@@ -30,13 +30,13 @@ class ACR_MapFeed
   {
    if (squad.GetFaction() != faction) continue;
    squad.GetAgents(agents);
-   foreach (int i, AIAgent agent : agents)
+   foreach (AIAgent agent : agents)
    {
     ChimeraCharacter soldier = ChimeraCharacter.Cast(agent.GetControlledEntity());
     if (!soldier) continue;
     ids.Insert(SCR_EntityHelper.EntityToRplId(soldier));
     positions.Insert(soldier.GetOrigin());
-    labels.Insert(string.Format("%1-%2", squad.GetName(), i + 1));
+    labels.Insert(string.Format("%1-%2", squad.GetName(), squad.NumberOf(soldier)));
     int state = 0;
     if (soldier.GetCharacterController().IsDead()) state = 2;
     else if (ACR_Squad.FindController(soldier) != 0) state = 1;

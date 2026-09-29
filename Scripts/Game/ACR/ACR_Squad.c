@@ -19,6 +19,7 @@ class ACR_Squad : Managed
  string m_Name;
  vector m_Home;               // position at registration; used by the test RALLY order
  AIWaypoint m_Waypoint;       // last waypoint we spawned, deleted when replaced
+ ref array<IEntity> m_Numbering = {}; // soldiers in first-seen order; gives stable "Alpha 1-2" labels
 
  void ACR_Squad(SCR_AIGroup group, int number)
  {
@@ -82,6 +83,16 @@ class ACR_Squad : Managed
   foreach (int i, AIAgent agent : agents)
    if (agent.GetControlledEntity() == soldier) return i;
   return -1;
+ }
+
+ // Stable 1-based number for a member. Roster order changes when the leader is
+ // detached for possession, so labels must not come from roster position.
+ int NumberOf(IEntity soldier)
+ {
+  if (!soldier) return 0;
+  int index = m_Numbering.Find(soldier);
+  if (index < 0) index = m_Numbering.Insert(soldier);
+  return index + 1;
  }
 
  bool IsAlive()

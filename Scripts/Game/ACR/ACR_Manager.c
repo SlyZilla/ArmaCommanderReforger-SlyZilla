@@ -208,7 +208,7 @@ class ACR_Manager : Managed
   if (pc.GetControlledEntity() != target) return "Control transfer failed; try again";
   if (squad.IsLeader(pc))
    return string.Format("Now leading %1. Native squad commands are available. F7 swaps again; F8 returns.", squad.GetName());
-  return string.Format("Now controlling %1-%2. F7 swaps again; F8 returns to your command unit.", squad.GetName(), squad.IndexOf(target) + 1);
+  return string.Format("Now controlling %1-%2. F7 swaps again; F8 returns to your command unit.", squad.GetName(), squad.NumberOf(target));
  }
 
  string Order(SCR_PlayerController pc, int command, vector point)
