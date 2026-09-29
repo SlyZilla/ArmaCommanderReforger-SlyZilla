@@ -16,6 +16,8 @@ class ACR_Base : GenericEntity
  bool m_bIncome;
  [Attribute("0", UIWidgets.CheckBox, "Hidden from other factions until one of their units enters it")]
  bool m_bHidden;
+ [Attribute("1", UIWidgets.CheckBox, "Purchased units and reinforcements can deploy here")]
+ bool m_bAllowSpawn;
  [Attribute("50", UIWidgets.EditBox, "Capture radius in metres")]
  float m_fRadius;
 
@@ -47,6 +49,13 @@ class ACR_Base : GenericEntity
  {
   if (m_sOwner.IsEmpty()) return null;
   return GetGame().GetFactionManager().GetFactionByKey(m_sOwner);
+ }
+
+ // Name as shown on the map, e.g. "Farm [1]".
+ string GetLabel()
+ {
+  if (m_bIncome) return string.Format("%1 [%2]", m_sName, m_iValue);
+  return m_sName;
  }
 
  bool IsVisibleTo(string factionKey)

@@ -18,6 +18,7 @@ class ACR_MapFeed
    string key = faction.GetFactionKey();
    pc.ACR_SendCommandStatus(manager.IsCommander(id), manager.CommandStatus(id), manager.m_SharedCommand, manager.m_Bases.GetRP(key), manager.m_Bases.GetIncome(key), manager.m_Bases.SecondsToIncome());
    PublishBases(manager, pc, key);
+   PublishRequisitions(manager, pc, key);
    PublishOrders(manager, pc, faction);
   }
  }
@@ -163,9 +164,7 @@ class ACR_MapFeed
   {
    if (!base.IsVisibleTo(factionKey)) continue;
    positions.Insert(base.GetOrigin());
-   string label = base.m_sName;
-   if (base.m_bIncome) label += string.Format(" [%1]", base.m_iValue);
-   names.Insert(label);
+   names.Insert(base.GetLabel());
    owners.Insert(base.m_sOwner);
    details.Insert(manager.m_Bases.Describe(base));
    radii.Insert(base.m_fRadius);
@@ -174,5 +173,18 @@ class ACR_MapFeed
    contested.Insert(flag);
   }
   pc.ACR_SendBases(positions, names, owners, details, radii, contested);
+ }
+ static void PublishRequisitions(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
+ {
+  array<string> names = {};
+  array<int> costs = {};
+  array<int> remaining = {};
+  foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(factionKey).m_aRequisitions)
+  {
+   names.Insert(entry.m_sName);
+   costs.Insert(entry.m_iCost);
+   remaining.Insert(entry.m_iRemaining);
+  }
+  pc.ACR_SendRequisitions(names, costs, remaining);
  }
 }

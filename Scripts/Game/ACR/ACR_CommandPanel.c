@@ -8,7 +8,10 @@ enum ACR_EPanelAction
  DEFEND,
  GET_IN,
  GET_OUT,
- UNLOAD
+ UNLOAD,
+ REINFORCE,
+ TOGGLE_REQUISITION,
+ REQUISITION_ENTRY = 100 // + entry index
 }
 
 enum ACR_ECursorMode
@@ -43,6 +46,11 @@ class ACR_CommandPanel : Managed
  protected ref array<SCR_ButtonTextComponent> m_ModeButtons = {};
  protected TextWidget m_Hint;
  protected SCR_ButtonTextComponent m_DefendButton;
+ protected SCR_ButtonTextComponent m_ReinforceButton;
+ protected SCR_ButtonTextComponent m_RequisitionButton;
+ protected Widget m_RequisitionWidget;
+ protected Widget m_RequisitionSection;
+ protected ref array<SCR_ButtonTextComponent> m_EntryButtons = {};
  protected SCR_ButtonTextComponent m_GetInButton;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
@@ -73,6 +81,10 @@ class ACR_CommandPanel : Managed
   m_Economy = AddText(m_Content, LAYOUT_TEXT, "");
   m_Status = AddText(m_Content, LAYOUT_TEXT, "");
   m_CommandButton = AddButton(m_Content, "Take command", ACR_EPanelAction.TOGGLE_COMMAND);
+  m_RequisitionButton = AddButton(m_Content, "Requisition", ACR_EPanelAction.TOGGLE_REQUISITION);
+  m_RequisitionWidget = m_LastButtonWidget;
+  m_RequisitionSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
+  AlignableSlot.SetPadding(m_RequisitionSection, 0, 6, 0, 0);
 
   m_GroupSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
@@ -95,6 +107,7 @@ class ACR_CommandPanel : Managed
   Widget orders2 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   AddButton(orders2, "Get out", ACR_EPanelAction.GET_OUT, true);
   AddButton(orders2, "Unload", ACR_EPanelAction.UNLOAD, true);
+  m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
  }
@@ -186,6 +199,50 @@ class ACR_CommandPanel : Managed
   if (m_Hint) m_Hint.SetText(hint);
  }
 
+ // Buy list: one button per entry, rebuilt when the entry count changes.
+ // selected = entry armed for deployment (-1 none), open = list expanded.
+ void SetRequisitions(bool visible, bool open, array<string> names, array<int> costs, array<int> remaining, int rp, int selected)
+ {
+  if (!m_RequisitionSection) return;
+  if (m_RequisitionWidget) m_RequisitionWidget.SetVisible(visible);
+  m_RequisitionSection.SetVisible(visible && open);
+  if (m_RequisitionButton)
+  {
+   if (open) m_RequisitionButton.SetText("Requisition  [close]");
+   else m_RequisitionButton.SetText("Requisition");
+  }
+  if (!visible || !open) return;
+  if (m_EntryButtons.Count() != names.Count())
+  {
+   Widget child = m_RequisitionSection.GetChildren();
+   while (child)
+   {
+    Widget next = child.GetSibling();
+    child.RemoveFromHierarchy();
+    child = next;
+   }
+   foreach (SCR_ButtonTextComponent old : m_EntryButtons) if (old) m_Actions.Remove(old);
+   m_EntryButtons.Clear();
+   foreach (int i, string entryName : names)
+    m_EntryButtons.Insert(AddButton(m_RequisitionSection, entryName, ACR_EPanelAction.REQUISITION_ENTRY + i));
+  }
+  foreach (int i, SCR_ButtonTextComponent button : m_EntryButtons)
+  {
+   if (!button) continue;
+   string label = string.Format("%1   %2 RP   (%3 left)", names[i], costs[i], remaining[i]);
+   if (i == selected) label = "[" + label + "]";
+   button.SetText(label);
+   button.SetEnabled(remaining[i] > 0 && costs[i] <= rp, false);
+  }
+ }
+
+ void SetReinforce(string text, bool enabled)
+ {
+  if (!m_ReinforceButton) return;
+  m_ReinforceButton.SetText(text);
+  m_ReinforceButton.SetEnabled(enabled, false);
+ }
+
  void SetEconomy(string text)
  {
   if (m_Economy) m_Economy.SetText(text);
@@ -209,6 +266,7 @@ class ACR_CommandPanel : Managed
   m_Root = null;
   m_Actions.Clear();
   m_ModeButtons.Clear();
+  m_EntryButtons.Clear();
  }
 }
 

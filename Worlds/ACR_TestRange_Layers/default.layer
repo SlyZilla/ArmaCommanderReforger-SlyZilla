@@ -84,3 +84,13 @@ PerceptionManager ACR_Perception : "{028DAEAD63E056BE}Prefabs/World/Game/Percept
 RadioManagerEntity ACR_Radio : "{B8E09FAB91C4ECCD}Prefabs/Systems/Radio/RadioManager.et" {
  coords 2400 111 2400
 }
+ACR_FactionSettings ACR_Settings_US {
+ coords 2400 111 2400
+ m_sFaction "US"
+ m_iStartingRP 100
+}
+ACR_FactionSettings ACR_Settings_USSR {
+ coords 2400 111 2400
+ m_sFaction "USSR"
+ m_iStartingRP 100
+}

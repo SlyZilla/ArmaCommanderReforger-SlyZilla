@@ -1,5 +1,12 @@
 // Server-side bases, capture, garrisons, hidden-base discovery and requisition
 // income. Numbers follow the Arma 3 mod (defines/commonDefines.inc, economy.sqf).
+class ACR_FactionData
+{
+ int m_iRP;
+ ref array<ref ACR_RequisitionEntry> m_aRequisitions = {};
+ ref array<ResourceName> m_aGarrison = {};
+}
+
 class ACR_BaseSystem : Managed
 {
  static const float CAPTURE_RATE = 0.4;     // score per second per soldier of difference
@@ -12,20 +19,37 @@ class ACR_BaseSystem : Managed
  int m_iBasicIncome = 5;
  int m_iStartingRP = 50;
  protected float m_fNextIncome = -1;
- protected ref map<string, int> m_RP = new map<string, int>();
 
- // Faction -> {empty group prefab, soldier prefab} for garrisons. Set by the scenario.
- protected ref map<string, ref array<ResourceName>> m_FactionPrefabs = new map<string, ref array<ResourceName>>();
+ static const ResourceName GROUP_BASE = "{000CD338713F2B5A}Prefabs/AI/Groups/Group_Base.et";
+ protected ref map<string, ref ACR_FactionData> m_Factions = new map<string, ref ACR_FactionData>();
  ref array<SCR_AIGroup> m_GarrisonGroups = {};
 
  // per-tick census
  protected ref array<IEntity> m_Bodies = {};
  protected ref array<string> m_BodyFactions = {};
 
- void SetFactionPrefabs(string factionKey, ResourceName groupPrefab, ResourceName soldierPrefab)
+ // Buy list, garrison soldiers and RP for a faction, built from its
+ // ACR_FactionSettings entity (or catalog defaults) the first time it's needed.
+ ACR_FactionData GetFaction(string factionKey)
  {
-  array<ResourceName> prefabs = {groupPrefab, soldierPrefab};
-  m_FactionPrefabs.Set(factionKey, prefabs);
+  ACR_FactionData data;
+  if (m_Factions.Find(factionKey, data)) return data;
+  data = new ACR_FactionData();
+  ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  data.m_iRP = m_iStartingRP;
+  if (settings) data.m_iRP = settings.m_iStartingRP;
+  ACR_FactionCatalog.BuildRequisitions(factionKey, settings, data.m_aRequisitions);
+  ACR_FactionCatalog.BuildGarrisonPool(factionKey, settings, data.m_aGarrison);
+  m_Factions.Insert(factionKey, data);
+  return data;
+ }
+
+ bool Spend(string factionKey, int amount)
+ {
+  ACR_FactionData data = GetFaction(factionKey);
+  if (data.m_iRP < amount) return false;
+  data.m_iRP -= amount;
+  return true;
  }
 
  bool IsGarrison(SCR_AIGroup group)
@@ -37,13 +61,7 @@ class ACR_BaseSystem : Managed
 
  int GetRP(string factionKey)
  {
-  int rp;
-  if (!m_RP.Find(factionKey, rp))
-  {
-   rp = m_iStartingRP;
-   m_RP.Set(factionKey, rp);
-  }
-  return rp;
+  return GetFaction(factionKey).m_iRP;
  }
 
  int GetIncome(string factionKey)
@@ -72,7 +90,8 @@ class ACR_BaseSystem : Managed
   {
    string key = faction.GetFactionKey();
    int added = GetIncome(key);
-   m_RP.Set(key, Math.Min(GetRP(key) + added, POINTS_CAP));
+   ACR_FactionData data = GetFaction(key);
+   data.m_iRP = Math.Min(data.m_iRP + added, POINTS_CAP);
   }
   PrintFormat("[ACR] Income paid");
  }
@@ -238,17 +257,17 @@ class ACR_BaseSystem : Managed
 
  protected void SpawnGarrison(ACR_Base base)
  {
-  array<ResourceName> prefabs;
-  if (!m_FactionPrefabs.Find(base.m_sOwner, prefabs) || prefabs.Count() < 2)
+  array<ResourceName> pool = GetFaction(base.m_sOwner).m_aGarrison;
+  if (pool.IsEmpty())
   {
-   PrintFormat("[ACR] No garrison prefabs for faction %1", base.m_sOwner);
+   PrintFormat("[ACR] No garrison soldiers for faction %1", base.m_sOwner);
    base.m_iGarrisonLeft = 0;
    return;
   }
   vector center = base.GetOrigin();
   // The faction group prefab would otherwise spawn its own six default members on top of ours.
   SCR_AIGroup.IgnoreSpawning(true);
-  SCR_AIGroup group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(prefabs[0], center));
+  SCR_AIGroup group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(GROUP_BASE, center));
   SCR_AIGroup.IgnoreSpawning(false);
   if (group) group.SetMaxUnitsToSpawn(0);
   if (!group) return;
@@ -259,7 +278,7 @@ class ACR_BaseSystem : Managed
   for (int i = 0; i < base.m_iGarrisonLeft; i++)
   {
    vector offset = Vector(Math.RandomFloat(-spread, spread), 0, Math.RandomFloat(-spread, spread));
-   IEntity soldier = ACR_Manager.SpawnPrefab(prefabs[1], center + offset);
+   IEntity soldier = ACR_Manager.SpawnPrefab(pool.GetRandomElement(), center + offset);
    if (!soldier) continue;
    if (!group.AddAIEntityToGroup(soldier)) PrintFormat("[ACR] Garrison soldier %1 could not join its group", i);
    FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(soldier.FindComponent(FactionAffiliationComponent));

@@ -44,7 +44,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (!pc) return;
   pc.ACR_MarkUiClick();
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
-  else if (m_BaseIndex >= 0) pc.ACR_SelectBase(m_Label);
+  else if (m_BaseIndex >= 0) pc.ACR_ClickBase(m_Label);
   else pc.ACR_SelectGroup(m_GroupId);
  }
 }
@@ -466,6 +466,13 @@ modded class SCR_PlayerController
   bool canTake = !m_ACR_IsCommander && (m_ACR_SharedCommand || m_ACR_CommandText == "Command: AI");
   m_ACR_Panel.SetCommand(m_ACR_CommandText, m_ACR_IsCommander, canTake);
   m_ACR_Panel.SetEconomy(string.Format("RP %1   +%2 in %3s", m_ACR_RP, m_ACR_Income, m_ACR_IncomeSeconds));
+  if (!m_ACR_IsCommander) m_ACR_PendingEntry = -1;
+  m_ACR_Panel.SetRequisitions(m_ACR_IsCommander, m_ACR_RequisitionOpen, m_ACR_ReqNames, m_ACR_ReqCosts, m_ACR_ReqRemaining, m_ACR_RP, m_ACR_PendingEntry);
+  if (m_ACR_PendingEntry >= 0 && m_ACR_PendingEntry < m_ACR_ReqNames.Count())
+  {
+   m_ACR_Panel.SetBase(m_ACR_ReqNames[m_ACR_PendingEntry], "Click one of your bases to deploy. Right-click to cancel.");
+   return;
+  }
   if (!m_ACR_SelectedBase.IsEmpty())
   {
    int baseIndex = m_ACR_BaseNames.Find(m_ACR_SelectedBase);
@@ -492,6 +499,8 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in (click Get in again to cancel)";
   else hint = "Right-click: move there";
   m_ACR_Panel.SetGroup(m_ACR_GroupNames[index], m_ACR_GroupDetails[index], friendly, m_ACR_IsCommander, m_ACR_GroupSymbols[index * 4 + 3], m_ACR_CursorMode, hint);
+  bool missing = m_ACR_GroupDetails[index].Contains("missing");
+  m_ACR_Panel.SetReinforce("Reinforce (3 RP per soldier)", missing);
  }
 
  void ACR_OnPanelAction(int action)
@@ -519,13 +528,30 @@ modded class SCR_PlayerController
     return;
    case ACR_EPanelAction.GET_OUT: ACR_Request(ACR_ERequest.ORDER_GET_OUT, m_ACR_SelectedGroup); return;
    case ACR_EPanelAction.UNLOAD: ACR_Request(ACR_ERequest.ORDER_UNLOAD, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.REINFORCE: ACR_Request(ACR_ERequest.REINFORCE, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.TOGGLE_REQUISITION:
+    m_ACR_RequisitionOpen = !m_ACR_RequisitionOpen;
+    m_ACR_PendingEntry = -1;
+    return;
+  }
+  if (action >= ACR_EPanelAction.REQUISITION_ENTRY)
+  {
+   int entry = action - ACR_EPanelAction.REQUISITION_ENTRY;
+   if (m_ACR_PendingEntry == entry) m_ACR_PendingEntry = -1; // click again to cancel
+   else m_ACR_PendingEntry = entry;
   }
  }
 
  // Called by the map radial menu hook. Returns true if the right-click was used.
  bool ACR_HandleMapRightClick()
  {
-  if (!ACR_Manager.GetInstance() || !m_ACR_SelectedGroup.IsValid()) return false;
+  if (!ACR_Manager.GetInstance()) return false;
+  if (m_ACR_PendingEntry >= 0)
+  {
+   m_ACR_PendingEntry = -1;
+   return true;
+  }
+  if (!m_ACR_SelectedGroup.IsValid()) return false;
   int index = m_ACR_GroupIds.Find(m_ACR_SelectedGroup);
   if (index < 0 || index >= m_ACR_Commandable.Count() || m_ACR_Commandable[index] != 1) return false;
   if (!m_ACR_IsCommander)
@@ -714,5 +740,59 @@ modded class SCR_PlayerController
    m_ACR_OrderCanvas.TessellateCircle(Vector(fx, fy, 0), radius, 48, ring.m_Vertices);
    m_ACR_OrderCommands.Insert(ring);
   }
+ }
+
+ // ---------------------------------------------------------------- requisition
+ protected ref array<string> m_ACR_ReqNames = {};
+ protected ref array<int> m_ACR_ReqCosts = {};
+ protected ref array<int> m_ACR_ReqRemaining = {};
+ protected bool m_ACR_RequisitionOpen;
+ protected int m_ACR_PendingEntry = -1;
+
+ void ACR_SendRequisitions(array<string> names, array<int> costs, array<int> remaining)
+ {
+  Rpc(ACR_RequisitionsOwner, names, costs, remaining);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_RequisitionsOwner(array<string> names, array<int> costs, array<int> remaining)
+ {
+  m_ACR_ReqNames.Copy(names);
+  m_ACR_ReqCosts.Copy(costs);
+  m_ACR_ReqRemaining.Copy(remaining);
+ }
+
+ // Base marker clicked: deploy the armed purchase there, otherwise select the base.
+ void ACR_ClickBase(string label)
+ {
+  if (m_ACR_PendingEntry >= 0)
+  {
+   Rpc(ACR_PurchaseServer, m_ACR_PendingEntry, label);
+   m_ACR_PendingEntry = -1;
+   return;
+  }
+  ACR_SelectBase(label);
+ }
+
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_PurchaseServer(int entryIndex, string baseLabel)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastCommand < 300) return;
+  m_ACR_LastCommand = now;
+  Rpc(ACR_FeedbackOwner, manager.Purchase(this, entryIndex, baseLabel));
+ }
+
+ // Test hook: buy entry at base without the UI.
+ void ACR_TestPurchase(int entryIndex, string baseLabel)
+ {
+  Rpc(ACR_PurchaseServer, entryIndex, baseLabel);
+ }
+ int ACR_TestFindEntry(string namePart)
+ {
+  foreach (int i, string entryName : m_ACR_ReqNames)
+   if (entryName.Contains(namePart)) return i;
+  return -1;
  }
 }

@@ -14,7 +14,8 @@ enum ACR_ERequest
  MODE_FAST,
  MODE_SILENT,
  TAKE_COMMAND,
- LEAVE_COMMAND
+ LEAVE_COMMAND,
+ REINFORCE         // refill the squad's fallen soldiers
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -120,12 +121,32 @@ class ACR_Manager : Managed
   return !FindSquadByGroup(group) && !FindSquadByCommandGroup(group);
  }
 
+ // Purchased vehicles waiting for their crew group to register, and
+ // passenger groups waiting to board.
+ protected ref map<IEntity, string> m_PendingCrewNames = new map<IEntity, string>();
+ protected ref map<SCR_AIGroup, IEntity> m_PendingBoarding = new map<SCR_AIGroup, IEntity>();
+
  ACR_Squad Register(SCR_AIGroup group)
  {
   m_SquadNumber++;
   ACR_Squad squad = new ACR_Squad(group, m_SquadNumber);
   m_Squads.Insert(squad);
+  array<IEntity> vehicles = {};
+  squad.GetVehicles(vehicles);
+  foreach (IEntity vehicle : vehicles)
+  {
+   string crewName;
+   if (!m_PendingCrewNames.Find(vehicle, crewName)) continue;
+   squad.Rename(crewName);
+   m_PendingCrewNames.Remove(vehicle);
+  }
   squad.Init();
+  IEntity ride;
+  if (m_PendingBoarding.Find(group, ride))
+  {
+   m_PendingBoarding.Remove(group);
+   if (ride) squad.GetIn(ride.GetOrigin());
+  }
   PrintFormat("[ACR] Squad registered: %1 faction=%2 soldiers=%3", squad.GetName(), group.GetFaction().GetFactionKey(), group.GetAgentsCount());
   return squad;
  }
@@ -293,6 +314,7 @@ class ACR_Manager : Managed
    case ACR_ERequest.POSSESS: return Possess(pc, body, targetId);
    case ACR_ERequest.SWITCH_TO_GROUP: return SwitchToGroup(pc, body, targetId);
    case ACR_ERequest.TAKE_COMMAND: return TakeCommand(pc);
+   case ACR_ERequest.REINFORCE: return Reinforce(pc, targetId);
    case ACR_ERequest.LEAVE_COMMAND: return LeaveCommand(pc);
   }
   return Order(pc, command, targetId, point);
@@ -434,6 +456,114 @@ class ACR_Manager : Managed
   }
   if (!unloaded) return transport.GetName() + " has no passengers";
   return string.Format("%1: unloading %2 squad(s)", transport.GetName(), unloaded);
+ }
+
+ // ================================================================ requisition (server)
+
+ static const int REINFORCE_COST_PER_SOLDIER = 3;
+
+ protected ACR_Base FindSpawnBase(string factionKey, string label)
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.GetLabel() == label && base.m_sOwner == factionKey) return base;
+  return null;
+ }
+
+ protected ACR_Base NearestSpawnBase(string factionKey, vector position)
+ {
+  ACR_Base best;
+  float bestDistance = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != factionKey || !base.m_bAllowSpawn || base.m_bContested) continue;
+   float distance = vector.Distance(base.GetOrigin(), position);
+   if (distance >= bestDistance) continue;
+   bestDistance = distance;
+   best = base;
+  }
+  return best;
+ }
+
+ protected vector SpawnPoint(ACR_Base base, float minDistance, float maxDistance)
+ {
+  float angle = Math.RandomFloat(0, Math.PI2);
+  float distance = Math.RandomFloat(minDistance, maxDistance);
+  return Ground(base.GetOrigin() + Vector(Math.Cos(angle) * distance, 0, Math.Sin(angle) * distance));
+ }
+
+ string Purchase(SCR_PlayerController pc, int entryIndex, string baseLabel)
+ {
+  Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
+  if (!faction) return "You have no faction";
+  if (!IsCommander(pc.GetPlayerId())) return "Only the commander can requisition units";
+  string key = faction.GetFactionKey();
+  ACR_FactionData data = m_Bases.GetFaction(key);
+  if (entryIndex < 0 || entryIndex >= data.m_aRequisitions.Count()) return "Unknown unit";
+  ACR_RequisitionEntry entry = data.m_aRequisitions[entryIndex];
+  if (entry.m_iRemaining <= 0) return entry.m_sName + ": none left";
+  ACR_Base base = FindSpawnBase(key, baseLabel);
+  if (!base) return "Deploy at one of your own bases";
+  if (!base.m_bAllowSpawn) return base.m_sName + " can't deploy units";
+  if (base.m_bContested) return base.m_sName + " is under attack";
+  if (!m_Bases.Spend(key, entry.m_iCost)) return string.Format("Not enough RP (%1 needed)", entry.m_iCost);
+  entry.m_iRemaining--;
+  entry.m_iBought++;
+  string name = string.Format("%1 %2", entry.m_sName, entry.m_iBought);
+
+  IEntity vehicle;
+  if (!entry.m_sVehicle.IsEmpty())
+  {
+   vehicle = SpawnPrefab(entry.m_sVehicle, SpawnPoint(base, 10, 20));
+   if (vehicle && entry.m_bCrewed)
+   {
+    m_PendingCrewNames.Set(vehicle, name);
+    SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+    array<ECompartmentType> seats = {ECompartmentType.PILOT, ECompartmentType.TURRET};
+    if (compartments) compartments.SpawnDefaultOccupants(seats);
+   }
+  }
+  if (!entry.m_sGroup.IsEmpty())
+  {
+   SCR_AIGroup group = SCR_AIGroup.Cast(SpawnPrefab(entry.m_sGroup, SpawnPoint(base, 5, 15)));
+   if (group) group.SetCustomName(name, 0);
+  }
+  if (!entry.m_sPassengers.IsEmpty())
+  {
+   SCR_AIGroup passengers = SCR_AIGroup.Cast(SpawnPrefab(entry.m_sPassengers, SpawnPoint(base, 5, 15)));
+   if (passengers)
+   {
+    passengers.SetCustomName(name + " infantry", 0);
+    if (vehicle) m_PendingBoarding.Set(passengers, vehicle);
+   }
+  }
+  PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
+  return string.Format("%1 deploying at %2", name, base.m_sName);
+ }
+
+ string Reinforce(SCR_PlayerController pc, RplId groupId)
+ {
+  ACR_Squad squad = FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
+  if (!squad || !squad.m_Group) return "Select a friendly squad first";
+  string key = squad.GetFaction().GetFactionKey();
+  if (SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId()) != squad.GetFaction()) return "That squad belongs to another faction";
+  if (!IsCommander(pc.GetPlayerId())) return "Only the commander can reinforce squads";
+  array<ResourceName> missing = {};
+  squad.GetMissing(missing);
+  if (missing.IsEmpty()) return squad.GetName() + " is at full strength";
+  IEntity anchor = squad.GetAnchor();
+  vector near = vector.Zero;
+  if (anchor) near = anchor.GetOrigin();
+  ACR_Base base = NearestSpawnBase(key, near);
+  if (!base) return "No friendly base can send reinforcements";
+  int cost = missing.Count() * REINFORCE_COST_PER_SOLDIER;
+  if (!m_Bases.Spend(key, cost)) return string.Format("Not enough RP (%1 needed)", cost);
+  foreach (ResourceName prefab : missing)
+  {
+   IEntity soldier = SpawnPrefab(prefab, SpawnPoint(base, 4, 12));
+   if (soldier) squad.m_Group.AddAIEntityToGroup(soldier);
+  }
+  PrintFormat("[ACR] REINFORCE %1 +%2 from %3 for %4 RP", squad.GetName(), missing.Count(), base.m_sName, cost);
+  return string.Format("%1: %2 reinforcements from %3", squad.GetName(), missing.Count(), base.m_sName);
  }
 
  // ================================================================ local input (every machine)

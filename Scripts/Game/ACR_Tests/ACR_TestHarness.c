@@ -11,6 +11,7 @@ class ACR_TestHarness : Managed
  static const int MODE_VEHICLE = 4;
  static const int MODE_BASES = 5;
  static const int MODE_ASSAULT = 6;
+ static const int MODE_REQUISITION = 7;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -36,6 +37,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrVehicleTest", flag)) mode = MODE_VEHICLE;
   if (System.GetCLIParam("acrBasesTest", flag)) mode = MODE_BASES;
   if (System.GetCLIParam("acrAssaultTest", flag)) mode = MODE_ASSAULT;
+  if (System.GetCLIParam("acrRequisitionTest", flag)) mode = MODE_REQUISITION;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -63,6 +65,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_VEHICLE) { TestVehicle(); return; }
   if (m_Mode == MODE_BASES) { TestBases(); return; }
   if (m_Mode == MODE_ASSAULT) { TestAssault(); return; }
+  if (m_Mode == MODE_REQUISITION) { TestRequisition(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -416,4 +419,50 @@ class ACR_TestHarness : Managed
   return text;
  }
  void PrintComplete() { Print("[ACR] TEST COMPLETE"); }
+
+ // ---------------------------------------------------------------- -acrRequisitionTest
+ void TestRequisition()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  array<ref ACR_RequisitionEntry> entries = manager.m_Bases.GetFaction("US").m_aRequisitions;
+  if (m_Ticks == 8)
+  {
+   PrintFormat("[ACR] REQ rp=%1 entries=%2 garrisonPool=%3", manager.m_Bases.GetRP("US"), entries.Count(), manager.m_Bases.GetFaction("US").m_aGarrison.Count());
+   foreach (int i, ACR_RequisitionEntry e : entries)
+    PrintFormat("[ACR] REQ %1: %2 | %3 RP | stock %4 | vehicle=%5", i, e.m_sName, e.m_iCost, e.m_iStock, !e.m_sVehicle.IsEmpty());
+  }
+  if (m_Ticks == 10)
+  {
+   foreach (int i, ACR_RequisitionEntry e : entries)
+    if (e.m_sVehicle.IsEmpty()) { pc.ACR_TestPurchase(i, "Farm [1]"); break; }
+  }
+  if (m_Ticks == 12)
+  {
+   int pick = -1;
+   foreach (int i, ACR_RequisitionEntry e : entries)
+   {
+    if (e.m_sVehicle.IsEmpty()) continue;
+    if (pick < 0) pick = i;
+    if (e.m_sVehicle.Contains("M923")) { pick = i; break; }
+   }
+   if (pick >= 0) pc.ACR_TestPurchase(pick, "Farm [1]");
+  }
+  if (m_Ticks == 14) pc.ACR_TestPurchase(0, "Outpost"); // enemy base: must be refused
+  if (m_Ticks == 30 || m_Ticks == 65)
+  {
+   foreach (ACR_Squad squad : manager.m_Squads)
+    PrintFormat("[ACR] REQ squad %1 (%2): %3", squad.GetName(), squad.GetFaction().GetFactionKey(), squad.Describe());
+   PrintFormat("[ACR] REQ rp=%1", manager.m_Bases.GetRP("US"));
+  }
+  if (m_Ticks == 35 && m_Range.m_Group)
+  {
+   array<AIAgent> agents = {};
+   m_Range.m_Group.GetAgents(agents);
+   if (agents.Count() > 1) SCR_EntityHelper.DeleteEntityAndChildren(agents[agents.Count() - 1].GetControlledEntity());
+  }
+  if (m_Ticks == 40) pc.ACR_Request(ACR_ERequest.REINFORCE, SCR_EntityHelper.EntityToRplId(m_Range.m_Group));
+  if (m_Ticks == 70) Print("[ACR] TEST COMPLETE");
+ }
 }

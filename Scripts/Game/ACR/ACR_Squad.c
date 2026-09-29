@@ -67,6 +67,57 @@ class ACR_Squad : Managed
 
  // ---------------------------------------------------------------- roster
 
+ void Rename(string name)
+ {
+  m_Name = name;
+  if (m_Group) m_Group.SetCustomName(name, 0);
+  if (m_CommandGroup) m_CommandGroup.SetCustomName(name, 0);
+ }
+
+ // Highest number of living soldiers seen per prefab: what Reinforce refills to.
+ protected ref map<ResourceName, int> m_FullStrength = new map<ResourceName, int>();
+
+ protected void CountByPrefab(map<ResourceName, int> counts)
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter soldier = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!soldier || soldier.GetCharacterController().IsDead() || !soldier.GetPrefabData()) continue;
+   ResourceName prefab = soldier.GetPrefabData().GetPrefabName();
+   int count;
+   counts.Find(prefab, count);
+   counts.Set(prefab, count + 1);
+  }
+ }
+
+ void TrackStrength()
+ {
+  map<ResourceName, int> now = new map<ResourceName, int>();
+  CountByPrefab(now);
+  foreach (ResourceName prefab, int count : now)
+  {
+   int best;
+   m_FullStrength.Find(prefab, best);
+   if (count > best) m_FullStrength.Set(prefab, count);
+  }
+ }
+
+ // Prefabs of fallen soldiers, one entry per missing man.
+ void GetMissing(array<ResourceName> missing)
+ {
+  missing.Clear();
+  map<ResourceName, int> now = new map<ResourceName, int>();
+  CountByPrefab(now);
+  foreach (ResourceName prefab, int full : m_FullStrength)
+  {
+   int alive;
+   now.Find(prefab, alive);
+   for (int i = alive; i < full; i++) missing.Insert(prefab);
+  }
+ }
+
  string GetName() { return m_Name; }
  Faction GetFaction()
  {
@@ -214,6 +265,7 @@ class ACR_Squad : Managed
  void Refresh()
  {
   KeepSimulated(m_Group);
+  TrackStrength();
   if (!m_Group || !m_CommandGroup) return;
   UpdateFormationLeader();
   int leaderPlayer;
@@ -426,6 +478,9 @@ class ACR_Squad : Managed
   array<IEntity> vehicles = {};
   GetVehicles(vehicles);
   if (!vehicles.IsEmpty()) text += " | mounted";
+  array<ResourceName> missing = {};
+  GetMissing(missing);
+  if (!missing.IsEmpty()) text += string.Format(" | %1 missing", missing.Count());
   return text;
  }
 
