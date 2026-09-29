@@ -87,6 +87,17 @@ function Invoke-Request($file) {
     $preset = (Get-Content -LiteralPath $file.FullName -Raw).Trim().ToLower()
     Remove-Item -LiteralPath $file.FullName
     $time = Get-Date -Format 'HH:mm:ss'
+    # Extra test presets from tools\test-presets.txt ("name|-acrSomethingTest 1|timeoutSec"),
+    # re-read on every request so new tests don't need a launcher restart. Only
+    # -acr...Test flags are accepted, so this can't be used to pass other options.
+    $extraFile = Join-Path $PSScriptRoot 'test-presets.txt'
+    if (Test-Path -LiteralPath $extraFile) {
+        foreach ($line in Get-Content -LiteralPath $extraFile) {
+            $parts = $line.Split('|')
+            if ($parts.Count -ne 3 -or $parts[1] -notmatch '^-acr[A-Za-z]+Test 1$') { continue }
+            $Presets[$parts[0].Trim().ToLower()] = @{ Flags = $parts[1]; TimeoutSec = [int]$parts[2]; DoneWhen = '\[ACR\] TEST COMPLETE' }
+        }
+    }
     if (!$Presets.ContainsKey($preset)) {
         Write-Host "[$time] Refused unknown preset '$preset'" -ForegroundColor Yellow
         Write-Result $id @("status=refused", "reason=unknown preset '$preset'")

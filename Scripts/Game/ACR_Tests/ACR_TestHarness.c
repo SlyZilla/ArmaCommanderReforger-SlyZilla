@@ -8,6 +8,7 @@ class ACR_TestHarness : Managed
  static const int MODE_AUTO = 1;
  static const int MODE_COMMAND = 2;
  static const int MODE_MAP_HANDOFF = 3;
+ static const int MODE_VEHICLE = 4;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -30,6 +31,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrAutoTest", flag)) mode = MODE_AUTO;
   if (System.GetCLIParam("acrCommandTest", flag)) mode = MODE_COMMAND;
   if (System.GetCLIParam("acrMapHandoffTest", flag)) mode = MODE_MAP_HANDOFF;
+  if (System.GetCLIParam("acrVehicleTest", flag)) mode = MODE_VEHICLE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -53,6 +55,8 @@ class ACR_TestHarness : Managed
   // Lets the launcher script close the game as soon as the run is over.
   if ((m_Mode == MODE_AUTO && m_Ticks == 66) || (m_Mode == MODE_COMMAND && m_Ticks == 92) || (m_Mode == MODE_MAP_HANDOFF && m_Ticks == 66))
    Print("[ACR] TEST COMPLETE");
+  if (m_Mode == MODE_VEHICLE && m_Ticks == 140) Print("[ACR] TEST COMPLETE");
+  if (m_Mode == MODE_VEHICLE) { TestVehicle(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -290,5 +294,51 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 52) LogLeaderMarker();
   if (m_Ticks == 54) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
   if (m_Ticks == 87) pc.ACR_Request(ACR_ERequest.RETURN);
+ }
+
+ // ---------------------------------------------------------------- -acrVehicleTest
+ // Alpha boards the truck, Bravo boards as passengers, Alpha drives, unloads
+ // Bravo, then dismounts itself. Logs how many of each squad are in the truck.
+ protected vector m_TruckStart;
+ void LogVehicle(string step)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !m_Range.m_Truck) return;
+  ACR_Squad alpha = manager.FindSquadByGroup(m_Range.m_Group);
+  ACR_Squad bravo = manager.FindSquadByGroup(m_Range.m_Bravo);
+  PrintFormat("[ACR] VEHICLE %1 alphaIn=%2 bravoIn=%3 truckMoved=%4", step, CountInTruck(alpha), CountInTruck(bravo), vector.Distance(m_Range.m_Truck.GetOrigin(), m_TruckStart));
+ }
+ int CountInTruck(ACR_Squad squad)
+ {
+  if (!squad) return -1;
+  int count;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character || !character.IsInVehicle()) continue;
+   CompartmentAccessComponent compartment = character.GetCompartmentAccessComponent();
+   if (compartment && compartment.GetVehicleIn(character) == m_Range.m_Truck) count++;
+  }
+  return count;
+ }
+ void TestVehicle()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (!pc || !pc.GetControlledEntity() || !m_Range.m_Truck || !m_Range.m_Group || !m_Range.m_Bravo) return;
+  RplId alpha = SCR_EntityHelper.EntityToRplId(m_Range.m_Group);
+  RplId bravo = SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo);
+  vector truckPos = m_Range.m_Truck.GetOrigin();
+  if (m_Ticks == 12)
+  {
+   m_TruckStart = truckPos;
+   pc.ACR_Request(ACR_ERequest.ORDER_GET_IN, alpha, truckPos);
+  }
+  if (m_Ticks == 35) { LogVehicle("alphaBoarded"); pc.ACR_Request(ACR_ERequest.ORDER_GET_IN, bravo, truckPos); }
+  if (m_Ticks == 60) { LogVehicle("bravoBoarded"); pc.ACR_Request(ACR_ERequest.MOVE_TO, alpha, m_TruckStart + Vector(80, 0, 0)); }
+  if (m_Ticks == 95) { LogVehicle("drove"); pc.ACR_Request(ACR_ERequest.ORDER_UNLOAD, alpha); }
+  if (m_Ticks == 115) { LogVehicle("unloaded"); pc.ACR_Request(ACR_ERequest.ORDER_GET_OUT, alpha); }
+  if (m_Ticks == 135) LogVehicle("dismounted");
  }
 }

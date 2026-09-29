@@ -6,6 +6,8 @@ class ACR_TestRange : GenericEntity
 {
  static ACR_TestRange s_Instance;
  SCR_AIGroup m_Group;
+ SCR_AIGroup m_Bravo;
+ IEntity m_Truck;
  vector m_Rally;
  vector m_Target;
  protected ref ACR_TestHarness m_Harness;
@@ -39,6 +41,11 @@ class ACR_TestRange : GenericEntity
   // The manager registers it automatically once its soldiers exist.
   if (m_Group) m_Group.SetCustomName("Alpha 1", 0);
   PrintFormat("[ACR] Squad spawn: %1 at %2", m_Group, m_Rally);
+  // A second squad and an empty truck, for Get in / Get out / Unload.
+  m_Bravo = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab("{FCF7F5DC4F83955C}Prefabs/Groups/BLUFOR/Group_US_LightFireTeam.et", ACR_Manager.Ground("2415 0 2430")));
+  if (m_Bravo) m_Bravo.SetCustomName("Bravo 1", 0);
+  m_Truck = ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", ACR_Manager.Ground("2440 0 2420"));
+  PrintFormat("[ACR] Bravo spawn: %1 truck: %2", m_Bravo, m_Truck);
  }
 
  override void EOnFrame(IEntity owner, float timeSlice)
