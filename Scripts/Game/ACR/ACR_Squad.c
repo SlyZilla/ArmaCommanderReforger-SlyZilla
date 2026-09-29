@@ -514,6 +514,44 @@ class ACR_Squad : Managed
   }
  }
 
+ // ---------------------------------------------------------------- transport
+ vector m_LZ;
+ bool m_bHasLZ;
+ float m_fLZSetAt;
+
+ // Everyone out now, however the vehicle is sitting (hover, roof, water):
+ // the normal dismount first, a teleport-out if that is refused.
+ int DismountNow()
+ {
+  int out;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character || !character.IsInVehicle() || !ACR_Respawn.IsAlive(character)) continue;
+   CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+   if (!access) continue;
+   if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
+    access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   out++;
+  }
+  m_bHasLZ = false;
+  Halt("Dismounting");
+  GetGame().GetCallqueue().CallLater(HoldAfterDismount, 4000, false);
+  return out;
+ }
+
+ // Once out, take positions where they landed.
+ void HoldAfterDismount()
+ {
+  IEntity anchor = GetAnchor();
+  if (!m_Group || !anchor) return;
+  IssueWaypoint(WP_DEFEND, anchor.GetOrigin(), 20);
+  m_Order = "Holding position";
+  m_OrderKind = 1;
+ }
+
  int CountAlive()
  {
   int alive;

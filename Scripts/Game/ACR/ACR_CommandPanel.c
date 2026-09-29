@@ -10,6 +10,7 @@ enum ACR_EPanelAction
  GET_OUT,
  UNLOAD,
  REINFORCE,
+ SET_LZ,
  TOGGLE_REQUISITION,
  TOGGLE_SUPPORTS,
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -20,7 +21,8 @@ enum ACR_ECursorMode
 {
  MOVE,
  DEFEND,
- GET_IN
+ GET_IN,
+ LZ
 }
 
 // Arma Commander side panel on the fullscreen map. Built from script out of the
@@ -60,6 +62,7 @@ class ACR_CommandPanel : Managed
  protected Widget m_SupportBox;
  protected ref array<SCR_ButtonTextComponent> m_SupportButtons = {};
  protected SCR_ButtonTextComponent m_GetInButton;
+ protected SCR_ButtonTextComponent m_LZButton;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
 
@@ -131,6 +134,7 @@ class ACR_CommandPanel : Managed
   Widget orders2 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   AddButton(orders2, "Get out", ACR_EPanelAction.GET_OUT, true);
   AddButton(orders2, "Unload", ACR_EPanelAction.UNLOAD, true);
+  m_LZButton = AddButton(m_OrderSection, "Unload at LZ", ACR_EPanelAction.SET_LZ);
   m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
@@ -219,6 +223,11 @@ class ACR_CommandPanel : Managed
   {
    if (cursorMode == ACR_ECursorMode.GET_IN) m_GetInButton.SetText("[Get in]");
    else m_GetInButton.SetText("Get in");
+  }
+  if (m_LZButton)
+  {
+   if (cursorMode == ACR_ECursorMode.LZ) m_LZButton.SetText("[Unload at LZ]");
+   else m_LZButton.SetText("Unload at LZ");
   }
   if (m_Hint) m_Hint.SetText(hint);
  }

@@ -20,6 +20,7 @@ class ACR_TestHarness : Managed
  static const int MODE_SUPPORT = 13;
  static const int MODE_GUNSHIP = 14;
  static const int MODE_TACTICS = 15;
+ static const int MODE_TRANSPORT = 16;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -54,6 +55,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrSupportTest", flag)) mode = MODE_SUPPORT;
   if (System.GetCLIParam("acrGunshipTest", flag)) mode = MODE_GUNSHIP;
   if (System.GetCLIParam("acrTacticsTest", flag)) mode = MODE_TACTICS;
+  if (System.GetCLIParam("acrTransportTest", flag)) mode = MODE_TRANSPORT;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -90,6 +92,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_SUPPORT) { TestSupport(); return; }
   if (m_Mode == MODE_GUNSHIP) { TestGunship(); return; }
   if (m_Mode == MODE_TACTICS) { TestTactics(); return; }
+  if (m_Mode == MODE_TRANSPORT) { TestTransport(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -859,5 +862,88 @@ class ACR_TestHarness : Managed
    }
   }
   if (m_Ticks == 175) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrTransportTest
+ // Alpha and Bravo board a crewed UH-1H. Alpha gets a queued LZ: nothing while
+ // the helicopter hovers high, out once it sets down. Bravo is dropped with F6
+ // from a 10 m hover (warning first, second press drops them).
+ protected IEntity m_Huey;
+ protected ChimeraCharacter m_HueyPilot;
+ protected vector m_HoverAt;
+
+ void Hover()
+ {
+  if (!m_Huey) return;
+  vector transform[4];
+  Math3D.AnglesToMatrix(Vector(90, 0, 0), transform);
+  transform[3] = m_HoverAt;
+  m_Huey.SetTransform(transform);
+  Physics physics = m_Huey.GetPhysics();
+  if (physics)
+  {
+   physics.EnableGravity(false);
+   physics.SetVelocity(vector.Zero);
+   physics.SetAngularVelocity(vector.Zero);
+  }
+ }
+
+ int Aboard(SCR_AIGroup group)
+ {
+  if (!group) return 0;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  int aboard;
+  foreach (AIAgent agent : agents) if (ACR_Transport.VehicleOf(agent.GetControlledEntity()) == m_Huey) aboard++;
+  return aboard;
+ }
+
+ void TestTransport()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  vector lz = Ground("1600 0 2830");
+  if (m_Ticks == 5) manager.SpawnUnit("Huey", "", "{70BAEEFC2D3FEE64}Prefabs/Vehicles/Helicopters/UH1H/UH1H.et", true, "", Ground("1420 0 2830"), Ground("1425 0 2820"));
+  if (m_Ticks == 12)
+  {
+   foreach (ACR_Squad squad : manager.m_Squads)
+   {
+    if (squad.GetName() != "Huey") continue;
+    array<IEntity> vehicles = {};
+    squad.GetVehicles(vehicles);
+    if (!vehicles.IsEmpty()) m_Huey = vehicles[0];
+   }
+   if (!m_Huey) { Print("[ACR] TRANSPORT FAIL: no helicopter"); return; }
+   pc.ACR_Request(ACR_ERequest.ORDER_GET_IN, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), m_Huey.GetOrigin());
+  }
+  if (m_Ticks == 13 && m_Huey) pc.ACR_Request(ACR_ERequest.ORDER_GET_IN, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), m_Huey.GetOrigin());
+  if (!m_Huey) return;
+  if (m_Ticks >= 14 && m_Ticks <= 50 && m_Ticks % 6 == 0) PrintFormat("[ACR] TRANSPORT t=%1 aboard: Alpha %2 Bravo %3", m_Ticks, Aboard(m_Range.m_Group), Aboard(m_Range.m_Bravo));
+  if (m_Ticks == 52) pc.ACR_Request(ACR_ERequest.ORDER_SET_LZ, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), lz);
+  if (m_Ticks == 54) m_HoverAt = lz + Vector(0, 25, 0);
+  if (m_Ticks >= 54 && m_Ticks < 60) Hover();
+  if (m_Ticks == 59) PrintFormat("[ACR] TRANSPORT hovering 25 m over the LZ: Alpha aboard %1 (expect all)", Aboard(m_Range.m_Group));
+  if (m_Ticks == 60) m_HoverAt = lz + Vector(0, 3, 0);
+  if (m_Ticks >= 60 && m_Ticks < 80) Hover();
+  if (m_Ticks == 66) PrintFormat("[ACR] TRANSPORT set down at the LZ: Alpha aboard %1 (expect 0), Bravo aboard %2", Aboard(m_Range.m_Group), Aboard(m_Range.m_Bravo));
+  if (m_Ticks == 67)
+  {
+   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(m_Huey.FindComponent(SCR_BaseCompartmentManagerComponent));
+   array<BaseCompartmentSlot> pilots = {};
+   if (compartments) compartments.GetCompartmentsOfType(pilots, ECompartmentType.PILOT);
+   foreach (BaseCompartmentSlot seat : pilots) if (seat.GetOccupant()) { m_HueyPilot = ChimeraCharacter.Cast(seat.GetOccupant()); break; }
+   if (m_HueyPilot) pc.ACR_Request(ACR_ERequest.POSSESS, SCR_EntityHelper.EntityToRplId(m_HueyPilot));
+  }
+  if (m_Ticks == 70) m_HoverAt = lz + Vector(40, 10, 0);
+  if (m_Ticks >= 70 && m_Ticks < 90) Hover();
+  if (m_Ticks == 74) PrintFormat("[ACR] TRANSPORT possessed pilot=%1, Bravo aboard %2", pc.GetControlledEntity() == m_HueyPilot, Aboard(m_Range.m_Bravo));
+  if (m_Ticks == 75 || m_Ticks == 76) pc.ACR_Request(ACR_ERequest.UNLOAD_HERE);
+  if (m_Ticks == 82)
+  {
+   PrintFormat("[ACR] TRANSPORT after F6 x2 at 10 m: Bravo aboard %1 (expect 0), Bravo alive %2", Aboard(m_Range.m_Bravo), AliveIn(m_Range.m_Bravo));
+   foreach (ACR_Squad squad : manager.m_Squads) PrintFormat("[ACR] TRANSPORT   %1: %2", squad.GetName(), squad.Describe());
+  }
+  if (m_Ticks == 86) Print("[ACR] TEST COMPLETE");
  }
 }

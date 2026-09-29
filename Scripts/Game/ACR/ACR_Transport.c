@@ -1,0 +1,88 @@
+// Transport helpers: who is riding in a vehicle, and is the vehicle "down"
+// enough to drop them. The rule is deliberately loose (slow and within a few
+// metres of whatever is below: ground, a rooftop or water), so hover drops on
+// roofs and helocasting work.
+class ACR_Transport
+{
+ static const float SETTLED_SPEED = 4;    // m/s
+ static const float SETTLED_HEIGHT = 6;   // m above ground, roof or water
+ static const float LZ_RADIUS = 100;      // queued unload triggers within this of the LZ
+
+ static IEntity VehicleOf(IEntity body)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(body);
+  if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent()) return null;
+  BaseCompartmentSlot slot = character.GetCompartmentAccessComponent().GetCompartment();
+  if (!slot) return null;
+  return slot.GetVehicle();
+ }
+
+ static ECompartmentType SeatOf(IEntity body)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(body);
+  if (!character || !character.GetCompartmentAccessComponent()) return ECompartmentType.CARGO;
+  BaseCompartmentSlot slot = character.GetCompartmentAccessComponent().GetCompartment();
+  if (!slot) return ECompartmentType.CARGO;
+  return slot.GetType();
+ }
+
+ // Squads with soldiers in the passenger (cargo) seats of this vehicle.
+ static void PassengerSquads(ACR_Manager manager, IEntity vehicle, array<ACR_Squad> result)
+ {
+  result.Clear();
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (VehicleOf(body) == vehicle && SeatOf(body) == ECompartmentType.CARGO)
+    {
+     result.Insert(squad);
+     break;
+    }
+   }
+  }
+ }
+
+ // The squad crewing a vehicle (driver/pilot/gunners), if the squad is one.
+ static IEntity CrewedVehicle(ACR_Squad squad)
+ {
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   IEntity vehicle = VehicleOf(body);
+   if (vehicle && SeatOf(body) != ECompartmentType.CARGO) return vehicle;
+  }
+  return null;
+ }
+
+ protected static IEntity s_TraceVehicle;
+ protected static bool IgnoreOwnVehicle(notnull IEntity entity)
+ {
+  if (ChimeraCharacter.Cast(entity)) return false;
+  return entity != s_TraceVehicle && entity.GetRootParent() != s_TraceVehicle;
+ }
+
+ static bool Settled(IEntity vehicle, out float height, out float speed)
+ {
+  speed = 0;
+  Physics physics = vehicle.GetPhysics();
+  if (physics) speed = physics.GetVelocity().Length();
+  vector pos = vehicle.GetOrigin();
+  BaseWorld world = GetGame().GetWorld();
+  float below = Math.Max(world.GetSurfaceY(pos[0], pos[2]), 0); // sea level is 0
+  TraceParam trace = new TraceParam();
+  trace.Start = pos;
+  trace.End = pos - Vector(0, 80, 0);
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  s_TraceVehicle = vehicle;
+  float fraction = world.TraceMove(trace, IgnoreOwnVehicle);
+  if (fraction < 1) below = Math.Max(below, pos[1] - 80 * fraction);
+  height = pos[1] - below;
+  return speed < SETTLED_SPEED && height < SETTLED_HEIGHT;
+ }
+}

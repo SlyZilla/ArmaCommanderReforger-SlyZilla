@@ -15,7 +15,9 @@ enum ACR_ERequest
  MODE_SILENT,
  TAKE_COMMAND,
  LEAVE_COMMAND,
- REINFORCE         // refill the squad's fallen soldiers
+ REINFORCE,        // refill the squad's fallen soldiers
+ ORDER_SET_LZ,     // passengers dismount on their own when their ride sets down near point
+ UNLOAD_HERE       // player in a vehicle: every passenger squad out now
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -408,6 +410,7 @@ class ACR_Manager : Managed
    case ACR_ERequest.TAKE_COMMAND: return TakeCommand(pc);
    case ACR_ERequest.REINFORCE: return Reinforce(pc, targetId);
    case ACR_ERequest.LEAVE_COMMAND: return LeaveCommand(pc);
+   case ACR_ERequest.UNLOAD_HERE: return UnloadHere(pc, body);
   }
   return Order(pc, command, targetId, point);
  }
@@ -485,7 +488,7 @@ class ACR_Manager : Managed
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can give map orders. Take command first.";
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return "That squad is not ready";
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN;
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ;
   // Reject nonsense coordinates from a client.
   if (usesPoint && vector.Distance(point, anchor.GetOrigin()) > 20000) return "Order is too far away";
   if (usesPoint) point = Ground(point);
@@ -517,6 +520,8 @@ class ACR_Manager : Managed
     return name + " is not in a vehicle";
    case ACR_ERequest.ORDER_UNLOAD:
     return Unload(squad);
+   case ACR_ERequest.ORDER_SET_LZ:
+    return SetLZ(squad, point);
    case ACR_ERequest.MODE_COMBAT:
     squad.SetMode(ACR_EMoveMode.COMBAT);
     return name + ": combat";
@@ -530,6 +535,82 @@ class ACR_Manager : Managed
     return "Unknown command";
   }
   return name + ": could not create that order";
+ }
+
+ // Queue an unload: the passengers get out by themselves when their vehicle
+ // sets down near the point. Selecting the transport (its crew) applies it to
+ // everyone riding in the back.
+ string SetLZ(ACR_Squad squad, vector point)
+ {
+  array<ACR_Squad> targets = {};
+  IEntity crewed = ACR_Transport.CrewedVehicle(squad);
+  if (crewed) ACR_Transport.PassengerSquads(this, crewed, targets);
+  if (targets.IsEmpty()) targets.Insert(squad);
+  string names = "";
+  foreach (ACR_Squad passenger : targets)
+  {
+   passenger.m_LZ = point;
+   passenger.m_bHasLZ = true;
+   passenger.m_fLZSetAt = GetGame().GetWorld().GetWorldTime();
+   if (!names.IsEmpty()) names += ", ";
+   names += passenger.GetName();
+  }
+  PrintFormat("[ACR] LZ set for %1 at %2", names, point);
+  return string.Format("%1: will unload at the LZ (%2)", names, Grid(point));
+ }
+
+ // F6 while in a vehicle. Not settled: warn, and a second press within 3 s drops them anyway.
+ protected ref map<int, float> m_UnloadConfirm = new map<int, float>();
+ string UnloadHere(SCR_PlayerController pc, ChimeraCharacter body)
+ {
+  IEntity vehicle = ACR_Transport.VehicleOf(body);
+  if (!vehicle) return "You are not in a vehicle";
+  array<ACR_Squad> passengers = {};
+  ACR_Transport.PassengerSquads(this, vehicle, passengers);
+  Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
+  for (int i = passengers.Count() - 1; i >= 0; i--)
+   if (passengers[i].GetFaction() != faction || passengers[i].HasPlayer()) passengers.Remove(i);
+  if (passengers.IsEmpty()) return "No passenger squads aboard";
+  float height, speed;
+  bool settled = ACR_Transport.Settled(vehicle, height, speed);
+  float now = GetGame().GetWorld().GetWorldTime();
+  float asked;
+  bool confirmed = m_UnloadConfirm.Find(pc.GetPlayerId(), asked) && now - asked < 3000;
+  if (!settled && !confirmed)
+  {
+   m_UnloadConfirm.Set(pc.GetPlayerId(), now);
+   return string.Format("%1 m up at %2 km/h. Press F6 again to drop them anyway.", (int)height, (int)(speed * 3.6));
+  }
+  m_UnloadConfirm.Remove(pc.GetPlayerId());
+  int soldiers;
+  foreach (ACR_Squad squad : passengers) soldiers += squad.DismountNow();
+  PrintFormat("[ACR] UNLOAD HERE player=%1 squads=%2 soldiers=%3 height=%4 speed=%5", pc.GetPlayerId(), passengers.Count(), soldiers, height, speed);
+  return string.Format("Unloading %1 squad(s)", passengers.Count());
+ }
+
+ // Queued unloads (server, several times a second).
+ protected float m_fNextLZCheck;
+ void CheckLandingZones()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < m_fNextLZCheck) return;
+  m_fNextLZCheck = now + 250;
+  foreach (ACR_Squad squad : m_Squads)
+  {
+   if (!squad.m_bHasLZ) continue;
+   if (now - squad.m_fLZSetAt > 900000) { squad.m_bHasLZ = false; continue; }
+   array<IEntity> vehicles = {};
+   squad.GetVehicles(vehicles);
+   if (vehicles.IsEmpty()) continue; // not aboard yet
+   IEntity vehicle = vehicles[0];
+   if (vector.DistanceXZ(vehicle.GetOrigin(), squad.m_LZ) > ACR_Transport.LZ_RADIUS) continue;
+   float height, speed;
+   if (!ACR_Transport.Settled(vehicle, height, speed)) continue;
+   int soldiers = squad.DismountNow();
+   PrintFormat("[ACR] LZ UNLOAD %1: %2 soldiers out (height %3, speed %4)", squad.GetName(), soldiers, height, speed);
+   Faction faction = squad.GetFaction();
+   if (faction) NotifyFaction(faction.GetFactionKey(), squad.GetName() + ": at the LZ, getting out");
+  }
  }
 
  // Every other squad riding in this squad's vehicles dismounts.
@@ -725,6 +806,7 @@ class ACR_Manager : Managed
   if (!Replication.IsServer()) return;
   if (!m_Supports) m_Supports = new ACR_Supports(this);
   m_Supports.Frame(timeSlice);
+  CheckLandingZones();
   if (m_Drives.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
   array<IEntity> ended = {};
@@ -744,6 +826,7 @@ class ACR_Manager : Managed
  // ================================================================ local input (every machine)
 
  protected IEntity m_LastDriveVehicle;
+ protected IEntity m_LastRide;
 
  void OnFrame()
  {
@@ -802,7 +885,16 @@ class ACR_Manager : Managed
    }
    else pc.ACR_Request(ACR_ERequest.ADVANCE);
   }
-  if (input.GetActionTriggered("ACR_Rally")) pc.ACR_Request(ACR_ERequest.RALLY);
+  // F6: in a vehicle, drop the passengers; otherwise the old test rally.
+  if (input.GetActionTriggered("ACR_Rally"))
+  {
+   if (ACR_Transport.VehicleOf(localBody)) pc.ACR_Request(ACR_ERequest.UNLOAD_HERE);
+   else pc.ACR_Request(ACR_ERequest.RALLY);
+  }
+  IEntity rideNow = ACR_Transport.VehicleOf(localBody);
+  if (rideNow != m_LastRide && rideNow && ACR_Transport.SeatOf(localBody) == ECompartmentType.PILOT)
+   SCR_HintManagerComponent.ShowCustomHint("Transporting troops? F6 drops every passenger squad (press twice if you are not down yet). Map: select them, 'Unload at LZ', right-click the LZ to have them jump out on landing.", "Arma Commander", 8, true);
+  m_LastRide = rideNow;
   if (input.GetActionTriggered("ACR_Possess"))
   {
    if (mapOpen) pc.ACR_PossessMapCursor();
