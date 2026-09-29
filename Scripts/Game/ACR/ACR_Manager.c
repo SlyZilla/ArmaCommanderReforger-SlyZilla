@@ -35,6 +35,8 @@ class ACR_Manager : Managed
  bool m_SharedCommand;
  // Game Master for the host and server admins: debugging and fixing stuck units.
  bool m_bHostGameMaster = true;
+ int m_iRespawnSeconds = 15;
+ ref ACR_Respawn m_Respawn;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
 
@@ -89,6 +91,8 @@ class ACR_Manager : Managed
   m_Bases.Tick(this);
   GrantGameMaster();
   TickAICommanders();
+  if (!m_Respawn) m_Respawn = new ACR_Respawn(this);
+  m_Respawn.Tick();
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
@@ -390,6 +394,11 @@ class ACR_Manager : Managed
  string ReturnToCommandUnit(SCR_PlayerController pc, ChimeraCharacter body)
  {
   if (!pc.IsPossessing()) return "You are already in your command unit";
+  if (m_Respawn)
+  {
+   string waiting = m_Respawn.OnReturnRequested(pc);
+   if (!waiting.IsEmpty()) return waiting;
+  }
   ACR_MapHandoff.Release(pc, body);
   ReleaseAuthority(pc);
   pc.SetPossessedEntity(null);
@@ -550,6 +559,8 @@ class ACR_Manager : Managed
   }
   return best;
  }
+
+ vector ClearSpotNear(ACR_Base base, float minDistance, float maxDistance, float clearance) { return SpawnPoint(base, minDistance, maxDistance, clearance); }
 
  // Random point in a ring around the base, nudged to a spot clear of walls,
  // revetments and buildings (clearance = radius of the free cylinder needed).

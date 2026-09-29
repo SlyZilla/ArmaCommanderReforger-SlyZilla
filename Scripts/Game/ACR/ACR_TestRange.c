@@ -1,10 +1,9 @@
 // Test-range scenario entity. Placed in the world layer: starts Arma Commander,
 // spawns one US fireteam ("Alpha 1") and drives the optional automated tests.
 // Everything generic lives in ACR_Manager / ACR_Squad; this file is scenario only.
-class ACR_TestRangeClass : GenericEntityClass {}
-class ACR_TestRange : GenericEntity
+class ACR_TestRangeClass : ACR_ModeClass {}
+class ACR_TestRange : ACR_Mode
 {
- static ACR_TestRange s_Instance;
  SCR_AIGroup m_Group;
  SCR_AIGroup m_Bravo;
  IEntity m_Truck;
@@ -12,16 +11,11 @@ class ACR_TestRange : GenericEntity
  vector m_Target;
  protected ref ACR_TestHarness m_Harness;
 
- void ACR_TestRange(IEntitySource src, IEntity parent)
- {
-  SetEventMask(EntityEvent.INIT | EntityEvent.FRAME);
- }
-
+ // Same startup as any ACR_Mode scenario, plus the test squads and harness.
  override void EOnInit(IEntity owner)
  {
+  super.EOnInit(owner);
   if (!GetGame().InPlayMode()) return;
-  s_Instance = this;
-  ACR_Manager.Start();
   if (Replication.IsServer())
   {
    IEntity spawn = GetGame().GetWorld().FindEntityByName("ACR_PlayerSpawn");
@@ -55,27 +49,12 @@ class ACR_TestRange : GenericEntity
   PrintFormat("[ACR] Bravo spawn: %1 truck: %2", m_Bravo, m_Truck);
  }
 
- override void EOnFrame(IEntity owner, float timeSlice)
- {
-  ACR_Manager manager = ACR_Manager.GetInstance();
-  if (s_Instance && manager)
-  {
-   manager.ServerFrame(timeSlice);
-   manager.OnFrame();
-  }
- }
-
  void ~ACR_TestRange()
  {
   if (GetGame())
   {
    GetGame().GetCallqueue().Remove(Setup);
    if (m_Harness) GetGame().GetCallqueue().Remove(m_Harness.Tick);
-  }
-  if (s_Instance == this)
-  {
-   s_Instance = null;
-   ACR_Manager.Stop();
   }
  }
 }

@@ -143,6 +143,20 @@ modded class SCR_PlayerController
   Rpc(ACR_DriveServer, SCR_EntityHelper.EntityToRplId(vehicle), throttle, steer);
  }
 
+ // Server: make a new character this player's command unit while they keep
+ // controlling a possessed soldier (their old command unit died).
+ void ACR_SetMainEntity(IEntity entity)
+ {
+  RplComponent rpl = RplComponent.Cast(entity.FindComponent(RplComponent));
+  if (!rpl) return;
+  rpl.GiveExt(RplIdentity.Local(), false);
+  m_MainEntityID = rpl.Id();
+  OnRplMainEntityFromID();
+  Replication.BumpMe();
+  SCR_PossessingManagerComponent possessing = SCR_PossessingManagerComponent.GetInstance();
+  if (possessing) possessing.SetMainEntity(GetPlayerId(), GetControlledEntity(), entity, true);
+ }
+
  void ACR_Notify(string message)
  {
   Rpc(ACR_FeedbackOwner, message);

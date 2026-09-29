@@ -8,6 +8,9 @@ class ACR_Mode : GenericEntity
  [Attribute("0", UIWidgets.CheckBox, "Shared command: every player of a faction may command")]
  bool m_bSharedCommand;
 
+ [Attribute("15", UIWidgets.EditBox, "Seconds before a killed command unit respawns at base")]
+ int m_iRespawnSeconds;
+
  static ACR_Mode s_Instance;
  protected bool m_bSummary;
  protected int m_iSeconds;
@@ -24,6 +27,9 @@ class ACR_Mode : GenericEntity
   ACR_Manager manager = ACR_Manager.Start();
   manager.m_bHostGameMaster = m_bHostGameMaster;
   manager.m_SharedCommand = m_bSharedCommand;
+  manager.m_iRespawnSeconds = m_iRespawnSeconds;
+  string respawnFlag;
+  if (System.GetCLIParam("acrRespawnSeconds", respawnFlag)) manager.m_iRespawnSeconds = respawnFlag.ToInt();
   if (Replication.IsServer())
   {
    GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 2000, false);

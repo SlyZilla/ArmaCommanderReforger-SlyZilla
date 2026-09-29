@@ -16,6 +16,7 @@ class ACR_TestHarness : Managed
  static const int MODE_AI = 9;
  static const int MODE_GUNNER = 10;
  static const int MODE_PROBE = 11;
+ static const int MODE_RESPAWN = 12;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -46,6 +47,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrAITest", flag)) mode = MODE_AI;
   if (System.GetCLIParam("acrGunnerTest", flag)) mode = MODE_GUNNER;
   if (System.GetCLIParam("acrProbeTest", flag)) mode = MODE_PROBE;
+  if (System.GetCLIParam("acrRespawnTest", flag)) mode = MODE_RESPAWN;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -78,6 +80,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_AI) { TestAI(); return; }
   if (m_Mode == MODE_GUNNER) { TestGunner(); return; }
   if (m_Mode == MODE_PROBE) { TestProbe(); return; }
+  if (m_Mode == MODE_RESPAWN) { TestRespawn(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -630,5 +633,75 @@ class ACR_TestHarness : Managed
    m_ProbeRow++;
   }
   if (m_ProbeRow >= PROBE_CELLS) { Print("[ACR] TEST COMPLETE"); m_ProbeRow++; }
+ }
+
+ // ---------------------------------------------------------------- -acrRespawnTest
+ // Farm is handed to nobody and Crossroads to US, so every respawn should land at
+ // Crossroads (the owned base closest to the placed spawn point).
+ IEntity m_RespawnOldMain;
+
+ string RespawnState(SCR_PlayerController pc)
+ {
+  ACR_Base crossroads;
+  foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sName == "Crossroads") crossroads = base;
+  IEntity controlled = pc.GetControlledEntity();
+  IEntity main = pc.GetMainEntity();
+  float distance = -1;
+  if (main && crossroads) distance = vector.Distance(main.GetOrigin(), crossroads.GetOrigin());
+  return string.Format("possessing=%1 controlledAlive=%2 mainAlive=%3 mainIsNew=%4 mainToCrossroads=%5", pc.IsPossessing(), ACR_Respawn.IsAlive(controlled), ACR_Respawn.IsAlive(main), main != m_RespawnOldMain, distance);
+ }
+
+ ChimeraCharacter AlphaMember(int index)
+ {
+  if (!m_Range.m_Group) return null;
+  array<AIAgent> agents = {};
+  m_Range.m_Group.GetAgents(agents);
+  if (index >= agents.Count()) return null;
+  return ChimeraCharacter.Cast(agents[index].GetControlledEntity());
+ }
+
+ void Kill(IEntity entity)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(entity);
+  if (character && character.GetCharacterController()) character.GetCharacterController().ForceDeath();
+ }
+
+ void TestRespawn()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  if (m_Ticks == 5)
+  {
+   manager.m_iRespawnSeconds = 6;
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (base.m_sName == "Farm") { base.m_sOwner = ""; base.m_iGarrisonLeft = 0; }
+    if (base.m_sName == "Crossroads") base.m_sOwner = "US";
+   }
+  }
+  // 1) Command unit dies while the player controls an Alpha soldier; F8 waits for the new one.
+  if (m_Ticks == 10)
+  {
+   m_RespawnOldMain = pc.GetMainEntity();
+   ChimeraCharacter soldier = AlphaMember(1);
+   if (soldier) pc.ACR_Request(ACR_ERequest.POSSESS, SCR_EntityHelper.EntityToRplId(soldier));
+  }
+  if (m_Ticks == 12) { Kill(m_RespawnOldMain); PrintFormat("[ACR] RESPAWN T1 killed main: %1", RespawnState(pc)); }
+  if (m_Ticks == 14) pc.ACR_Request(ACR_ERequest.RETURN);
+  if (m_Ticks == 16 || m_Ticks == 21) PrintFormat("[ACR] RESPAWN T1 t=%1 %2", m_Ticks, RespawnState(pc));
+  // 2) A possessed soldier dies while the command unit lives: back to the command unit.
+  if (m_Ticks == 23)
+  {
+   m_RespawnOldMain = pc.GetMainEntity();
+   ChimeraCharacter soldier = AlphaMember(2);
+   if (soldier) pc.ACR_Request(ACR_ERequest.POSSESS, SCR_EntityHelper.EntityToRplId(soldier));
+  }
+  if (m_Ticks == 25) Kill(pc.GetControlledEntity());
+  if (m_Ticks == 27) PrintFormat("[ACR] RESPAWN T2 %1 backInMain=%2", RespawnState(pc), pc.GetControlledEntity() == pc.GetMainEntity());
+  // 3) Killed in the command unit: native respawn after the delay, at Crossroads.
+  if (m_Ticks == 29) { m_RespawnOldMain = pc.GetControlledEntity(); Kill(m_RespawnOldMain); }
+  if (m_Ticks == 32 || m_Ticks == 38) PrintFormat("[ACR] RESPAWN T3 t=%1 %2", m_Ticks, RespawnState(pc));
+  if (m_Ticks == 40) Print("[ACR] TEST COMPLETE");
  }
 }
