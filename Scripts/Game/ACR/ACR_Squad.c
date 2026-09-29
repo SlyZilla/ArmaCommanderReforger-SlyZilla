@@ -317,6 +317,9 @@ class ACR_Squad : Managed
 
  ACR_EMoveMode m_Mode = ACR_EMoveMode.COMBAT;
  string m_Order = "Holding";
+ // AI commander bookkeeping
+ int m_iAITask;          // ACR_EAITask
+ ACR_Base m_AITarget;
  int m_OrderKind;   // for map symbology: 0 move, 1 defend, 2 get in, 3 get out
 
  static string ModeName(ACR_EMoveMode mode)
@@ -388,6 +391,36 @@ class ACR_Squad : Managed
   m_Order = "Defending";
   m_OrderKind = 1;
   return true;
+ }
+
+ int CountAlive()
+ {
+  int alive;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (character && !character.GetCharacterController().IsDead()) alive++;
+  }
+  return alive;
+ }
+
+ // Rough fighting value: soldiers, plus 5 per vehicle (Arma Commander's default vehicle value).
+ int Strength()
+ {
+  array<IEntity> vehicles = {};
+  GetVehicles(vehicles);
+  return CountAlive() + vehicles.Count() * 5;
+ }
+
+ bool HasPlayer()
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+   if (FindController(agent.GetControlledEntity())) return true;
+  return false;
  }
 
  // Board a specific vehicle if one is within 30 m of the point, otherwise the nearest free one.

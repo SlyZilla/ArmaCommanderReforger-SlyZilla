@@ -43,6 +43,12 @@ class ACR_FactionSettings : GenericEntity
  string m_sFaction;
  [Attribute("100", UIWidgets.EditBox, "Requisition points at the start")]
  int m_iStartingRP;
+ [Attribute("1", UIWidgets.CheckBox, "An AI commander leads this faction whenever no player is in command")]
+ bool m_bAICommander;
+ [Attribute("8", UIWidgets.EditBox, "AI commander: most squads it keeps in the field")]
+ int m_iAIUnitCap;
+ [Attribute("1", UIWidgets.EditBox, "AI commander: how many base attacks it runs at once")]
+ int m_iAIAttacks;
  [Attribute("1", UIWidgets.CheckBox, "Add every group and vehicle from the faction's Game Master catalog with automatic prices. Entries below override or add to it.")]
  bool m_bAutoFill;
  [Attribute(desc: "Hand-picked units. With auto fill on, an entry using the same prefab replaces the automatic one.")]

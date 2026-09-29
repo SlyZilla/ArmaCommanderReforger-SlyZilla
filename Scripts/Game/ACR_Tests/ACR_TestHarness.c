@@ -13,6 +13,7 @@ class ACR_TestHarness : Managed
  static const int MODE_ASSAULT = 6;
  static const int MODE_REQUISITION = 7;
  static const int MODE_GAMEMASTER = 8;
+ static const int MODE_AI = 9;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -40,6 +41,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrAssaultTest", flag)) mode = MODE_ASSAULT;
   if (System.GetCLIParam("acrRequisitionTest", flag)) mode = MODE_REQUISITION;
   if (System.GetCLIParam("acrGameMasterTest", flag)) mode = MODE_GAMEMASTER;
+  if (System.GetCLIParam("acrAITest", flag)) mode = MODE_AI;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -69,6 +71,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_ASSAULT) { TestAssault(); return; }
   if (m_Mode == MODE_REQUISITION) { TestRequisition(); return; }
   if (m_Mode == MODE_GAMEMASTER) { TestGameMaster(); return; }
+  if (m_Mode == MODE_AI) { TestAI(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -486,5 +489,24 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] GM closed=%1", !editor.IsOpened());
    Print("[ACR] TEST COMPLETE");
   }
+ }
+
+ // ---------------------------------------------------------------- -acrAITest
+ // The Soviet AI commander runs on its own for ~2.5 minutes; the log shows
+ // purchases, postings, defences and attacks. US squads stay idle at spawn.
+ void TestAI()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  if (m_Ticks % 20 == 0)
+  {
+   PrintFormat("[ACR] AITEST t=%1 USSR rp=%2 aiActive=%3", m_Ticks, manager.m_Bases.GetRP("USSR"), manager.IsAIInCommand("USSR"));
+   foreach (ACR_Squad squad : manager.m_Squads)
+    if (squad.GetFaction().GetFactionKey() == "USSR")
+     PrintFormat("[ACR] AITEST   %1 task=%2 %3", squad.GetName(), squad.m_iAITask, squad.Describe());
+   foreach (ACR_Base base : ACR_Base.s_All)
+    PrintFormat("[ACR] AITEST   base %1: %2", base.m_sName, manager.m_Bases.Describe(base));
+  }
+  if (m_Ticks == 150) Print("[ACR] TEST COMPLETE");
  }
 }

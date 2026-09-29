@@ -27,6 +27,7 @@ class ACR_Manager : Managed
 
  ref array<ref ACR_Squad> m_Squads = {};
  ref ACR_BaseSystem m_Bases = new ACR_BaseSystem();
+ protected ref map<string, ref ACR_AICommander> m_AICommanders = new map<string, ref ACR_AICommander>();
  protected ref map<int, ACR_Squad> m_LastSquad = new map<int, ACR_Squad>();
  protected int m_SquadNumber;
 
@@ -87,6 +88,7 @@ class ACR_Manager : Managed
   EnsureCommanders();
   m_Bases.Tick(this);
   GrantGameMaster();
+  TickAICommanders();
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
@@ -228,6 +230,33 @@ class ACR_Manager : Managed
    PrintFormat("[ACR] Game Master granted to player %1", id);
    Notify(id, "Game Master available: press Y");
   }
+ }
+
+ // ================================================================ AI commanders (server)
+
+ // Every faction with an ACR_FactionSettings entity that allows it gets an AI
+ // commander. It only acts while no player of that faction is in command.
+ protected void TickAICommanders()
+ {
+  foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
+  {
+   if (!settings.m_bAICommander) continue;
+   ACR_AICommander ai;
+   if (!m_AICommanders.Find(settings.m_sFaction, ai))
+   {
+    ai = new ACR_AICommander(this, settings.m_sFaction);
+    m_AICommanders.Insert(settings.m_sFaction, ai);
+   }
+   Faction faction = GetGame().GetFactionManager().GetFactionByKey(settings.m_sFaction);
+   array<int> commanders = GetCommanders(faction);
+   ai.Tick(commanders == null || commanders.IsEmpty());
+  }
+ }
+
+ bool IsAIInCommand(string factionKey)
+ {
+  ACR_AICommander ai;
+  return m_AICommanders.Find(factionKey, ai) && ai.m_bActive;
  }
 
  // ================================================================ command rules (server)
@@ -528,12 +557,17 @@ class ACR_Manager : Managed
   if (!faction) return "You have no faction";
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can requisition units";
   string key = faction.GetFactionKey();
+  return PurchaseAt(key, entryIndex, FindSpawnBase(key, baseLabel));
+ }
+
+ // Shared by the player commander and the AI commander.
+ string PurchaseAt(string key, int entryIndex, ACR_Base base)
+ {
   ACR_FactionData data = m_Bases.GetFaction(key);
   if (entryIndex < 0 || entryIndex >= data.m_aRequisitions.Count()) return "Unknown unit";
   ACR_RequisitionEntry entry = data.m_aRequisitions[entryIndex];
   if (entry.m_iRemaining <= 0) return entry.m_sName + ": none left";
-  ACR_Base base = FindSpawnBase(key, baseLabel);
-  if (!base) return "Deploy at one of your own bases";
+  if (!base || base.m_sOwner != key) return "Deploy at one of your own bases";
   if (!base.m_bAllowSpawn) return base.m_sName + " can't deploy units";
   if (base.m_bContested) return base.m_sName + " is under attack";
   if (!m_Bases.Spend(key, entry.m_iCost)) return string.Format("Not enough RP (%1 needed)", entry.m_iCost);
