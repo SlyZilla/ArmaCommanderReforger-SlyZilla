@@ -47,7 +47,7 @@ class ACR_TestRange : GenericEntity
   if (m_Group) m_Group.SetCustomName("Alpha 1", 0);
   PrintFormat("[ACR] Squad spawn: %1 at %2", m_Group, m_Rally);
   // A second squad and an empty truck, for Get in / Get out / Unload.
-  string bravoPos = "2415 0 2430";
+  vector bravoPos = "2415 0 2430";
   if (assault) bravoPos = "2870 0 2630";
   m_Bravo = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab("{FCF7F5DC4F83955C}Prefabs/Groups/BLUFOR/Group_US_LightFireTeam.et", ACR_Manager.Ground(bravoPos)));
   if (m_Bravo) m_Bravo.SetCustomName("Bravo 1", 0);
