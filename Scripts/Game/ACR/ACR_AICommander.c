@@ -50,6 +50,23 @@ class ACR_AICommander : Managed
  static const float CONCEDE_RATIO = 4;        // give a base up against 4x the defence
  static const int PLAYER_STRENGTH = 5;
  static const float STAGING_TIMEOUT = 300;    // seconds
+ // Initiative: with no attack launched for a while, the commander accepts
+ // worse odds (down to 65% of the usual strength) and commits its reserve,
+ // so two AI sides don't sit facing each other forever.
+ static const float QUIET_MINUTES = 4;
+ static const float PRESSURE_PER_MINUTE = 0.05;
+ static const float MIN_PRESSURE = 0.65;
+ protected float m_fLastOffensive = -1;
+ protected float m_fNextWeakLog;
+
+ protected float Pressure()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (m_fLastOffensive < 0) m_fLastOffensive = now;
+  float quiet = (now - m_fLastOffensive) / 60000 - QUIET_MINUTES;
+  if (quiet <= 0) return 1;
+  return Math.Max(MIN_PRESSURE, 1 - quiet * PRESSURE_PER_MINUTE);
+ }
 
  ACR_Manager m_Manager;
  string m_sFaction;
@@ -82,6 +99,7 @@ class ACR_AICommander : Managed
    if (!m_bActive) ReleaseAll();
   }
   if (!m_bActive) return;
+  GatherIntel();
   m_iSeconds++;
   if (m_iSeconds % TICK_SECONDS != 1) return;
   Assess();
@@ -212,16 +230,112 @@ class ACR_AICommander : Managed
   return true;
  }
 
- // Enemy squad nearest to a point (for defensive fires).
- protected ACR_Squad EnemyNear(vector point, float radius)
+ // ---------------------------------------------------------------- 0. intelligence
+ // No map hacks: the commander only knows about enemies its own soldiers have
+ // actually spotted (their perception), or that walk into one of its bases
+ // (sentries). Each sighting is remembered at the last seen position for
+ // INTEL_MEMORY_MS, then forgotten. Threat estimates, defensive fires and
+ // attack planning all work from this picture, not from true positions.
+ static const float INTEL_MEMORY_MS = 90000;
+ static const float SENTRY_RANGE = 60;
+ static const int UNKNOWN_DEFENCE = 4;        // assumed extra defenders at an enemy base we can't see into
+ protected ref map<IEntity, vector> m_SeenAt = new map<IEntity, vector>();
+ protected ref map<IEntity, float> m_SeenTime = new map<IEntity, float>();
+
+ protected void Note(IEntity enemy, float now)
+ {
+  if (!enemy || !ACR_Respawn.IsAlive(enemy)) return;
+  m_SeenAt.Set(enemy, enemy.GetOrigin());
+  m_SeenTime.Set(enemy, now);
+ }
+
+ protected string FactionKeyOf(IEntity body)
+ {
+  if (!body) return "";
+  FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(body.FindComponent(FactionAffiliationComponent));
+  if (!affiliation || !affiliation.GetAffiliatedFaction()) return "";
+  return affiliation.GetAffiliatedFaction().GetFactionKey();
+ }
+
+ // Every second: what our people can see right now.
+ protected void GatherIntel()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction || !squad.m_Group) continue;
+   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(squad.m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+   if (!utility || !utility.m_Perception) continue;
+   foreach (IEntity seen : utility.m_Perception.m_aTargetEntities)
+   {
+    string key = FactionKeyOf(seen);
+    if (!key.IsEmpty() && key != m_sFaction) Note(seen, now);
+   }
+  }
+  // Sentries: anyone inside (or right at) one of our bases is seen.
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != m_sFaction) continue;
+   float reach = base.m_fRadius + SENTRY_RANGE;
+   foreach (ACR_Squad intruders : m_Manager.m_Squads)
+   {
+    if (!intruders.GetFaction() || intruders.GetFaction().GetFactionKey() == m_sFaction) continue;
+    array<AIAgent> agents = {};
+    intruders.GetAgents(agents);
+    foreach (AIAgent agent : agents)
+    {
+     IEntity body = agent.GetControlledEntity();
+     if (body && vector.DistanceXZ(body.GetOrigin(), base.GetOrigin()) < reach) Note(body, now);
+    }
+   }
+   array<int> players = {};
+   GetGame().GetPlayerManager().GetPlayers(players);
+   foreach (int id : players)
+   {
+    IEntity player = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
+    if (player && FactionKeyOf(player) != m_sFaction && vector.DistanceXZ(player.GetOrigin(), base.GetOrigin()) < reach) Note(player, now);
+   }
+  }
+  // Forget the stale and the dead.
+  array<IEntity> stale = {};
+  foreach (IEntity enemy, float when : m_SeenTime)
+   if (!enemy || now - when > INTEL_MEMORY_MS || !ACR_Respawn.IsAlive(enemy)) stale.Insert(enemy);
+  foreach (IEntity gone : stale)
+  {
+   m_SeenTime.Remove(gone);
+   m_SeenAt.Remove(gone);
+  }
+ }
+
+ // Where we last saw any member of this enemy squad (false: we haven't).
+ protected bool KnownPosition(ACR_Squad squad, out vector position)
+ {
+  float newest = -1;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   float when;
+   if (!body || !m_SeenTime.Find(body, when) || when <= newest) continue;
+   newest = when;
+   position = m_SeenAt.Get(body);
+  }
+  return newest >= 0;
+ }
+
+ // Known enemy squad nearest to a point (for defensive fires): aimed at where it was last seen.
+ protected ACR_Squad EnemyNear(vector point, float radius, out vector seenAt)
  {
   ACR_Squad best;
   float bestDistance = radius;
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
-   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == m_sFaction || !squad.GetAnchor()) continue;
-   float distance = vector.DistanceXZ(PositionOf(squad), point);
-   if (distance < bestDistance) { bestDistance = distance; best = squad; }
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == m_sFaction) continue;
+   vector known;
+   if (!KnownPosition(squad, known)) continue;
+   float distance = vector.DistanceXZ(known, point);
+   if (distance < bestDistance) { bestDistance = distance; best = squad; seenAt = known; }
   }
   return best;
  }
@@ -236,10 +350,15 @@ class ACR_AICommander : Managed
   {
    int defence, threat;
    vector center = base.GetOrigin();
+   // Our own squads we know exactly; enemy squads only where last seen.
+   bool ours = base.m_sOwner == m_sFaction;
    foreach (ACR_Squad squad : m_Manager.m_Squads)
    {
     if (!squad.GetFaction() || !squad.GetAnchor()) continue;
-    float distance = vector.DistanceXZ(PositionOf(squad), center);
+    bool mine = squad.GetFaction().GetFactionKey() == m_sFaction;
+    vector where = PositionOf(squad);
+    if (!mine && !KnownPosition(squad, where)) continue;
+    float distance = vector.DistanceXZ(where, center);
     bool friendly = squad.GetFaction().GetFactionKey() == base.m_sOwner;
     if (friendly && distance < DEFENSE_DISTANCE) defence += squad.Strength();
     if (!friendly && distance < THREAT_DISTANCE + base.m_fRadius) threat += squad.Strength();
@@ -252,11 +371,18 @@ class ACR_AICommander : Managed
     IEntity body = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
     Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
     if (!body || !faction || m_Manager.FindSquadBySoldier(body)) continue;
-    float d = vector.DistanceXZ(body.GetOrigin(), center);
+    vector bodyAt = body.GetOrigin();
+    if (faction.GetFactionKey() != m_sFaction)
+    {
+     if (!m_SeenAt.Contains(body)) continue;
+     bodyAt = m_SeenAt.Get(body);
+    }
+    float d = vector.DistanceXZ(bodyAt, center);
     if (faction.GetFactionKey() == base.m_sOwner && d < DEFENSE_DISTANCE) defence += PLAYER_STRENGTH;
     if (faction.GetFactionKey() != base.m_sOwner && d < THREAT_DISTANCE + base.m_fRadius) threat += PLAYER_STRENGTH;
    }
    if (!base.m_sOwner.IsEmpty()) defence += base.m_iGarrisonLeft;
+   if (!ours && !base.m_sOwner.IsEmpty()) defence += UNKNOWN_DEFENCE; // fog of war: expect more than we've seen
    m_Defence.Set(base, defence);
    m_Threat.Set(base, threat);
    string before;
@@ -315,10 +441,11 @@ class ACR_AICommander : Managed
   foreach (ACR_Base held : ACR_Base.s_All)
   {
    if (held.m_sOwner != m_sFaction || ThreatTo(held) <= DefenceOf(held)) continue;
-   ACR_Squad attacker = EnemyNear(held.GetOrigin(), THREAT_DISTANCE + held.m_fRadius);
+   vector seenAt;
+   ACR_Squad attacker = EnemyNear(held.GetOrigin(), THREAT_DISTANCE + held.m_fRadius, seenAt);
    if (!attacker) continue;
-   if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, PositionOf(attacker), "defensive fire at " + held.m_sName)) break;
-   if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, PositionOf(attacker), "defensive fire at " + held.m_sName)) break;
+   if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, seenAt, "defensive fire at " + held.m_sName)) break;
+   if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, seenAt, "defensive fire at " + held.m_sName)) break;
   }
  }
 
@@ -335,7 +462,7 @@ class ACR_AICommander : Managed
   // Keep a reserve at home once the force is big enough.
   array<ACR_Squad> all = {};
   MySquads(all, false);
-  if (all.Count() >= 5 && free.Count() >= 2)
+  if (all.Count() >= 5 && free.Count() >= 2 && Pressure() >= 0.9)
   {
    ACR_Base home = HomeBase();
    if (home)
@@ -401,26 +528,51 @@ class ACR_AICommander : Managed
   if (attacks >= maxAttacks && !counterDue) return;
 
   // Target: a counterattack on a base just lost, otherwise the enemy base with
-  // the lowest (defence x ratio) scaled by distance.
+  // the lowest (defence x ratio) scaled by distance -- the best one we can
+  // actually muster enough for, rather than waiting forever on one we can't.
+  float pressure = Pressure();
+  int available;
+  foreach (ACR_Squad counted : free) available += counted.Strength();
   ACR_Base target;
+  ACR_Base wanted;
+  float required = 1;
+  float wantedRequired;
   vector from = PositionOf(free[0]);
-  if (counterDue) target = m_CounterTarget;
+  array<ACR_Base> candidates = {};
+  array<float> scores = {};
+  if (counterDue) candidates.Insert(m_CounterTarget);
   else
   {
-   float bestScore = float.MAX;
    foreach (ACR_Base base : ACR_Base.s_All)
    {
     if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || IsAttacking(base)) continue;
     float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
     float score = cost * (vector.DistanceXZ(base.GetOrigin(), from) / 1000 + 0.1);
-    if (score < bestScore) { bestScore = score; target = base; }
+    int at = 0;
+    while (at < scores.Count() && scores[at] <= score) at++;
+    candidates.InsertAt(base, at);
+    scores.InsertAt(score, at);
    }
   }
-  if (!target) return;
-
-  float required = 1;
-  if (!target.m_sOwner.IsEmpty()) required = Math.Max(10, DefenceOf(target) * ATTACK_RATIO * 0.65) + target.m_iGarrisonLeft;
-  if (counterDue) required = required * 0.7; // strike before they dig in
+  foreach (ACR_Base candidate : candidates)
+  {
+   float need = 1;
+   if (!candidate.m_sOwner.IsEmpty()) need = Math.Max(10, DefenceOf(candidate) * ATTACK_RATIO * 0.65) + candidate.m_iGarrisonLeft;
+   if (counterDue) need = need * 0.7; // strike before they dig in
+   need = need * pressure;
+   if (!wanted) { wanted = candidate; wantedRequired = need; }
+   if (available >= need) { target = candidate; required = need; break; }
+  }
+  if (!target)
+  {
+   float now = GetGame().GetWorld().GetWorldTime();
+   if (wanted && now >= m_fNextWeakLog)
+   {
+    m_fNextWeakLog = now + 60000;
+    PrintFormat("[ACR] AI %1: not strong enough for any target (best: %2, %3/%4, pressure x%5)", m_sFaction, wanted.m_sName, available, (int)wantedRequired, pressure);
+   }
+   return; // Requisition() will add troops
+  }
   SortByDistance(free, target.GetOrigin());
   ACR_AIAttack attack = new ACR_AIAttack();
   attack.m_Target = target;
@@ -482,6 +634,8 @@ class ACR_AICommander : Managed
   }
   attack.m_bAssaulting = empty;
   m_Attacks.Insert(attack);
+  m_fLastOffensive = GetGame().GetWorld().GetWorldTime();
+  if (pressure < 1) PrintFormat("[ACR] AI %1: taking the initiative against %2 (accepting x%3 odds after a quiet spell)", m_sFaction, target.m_sName, pressure);
   string kind = "attacking";
   if (counterDue) { kind = "COUNTERATTACKING"; m_CounterTarget = null; }
   PrintFormat("[ACR] AI %1: %2 %3 with %4 squad(s), strength %5/%6", m_sFaction, kind, target.m_sName, attack.m_Squads.Count(), strength, required);
@@ -705,6 +859,9 @@ class ACR_AICommander : Managed
   if (banked > 150) cap += Math.Min(4, (banked - 100) / 50);
   array<ACR_Squad> mine = {};
   MySquads(mine, false);
+  // Only fighting units count against the cap (trucks and lone drivers don't).
+  for (int m = mine.Count() - 1; m >= 0; m--)
+   if (!mine[m].IsCombatUnit()) mine.RemoveOrdered(m);
   if (mine.Count() >= cap) return;
   // Deploy at the own spawn base furthest from the fighting.
   ACR_Base spawn;
