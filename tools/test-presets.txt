@@ -9,3 +9,4 @@ gunner|-acrGunnerTest 1|120
 probe|-acrProbeTest 1|90
 respawn|-acrRespawnTest 1|90
 support|-acrSupportTest 1|180
+gunship|-acrGunshipTest 1|180

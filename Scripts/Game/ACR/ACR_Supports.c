@@ -79,13 +79,66 @@ class ACR_RocketStrikeRun : ACR_SupportRun
  }
 }
 
-// A crewed gunship flown by script: straight gun run, or orbit (loiter) the target.
+// One door/nose gun of a support helicopter.
+class ACR_HeliGun : Managed
+{
+ IEntity m_Turret;
+ TurretComponent m_TurretComponent;
+ TurretControllerComponent m_Controller;
+ string m_sName;
+ ref array<bool> m_aBins = {};  // 36 bins of 10 deg: can it reach a target at that bearing from the nose
+ int m_iLastAmmo = -1;
+
+ static int Bin(float bearing)
+ {
+  int bin = Math.Round((bearing + 180) / 10);
+  while (bin < 0) bin += 36;
+  while (bin >= 36) bin -= 36;
+  return bin;
+ }
+ bool CoversBearing(float bearing)
+ {
+  if (m_aBins.Count() != 36) return false;
+  return m_aBins[Bin(bearing)];
+ }
+ string Describe()
+ {
+  string text = "";
+  for (int i = 0; i < 36; i++) if (m_aBins[i]) text += (i * 10 - 180).ToString() + " ";
+  return text;
+ }
+
+ int Ammo()
+ {
+  if (!m_Controller || !m_Controller.GetWeaponManager()) return -1;
+  BaseWeaponComponent weapon = m_Controller.GetWeaponManager().GetCurrentWeapon();
+  if (!weapon || !weapon.GetCurrentMuzzle()) return -1;
+  return weapon.GetCurrentMuzzle().GetAmmoCount();
+ }
+
+ bool Covers(vector point)
+ {
+  if (!m_TurretComponent) return false;
+  vector excess = m_TurretComponent.GetAimingAngleExcess(point);
+  return Math.AbsFloat(excess[0]) < 0.5 && Math.AbsFloat(excess[1]) < 0.5;
+ }
+}
+
+// A crewed gunship flown by script (the AI cannot fly).
+//  Gun run: one straight pass with a rocket salvo.
+//  Loiter: the helicopter's guns are measured when it arrives, and it flies the
+//  pattern that keeps the most guns on the target:
+//   - side guns (UH-1H doors): a pylon-turn orbit with the gun side toward the target;
+//   - nose/tail guns (Mi-8 bow and ramp PKTs): repeated attack passes, nose gun and
+//     rockets on the way in, ramp gun covering the target on the way out.
 class ACR_HeliRun : ACR_SupportRun
 {
  static const float SPEED_RUN = 55;
- static const float SPEED_LOITER = 38;
- static const float LOITER_RADIUS = 330;
+ static const float SPEED_LOITER = 36;
+ static const float LOITER_RADIUS = 280;
  static const float LOITER_TIME_MS = 90000;
+ static const float ALT_TRANSIT = 70;
+ static const float ALT_LOITER = 55;
 
  IEntity m_Vehicle;
  string m_sFaction;
@@ -93,22 +146,32 @@ class ACR_HeliRun : ACR_SupportRun
  vector m_Target;
  vector m_Dir;
  vector m_Pos;
- float m_fYaw;
+ float m_fYaw;       // direction of travel
+ float m_fBodyYaw;   // where the nose points (differs in a pylon turn)
  float m_fRoll;
  ResourceName m_Rocket;
  int m_iRockets;
  float m_fNextRocket;
- int m_iPhase; // 0 inbound, 1 orbit, 2 outbound
+ int m_iPhase;       // 0 inbound, 1 on station, 2 outbound
  float m_fOrbitEnd;
  vector m_ExitDir;
  float m_fStarted;
  bool m_bDestroyed;
+ ref array<ref ACR_HeliGun> m_Guns = {};
+ bool m_bAnalyzed;
+ bool m_bPasses;     // attack passes instead of an orbit
+ float m_fSideBearing = -90; // orbit: target bearing relative to the nose
+ bool m_bPassOutbound;
+ float m_fNextGunLog;
 
  bool Start(ACR_Supports supports, ResourceName prefab, float now)
  {
-  m_Pos = m_Target - m_Dir * 2200;
-  m_Pos[1] = SafeAltitude(m_Pos, m_Dir) ;
+  float startDistance = 2200;
+  if (m_bLoiter) startDistance = 1500;
+  m_Pos = m_Target - m_Dir * startDistance;
+  m_Pos[1] = SafeAltitude(m_Pos, m_Dir, ALT_TRANSIT);
   m_fYaw = Math.Atan2(m_Dir[0], m_Dir[2]) * Math.RAD2DEG;
+  m_fBodyYaw = m_fYaw;
   Resource resource = Resource.Load(prefab);
   if (!resource.IsValid()) return false;
   EntitySpawnParams parameters = new EntitySpawnParams();
@@ -133,7 +196,7 @@ class ACR_HeliRun : ACR_SupportRun
  }
 
  // Terrain-following height: clear the ground (and sea) ahead.
- static float SafeAltitude(vector pos, vector forward)
+ static float SafeAltitude(vector pos, vector forward, float above)
  {
   BaseWorld world = GetGame().GetWorld();
   float ground = 0;
@@ -142,13 +205,78 @@ class ACR_HeliRun : ACR_SupportRun
    vector probe = pos + forward * (i * 90);
    ground = Math.Max(ground, world.GetSurfaceY(probe[0], probe[2]));
   }
-  return ground + 70;
+  return ground + above;
  }
 
  bool IsDestroyed()
  {
   DamageManagerComponent damage = DamageManagerComponent.Cast(m_Vehicle.FindComponent(DamageManagerComponent));
   return damage && damage.GetState() == EDamageState.DESTROYED;
+ }
+
+ static vector Heading(float yaw)
+ {
+  return Vector(Math.Sin(yaw * Math.DEG2RAD), 0, Math.Cos(yaw * Math.DEG2RAD));
+ }
+
+ static float Wrap(float angle)
+ {
+  while (angle > 180) angle -= 360;
+  while (angle < -180) angle += 360;
+  return angle;
+ }
+
+ // Find every crewed gun and measure which target bearings (relative to the
+ // nose, target 60 m below at 280 m) it can reach, then pick the flight pattern.
+ void AnalyzeGuns()
+ {
+  m_bAnalyzed = true;
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return;
+  array<BaseCompartmentSlot> slots = {};
+  compartments.GetCompartments(slots);
+  foreach (BaseCompartmentSlot slot : slots)
+  {
+   if (slot.GetType() != ECompartmentType.TURRET) continue;
+   IEntity turret = slot.GetOwner();
+   ACR_HeliGun gun = new ACR_HeliGun();
+   gun.m_Turret = turret;
+   gun.m_TurretComponent = TurretComponent.Cast(turret.FindComponent(TurretComponent));
+   gun.m_Controller = TurretControllerComponent.Cast(turret.FindComponent(TurretControllerComponent));
+   gun.m_sName = slot.GetCompartmentName();
+   if (!gun.m_TurretComponent || !gun.m_Controller) continue;
+   // Rocket pods and fixed guns are pilot weapons (no turret slot); this is crewed guns only.
+   for (int bin = 0; bin < 36; bin++)
+   {
+    vector point = m_Pos + Heading(m_fBodyYaw + bin * 10 - 180) * LOITER_RADIUS;
+    point[1] = m_Pos[1] - 60;
+    gun.m_aBins.Insert(gun.Covers(point));
+   }
+   m_Guns.Insert(gun);
+   PrintFormat("[ACR] SUPPORT gun %1 (occupant=%2 ammo=%3) reaches bearings: %4", gun.m_sName, slot.GetOccupant() != null, gun.Ammo(), gun.Describe());
+  }
+  // Best side bearing for an orbit: most guns covering +-(60..120).
+  int bestCount = 0;
+  float bestBearing = -90;
+  array<int> signs = {-1, 1};
+  for (int b = 60; b <= 120; b += 10)
+  {
+   foreach (int sign : signs)
+   {
+    int count = 0;
+    foreach (ACR_HeliGun g : m_Guns) if (g.CoversBearing(sign * b)) count++;
+    if (count > bestCount) { bestCount = count; bestBearing = sign * b; }
+   }
+  }
+  int noseTail = 0;
+  foreach (ACR_HeliGun g2 : m_Guns)
+  {
+   if (g2.CoversBearing(0) || g2.CoversBearing(10) || g2.CoversBearing(-10)) noseTail++;
+   else if (g2.CoversBearing(180) || g2.CoversBearing(170) || g2.CoversBearing(-170)) noseTail++;
+  }
+  m_fSideBearing = bestBearing;
+  m_bPasses = bestCount == 0 || noseTail > bestCount;
+  PrintFormat("[ACR] SUPPORT gunship pattern: %1 (side guns %2 at %3 deg, nose/tail guns %4)", m_bPasses, bestCount, bestBearing, noseTail);
  }
 
  override bool Frame(ACR_Supports supports, float dt, float now)
@@ -164,17 +292,21 @@ class ACR_HeliRun : ACR_SupportRun
    return false;
   }
   if (now - m_fStarted > 300000) return false;
+  if (!m_bAnalyzed && now - m_fStarted > 500) AnalyzeGuns();
 
   vector flat = m_Target - m_Pos;
   flat[1] = 0;
   float distance = flat.Length();
   vector toTarget = flat.Normalized();
+  float yawToTarget = Math.Atan2(toTarget[0], toTarget[2]) * Math.RAD2DEG;
   vector desired = m_Dir;
+  float bodyOffset = 0; // nose = track + offset
   float speed = SPEED_RUN;
+  float altitude = ALT_TRANSIT;
   if (m_bLoiter)
   {
    speed = SPEED_LOITER;
-   if (m_iPhase == 0 && distance < LOITER_RADIUS + 40)
+   if (m_iPhase == 0 && distance < LOITER_RADIUS + 60)
    {
     m_iPhase = 1;
     m_fOrbitEnd = now + LOITER_TIME_MS;
@@ -190,32 +322,54 @@ class ACR_HeliRun : ACR_SupportRun
    if (m_iPhase == 0) desired = toTarget;
    else if (m_iPhase == 1)
    {
-    vector tangent = Vector(-toTarget[2], 0, toTarget[0]);
-    desired = (tangent + toTarget * ((distance - LOITER_RADIUS) / LOITER_RADIUS * 1.5)).Normalized();
+    altitude = ALT_LOITER;
+    if (m_bPasses)
+    {
+     // Attack passes: run in, overfly, extend 650 m, come round again.
+     if (!m_bPassOutbound && distance < 90) m_bPassOutbound = true;
+     if (m_bPassOutbound && distance > 650) m_bPassOutbound = false;
+     if (m_bPassOutbound) desired = Heading(m_fYaw);
+     else desired = toTarget;
+    }
+    else
+    {
+     // Pylon turn: circle so the target stays on the gun side.
+     // Target on the left (negative bearing) = circle with the left side inward.
+     float side = -1;
+     if (m_fSideBearing < 0) side = 1;
+     vector tangent = Vector(toTarget[2], 0, -toTarget[0]) * side;
+     desired = (tangent + toTarget * ((distance - LOITER_RADIUS) / LOITER_RADIUS * 1.5)).Normalized();
+     // Point the nose so the target sits exactly at the guns' best bearing.
+     bodyOffset = Wrap(yawToTarget - m_fSideBearing - Math.Atan2(desired[0], desired[2]) * Math.RAD2DEG);
+     bodyOffset = Math.Clamp(bodyOffset, -35, 35);
+    }
    }
    else desired = m_ExitDir;
   }
 
-  // Turn toward the desired heading at a helicopter-like rate, banking into it.
+  // Track: turn toward the desired heading at a helicopter-like rate, banking into it.
   float desiredYaw = Math.Atan2(desired[0], desired[2]) * Math.RAD2DEG;
-  float delta = desiredYaw - m_fYaw;
-  while (delta > 180) delta -= 360;
-  while (delta < -180) delta += 360;
-  float maxTurn = 22 * dt;
+  float delta = Wrap(desiredYaw - m_fYaw);
+  float maxTurn = 24 * dt;
   float turn = Math.Clamp(delta, -maxTurn, maxTurn);
-  m_fYaw += turn;
+  m_fYaw = Wrap(m_fYaw + turn);
   float yawRate = 0;
   if (dt > 0) yawRate = turn / dt;
   m_fRoll += (Math.Clamp(-yawRate * 1.2, -25, 25) - m_fRoll) * Math.Min(1, dt * 2);
+  // Body: the nose follows the track plus the pylon-turn offset.
+  float bodyDelta = Wrap(m_fYaw + bodyOffset - m_fBodyYaw);
+  m_fBodyYaw = Wrap(m_fBodyYaw + Math.Clamp(bodyDelta, -40 * dt, 40 * dt));
 
-  vector forward = Vector(Math.Sin(m_fYaw * Math.DEG2RAD), 0, Math.Cos(m_fYaw * Math.DEG2RAD));
+  vector forward = Heading(m_fYaw);
+  vector nose = Heading(m_fBodyYaw);
   vector previous = m_Pos;
   m_Pos = m_Pos + forward * (speed * dt);
-  float wantedY = SafeAltitude(m_Pos, forward);
+  float wantedY = SafeAltitude(m_Pos, forward, altitude);
   m_Pos[1] = previous[1] + Math.Clamp(wantedY - previous[1], -10 * dt, 12 * dt);
   float pitch = -4;
 
-  // Rockets: gun run fires one pass on the way in; loiter fires salvos at enemies near the target.
+  // Rockets: gun run fires one pass on the way in; loiter fires salvos at
+  // enemies near the target whenever the nose points at them.
   if (m_iRockets > 0 && now >= m_fNextRocket)
   {
    vector aim;
@@ -233,26 +387,44 @@ class ACR_HeliRun : ACR_SupportRun
     vector enemyFlat;
     if (enemy) enemyFlat = enemy.GetOrigin() - m_Pos;
     enemyFlat[1] = 0;
-    // Only when the nose points roughly at the enemy (salvo of 4, then a pause).
-    shoot = enemy != null && vector.Dot(enemyFlat.Normalized(), forward) > 0.2 && enemyFlat.Length() < 700;
-    if (enemy) aim = enemy.GetOrigin() + Vector(Math.RandomFloat(-8, 8), 0.5, Math.RandomFloat(-8, 8));
+    shoot = enemy != null && vector.Dot(enemyFlat.Normalized(), nose) > 0.9 && enemyFlat.Length() < 650 && enemyFlat.Length() > 150;
+    if (enemy) aim = enemy.GetOrigin() + Vector(Math.RandomFloat(-6, 6), 2, Math.RandomFloat(-6, 6));
+    if (shoot) pitch = -8;
    }
    if (shoot)
    {
     aim[1] = Math.Max(aim[1], GetGame().GetWorld().GetSurfaceY(aim[0], aim[2]) + 0.5);
-    vector right = Vector(forward[2], 0, -forward[0]);
-    float side = 1.6;
-    if (m_iRockets % 2 == 0) side = -1.6;
-    supports.FireProjectile(m_Rocket, m_Pos + forward * 6 + right * side - Vector(0, 1.2, 0), aim, forward * speed);
+    vector right = Vector(nose[2], 0, -nose[0]);
+    float sideOffset = 1.6;
+    if (m_iRockets % 2 == 0) sideOffset = -1.6;
+    supports.FireProjectile(m_Rocket, m_Pos + nose * 6 + right * sideOffset - Vector(0, 1.2, 0), aim, forward * speed);
     m_iRockets--;
-    PrintFormat("[ACR] SUPPORT heli rocket, %1 left, pos %2 range %3", m_iRockets, m_Pos, vector.Distance(m_Pos, aim));
+    PrintFormat("[ACR] SUPPORT heli rocket, %1 left, range %2", m_iRockets, vector.Distance(m_Pos, aim));
     m_fNextRocket = now + 280;
     if (m_bLoiter && m_iRockets % 4 == 0) m_fNextRocket = now + 8000;
    }
   }
 
+  // Gun report (loiter): which guns can reach the nearest enemy, and rounds fired.
+  if (m_bLoiter && m_iPhase == 1 && now >= m_fNextGunLog)
+  {
+   m_fNextGunLog = now + 5000;
+   IEntity nearest = supports.FindEnemyNear(m_sFaction, m_Target, 250);
+   string report = "";
+   foreach (ACR_HeliGun gun : m_Guns)
+   {
+    int ammo = gun.Ammo();
+    int fired = 0;
+    if (gun.m_iLastAmmo >= 0 && ammo >= 0) fired = gun.m_iLastAmmo - ammo;
+    gun.m_iLastAmmo = ammo;
+    bool reach = nearest != null && gun.Covers(nearest.GetOrigin());
+    report += string.Format(" | %1 inArc=%2 fired=%3", gun.m_sName, reach, fired);
+   }
+   PrintFormat("[ACR] SUPPORT gunship guns%1", report);
+  }
+
   vector transform[4];
-  Math3D.AnglesToMatrix(Vector(m_fYaw, pitch, m_fRoll), transform);
+  Math3D.AnglesToMatrix(Vector(m_fBodyYaw, pitch, m_fRoll), transform);
   transform[3] = m_Pos;
   m_Vehicle.SetTransform(transform);
   Physics physics = m_Vehicle.GetPhysics();

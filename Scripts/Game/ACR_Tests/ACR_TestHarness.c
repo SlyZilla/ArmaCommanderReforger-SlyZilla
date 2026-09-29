@@ -18,6 +18,7 @@ class ACR_TestHarness : Managed
  static const int MODE_PROBE = 11;
  static const int MODE_RESPAWN = 12;
  static const int MODE_SUPPORT = 13;
+ static const int MODE_GUNSHIP = 14;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -50,6 +51,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrProbeTest", flag)) mode = MODE_PROBE;
   if (System.GetCLIParam("acrRespawnTest", flag)) mode = MODE_RESPAWN;
   if (System.GetCLIParam("acrSupportTest", flag)) mode = MODE_SUPPORT;
+  if (System.GetCLIParam("acrGunshipTest", flag)) mode = MODE_GUNSHIP;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -84,6 +86,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_PROBE) { TestProbe(); return; }
   if (m_Mode == MODE_RESPAWN) { TestRespawn(); return; }
   if (m_Mode == MODE_SUPPORT) { TestSupport(); return; }
+  if (m_Mode == MODE_GUNSHIP) { TestGunship(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -773,5 +776,43 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 60) pc.ACR_TestSupport(SupportIndex(manager, ACR_ESupportType.HELI_LOITER), "1300 0 2210".ToVector());
   if (m_Ticks % 10 == 0 && m_Ticks >= 20) LogTargets(string.Format("t=%1", m_Ticks));
   if (m_Ticks == 140) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrGunshipTest
+ // A US UH-1H and a Soviet Mi-8 loiter over enemy fireteams in the open.
+ protected SCR_AIGroup m_UHTarget;
+ protected SCR_AIGroup m_MiTarget;
+
+ ResourceName FireTeamOf(ACR_Manager manager, string key)
+ {
+  foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(key).m_aRequisitions)
+   if (entry.m_sVehicle.IsEmpty() && (entry.m_sName.Contains("Fire Team") || entry.m_sName.Contains("Fire Group"))) return entry.m_sGroup;
+  return "";
+ }
+
+ void TestGunship()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+  }
+  vector uhSpot = "1300 0 2210".ToVector();
+  vector miSpot = "1650 0 2830".ToVector();
+  if (m_Ticks == 5)
+  {
+   manager.m_Bases.GetFaction("US").m_iRP = 1000;
+   manager.m_Bases.GetFaction("USSR").m_iRP = 1000;
+   m_UHTarget = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(FireTeamOf(manager, "USSR"), uhSpot));
+   m_MiTarget = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(FireTeamOf(manager, "US"), miSpot));
+   PrintFormat("[ACR] GUNSHIPTEST targets %1 %2", m_UHTarget, m_MiTarget);
+  }
+  if (!manager.m_Supports) return;
+  if (m_Ticks == 10) PrintFormat("[ACR] GUNSHIPTEST Mi-8: %1", manager.m_Supports.Call("USSR", SupportIndex(manager, ACR_ESupportType.HELI_LOITER), miSpot, true));
+  if (m_Ticks == 12) PrintFormat("[ACR] GUNSHIPTEST UH-1H: %1", manager.m_Supports.Call("US", SupportIndex(manager, ACR_ESupportType.HELI_LOITER), uhSpot, true));
+  if (m_Ticks % 10 == 0 && m_Ticks >= 20) PrintFormat("[ACR] GUNSHIPTEST t=%1 UH-1H target alive %2 | Mi-8 target alive %3", m_Ticks, AliveIn(m_UHTarget), AliveIn(m_MiTarget));
+  if (m_Ticks == 150) Print("[ACR] TEST COMPLETE");
  }
 }
