@@ -79,15 +79,29 @@ class ACR_RocketStrikeRun : ACR_SupportRun
  }
 }
 
-// One door/nose gun of a support helicopter.
+// One door/nose gun of a support helicopter. The script aims and fires it
+// (the AI gunners barely engage from a moving helicopter): it picks an enemy the
+// gun can reach and see, leads for the helicopter's own speed, and fires bursts.
 class ACR_HeliGun : Managed
 {
+ BaseCompartmentSlot m_Slot;
  IEntity m_Turret;
  TurretComponent m_TurretComponent;
  TurretControllerComponent m_Controller;
  string m_sName;
  ref array<bool> m_aBins = {};  // 36 bins of 10 deg: can it reach a target at that bearing from the nose
  int m_iLastAmmo = -1;
+ float m_fYawCmd;
+ float m_fPitchCmd;
+ float m_fYawSign = 1;
+ float m_fPitchSign = 1;
+ float m_fLastYawErr = 999;
+ int m_iWorse;
+ IEntity m_Target;
+ bool m_bFiring;
+ float m_fBurstEnd;
+ float m_fPauseEnd;
+ float m_fNextPick;
 
  static int Bin(float bearing)
  {
@@ -121,6 +135,105 @@ class ACR_HeliGun : Managed
   if (!m_TurretComponent) return false;
   vector excess = m_TurretComponent.GetAimingAngleExcess(point);
   return Math.AbsFloat(excess[0]) < 0.5 && Math.AbsFloat(excess[1]) < 0.5;
+ }
+
+ IEntity Occupant()
+ {
+  if (!m_Slot) return null;
+  return m_Slot.GetOccupant();
+ }
+
+ bool Visible(IEntity heli, vector point)
+ {
+  TraceParam trace = new TraceParam();
+  vector from = m_Turret.GetOrigin();
+  trace.Start = from + (point - from).Normalized() * 2;
+  trace.End = point;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  trace.Exclude = heli;
+  float fraction = GetGame().GetWorld().TraceMove(trace, null);
+  if (fraction >= 0.97) return true;
+  IEntity hit = trace.TraceEnt;
+  return hit && (hit == m_Target || hit.GetRootParent() == m_Target);
+ }
+
+ // Where to point: chest height, led for the helicopter's own motion (bullets
+ // inherit it) and a little bullet drop.
+ vector AimPoint(vector heliVelocity, IEntity target)
+ {
+  vector point = target.GetOrigin() + Vector(0, 1.1, 0);
+  float flight = vector.Distance(point, m_Turret.GetOrigin()) / 820;
+  point = point - heliVelocity * flight;
+  point[1] = point[1] + 0.02 * flight * flight * 9.8 * 25;
+  return point;
+ }
+
+ void StopFire()
+ {
+  if (m_bFiring && m_Controller) m_Controller.SetFireWeaponWanted(false);
+  m_bFiring = false;
+ }
+
+ void Update(IEntity heli, vector heliVelocity, vector center, array<IEntity> enemies, float now)
+ {
+  IEntity gunner = Occupant();
+  if (!m_Controller || !m_TurretComponent || !ACR_Respawn.IsAlive(gunner)) { StopFire(); return; }
+  // The script is the gunner's brain: keep the AI from fighting over the gun.
+  AIControlComponent ai = AIControlComponent.Cast(gunner.FindComponent(AIControlComponent));
+  if (ai && ai.IsAIActivated()) ai.DeactivateAI();
+
+  if (m_Target && (!ACR_Respawn.IsAlive(m_Target) || !Covers(AimPoint(heliVelocity, m_Target)))) m_Target = null;
+  if (!m_Target && now >= m_fNextPick)
+  {
+   m_fNextPick = now + 400;
+   float best = float.MAX;
+   foreach (IEntity enemy : enemies)
+   {
+    vector point = AimPoint(heliVelocity, enemy);
+    if (!Covers(point)) continue;
+    float score = vector.Distance(enemy.GetOrigin(), center);
+    if (score >= best) continue;
+    if (!Visible(heli, point)) continue;
+    best = score;
+    m_Target = enemy;
+   }
+   m_iWorse = 0;
+   m_fLastYawErr = 999;
+  }
+  if (!m_Target) { StopFire(); return; }
+
+  vector aim = AimPoint(heliVelocity, m_Target);
+  vector desired = (aim - m_Turret.GetOrigin()).Normalized();
+  vector current = m_TurretComponent.GetAimingDirectionWorld();
+  float errYaw = ACR_HeliRun.Wrap((Math.Atan2(desired[0], desired[2]) - Math.Atan2(current[0], current[2])) * Math.RAD2DEG);
+  float errPitch = (Math.Asin(Math.Clamp(desired[1], -1, 1)) - Math.Asin(Math.Clamp(current[1], -1, 1))) * Math.RAD2DEG;
+  // Closed loop on the gun's real aim; if the error keeps growing the axis sign is flipped.
+  if (Math.AbsFloat(errYaw) > m_fLastYawErr + 0.2 && Math.AbsFloat(errYaw) > 5) m_iWorse++;
+  else m_iWorse = 0;
+  if (m_iWorse > 12)
+  {
+   m_fYawSign = -m_fYawSign;
+   m_iWorse = 0;
+   PrintFormat("[ACR] SUPPORT gun %1: flipped yaw sign", m_sName);
+  }
+  m_fLastYawErr = Math.AbsFloat(errYaw);
+  m_fYawCmd = Math.Clamp(m_fYawCmd + m_fYawSign * errYaw * Math.DEG2RAD * 0.5, -3, 3);
+  m_fPitchCmd = Math.Clamp(m_fPitchCmd + m_fPitchSign * errPitch * Math.DEG2RAD * 0.5, -1.5, 1.5);
+  m_Controller.SetAimingAngles(m_fYawCmd, m_fPitchCmd);
+
+  bool onTarget = Math.AbsFloat(errYaw) < 1.5 && Math.AbsFloat(errPitch) < 1.5;
+  if (m_bFiring && now > m_fBurstEnd)
+  {
+   StopFire();
+   m_fPauseEnd = now + Math.RandomFloat(400, 800);
+  }
+  else if (!m_bFiring && onTarget && now > m_fPauseEnd)
+  {
+   m_Controller.SetFireWeaponWanted(true);
+   m_bFiring = true;
+   m_fBurstEnd = now + Math.RandomFloat(700, 1300);
+  }
+  else if (m_bFiring && !onTarget && Math.AbsFloat(errYaw) > 6) StopFire();
  }
 }
 
@@ -163,6 +276,8 @@ class ACR_HeliRun : ACR_SupportRun
  float m_fSideBearing = -90; // orbit: target bearing relative to the nose
  bool m_bPassOutbound;
  float m_fNextGunLog;
+ float m_fNextEnemyScan;
+ ref array<IEntity> m_aEnemies = {};
 
  bool Start(ACR_Supports supports, ResourceName prefab, float now)
  {
@@ -228,18 +343,37 @@ class ACR_HeliRun : ACR_SupportRun
 
  // Find every crewed gun and measure which target bearings (relative to the
  // nose, target 60 m below at 280 m) it can reach, then pick the flight pattern.
- void AnalyzeGuns()
+ void AnalyzeGuns(ACR_Supports supports)
  {
   m_bAnalyzed = true;
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   if (!compartments) return;
   array<BaseCompartmentSlot> slots = {};
   compartments.GetCompartments(slots);
+  // Some helicopters (the Mi-8) have no default crew for their guns: seat soldiers there.
+  AIGroup crewGroup;
+  foreach (BaseCompartmentSlot seat : slots)
+  {
+   if (seat.GetOccupant())
+   {
+    AIControlComponent seated = AIControlComponent.Cast(seat.GetOccupant().FindComponent(AIControlComponent));
+    if (seated && seated.GetControlAIAgent()) crewGroup = seated.GetControlAIAgent().GetParentGroup();
+    if (crewGroup) break;
+   }
+  }
+  ResourceName crewman = supports.CrewPrefab(m_sFaction);
+  foreach (BaseCompartmentSlot empty : slots)
+  {
+   if (empty.GetOccupant() || empty.GetType() != ECompartmentType.TURRET) continue;
+   IEntity seatedCrew = empty.SpawnCharacterInCompartment(crewman, crewGroup);
+   PrintFormat("[ACR] SUPPORT seated %1 in %2: %3", crewman, empty.GetCompartmentName(), seatedCrew != null);
+  }
   foreach (BaseCompartmentSlot slot : slots)
   {
    if (slot.GetType() != ECompartmentType.TURRET) continue;
    IEntity turret = slot.GetOwner();
    ACR_HeliGun gun = new ACR_HeliGun();
+   gun.m_Slot = slot;
    gun.m_Turret = turret;
    gun.m_TurretComponent = TurretComponent.Cast(turret.FindComponent(TurretComponent));
    gun.m_Controller = TurretControllerComponent.Cast(turret.FindComponent(TurretControllerComponent));
@@ -292,7 +426,7 @@ class ACR_HeliRun : ACR_SupportRun
    return false;
   }
   if (now - m_fStarted > 300000) return false;
-  if (!m_bAnalyzed && now - m_fStarted > 500) AnalyzeGuns();
+  if (!m_bAnalyzed && now - m_fStarted > 500) AnalyzeGuns(supports);
 
   vector flat = m_Target - m_Pos;
   flat[1] = 0;
@@ -405,6 +539,20 @@ class ACR_HeliRun : ACR_SupportRun
    }
   }
 
+  // Gunnery: engage enemies near the target once within reach.
+  vector heliVelocity = forward * speed;
+  if (m_bLoiter && m_iPhase != 2 && distance < 700)
+  {
+   if (now >= m_fNextEnemyScan)
+   {
+    m_fNextEnemyScan = now + 500;
+    m_aEnemies.Clear();
+    supports.FindEnemies(m_sFaction, m_Target, 320, m_aEnemies);
+   }
+   foreach (ACR_HeliGun shooter : m_Guns) shooter.Update(m_Vehicle, heliVelocity, m_Target, m_aEnemies, now);
+  }
+  else foreach (ACR_HeliGun idle : m_Guns) idle.StopFire();
+
   // Gun report (loiter): which guns can reach the nearest enemy, and rounds fired.
   if (m_bLoiter && m_iPhase == 1 && now >= m_fNextGunLog)
   {
@@ -418,7 +566,7 @@ class ACR_HeliRun : ACR_SupportRun
     if (gun.m_iLastAmmo >= 0 && ammo >= 0) fired = gun.m_iLastAmmo - ammo;
     gun.m_iLastAmmo = ammo;
     bool reach = nearest != null && gun.Covers(nearest.GetOrigin());
-    report += string.Format(" | %1 inArc=%2 fired=%3", gun.m_sName, reach, fired);
+    report += string.Format(" | %1 manned=%2 target=%3 inArc=%4 fired=%5", gun.m_sName, ACR_Respawn.IsAlive(gun.Occupant()), gun.m_Target != null, reach, fired);
    }
    PrintFormat("[ACR] SUPPORT gunship guns%1", report);
   }
@@ -736,6 +884,52 @@ class ACR_Supports : Managed
   if (!projectile) return;
   ProjectileMoveComponent move = ProjectileMoveComponent.Cast(projectile.FindComponent(ProjectileMoveComponent));
   if (move) move.Launch(dir, parentVelocity, 1, projectile, null, null, null, null);
+ }
+
+ ResourceName CrewPrefab(string factionKey)
+ {
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(factionKey);
+  if (!data.m_aGarrison.IsEmpty()) return data.m_aGarrison[0];
+  Faction faction = GetGame().GetFactionManager().GetFactionByKey(factionKey);
+  SCR_BasePlayerLoadout loadout;
+  if (faction) loadout = GetGame().GetLoadoutManager().GetRandomFactionLoadout(faction);
+  if (loadout) return loadout.GetLoadoutResource();
+  return "";
+ }
+
+ // Living enemy soldiers (squads, garrisons and players) within radius.
+ void FindEnemies(string factionKey, vector center, float radius, array<IEntity> result)
+ {
+  array<AIAgent> agents = {};
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == factionKey) continue;
+   agents.Clear();
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents) AddIfNear(agent.GetControlledEntity(), center, radius, result);
+  }
+  foreach (SCR_AIGroup garrison : m_Manager.m_Bases.m_GarrisonGroups)
+  {
+   if (!garrison || !garrison.GetFaction() || garrison.GetFaction().GetFactionKey() == factionKey) continue;
+   agents.Clear();
+   garrison.GetAgents(agents);
+   foreach (AIAgent guard : agents) AddIfNear(guard.GetControlledEntity(), center, radius, result);
+  }
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (int id : players)
+  {
+   Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
+   if (!faction || faction.GetFactionKey() == factionKey) continue;
+   PlayerController pc = GetGame().GetPlayerManager().GetPlayerController(id);
+   if (pc) AddIfNear(pc.GetControlledEntity(), center, radius, result);
+  }
+ }
+
+ protected void AddIfNear(IEntity soldier, vector center, float radius, array<IEntity> result)
+ {
+  if (!ACR_Respawn.IsAlive(soldier) || result.Contains(soldier)) return;
+  if (vector.DistanceXZ(soldier.GetOrigin(), center) <= radius) result.Insert(soldier);
  }
 
  IEntity FindEnemyNear(string factionKey, vector center, float radius)
