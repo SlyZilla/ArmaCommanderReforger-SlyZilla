@@ -70,7 +70,7 @@ class ACR_RocketStrikeRun : ACR_SupportRun
    vector right = Vector(m_Dir[2], 0, -m_Dir[0]);
    vector aim = m_Target + m_Dir * Math.RandomFloat(-40, 60) + right * Math.RandomFloat(-18, 18);
    aim[1] = GetGame().GetWorld().GetSurfaceY(aim[0], aim[2]) + 1;
-   supports.FireProjectile(m_Rocket, m_Pos + right * Math.RandomFloat(-4, 4), aim);
+   supports.FireProjectile(m_Rocket, m_Pos + right * Math.RandomFloat(-4, 4), aim, m_Dir * 110);
    m_iLeft--;
    if (m_iLeft % 4 == 0) PrintFormat("[ACR] SUPPORT strike rockets left %1 from %2", m_iLeft, m_Pos);
    m_fNext = now + 110;
@@ -223,8 +223,8 @@ class ACR_HeliRun : ACR_SupportRun
    if (!m_bLoiter)
    {
     float along = vector.Dot(m_Target - m_Pos, m_Dir);
-    shoot = along < 950 && along > 380;
-    aim = m_Target + Vector(Math.RandomFloat(-22, 22), 0, Math.RandomFloat(-22, 22));
+    shoot = along < 650 && along > 280;
+    aim = m_Target + Vector(Math.RandomFloat(-15, 15), 3, Math.RandomFloat(-15, 15));
     if (shoot) pitch = -8;
    }
    else if (m_iPhase == 1)
@@ -243,11 +243,11 @@ class ACR_HeliRun : ACR_SupportRun
     vector right = Vector(forward[2], 0, -forward[0]);
     float side = 1.6;
     if (m_iRockets % 2 == 0) side = -1.6;
-    supports.FireProjectile(m_Rocket, m_Pos + forward * 4 + right * side - Vector(0, 1.2, 0), aim);
+    supports.FireProjectile(m_Rocket, m_Pos + forward * 6 + right * side - Vector(0, 1.2, 0), aim, forward * speed);
     m_iRockets--;
-    PrintFormat("[ACR] SUPPORT heli rocket, %1 left, pos %2", m_iRockets, m_Pos);
-    m_fNextRocket = now + 160;
-    if (m_bLoiter && m_iRockets % 4 == 0) m_fNextRocket = now + 12000;
+    PrintFormat("[ACR] SUPPORT heli rocket, %1 left, pos %2 range %3", m_iRockets, m_Pos, vector.Distance(m_Pos, aim));
+    m_fNextRocket = now + 280;
+    if (m_bLoiter && m_iRockets % 4 == 0) m_fNextRocket = now + 8000;
    }
   }
 
@@ -290,6 +290,7 @@ class ACR_PendingLaunch : Managed
 {
  IEntity m_Entity;
  vector m_Dir;
+ vector m_Velocity;
  int m_iFrame;
 }
 
@@ -539,7 +540,7 @@ class ACR_Supports : Managed
 
  // Spawns a rocket/shell pointing at the target; it is launched next frame on the
  // server and every client (projectiles are simulated locally everywhere).
- void FireProjectile(ResourceName prefab, vector from, vector to)
+ void FireProjectile(ResourceName prefab, vector from, vector to, vector parentVelocity = "0 0 0")
  {
   Resource resource = Resource.Load(prefab);
   if (!resource.IsValid()) return;
@@ -553,15 +554,16 @@ class ACR_Supports : Managed
   ACR_PendingLaunch launch = new ACR_PendingLaunch();
   launch.m_Entity = projectile;
   launch.m_Dir = dir;
+  launch.m_Velocity = parentVelocity;
   launch.m_iFrame = m_iFrame;
   m_Launches.Insert(launch);
  }
 
- static void LaunchLocal(IEntity projectile, vector dir)
+ static void LaunchLocal(IEntity projectile, vector dir, vector parentVelocity)
  {
   if (!projectile) return;
   ProjectileMoveComponent move = ProjectileMoveComponent.Cast(projectile.FindComponent(ProjectileMoveComponent));
-  if (move) move.Launch(dir, vector.Zero, 1, projectile, null, null, null, null);
+  if (move) move.Launch(dir, parentVelocity, 1, projectile, null, null, null, null);
  }
 
  IEntity FindEnemyNear(string factionKey, vector center, float radius)
@@ -595,9 +597,9 @@ class ACR_Supports : Managed
    if (launch.m_iFrame >= m_iFrame) continue;
    m_Launches.Remove(l);
    if (!launch.m_Entity) continue;
-   LaunchLocal(launch.m_Entity, launch.m_Dir);
+   LaunchLocal(launch.m_Entity, launch.m_Dir, launch.m_Velocity);
    SCR_BaseGameMode gameMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
-   if (gameMode) gameMode.ACR_BroadcastLaunch(SCR_EntityHelper.EntityToRplId(launch.m_Entity), launch.m_Dir);
+   if (gameMode) gameMode.ACR_BroadcastLaunch(SCR_EntityHelper.EntityToRplId(launch.m_Entity), launch.m_Dir, launch.m_Velocity);
   }
   for (int r = m_Runs.Count() - 1; r >= 0; r--)
   {
@@ -613,13 +615,13 @@ class ACR_Supports : Managed
 // The game mode entity is replicated, so it carries the "launch this projectile" broadcast.
 modded class SCR_BaseGameMode
 {
- void ACR_BroadcastLaunch(RplId id, vector dir)
+ void ACR_BroadcastLaunch(RplId id, vector dir, vector parentVelocity)
  {
-  Rpc(ACR_RpcLaunch, id, dir);
+  Rpc(ACR_RpcLaunch, id, dir, parentVelocity);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
- protected void ACR_RpcLaunch(RplId id, vector dir)
+ protected void ACR_RpcLaunch(RplId id, vector dir, vector parentVelocity)
  {
-  ACR_Supports.LaunchLocal(SCR_EntityHelper.RplIdToEntity(id), dir);
+  ACR_Supports.LaunchLocal(SCR_EntityHelper.RplIdToEntity(id), dir, parentVelocity);
  }
 }
