@@ -1,4 +1,4 @@
-param([switch]$HostMenu, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
+param([switch]$HostMenu, [switch]$TestProfile, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
 $ErrorActionPreference = 'Stop'
 try {
  if (!$GamePath) {
@@ -19,8 +19,9 @@ try {
  }
  if (!$GamePath -or !(Test-Path -LiteralPath $GamePath)) { throw 'Arma Reforger was not found. Run this script with -GamePath pointing to ArmaReforgerSteam.exe.' }
  $addonsPath = Split-Path $PSScriptRoot -Parent
- $profilePath = Join-Path $PSScriptRoot '.local-game'
- $arguments = '-addonsDir "' + $addonsPath + '" -addons AC230926A0010001 -profile "' + $profilePath + '" -noSplash'
+ # Players get their normal profile (controls, graphics); automated tests use a separate one.
+ $arguments = '-addonsDir "' + $addonsPath + '" -addons AC230926A0010001 -noSplash'
+ if ($TestProfile) { $arguments += ' -profile "' + (Join-Path $PSScriptRoot '.local-game') + '"' }
  if (!$HostMenu) { $arguments += ' -noBackend -world "' + $World + '"' }
  if ($Extra) { $arguments += ' ' + $Extra }
  # User-invoked interactive game launcher.

@@ -65,7 +65,7 @@ IF IT DOESN'T CONNECT:
 - Check the address, that the server window is still open, and the firewall
   question from step 2.
 - Logs: host server log in ArmaCommanderReforger\.local-server\logs, game
-  logs in ArmaCommanderReforger\.local-game\logs. Send the newest ones.
+  logs in Documents\My Games\ArmaReforger\logs. Send the newest ones.
 
 THE SITUATION
 -------------
@@ -180,7 +180,7 @@ KNOWN LIMITS (alpha)
 - Multiplayer has never been tested before this package. Expect bugs;
   logs and a short note of what happened are gold.
 - No victory condition: play until one side is clearly beaten.
-- Logs are in ArmaCommanderReforger\.local-game\logs if something breaks.
+- Game logs are in Documents\My Games\ArmaReforger\logs if something breaks.
   Sending the newest console.log helps a lot.
 
 CREDITS

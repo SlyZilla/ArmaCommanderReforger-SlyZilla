@@ -112,8 +112,8 @@ try {
   }
 
   if ($Address -notmatch ':\d+$') { $Address = $Address + ':' + $Port }
-  $gameProfile = Join-Path $PSScriptRoot '.local-game'
-  $clientArgs = '-client ' + $Address + ' ' + $mod + ' -profile "' + $gameProfile + '" -noSplash' + $backend
+  # The game uses the player's normal profile (controls, graphics, name).
+  $clientArgs = '-client ' + $Address + ' ' + $mod + ' -noSplash' + $backend
   Write-Host ('Joining ' + $Address + ' ...') -ForegroundColor Cyan
   Start-Process -FilePath $game -ArgumentList $clientArgs -WorkingDirectory (Split-Path $game -Parent)
   if ($Mode -eq 'Host') {

@@ -28,7 +28,7 @@ Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo).
 | W/A/S/D in a turret | Gunner drives: steer the vehicle's AI driver (a map order hands control back) |
 | Command menu key (default: backtick) | Native squad orders, only while possessing a squad leader |
 
-Logs: `.local-game/logs/<date>/console.log`, tagged `[ACR]`.
+Logs: automated tests write to `.local-game/logs/<date>/console.log`; normal play uses `Documents/My Games/ArmaReforger/logs`. Lines are tagged `[ACR]`.
 
 ## Code layout (`Scripts/Game`)
 
