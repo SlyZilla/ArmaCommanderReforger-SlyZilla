@@ -1,0 +1,15 @@
+GameProject {
+ ID "ArmaCommanderReforger"
+ GUID "AC230926A0010001"
+ TITLE "Arma Commander Reforger - Development"
+ Dependencies {
+  "58D0FB3206B6F859"
+ }
+ Configurations {
+  GameProjectConfig PC {
+   InputManagerSettings InputManagerSettings "{50A48858902D5F64}" {
+    Default "{AC230926A0010030}Configs/ACR_Input.conf"
+   }
+  }
+ }
+}

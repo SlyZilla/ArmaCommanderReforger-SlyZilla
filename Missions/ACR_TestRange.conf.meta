@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A0010011}Missions/ACR_TestRange.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

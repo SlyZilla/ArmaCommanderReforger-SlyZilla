@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A0010010}Worlds/ACR_TestRange.ent"
+ Configurations {
+  ENTResourceClass PC {
+  }
+  ENTResourceClass HEADLESS : PC {
+  }
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AC230926A0010030}Configs/ACR_Input.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}
