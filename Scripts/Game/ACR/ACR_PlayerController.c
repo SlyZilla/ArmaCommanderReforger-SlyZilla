@@ -267,6 +267,8 @@ modded class SCR_PlayerController
     marker.m_Original = i == count;
     m_ACR_Markers.Insert(marker);
     manager.InsertStaticMarker(marker, true);
+    // Not "owned" by the player, so vanilla doesn't open the marker edit dialog on click.
+    marker.SetMarkerOwnerID(-1);
    }
   }
   for (int i = 0; i < count; i++)
@@ -317,6 +319,8 @@ modded class SCR_PlayerController
     marker.SetCanBeRemovedByOwner(false);
     m_ACR_GroupMarkers.Insert(marker);
     manager.InsertStaticMarker(marker, true);
+    // Not "owned" by the player, so vanilla doesn't open the marker edit dialog on click.
+    marker.SetMarkerOwnerID(-1);
    }
   }
   for (int i = 0; i < m_ACR_GroupMarkers.Count(); i++)
@@ -450,17 +454,17 @@ modded class SCR_PlayerController
   if (index < 0)
   {
    // Selection vanished (squad wiped out, or not in the latest snapshot yet).
-   m_ACR_Panel.SetGroup("", "", false, false, 0, "");
+   m_ACR_Panel.SetGroup("", "", false, false, 0, 0, "");
    return;
   }
   bool friendly = index < m_ACR_Commandable.Count() && m_ACR_Commandable[index] == 1;
   string hint;
   if (!friendly) hint = "Player group: not commandable";
   else if (!m_ACR_IsCommander) hint = "Take command to give orders";
-  else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend that position";
-  else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend there (click Defend again to cancel)";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in (click Get in again to cancel)";
   else hint = "Right-click: move there";
-  m_ACR_Panel.SetGroup(m_ACR_GroupNames[index], m_ACR_GroupDetails[index], friendly, m_ACR_IsCommander, m_ACR_GroupSymbols[index * 4 + 3], hint);
+  m_ACR_Panel.SetGroup(m_ACR_GroupNames[index], m_ACR_GroupDetails[index], friendly, m_ACR_IsCommander, m_ACR_GroupSymbols[index * 4 + 3], m_ACR_CursorMode, hint);
  }
 
  void ACR_OnPanelAction(int action)
@@ -476,8 +480,16 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.MODE_COMBAT: ACR_Request(ACR_ERequest.MODE_COMBAT, m_ACR_SelectedGroup); return;
    case ACR_EPanelAction.MODE_FAST: ACR_Request(ACR_ERequest.MODE_FAST, m_ACR_SelectedGroup); return;
    case ACR_EPanelAction.MODE_SILENT: ACR_Request(ACR_ERequest.MODE_SILENT, m_ACR_SelectedGroup); return;
-   case ACR_EPanelAction.DEFEND: m_ACR_CursorMode = ACR_ECursorMode.DEFEND; return;
-   case ACR_EPanelAction.GET_IN: m_ACR_CursorMode = ACR_ECursorMode.GET_IN; return;
+   // Defend / Get in arm the next right-click; pressing the same button again
+   // cancels back to a plain move.
+   case ACR_EPanelAction.DEFEND:
+    if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+    else m_ACR_CursorMode = ACR_ECursorMode.DEFEND;
+    return;
+   case ACR_EPanelAction.GET_IN:
+    if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+    else m_ACR_CursorMode = ACR_ECursorMode.GET_IN;
+    return;
    case ACR_EPanelAction.GET_OUT: ACR_Request(ACR_ERequest.ORDER_GET_OUT, m_ACR_SelectedGroup); return;
    case ACR_EPanelAction.UNLOAD: ACR_Request(ACR_ERequest.ORDER_UNLOAD, m_ACR_SelectedGroup); return;
   }

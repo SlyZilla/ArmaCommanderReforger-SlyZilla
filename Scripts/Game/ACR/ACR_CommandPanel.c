@@ -39,6 +39,8 @@ class ACR_CommandPanel : Managed
  protected Widget m_OrderSection;
  protected ref array<SCR_ButtonTextComponent> m_ModeButtons = {};
  protected TextWidget m_Hint;
+ protected SCR_ButtonTextComponent m_DefendButton;
+ protected SCR_ButtonTextComponent m_GetInButton;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
 
@@ -83,8 +85,8 @@ class ACR_CommandPanel : Managed
   m_ModeButtons.Insert(AddButton(modes, "Silent", ACR_EPanelAction.MODE_SILENT, true));
   AddText(m_OrderSection, LAYOUT_TEXT, "Orders");
   Widget orders1 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
-  AddButton(orders1, "Defend", ACR_EPanelAction.DEFEND, true);
-  AddButton(orders1, "Get in", ACR_EPanelAction.GET_IN, true);
+  m_DefendButton = AddButton(orders1, "Defend", ACR_EPanelAction.DEFEND, true);
+  m_GetInButton = AddButton(orders1, "Get in", ACR_EPanelAction.GET_IN, true);
   Widget orders2 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   AddButton(orders2, "Get out", ACR_EPanelAction.GET_OUT, true);
   AddButton(orders2, "Unload", ACR_EPanelAction.UNLOAD, true);
@@ -147,7 +149,7 @@ class ACR_CommandPanel : Managed
  }
 
  // name empty = nothing selected
- void SetGroup(string name, string detail, bool friendly, bool isCommander, int mode, string hint)
+ void SetGroup(string name, string detail, bool friendly, bool isCommander, int mode, int cursorMode, string hint)
  {
   if (!m_GroupSection) return;
   m_GroupSection.SetVisible(!name.IsEmpty());
@@ -162,6 +164,17 @@ class ACR_CommandPanel : Managed
    string label = ACR_Squad.ModeName(i);
    if (i == mode) label = "[" + label + "]";
    button.SetText(label);
+  }
+  // Armed right-click order is shown in brackets, like the active movement mode.
+  if (m_DefendButton)
+  {
+   if (cursorMode == ACR_ECursorMode.DEFEND) m_DefendButton.SetText("[Defend]");
+   else m_DefendButton.SetText("Defend");
+  }
+  if (m_GetInButton)
+  {
+   if (cursorMode == ACR_ECursorMode.GET_IN) m_GetInButton.SetText("[Get in]");
+   else m_GetInButton.SetText("Get in");
   }
   if (m_Hint) m_Hint.SetText(hint);
  }
