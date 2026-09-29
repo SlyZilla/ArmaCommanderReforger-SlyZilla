@@ -32,7 +32,7 @@ class ACR_TestRange : GenericEntity
   }
   Print("[ACR] Range initialized");
   // A scenario test that landed on the range (wrong world): end at once.
-  if (System.IsCLIParam("acrScenarioTest")) Print("[ACR] WRONG WORLD for scenario test. TEST COMPLETE");
+  if (System.IsCLIParam("acrScenarioTest")) Print("[ACR] TEST COMPLETE (wrong world: restart the test launcher)");
  }
 
  void Setup()

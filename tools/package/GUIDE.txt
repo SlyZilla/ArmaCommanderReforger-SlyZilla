@@ -36,11 +36,12 @@ Bases (distances are from your spawn at the Airfield):
   Harbor ............ neutral, 0.5 km north
   Farm .............. neutral, 0.9 km east
   Military Hill ..... neutral, 1.4 km east (worth extra)
-  Lighthouse ........ neutral control point, 1.7 km south (no income)
+  Lighthouse ........ neutral control point, 1.7 km south (no income,
+                      no deploying)
   Ridge ............. neutral, 1.8 km south-east
   Heide ............. SOVIET HQ, 1.9 km east (Heide town)
   Arlberg ........... Soviet, 1.9 km south-east
-  Heide Lighthouse .. Soviet control point, 2.3 km east (on the coast)
+  Heide Lighthouse .. Soviet control point, 2.3 km east, on the coast
   Arlberg Harbor .... Soviet and HIDDEN until your troops get near it.
                       It's 2.5 km south-east, on the coast past Arlberg.
 
@@ -48,7 +49,8 @@ Bases (distances are from your spawn at the Airfield):
   More soldiers capture it faster. Garrisoned bases have defenders that appear
   when you get close.
 - Bases you own give RP (Requisition Points) every minute. You can deploy
-  units you buy at any base you own that isn't under attack.
+  units you buy at any base you own that isn't under attack (the two
+  lighthouse control points excepted).
 - There's no win screen yet. Play until one side owns the map.
 
 CONTROLS

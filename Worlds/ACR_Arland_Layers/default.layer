@@ -125,6 +125,7 @@ ACR_Base ACR_Base_6 {
  m_iValue 0
  m_bIncome 0
  m_bHidden 0
+ m_bAllowSpawn 0
  m_fRadius 40
 }
 ACR_Base ACR_Base_7 {
@@ -165,6 +166,7 @@ ACR_Base ACR_Base_10 {
  m_iValue 0
  m_bIncome 0
  m_bHidden 0
+ m_bAllowSpawn 0
  m_fRadius 40
 }
 ACR_StartingUnit ACR_Start_0 {
