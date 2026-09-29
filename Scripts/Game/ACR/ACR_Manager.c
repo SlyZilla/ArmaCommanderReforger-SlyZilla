@@ -544,11 +544,22 @@ class ACR_Manager : Managed
   return best;
  }
 
- protected vector SpawnPoint(ACR_Base base, float minDistance, float maxDistance)
+ // Random point in a ring around the base, nudged to a spot clear of walls,
+ // revetments and buildings (clearance = radius of the free cylinder needed).
+ protected vector SpawnPoint(ACR_Base base, float minDistance, float maxDistance, float clearance = 1)
  {
-  float angle = Math.RandomFloat(0, Math.PI2);
-  float distance = Math.RandomFloat(minDistance, maxDistance);
-  return Ground(base.GetOrigin() + Vector(Math.Cos(angle) * distance, 0, Math.Sin(angle) * distance));
+  vector fallback;
+  for (int attempt = 0; attempt < 8; attempt++)
+  {
+   float angle = Math.RandomFloat(0, Math.PI2);
+   float distance = Math.RandomFloat(minDistance, maxDistance + attempt * 5);
+   vector candidate = Ground(base.GetOrigin() + Vector(Math.Cos(angle) * distance, 0, Math.Sin(angle) * distance));
+   if (attempt == 0) fallback = candidate;
+   vector free;
+   if (SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 8, clearance, 2.5))
+    return Ground(free);
+  }
+  return fallback;
  }
 
  string Purchase(SCR_PlayerController pc, int entryIndex, string baseLabel)
@@ -575,7 +586,7 @@ class ACR_Manager : Managed
   entry.m_iBought++;
   string name = string.Format("%1 %2", entry.m_sName, entry.m_iBought);
 
-  SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, SpawnPoint(base, 10, 20), SpawnPoint(base, 5, 15));
+  SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, SpawnPoint(base, 10, 25, 4), SpawnPoint(base, 5, 15, 1.5));
   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
   return string.Format("%1 deploying at %2", name, base.m_sName);
  }
@@ -631,14 +642,66 @@ class ACR_Manager : Managed
   if (!m_Bases.Spend(key, cost)) return string.Format("Not enough RP (%1 needed)", cost);
   foreach (ResourceName prefab : missing)
   {
-   IEntity soldier = SpawnPrefab(prefab, SpawnPoint(base, 4, 12));
+   IEntity soldier = SpawnPrefab(prefab, SpawnPoint(base, 4, 12, 0.8));
    if (soldier) squad.m_Group.AddAIEntityToGroup(soldier);
   }
   PrintFormat("[ACR] REINFORCE %1 +%2 from %3 for %4 RP", squad.GetName(), missing.Count(), base.m_sName, cost);
   return string.Format("%1: %2 reinforcements from %3", squad.GetName(), missing.Count(), base.m_sName);
  }
 
+ // ================================================================ gunner drives (server)
+
+ protected ref map<IEntity, ref ACR_GunnerDrive> m_Drives = new map<IEntity, ref ACR_GunnerDrive>();
+
+ void GunnerDriveInput(SCR_PlayerController pc, IEntity vehicle, float throttle, float steer)
+ {
+  ChimeraCharacter driver;
+  if (!vehicle || ACR_GunnerDrive.DrivableFrom(pc.GetControlledEntity(), driver) != vehicle) return;
+  ACR_Squad squad = FindSquadBySoldier(driver);
+  if (!squad || squad.GetFaction() != SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId())) return;
+  ACR_GunnerDrive drive = m_Drives.Get(vehicle);
+  if (!drive)
+  {
+   if (throttle == 0 && steer == 0) return;
+   drive = new ACR_GunnerDrive();
+   drive.m_Vehicle = vehicle;
+   drive.m_Driver = driver;
+   drive.m_Squad = squad;
+   drive.m_PlayerId = pc.GetPlayerId();
+   drive.Begin();
+   m_Drives.Insert(vehicle, drive);
+   PrintFormat("[ACR] GUNNER DRIVE start: %1 (player %2)", squad.GetName(), pc.GetPlayerId());
+  }
+  drive.m_PlayerId = pc.GetPlayerId();
+  drive.m_Throttle = Math.Clamp(throttle, -1, 1);
+  drive.m_Steer = Math.Clamp(steer, -1, 1);
+  drive.m_LastInput = GetGame().GetWorld().GetWorldTime();
+ }
+
+ bool IsGunnerDriven(IEntity vehicle) { return m_Drives.Contains(vehicle); }
+
+ // Every frame on the server (physics inputs must be refreshed continuously).
+ void ServerFrame(float timeSlice)
+ {
+  if (m_Drives.IsEmpty() || !Replication.IsServer()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  array<IEntity> ended = {};
+  foreach (IEntity vehicle, ACR_GunnerDrive drive : m_Drives)
+   if (!drive.Apply(now)) ended.Insert(vehicle);
+  foreach (IEntity vehicle : ended)
+  {
+   ACR_GunnerDrive drive = m_Drives.Get(vehicle);
+   drive.End();
+   string squadName = "?";
+   if (drive.m_Squad) squadName = drive.m_Squad.GetName();
+   PrintFormat("[ACR] GUNNER DRIVE end: %1 (%2)", squadName, drive.m_EndReason);
+   m_Drives.Remove(vehicle);
+  }
+ }
+
  // ================================================================ local input (every machine)
+
+ protected IEntity m_LastDriveVehicle;
 
  void OnFrame()
  {
@@ -667,6 +730,21 @@ class ACR_Manager : Managed
   m_WasMovementActive = movementActive;
   m_WasMapOpen = mapOpen;
   pc.ACR_UpdateMap();
+  // Gunner drives: WASD in a turret steers the AI driver (Arma 3 style).
+  ChimeraCharacter driveDriver;
+  IEntity driveVehicle;
+  if (!mapOpen) driveVehicle = ACR_GunnerDrive.DrivableFrom(localBody, driveDriver);
+  float driveThrottle, driveSteer;
+  if (driveVehicle)
+  {
+   input.ActivateContext("ACR_GunnerContext");
+   driveThrottle = input.GetActionValue("ACR_DriveForward") - input.GetActionValue("ACR_DriveBack");
+   driveSteer = input.GetActionValue("ACR_DriveRight") - input.GetActionValue("ACR_DriveLeft");
+   if (driveVehicle != m_LastDriveVehicle)
+    SCR_HintManagerComponent.ShowCustomHint("Gunner seat: W/S drive forward/back, A/D steer. The AI driver takes over again when you give the squad a map order.", "Arma Commander", 8, true);
+  }
+  m_LastDriveVehicle = driveVehicle;
+  pc.ACR_UpdateGunnerDrive(driveVehicle, driveThrottle, driveSteer);
   if (!m_HintShown)
   {
    m_HintShown = true;

@@ -62,7 +62,11 @@ class ACR_Mode : GenericEntity
  override void EOnFrame(IEntity owner, float timeSlice)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (s_Instance == this && manager) manager.OnFrame();
+  if (s_Instance == this && manager)
+  {
+   manager.ServerFrame(timeSlice);
+   manager.OnFrame();
+  }
  }
 
  void ~ACR_Mode()

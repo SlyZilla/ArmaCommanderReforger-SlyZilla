@@ -377,6 +377,18 @@ class ACR_Squad : Managed
   return waypoint;
  }
 
+ // Drop every queued order and stand still (used while a gunner drives).
+ void Halt(string label)
+ {
+  if (!m_Group) return;
+  array<AIWaypoint> previousOrders = {};
+  m_Group.GetWaypoints(previousOrders);
+  foreach (AIWaypoint previousOrder : previousOrders) m_Group.RemoveWaypoint(previousOrder);
+  if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
+  m_Waypoint = null;
+  m_Order = label;
+ }
+
  bool MoveTo(vector destination)
  {
   if (!IssueWaypoint(WP_MOVE, destination)) return false;

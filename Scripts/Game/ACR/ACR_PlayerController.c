@@ -12,6 +12,8 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  ref SCR_MilitarySymbol m_GroupSymbol;
  override void OnCreateMarker(bool skipProfanityFilter = false)
  {
+  // Always update: units move into view without the map being panned.
+  m_bTestVisibleFrame = false;
   super.OnCreateMarker(true);
   if (!m_wRoot) return;
   m_Click = new ACR_MarkerClick();
@@ -100,6 +102,45 @@ modded class SCR_PlayerController
  {
   Print("[ACR] " + message);
   SCR_HintManagerComponent.ShowCustomHint(message, "Arma Commander", 5, true);
+ }
+
+ // ---------------------------------------------------------------- gunner drives
+ protected IEntity m_ACR_DriveVehicle;
+ protected float m_ACR_DriveThrottle;
+ protected float m_ACR_DriveSteer;
+ protected float m_ACR_DriveSent;
+
+ // Called every frame by the local manager; sends key changes plus a keep-alive while held.
+ void ACR_UpdateGunnerDrive(IEntity vehicle, float throttle, float steer)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (vehicle != m_ACR_DriveVehicle)
+  {
+   if (m_ACR_DriveVehicle && (m_ACR_DriveThrottle != 0 || m_ACR_DriveSteer != 0))
+    Rpc(ACR_DriveServer, SCR_EntityHelper.EntityToRplId(m_ACR_DriveVehicle), 0, 0);
+   m_ACR_DriveVehicle = vehicle;
+   m_ACR_DriveThrottle = 0;
+   m_ACR_DriveSteer = 0;
+  }
+  if (!vehicle) return;
+  bool changed = throttle != m_ACR_DriveThrottle || steer != m_ACR_DriveSteer;
+  bool held = throttle != 0 || steer != 0;
+  if (!changed && !(held && now - m_ACR_DriveSent > 250)) return;
+  m_ACR_DriveThrottle = throttle;
+  m_ACR_DriveSteer = steer;
+  m_ACR_DriveSent = now;
+  Rpc(ACR_DriveServer, SCR_EntityHelper.EntityToRplId(vehicle), throttle, steer);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_DriveServer(RplId vehicleId, float throttle, float steer)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager) manager.GunnerDriveInput(this, SCR_EntityHelper.RplIdToEntity(vehicleId), throttle, steer);
+ }
+ // Test hook: drive as if the keys were held.
+ void ACR_TestDrive(IEntity vehicle, float throttle, float steer)
+ {
+  Rpc(ACR_DriveServer, SCR_EntityHelper.EntityToRplId(vehicle), throttle, steer);
  }
 
  void ACR_Notify(string message)
@@ -228,9 +269,9 @@ modded class SCR_PlayerController
   SCR_MapMarkerManagerComponent manager = SCR_MapMarkerManagerComponent.GetInstance();
   if (manager)
   {
-   foreach (ACR_UnitMarker marker : m_ACR_Markers) manager.RemoveStaticMarker(marker);
-   foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) manager.RemoveStaticMarker(groupMarker);
-   foreach (ACR_UnitMarker baseMarker : m_ACR_BaseMarkers) manager.RemoveStaticMarker(baseMarker);
+   foreach (ACR_UnitMarker marker : m_ACR_Markers) manager.ACR_RemoveMarker(marker);
+   foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) manager.ACR_RemoveMarker(groupMarker);
+   foreach (ACR_UnitMarker baseMarker : m_ACR_BaseMarkers) manager.ACR_RemoveMarker(baseMarker);
   }
   m_ACR_BaseMarkers.Clear();
   m_ACR_Markers.Clear();
@@ -274,7 +315,7 @@ modded class SCR_PlayerController
   int count = shown.Count();
   if (m_ACR_Markers.Count() != count + 1)
   {
-   foreach (ACR_UnitMarker old : m_ACR_Markers) manager.RemoveStaticMarker(old);
+   foreach (ACR_UnitMarker old : m_ACR_Markers) manager.ACR_RemoveMarker(old);
    m_ACR_Markers.Clear();
    for (int i = 0; i <= count; i++)
    {
@@ -316,7 +357,7 @@ modded class SCR_PlayerController
  {
   if (m_ACR_GroupMarkers.Count() != m_ACR_LeaderIds.Count())
   {
-   foreach (ACR_UnitMarker old : m_ACR_GroupMarkers) manager.RemoveStaticMarker(old);
+   foreach (ACR_UnitMarker old : m_ACR_GroupMarkers) manager.ACR_RemoveMarker(old);
    m_ACR_GroupMarkers.Clear();
    for (int i = 0; i < m_ACR_LeaderIds.Count(); i++)
    {
@@ -689,7 +730,7 @@ modded class SCR_PlayerController
  {
   if (m_ACR_BaseMarkers.Count() != m_ACR_BaseNames.Count())
   {
-   foreach (ACR_UnitMarker old : m_ACR_BaseMarkers) manager.RemoveStaticMarker(old);
+   foreach (ACR_UnitMarker old : m_ACR_BaseMarkers) manager.ACR_RemoveMarker(old);
    m_ACR_BaseMarkers.Clear();
    for (int i = 0; i < m_ACR_BaseNames.Count(); i++)
    {

@@ -58,7 +58,11 @@ class ACR_TestRange : GenericEntity
  override void EOnFrame(IEntity owner, float timeSlice)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (s_Instance && manager) manager.OnFrame();
+  if (s_Instance && manager)
+  {
+   manager.ServerFrame(timeSlice);
+   manager.OnFrame();
+  }
  }
 
  void ~ACR_TestRange()

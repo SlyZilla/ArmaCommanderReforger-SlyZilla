@@ -278,7 +278,10 @@ class ACR_BaseSystem : Managed
   for (int i = 0; i < base.m_iGarrisonLeft; i++)
   {
    vector offset = Vector(Math.RandomFloat(-spread, spread), 0, Math.RandomFloat(-spread, spread));
-   IEntity soldier = ACR_Manager.SpawnPrefab(pool.GetRandomElement(), center + offset);
+   vector spot = ACR_Manager.Ground(center + offset);
+   vector free;
+   if (SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 5, 0.6, 2)) spot = ACR_Manager.Ground(free);
+   IEntity soldier = ACR_Manager.SpawnPrefab(pool.GetRandomElement(), spot);
    if (!soldier) continue;
    if (!group.AddAIEntityToGroup(soldier)) PrintFormat("[ACR] Garrison soldier %1 could not join its group", i);
    FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(soldier.FindComponent(FactionAffiliationComponent));

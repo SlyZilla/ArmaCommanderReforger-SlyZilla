@@ -14,6 +14,7 @@ class ACR_TestHarness : Managed
  static const int MODE_REQUISITION = 7;
  static const int MODE_GAMEMASTER = 8;
  static const int MODE_AI = 9;
+ static const int MODE_GUNNER = 10;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -42,6 +43,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRequisitionTest", flag)) mode = MODE_REQUISITION;
   if (System.GetCLIParam("acrGameMasterTest", flag)) mode = MODE_GAMEMASTER;
   if (System.GetCLIParam("acrAITest", flag)) mode = MODE_AI;
+  if (System.GetCLIParam("acrGunnerTest", flag)) mode = MODE_GUNNER;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -72,6 +74,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_REQUISITION) { TestRequisition(); return; }
   if (m_Mode == MODE_GAMEMASTER) { TestGameMaster(); return; }
   if (m_Mode == MODE_AI) { TestAI(); return; }
+  if (m_Mode == MODE_GUNNER) { TestGunner(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -508,5 +511,78 @@ class ACR_TestHarness : Managed
     PrintFormat("[ACR] AITEST   base %1: %2", base.m_sName, manager.m_Bases.Describe(base));
   }
   if (m_Ticks == 150) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrGunnerTest
+ IEntity m_GunVehicle;
+ ChimeraCharacter m_Gunner;
+ vector m_GunStart;
+ float m_GunYaw;
+
+ string GunState()
+ {
+  if (!m_GunVehicle) return "no vehicle";
+  vector angles = m_GunVehicle.GetYawPitchRoll();
+  CarControllerComponent car = CarControllerComponent.Cast(m_GunVehicle.FindComponent(CarControllerComponent));
+  string sim = "";
+  if (car && car.GetSimulation())
+  {
+   VehicleWheeledSimulation s = car.GetSimulation();
+   sim = string.Format("gear=%1 (n=%2) rpm=%3 thr=%4 brk=%5 steer=%6 engine=%7", s.GetGear(), s.GearboxGearsCount() - s.GearboxForwardGearsCount() - 1, (int)s.EngineGetRPM(), s.GetThrottle(), s.GetBrake(), s.GetSteering(), car.IsEngineOn());
+  }
+  vector offset = m_GunVehicle.GetOrigin() - m_GunStart;
+  float forward = vector.Dot(offset, Vector(Math.Sin(m_GunYaw * Math.DEG2RAD), 0, Math.Cos(m_GunYaw * Math.DEG2RAD)));
+  float speed = 0;
+  if (m_GunVehicle.GetPhysics()) speed = m_GunVehicle.GetPhysics().GetVelocity().Length();
+  return string.Format("moved=%1 forward=%2 yaw=%3 speed=%4 %5", offset.Length(), forward, angles[0], speed, sim);
+ }
+
+ void TestGunner()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  if (m_Ticks == 5) manager.SpawnUnit("Gun Truck", "", "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et", true, "", Ground("2470 0 2380"), Ground("2475 0 2370"));
+  if (m_Ticks == 14)
+  {
+   foreach (ACR_Squad squad : manager.m_Squads)
+   {
+    if (squad.GetName() != "Gun Truck") continue;
+    array<IEntity> vehicles = {};
+    squad.GetVehicles(vehicles);
+    if (!vehicles.IsEmpty()) m_GunVehicle = vehicles[0];
+   }
+   if (!m_GunVehicle) { Print("[ACR] GUNNER FAIL: no gun truck"); return; }
+   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(m_GunVehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+   array<BaseCompartmentSlot> turrets = {};
+   if (compartments) compartments.GetCompartmentsOfType(turrets, ECompartmentType.TURRET);
+   foreach (BaseCompartmentSlot turret : turrets)
+    if (turret.GetOccupant()) m_Gunner = ChimeraCharacter.Cast(turret.GetOccupant());
+   PrintFormat("[ACR] GUNNER turrets=%1 gunner=%2", turrets.Count(), m_Gunner);
+   if (m_Gunner) pc.ACR_Request(ACR_ERequest.POSSESS, SCR_EntityHelper.EntityToRplId(m_Gunner));
+  }
+  if (!m_GunVehicle) return;
+  if (m_Ticks == 17)
+  {
+   ChimeraCharacter driver;
+   IEntity drivable = ACR_GunnerDrive.DrivableFrom(pc.GetControlledEntity(), driver);
+   PrintFormat("[ACR] GUNNER possessed=%1 drivable=%2 driver=%3", pc.GetControlledEntity() == m_Gunner, drivable == m_GunVehicle, driver);
+   m_GunStart = m_GunVehicle.GetOrigin();
+   m_GunYaw = m_GunVehicle.GetYawPitchRoll()[0];
+  }
+  if (m_Ticks >= 18 && m_Ticks < 26) pc.ACR_TestDrive(m_GunVehicle, 1, 0);
+  if (m_Ticks >= 26 && m_Ticks < 31) pc.ACR_TestDrive(m_GunVehicle, 1, 1);
+  if (m_Ticks >= 31 && m_Ticks < 35) pc.ACR_TestDrive(m_GunVehicle, 0, 0);
+  if (m_Ticks == 35) { m_GunStart = m_GunVehicle.GetOrigin(); m_GunYaw = m_GunVehicle.GetYawPitchRoll()[0]; }
+  if (m_Ticks >= 35 && m_Ticks < 41) pc.ACR_TestDrive(m_GunVehicle, -1, 0);
+  if (m_Ticks >= 41 && m_Ticks < 44) pc.ACR_TestDrive(m_GunVehicle, 0, 0);
+  if (m_Ticks >= 17 && m_Ticks <= 45) PrintFormat("[ACR] GUNNER t=%1 drivenByGunner=%2 %3", m_Ticks, manager.IsGunnerDriven(m_GunVehicle), GunState());
+  if (m_Ticks == 46)
+  {
+   ACR_Squad squad = manager.FindSquadBySoldier(m_Gunner);
+   if (squad) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(squad.m_Group), m_GunVehicle.GetOrigin() + Vector(0, 0, 60));
+  }
+  if (m_Ticks == 50 || m_Ticks == 60) PrintFormat("[ACR] GUNNER after map order: drivenByGunner=%1 %2", manager.IsGunnerDriven(m_GunVehicle), GunState());
+  if (m_Ticks == 62) Print("[ACR] TEST COMPLETE");
  }
 }
