@@ -314,6 +314,14 @@ class ACR_Squad : Managed
  static const ResourceName WP_GET_IN_NEAREST = "{B049D4C74FBC0C4D}Prefabs/AI/Waypoints/AIWaypoint_GetInNearest.et";
  static const ResourceName WP_GET_IN = "{712F4795CF8B91C7}Prefabs/AI/Waypoints/AIWaypoint_GetIn.et";
  static const ResourceName WP_GET_OUT = "{C40316EE26846CAB}Prefabs/AI/Waypoints/AIWaypoint_GetOut.et";
+ static const ResourceName WP_SEARCH_DESTROY = "{B3E7B8DC2BAB8ACC}Prefabs/AI/Waypoints/AIWaypoint_SearchAndDestroy.et";
+ static const ResourceName WP_SUPPRESS = "{ED8277F35B46B4AA}Prefabs/AI/Waypoints/AIWaypoint_Suppress.et";
+
+ vector m_MoveTarget;   // where the current order points
+ bool m_bForced;        // current order outranks combat (Fast)
+ ResourceName m_sOrderPrefab;
+ float m_fOrderRadius = -1;
+ float m_fContactLogged;
 
  ACR_EMoveMode m_Mode = ACR_EMoveMode.COMBAT;
  string m_Order = "Holding";
@@ -366,7 +374,11 @@ class ACR_Squad : Managed
   AIWaypoint waypoint = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(resource, null, params));
   if (!waypoint) return null;
   SCR_AIWaypoint scripted = SCR_AIWaypoint.Cast(waypoint);
-  if (scripted && (forced || m_Mode == ACR_EMoveMode.FAST)) scripted.SetPriorityLevel(SCR_AIActionBase.PRIORITY_LEVEL_PLAYER);
+  m_bForced = forced || m_Mode == ACR_EMoveMode.FAST;
+  m_MoveTarget = position;
+  m_sOrderPrefab = prefab;
+  m_fOrderRadius = completionRadius;
+  if (scripted && m_bForced) scripted.SetPriorityLevel(SCR_AIActionBase.PRIORITY_LEVEL_PLAYER);
   if (completionRadius >= 0) waypoint.SetCompletionRadius(completionRadius);
   array<AIWaypoint> previousOrders = {};
   m_Group.GetWaypoints(previousOrders);
@@ -399,10 +411,107 @@ class ACR_Squad : Managed
 
  bool Defend(vector position)
  {
-  if (!IssueWaypoint(WP_DEFEND, position, 15, true)) return false;
+  if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
   m_Order = "Defending";
   m_OrderKind = 1;
   return true;
+ }
+
+ // Clear an objective: move in and fight through it (search and destroy).
+ bool Assault(vector position)
+ {
+  if (!IssueWaypoint(WP_SEARCH_DESTROY, position, 30)) return false;
+  m_Order = "Assaulting";
+  m_OrderKind = 0;
+  return true;
+ }
+
+ // Put fire on an area from where the squad stands (support by fire).
+ bool Suppress(vector position)
+ {
+  if (!IssueWaypoint(WP_SUPPRESS, position)) return false;
+  m_Order = "Suppressing";
+  m_OrderKind = 0;
+  return true;
+ }
+
+ // Living enemies this squad knows about within radius of it.
+ int KnownEnemies(float radius)
+ {
+  if (!m_Group) return 0;
+  SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+  IEntity anchor = GetAnchor();
+  if (!utility || !utility.m_Perception || !anchor) return 0;
+  int count;
+  foreach (IEntity enemy : utility.m_Perception.m_aTargetEntities)
+  {
+   if (!ACR_Respawn.IsAlive(enemy)) continue;
+   if (vector.DistanceXZ(enemy.GetOrigin(), anchor.GetOrigin()) <= radius) count++;
+  }
+  return count;
+ }
+
+ bool IsMounted()
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (character && character.IsInVehicle()) return true;
+  }
+  return false;
+ }
+
+ float StrengthRatio()
+ {
+  int full;
+  foreach (ResourceName prefab, int count : m_FullStrength) full += count;
+  if (full <= 0) return 1;
+  return CountAlive() / (float)full;
+ }
+
+ // Small-unit sense, every second for squads no player is leading:
+ //  - a Fast (forced) move stops ignoring the enemy once the squad makes contact;
+ //  - a squad that reaches its destination takes up positions instead of standing around;
+ //  - soldiers get the mission's AI skill.
+ void Tactics(int skill, float now)
+ {
+  if (!m_Group || m_Commander != 0) return;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body) continue;
+   SCR_AICombatComponent combat = SCR_AICombatComponent.Cast(body.FindComponent(SCR_AICombatComponent));
+   if (combat && combat.GetAISkill() != skill) combat.SetAISkill(skill);
+  }
+  bool contact = KnownEnemies(350) > 0;
+  bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
+  if (m_bForced && movingOrder && contact && !IsMounted())
+  {
+   string order = m_Order;
+   ACR_EMoveMode mode = m_Mode;
+   m_Mode = ACR_EMoveMode.COMBAT;
+   IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius);
+   m_Mode = mode;
+   m_Order = order;
+   PrintFormat("[ACR] TACTICS %1: contact, fighting its way forward", m_Name);
+  }
+  if (m_Order == "Moving" && m_OrderKind == 0 && !IsMounted())
+  {
+   array<AIWaypoint> waypoints = {};
+   m_Group.GetWaypoints(waypoints);
+   IEntity anchor = GetAnchor();
+   if (waypoints.IsEmpty() && anchor && vector.DistanceXZ(anchor.GetOrigin(), m_MoveTarget) < 60)
+   {
+    IssueWaypoint(WP_DEFEND, m_MoveTarget, 20);
+    m_Order = "Holding position";
+    m_OrderKind = 1;
+    PrintFormat("[ACR] TACTICS %1: arrived, taking positions", m_Name);
+   }
+  }
  }
 
  int CountAlive()

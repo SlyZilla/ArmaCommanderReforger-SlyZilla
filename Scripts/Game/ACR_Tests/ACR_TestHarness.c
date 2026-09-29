@@ -19,6 +19,7 @@ class ACR_TestHarness : Managed
  static const int MODE_RESPAWN = 12;
  static const int MODE_SUPPORT = 13;
  static const int MODE_GUNSHIP = 14;
+ static const int MODE_TACTICS = 15;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -52,6 +53,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRespawnTest", flag)) mode = MODE_RESPAWN;
   if (System.GetCLIParam("acrSupportTest", flag)) mode = MODE_SUPPORT;
   if (System.GetCLIParam("acrGunshipTest", flag)) mode = MODE_GUNSHIP;
+  if (System.GetCLIParam("acrTacticsTest", flag)) mode = MODE_TACTICS;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -87,6 +89,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_RESPAWN) { TestRespawn(); return; }
   if (m_Mode == MODE_SUPPORT) { TestSupport(); return; }
   if (m_Mode == MODE_GUNSHIP) { TestGunship(); return; }
+  if (m_Mode == MODE_TACTICS) { TestTactics(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -814,5 +817,44 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 12) PrintFormat("[ACR] GUNSHIPTEST UH-1H: %1", manager.m_Supports.Call("US", SupportIndex(manager, ACR_ESupportType.HELI_LOITER), uhSpot, true));
   if (m_Ticks % 10 == 0 && m_Ticks >= 20) PrintFormat("[ACR] GUNSHIPTEST t=%1 UH-1H target alive %2 | Mi-8 target alive %3", m_Ticks, AliveIn(m_UHTarget), AliveIn(m_MiTarget));
   if (m_Ticks == 150) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrTacticsTest
+ // The US AI commander (player leaves command) attacks the Soviet Outpost with
+ // five fireteams: reserve, pincer staging, preparation fire, smoke, base of
+ // fire, assault, falling back. The Soviet AI commander is off.
+ void TestTactics()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+  }
+  if (m_Ticks == 3)
+  {
+   pc.ACR_Request(ACR_ERequest.LEAVE_COMMAND);
+   manager.m_Bases.GetFaction("US").m_iRP = 300;
+   ResourceName team = FireTeamOf(manager, "US");
+   array<vector> spots = {"1350 0 2540".ToVector(), "1200 0 2520".ToVector(), "1400 0 2560".ToVector()};
+   foreach (vector spot : spots) ACR_Manager.SpawnPrefab(team, spot);
+  }
+  if (m_Ticks % 15 == 0 && m_Ticks >= 15)
+  {
+   ACR_Base outpost;
+   foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sName == "Outpost") outpost = base;
+   string line = string.Format("[ACR] TACTICSTEST t=%1 outpost: %2 | US rp %3", m_Ticks, manager.m_Bases.Describe(outpost), manager.m_Bases.GetRP("US"));
+   Print(line);
+   foreach (ACR_Squad squad : manager.m_Squads)
+   {
+    if (squad.GetFaction().GetFactionKey() != "US" || squad.IsMounted()) continue;
+    float d = -1;
+    if (squad.GetAnchor()) d = vector.DistanceXZ(squad.GetAnchor().GetOrigin(), outpost.GetOrigin());
+    PrintFormat("[ACR] TACTICSTEST   %1 task=%2 %3 | %4 m from Outpost | enemies known %5", squad.GetName(), squad.m_iAITask, squad.Describe(), (int)d, squad.KnownEnemies(400));
+   }
+  }
+  if (m_Ticks == 175) Print("[ACR] TEST COMPLETE");
  }
 }

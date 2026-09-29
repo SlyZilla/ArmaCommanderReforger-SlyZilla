@@ -35,6 +35,8 @@ class ACR_TestRange : ACR_Mode
   string flag;
   bool assault = System.GetCLIParam("acrAssaultTest", flag);
   if (assault) m_Rally = ACR_Manager.Ground("1280 0 2300");
+  bool tactics = System.GetCLIParam("acrTacticsTest", flag);
+  if (tactics) m_Rally = ACR_Manager.Ground("1300 0 2530");
   m_Target = ACR_Manager.Ground("1370 0 2832");
   m_Group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab("{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et", m_Rally));
   // The manager registers it automatically once its soldiers exist.
@@ -43,6 +45,7 @@ class ACR_TestRange : ACR_Mode
   // A second squad and an empty truck, for Get in / Get out / Unload.
   vector bravoPos = "1335 0 2862";
   if (assault) bravoPos = "1290 0 2295";
+  if (tactics) bravoPos = "1250 0 2510";
   m_Bravo = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab("{FCF7F5DC4F83955C}Prefabs/Groups/BLUFOR/Group_US_LightFireTeam.et", ACR_Manager.Ground(bravoPos)));
   if (m_Bravo) m_Bravo.SetCustomName("Bravo 1", 0);
   m_Truck = ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", ACR_Manager.Ground("1360 0 2852"));

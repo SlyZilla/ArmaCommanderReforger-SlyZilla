@@ -36,6 +36,7 @@ class ACR_Manager : Managed
  // Game Master for the host and server admins: debugging and fixing stuck units.
  bool m_bHostGameMaster = true;
  int m_iRespawnSeconds = 15;
+ int m_iAISkill = 70; // EAISkill.VETERAN
  ref ACR_Respawn m_Respawn;
  ref ACR_Supports m_Supports;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
@@ -117,6 +118,7 @@ class ACR_Manager : Managed
    if (squad.IsAlive())
    {
     squad.Refresh();
+    squad.Tactics(m_iAISkill, GetGame().GetWorld().GetWorldTime());
     continue;
    }
    PrintFormat("[ACR] Squad removed: %1", squad.GetName());

@@ -11,9 +11,26 @@ class ACR_AIAttack
 {
  ACR_Base m_Target;
  ref array<ACR_Squad> m_Squads = {};
- vector m_Staging;
+ ref array<vector> m_aStaging = {};  // one staging point per squad (pincers)
+ vector m_Staging;                   // main approach, for smoke
  bool m_bAssaulting;
  float m_fStageDeadline;
+ ACR_Squad m_Suppressor;             // support-by-fire squad
+ int m_iStartStrength;
+ bool m_bCounter;
+
+ vector StagingOf(ACR_Squad squad)
+ {
+  int i = m_Squads.Find(squad);
+  if (i >= 0 && i < m_aStaging.Count()) return m_aStaging[i];
+  return m_Staging;
+ }
+ void Remove(int index)
+ {
+  if (m_Suppressor == m_Squads[index]) m_Suppressor = null;
+  m_Squads.RemoveOrdered(index);
+  if (index < m_aStaging.Count()) m_aStaging.RemoveOrdered(index);
+ }
 }
 
 // Strategic AI for one faction, adapted from the Arma 3 mod's ai_strategic.sqf
@@ -40,6 +57,12 @@ class ACR_AICommander : Managed
  protected ref array<ref ACR_AIAttack> m_Attacks = {};
  protected ref map<ACR_Base, int> m_Defence = new map<ACR_Base, int>();
  protected ref map<ACR_Base, int> m_Threat = new map<ACR_Base, int>();
+ protected ref map<ACR_Base, string> m_LastOwner = new map<ACR_Base, string>();
+ protected ACR_Base m_CounterTarget;
+ protected float m_fCounterUntil;
+ static const float RETREAT_RATIO = 0.4;   // a squad below 40% in contact falls back
+ static const float ABORT_RATIO = 0.35;    // an attack below 35% of its strength is called off
+ static const int SUPPORT_RESERVE = 15;    // RP the AI keeps back when calling supports
 
  void ACR_AICommander(ACR_Manager manager, string factionKey)
  {
@@ -134,6 +157,72 @@ class ACR_AICommander : Managed
   }
  }
 
+ // ---------------------------------------------------------------- supports
+
+ protected int SupportIndex(ACR_ESupportType type)
+ {
+  foreach (int i, ACR_SupportEntry entry : m_Manager.m_Bases.GetFaction(m_sFaction).m_aSupports)
+   if (entry.m_eType == type) return i;
+  return -1;
+ }
+
+ protected bool SupportReady(ACR_ESupportType type)
+ {
+  int index = SupportIndex(type);
+  if (index < 0 || !m_Manager.m_Supports) return false;
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  ACR_SupportEntry entry = data.m_aSupports[index];
+  return GetGame().GetWorld().GetWorldTime() >= entry.m_fReadyAt && data.m_iRP >= entry.m_iCost + SUPPORT_RESERVE;
+ }
+
+ // Own soldiers (squads and players) within radius: never call fire on them.
+ protected bool FriendliesNear(vector point, float radius)
+ {
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity soldier = agent.GetControlledEntity();
+    if (soldier && vector.DistanceXZ(soldier.GetOrigin(), point) < radius) return true;
+   }
+  }
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (int id : players)
+  {
+   Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
+   IEntity body = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
+   if (faction && body && faction.GetFactionKey() == m_sFaction && vector.DistanceXZ(body.GetOrigin(), point) < radius) return true;
+  }
+  return false;
+ }
+
+ protected bool CallSupport(ACR_ESupportType type, vector point, string why)
+ {
+  if (!SupportReady(type)) return false;
+  if (FriendliesNear(point, ACR_Supports.ZoneRadius(type) + 40)) return false;
+  string result = m_Manager.m_Supports.Call(m_sFaction, SupportIndex(type), point, true);
+  PrintFormat("[ACR] AI %1 support (%2): %3", m_sFaction, why, result);
+  return true;
+ }
+
+ // Enemy squad nearest to a point (for defensive fires).
+ protected ACR_Squad EnemyNear(vector point, float radius)
+ {
+  ACR_Squad best;
+  float bestDistance = radius;
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == m_sFaction || !squad.GetAnchor()) continue;
+   float distance = vector.DistanceXZ(PositionOf(squad), point);
+   if (distance < bestDistance) { bestDistance = distance; best = squad; }
+  }
+  return best;
+ }
+
  // ---------------------------------------------------------------- 1. assessment
 
  protected void Assess()
@@ -167,6 +256,15 @@ class ACR_AICommander : Managed
    if (!base.m_sOwner.IsEmpty()) defence += base.m_iGarrisonLeft;
    m_Defence.Set(base, defence);
    m_Threat.Set(base, threat);
+   string before;
+   if (m_LastOwner.Find(base, before) && before == m_sFaction && base.m_sOwner != m_sFaction && !base.m_sOwner.IsEmpty())
+   {
+    // Hit back while the enemy is still thin on the ground.
+    m_CounterTarget = base;
+    m_fCounterUntil = GetGame().GetWorld().GetWorldTime() + 300000;
+    PrintFormat("[ACR] AI %1: lost %2, planning a counterattack", m_sFaction, base.m_sName);
+   }
+   m_LastOwner.Set(base, base.m_sOwner);
   }
  }
 
@@ -210,6 +308,15 @@ class ACR_AICommander : Managed
     PrintFormat("[ACR] AI %1: %2 defends %3 (threat %4)", m_sFaction, squad.GetName(), base.m_sName, threat);
    }
   }
+  // Defensive fires: shell the attackers of a base that is losing the fight.
+  foreach (ACR_Base held : ACR_Base.s_All)
+  {
+   if (held.m_sOwner != m_sFaction || ThreatTo(held) <= DefenceOf(held)) continue;
+   ACR_Squad attacker = EnemyNear(held.GetOrigin(), THREAT_DISTANCE + held.m_fRadius);
+   if (!attacker) continue;
+   if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, PositionOf(attacker), "defensive fire at " + held.m_sName)) break;
+   if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, PositionOf(attacker), "defensive fire at " + held.m_sName)) break;
+  }
  }
 
  // ---------------------------------------------------------------- 3. attacks
@@ -219,31 +326,58 @@ class ACR_AICommander : Managed
   ACR_FactionSettings settings = Settings();
   int maxAttacks = 1;
   if (settings) maxAttacks = settings.m_iAIAttacks;
-  if (m_Attacks.Count() >= maxAttacks) return;
+  bool counterDue = m_CounterTarget && m_CounterTarget.m_sOwner != m_sFaction && GetGame().GetWorld().GetWorldTime() < m_fCounterUntil && !IsAttacking(m_CounterTarget);
+  if (m_Attacks.Count() >= maxAttacks && !counterDue) return;
   array<ACR_Squad> free = {};
   MySquads(free, true);
+  // Keep a reserve at home once the force is big enough.
+  array<ACR_Squad> all = {};
+  MySquads(all, false);
+  if (all.Count() >= 5 && free.Count() >= 2)
+  {
+   ACR_Base home = HomeBase();
+   if (home)
+   {
+    SortByDistance(free, home.GetOrigin());
+    ACR_Squad reserve = free[0];
+    free.RemoveOrdered(0);
+    if (reserve.m_iAITask != ACR_EAITask.POSTED || vector.DistanceXZ(PositionOf(reserve), home.GetOrigin()) > 150)
+    {
+     reserve.m_iAITask = ACR_EAITask.POSTED;
+     reserve.SetMode(ACR_EMoveMode.COMBAT);
+     reserve.Defend(home.GetOrigin());
+     PrintFormat("[ACR] AI %1: %2 held in reserve at %3", m_sFaction, reserve.GetName(), home.m_sName);
+    }
+   }
+  }
   if (free.IsEmpty()) return;
 
-  // Pick the cheapest target: empty bases first, then enemy bases by
-  // (defence x ratio + garrison) scaled by distance, like the original.
+  // Target: a counterattack on a base just lost, otherwise the cheapest target:
+  // empty bases first, then enemy bases by (defence x ratio) scaled by distance.
   ACR_Base target;
-  float bestScore = float.MAX;
   vector from = PositionOf(free[0]);
-  foreach (ACR_Base base : ACR_Base.s_All)
+  if (counterDue) target = m_CounterTarget;
+  else
   {
-   if (base.m_sOwner == m_sFaction || !Visible(base) || IsAttacking(base)) continue;
-   float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
-   if (base.m_sOwner.IsEmpty()) cost = 1;
-   float score = cost * (vector.DistanceXZ(base.GetOrigin(), from) / 1000 + 0.1);
-   if (score < bestScore) { bestScore = score; target = base; }
+   float bestScore = float.MAX;
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (base.m_sOwner == m_sFaction || !Visible(base) || IsAttacking(base)) continue;
+    float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
+    if (base.m_sOwner.IsEmpty()) cost = 1;
+    float score = cost * (vector.DistanceXZ(base.GetOrigin(), from) / 1000 + 0.1);
+    if (score < bestScore) { bestScore = score; target = base; }
+   }
   }
   if (!target) return;
 
   float required = 1;
   if (!target.m_sOwner.IsEmpty()) required = Math.Max(10, DefenceOf(target) * ATTACK_RATIO * 0.65) + target.m_iGarrisonLeft;
+  if (counterDue) required = required * 0.7; // strike before they dig in
   SortByDistance(free, target.GetOrigin());
   ACR_AIAttack attack = new ACR_AIAttack();
   attack.m_Target = target;
+  attack.m_bCounter = counterDue;
   int strength;
   foreach (ACR_Squad squad : free)
   {
@@ -256,13 +390,26 @@ class ACR_AICommander : Managed
    PrintFormat("[ACR] AI %1: not strong enough for %2 (%3/%4)", m_sFaction, target.m_sName, strength, required);
    return; // Requisition() will add troops
   }
-  // Staging point on the attackers' side of the target.
+  attack.m_iStartStrength = strength;
+  // Staging: the main approach from the attackers' side; with several squads
+  // they spread out and come in from different angles (pincers).
   vector dir = from - target.GetOrigin();
   dir[1] = 0;
   dir.Normalize();
-  attack.m_Staging = ACR_Manager.Ground(target.GetOrigin() + dir * (target.m_fRadius + STAGING_DISTANCE));
-  attack.m_fStageDeadline = GetGame().GetWorld().GetWorldTime() + STAGING_TIMEOUT * 1000;
+  float ring = target.m_fRadius + STAGING_DISTANCE;
+  attack.m_Staging = ACR_Manager.Ground(target.GetOrigin() + dir * ring);
+  array<float> angles = {0, 55, -55, 90, -90};
+  foreach (int i, ACR_Squad member : attack.m_Squads)
+  {
+   float angle = angles[i % angles.Count()] * Math.DEG2RAD;
+   vector rotated = Vector(dir[0] * Math.Cos(angle) - dir[2] * Math.Sin(angle), 0, dir[0] * Math.Sin(angle) + dir[2] * Math.Cos(angle));
+   attack.m_aStaging.Insert(ACR_Manager.Ground(target.GetOrigin() + rotated * ring));
+  }
   bool empty = target.m_sOwner.IsEmpty();
+  // With two or more squads on a held base, the one on the direct approach
+  // becomes the base of fire while the others manoeuvre.
+  if (!empty && attack.m_Squads.Count() >= 2) attack.m_Suppressor = attack.m_Squads[0];
+  attack.m_fStageDeadline = GetGame().GetWorld().GetWorldTime() + STAGING_TIMEOUT * 1000;
   foreach (ACR_Squad squad : attack.m_Squads)
   {
    squad.m_iAITask = ACR_EAITask.ATTACK;
@@ -270,11 +417,54 @@ class ACR_AICommander : Managed
    squad.SetMode(ACR_EMoveMode.FAST);
    // Nobody to fight at an empty base: go straight in.
    if (empty) squad.MoveTo(target.GetOrigin());
-   else squad.MoveTo(attack.m_Staging);
+   else squad.MoveTo(attack.StagingOf(squad));
   }
   attack.m_bAssaulting = empty;
   m_Attacks.Insert(attack);
-  PrintFormat("[ACR] AI %1: attacking %2 with %3 squad(s), strength %4/%5", m_sFaction, target.m_sName, attack.m_Squads.Count(), strength, required);
+  string kind = "attacking";
+  if (counterDue) { kind = "COUNTERATTACKING"; m_CounterTarget = null; }
+  PrintFormat("[ACR] AI %1: %2 %3 with %4 squad(s), strength %5/%6", m_sFaction, kind, target.m_sName, attack.m_Squads.Count(), strength, required);
+ }
+
+ // The own spawn base furthest from the fighting.
+ protected ACR_Base HomeBase()
+ {
+  ACR_Base home;
+  float best = -1;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != m_sFaction || !base.m_bAllowSpawn) continue;
+   float nearestFront = 100000;
+   foreach (ACR_Base other : ACR_Base.s_All)
+    if (other.m_sOwner != m_sFaction) nearestFront = Math.Min(nearestFront, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
+   if (nearestFront > best) { best = nearestFront; home = base; }
+  }
+  return home;
+ }
+
+ protected ACR_Base NearestOwnBase(vector point)
+ {
+  ACR_Base nearest;
+  float best = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != m_sFaction) continue;
+   float d = vector.DistanceXZ(base.GetOrigin(), point);
+   if (d < best) { best = d; nearest = base; }
+  }
+  return nearest;
+ }
+
+ // A beaten squad breaks contact and falls back to the nearest own base.
+ protected void FallBack(ACR_Squad squad, string why)
+ {
+  ACR_Base refuge = NearestOwnBase(PositionOf(squad));
+  squad.m_iAITask = ACR_EAITask.FREE;
+  squad.SetMode(ACR_EMoveMode.FAST);
+  if (refuge) squad.Defend(refuge.GetOrigin());
+  string where = "its position";
+  if (refuge) where = refuge.m_sName;
+  PrintFormat("[ACR] AI %1: %2 falls back to %3 (%4)", m_sFaction, squad.GetName(), where, why);
  }
 
  protected bool IsAttacking(ACR_Base base)
@@ -292,32 +482,74 @@ class ACR_AICommander : Managed
    for (int s = attack.m_Squads.Count() - 1; s >= 0; s--)
    {
     ACR_Squad squad = attack.m_Squads[s];
-    if (!squad || !m_Manager.m_Squads.Contains(squad) || squad.HasPlayer()) attack.m_Squads.RemoveOrdered(s);
+    if (!squad || !m_Manager.m_Squads.Contains(squad) || squad.HasPlayer()) { attack.Remove(s); continue; }
+    // Badly hurt and still under fire: pull out instead of dying in place.
+    if (attack.m_bAssaulting && squad.StrengthRatio() < RETREAT_RATIO && squad.KnownEnemies(300) > 0)
+    {
+     FallBack(squad, "heavy casualties");
+     attack.Remove(s);
+    }
    }
    ACR_Base target = attack.m_Target;
    bool won = target && target.m_sOwner == m_sFaction;
-   if (!target || won || attack.m_Squads.IsEmpty())
+   int strength;
+   foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
+   bool broken = attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * ABORT_RATIO;
+   if (!target || won || attack.m_Squads.IsEmpty() || broken)
    {
     string outcome = "failed";
     if (won) outcome = "won";
+    if (broken) outcome = "called off (too many losses)";
     if (target) PrintFormat("[ACR] AI %1: attack on %2 %3", m_sFaction, target.m_sName, outcome);
-    foreach (ACR_Squad squad : attack.m_Squads) squad.m_iAITask = ACR_EAITask.FREE;
+    foreach (ACR_Squad squad : attack.m_Squads)
+    {
+     if (broken) FallBack(squad, "attack called off");
+     else squad.m_iAITask = ACR_EAITask.FREE;
+    }
     m_Attacks.RemoveOrdered(i);
     continue;
    }
-   if (attack.m_bAssaulting) continue;
+   if (attack.m_bAssaulting)
+   {
+    // Base of fire keeps suppressing until the assault squads are on the
+    // objective, then lifts fire and joins in.
+    if (attack.m_Suppressor)
+    {
+     bool closeIn = false;
+     foreach (ACR_Squad assaulter : attack.m_Squads)
+      if (assaulter != attack.m_Suppressor && vector.DistanceXZ(PositionOf(assaulter), target.GetOrigin()) < target.m_fRadius + 60) closeIn = true;
+     if (closeIn)
+     {
+      attack.m_Suppressor.SetMode(ACR_EMoveMode.COMBAT);
+      attack.m_Suppressor.Assault(target.GetOrigin());
+      PrintFormat("[ACR] AI %1: %2 lifts fire and joins the assault on %3", m_sFaction, attack.m_Suppressor.GetName(), target.m_sName);
+      attack.m_Suppressor = null;
+     }
+     else attack.m_Suppressor.Suppress(target.GetOrigin());
+    }
+    continue;
+   }
    bool gathered = true;
    foreach (ACR_Squad squad : attack.m_Squads)
-    if (vector.DistanceXZ(PositionOf(squad), attack.m_Staging) > 120) gathered = false;
+    if (vector.DistanceXZ(PositionOf(squad), attack.StagingOf(squad)) > 120) gathered = false;
    if (gathered || GetGame().GetWorld().GetWorldTime() > attack.m_fStageDeadline)
    {
     attack.m_bAssaulting = true;
+    // Preparation: shell the objective, screen the approach with smoke.
+    if (!CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, target.GetOrigin(), "preparation fire on " + target.m_sName))
+     CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, target.GetOrigin(), "preparation fire on " + target.m_sName);
+    vector screen = attack.m_Staging + (target.GetOrigin() - attack.m_Staging) * 0.55;
+    CallSupport(ACR_ESupportType.MORTAR_SMOKE, screen, "smoke screen for " + target.m_sName);
+    if (attack.m_bCounter) CallSupport(ACR_ESupportType.HELI_LOITER, target.GetOrigin(), "gunship for the counterattack on " + target.m_sName);
     foreach (ACR_Squad squad : attack.m_Squads)
     {
      squad.SetMode(ACR_EMoveMode.COMBAT);
-     squad.MoveTo(target.GetOrigin());
+     if (squad == attack.m_Suppressor) squad.Suppress(target.GetOrigin());
+     else squad.Assault(target.GetOrigin());
     }
-    PrintFormat("[ACR] AI %1: assaulting %2", m_sFaction, target.m_sName);
+    string suppressor = "none";
+    if (attack.m_Suppressor) suppressor = attack.m_Suppressor.GetName();
+    PrintFormat("[ACR] AI %1: assaulting %2 from %3 directions, base of fire: %4", m_sFaction, target.m_sName, attack.m_Squads.Count(), suppressor);
    }
   }
  }
