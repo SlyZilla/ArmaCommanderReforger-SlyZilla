@@ -303,7 +303,7 @@ class ACR_AICommander : Managed
     ACR_Squad squad = free[k];
     if (vector.DistanceXZ(PositionOf(squad), base.GetOrigin()) > DEFENSE_DISTANCE * 3) { k++; continue; }
     squad.SetMode(ACR_EMoveMode.FAST);
-    squad.Defend(base.GetOrigin());
+    Travel(squad, base.GetOrigin(), true, 0);
     squad.m_iAITask = ACR_EAITask.DEFEND;
     squad.m_AITarget = base;
     needed -= squad.Strength();
@@ -347,7 +347,7 @@ class ACR_AICommander : Managed
     {
      reserve.m_iAITask = ACR_EAITask.POSTED;
      reserve.SetMode(ACR_EMoveMode.COMBAT);
-     reserve.Defend(home.GetOrigin());
+     Travel(reserve, home.GetOrigin(), true, 0);
      PrintFormat("[ACR] AI %1: %2 held in reserve at %3", m_sFaction, reserve.GetName(), home.m_sName);
     }
    }
@@ -390,7 +390,7 @@ class ACR_AICommander : Managed
    runner.m_iAITask = ACR_EAITask.ATTACK;
    runner.m_AITarget = empty;
    runner.SetMode(ACR_EMoveMode.FAST);
-   runner.MoveTo(empty.GetOrigin());
+   Travel(runner, empty.GetOrigin(), false, 100);
    free.RemoveItem(runner);
    m_Attacks.Insert(grab);
    grabs++;
@@ -472,8 +472,8 @@ class ACR_AICommander : Managed
    squad.m_AITarget = target;
    squad.SetMode(ACR_EMoveMode.FAST);
    // Nobody to fight at an empty base: go straight in.
-   if (empty) squad.MoveTo(target.GetOrigin());
-   else squad.MoveTo(attack.StagingOf(squad));
+   if (empty) Travel(squad, target.GetOrigin(), false, 100);
+   else Travel(squad, attack.StagingOf(squad), false, 0);
   }
   attack.m_bAssaulting = empty;
   m_Attacks.Insert(attack);
@@ -509,6 +509,31 @@ class ACR_AICommander : Managed
    if (d < best) { best = d; nearest = base; }
   }
   return nearest;
+ }
+
+ // Long trips on foot become rides: a free truck nearby picks the squad up and
+ // drops it dropShort metres before the destination, where it carries on.
+ static const float RIDE_DISTANCE = 900;
+ protected void Travel(ACR_Squad squad, vector destination, bool defend, float dropShort)
+ {
+  if (m_Manager.m_Rides && !squad.IsMounted() && vector.DistanceXZ(PositionOf(squad), destination) > RIDE_DISTANCE)
+  {
+   ResourceName prefab = ACR_Squad.WP_MOVE;
+   float radius = -1;
+   string order = "Moving";
+   int kind = 0;
+   if (defend)
+   {
+    prefab = ACR_Squad.WP_DEFEND;
+    radius = 15;
+    order = "Defending";
+    kind = 1;
+   }
+   string why;
+   if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why)) return;
+  }
+  if (defend) squad.Defend(destination);
+  else squad.MoveTo(destination);
  }
 
  // A beaten squad breaks contact and falls back to the nearest own base.
@@ -646,7 +671,7 @@ class ACR_AICommander : Managed
    squad.m_iAITask = ACR_EAITask.POSTED;
    if (!nearest || best < 150) continue;
    squad.SetMode(ACR_EMoveMode.FAST);
-   squad.Defend(nearest.GetOrigin());
+   Travel(squad, nearest.GetOrigin(), true, 0);
    PrintFormat("[ACR] AI %1: %2 posted to %3", m_sFaction, squad.GetName(), nearest.m_sName);
   }
  }
@@ -678,8 +703,21 @@ class ACR_AICommander : Managed
    if (nearestFront > best) { best = nearestFront; spawn = base; }
   }
   if (!spawn) return;
-  // Buy up to two squads per tick from what's affordable, favouring infantry.
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  // Squads keep having to walk far with no truck to fetch them: buy a transport first.
+  if (m_Manager.m_Rides && m_Manager.m_Rides.ShortOfTransport(m_sFaction) && m_Manager.m_Rides.CountTransports(m_sFaction) < 3)
+  {
+   int truck = -1;
+   foreach (int t, ACR_RequisitionEntry candidate : data.m_aRequisitions)
+    if (candidate.m_bTransport && candidate.m_iRemaining > 0 && candidate.m_iCost <= data.m_iRP && (truck < 0 || candidate.m_iCost < data.m_aRequisitions[truck].m_iCost)) truck = t;
+   if (truck >= 0)
+   {
+    PrintFormat("[ACR] AI %1 requisition (transport): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, truck, spawn));
+    m_Manager.m_Rides.m_NoTransportAt.Remove(m_sFaction);
+    return;
+   }
+  }
+  // Buy up to two squads per tick from what's affordable, favouring infantry.
   for (int n = 0; n < 2 && mine.Count() + n < cap; n++)
   {
    array<int> options = {};

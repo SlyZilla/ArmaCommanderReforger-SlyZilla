@@ -13,6 +13,7 @@ enum ACR_EPanelAction
  SET_LZ,
  TOGGLE_REQUISITION,
  TOGGLE_SUPPORTS,
+ RIDE,
  REQUISITION_ENTRY = 100, // + entry index (below 200)
  SUPPORT_ENTRY = 200     // + entry index
 }
@@ -22,7 +23,8 @@ enum ACR_ECursorMode
  MOVE,
  DEFEND,
  GET_IN,
- LZ
+ LZ,
+ RIDE
 }
 
 // Arma Commander side panel on the fullscreen map. Built from script out of the
@@ -63,6 +65,7 @@ class ACR_CommandPanel : Managed
  protected ref array<SCR_ButtonTextComponent> m_SupportButtons = {};
  protected SCR_ButtonTextComponent m_GetInButton;
  protected SCR_ButtonTextComponent m_LZButton;
+ protected SCR_ButtonTextComponent m_RideButton;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
 
@@ -134,7 +137,9 @@ class ACR_CommandPanel : Managed
   Widget orders2 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   AddButton(orders2, "Get out", ACR_EPanelAction.GET_OUT, true);
   AddButton(orders2, "Unload", ACR_EPanelAction.UNLOAD, true);
-  m_LZButton = AddButton(m_OrderSection, "Unload at LZ", ACR_EPanelAction.SET_LZ);
+  Widget orders3 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_RideButton = AddButton(orders3, "Ride", ACR_EPanelAction.RIDE, true);
+  m_LZButton = AddButton(orders3, "Unload at LZ", ACR_EPanelAction.SET_LZ, true);
   m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
@@ -228,6 +233,11 @@ class ACR_CommandPanel : Managed
   {
    if (cursorMode == ACR_ECursorMode.LZ) m_LZButton.SetText("[Unload at LZ]");
    else m_LZButton.SetText("Unload at LZ");
+  }
+  if (m_RideButton)
+  {
+   if (cursorMode == ACR_ECursorMode.RIDE) m_RideButton.SetText("[Ride]");
+   else m_RideButton.SetText("Ride");
   }
   if (m_Hint) m_Hint.SetText(hint);
  }

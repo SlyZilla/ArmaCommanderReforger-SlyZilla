@@ -563,6 +563,7 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend there (click Defend again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in (click Get in again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.LZ) hint = "Right-click the landing zone: they jump out when their ride sets down there";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) hint = "Right-click the destination: a free truck nearby picks them up and drops them there";
   else hint = "Right-click: move there";
   m_ACR_Panel.SetGroup(m_ACR_GroupNames[index], m_ACR_GroupDetails[index], friendly, m_ACR_IsCommander, m_ACR_GroupSymbols[index * 4 + 3], m_ACR_CursorMode, hint);
   bool missing = m_ACR_GroupDetails[index].Contains("missing");
@@ -595,6 +596,10 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.SET_LZ:
     if (m_ACR_CursorMode == ACR_ECursorMode.LZ) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
     else m_ACR_CursorMode = ACR_ECursorMode.LZ;
+    return;
+   case ACR_EPanelAction.RIDE:
+    if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+    else m_ACR_CursorMode = ACR_ECursorMode.RIDE;
     return;
    case ACR_EPanelAction.GET_OUT: ACR_Request(ACR_ERequest.ORDER_GET_OUT, m_ACR_SelectedGroup); return;
    case ACR_EPanelAction.UNLOAD: ACR_Request(ACR_ERequest.ORDER_UNLOAD, m_ACR_SelectedGroup); return;
@@ -663,6 +668,7 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) command = ACR_ERequest.ORDER_DEFEND;
   if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) command = ACR_ERequest.ORDER_GET_IN;
   if (m_ACR_CursorMode == ACR_ECursorMode.LZ) command = ACR_ERequest.ORDER_SET_LZ;
+  if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) command = ACR_ERequest.ORDER_RIDE;
   ACR_Request(command, m_ACR_SelectedGroup, Vector(x, 0, z));
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   return true;

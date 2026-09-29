@@ -320,6 +320,7 @@ class ACR_Squad : Managed
  vector m_MoveTarget;   // where the current order points
  bool m_bForced;        // current order outranks combat (Fast)
  ResourceName m_sOrderPrefab;
+ int m_iOrderSerial;     // bumped by every new order from a player or the AI commander (not by internal re-issues)
  float m_fOrderRadius = -1;
  float m_fContactLogged;
 
@@ -393,16 +394,25 @@ class ACR_Squad : Managed
  void Halt(string label)
  {
   if (!m_Group) return;
+  ClearOrders();
+  m_Order = label;
+  m_iOrderSerial++;
+ }
+
+ protected void ClearOrders()
+ {
+  if (!m_Group) return;
   array<AIWaypoint> previousOrders = {};
   m_Group.GetWaypoints(previousOrders);
   foreach (AIWaypoint previousOrder : previousOrders) m_Group.RemoveWaypoint(previousOrder);
   if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
   m_Waypoint = null;
-  m_Order = label;
  }
 
  bool MoveTo(vector destination)
  {
+  m_iOrderSerial++;
+  m_bRegrouping = false;
   if (!IssueWaypoint(WP_MOVE, destination)) return false;
   m_Order = "Moving";
   m_OrderKind = 0;
@@ -411,6 +421,8 @@ class ACR_Squad : Managed
 
  bool Defend(vector position)
  {
+  m_iOrderSerial++;
+  m_bRegrouping = false;
   if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
   m_Order = "Defending";
   m_OrderKind = 1;
@@ -420,6 +432,8 @@ class ACR_Squad : Managed
  // Clear an objective: move in and fight through it (search and destroy).
  bool Assault(vector position)
  {
+  m_iOrderSerial++;
+  m_bRegrouping = false;
   if (!IssueWaypoint(WP_SEARCH_DESTROY, position, 30)) return false;
   m_Order = "Assaulting";
   m_OrderKind = 0;
@@ -429,6 +443,8 @@ class ACR_Squad : Managed
  // Put fire on an area from where the squad stands (support by fire).
  bool Suppress(vector position)
  {
+  m_iOrderSerial++;
+  m_bRegrouping = false;
   if (!IssueWaypoint(WP_SUPPRESS, position)) return false;
   m_Order = "Suppressing";
   m_OrderKind = 0;
@@ -488,8 +504,9 @@ class ACR_Squad : Managed
    if (combat && combat.GetAISkill() != skill) combat.SetAISkill(skill);
   }
   bool contact = KnownEnemies(350) > 0;
+  Cohesion(now, contact);
   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
-  if (m_bForced && movingOrder && contact && !IsMounted())
+  if (m_bForced && movingOrder && contact && !IsMounted() && !m_bRegrouping)
   {
    string order = m_Order;
    ACR_EMoveMode mode = m_Mode;
@@ -513,6 +530,79 @@ class ACR_Squad : Managed
    }
   }
   DriveWatch(now, contact);
+ }
+
+ // ---------------------------------------------------------------- cohesion
+ // On a long move the leader keeps his pace while the rest string out behind
+ // him. When a third of the squad is more than 60 m off, the squad stops (no
+ // orders: the game's formation pulls everyone back to the leader) until they
+ // are within 25 m, then carries on. Not in contact, and at most once a minute.
+ static const float STRAGGLER_DISTANCE = 60;
+ static const float REGROUPED_DISTANCE = 25;
+ static const float REGROUP_TIMEOUT_MS = 45000;
+ static const float REGROUP_COOLDOWN_MS = 60000;
+
+ protected bool m_bRegrouping;
+ protected float m_fRegroupSince;
+ protected float m_fNextRegroup;
+ protected ResourceName m_sRegroupPrefab;
+ protected vector m_RegroupTarget;
+ protected float m_fRegroupRadius;
+ protected string m_sRegroupOrder;
+ protected int m_iRegroupKind;
+
+ // Living members on foot farther than this from the leader.
+ int Stragglers(float radius)
+ {
+  IEntity leader = GetLeader();
+  if (!leader) return 0;
+  int count;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || body == leader || !ACR_Respawn.IsAlive(body) || ACR_Transport.VehicleOf(body)) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), leader.GetOrigin()) > radius) count++;
+  }
+  return count;
+ }
+
+ protected void Cohesion(float now, bool contact)
+ {
+  if (m_bRegrouping)
+  {
+   bool closed = Stragglers(REGROUPED_DISTANCE) == 0;
+   if (!closed && !contact && now - m_fRegroupSince < REGROUP_TIMEOUT_MS) return;
+   m_bRegrouping = false;
+   m_fNextRegroup = now + REGROUP_COOLDOWN_MS;
+   IssueWaypoint(m_sRegroupPrefab, m_RegroupTarget, m_fRegroupRadius);
+   m_Order = m_sRegroupOrder;
+   m_OrderKind = m_iRegroupKind;
+   PrintFormat("[ACR] TACTICS %1: regrouped (%2 s), moving on", m_Name, (int)((now - m_fRegroupSince) / 1000));
+   return;
+  }
+  if (contact || now < m_fNextRegroup || !m_Group || HasPlayer() || IsMounted()) return;
+  bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
+  if (!movingOrder) return;
+  array<AIWaypoint> waypoints = {};
+  m_Group.GetWaypoints(waypoints);
+  IEntity leader = GetLeader();
+  if (waypoints.IsEmpty() || !leader || vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget) < 200) return;
+  int alive = CountAlive();
+  if (alive < 3) return;
+  int behind = Stragglers(STRAGGLER_DISTANCE);
+  if (behind * 3 < alive) return;
+  m_sRegroupPrefab = m_sOrderPrefab;
+  m_RegroupTarget = m_MoveTarget;
+  m_fRegroupRadius = m_fOrderRadius;
+  m_sRegroupOrder = m_Order;
+  m_iRegroupKind = m_OrderKind;
+  ClearOrders();
+  m_Order = "Regrouping";
+  m_bRegrouping = true;
+  m_fRegroupSince = now;
+  PrintFormat("[ACR] TACTICS %1: %2 of %3 strung out, regrouping", m_Name, behind, alive);
  }
 
  // ---------------------------------------------------------------- stalled vehicles
@@ -719,14 +809,24 @@ class ACR_Squad : Managed
    foreach (ACR_Squad rider : riders) if (rider != this && !rider.HasPlayer()) rider.DismountNow();
   }
   ResourceName prefab = m_sOrderPrefab;
-  vector target = m_MoveTarget;
-  float radius = m_fOrderRadius;
-  string order = m_Order;
-  int kind = m_OrderKind;
-  DismountNow();
+  if (!resume) prefab = "";
+  DismountAndContinue(prefab, m_MoveTarget, m_fOrderRadius, m_Order, m_OrderKind);
   m_StallVehicle = null;
   m_iUnsticks = 0;
-  m_bResumeOnFoot = resume && !prefab.IsEmpty();
+ }
+
+ // Everyone out now; then carry out this order on foot (or, with no prefab,
+ // take positions where they got out).
+ void DismountAndContinue(ResourceName prefab, vector target, float radius, string order, int kind)
+ {
+  DismountNow();
+  ContinueAfterDismount(prefab, target, radius, order, kind);
+ }
+
+ // For a squad already getting out: what to do once everyone is on the ground.
+ void ContinueAfterDismount(ResourceName prefab, vector target, float radius, string order, int kind)
+ {
+  m_bResumeOnFoot = !prefab.IsEmpty();
   m_sResumePrefab = prefab;
   m_ResumeTarget = target;
   m_fResumeRadius = radius;
@@ -845,7 +945,14 @@ class ACR_Squad : Managed
  // Board a specific vehicle if one is within 30 m of the point, otherwise the nearest free one.
  bool GetIn(vector position)
  {
-  Vehicle vehicle = FindVehicleNear(position, 30);
+  return BoardVehicle(FindVehicleNear(position, 30), position);
+ }
+
+ // Board this vehicle (or, without one, the nearest free vehicle to the point).
+ bool BoardVehicle(Vehicle vehicle, vector position)
+ {
+  m_iOrderSerial++;
+  m_bRegrouping = false;
   if (vehicle)
   {
    SCR_BoardingEntityWaypoint boarding = SCR_BoardingEntityWaypoint.Cast(IssueWaypoint(WP_GET_IN, vehicle.GetOrigin(), -1, true));
@@ -860,6 +967,7 @@ class ACR_Squad : Managed
 
  bool GetOut()
  {
+  m_iOrderSerial++;
   array<IEntity> vehicles = {};
   GetVehicles(vehicles);
   if (vehicles.IsEmpty()) return false;

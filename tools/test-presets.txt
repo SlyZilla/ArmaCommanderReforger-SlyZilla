@@ -13,4 +13,5 @@ gunship|-acrGunshipTest 1|180
 tactics|-acrTacticsTest 1|200
 transport|-acrTransportTest 1|130
 stall|-acrStallTest 1|150
+ride|-acrRideTest 1|200
 soak|-acrSoakTest 1|1320|Worlds/ACR_Arland.ent

@@ -17,7 +17,8 @@ enum ACR_ERequest
  LEAVE_COMMAND,
  REINFORCE,        // refill the squad's fallen soldiers
  ORDER_SET_LZ,     // passengers dismount on their own when their ride sets down near point
- UNLOAD_HERE       // player in a vehicle: every passenger squad out now
+ UNLOAD_HERE,      // player in a vehicle: every passenger squad out now
+ ORDER_RIDE        // a nearby free transport picks the squad up and drives it to point
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -41,6 +42,7 @@ class ACR_Manager : Managed
  int m_iAISkill = 70; // EAISkill.VETERAN
  ref ACR_Respawn m_Respawn;
  ref ACR_Supports m_Supports;
+ ref ACR_Rides m_Rides;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
 
@@ -114,6 +116,8 @@ class ACR_Manager : Managed
   TickAICommanders();
   if (!m_Respawn) m_Respawn = new ACR_Respawn(this);
   m_Respawn.Tick();
+  if (!m_Rides) m_Rides = new ACR_Rides(this);
+  m_Rides.Tick();
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
@@ -488,7 +492,7 @@ class ACR_Manager : Managed
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can give map orders. Take command first.";
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return "That squad is not ready";
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ;
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE;
   // Reject nonsense coordinates from a client.
   if (usesPoint && vector.Distance(point, anchor.GetOrigin()) > 20000) return "Order is too far away";
   if (usesPoint) point = Ground(point);
@@ -522,6 +526,8 @@ class ACR_Manager : Managed
     return Unload(squad);
    case ACR_ERequest.ORDER_SET_LZ:
     return SetLZ(squad, point);
+   case ACR_ERequest.ORDER_RIDE:
+    return Ride(squad, point);
    case ACR_ERequest.MODE_COMBAT:
     squad.SetMode(ACR_EMoveMode.COMBAT);
     return name + ": combat";
@@ -535,6 +541,19 @@ class ACR_Manager : Managed
     return "Unknown command";
   }
   return name + ": could not create that order";
+ }
+
+ // A free transport nearby (never fetched from far away) picks the squad up,
+ // drops it at the point and it takes positions there.
+ string Ride(ACR_Squad squad, vector point)
+ {
+  if (!m_Rides) m_Rides = new ACR_Rides(this);
+  string why;
+  if (!m_Rides.Request(squad, point, 0, "", -1, "Holding position", 1, why)) return squad.GetName() + ": no ride, " + why;
+  ACR_Ride ride = m_Rides.RideOf(squad);
+  string taxi = "a transport";
+  if (ride) taxi = ride.m_Taxi.GetName();
+  return string.Format("%1: %2 is on its way to pick them up", squad.GetName(), taxi);
  }
 
  // Queue an unload: the passengers get out by themselves when their vehicle

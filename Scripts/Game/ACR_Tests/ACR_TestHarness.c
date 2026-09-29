@@ -22,6 +22,7 @@ class ACR_TestHarness : Managed
  static const int MODE_TACTICS = 15;
  static const int MODE_TRANSPORT = 16;
  static const int MODE_STALL = 17;
+ static const int MODE_RIDE = 18;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -58,6 +59,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrTacticsTest", flag)) mode = MODE_TACTICS;
   if (System.GetCLIParam("acrTransportTest", flag)) mode = MODE_TRANSPORT;
   if (System.GetCLIParam("acrStallTest", flag)) mode = MODE_STALL;
+  if (System.GetCLIParam("acrRideTest", flag)) mode = MODE_RIDE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -96,6 +98,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_TACTICS) { TestTactics(); return; }
   if (m_Mode == MODE_TRANSPORT) { TestTransport(); return; }
   if (m_Mode == MODE_STALL) { TestStall(); return; }
+  if (m_Mode == MODE_RIDE) { TestRide(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -1058,5 +1061,84 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] STALL t=%1 lone: %2", m_Ticks, StallState(m_LoneSquad, m_LoneVehicle, m_LoneStart));
   }
   if (m_Ticks == 110) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrRideTest
+ // Bravo takes the "Ride" order to a point 560 m south; a crewed truck 70 m away
+ // fetches it. The fetch limits are checked directly. Alpha walks east along the
+ // runway with two men dragged 90 m behind, and must regroup before moving on.
+ protected ACR_Squad m_RideSquad;
+ protected ACR_Squad m_WalkSquad;
+ protected ACR_Squad m_TaxiSquad;
+ protected vector m_RideDest;
+
+ string RideState()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  string state = "none";
+  ACR_Ride ride;
+  if (manager.m_Rides) ride = manager.m_Rides.RideOf(m_RideSquad);
+  if (ride) state = typename.EnumToString(ACR_ERideState, ride.m_State);
+  float toDest = -1;
+  IEntity anchor = m_RideSquad.GetAnchor();
+  if (anchor) toDest = vector.DistanceXZ(anchor.GetOrigin(), m_RideDest);
+  float taxiMoved = -1;
+  IEntity truck = ACR_Transport.CrewedVehicle(m_TaxiSquad);
+  if (truck) taxiMoved = vector.DistanceXZ(truck.GetOrigin(), Ground("1400 0 2850"));
+  return string.Format("ride=%1 bravo='%2' aboard=%3/%4 toDest=%5m | taxi='%6' truckFromStart=%7m", state, m_RideSquad.m_Order, Aboard(m_Range.m_Bravo), AliveIn(m_Range.m_Bravo), (int)toDest, m_TaxiSquad.m_Order, (int)taxiMoved);
+ }
+
+ void TestRide()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+  }
+  if (m_Ticks == 5)
+   manager.SpawnUnit("Taxi 1", "", "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", true, "", Ground("1400 0 2850"), Ground("1405 0 2855"));
+  if (m_Ticks == 14)
+  {
+   m_TaxiSquad = NamedSquad(manager, "Taxi 1");
+   m_RideSquad = manager.FindSquadByGroup(m_Range.m_Bravo);
+   m_WalkSquad = Squad();
+   if (!m_TaxiSquad || !m_RideSquad || !m_WalkSquad || !manager.m_Rides) { Print("[ACR] RIDE FAIL: setup incomplete"); return; }
+   float d;
+   ACR_Squad nearOk = manager.m_Rides.FindTransport("US", Ground("1300 0 2250"), 2000, 3, d);
+   ACR_Squad tooFar = manager.m_Rides.FindTransport("US", Ground("1300 0 2250"), 1000, 3, d);
+   ACR_Squad veryFar = manager.m_Rides.FindTransport("US", Ground("400 0 2250"), 5000, 3, d);
+   PrintFormat("[ACR] RIDE limits: 600 m away on a 2 km trip -> %1 (expect Taxi 1) | 600 m on a 1 km trip -> %2 (expect none) | 1 km away -> %3 (expect none) | free=%4 seats=%5",
+    nearOk, tooFar, veryFar, manager.m_Rides.IsFreeTransport(m_TaxiSquad, "US"), ACR_Rides.FreeSeats(ACR_Transport.CrewedVehicle(m_TaxiSquad)));
+   m_RideDest = Ground("1290 0 2300");
+   pc.ACR_Request(ACR_ERequest.ORDER_RIDE, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), m_RideDest);
+   m_WalkSquad.MoveTo(Ground("1750 0 2832"));
+  }
+  if (!m_TaxiSquad || !m_RideSquad || !m_WalkSquad || m_Ticks < 15) return;
+  if (m_Ticks == 22)
+  {
+   // Drag two of Alpha's men 90 m back along the route.
+   IEntity leader = m_WalkSquad.GetLeader();
+   array<AIAgent> agents = {};
+   m_WalkSquad.GetAgents(agents);
+   int moved;
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (!body || body == leader || moved >= 2 || !leader) continue;
+    body.SetOrigin(Ground(string.Format("%1 0 %2", leader.GetOrigin()[0] - 90, leader.GetOrigin()[2] + moved * 3)));
+    body.Update();
+    moved++;
+   }
+   PrintFormat("[ACR] RIDE cohesion: dragged %1 back, stragglers(60)=%2", moved, m_WalkSquad.Stragglers(60));
+  }
+  if (m_Ticks % 5 == 0)
+  {
+   PrintFormat("[ACR] RIDE t=%1 %2", m_Ticks, RideState());
+   PrintFormat("[ACR] RIDE t=%1 alpha='%2' stragglers(60)=%3 stragglers(25)=%4", m_Ticks, m_WalkSquad.m_Order, m_WalkSquad.Stragglers(60), m_WalkSquad.Stragglers(25));
+  }
+  if (m_Ticks == 170) Print("[ACR] TEST COMPLETE");
  }
 }
