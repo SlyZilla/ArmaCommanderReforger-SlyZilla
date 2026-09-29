@@ -245,7 +245,10 @@ class ACR_BaseSystem : Managed
    return;
   }
   vector center = base.GetOrigin();
+  // The faction group prefab would otherwise spawn its own six default members on top of ours.
+  SCR_AIGroup.IgnoreSpawning(true);
   SCR_AIGroup group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(prefabs[0], center));
+  SCR_AIGroup.IgnoreSpawning(false);
   if (!group) return;
   m_GarrisonGroups.Insert(group); // before any soldier joins, so it is never registered as a squad
   group.SetDeleteWhenEmpty(false); // we delete it ourselves; otherwise it vanishes mid-fight and respawns
