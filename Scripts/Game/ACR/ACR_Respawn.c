@@ -1,5 +1,5 @@
 // Command-unit respawn (server).
-//  - Killed in your command unit: the normal respawn happens after a delay, at
+//  - Killed in your command unit: the normal (auto) respawn happens after a delay, at
 //    the owned base closest to your side's placed spawn point (your HQ while you
 //    hold it), otherwise at the spawn point itself.
 //  - Command unit killed while you control another soldier: you stay in that
@@ -24,22 +24,66 @@ class ACR_Respawn
  }
 
  // Where this faction's placed spawn point was at mission start (its HQ).
+ protected ref map<string, vector> m_Home = new map<string, vector>();
  protected vector HomeOf(string factionKey, out bool found)
  {
-  found = false;
+  vector home;
+  found = m_Home.Find(factionKey, home);
+  if (found) return home;
   array<SCR_SpawnPoint> points = SCR_SpawnPoint.GetSpawnPointsForFaction(factionKey);
-  foreach (SCR_SpawnPoint point : points)
+  if (points.IsEmpty()) return vector.Zero;
+  home = points[0].GetOrigin();
+  m_Home.Set(factionKey, home);
+  found = true;
+  return home;
+ }
+
+ // Spawn points withheld during a respawn delay: the native auto-spawn finds none,
+ // retries every second, and succeeds once they are given back at the new base.
+ protected ref map<SCR_SpawnPoint, string> m_Withheld = new map<SCR_SpawnPoint, string>();
+ protected ref map<string, float> m_ReleaseAt = new map<string, float>();
+
+ // Called just before the native kill handling of a player's command unit.
+ void OnCommandUnitKilled(int playerId)
+ {
+  Faction faction = SCR_FactionManager.SGetPlayerFaction(playerId);
+  if (!faction) return;
+  string key = faction.GetFactionKey();
+  bool found;
+  HomeOf(key, found);
+  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPointsForFaction(key))
   {
-   found = true;
-   vector origin;
-   if (!m_SpawnPointOrigins.Find(point, origin))
-   {
-    origin = point.GetOrigin();
-    m_SpawnPointOrigins.Insert(point, origin);
-   }
-   return origin;
+   m_Withheld.Set(point, key);
+   point.SetFactionKey("");
   }
-  return vector.Zero;
+  m_ReleaseAt.Set(key, GetGame().GetWorld().GetWorldTime() + DelayMs());
+  m_Manager.Notify(playerId, string.Format("Command unit killed. Respawning at %1 in %2 s.", BaseName(key), m_Manager.m_iRespawnSeconds));
+  PrintFormat("[ACR] COMMAND UNIT KILLED player=%1, respawn in %2 s", playerId, m_Manager.m_iRespawnSeconds);
+ }
+
+ protected void ReleaseSpawnPoints(float now)
+ {
+  array<string> released = {};
+  foreach (string key, float at : m_ReleaseAt)
+  {
+   if (now < at) continue;
+   released.Insert(key);
+   vector position = RespawnPosition(key);
+   foreach (SCR_SpawnPoint point, string owner : m_Withheld)
+   {
+    if (owner != key || !point) continue;
+    point.SetOrigin(position);
+    point.SetFactionKey(key);
+   }
+   PrintFormat("[ACR] RESPAWN %1 at %2 %3", key, BaseName(key), position);
+  }
+  foreach (string key : released)
+  {
+   m_ReleaseAt.Remove(key);
+   array<SCR_SpawnPoint> done = {};
+   foreach (SCR_SpawnPoint point, string owner : m_Withheld) if (owner == key) done.Insert(point);
+   foreach (SCR_SpawnPoint point : done) m_Withheld.Remove(point);
+  }
  }
 
  ACR_Base ChooseBase(string factionKey)
@@ -72,28 +116,6 @@ class ACR_Respawn
   bool found;
   vector home = HomeOf(factionKey, found);
   return ACR_Manager.Ground(home);
- }
-
- // Before a native respawn: move this faction's spawn points to the chosen base.
- void PlaceSpawnPoints(int playerId)
- {
-  Faction faction = SCR_FactionManager.SGetPlayerFaction(playerId);
-  if (!faction) return;
-  string key = faction.GetFactionKey();
-  bool found;
-  HomeOf(key, found); // remember the original position before moving anything
-  vector position = RespawnPosition(key);
-  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPointsForFaction(key)) point.SetOrigin(position);
-  PrintFormat("[ACR] RESPAWN player=%1 at %2 %3", playerId, BaseName(key), position);
- }
-
- // Native respawn is about to be delayed (killed in the command unit).
- void OnCommandUnitKilled(int playerId)
- {
-  Faction faction = SCR_FactionManager.SGetPlayerFaction(playerId);
-  string where = "your start point";
-  if (faction) where = BaseName(faction.GetFactionKey());
-  m_Manager.Notify(playerId, string.Format("Command unit killed. Respawning at %1 in %2 s.", where, m_Manager.m_iRespawnSeconds));
  }
 
  // A soldier the player controlled died.
@@ -149,6 +171,7 @@ class ACR_Respawn
  void Tick()
  {
   float now = GetGame().GetWorld().GetWorldTime();
+  ReleaseSpawnPoints(now);
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
   foreach (int id : players)
@@ -213,39 +236,6 @@ class ACR_Respawn
  }
 }
 
-// Delay the native respawn and move the spawn point to the respawn base.
-modded class SCR_AutoSpawnLogic
-{
- protected ref set<int> m_ACR_HasSpawned = new set<int>();
- protected ref set<int> m_ACR_Due = new set<int>();
-
- override protected void DoSpawn_S(int playerId)
- {
-  ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!manager || !manager.m_Respawn || !m_ACR_HasSpawned.Contains(playerId))
-  {
-   super.DoSpawn_S(playerId);
-   return;
-  }
-  if (!m_ACR_Due.Contains(playerId))
-  {
-   m_ACR_Due.Insert(playerId);
-   manager.m_Respawn.OnCommandUnitKilled(playerId);
-   GetGame().GetCallqueue().CallLater(DoSpawn_S, manager.m_Respawn.DelayMs(), false, playerId);
-   return;
-  }
-  manager.m_Respawn.PlaceSpawnPoints(playerId);
-  super.DoSpawn_S(playerId);
- }
-
- override void OnPlayerSpawned_S(int playerId, IEntity entity)
- {
-  super.OnPlayerSpawned_S(playerId, entity);
-  m_ACR_HasSpawned.Insert(playerId);
-  m_ACR_Due.RemoveItem(playerId);
- }
-}
-
 // A possessed soldier dying returns the player to their command unit instead of
 // opening the Game Master editor.
 modded class SCR_PossessingManagerComponent
@@ -253,8 +243,13 @@ modded class SCR_PossessingManagerComponent
  override bool HandlePlayerKilled(int playerId, IEntity playerEntity, IEntity killerEntity, notnull Instigator instigator)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!manager || !manager.m_Respawn || playerId <= 0 || playerEntity == GetMainEntity(playerId))
+  if (!manager || !manager.m_Respawn || playerId <= 0)
    return super.HandlePlayerKilled(playerId, playerEntity, killerEntity, instigator);
+  if (playerEntity == GetMainEntity(playerId) || !IsPossessing(playerId))
+  {
+   manager.m_Respawn.OnCommandUnitKilled(playerId);
+   return super.HandlePlayerKilled(playerId, playerEntity, killerEntity, instigator);
+  }
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(playerId));
   if (!pc) return super.HandlePlayerKilled(playerId, playerEntity, killerEntity, instigator);
   manager.m_Respawn.OnPossessedKilled(pc);
