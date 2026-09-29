@@ -32,6 +32,8 @@ class ACR_Manager : Managed
 
  // Command rules. One commander per faction unless shared command is on.
  bool m_SharedCommand;
+ // Game Master for the host and server admins: debugging and fixing stuck units.
+ bool m_bHostGameMaster = true;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
 
@@ -84,6 +86,7 @@ class ACR_Manager : Managed
   ScanForSquads();
   EnsureCommanders();
   m_Bases.Tick(this);
+  GrantGameMaster();
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
@@ -197,6 +200,34 @@ class ACR_Manager : Managed
   foreach (ACR_Squad candidate : m_Squads)
    if (candidate.GetFaction() == faction) return candidate;
   return null;
+ }
+
+ // ================================================================ Game Master (server)
+
+ static bool IsHostOrAdmin(int playerId)
+ {
+  if (SCR_Global.IsAdmin(playerId)) return true;
+  // Listen server / offline: the server's own player is the host.
+  PlayerController local = GetGame().GetPlayerController();
+  return local && local.GetPlayerId() == playerId;
+ }
+
+ protected void GrantGameMaster()
+ {
+  if (!m_bHostGameMaster) return;
+  SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
+  if (!core) return;
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (int id : players)
+  {
+   if (!IsHostOrAdmin(id)) continue;
+   SCR_EditorManagerEntity editor = core.GetEditorManager(id);
+   if (!editor || editor.HasMode(EEditorMode.EDIT)) continue;
+   editor.AddEditorModes(EEditorModeAccess.BASE, EEditorMode.EDIT);
+   PrintFormat("[ACR] Game Master granted to player %1", id);
+   Notify(id, "Game Master available: press Y");
+  }
  }
 
  // ================================================================ command rules (server)

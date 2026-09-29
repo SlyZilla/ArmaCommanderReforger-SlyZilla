@@ -12,6 +12,7 @@ class ACR_TestHarness : Managed
  static const int MODE_BASES = 5;
  static const int MODE_ASSAULT = 6;
  static const int MODE_REQUISITION = 7;
+ static const int MODE_GAMEMASTER = 8;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -38,6 +39,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrBasesTest", flag)) mode = MODE_BASES;
   if (System.GetCLIParam("acrAssaultTest", flag)) mode = MODE_ASSAULT;
   if (System.GetCLIParam("acrRequisitionTest", flag)) mode = MODE_REQUISITION;
+  if (System.GetCLIParam("acrGameMasterTest", flag)) mode = MODE_GAMEMASTER;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -66,6 +68,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_BASES) { TestBases(); return; }
   if (m_Mode == MODE_ASSAULT) { TestAssault(); return; }
   if (m_Mode == MODE_REQUISITION) { TestRequisition(); return; }
+  if (m_Mode == MODE_GAMEMASTER) { TestGameMaster(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -464,5 +467,24 @@ class ACR_TestHarness : Managed
   }
   if (m_Ticks == 40) pc.ACR_Request(ACR_ERequest.REINFORCE, SCR_EntityHelper.EntityToRplId(m_Range.m_Group));
   if (m_Ticks == 70) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrGameMasterTest
+ void TestGameMaster()
+ {
+  SCR_EditorManagerEntity editor = SCR_EditorManagerEntity.GetInstance();
+  if (m_Ticks == 10)
+  {
+   if (!editor) { Print("[ACR] GM no editor manager"); return; }
+   PrintFormat("[ACR] GM hasEdit=%1 modes=%2", editor.HasMode(EEditorMode.EDIT), editor.GetModes());
+   editor.Open();
+  }
+  if (m_Ticks == 14 && editor) PrintFormat("[ACR] GM opened=%1", editor.IsOpened());
+  if (m_Ticks == 16 && editor) editor.Close();
+  if (m_Ticks == 18 && editor)
+  {
+   PrintFormat("[ACR] GM closed=%1", !editor.IsOpened());
+   Print("[ACR] TEST COMPLETE");
+  }
  }
 }
