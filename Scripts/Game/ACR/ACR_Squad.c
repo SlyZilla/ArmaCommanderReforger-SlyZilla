@@ -529,22 +529,47 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
-   if (!character || !character.IsInVehicle() || !ACR_Respawn.IsAlive(character)) continue;
+   if (!character || !ACR_Respawn.IsAlive(character)) continue;
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
    if (!access) continue;
+   // Still climbing in: stop, so nobody is left behind on board.
+   if (!character.IsInVehicle())
+   {
+    if (access.IsGettingIn()) access.InterruptVehicleActionQueue(true, true, true);
+    continue;
+   }
    if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
    dropped++;
   }
   m_bHasLZ = false;
   Halt("Dismounting");
-  GetGame().GetCallqueue().CallLater(HoldAfterDismount, 4000, false);
+  m_iDismountSweeps = 0;
+  GetGame().GetCallqueue().CallLater(HoldAfterDismount, 3000, false);
   return dropped;
  }
 
- // Once out, take positions where they landed.
+ protected int m_iDismountSweeps;
+
+ // Once out, take positions where they landed (sweeping out any late boarder first).
  void HoldAfterDismount()
  {
+  if (IsMounted() && m_iDismountSweeps < 3)
+  {
+   m_iDismountSweeps++;
+   array<AIAgent> agents = {};
+   GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent()) continue;
+    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+    if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
+     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   }
+   GetGame().GetCallqueue().CallLater(HoldAfterDismount, 3000, false);
+   return;
+  }
   IEntity anchor = GetAnchor();
   if (!m_Group || !anchor) return;
   IssueWaypoint(WP_DEFEND, anchor.GetOrigin(), 20);
