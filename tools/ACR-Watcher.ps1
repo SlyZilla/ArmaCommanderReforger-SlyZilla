@@ -136,6 +136,8 @@ function Invoke-Request($file) {
             $text = Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue
             $scriptLog = Join-Path (Split-Path $log -Parent) 'script.log'
             if (Test-Path -LiteralPath $scriptLog) { $text += Get-Content -LiteralPath $scriptLog -Raw -ErrorAction SilentlyContinue }
+            # Known harmless vanilla errors (e.g. deaths caused by Game Master effect modules).
+            $text = ($text -split "`n" | Where-Object { $_ -notmatch 'SCR_InstigatorContextData: instigatorType' }) -join "`n"
             if ($text -match 'SCRIPT\s+\(E\)') { Start-Sleep -Seconds 3; $outcome = 'script error'; break }
             if ($text -match $config.DoneWhen) { Start-Sleep -Seconds 2; $outcome = 'completed'; break }
         }
