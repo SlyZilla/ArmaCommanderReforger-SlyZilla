@@ -185,5 +185,9 @@ KNOWN LIMITS (alpha)
 
 CREDITS
 -------
-Based on "Arma Commander" for Arma 3 by its original authors (APL-SA licence).
-This remake keeps that licence.
+Based on "Arma Commander" for Arma 3 by Martin Hajek
+(https://gitlab.com/silliaris/arma-commander), ported from the community fork by
+Will and Anarch Cassius. Rebuilt for Arma Reforger with new features.
+Licensed, like the original, under the Arma Public License Share Alike (APL-SA):
+https://www.bohemia.net/community/licenses/arma-public-license-share-alike
+Details in ArmaCommanderReforger\LICENSE.md.

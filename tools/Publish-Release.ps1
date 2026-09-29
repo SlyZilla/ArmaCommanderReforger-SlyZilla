@@ -35,16 +35,27 @@ if ($LASTEXITCODE -ne 0) {
   Start-Sleep -Seconds 3
 }
 
-# A release needs at least one commit; give an empty repository a README.
-& $gh api "repos/$repo/commits?per_page=1" 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  Write-Host "Repository is empty; adding a README ..."
-  $readme = "# Arma Commander: Reforger`n`nA fan remake of the Arma 3 ""Arma Commander"" mode for Arma Reforger.`n`n**Download:** [ArmaCommander-Arland.zip](https://github.com/$repo/releases/latest/download/ArmaCommander-Arland.zip). Unzip it and open ""READ ME FIRST.txt"".`n`nThe Host and Join launchers update themselves from this page.`n`nBased on Arma Commander for Arma 3 by Martin Hajek (APL-SA).`n"
-  $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($readme))
-  & $gh api -X PUT "repos/$repo/contents/README.md" -f message="Add README" -f content="$b64"
-  if ($LASTEXITCODE -ne 0) { Fail "Could not add a README to $repo." }
-  Start-Sleep -Seconds 2
+# Keep the repository's front page and license in step with the project
+# (this also gives an empty repository the commit a release needs).
+function Sync-RepoFile($localPath, $repoPath) {
+  $bytes = [IO.File]::ReadAllBytes($localPath)
+  # Git blob hash of the local file, to skip unchanged uploads.
+  $header = [Text.Encoding]::ASCII.GetBytes("blob $($bytes.Length)`0")
+  $sha1 = [Security.Cryptography.SHA1]::Create()
+  $local = -join ($sha1.ComputeHash([byte[]]($header + $bytes)) | ForEach-Object { $_.ToString('x2') })
+  $remote = (& $gh api "repos/$repo/contents/$repoPath" --jq .sha 2>$null)
+  if ($LASTEXITCODE -ne 0) { $remote = '' }
+  $remote = "$remote".Trim()
+  if ($remote -eq $local) { return }
+  Write-Host "Updating $repoPath on GitHub ..."
+  $b64 = [Convert]::ToBase64String($bytes)
+  if ($remote) { & $gh api -X PUT "repos/$repo/contents/$repoPath" -f message="Update $repoPath" -f content="$b64" -f sha="$remote" | Out-Null }
+  else { & $gh api -X PUT "repos/$repo/contents/$repoPath" -f message="Add $repoPath" -f content="$b64" | Out-Null }
+  if ($LASTEXITCODE -ne 0) { Fail "Could not update $repoPath on $repo." }
 }
+Sync-RepoFile (Join-Path $root 'tools\package\REPO-README.md') 'README.md'
+Sync-RepoFile (Join-Path $root 'LICENSE.md') 'LICENSE.md'
+Start-Sleep -Seconds 1
 
 # Remove drafts left behind by a failed upload.
 $drafts = & $gh api "repos/$repo/releases" --jq '.[] | select(.draft) | .id' 2>$null
