@@ -54,15 +54,15 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetSizeToContent(m_Root, true);
   m_Root.SetZOrder(1000);
 
-  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0, 0, 0, 0.78), 0, m_Root);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.86), 0, m_Root);
   AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
   AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
 
   SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_Root));
   size.EnableWidthOverride(true);
   size.SetWidthOverride(WIDTH);
+  AlignableSlot.SetPadding(size, 14, 12, 14, 16);
   m_Content = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
-  AlignableSlot.SetPadding(m_Content, 14, 12, 14, 12);
 
   AddText(m_Content, LAYOUT_HEADING, "ARMA COMMANDER");
   m_Status = AddText(m_Content, LAYOUT_TEXT, "");
@@ -89,7 +89,7 @@ class ACR_CommandPanel : Managed
   AddButton(orders2, "Get out", ACR_EPanelAction.GET_OUT, true);
   AddButton(orders2, "Unload", ACR_EPanelAction.UNLOAD, true);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
-  if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 0);
+  if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
  }
 
  protected TextWidget AddText(Widget parent, ResourceName layout, string text)
@@ -108,6 +108,12 @@ class ACR_CommandPanel : Managed
   SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(widget);
   if (!button) return null;
   button.SetText(text);
+  // Arma Commander blue instead of the vanilla orange.
+  Color normal = new Color(0.16, 0.42, 0.80, 0.40);
+  button.SetBackgroundColors(normal, new Color(0.26, 0.56, 0.96, 0.70), new Color(0.30, 0.62, 1.0, 0.95), new Color(0.36, 0.68, 1.0, 1.0), new Color(0.30, 0.62, 1.0, 0.95));
+  if (button.m_wBackground) button.m_wBackground.SetColor(normal);
+  Widget border = widget.FindAnyWidget("Border");
+  if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
   button.m_OnClicked.Insert(OnButton);
   m_Actions.Insert(button, action);
   return button;

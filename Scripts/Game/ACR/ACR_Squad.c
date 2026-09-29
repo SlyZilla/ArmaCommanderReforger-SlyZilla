@@ -245,6 +245,7 @@ class ACR_Squad : Managed
 
  ACR_EMoveMode m_Mode = ACR_EMoveMode.COMBAT;
  string m_Order = "Holding";
+ int m_OrderKind;   // for map symbology: 0 move, 1 defend, 2 get in, 3 get out
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -305,6 +306,7 @@ class ACR_Squad : Managed
  {
   if (!IssueWaypoint(WP_MOVE, destination)) return false;
   m_Order = "Moving";
+  m_OrderKind = 0;
   return true;
  }
 
@@ -312,6 +314,7 @@ class ACR_Squad : Managed
  {
   if (!IssueWaypoint(WP_DEFEND, position, 15, true)) return false;
   m_Order = "Defending";
+  m_OrderKind = 1;
   return true;
  }
 
@@ -327,6 +330,7 @@ class ACR_Squad : Managed
   }
   else if (!IssueWaypoint(WP_GET_IN_NEAREST, position, 20, true)) return false;
   m_Order = "Getting in";
+  m_OrderKind = 2;
   return true;
  }
 
@@ -337,6 +341,7 @@ class ACR_Squad : Managed
   if (vehicles.IsEmpty()) return false;
   if (!IssueWaypoint(WP_GET_OUT, vehicles[0].GetOrigin(), -1, true)) return false;
   m_Order = "Getting out";
+  m_OrderKind = 3;
   return true;
  }
 
@@ -370,6 +375,18 @@ class ACR_Squad : Managed
   m_FoundVehicle = null;
   GetGame().GetWorld().QueryEntitiesBySphere(position, radius, CollectVehicle);
   return m_FoundVehicle;
+ }
+
+ // Where the squad is currently headed (any waypoint, including native orders).
+ bool GetOrderTarget(out vector target, out int kind)
+ {
+  if (!m_Group) return false;
+  AIWaypoint current = m_Group.GetCurrentWaypoint();
+  if (!current) return false;
+  target = current.GetOrigin();
+  kind = 0;
+  if (current == m_Waypoint) kind = m_OrderKind;
+  return true;
  }
 
  // One line for the command panel, e.g. "4/4 alive | Combat | Moving".

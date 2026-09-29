@@ -16,6 +16,7 @@ class ACR_MapFeed
    PublishRoster(manager, pc, faction);
    PublishGroups(manager, pc, faction);
    pc.ACR_SendCommandStatus(manager.IsCommander(id), manager.CommandStatus(id), manager.m_SharedCommand);
+   PublishOrders(manager, pc, faction);
   }
  }
 
@@ -129,5 +130,23 @@ class ACR_MapFeed
 
   }
   pc.ACR_SendGroupMarkers(leaders, positions, names, symbols, states, commandable, groupIds, details);
+ }
+ // Current destination of every friendly squad, for the order lines on the map.
+ static void PublishOrders(ACR_Manager manager, SCR_PlayerController pc, Faction faction)
+ {
+  array<RplId> groupIds = {};
+  array<vector> targets = {};
+  array<int> kinds = {};
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (squad.GetFaction() != faction) continue;
+   vector target;
+   int kind;
+   if (!squad.GetOrderTarget(target, kind)) continue;
+   groupIds.Insert(SCR_EntityHelper.EntityToRplId(squad.m_Group));
+   targets.Insert(target);
+   kinds.Insert(kind);
+  }
+  pc.ACR_SendOrders(groupIds, targets, kinds);
  }
 }

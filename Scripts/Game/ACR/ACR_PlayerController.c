@@ -252,6 +252,7 @@ modded class SCR_PlayerController
   }
   m_ACR_MapWasOpen = true;
   ACR_UpdatePanel();
+  ACR_DrawOrders(mapEntity);
   int count = m_ACR_Ids.Count();
   if (m_ACR_Markers.Count() != count + 1)
   {
@@ -408,6 +409,15 @@ modded class SCR_PlayerController
   if (!root) return;
   m_ACR_Panel = new ACR_CommandPanel();
   m_ACR_Panel.Create(root, this);
+  // Full-screen canvas for order lines; ignores the cursor so map clicks pass through.
+  m_ACR_OrderCanvas = CanvasWidget.Cast(GetGame().GetWorkspace().CreateWidget(WidgetType.CanvasWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.BLEND, Color.FromInt(Color.WHITE), 0, root));
+  if (m_ACR_OrderCanvas)
+  {
+   FrameSlot.SetAnchorMin(m_ACR_OrderCanvas, 0, 0);
+   FrameSlot.SetAnchorMax(m_ACR_OrderCanvas, 1, 1);
+   FrameSlot.SetOffsets(m_ACR_OrderCanvas, 0, 0, 0, 0);
+   m_ACR_OrderCanvas.SetZOrder(900);
+  }
   SCR_MapEntity.GetOnSelection().Insert(ACR_OnMapClick);
  }
 
@@ -416,6 +426,8 @@ modded class SCR_PlayerController
   SCR_MapEntity.GetOnSelection().Remove(ACR_OnMapClick);
   if (m_ACR_Panel) m_ACR_Panel.Destroy();
   m_ACR_Panel = null;
+  if (m_ACR_OrderCanvas) m_ACR_OrderCanvas.RemoveFromHierarchy();
+  m_ACR_OrderCanvas = null;
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
  }
 
@@ -492,5 +504,75 @@ modded class SCR_PlayerController
   ACR_Request(command, m_ACR_SelectedGroup, Vector(x, 0, z));
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   return true;
+ }
+
+ // ---------------------------------------------------------------- order lines
+ // A line from each friendly squad's leader to its current destination, ending
+ // in a dot, like the Arma 3 mod. Colour shows the order; the selected squad's
+ // line is brighter and thicker.
+ protected ref array<RplId> m_ACR_OrderGroups = {};
+ protected ref array<vector> m_ACR_OrderTargets = {};
+ protected ref array<int> m_ACR_OrderKinds = {};
+ protected CanvasWidget m_ACR_OrderCanvas;
+ protected ref array<ref CanvasWidgetCommand> m_ACR_OrderCommands = {};
+
+ void ACR_SendOrders(array<RplId> groupIds, array<vector> targets, array<int> kinds)
+ {
+  Rpc(ACR_OrdersOwner, groupIds, targets, kinds);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_OrdersOwner(array<RplId> groupIds, array<vector> targets, array<int> kinds)
+ {
+  m_ACR_OrderGroups.Copy(groupIds);
+  m_ACR_OrderTargets.Copy(targets);
+  m_ACR_OrderKinds.Copy(kinds);
+ }
+
+ protected int ACR_OrderColor(int kind, bool selected)
+ {
+  float alpha = 0.75;
+  if (selected) alpha = 1;
+  if (kind == 1) return new Color(0.35, 0.90, 0.40, alpha).PackToInt(); // defend: green
+  if (kind == 2) return new Color(1.00, 0.85, 0.25, alpha).PackToInt(); // get in: yellow
+  if (kind == 3) return new Color(1.00, 0.55, 0.20, alpha).PackToInt(); // get out: orange
+  return new Color(0.30, 0.65, 1.00, alpha).PackToInt();                 // move: blue
+ }
+
+ protected void ACR_DrawOrders(SCR_MapEntity mapEntity)
+ {
+  if (!m_ACR_OrderCanvas) return;
+  m_ACR_OrderCommands.Clear();
+  foreach (int i, RplId groupId : m_ACR_OrderGroups)
+  {
+   int g = m_ACR_GroupIds.Find(groupId);
+   if (g < 0) continue;
+   vector from = m_ACR_LeaderPositions[g];
+   IEntity leader = SCR_EntityHelper.RplIdToEntity(m_ACR_LeaderIds[g]);
+   if (leader) from = leader.GetOrigin();
+   vector to = m_ACR_OrderTargets[i];
+   int sx0, sy0, sx1, sy1;
+   mapEntity.WorldToScreen(from[0], from[2], sx0, sy0, true);
+   mapEntity.WorldToScreen(to[0], to[2], sx1, sy1, true);
+   float x0 = sx0;
+   float y0 = sy0;
+   float x1 = sx1;
+   float y1 = sy1;
+   bool selected = m_ACR_SelectedGroup.IsValid() && groupId == m_ACR_SelectedGroup;
+   int color = ACR_OrderColor(m_ACR_OrderKinds[i], selected);
+
+   LineDrawCommand line = new LineDrawCommand();
+   line.m_iColor = color;
+   line.m_fWidth = 2;
+   if (selected) line.m_fWidth = 3;
+   line.m_Vertices = {x0, y0, x1, y1};
+   m_ACR_OrderCommands.Insert(line);
+
+   PolygonDrawCommand dot = new PolygonDrawCommand();
+   dot.m_iColor = color;
+   dot.m_Vertices = {};
+   m_ACR_OrderCanvas.TessellateCircle(Vector(x1, y1, 0), 6, 12, dot.m_Vertices);
+   m_ACR_OrderCommands.Insert(dot);
+  }
+  m_ACR_OrderCanvas.SetDrawCommands(m_ACR_OrderCommands);
  }
 }
