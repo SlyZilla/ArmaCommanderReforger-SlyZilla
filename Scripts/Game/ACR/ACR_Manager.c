@@ -25,6 +25,7 @@ class ACR_Manager : Managed
  protected static ref ACR_Manager s_Instance;
 
  ref array<ref ACR_Squad> m_Squads = {};
+ ref ACR_BaseSystem m_Bases = new ACR_BaseSystem();
  protected ref map<int, ACR_Squad> m_LastSquad = new map<int, ACR_Squad>();
  protected int m_SquadNumber;
 
@@ -81,6 +82,7 @@ class ACR_Manager : Managed
  {
   ScanForSquads();
   EnsureCommanders();
+  m_Bases.Tick(this);
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
@@ -113,6 +115,7 @@ class ACR_Manager : Managed
  bool CanRegister(SCR_AIGroup group)
  {
   if (group.IsPlayable() || group.IsSlave() || !group.GetFaction()) return false;
+  if (m_Bases.IsGarrison(group)) return false;
   if (group.GetAgentsCount() == 0) return false;
   return !FindSquadByGroup(group) && !FindSquadByCommandGroup(group);
  }
@@ -258,6 +261,17 @@ class ACR_Manager : Managed
   if (!m_LeftCommand.Contains(id)) m_LeftCommand.Insert(id);
   EnsureCommanders();
   return "You left command";
+ }
+
+ void NotifyFaction(string factionKey, string message)
+ {
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (int id : players)
+  {
+   Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
+   if (faction && faction.GetFactionKey() == factionKey) Notify(id, message);
+  }
  }
 
  void Notify(int playerId, string message)

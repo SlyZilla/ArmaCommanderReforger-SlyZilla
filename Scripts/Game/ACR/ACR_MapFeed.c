@@ -15,7 +15,9 @@ class ACR_MapFeed
    if (!faction) continue;
    PublishRoster(manager, pc, faction);
    PublishGroups(manager, pc, faction);
-   pc.ACR_SendCommandStatus(manager.IsCommander(id), manager.CommandStatus(id), manager.m_SharedCommand);
+   string key = faction.GetFactionKey();
+   pc.ACR_SendCommandStatus(manager.IsCommander(id), manager.CommandStatus(id), manager.m_SharedCommand, manager.m_Bases.GetRP(key), manager.m_Bases.GetIncome(key), manager.m_Bases.SecondsToIncome());
+   PublishBases(manager, pc, key);
    PublishOrders(manager, pc, faction);
   }
  }
@@ -148,5 +150,30 @@ class ACR_MapFeed
    kinds.Insert(kind);
   }
   pc.ACR_SendOrders(groupIds, targets, kinds);
+ }
+ // Bases this faction can see (hidden enemy bases only once discovered).
+ static void PublishBases(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
+ {
+  array<vector> positions = {};
+  array<string> names = {};
+  array<string> owners = {};
+  array<string> details = {};
+  array<float> radii = {};
+  array<int> contested = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base.IsVisibleTo(factionKey)) continue;
+   positions.Insert(base.GetOrigin());
+   string label = base.m_sName;
+   if (base.m_bIncome) label += string.Format(" [%1]", base.m_iValue);
+   names.Insert(label);
+   owners.Insert(base.m_sOwner);
+   details.Insert(manager.m_Bases.Describe(base));
+   radii.Insert(base.m_fRadius);
+   int flag = 0;
+   if (base.m_bContested) flag = 1;
+   contested.Insert(flag);
+  }
+  pc.ACR_SendBases(positions, names, owners, details, radii, contested);
  }
 }

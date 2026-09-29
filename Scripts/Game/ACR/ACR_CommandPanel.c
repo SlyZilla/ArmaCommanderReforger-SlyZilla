@@ -31,6 +31,9 @@ class ACR_CommandPanel : Managed
  Widget m_Root;
  protected Widget m_Content;
  protected TextWidget m_Status;
+ protected TextWidget m_Economy;
+ protected Widget m_SwitchWidget;
+ protected Widget m_LastButtonWidget;
  protected SCR_ButtonTextComponent m_CommandButton;
  protected Widget m_GroupSection;
  protected TextWidget m_GroupName;
@@ -67,6 +70,7 @@ class ACR_CommandPanel : Managed
   m_Content = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
 
   AddText(m_Content, LAYOUT_HEADING, "ARMA COMMANDER");
+  m_Economy = AddText(m_Content, LAYOUT_TEXT, "");
   m_Status = AddText(m_Content, LAYOUT_TEXT, "");
   m_CommandButton = AddButton(m_Content, "Take command", ACR_EPanelAction.TOGGLE_COMMAND);
 
@@ -75,6 +79,7 @@ class ACR_CommandPanel : Managed
   m_GroupName = AddText(m_GroupSection, LAYOUT_HEADING, "");
   m_GroupDetail = AddText(m_GroupSection, LAYOUT_TEXT, "");
   m_SwitchButton = AddButton(m_GroupSection, "Switch to squad", ACR_EPanelAction.SWITCH);
+  m_SwitchWidget = m_LastButtonWidget;
 
   m_OrderSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_GroupSection);
   AlignableSlot.SetPadding(m_OrderSection, 0, 10, 0, 0);
@@ -105,6 +110,7 @@ class ACR_CommandPanel : Managed
  {
   Widget widget = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, parent);
   if (!widget) return null;
+  m_LastButtonWidget = widget;
   AlignableSlot.SetPadding(widget, 2, 2, 2, 2);
   if (fill) LayoutSlot.SetSizeMode(widget, LayoutSizeMode.Fill);
   SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(widget);
@@ -156,6 +162,7 @@ class ACR_CommandPanel : Managed
   if (name.IsEmpty()) return;
   m_GroupName.SetText(name);
   m_GroupDetail.SetText(detail);
+  if (m_SwitchWidget) m_SwitchWidget.SetVisible(true);
   if (m_SwitchButton) m_SwitchButton.SetEnabled(friendly, false);
   m_OrderSection.SetVisible(friendly && isCommander);
   foreach (int i, SCR_ButtonTextComponent button : m_ModeButtons)
@@ -177,6 +184,23 @@ class ACR_CommandPanel : Managed
    else m_GetInButton.SetText("Get in");
   }
   if (m_Hint) m_Hint.SetText(hint);
+ }
+
+ void SetEconomy(string text)
+ {
+  if (m_Economy) m_Economy.SetText(text);
+ }
+
+ // A selected base: info only, no squad buttons.
+ void SetBase(string name, string detail)
+ {
+  if (!m_GroupSection) return;
+  m_GroupSection.SetVisible(true);
+  m_GroupName.SetText(name);
+  m_GroupDetail.SetText(detail);
+  if (m_SwitchWidget) m_SwitchWidget.SetVisible(false);
+  m_OrderSection.SetVisible(false);
+  if (m_Hint) m_Hint.SetText("");
  }
 
  void Destroy()

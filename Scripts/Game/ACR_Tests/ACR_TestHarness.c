@@ -9,6 +9,7 @@ class ACR_TestHarness : Managed
  static const int MODE_COMMAND = 2;
  static const int MODE_MAP_HANDOFF = 3;
  static const int MODE_VEHICLE = 4;
+ static const int MODE_BASES = 5;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -32,6 +33,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrCommandTest", flag)) mode = MODE_COMMAND;
   if (System.GetCLIParam("acrMapHandoffTest", flag)) mode = MODE_MAP_HANDOFF;
   if (System.GetCLIParam("acrVehicleTest", flag)) mode = MODE_VEHICLE;
+  if (System.GetCLIParam("acrBasesTest", flag)) mode = MODE_BASES;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -57,6 +59,7 @@ class ACR_TestHarness : Managed
    Print("[ACR] TEST COMPLETE");
   if (m_Mode == MODE_VEHICLE && m_Ticks == 140) Print("[ACR] TEST COMPLETE");
   if (m_Mode == MODE_VEHICLE) { TestVehicle(); return; }
+  if (m_Mode == MODE_BASES) { TestBases(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -340,5 +343,29 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 95) { LogVehicle("drove"); pc.ACR_Request(ACR_ERequest.ORDER_UNLOAD, alpha); }
   if (m_Ticks == 115) { LogVehicle("unloaded"); pc.ACR_Request(ACR_ERequest.ORDER_GET_OUT, alpha); }
   if (m_Ticks == 135) LogVehicle("dismounted");
+ }
+
+ // ---------------------------------------------------------------- -acrBasesTest
+ // Alpha and Bravo walk to the unclaimed Crossroads and capture it; logs the
+ // state of every base and the economy every 10 s.
+ void TestBases()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager || !m_Range.m_Group || !m_Range.m_Bravo) return;
+  if (m_Ticks == 8)
+  {
+   PrintFormat("[ACR] BASES count=%1", ACR_Base.s_All.Count());
+   pc.ACR_Request(ACR_ERequest.MODE_FAST, SCR_EntityHelper.EntityToRplId(m_Range.m_Group));
+  }
+  if (m_Ticks == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), "2560 0 2450".ToVector());
+  if (m_Ticks == 12) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), "2565 0 2445".ToVector());
+  if (m_Ticks % 10 == 0)
+  {
+   foreach (ACR_Base base : ACR_Base.s_All)
+    PrintFormat("[ACR] BASE %1: %2", base.m_sName, manager.m_Bases.Describe(base));
+   PrintFormat("[ACR] ECONOMY US rp=%1 income=%2 next=%3s", manager.m_Bases.GetRP("US"), manager.m_Bases.GetIncome("US"), manager.m_Bases.SecondsToIncome());
+  }
+  if (m_Ticks == 200) Print("[ACR] TEST COMPLETE");
  }
 }

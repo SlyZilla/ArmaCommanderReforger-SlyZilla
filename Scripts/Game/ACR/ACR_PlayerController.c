@@ -7,6 +7,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  bool m_Original;      // the player's command unit
  bool m_Selected;
  RplId m_GroupId;      // squad this marker belongs to
+ int m_BaseIndex = -1; // >= 0: this marker is a base
  ref ACR_MarkerClick m_Click;
  ref SCR_MilitarySymbol m_GroupSymbol;
  override void OnCreateMarker(bool skipProfanityFilter = false)
@@ -17,6 +18,10 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   m_Click.m_Marker = this;
   m_wRoot.AddHandler(m_Click);
   RefreshStyle();
+ }
+ void ACR_SetColor(Color color)
+ {
+  if (m_MarkerWidgetComp) m_MarkerWidgetComp.SetColor(color);
  }
  void RefreshStyle()
  {
@@ -39,6 +44,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (!pc) return;
   pc.ACR_MarkUiClick();
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
+  else if (m_BaseIndex >= 0) pc.ACR_SelectBase(m_Label);
   else pc.ACR_SelectGroup(m_GroupId);
  }
 }
@@ -105,13 +111,19 @@ modded class SCR_PlayerController
  protected bool m_ACR_IsCommander;
  protected bool m_ACR_SharedCommand;
  protected string m_ACR_CommandText;
- void ACR_SendCommandStatus(bool isCommander, string text, bool shared)
+ protected int m_ACR_RP;
+ protected int m_ACR_Income;
+ protected int m_ACR_IncomeSeconds;
+ void ACR_SendCommandStatus(bool isCommander, string text, bool shared, int rp, int income, int seconds)
  {
-  Rpc(ACR_CommandStatusOwner, isCommander, text, shared);
+  Rpc(ACR_CommandStatusOwner, isCommander, text, shared, rp, income, seconds);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_CommandStatusOwner(bool isCommander, string text, bool shared)
+ protected void ACR_CommandStatusOwner(bool isCommander, string text, bool shared, int rp, int income, int seconds)
  {
+  m_ACR_RP = rp;
+  m_ACR_Income = income;
+  m_ACR_IncomeSeconds = seconds;
   m_ACR_IsCommander = isCommander;
   m_ACR_CommandText = text;
   m_ACR_SharedCommand = shared;
@@ -218,7 +230,9 @@ modded class SCR_PlayerController
   {
    foreach (ACR_UnitMarker marker : m_ACR_Markers) manager.RemoveStaticMarker(marker);
    foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) manager.RemoveStaticMarker(groupMarker);
+   foreach (ACR_UnitMarker baseMarker : m_ACR_BaseMarkers) manager.RemoveStaticMarker(baseMarker);
   }
+  m_ACR_BaseMarkers.Clear();
   m_ACR_Markers.Clear();
   m_ACR_GroupMarkers.Clear();
  }
@@ -292,6 +306,7 @@ modded class SCR_PlayerController
   original.SetWorldPos(m_ACR_OriginalPos[0], m_ACR_OriginalPos[2]);
   original.RefreshStyle();
   ACR_UpdateGroupMarkers(manager);
+  ACR_UpdateBaseMarkers(manager);
  }
  void ACR_UpdateGroupMarkers(SCR_MapMarkerManagerComponent manager)
  {
@@ -402,6 +417,7 @@ modded class SCR_PlayerController
 
  void ACR_SelectGroup(RplId groupId)
  {
+  m_ACR_SelectedBase = "";
   m_ACR_SelectedGroup = groupId;
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
  }
@@ -441,6 +457,7 @@ modded class SCR_PlayerController
   if (System.GetTickCount() - m_ACR_LastUiClick < 400) return;
   if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) return;
   m_ACR_SelectedGroup = RplId.Invalid();
+  m_ACR_SelectedBase = "";
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
  }
 
@@ -449,6 +466,17 @@ modded class SCR_PlayerController
   if (!m_ACR_Panel) return;
   bool canTake = !m_ACR_IsCommander && (m_ACR_SharedCommand || m_ACR_CommandText == "Command: AI");
   m_ACR_Panel.SetCommand(m_ACR_CommandText, m_ACR_IsCommander, canTake);
+  m_ACR_Panel.SetEconomy(string.Format("RP %1   +%2 in %3s", m_ACR_RP, m_ACR_Income, m_ACR_IncomeSeconds));
+  if (!m_ACR_SelectedBase.IsEmpty())
+  {
+   int baseIndex = m_ACR_BaseNames.Find(m_ACR_SelectedBase);
+   if (baseIndex >= 0)
+   {
+    m_ACR_Panel.SetBase(m_ACR_BaseNames[baseIndex], m_ACR_BaseDetails[baseIndex]);
+    return;
+   }
+   m_ACR_SelectedBase = "";
+  }
   int index = -1;
   if (m_ACR_SelectedGroup.IsValid()) index = m_ACR_GroupIds.Find(m_ACR_SelectedGroup);
   if (index < 0)
@@ -555,6 +583,7 @@ modded class SCR_PlayerController
  {
   if (!m_ACR_OrderCanvas) return;
   m_ACR_OrderCommands.Clear();
+  ACR_DrawBaseAreas(mapEntity);
   foreach (int i, RplId groupId : m_ACR_OrderGroups)
   {
    int g = m_ACR_GroupIds.Find(groupId);
@@ -587,5 +616,104 @@ modded class SCR_PlayerController
    m_ACR_OrderCommands.Insert(dot);
   }
   m_ACR_OrderCanvas.SetDrawCommands(m_ACR_OrderCommands);
+ }
+
+ // ---------------------------------------------------------------- bases
+ protected ref array<vector> m_ACR_BasePositions = {};
+ protected ref array<string> m_ACR_BaseNames = {};
+ protected ref array<string> m_ACR_BaseOwners = {};
+ protected ref array<string> m_ACR_BaseDetails = {};
+ protected ref array<float> m_ACR_BaseRadii = {};
+ protected ref array<int> m_ACR_BaseContested = {};
+ protected ref array<ref ACR_UnitMarker> m_ACR_BaseMarkers = {};
+ protected string m_ACR_SelectedBase;
+
+ void ACR_SendBases(array<vector> positions, array<string> names, array<string> owners, array<string> details, array<float> radii, array<int> contested)
+ {
+  Rpc(ACR_BasesOwner, positions, names, owners, details, radii, contested);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_BasesOwner(array<vector> positions, array<string> names, array<string> owners, array<string> details, array<float> radii, array<int> contested)
+ {
+  m_ACR_BasePositions.Copy(positions);
+  m_ACR_BaseNames.Copy(names);
+  m_ACR_BaseOwners.Copy(owners);
+  m_ACR_BaseDetails.Copy(details);
+  m_ACR_BaseRadii.Copy(radii);
+  m_ACR_BaseContested.Copy(contested);
+ }
+
+ void ACR_SelectBase(string label)
+ {
+  m_ACR_SelectedGroup = RplId.Invalid();
+  m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+  m_ACR_SelectedBase = label;
+ }
+
+ // Friendly blue, enemy red, unclaimed yellow (the Arma 3 mod's colours).
+ protected Color ACR_BaseColor(int index, float alpha)
+ {
+  string owner = m_ACR_BaseOwners[index];
+  if (owner.IsEmpty()) return new Color(0.85, 0.72, 0.1, alpha);
+  Faction mine = SCR_FactionManager.SGetLocalPlayerFaction();
+  if (mine && mine.GetFactionKey() == owner) return new Color(0.2, 0.5, 1.0, alpha);
+  return new Color(0.9, 0.15, 0.15, alpha);
+ }
+
+ protected void ACR_UpdateBaseMarkers(SCR_MapMarkerManagerComponent manager)
+ {
+  if (m_ACR_BaseMarkers.Count() != m_ACR_BaseNames.Count())
+  {
+   foreach (ACR_UnitMarker old : m_ACR_BaseMarkers) manager.RemoveStaticMarker(old);
+   m_ACR_BaseMarkers.Clear();
+   for (int i = 0; i < m_ACR_BaseNames.Count(); i++)
+   {
+    ACR_UnitMarker marker = new ACR_UnitMarker();
+    marker.SetType(SCR_EMapMarkerType.SIMPLE);
+    marker.SetMarkerConfigID(1);
+    marker.SetCanBeRemovedByOwner(false);
+    marker.m_BaseIndex = i;
+    m_ACR_BaseMarkers.Insert(marker);
+    manager.InsertStaticMarker(marker, true);
+    marker.SetMarkerOwnerID(-1);
+   }
+  }
+  foreach (int i, ACR_UnitMarker marker : m_ACR_BaseMarkers)
+  {
+   marker.m_BaseIndex = i;
+   marker.m_Label = m_ACR_BaseNames[i];
+   marker.m_Selected = m_ACR_SelectedBase == marker.m_Label;
+   vector pos = m_ACR_BasePositions[i];
+   marker.SetWorldPos(pos[0], pos[2]);
+   marker.RefreshStyle();
+   if (!marker.m_Selected && marker.GetRootWidget())
+   {
+    // RefreshStyle colours by unit state; bases use ownership instead.
+    marker.ACR_SetColor(ACR_BaseColor(i, 1));
+   }
+  }
+ }
+
+ // Capture radius circles; contested bases get a thicker outline.
+ protected void ACR_DrawBaseAreas(SCR_MapEntity mapEntity)
+ {
+  foreach (int i, vector pos : m_ACR_BasePositions)
+  {
+   int cx, cy, ex, ey;
+   mapEntity.WorldToScreen(pos[0], pos[2], cx, cy, true);
+   mapEntity.WorldToScreen(pos[0] + m_ACR_BaseRadii[i], pos[2], ex, ey, true);
+   float radius = Math.AbsFloat(ex - cx);
+   if (radius < 3) continue;
+   float fx = cx;
+   float fy = cy;
+   LineDrawCommand ring = new LineDrawCommand();
+   ring.m_iColor = ACR_BaseColor(i, 0.9).PackToInt();
+   ring.m_fWidth = 2;
+   if (m_ACR_BaseContested[i] == 1) ring.m_fWidth = 4;
+   ring.m_bShouldEnclose = true;
+   ring.m_Vertices = {};
+   m_ACR_OrderCanvas.TessellateCircle(Vector(fx, fy, 0), radius, 48, ring.m_Vertices);
+   m_ACR_OrderCommands.Insert(ring);
+  }
  }
 }

@@ -46,3 +46,35 @@ SCR_AIWorld ACR_AIWorld : "{E0A05C76552E7F58}Prefabs/AI/SCR_AIWorld.et" {
 ACR_TestRange ACR_TestRange {
  coords 2400 0 2400
 }
+ACR_Base ACR_Base_Farm {
+ coords 2420 111 2380
+ m_sName "Farm"
+ m_sOwner "US"
+ m_iGarrison 4
+ m_iValue 1
+ m_fRadius 40
+}
+ACR_Base ACR_Base_Crossroads {
+ coords 2560 111 2450
+ m_sName "Crossroads"
+ m_iGarrison 0
+ m_iValue 2
+ m_fRadius 40
+}
+ACR_Base ACR_Base_Outpost {
+ coords 2650 111 2560
+ m_sName "Outpost"
+ m_sOwner "USSR"
+ m_iGarrison 3
+ m_bIncome 0
+ m_fRadius 40
+}
+ACR_Base ACR_Base_Hill {
+ coords 2750 111 2330
+ m_sName "Hill"
+ m_sOwner "USSR"
+ m_iGarrison 6
+ m_iValue 3
+ m_bHidden 1
+ m_fRadius 50
+}
