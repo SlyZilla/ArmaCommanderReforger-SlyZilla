@@ -3,3 +3,4 @@
 resourceDatabase.rdb
 *.bak
 .local-game/
+.acr-requests/

@@ -50,6 +50,9 @@ class ACR_TestHarness : Managed
  void Tick()
  {
   m_Ticks++;
+  // Lets the launcher script close the game as soon as the run is over.
+  if ((m_Mode == MODE_AUTO && m_Ticks == 66) || (m_Mode == MODE_COMMAND && m_Ticks == 92) || (m_Mode == MODE_MAP_HANDOFF && m_Ticks == 66))
+   Print("[ACR] TEST COMPLETE");
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
