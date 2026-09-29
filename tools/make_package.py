@@ -31,3 +31,4 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
             if p.is_file():
                 z.write(p, f'{top}/ArmaCommanderReforger/{p.relative_to(root).as_posix()}')
 print(out, out.stat().st_size, version)
+(root / 'dist' / 'VERSION.txt').write_text(version + '\n')
