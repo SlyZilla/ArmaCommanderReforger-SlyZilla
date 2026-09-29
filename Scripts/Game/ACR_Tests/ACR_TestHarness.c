@@ -924,7 +924,7 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 54) m_HoverAt = lz + Vector(0, 25, 0);
   if (m_Ticks >= 54 && m_Ticks < 60) Hover();
   if (m_Ticks == 59) PrintFormat("[ACR] TRANSPORT hovering 25 m over the LZ: Alpha aboard %1 (expect all)", Aboard(m_Range.m_Group));
-  if (m_Ticks == 60) m_HoverAt = lz + Vector(0, 3, 0);
+  if (m_Ticks == 60) m_HoverAt = lz + Vector(0, 1.5, 0);
   if (m_Ticks >= 60 && m_Ticks < 80) Hover();
   if (m_Ticks == 66) PrintFormat("[ACR] TRANSPORT set down at the LZ: Alpha aboard %1 (expect 0), Bravo aboard %2", Aboard(m_Range.m_Group), Aboard(m_Range.m_Bravo));
   if (m_Ticks == 67)
@@ -944,6 +944,7 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] TRANSPORT after F6 x2 at 10 m: Bravo aboard %1 (expect 0), Bravo alive %2", Aboard(m_Range.m_Bravo), AliveIn(m_Range.m_Bravo));
    foreach (ACR_Squad squad : manager.m_Squads) PrintFormat("[ACR] TRANSPORT   %1: %2", squad.GetName(), squad.Describe());
   }
-  if (m_Ticks == 86) Print("[ACR] TEST COMPLETE");
+  if (m_Ticks == 88) PrintFormat("[ACR] TRANSPORT final: Bravo aboard %1, alive %2", Aboard(m_Range.m_Bravo), AliveIn(m_Range.m_Bravo));
+  if (m_Ticks == 89) Print("[ACR] TEST COMPLETE");
  }
 }
