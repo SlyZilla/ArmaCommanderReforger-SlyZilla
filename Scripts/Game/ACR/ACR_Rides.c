@@ -84,6 +84,7 @@ class ACR_Rides : Managed
   if (FactionOf(squad) != faction || squad.HasPlayer() || RideOf(squad)) return false;
   IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
   if (!vehicle || squad.HasGunner(vehicle)) return false;
+  if (ACR_Logistics.ServiceOf(vehicle) != 0) return false; // ammo/repair/fuel trucks have their own job
   if (!CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent))) return false; // ground vehicles only
   ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
   if (!driver || !ACR_Respawn.IsAlive(driver) || ACR_Squad.FindController(driver) != 0) return false;

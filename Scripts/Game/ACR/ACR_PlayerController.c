@@ -270,6 +270,19 @@ modded class SCR_PlayerController
   m_ACR_Commandable.Copy(commandable);
  }
 
+ protected ref array<RplId> m_ACR_StatusGroups = {};
+ protected ref array<int> m_ACR_Status = {};
+ void ACR_SendGroupStatus(array<RplId> groupIds, array<int> status)
+ {
+  Rpc(ACR_GroupStatusOwner, groupIds, status);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_GroupStatusOwner(array<RplId> groupIds, array<int> status)
+ {
+  m_ACR_StatusGroups.Copy(groupIds);
+  m_ACR_Status.Copy(status);
+ }
+
  // Client-side hint for the command menu; the server re-checks on execution.
  bool ACR_CanCommandSquad()
  {
@@ -744,7 +757,57 @@ modded class SCR_PlayerController
    m_ACR_OrderCanvas.TessellateCircle(Vector(x1, y1, 0), 6, 12, dot.m_Vertices);
    m_ACR_OrderCommands.Insert(dot);
   }
+  ACR_DrawStatusBars(mapEntity);
   m_ACR_OrderCanvas.SetDrawCommands(m_ACR_OrderCommands);
+ }
+
+ // Two small bars under each friendly squad marker: health (green, amber, red)
+ // and ammo (blue, red when low). Crews add their vehicle's state; fuel and
+ // service stock are in the panel text.
+ protected void ACR_DrawStatusBars(SCR_MapEntity mapEntity)
+ {
+  foreach (int i, RplId groupId : m_ACR_StatusGroups)
+  {
+   if (i * 4 + 1 >= m_ACR_Status.Count()) break;
+   int health = m_ACR_Status[i * 4];
+   int ammo = m_ACR_Status[i * 4 + 1];
+   if (health < 0) continue;
+   int g = m_ACR_GroupIds.Find(groupId);
+   if (g < 0 || g >= m_ACR_LeaderPositions.Count()) continue;
+   vector pos = m_ACR_LeaderPositions[g];
+   IEntity leader = SCR_EntityHelper.RplIdToEntity(m_ACR_LeaderIds[g]);
+   if (leader) pos = leader.GetOrigin();
+   int sx, sy;
+   mapEntity.WorldToScreen(pos[0], pos[2], sx, sy, true);
+   float x = sx - 15;
+   float y = sy + 16;
+   Color healthColor = new Color(0.30, 0.85, 0.35, 0.95);
+   if (health < 60) healthColor = new Color(1.00, 0.75, 0.20, 0.95);
+   if (health < 30) healthColor = new Color(1.00, 0.25, 0.20, 0.95);
+   ACR_Bar(x, y, 30, 4, health / 100.0, healthColor);
+   if (ammo >= 0)
+   {
+    Color ammoColor = new Color(0.35, 0.70, 1.00, 0.95);
+    if (ammo < 30) ammoColor = new Color(1.00, 0.25, 0.20, 0.95);
+    ACR_Bar(x, y + 6, 30, 4, ammo / 100.0, ammoColor);
+   }
+  }
+ }
+
+ protected void ACR_Bar(float x, float y, float width, float height, float fill, Color color)
+ {
+  fill = Math.Clamp(fill, 0, 1);
+  PolygonDrawCommand back = new PolygonDrawCommand();
+  Color dark = new Color(0, 0, 0, 0.6);
+  back.m_iColor = dark.PackToInt();
+  back.m_Vertices = {x - 1, y - 1, x + width + 1, y - 1, x + width + 1, y + height + 1, x - 1, y + height + 1};
+  m_ACR_OrderCommands.Insert(back);
+  if (fill <= 0) return;
+  PolygonDrawCommand bar = new PolygonDrawCommand();
+  bar.m_iColor = color.PackToInt();
+  float right = x + width * fill;
+  bar.m_Vertices = {x, y, right, y, right, y + height, x, y + height};
+  m_ACR_OrderCommands.Insert(bar);
  }
 
  // ---------------------------------------------------------------- bases

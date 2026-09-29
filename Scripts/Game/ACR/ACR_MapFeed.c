@@ -134,6 +134,25 @@ class ACR_MapFeed
 
   }
   pc.ACR_SendGroupMarkers(leaders, positions, names, symbols, states, commandable, groupIds, details);
+  // Status bars: 4 ints per group (health %, ammo % or -1, fuel % or -1, service stock % or -1).
+  array<int> status = {};
+  foreach (RplId statusGroup : groupIds)
+  {
+   ACR_Squad known = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(statusGroup)));
+   if (!known)
+   {
+    status.Insert(-1);
+    status.Insert(-1);
+    status.Insert(-1);
+    status.Insert(-1);
+    continue;
+   }
+   status.Insert(known.m_iHealthPct);
+   status.Insert(known.m_iAmmoPct);
+   status.Insert(known.m_iFuelPct);
+   status.Insert(known.m_iStockPct);
+  }
+  pc.ACR_SendGroupStatus(groupIds, status);
  }
  // Current destination of every friendly squad, for the order lines on the map.
  static void PublishOrders(ACR_Manager manager, SCR_PlayerController pc, Faction faction)

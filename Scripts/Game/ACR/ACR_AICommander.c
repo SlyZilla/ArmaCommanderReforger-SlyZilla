@@ -3,7 +3,8 @@ enum ACR_EAITask
  FREE,      // available for orders
  DEFEND,    // holding a threatened base
  ATTACK,    // part of a base attack
- POSTED     // idle, moved up to a frontline base
+ POSTED,    // idle, moved up to a frontline base
+ RESUPPLY   // on its way to an ammo / repair / fuel / medical vehicle
 }
 
 // One base attack: groups gather at a staging point, then assault together.
@@ -107,6 +108,7 @@ class ACR_AICommander : Managed
   AssignDefenders();
   AssignAttacks();
   PostIdle();
+  ManageLogistics();
   Requisition();
  }
 
@@ -878,6 +880,26 @@ class ACR_AICommander : Managed
   }
   if (!spawn) return;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  // A service truck for a need nobody can meet (squads low on ammo, a wrecked
+  // BRDM...), one of each kind at a time.
+  if (m_Manager.m_Logistics)
+  {
+   array<int> services = {ACR_EService.AMMO, ACR_EService.REPAIR, ACR_EService.FUEL, ACR_EService.MEDICAL};
+   foreach (int service : services)
+   {
+    if ((m_iNeeds & service) == 0 || m_Manager.m_Logistics.CountStations(m_sFaction, service) > 0) continue;
+    int pick = -1;
+    foreach (int e, ACR_RequisitionEntry offer : data.m_aRequisitions)
+    {
+     if (offer.m_iRemaining <= 0 || offer.m_iCost > data.m_iRP || offer.m_sVehicle.IsEmpty()) continue;
+     if ((ACR_Logistics.ServiceOfName(offer.m_sVehicle) & service) == 0) continue;
+     if (pick < 0 || offer.m_iCost < data.m_aRequisitions[pick].m_iCost) pick = e;
+    }
+    if (pick < 0) continue;
+    PrintFormat("[ACR] AI %1 requisition (%2 support): %3", m_sFaction, ACR_Logistics.ServiceName(service), m_Manager.PurchaseAt(m_sFaction, pick, spawn));
+    return;
+   }
+  }
   // Squads keep having to walk far with no truck to fetch them: buy a transport first.
   if (m_Manager.m_Rides && m_Manager.m_Rides.ShortOfTransport(m_sFaction) && m_Manager.m_Rides.CountTransports(m_sFaction) < 3)
   {
@@ -910,6 +932,140 @@ class ACR_AICommander : Managed
    string result = m_Manager.PurchaseAt(m_sFaction, options.GetRandomElement(), spawn);
    PrintFormat("[ACR] AI %1 requisition: %2", m_sFaction, result);
   }
+ }
+
+ // ---------------------------------------------------------------- 6. logistics
+ // Squads low on ammo, hurt, or with a damaged / thirsty vehicle get the matching
+ // service vehicle: it drives out to squads holding a position, while free
+ // squads go back to it. Idle service vehicles wait at the safest base nearest
+ // the front, and go home to restock when they run low. Lose the truck and the
+ // front runs dry.
+ static const int LOW_AMMO = 45;
+ static const int LOW_HEALTH = 60;
+ static const int LOW_FUEL = 25;
+ static const float SERVICE_REACH = 2000;     // farthest a service vehicle is sent or sought
+ protected int m_iNeeds;                      // services wanted this tick (for requisition)
+ protected ref map<ACR_Squad, ACR_Squad> m_ServiceJobs = new map<ACR_Squad, ACR_Squad>(); // service crew -> squad it is serving
+
+ protected ACR_Squad CrewOf(IEntity vehicle)
+ {
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+   if (ACR_Transport.CrewedVehicle(squad) == vehicle) return squad;
+  return null;
+ }
+
+ protected bool InAssault(ACR_Squad squad)
+ {
+  foreach (ACR_AIAttack attack : m_Attacks)
+   if (attack.m_bAssaulting && !attack.m_bGrab && attack.m_Squads.Contains(squad)) return true;
+  return false;
+ }
+
+ protected int NeedsOf(ACR_Squad squad)
+ {
+  int need;
+  if (squad.m_iAmmoPct >= 0 && squad.m_iAmmoPct < LOW_AMMO) need |= ACR_EService.AMMO;
+  if (squad.m_iAvgHpPct < LOW_HEALTH) need |= ACR_EService.MEDICAL;
+  IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
+  if (vehicle)
+  {
+   if (ACR_Logistics.Health(vehicle) * 100 < LOW_HEALTH) need |= ACR_EService.REPAIR;
+   float fuel = ACR_Logistics.Fuel(vehicle);
+   if (fuel >= 0 && fuel * 100 < LOW_FUEL) need |= ACR_EService.FUEL;
+  }
+  return need;
+ }
+
+ protected void ManageLogistics()
+ {
+  ACR_Logistics logistics = m_Manager.m_Logistics;
+  m_iNeeds = 0;
+  if (!logistics) return;
+  // Finished jobs: the served squad no longer needs it, or either side is gone.
+  array<ACR_Squad> done = {};
+  foreach (ACR_Squad jobCrew, ACR_Squad jobClient : m_ServiceJobs)
+   if (!jobCrew || !jobClient || !m_Manager.m_Squads.Contains(jobCrew) || !m_Manager.m_Squads.Contains(jobClient) || NeedsOf(jobClient) == 0) done.Insert(jobCrew);
+  foreach (ACR_Squad finished : done) m_ServiceJobs.Remove(finished);
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  foreach (ACR_Squad squad : mine)
+  {
+   int need = NeedsOf(squad);
+   if (squad.m_iAITask == ACR_EAITask.RESUPPLY && need == 0)
+   {
+    squad.m_iAITask = ACR_EAITask.FREE;
+    PrintFormat("[ACR] AI %1: %2 resupplied", m_sFaction, squad.GetName());
+   }
+   if (need == 0 || InAssault(squad) || ACR_Logistics.ServiceOf(ACR_Transport.CrewedVehicle(squad)) != 0) continue;
+   m_iNeeds |= need;
+   array<int> services = {ACR_EService.AMMO, ACR_EService.REPAIR, ACR_EService.FUEL, ACR_EService.MEDICAL};
+   foreach (int service : services)
+   {
+    if ((need & service) == 0) continue;
+    array<IEntity> stations = {};
+    logistics.Stations(m_sFaction, service, stations);
+    IEntity station;
+    float best = SERVICE_REACH;
+    foreach (IEntity candidate : stations)
+    {
+     float d = vector.DistanceXZ(candidate.GetOrigin(), PositionOf(squad));
+     if (d < best) { best = d; station = candidate; }
+    }
+    if (!station || best < ACR_Logistics.SERVICE_RANGE) continue; // none, or already being served
+    ACR_Squad crew = CrewOf(station);
+    bool holding = squad.m_iAITask == ACR_EAITask.DEFEND || squad.m_iAITask == ACR_EAITask.POSTED || !squad.m_Group.GetCurrentWaypoint();
+    bool crewFree = crew && !crew.HasPlayer() && !m_ServiceJobs.Contains(crew);
+    string what = ACR_Logistics.ServiceName(service);
+    if (crewFree && (holding || squad.IsMounted() == false && best > 800))
+    {
+     // Bring the truck to them.
+     crew.SetMode(ACR_EMoveMode.FAST);
+     crew.RouteTo(ACR_Manager.Ground(PositionOf(squad)), ACR_Squad.WP_MOVE, -1, "Resupplying " + squad.GetName(), 0);
+     m_ServiceJobs.Set(crew, squad);
+     PrintFormat("[ACR] AI %1: %2 drives out to %3 (%4)", m_sFaction, crew.GetName(), squad.GetName(), what);
+    }
+    else if (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED)
+    {
+     // Go back to the truck.
+     squad.m_iAITask = ACR_EAITask.RESUPPLY;
+     squad.SetMode(ACR_EMoveMode.FAST);
+     Travel(squad, ACR_Manager.Ground(station.GetOrigin()), false, 0);
+     PrintFormat("[ACR] AI %1: %2 falls back to the %3 truck", m_sFaction, squad.GetName(), what);
+    }
+    break;
+   }
+  }
+  // Idle service vehicles: restock if low, otherwise wait at the supply point.
+  ACR_Base supplyPoint = SupplyPoint();
+  foreach (ACR_Squad idleCrew : mine)
+  {
+   IEntity serviceVehicle = ACR_Transport.CrewedVehicle(idleCrew);
+   if (!serviceVehicle || ACR_Logistics.ServiceOf(serviceVehicle) == 0 || idleCrew.HasPlayer() || m_ServiceJobs.Contains(idleCrew)) continue;
+   ACR_Base goal = supplyPoint;
+   if (logistics.StockPercent(serviceVehicle) < 25) goal = HomeBase();
+   if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
+   if (idleCrew.m_Order == "Moving" && vector.DistanceXZ(idleCrew.m_MoveTarget, goal.GetOrigin()) < goal.m_fRadius) continue;
+   idleCrew.RouteTo(ACR_Manager.Ground(goal.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
+   PrintFormat("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(ACR_Logistics.ServiceOf(serviceVehicle)));
+  }
+ }
+
+ // Our base nearest the front that isn't threatened: where service vehicles wait.
+ protected ACR_Base SupplyPoint()
+ {
+  ACR_Base best;
+  float bestFront = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != m_sFaction || base.m_bContested || ThreatTo(base) > 0) continue;
+   float front = float.MAX;
+   foreach (ACR_Base other : ACR_Base.s_All)
+    if (other.m_sOwner != m_sFaction && Visible(other)) front = Math.Min(front, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
+   if (front < 500) continue; // too close to the enemy to park trucks
+   if (front < bestFront) { bestFront = front; best = base; }
+  }
+  if (!best) best = HomeBase();
+  return best;
  }
 
  // ---------------------------------------------------------------- hand-over

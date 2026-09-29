@@ -43,6 +43,8 @@ class ACR_Manager : Managed
  ref ACR_Respawn m_Respawn;
  ref ACR_Supports m_Supports;
  ref ACR_Rides m_Rides;
+ ref ACR_Logistics m_Logistics;
+ protected int m_iStatusTick;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
 
@@ -118,6 +120,10 @@ class ACR_Manager : Managed
   m_Respawn.Tick();
   if (!m_Rides) m_Rides = new ACR_Rides(this);
   m_Rides.Tick();
+  if (!m_Logistics) m_Logistics = new ACR_Logistics(this);
+  m_Logistics.Tick();
+  m_iStatusTick++;
+  bool statusDue = m_iStatusTick % 5 == 0;
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
@@ -125,6 +131,7 @@ class ACR_Manager : Managed
    {
     squad.Refresh();
     squad.Tactics(m_iAISkill, GetGame().GetWorld().GetWorldTime());
+    if (statusDue) squad.UpdateStatus(m_Logistics);
     continue;
    }
    PrintFormat("[ACR] Squad removed: %1", squad.GetName());

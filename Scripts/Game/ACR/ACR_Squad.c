@@ -1092,8 +1092,13 @@ class ACR_Squad : Managed
    if (character && !character.GetCharacterController().IsDead()) alive++;
   }
   string order = m_Order;
-  if (m_Group && !m_Group.GetCurrentWaypoint() && order != "Defending") order = "Holding";
+  bool finished = order == "Moving" || order == "Assaulting" || order == "Suppressing" || order == "Getting in" || order == "Getting out";
+  if (m_Group && !m_Group.GetCurrentWaypoint() && finished) order = "Holding";
   string text = string.Format("%1 alive | %2 | %3", alive, ModeName(m_Mode), order);
+  text += " | HP " + m_iHealthPct.ToString() + "%";
+  if (m_iAmmoPct >= 0) text += " | ammo " + m_iAmmoPct.ToString() + "%";
+  if (m_iFuelPct >= 0 && m_iFuelPct < 30) text += " | fuel " + m_iFuelPct.ToString() + "%";
+  if (m_iStockPct >= 0) text += " | " + m_sServiceName + " stock " + m_iStockPct.ToString() + "%";
   array<IEntity> vehicles = {};
   GetVehicles(vehicles);
   if (!vehicles.IsEmpty()) text += " | mounted";
@@ -1101,6 +1106,80 @@ class ACR_Squad : Managed
   GetMissing(missing);
   if (!missing.IsEmpty()) text += string.Format(" | %1 missing", missing.Count());
   return text;
+ }
+
+ // ---------------------------------------------------------------- status
+ // Refreshed every few seconds on the server for the map markers and panel:
+ // health (wounds and losses against full strength, and the vehicle's state),
+ // ammo (magazines against what each soldier started with; guns for crews),
+ // fuel, and for service vehicles their remaining stock.
+ int m_iHealthPct = 100;
+ int m_iAmmoPct = -1;
+ int m_iFuelPct = -1;
+ int m_iStockPct = -1;
+ int m_iAvgHpPct = 100;       // average health of the living (for medics)
+ string m_sServiceName;
+ protected ref map<IEntity, float> m_MagazineBaseline = new map<IEntity, float>();
+
+ int MagazineTarget(IEntity soldier)
+ {
+  float baseline;
+  if (m_MagazineBaseline.Find(soldier, baseline)) return (int)Math.Round(baseline);
+  return 6;
+ }
+
+ void UpdateStatus(ACR_Logistics logistics)
+ {
+  int full;
+  foreach (ResourceName prefab, int count : m_FullStrength) full += count;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  float health;
+  float have;
+  float want;
+  int alive;
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   alive++;
+   health += ACR_Logistics.Health(body);
+   float magazines = ACR_Logistics.SoldierMagazines(body);
+   float baseline;
+   if (!m_MagazineBaseline.Find(body, baseline))
+   {
+    baseline = Math.Max(magazines, 1);
+    m_MagazineBaseline.Set(body, baseline);
+   }
+   have += Math.Min(magazines, baseline);
+   want += baseline;
+  }
+  int slots = Math.Max(full, alive);
+  m_iHealthPct = 0;
+  if (slots > 0) m_iHealthPct = (int)(100 * health / slots);
+  m_iAvgHpPct = 100;
+  if (alive > 0) m_iAvgHpPct = (int)(100 * health / alive);
+  m_iAmmoPct = -1;
+  if (want > 0) m_iAmmoPct = (int)(100 * have / want);
+  m_iFuelPct = -1;
+  m_iStockPct = -1;
+  m_sServiceName = "";
+  IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  if (!vehicle) return;
+  m_iHealthPct = (int)Math.Min(m_iHealthPct, 100 * ACR_Logistics.Health(vehicle));
+  float guns = ACR_Logistics.VehicleAmmo(vehicle);
+  if (guns >= 0 && HasGunner(vehicle))
+  {
+   if (m_iAmmoPct < 0) m_iAmmoPct = (int)(100 * guns);
+   else m_iAmmoPct = (int)Math.Min(m_iAmmoPct, 100 * guns);
+  }
+  float fuel = ACR_Logistics.Fuel(vehicle);
+  if (fuel >= 0) m_iFuelPct = (int)(100 * fuel);
+  if (logistics && ACR_Logistics.ServiceOf(vehicle) != 0)
+  {
+   m_iStockPct = logistics.StockPercent(vehicle);
+   m_sServiceName = ACR_Logistics.ServiceName(ACR_Logistics.ServiceOf(vehicle));
+  }
  }
 
  // ---------------------------------------------------------------- teardown
