@@ -833,9 +833,13 @@ class ACR_TestHarness : Managed
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
    if (soviets) soviets.m_bAICommander = false;
   }
+  if (m_Ticks == 2)
+  {
+   foreach (ACR_Base held : ACR_Base.s_All) if (held.m_sName == "Crossroads") held.m_sOwner = "US";
+  }
+  if (m_Ticks == 5) pc.ACR_Request(ACR_ERequest.LEAVE_COMMAND);
   if (m_Ticks == 3)
   {
-   pc.ACR_Request(ACR_ERequest.LEAVE_COMMAND);
    manager.m_Bases.GetFaction("US").m_iRP = 300;
    ResourceName team = FireTeamOf(manager, "US");
    array<vector> spots = {"1350 0 2540".ToVector(), "1200 0 2520".ToVector(), "1400 0 2560".ToVector()};
@@ -845,8 +849,7 @@ class ACR_TestHarness : Managed
   {
    ACR_Base outpost;
    foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sName == "Outpost") outpost = base;
-   string line = string.Format("[ACR] TACTICSTEST t=%1 outpost: %2 | US rp %3", m_Ticks, manager.m_Bases.Describe(outpost), manager.m_Bases.GetRP("US"));
-   Print(line);
+   PrintFormat("[ACR] TACTICSTEST t=%1 outpost: %2 | US rp %3", m_Ticks, manager.m_Bases.Describe(outpost), manager.m_Bases.GetRP("US"));
    foreach (ACR_Squad squad : manager.m_Squads)
    {
     if (squad.GetFaction().GetFactionKey() != "US" || squad.IsMounted()) continue;
