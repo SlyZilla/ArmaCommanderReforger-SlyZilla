@@ -102,6 +102,11 @@ class ACR_HeliGun : Managed
  float m_fBurstEnd;
  float m_fPauseEnd;
  float m_fNextPick;
+ vector m_Wander;        // slowly drifting aim error (metres at the target)
+ vector m_WanderGoal;
+ float m_fNextWander;
+ float m_fSettleUntil;   // time to get on a new target before the first burst
+ static const float WANDER_METRES = 2.5;
 
  static int Bin(float bearing)
  {
@@ -199,10 +204,19 @@ class ACR_HeliGun : Managed
    }
    m_iWorse = 0;
    m_fLastYawErr = 999;
+   if (m_Target) m_fSettleUntil = now + Math.RandomFloat(900, 1600);
   }
   if (!m_Target) { StopFire(); return; }
 
-  vector aim = LeadPoint(heliVelocity, m_Target);
+  // A human gunner in a moving helicopter: the aim drifts around the target and
+  // each new target takes a moment to get on. The gun's own dispersion adds on top.
+  if (now >= m_fNextWander)
+  {
+   m_fNextWander = now + Math.RandomFloat(500, 1100);
+   m_WanderGoal = Vector(Math.RandomFloat(-1, 1), Math.RandomFloat(-0.5, 0.7), Math.RandomFloat(-1, 1)) * WANDER_METRES;
+  }
+  m_Wander = m_Wander + (m_WanderGoal - m_Wander) * 0.05;
+  vector aim = LeadPoint(heliVelocity, m_Target) + m_Wander;
   vector desired = (aim - m_Turret.GetOrigin()).Normalized();
   vector current = m_TurretComponent.GetAimingDirectionWorld();
   float errYaw = ACR_HeliRun.Wrap((Math.Atan2(desired[0], desired[2]) - Math.Atan2(current[0], current[2])) * Math.RAD2DEG);
@@ -227,7 +241,7 @@ class ACR_HeliGun : Managed
    StopFire();
    m_fPauseEnd = now + Math.RandomFloat(400, 800);
   }
-  else if (!m_bFiring && onTarget && now > m_fPauseEnd)
+  else if (!m_bFiring && onTarget && now > m_fPauseEnd && now > m_fSettleUntil)
   {
    m_Controller.SetFireWeaponWanted(true);
    m_bFiring = true;

@@ -613,6 +613,8 @@ class ACR_AICommander : Managed
    foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
    {
     if (entry.m_iRemaining <= 0 || entry.m_iCost > data.m_iRP) continue;
+    // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
+    if (entry.m_bAircraft || entry.m_sVehicle.Contains("/Helicopters/") || entry.m_sVehicle.Contains("/Planes/")) continue;
     // Keep infantry the backbone: three chances in four for infantry-only entries.
     if (!entry.m_sVehicle.IsEmpty() && Math.RandomFloat(0, 1) < 0.75) continue;
     options.Insert(i);
