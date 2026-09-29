@@ -203,12 +203,11 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents) WakeUp(agent);
  }
 
- // PreventMaxLOD doesn't pull an agent that is already disabled back out, so
- // step it down one LOD first.
+ // Reforger lowers AI detail with distance from players, and far AI stop
+ // perceiving and fighting. Pin commanded AI and garrisons at full detail.
  static void WakeUp(AIAgent agent)
  {
-  int maxLOD = AIAgent.GetMaxLOD();
-  if (agent.GetLOD() >= maxLOD) agent.SetLOD(maxLOD - 1);
+  if (agent.GetPermanentLOD() != 0) agent.SetPermanentLOD(0);
   agent.PreventMaxLOD();
  }
 

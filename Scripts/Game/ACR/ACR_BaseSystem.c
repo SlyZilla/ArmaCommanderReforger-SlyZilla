@@ -260,7 +260,7 @@ class ACR_BaseSystem : Managed
    vector offset = Vector(Math.RandomFloat(-spread, spread), 0, Math.RandomFloat(-spread, spread));
    IEntity soldier = ACR_Manager.SpawnPrefab(prefabs[1], center + offset);
    if (!soldier) continue;
-   group.AddAIEntityToGroup(soldier);
+   if (!group.AddAIEntityToGroup(soldier)) PrintFormat("[ACR] Garrison soldier %1 could not join its group", i);
    FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(soldier.FindComponent(FactionAffiliationComponent));
    if (affiliation) affiliation.SetAffiliatedFactionByKey(base.m_sOwner);
   }
@@ -272,7 +272,7 @@ class ACR_BaseSystem : Managed
    defend.SetCompletionRadius(base.m_fRadius);
    group.AddWaypoint(defend);
   }
-  PrintFormat("[ACR] Garrison deployed at %1: %2 soldiers", base.m_sName, base.m_iGarrisonLeft);
+  PrintFormat("[ACR] Garrison deployed at %1: %2 soldiers, %3 in group", base.m_sName, base.m_iGarrisonLeft, group.GetAgentsCount());
  }
 
  protected EntitySpawnParams SpawnParams(vector position)

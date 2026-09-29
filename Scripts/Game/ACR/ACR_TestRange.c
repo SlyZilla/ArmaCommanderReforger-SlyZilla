@@ -22,8 +22,8 @@ class ACR_TestRange : GenericEntity
   if (!GetGame().InPlayMode()) return;
   s_Instance = this;
   ACR_Manager manager = ACR_Manager.Start();
-  manager.m_Bases.SetFactionPrefabs("US", "{EACD97CF4A702FAE}Prefabs/Groups/BLUFOR/Group_US_Base.et", "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et");
-  manager.m_Bases.SetFactionPrefabs("USSR", "{8DE0C0830FE0C33D}Prefabs/Groups/OPFOR/Group_USSR_Base.et", "{DCB41B3746FDD1BE}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_Rifleman.et");
+  manager.m_Bases.SetFactionPrefabs("US", "{000CD338713F2B5A}Prefabs/AI/Groups/Group_Base.et", "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et");
+  manager.m_Bases.SetFactionPrefabs("USSR", "{000CD338713F2B5A}Prefabs/AI/Groups/Group_Base.et", "{DCB41B3746FDD1BE}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_Rifleman.et");
   if (Replication.IsServer())
   {
    IEntity spawn = GetGame().GetWorld().FindEntityByName("ACR_PlayerSpawn");
