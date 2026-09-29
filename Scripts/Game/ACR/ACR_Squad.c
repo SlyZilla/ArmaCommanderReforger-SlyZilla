@@ -197,10 +197,19 @@ class ACR_Squad : Managed
  static void KeepSimulated(AIGroup group)
  {
   if (!group) return;
-  group.PreventMaxLOD();
+  WakeUp(group);
   array<AIAgent> agents = {};
   group.GetAgents(agents);
-  foreach (AIAgent agent : agents) agent.PreventMaxLOD();
+  foreach (AIAgent agent : agents) WakeUp(agent);
+ }
+
+ // PreventMaxLOD doesn't pull an agent that is already disabled back out, so
+ // step it down one LOD first.
+ static void WakeUp(AIAgent agent)
+ {
+  int maxLOD = AIAgent.GetMaxLOD();
+  if (agent.GetLOD() >= maxLOD) agent.SetLOD(maxLOD - 1);
+  agent.PreventMaxLOD();
  }
 
  void Refresh()

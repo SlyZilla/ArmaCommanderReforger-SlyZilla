@@ -249,6 +249,7 @@ class ACR_BaseSystem : Managed
   SCR_AIGroup.IgnoreSpawning(true);
   SCR_AIGroup group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(prefabs[0], center));
   SCR_AIGroup.IgnoreSpawning(false);
+  if (group) group.SetMaxUnitsToSpawn(0);
   if (!group) return;
   m_GarrisonGroups.Insert(group); // before any soldier joins, so it is never registered as a squad
   group.SetDeleteWhenEmpty(false); // we delete it ourselves; otherwise it vanishes mid-fight and respawns

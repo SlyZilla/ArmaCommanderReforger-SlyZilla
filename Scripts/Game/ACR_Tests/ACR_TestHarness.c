@@ -396,6 +396,7 @@ class ACR_TestHarness : Managed
    if (alpha) a = alpha.Describe();
    if (bravo) b = bravo.Describe();
    PrintFormat("[ACR] ASSAULT t=%1 outpost: %2 | alpha: %3 | bravo: %4", m_Ticks, manager.m_Bases.Describe(outpost), a, b);
+   PrintFormat("[ACR] ASSAULT LOD garrison=%1 alpha=%2 max=%3", LodList(outpost.m_GarrisonGroup), LodList(m_Range.m_Group), AIAgent.GetMaxLOD());
   }
   if (!m_AssaultDone && outpost.m_sOwner == "US")
   {
@@ -404,6 +405,15 @@ class ACR_TestHarness : Managed
    GetGame().GetCallqueue().CallLater(PrintComplete, 5000, false);
   }
   if (m_Ticks == 400) Print("[ACR] TEST COMPLETE");
+ }
+ string LodList(AIGroup group)
+ {
+  if (!group) return "none";
+  string text = group.GetLOD().ToString() + ":";
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents) text += " " + agent.GetLOD().ToString();
+  return text;
  }
  void PrintComplete() { Print("[ACR] TEST COMPLETE"); }
 }
