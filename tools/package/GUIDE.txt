@@ -153,6 +153,13 @@ its bases.
 
 TIPS
 ----
+- HELICOPTER / TRUCK INSERTIONS: order a squad to "Get in" your transport.
+  Then (squad or transport selected) click "Unload at LZ" and right-click the
+  landing zone: they jump out by themselves as soon as the vehicle is down
+  and slow near it (ground, a rooftop, or a few metres over water all count).
+  Flying or driving yourself? F6 drops every passenger squad right now; if
+  you are still high or fast it warns you first, and F6 again drops them
+  anyway (they may get hurt from high up).
 - Load a squad into Truck 1: select the squad, click "Get in", then right-click
   on the truck. Then move the TRUCK's crew, and the passengers ride along.
 - GUNNER DRIVES: sitting in a vehicle's gun (e.g. a Humvee M2) with an AI

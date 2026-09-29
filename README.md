@@ -23,7 +23,8 @@ Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo).
 | F7 | Possess the soldier under your crosshair, or the marker under the map cursor |
 | F8 | Return to your command unit |
 | F9 | Open/close the command map (no map item needed) |
-| F5 / F6 | Test hotkeys: move selected squad to cursor (map) or 35 m ahead / back to start |
+| F6 (in a vehicle) | Drop every passenger squad now (a second press within 3 s overrides the "too high/fast" warning) |
+| F5 | Test hotkey: move selected squad to cursor (map) or 35 m ahead |
 | W/A/S/D in a turret | Gunner drives: steer the vehicle's AI driver (a map order hands control back) |
 | Command menu key (default: backtick) | Native squad orders, only while possessing a squad leader |
 
@@ -39,6 +40,7 @@ Logs: `.local-game/logs/<date>/console.log`, tagged `[ACR]`.
 | `ACR/ACR_GunnerDrive.c` | Gunner drives: server-side throttle/steer override while a player mans a turret with an AI driver |
 | `ACR/ACR_Supports.c` | Off-map supports: mortar/smoke/flare effect modules, virtual rocket strike and bomb run, script-flown gunship gun run / loiter |
 | `ACR/ACR_Respawn.c` | Command-unit respawn at the nearest owned base; possessed-soldier death handling |
+| `ACR/ACR_Transport.c` | Passenger squads, "vehicle is down" rule, queued LZ unloads |
 | `ACR/ACR_MapFeed.c` | Server-to-player map snapshots (soldiers, group leaders) |
 | `ACR/ACR_PlayerController.c` | Player RPCs, map markers, aimed possession |
 | `ACR/ACR_MapHandoff.c` | Cleans up map gadget, focus, input and view flags when you leave a body |
