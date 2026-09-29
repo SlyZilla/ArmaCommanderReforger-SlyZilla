@@ -385,9 +385,9 @@ class ACR_TestHarness : Managed
   foreach (ACR_Base base : ACR_Base.s_All)
    if (base.m_sName == "Outpost") outpost = base;
   if (!outpost) return;
-  if (m_Ticks == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), "2945 0 2700".ToVector());
+  if (m_Ticks == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), "2948 0 2700".ToVector());
   if (m_Ticks == 12) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), "2955 0 2695".ToVector());
-  if (m_Ticks % 15 == 0)
+  if (m_Ticks % 10 == 0)
   {
    ACR_Squad alpha = manager.FindSquadByGroup(m_Range.m_Group);
    ACR_Squad bravo = manager.FindSquadByGroup(m_Range.m_Bravo);
@@ -404,7 +404,7 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] ASSAULT captured at t=%1", m_Ticks);
    GetGame().GetCallqueue().CallLater(PrintComplete, 5000, false);
   }
-  if (m_Ticks == 400) Print("[ACR] TEST COMPLETE");
+  if (m_Ticks == 150) Print("[ACR] TEST COMPLETE");
  }
  string LodList(AIGroup group)
  {
