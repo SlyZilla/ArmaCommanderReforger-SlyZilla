@@ -1112,6 +1112,25 @@ class ACR_TestHarness : Managed
    ACR_Squad veryFar = manager.m_Rides.FindTransport("US", Ground("400 0 2250"), 5000, 3, d);
    PrintFormat("[ACR] RIDE limits: 600 m away on a 2 km trip -> %1 (expect Taxi 1) | 600 m on a 1 km trip -> %2 (expect none) | 1 km away -> %3 (expect none) | free=%4 seats=%5",
     nearOk, tooFar, veryFar, manager.m_Rides.IsFreeTransport(m_TaxiSquad, "US"), ACR_Rides.FreeSeats(ACR_Transport.CrewedVehicle(m_TaxiSquad)));
+   // Land routing: a few long lines across the island; each leg of a route must be dry.
+   array<vector> ends = {"1320 0 2832".ToVector(), "1450 0 1150".ToVector(), "3200 0 2700".ToVector(), "2500 0 1300".ToVector(), "600 0 1500".ToVector()};
+   for (int e = 0; e + 1 < ends.Count(); e++)
+   {
+    vector from = Ground(string.Format("%1 0 %2", ends[e][0], ends[e][2]));
+    vector to = Ground(string.Format("%1 0 %2", ends[e + 1][0], ends[e + 1][2]));
+    array<vector> legs = {};
+    int started = System.GetTickCount();
+    bool routed = ACR_Terrain.LandRoute(from, to, legs);
+    int took = System.GetTickCount() - started;
+    float worst;
+    vector prev = from;
+    foreach (vector leg : legs)
+    {
+     worst = Math.Max(worst, ACR_Terrain.WaterAlong(prev, leg));
+     prev = leg;
+    }
+    PrintFormat("[ACR] ROUTETEST %1 -> %2: straight water %3 m, routed=%4 legs=%5 worst leg water %6 m, %7 ms", from, to, (int)ACR_Terrain.WaterAlong(from, to), routed, legs.Count(), (int)worst, took);
+   }
    m_RideDest = Ground("1290 0 2300");
    pc.ACR_Request(ACR_ERequest.ORDER_RIDE, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), m_RideDest);
    m_WalkSquad.MoveTo(Ground("1750 0 2832"));

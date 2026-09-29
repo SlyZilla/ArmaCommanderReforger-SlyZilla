@@ -445,12 +445,17 @@ class ACR_AICommander : Managed
   dir.Normalize();
   float ring = target.m_fRadius + STAGING_DISTANCE;
   attack.m_Staging = ACR_Manager.Ground(target.GetOrigin() + dir * ring);
+  // Staging points on dry land with a dry run in (no forming up in a bay).
+  vector dryMain;
+  if (ACR_Terrain.DryApproach(target.GetOrigin(), dir, ring, dryMain)) attack.m_Staging = dryMain;
   array<float> angles = {0, 55, -55, 90, -90};
   foreach (int i, ACR_Squad member : attack.m_Squads)
   {
    float angle = angles[i % angles.Count()] * Math.DEG2RAD;
    vector rotated = Vector(dir[0] * Math.Cos(angle) - dir[2] * Math.Sin(angle), 0, dir[0] * Math.Sin(angle) + dir[2] * Math.Cos(angle));
-   attack.m_aStaging.Insert(ACR_Manager.Ground(target.GetOrigin() + rotated * ring));
+   vector stage;
+   if (!ACR_Terrain.DryApproach(target.GetOrigin(), rotated, ring, stage)) stage = attack.m_Staging;
+   attack.m_aStaging.Insert(stage);
   }
   bool empty = target.m_sOwner.IsEmpty();
   // With two or more squads on a held base, one becomes the base of fire
@@ -511,6 +516,17 @@ class ACR_AICommander : Managed
   return nearest;
  }
 
+ static bool IsServiceVehicle(ACR_RequisitionEntry entry)
+ {
+  if (entry.m_sVehicle.IsEmpty()) return false;
+  string text = entry.m_sName + " " + entry.m_sVehicle;
+  text.ToLower();
+  array<string> words = {"fuel", "repair", "ammo", "supply", "medical", "ambulance", "command", "radio", "tanker"};
+  foreach (string word : words)
+   if (text.Contains(word)) return true;
+  return false;
+ }
+
  // Long trips on foot become rides: a free truck nearby picks the squad up and
  // drops it dropShort metres before the destination, where it carries on.
  static const float RIDE_DISTANCE = 900;
@@ -532,8 +548,9 @@ class ACR_AICommander : Managed
    string why;
    if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why)) return;
   }
-  if (defend) squad.Defend(destination);
-  else squad.MoveTo(destination);
+  // On foot (or its own vehicle): round any water rather than across it.
+  if (defend) squad.RouteTo(destination, ACR_Squad.WP_DEFEND, 15, "Defending", 1);
+  else squad.RouteTo(destination, ACR_Squad.WP_MOVE, -1, "Moving", 0);
  }
 
  // A beaten squad breaks contact and falls back to the nearest own base.
@@ -709,7 +726,7 @@ class ACR_AICommander : Managed
   {
    int truck = -1;
    foreach (int t, ACR_RequisitionEntry candidate : data.m_aRequisitions)
-    if (candidate.m_bTransport && candidate.m_iRemaining > 0 && candidate.m_iCost <= data.m_iRP && (truck < 0 || candidate.m_iCost < data.m_aRequisitions[truck].m_iCost)) truck = t;
+    if (candidate.m_bTransport && !IsServiceVehicle(candidate) && candidate.m_iRemaining > 0 && candidate.m_iCost <= data.m_iRP && (truck < 0 || candidate.m_iCost < data.m_aRequisitions[truck].m_iCost)) truck = t;
    if (truck >= 0)
    {
     PrintFormat("[ACR] AI %1 requisition (transport): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, truck, spawn));
@@ -726,6 +743,8 @@ class ACR_AICommander : Managed
     if (entry.m_iRemaining <= 0 || entry.m_iCost > data.m_iRP) continue;
     // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
     if (entry.m_bAircraft || entry.m_sVehicle.Contains("/Helicopters/") || entry.m_sVehicle.Contains("/Planes/")) continue;
+    // Nor service vehicles (fuel, repair, ammo, medical, command): nothing for the AI to do with them.
+    if (IsServiceVehicle(entry)) continue;
     // Keep infantry the backbone: three chances in four for infantry-only entries.
     if (!entry.m_sVehicle.IsEmpty() && Math.RandomFloat(0, 1) < 0.75) continue;
     options.Insert(i);

@@ -397,6 +397,7 @@ class ACR_Squad : Managed
   ClearOrders();
   m_Order = label;
   m_iOrderSerial++;
+  m_aRoute.Clear();
  }
 
  protected void ClearOrders()
@@ -412,6 +413,7 @@ class ACR_Squad : Managed
  bool MoveTo(vector destination)
  {
   m_iOrderSerial++;
+  m_aRoute.Clear();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_MOVE, destination)) return false;
   m_Order = "Moving";
@@ -422,6 +424,7 @@ class ACR_Squad : Managed
  bool Defend(vector position)
  {
   m_iOrderSerial++;
+  m_aRoute.Clear();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
   m_Order = "Defending";
@@ -433,6 +436,7 @@ class ACR_Squad : Managed
  bool Assault(vector position)
  {
   m_iOrderSerial++;
+  m_aRoute.Clear();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SEARCH_DESTROY, position, 30)) return false;
   m_Order = "Assaulting";
@@ -444,6 +448,7 @@ class ACR_Squad : Managed
  bool Suppress(vector position)
  {
   m_iOrderSerial++;
+  m_aRoute.Clear();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SUPPRESS, position)) return false;
   m_Order = "Suppressing";
@@ -504,6 +509,7 @@ class ACR_Squad : Managed
    if (combat && combat.GetAISkill() != skill) combat.SetAISkill(skill);
   }
   bool contact = KnownEnemies(350) > 0;
+  FollowRoute();
   Cohesion(now, contact);
   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
   if (m_bForced && movingOrder && contact && !IsMounted() && !m_bRegrouping)
@@ -530,6 +536,57 @@ class ACR_Squad : Managed
    }
   }
   DriveWatch(now, contact);
+ }
+
+ // ---------------------------------------------------------------- land routes
+ // An order whose straight line crosses open water is walked leg by leg along a
+ // land route instead (see ACR_Terrain), so squads go round a bay, not across it.
+ protected ref array<vector> m_aRoute = {};
+ protected ResourceName m_sRoutePrefab;
+ protected float m_fRouteRadius;
+ protected string m_sRouteOrder;
+ protected int m_iRouteKind;
+
+ bool RouteTo(vector destination, ResourceName prefab, float radius, string order, int kind)
+ {
+  IEntity anchor = GetAnchor();
+  array<vector> legs = {};
+  if (!anchor || IsMounted() || !ACR_Terrain.LandRoute(anchor.GetOrigin(), destination, legs))
+  {
+   if (prefab == WP_DEFEND) return Defend(destination);
+   if (prefab == WP_SEARCH_DESTROY) return Assault(destination);
+   return MoveTo(destination);
+  }
+  m_iOrderSerial++;
+  m_bRegrouping = false;
+  m_aRoute.Clear();
+  foreach (vector leg : legs) m_aRoute.Insert(leg);
+  m_sRoutePrefab = prefab;
+  m_fRouteRadius = radius;
+  m_sRouteOrder = order;
+  m_iRouteKind = kind;
+  PrintFormat("[ACR] ROUTE %1: straight line crosses water, going round in %2 legs", m_Name, legs.Count());
+  NextLeg();
+  return true;
+ }
+
+ protected void NextLeg()
+ {
+  vector leg = m_aRoute[0];
+  m_aRoute.RemoveOrdered(0);
+  if (m_aRoute.IsEmpty()) IssueWaypoint(m_sRoutePrefab, leg, m_fRouteRadius);
+  else IssueWaypoint(WP_MOVE, leg, 25);
+  m_Order = m_sRouteOrder;
+  m_OrderKind = m_iRouteKind;
+ }
+
+ protected void FollowRoute()
+ {
+  if (m_aRoute.IsEmpty() || m_bRegrouping || !m_Group) return;
+  array<AIWaypoint> waypoints = {};
+  m_Group.GetWaypoints(waypoints);
+  IEntity leader = GetLeader();
+  if (waypoints.IsEmpty() || (leader && vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget) < 30)) NextLeg();
  }
 
  // ---------------------------------------------------------------- cohesion
@@ -952,6 +1009,7 @@ class ACR_Squad : Managed
  bool BoardVehicle(Vehicle vehicle, vector position)
  {
   m_iOrderSerial++;
+  m_aRoute.Clear();
   m_bRegrouping = false;
   if (vehicle)
   {
@@ -968,6 +1026,7 @@ class ACR_Squad : Managed
  bool GetOut()
  {
   m_iOrderSerial++;
+  m_aRoute.Clear();
   array<IEntity> vehicles = {};
   GetVehicles(vehicles);
   if (vehicles.IsEmpty()) return false;
