@@ -1,0 +1,5 @@
+GameProject {
+ ID "ACRInspector"
+ GUID "AC230926A0010002"
+ Dependencies { "58D0FB3206B6F859" }
+}

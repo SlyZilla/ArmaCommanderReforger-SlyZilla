@@ -15,6 +15,7 @@ $Presets = @{
     'compile'    = @{ Flags = '';                        TimeoutSec = 120; DoneWhen = '\[ACR\] Squad registered' }
     'auto'       = @{ Flags = '-acrAutoTest 1';          TimeoutSec = 180; DoneWhen = '\[ACR\] TEST COMPLETE' }
     'command'    = @{ Flags = '-acrCommandTest 1';       TimeoutSec = 200; DoneWhen = '\[ACR\] TEST COMPLETE' }
+    'inspect'    = @{ Workbench = $true;                 TimeoutSec = 300 }
     'maphandoff' = @{ Flags = '-acrMapHandoffTest 1';    TimeoutSec = 180; DoneWhen = '\[ACR\] TEST COMPLETE' }
 }
 
@@ -45,6 +46,37 @@ function Find-Game {
     throw 'Arma Reforger was not found. Start this script with -GamePath pointing to ArmaReforgerSteam.exe.'
 }
 
+function Find-Workbench {
+    $game = Find-Game
+    $steamApps = Split-Path (Split-Path $game -Parent) -Parent
+    $candidates = @((Join-Path $steamApps 'Arma Reforger Tools\Workbench\ArmaReforgerWorkbenchSteamDiag.exe'))
+    foreach ($drive in 'C','D','E','F','G') {
+        $candidates += "${drive}:\SteamLibrary\steamapps\common\Arma Reforger Tools\Workbench\ArmaReforgerWorkbenchSteamDiag.exe"
+    }
+    foreach ($c in $candidates) { if (Test-Path -LiteralPath $c) { return $c } }
+    throw 'Arma Reforger Tools (Workbench) was not found.'
+}
+
+# Headless Workbench run that exports vanilla files listed in .local-inspect\profile\requests.txt.
+function Invoke-Inspect($id) {
+    $game = Find-Game
+    $wb = Find-Workbench
+    $inspectProfile = Join-Path $ProjectRoot '.local-inspect'
+    New-Item -ItemType Directory -Force (Join-Path $inspectProfile 'profile') | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $inspectProfile 'profile') -Filter 'export_*.txt' -ErrorAction SilentlyContinue | Remove-Item
+    $gproj = Join-Path $PSScriptRoot 'inspector\addon.gproj'
+    $gameAddons = Join-Path (Split-Path $game -Parent) 'addons'
+    $wbArgs = '-gproj "' + $gproj + '" -addonsDir "' + $gameAddons + '" -profile "' + $inspectProfile + '" -noThrow -wbmodule=ResourceManager -plugin=ACR_InspectPlugin'
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Running 'inspect' (Workbench, hidden)..." -ForegroundColor Cyan
+    $started = Get-Date
+    $proc = Start-Process -FilePath $wb -ArgumentList $wbArgs -WindowStyle Hidden -PassThru
+    $outcome = 'completed'
+    if (!$proc.WaitForExit(300000)) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; $outcome = 'timeout' }
+    $exports = @(Get-ChildItem -LiteralPath (Join-Path $inspectProfile 'profile') -Filter 'export_*.txt' -ErrorAction SilentlyContinue).Count
+    Write-Result $id @("status=$outcome", 'preset=inspect', "seconds=$([int]((Get-Date) - $started).TotalSeconds)", "exports=$exports")
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 'inspect' finished: $outcome, $exports files" -ForegroundColor Green
+}
+
 function Write-Result($id, $lines) {
     $path = Join-Path $RequestDir "$id.result.txt"
     $lines | Set-Content -LiteralPath $path -Encoding UTF8
@@ -67,6 +99,7 @@ function Invoke-Request($file) {
     }
 
     $config = $Presets[$preset]
+    if ($config.Workbench) { Invoke-Inspect $id; return }
     $game = Find-Game
     $gameArgs = '-addonsDir "' + $AddonsDir + '" -addons AC230926A0010001 -profile "' + $ProfileDir + '" -noSplash -noBackend -world "Worlds/ACR_TestRange.ent" ' + $config.Flags
     Write-Host "[$time] Running '$preset'..." -ForegroundColor Cyan
