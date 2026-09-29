@@ -523,7 +523,7 @@ class ACR_Squad : Managed
  // the normal dismount first, a teleport-out if that is refused.
  int DismountNow()
  {
-  int out;
+  int dropped;
   array<AIAgent> agents = {};
   GetAgents(agents);
   foreach (AIAgent agent : agents)
@@ -534,12 +534,12 @@ class ACR_Squad : Managed
    if (!access) continue;
    if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
-   out++;
+   dropped++;
   }
   m_bHasLZ = false;
   Halt("Dismounting");
   GetGame().GetCallqueue().CallLater(HoldAfterDismount, 4000, false);
-  return out;
+  return dropped;
  }
 
  // Once out, take positions where they landed.
