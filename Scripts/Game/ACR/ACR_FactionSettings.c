@@ -58,6 +58,15 @@ class ACR_FactionSettings : GenericEntity
  [Attribute(desc: "Soldiers used for base garrisons. Empty = the faction's riflemen, gunners and AT soldiers from its catalog.", params: "et")]
  ref array<ResourceName> m_aGarrisonSoldiers;
 
+ [Attribute("1", UIWidgets.CheckBox, "The commander can call off-map supports (artillery, air, helicopters)")]
+ bool m_bSupports;
+ [Attribute(desc: "Supports on offer. Empty = all of them with default prices and cooldowns.")]
+ ref array<ref ACR_SupportEntry> m_aSupports;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Gunship for helicopter supports (empty = UH-1H for western factions, Mi-8 otherwise)", "et")]
+ ResourceName m_sSupportHelicopter;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Rocket for rocket strikes and gunships (empty = Hydra 70 / S-5)", "et")]
+ ResourceName m_sSupportRocket;
+
  static ref array<ACR_FactionSettings> s_All = {};
 
  void ACR_FactionSettings(IEntitySource src, IEntity parent)

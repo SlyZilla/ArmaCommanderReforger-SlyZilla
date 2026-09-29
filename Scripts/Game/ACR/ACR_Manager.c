@@ -37,6 +37,7 @@ class ACR_Manager : Managed
  bool m_bHostGameMaster = true;
  int m_iRespawnSeconds = 15;
  ref ACR_Respawn m_Respawn;
+ ref ACR_Supports m_Supports;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
 
@@ -70,6 +71,23 @@ class ACR_Manager : Managed
  {
   point[1] = GetGame().GetWorld().GetSurfaceY(point[0], point[2]) + 0.15;
   return point;
+ }
+
+ // Arma-style 6-digit grid reference (10 m precision).
+ static string Grid(vector position)
+ {
+  int x = position[0] / 10;
+  int z = position[2] / 10;
+  return string.Format("grid %1-%2", x.ToString(3), z.ToString(3));
+ }
+
+ string CallSupport(SCR_PlayerController pc, int index, vector target)
+ {
+  Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
+  if (!faction) return "You have no faction";
+  if (!IsCommander(pc.GetPlayerId())) return "Only the commander can call supports";
+  if (!m_Supports) m_Supports = new ACR_Supports(this);
+  return m_Supports.Call(faction.GetFactionKey(), index, target);
  }
 
  static IEntity SpawnPrefab(ResourceName prefab, vector point)
@@ -126,6 +144,7 @@ class ACR_Manager : Managed
  {
   if (group.IsPlayable() || group.IsSlave() || !group.GetFaction()) return false;
   if (m_Bases.IsGarrison(group)) return false;
+  if (m_Supports && m_Supports.IsSupportGroup(group)) return false;
   if (group.GetAgentsCount() == 0) return false;
   return !FindSquadByGroup(group) && !FindSquadByCommandGroup(group);
  }
@@ -701,7 +720,10 @@ class ACR_Manager : Managed
  // Every frame on the server (physics inputs must be refreshed continuously).
  void ServerFrame(float timeSlice)
  {
-  if (m_Drives.IsEmpty() || !Replication.IsServer()) return;
+  if (!Replication.IsServer()) return;
+  if (!m_Supports) m_Supports = new ACR_Supports(this);
+  m_Supports.Frame(timeSlice);
+  if (m_Drives.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
   array<IEntity> ended = {};
   foreach (IEntity vehicle, ACR_GunnerDrive drive : m_Drives)

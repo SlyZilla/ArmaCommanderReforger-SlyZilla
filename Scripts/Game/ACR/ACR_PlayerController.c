@@ -522,7 +522,14 @@ modded class SCR_PlayerController
   m_ACR_Panel.SetCommand(m_ACR_CommandText, m_ACR_IsCommander, canTake);
   m_ACR_Panel.SetEconomy(string.Format("RP %1   +%2 in %3s", m_ACR_RP, m_ACR_Income, m_ACR_IncomeSeconds));
   if (!m_ACR_IsCommander) m_ACR_PendingEntry = -1;
+  if (!m_ACR_IsCommander) m_ACR_PendingSupport = -1;
   m_ACR_Panel.SetRequisitions(m_ACR_IsCommander, m_ACR_RequisitionOpen, m_ACR_ReqNames, m_ACR_ReqCosts, m_ACR_ReqRemaining, m_ACR_RP, m_ACR_PendingEntry);
+  m_ACR_Panel.SetSupports(m_ACR_IsCommander, m_ACR_SupportOpen, m_ACR_SupNames, m_ACR_SupCosts, m_ACR_SupCooldowns, m_ACR_RP, m_ACR_PendingSupport);
+  if (m_ACR_PendingSupport >= 0 && m_ACR_PendingSupport < m_ACR_SupNames.Count())
+  {
+   m_ACR_Panel.SetBase(m_ACR_SupNames[m_ACR_PendingSupport], "Right-click the target on the map. Click the entry again to cancel.");
+   return;
+  }
   if (m_ACR_PendingEntry >= 0 && m_ACR_PendingEntry < m_ACR_ReqNames.Count())
   {
    m_ACR_Panel.SetBase(m_ACR_ReqNames[m_ACR_PendingEntry], "Click one of your bases to deploy. Right-click to cancel.");
@@ -586,8 +593,24 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.REINFORCE: ACR_Request(ACR_ERequest.REINFORCE, m_ACR_SelectedGroup); return;
    case ACR_EPanelAction.TOGGLE_REQUISITION:
     m_ACR_RequisitionOpen = !m_ACR_RequisitionOpen;
+    if (m_ACR_RequisitionOpen) m_ACR_SupportOpen = false;
     m_ACR_PendingEntry = -1;
+    m_ACR_PendingSupport = -1;
     return;
+   case ACR_EPanelAction.TOGGLE_SUPPORTS:
+    m_ACR_SupportOpen = !m_ACR_SupportOpen;
+    if (m_ACR_SupportOpen) m_ACR_RequisitionOpen = false;
+    m_ACR_PendingEntry = -1;
+    m_ACR_PendingSupport = -1;
+    return;
+  }
+  if (action >= ACR_EPanelAction.SUPPORT_ENTRY)
+  {
+   int support = action - ACR_EPanelAction.SUPPORT_ENTRY;
+   if (m_ACR_PendingSupport == support) m_ACR_PendingSupport = -1;
+   else m_ACR_PendingSupport = support;
+   m_ACR_PendingEntry = -1;
+   return;
   }
   if (action >= ACR_EPanelAction.REQUISITION_ENTRY)
   {
@@ -601,6 +624,16 @@ modded class SCR_PlayerController
  bool ACR_HandleMapRightClick()
  {
   if (!ACR_Manager.GetInstance()) return false;
+  if (m_ACR_PendingSupport >= 0)
+  {
+   SCR_MapEntity supportMap = SCR_MapEntity.GetMapInstance();
+   if (!supportMap) return false;
+   float sx, sz;
+   supportMap.GetMapCursorWorldPosition(sx, sz);
+   Rpc(ACR_SupportServer, m_ACR_PendingSupport, Vector(sx, 0, sz));
+   m_ACR_PendingSupport = -1;
+   return true;
+  }
   if (m_ACR_PendingEntry >= 0)
   {
    m_ACR_PendingEntry = -1;
@@ -814,6 +847,40 @@ modded class SCR_PlayerController
   m_ACR_ReqNames.Copy(names);
   m_ACR_ReqCosts.Copy(costs);
   m_ACR_ReqRemaining.Copy(remaining);
+ }
+
+ // ---------------------------------------------------------------- supports
+ protected ref array<string> m_ACR_SupNames = {};
+ protected ref array<int> m_ACR_SupCosts = {};
+ protected ref array<int> m_ACR_SupCooldowns = {};
+ protected bool m_ACR_SupportOpen;
+ protected int m_ACR_PendingSupport = -1;
+
+ void ACR_SendSupports(array<string> names, array<int> costs, array<int> cooldowns)
+ {
+  Rpc(ACR_SupportsOwner, names, costs, cooldowns);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_SupportsOwner(array<string> names, array<int> costs, array<int> cooldowns)
+ {
+  m_ACR_SupNames.Copy(names);
+  m_ACR_SupCosts.Copy(costs);
+  m_ACR_SupCooldowns.Copy(cooldowns);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_SupportServer(int index, vector target)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastCommand < 300) return;
+  m_ACR_LastCommand = now;
+  Rpc(ACR_FeedbackOwner, manager.CallSupport(this, index, target));
+ }
+ // Test hook: call a support without the UI.
+ void ACR_TestSupport(int index, vector target)
+ {
+  Rpc(ACR_SupportServer, index, target);
  }
 
  // Base marker clicked: deploy the armed purchase there, otherwise select the base.

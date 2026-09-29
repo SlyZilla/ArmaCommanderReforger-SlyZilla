@@ -17,6 +17,7 @@ class ACR_TestHarness : Managed
  static const int MODE_GUNNER = 10;
  static const int MODE_PROBE = 11;
  static const int MODE_RESPAWN = 12;
+ static const int MODE_SUPPORT = 13;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -48,6 +49,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrGunnerTest", flag)) mode = MODE_GUNNER;
   if (System.GetCLIParam("acrProbeTest", flag)) mode = MODE_PROBE;
   if (System.GetCLIParam("acrRespawnTest", flag)) mode = MODE_RESPAWN;
+  if (System.GetCLIParam("acrSupportTest", flag)) mode = MODE_SUPPORT;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -81,6 +83,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_GUNNER) { TestGunner(); return; }
   if (m_Mode == MODE_PROBE) { TestProbe(); return; }
   if (m_Mode == MODE_RESPAWN) { TestRespawn(); return; }
+  if (m_Mode == MODE_SUPPORT) { TestSupport(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -703,5 +706,72 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 29) { m_RespawnOldMain = pc.GetControlledEntity(); Kill(m_RespawnOldMain); }
   if (m_Ticks == 32 || m_Ticks == 38) PrintFormat("[ACR] RESPAWN T3 t=%1 %2", m_Ticks, RespawnState(pc));
   if (m_Ticks == 40) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrSupportTest
+ // Soviet target groups in the open field south of the airfield; each support is
+ // called on its own group and the survivors are counted.
+ protected ref array<SCR_AIGroup> m_Targets = {};
+ protected ref array<string> m_TargetNames = {"mortar HE", "rocket strike", "bomb run", "heli gun run"};
+ protected ref array<vector> m_TargetSpots = {"1240 0 2150".ToVector(), "1350 0 2150".ToVector(), "1240 0 2270".ToVector(), "1350 0 2270".ToVector()};
+
+ int SupportIndex(ACR_Manager manager, ACR_ESupportType type)
+ {
+  foreach (int i, ACR_SupportEntry entry : manager.m_Bases.GetFaction("US").m_aSupports)
+   if (entry.m_eType == type) return i;
+  return -1;
+ }
+
+ int AliveIn(SCR_AIGroup group)
+ {
+  if (!group) return 0;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  int alive = 0;
+  foreach (AIAgent agent : agents) if (ACR_Respawn.IsAlive(agent.GetControlledEntity())) alive++;
+  return alive;
+ }
+
+ void LogTargets(string when)
+ {
+  string text = "";
+  foreach (int i, SCR_AIGroup group : m_Targets) text += string.Format(" | %1: %2 alive", m_TargetNames[i], AliveIn(group));
+  PrintFormat("[ACR] SUPPORTTEST %1%2", when, text);
+ }
+
+ void TestSupport()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+  }
+  if (m_Ticks == 5)
+  {
+   manager.m_Bases.GetFaction("US").m_iRP = 1000;
+   ResourceName groupPrefab;
+   foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction("USSR").m_aRequisitions)
+    if (entry.m_sVehicle.IsEmpty() && entry.m_sName.Contains("Fire Team")) { groupPrefab = entry.m_sGroup; break; }
+   foreach (vector spot : m_TargetSpots)
+   {
+    SCR_AIGroup group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(groupPrefab, spot));
+    m_Targets.Insert(group);
+   }
+   PrintFormat("[ACR] SUPPORTTEST targets=%1 prefab=%2 supports=%3", m_Targets.Count(), groupPrefab, manager.m_Bases.GetFaction("US").m_aSupports.Count());
+  }
+  if (m_Ticks == 11) LogTargets("before");
+  if (m_Ticks == 12) pc.ACR_TestSupport(SupportIndex(manager, ACR_ESupportType.MORTAR_HE_SMALL), m_TargetSpots[0]);
+  if (m_Ticks == 13) pc.ACR_TestSupport(SupportIndex(manager, ACR_ESupportType.MORTAR_SMOKE), "1450 0 2400".ToVector());
+  if (m_Ticks == 14) pc.ACR_TestSupport(SupportIndex(manager, ACR_ESupportType.ILLUMINATION), "1300 0 2450".ToVector());
+  if (m_Ticks == 15) pc.ACR_TestSupport(SupportIndex(manager, ACR_ESupportType.ROCKET_STRIKE), m_TargetSpots[1]);
+  if (m_Ticks == 16) pc.ACR_TestSupport(SupportIndex(manager, ACR_ESupportType.BOMB_RUN), m_TargetSpots[2]);
+  if (m_Ticks == 17) pc.ACR_TestSupport(SupportIndex(manager, ACR_ESupportType.HELI_GUN_RUN), m_TargetSpots[3]);
+  if (m_Ticks == 18) pc.ACR_TestSupport(0, m_TargetSpots[0]); // on cooldown: must be refused
+  if (m_Ticks == 60) pc.ACR_TestSupport(SupportIndex(manager, ACR_ESupportType.HELI_LOITER), "1300 0 2210".ToVector());
+  if (m_Ticks % 10 == 0 && m_Ticks >= 20) LogTargets(string.Format("t=%1", m_Ticks));
+  if (m_Ticks == 140) Print("[ACR] TEST COMPLETE");
  }
 }

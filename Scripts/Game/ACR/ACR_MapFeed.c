@@ -19,6 +19,7 @@ class ACR_MapFeed
    pc.ACR_SendCommandStatus(manager.IsCommander(id), manager.CommandStatus(id), manager.m_SharedCommand, manager.m_Bases.GetRP(key), manager.m_Bases.GetIncome(key), manager.m_Bases.SecondsToIncome());
    PublishBases(manager, pc, key);
    PublishRequisitions(manager, pc, key);
+   PublishSupports(manager, pc, key);
    PublishOrders(manager, pc, faction);
   }
  }
@@ -173,6 +174,22 @@ class ACR_MapFeed
    contested.Insert(flag);
   }
   pc.ACR_SendBases(positions, names, owners, details, radii, contested);
+ }
+ static void PublishSupports(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
+ {
+  array<string> names = {};
+  array<int> costs = {};
+  array<int> cooldowns = {};
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (ACR_SupportEntry entry : manager.m_Bases.GetFaction(factionKey).m_aSupports)
+  {
+   names.Insert(entry.m_sName);
+   costs.Insert(entry.m_iCost);
+   int left = Math.Ceil((entry.m_fReadyAt - now) / 1000);
+   if (left < 0) left = 0;
+   cooldowns.Insert(left);
+  }
+  pc.ACR_SendSupports(names, costs, cooldowns);
  }
  static void PublishRequisitions(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
  {

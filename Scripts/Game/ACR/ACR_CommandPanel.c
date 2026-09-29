@@ -11,7 +11,9 @@ enum ACR_EPanelAction
  UNLOAD,
  REINFORCE,
  TOGGLE_REQUISITION,
- REQUISITION_ENTRY = 100 // + entry index
+ TOGGLE_SUPPORTS,
+ REQUISITION_ENTRY = 100, // + entry index (below 200)
+ SUPPORT_ENTRY = 200     // + entry index
 }
 
 enum ACR_ECursorMode
@@ -52,6 +54,11 @@ class ACR_CommandPanel : Managed
  protected Widget m_RequisitionSection;
  protected Widget m_RequisitionBox;
  protected ref array<SCR_ButtonTextComponent> m_EntryButtons = {};
+ protected SCR_ButtonTextComponent m_SupportButton;
+ protected Widget m_SupportWidget;
+ protected Widget m_SupportSection;
+ protected Widget m_SupportBox;
+ protected ref array<SCR_ButtonTextComponent> m_SupportButtons = {};
  protected SCR_ButtonTextComponent m_GetInButton;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
@@ -92,6 +99,16 @@ class ACR_CommandPanel : Managed
   m_RequisitionBox = listBox;
   Widget scroll = ws.CreateWidget(WidgetType.ScrollLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, listBox);
   m_RequisitionSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, scroll);
+
+  m_SupportButton = AddButton(m_Content, "Supports", ACR_EPanelAction.TOGGLE_SUPPORTS);
+  m_SupportWidget = m_LastButtonWidget;
+  SizeLayoutWidget supportBox = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content));
+  supportBox.EnableHeightOverride(true);
+  supportBox.SetHeightOverride(300);
+  AlignableSlot.SetPadding(supportBox, 0, 6, 0, 0);
+  m_SupportBox = supportBox;
+  Widget supportScroll = ws.CreateWidget(WidgetType.ScrollLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, supportBox);
+  m_SupportSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, supportScroll);
 
   m_GroupSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
@@ -241,6 +258,45 @@ class ACR_CommandPanel : Managed
    if (i == selected) label = "[" + label + "]";
    button.SetText(label);
    button.SetEnabled(remaining[i] > 0 && costs[i] <= rp, false);
+  }
+ }
+
+ // Support list: cost and cooldown per entry. selected = support armed for the next right-click.
+ void SetSupports(bool visible, bool open, array<string> names, array<int> costs, array<int> cooldowns, int rp, int selected)
+ {
+  if (!m_SupportSection) return;
+  if (m_SupportWidget) m_SupportWidget.SetVisible(visible && !names.IsEmpty());
+  m_SupportSection.SetVisible(visible && open);
+  if (m_SupportBox) m_SupportBox.SetVisible(visible && open);
+  if (m_SupportButton)
+  {
+   if (open) m_SupportButton.SetText("Supports  [close]");
+   else m_SupportButton.SetText("Supports");
+  }
+  if (!visible || !open) return;
+  if (m_SupportButtons.Count() != names.Count())
+  {
+   Widget child = m_SupportSection.GetChildren();
+   while (child)
+   {
+    Widget next = child.GetSibling();
+    child.RemoveFromHierarchy();
+    child = next;
+   }
+   foreach (SCR_ButtonTextComponent old : m_SupportButtons) if (old) m_Actions.Remove(old);
+   m_SupportButtons.Clear();
+   foreach (int i, string supportName : names)
+    m_SupportButtons.Insert(AddButton(m_SupportSection, supportName, ACR_EPanelAction.SUPPORT_ENTRY + i));
+  }
+  foreach (int i, SCR_ButtonTextComponent button : m_SupportButtons)
+  {
+   if (!button) continue;
+   string state = "ready";
+   if (cooldowns[i] > 0) state = cooldowns[i].ToString() + " s";
+   string label = string.Format("%1   %2 RP   (%3)", names[i], costs[i], state);
+   if (i == selected) label = "[" + label + "]";
+   button.SetText(label);
+   button.SetEnabled(cooldowns[i] <= 0 && costs[i] <= rp, false);
   }
  }
 

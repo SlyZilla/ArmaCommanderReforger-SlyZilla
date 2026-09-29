@@ -7,7 +7,7 @@
 //    takes you there.
 //  - A possessed soldier dies: you go back to your command unit (or wait for the
 //    new one), never into the Game Master editor.
-class ACR_Respawn
+class ACR_Respawn : Managed
 {
  protected ACR_Manager m_Manager;
  protected ref map<int, float> m_DueAt = new map<int, float>();         // player -> world time the new unit is ready

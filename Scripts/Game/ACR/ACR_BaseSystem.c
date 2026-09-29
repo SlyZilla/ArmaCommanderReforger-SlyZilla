@@ -5,6 +5,7 @@ class ACR_FactionData
  int m_iRP;
  ref array<ref ACR_RequisitionEntry> m_aRequisitions = {};
  ref array<ResourceName> m_aGarrison = {};
+ ref array<ref ACR_SupportEntry> m_aSupports = {};
 }
 
 class ACR_BaseSystem : Managed
@@ -40,6 +41,18 @@ class ACR_BaseSystem : Managed
   if (settings) data.m_iRP = settings.m_iStartingRP;
   ACR_FactionCatalog.BuildRequisitions(factionKey, settings, data.m_aRequisitions);
   ACR_FactionCatalog.BuildGarrisonPool(factionKey, settings, data.m_aGarrison);
+  if (!settings || settings.m_bSupports)
+  {
+   if (settings && settings.m_aSupports && !settings.m_aSupports.IsEmpty())
+   {
+    foreach (ACR_SupportEntry configured : settings.m_aSupports)
+    {
+     configured.Resolve();
+     data.m_aSupports.Insert(configured);
+    }
+   }
+   else ACR_Supports.BuildDefaults(data.m_aSupports);
+  }
   m_Factions.Insert(factionKey, data);
   return data;
  }
