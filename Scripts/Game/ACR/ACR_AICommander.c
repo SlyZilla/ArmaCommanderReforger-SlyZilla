@@ -411,7 +411,13 @@ class ACR_AICommander : Managed
   {
    if (squad.m_iAITask != ACR_EAITask.DEFEND) continue;
    ACR_Base held = squad.m_AITarget;
-   if (!held || held.m_sOwner != m_sFaction || ThreatTo(held) == 0) squad.m_iAITask = ACR_EAITask.FREE;
+   if (!held || held.m_sOwner != m_sFaction || ThreatTo(held) == 0) { squad.m_iAITask = ACR_EAITask.FREE; continue; }
+   // A defence that is being overrun: the badly hurt get out rather than die in place.
+   bool overrun = ThreatTo(held) > DefenceOf(held) * 2;
+   if (overrun && squad.StrengthRatio() < RETREAT_RATIO && squad.KnownEnemies(300) > 0)
+    FallBack(squad, "defence of " + held.m_sName + " overrun", held);
+   else if (squad.m_iAmmoPct >= 0 && squad.m_iAmmoPct < OUT_OF_AMMO && squad.KnownEnemies(300) > 0)
+    FallBack(squad, "out of ammo", held);
   }
   array<ACR_Squad> free = {};
   MySquads(free, true);
@@ -659,13 +665,13 @@ class ACR_AICommander : Managed
   return home;
  }
 
- protected ACR_Base NearestOwnBase(vector point)
+ protected ACR_Base NearestOwnBase(vector point, ACR_Base except = null)
  {
   ACR_Base nearest;
   float best = float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_sOwner != m_sFaction) continue;
+   if (base.m_sOwner != m_sFaction || base == except) continue;
    float d = vector.DistanceXZ(base.GetOrigin(), point);
    if (d < best) { best = d; nearest = base; }
   }
@@ -710,12 +716,13 @@ class ACR_AICommander : Managed
  }
 
  // A beaten squad breaks contact and falls back to the nearest own base.
- protected void FallBack(ACR_Squad squad, string why)
+ protected void FallBack(ACR_Squad squad, string why, ACR_Base except = null)
  {
-  ACR_Base refuge = NearestOwnBase(PositionOf(squad));
+  ACR_Base refuge = NearestOwnBase(PositionOf(squad), except);
   squad.m_iAITask = ACR_EAITask.FREE;
   squad.SetMode(ACR_EMoveMode.FAST);
-  if (refuge) squad.Defend(refuge.GetOrigin());
+  // On foot, round any water; no waiting for a truck under fire.
+  if (refuge) squad.RouteTo(ACR_Manager.Ground(refuge.GetOrigin()), ACR_Squad.WP_DEFEND, 15, "Falling back", 1);
   string where = "its position";
   if (refuge) where = refuge.m_sName;
   PrintFormat("[ACR] AI %1: %2 falls back to %3 (%4)", m_sFaction, squad.GetName(), where, why);
@@ -748,6 +755,13 @@ class ACR_AICommander : Managed
     if (attack.m_bAssaulting && squad.StrengthRatio() < RETREAT_RATIO && squad.KnownEnemies(300) > 0)
     {
      FallBack(squad, "heavy casualties");
+     attack.Remove(s);
+     continue;
+    }
+    // Shot dry: pull back to rearm instead of charging with empty rifles.
+    if (squad.m_iAmmoPct >= 0 && squad.m_iAmmoPct < OUT_OF_AMMO)
+    {
+     FallBack(squad, "out of ammo");
      attack.Remove(s);
     }
    }
@@ -941,6 +955,7 @@ class ACR_AICommander : Managed
  // the front, and go home to restock when they run low. Lose the truck and the
  // front runs dry.
  static const int LOW_AMMO = 45;
+ static const int OUT_OF_AMMO = 15;           // below this a squad in a fight pulls back
  static const int LOW_HEALTH = 60;
  static const int LOW_FUEL = 25;
  static const float SERVICE_REACH = 2000;     // farthest a service vehicle is sent or sought
