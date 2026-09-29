@@ -75,7 +75,6 @@ class ACR_MapFeed
   array<int> commandable = {};
   array<RplId> groupIds = {};
   array<string> details = {};
-  array<int> modes = {};
   foreach (SCR_AIGroup group : groups)
   {
    if (!group || group.GetFaction() != faction) continue;
@@ -114,6 +113,9 @@ class ACR_MapFeed
    symbols.Insert(icons);
    symbols.Insert(dimension);
    symbols.Insert(amplifier);
+   int mode = 0;
+   if (squad) mode = squad.m_Mode;
+   symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    states.Insert(state);
@@ -124,10 +126,8 @@ class ACR_MapFeed
    string detail;
    if (squad) detail = squad.Describe();
    details.Insert(detail);
-   int mode = 0;
-   if (squad) mode = squad.m_Mode;
-   modes.Insert(mode);
+
   }
-  pc.ACR_SendGroupMarkers(leaders, positions, names, symbols, states, commandable, groupIds, details, modes);
+  pc.ACR_SendGroupMarkers(leaders, positions, names, symbols, states, commandable, groupIds, details);
  }
 }

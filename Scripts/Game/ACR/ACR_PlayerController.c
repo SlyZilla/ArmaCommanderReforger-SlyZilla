@@ -184,19 +184,17 @@ modded class SCR_PlayerController
  protected ref array<int> m_ACR_Commandable = {};
  protected ref array<RplId> m_ACR_GroupIds = {};
  protected ref array<string> m_ACR_GroupDetails = {};
- protected ref array<int> m_ACR_GroupModes = {};
  protected ref array<ref ACR_UnitMarker> m_ACR_GroupMarkers = {};
 
- void ACR_SendGroupMarkers(array<RplId> leaders, array<vector> positions, array<string> names, array<int> symbols, array<int> states, array<int> commandable, array<RplId> groupIds, array<string> details, array<int> modes)
+ void ACR_SendGroupMarkers(array<RplId> leaders, array<vector> positions, array<string> names, array<int> symbols, array<int> states, array<int> commandable, array<RplId> groupIds, array<string> details)
  {
-  Rpc(ACR_GroupMarkersOwner, leaders, positions, names, symbols, states, commandable, groupIds, details, modes);
+  Rpc(ACR_GroupMarkersOwner, leaders, positions, names, symbols, states, commandable, groupIds, details);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_GroupMarkersOwner(array<RplId> leaders, array<vector> positions, array<string> names, array<int> symbols, array<int> states, array<int> commandable, array<RplId> groupIds, array<string> details, array<int> modes)
+ protected void ACR_GroupMarkersOwner(array<RplId> leaders, array<vector> positions, array<string> names, array<int> symbols, array<int> states, array<int> commandable, array<RplId> groupIds, array<string> details)
  {
   m_ACR_GroupIds.Copy(groupIds);
   m_ACR_GroupDetails.Copy(details);
-  m_ACR_GroupModes.Copy(modes);
   m_ACR_LeaderIds.Copy(leaders);
   m_ACR_LeaderPositions.Copy(positions);
   m_ACR_GroupNames.Copy(names);
@@ -301,8 +299,8 @@ modded class SCR_PlayerController
    for (int i = 0; i < m_ACR_LeaderIds.Count(); i++)
    {
     ACR_UnitMarker marker = new ACR_UnitMarker();
-    int icons = m_ACR_GroupSymbols[i * 3];
-    int dimension = m_ACR_GroupSymbols[i * 3 + 1];
+    int icons = m_ACR_GroupSymbols[i * 4];
+    int dimension = m_ACR_GroupSymbols[i * 4 + 1];
     SCR_MapMarkerBase prepared = manager.PrepareMilitaryMarker(EMilitarySymbolIdentity.BLUFOR, dimension, icons);
     if (prepared)
     {
@@ -335,7 +333,7 @@ modded class SCR_PlayerController
    if (streamed) pos = streamed.GetOrigin();
    marker.SetWorldPos(pos[0], pos[2]);
    if (!marker.m_GroupSymbol) marker.m_GroupSymbol = new SCR_MilitarySymbol();
-   marker.m_GroupSymbol.Set(EMilitarySymbolIdentity.BLUFOR, m_ACR_GroupSymbols[i * 3 + 1], m_ACR_GroupSymbols[i * 3], m_ACR_GroupSymbols[i * 3 + 2]);
+   marker.m_GroupSymbol.Set(EMilitarySymbolIdentity.BLUFOR, m_ACR_GroupSymbols[i * 4 + 1], m_ACR_GroupSymbols[i * 4], m_ACR_GroupSymbols[i * 4 + 2]);
    marker.RefreshStyle();
   }
   // The leader marker replaces that soldier's plain marker.
@@ -450,7 +448,7 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend that position";
   else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in";
   else hint = "Right-click: move there";
-  m_ACR_Panel.SetGroup(m_ACR_GroupNames[index], m_ACR_GroupDetails[index], friendly, m_ACR_IsCommander, m_ACR_GroupModes[index], hint);
+  m_ACR_Panel.SetGroup(m_ACR_GroupNames[index], m_ACR_GroupDetails[index], friendly, m_ACR_IsCommander, m_ACR_GroupSymbols[index * 4 + 3], hint);
  }
 
  void ACR_OnPanelAction(int action)
