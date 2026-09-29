@@ -1238,7 +1238,7 @@ class ACR_TestHarness : Managed
   if (m_Ticks % 5 == 0 && m_Ticks >= 15 && alpha)
   {
    IEntity gunNow = ACR_Transport.CrewedVehicle(m_GunCrew);
-   PrintFormat("[ACR] LOGI t=%1 alpha: %2 | gun truck: health %3 fuel %4 gunAmmo %5 | ammo truck stock %6%%", m_Ticks, alpha.Describe(), ACR_Logistics.Health(gunNow), ACR_Logistics.Fuel(gunNow), ACR_Logistics.VehicleAmmo(gunNow), manager.m_Logistics.StockPercent(m_AmmoTruck));
+   PrintFormat("[ACR] LOGI t=%1 alpha: %2 | gun truck: health %3 fuel %4 gunAmmo %5 | ammo truck stock %6 pct", m_Ticks, alpha.Describe(), ACR_Logistics.Health(gunNow), ACR_Logistics.Fuel(gunNow), ACR_Logistics.VehicleAmmo(gunNow), manager.m_Logistics.StockPercent(m_AmmoTruck));
   }
   if (m_Ticks == 100) Print("[ACR] TEST COMPLETE");
  }
