@@ -277,6 +277,14 @@ class ACR_HeliRun : ACR_SupportRun
  bool m_bPassOutbound;
  float m_fNextGunLog;
  float m_fNextEnemyScan;
+ float m_fNextSideCheck;
+
+ bool SideCanFire(float bearing)
+ {
+  foreach (ACR_HeliGun gun : m_Guns)
+   if (gun.CoversBearing(bearing) && ACR_Respawn.IsAlive(gun.Occupant()) && gun.Ammo() != 0) return true;
+  return false;
+ }
  ref array<IEntity> m_aEnemies = {};
 
  bool Start(ACR_Supports supports, ResourceName prefab, float now)
@@ -393,7 +401,8 @@ class ACR_HeliRun : ACR_SupportRun
   int bestCount = 0;
   float bestBearing = -90;
   array<int> signs = {-1, 1};
-  for (int b = 60; b <= 120; b += 10)
+  array<int> sideBearings = {90, 80, 100, 70, 110, 60, 120};
+  foreach (int b : sideBearings)
   {
    foreach (int sign : signs)
    {
@@ -457,6 +466,16 @@ class ACR_HeliRun : ACR_SupportRun
    else if (m_iPhase == 1)
    {
     altitude = ALT_LOITER;
+    // Gunner on the working side down or out of ammo: turn the other side in.
+    if (!m_bPasses && now >= m_fNextSideCheck)
+    {
+     m_fNextSideCheck = now + 2000;
+     if (!SideCanFire(m_fSideBearing) && SideCanFire(-m_fSideBearing))
+     {
+      m_fSideBearing = -m_fSideBearing;
+      PrintFormat("[ACR] SUPPORT gunship switching to its other side (bearing %1)", m_fSideBearing);
+     }
+    }
     if (m_bPasses)
     {
      // Attack passes: run in, overfly, extend 650 m, come round again.
