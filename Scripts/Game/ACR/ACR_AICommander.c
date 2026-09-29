@@ -18,6 +18,7 @@ class ACR_AIAttack
  ACR_Squad m_Suppressor;             // support-by-fire squad
  int m_iStartStrength;
  bool m_bCounter;
+ bool m_bGrab;                       // quick grab of an empty base (doesn't count against the attack limit)
 
  vector StagingOf(ACR_Squad squad)
  {
@@ -63,6 +64,7 @@ class ACR_AICommander : Managed
  static const float RETREAT_RATIO = 0.4;   // a squad below 40% in contact falls back
  static const float ABORT_RATIO = 0.35;    // an attack below 35% of its strength is called off
  static const int SUPPORT_RESERVE = 15;    // RP the AI keeps back when calling supports
+ static const int MAX_GRABS = 3;           // empty bases it goes for at the same time
 
  void ACR_AICommander(ACR_Manager manager, string factionKey)
  {
@@ -327,7 +329,6 @@ class ACR_AICommander : Managed
   int maxAttacks = 1;
   if (settings) maxAttacks = settings.m_iAIAttacks;
   bool counterDue = m_CounterTarget && m_CounterTarget.m_sOwner != m_sFaction && GetGame().GetWorld().GetWorldTime() < m_fCounterUntil && !IsAttacking(m_CounterTarget);
-  if (m_Attacks.Count() >= maxAttacks && !counterDue) return;
   array<ACR_Squad> free = {};
   MySquads(free, true);
   // Keep a reserve at home once the force is big enough.
@@ -352,8 +353,55 @@ class ACR_AICommander : Managed
   }
   if (free.IsEmpty()) return;
 
-  // Target: a counterattack on a base just lost, otherwise the cheapest target:
-  // empty bases first, then enemy bases by (defence x ratio) scaled by distance.
+  // Empty bases: several quick grabs at once, each by whichever free squad gets
+  // there first (vehicles count as three times faster than walking).
+  int grabs = 0;
+  int attacks = 0;
+  foreach (ACR_AIAttack running : m_Attacks)
+  {
+   if (running.m_bGrab) grabs++;
+   else attacks++;
+  }
+  while (grabs < MAX_GRABS && !free.IsEmpty())
+  {
+   ACR_Base empty;
+   ACR_Squad runner;
+   float bestTime = float.MAX;
+   foreach (ACR_Base candidate : ACR_Base.s_All)
+   {
+    if (!candidate.m_sOwner.IsEmpty() || !Visible(candidate) || IsAttacking(candidate)) continue;
+    foreach (ACR_Squad squad : free)
+    {
+     if (squad.Strength() < 2) continue; // not a lone driver
+     float speed = 3;
+     if (squad.IsMounted()) speed = 9;
+     float time = vector.DistanceXZ(PositionOf(squad), candidate.GetOrigin()) / speed;
+     if (time < bestTime) { bestTime = time; empty = candidate; runner = squad; }
+    }
+   }
+   if (!empty) break;
+   ACR_AIAttack grab = new ACR_AIAttack();
+   grab.m_Target = empty;
+   grab.m_bGrab = true;
+   grab.m_bAssaulting = true;
+   grab.m_Squads.Insert(runner);
+   grab.m_aStaging.Insert(empty.GetOrigin());
+   grab.m_iStartStrength = runner.Strength();
+   runner.m_iAITask = ACR_EAITask.ATTACK;
+   runner.m_AITarget = empty;
+   runner.SetMode(ACR_EMoveMode.FAST);
+   runner.MoveTo(empty.GetOrigin());
+   free.RemoveItem(runner);
+   m_Attacks.Insert(grab);
+   grabs++;
+   PrintFormat("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime);
+  }
+  if (free.IsEmpty()) return;
+  if (free.Count() >= 4) maxAttacks++; // plenty of idle troops: open a second front
+  if (attacks >= maxAttacks && !counterDue) return;
+
+  // Target: a counterattack on a base just lost, otherwise the enemy base with
+  // the lowest (defence x ratio) scaled by distance.
   ACR_Base target;
   vector from = PositionOf(free[0]);
   if (counterDue) target = m_CounterTarget;
@@ -362,9 +410,8 @@ class ACR_AICommander : Managed
    float bestScore = float.MAX;
    foreach (ACR_Base base : ACR_Base.s_All)
    {
-    if (base.m_sOwner == m_sFaction || !Visible(base) || IsAttacking(base)) continue;
+    if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || IsAttacking(base)) continue;
     float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
-    if (base.m_sOwner.IsEmpty()) cost = 1;
     float score = cost * (vector.DistanceXZ(base.GetOrigin(), from) / 1000 + 0.1);
     if (score < bestScore) { bestScore = score; target = base; }
    }
@@ -492,6 +539,13 @@ class ACR_AICommander : Managed
    }
    ACR_Base target = attack.m_Target;
    bool won = target && target.m_sOwner == m_sFaction;
+   if (attack.m_bGrab && target && !target.m_sOwner.IsEmpty() && !won)
+   {
+    PrintFormat("[ACR] AI %1: %2 was taken first, grab cancelled", m_sFaction, target.m_sName);
+    foreach (ACR_Squad late : attack.m_Squads) late.m_iAITask = ACR_EAITask.FREE;
+    m_Attacks.RemoveOrdered(i);
+    continue;
+   }
    int strength;
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
    bool broken = attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * ABORT_RATIO;
@@ -588,6 +642,9 @@ class ACR_AICommander : Managed
   ACR_FactionSettings settings = Settings();
   int cap = 8;
   if (settings) cap = settings.m_iAIUnitCap;
+  // Money piling up: field a few more squads rather than sit on it.
+  int banked = m_Manager.m_Bases.GetRP(m_sFaction);
+  if (banked > 150) cap += Math.Min(4, (banked - 100) / 50);
   array<ACR_Squad> mine = {};
   MySquads(mine, false);
   if (mine.Count() >= cap) return;
