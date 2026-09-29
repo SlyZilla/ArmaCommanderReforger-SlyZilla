@@ -159,7 +159,7 @@ class ACR_HeliGun : Managed
 
  // Where to point: chest height, led for the helicopter's own motion (bullets
  // inherit it) and a little bullet drop.
- vector AimPoint(vector heliVelocity, IEntity target)
+ vector LeadPoint(vector heliVelocity, IEntity target)
  {
   vector point = target.GetOrigin() + Vector(0, 1.1, 0);
   float flight = vector.Distance(point, m_Turret.GetOrigin()) / 820;
@@ -182,14 +182,14 @@ class ACR_HeliGun : Managed
   AIControlComponent ai = AIControlComponent.Cast(gunner.FindComponent(AIControlComponent));
   if (ai && ai.IsAIActivated()) ai.DeactivateAI();
 
-  if (m_Target && (!ACR_Respawn.IsAlive(m_Target) || !Covers(AimPoint(heliVelocity, m_Target)))) m_Target = null;
+  if (m_Target && (!ACR_Respawn.IsAlive(m_Target) || !Covers(LeadPoint(heliVelocity, m_Target)))) m_Target = null;
   if (!m_Target && now >= m_fNextPick)
   {
    m_fNextPick = now + 400;
    float best = float.MAX;
    foreach (IEntity enemy : enemies)
    {
-    vector point = AimPoint(heliVelocity, enemy);
+    vector point = LeadPoint(heliVelocity, enemy);
     if (!Covers(point)) continue;
     float score = vector.Distance(enemy.GetOrigin(), center);
     if (score >= best) continue;
@@ -202,7 +202,7 @@ class ACR_HeliGun : Managed
   }
   if (!m_Target) { StopFire(); return; }
 
-  vector aim = AimPoint(heliVelocity, m_Target);
+  vector aim = LeadPoint(heliVelocity, m_Target);
   vector desired = (aim - m_Turret.GetOrigin()).Normalized();
   vector current = m_TurretComponent.GetAimingDirectionWorld();
   float errYaw = ACR_HeliRun.Wrap((Math.Atan2(desired[0], desired[2]) - Math.Atan2(current[0], current[2])) * Math.RAD2DEG);
