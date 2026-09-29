@@ -139,8 +139,17 @@ ON THE COMMAND MAP
     Helicopter: gun run (one rocket pass) or loiter (circles the target for
          90 s; door gunners and rocket salvos). It flies in from your nearest
          base and CAN be shot down.
-  Keep your own troops out of the target area!
+  A red ring with a countdown marks each incoming support on the map.
+  Keep your own troops out of it!
 - Base rings: blue = yours, red = enemy, yellow = neutral.
+
+THE ENEMY AI
+------------
+The Soviet commander plays smarter than it looks: it keeps a reserve, comes at
+a base from several directions, shells it and lays smoke before assaulting,
+has one squad pin you down while the others move, pulls beaten squads back,
+counterattacks bases it just lost, and calls mortars on you when you attack
+its bases.
 
 TIPS
 ----
