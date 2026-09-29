@@ -15,6 +15,7 @@ class ACR_Mode : GenericEntity
 
  static ACR_Mode s_Instance;
  protected bool m_bSummary;
+ protected bool m_bSoak;
  protected int m_iSeconds;
 
  void ACR_Mode(IEntitySource src, IEntity parent)
@@ -38,6 +39,7 @@ class ACR_Mode : GenericEntity
    GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 2000, false);
    string flag;
    m_bSummary = System.GetCLIParam("acrScenarioTest", flag);
+  m_bSoak = System.GetCLIParam("acrSoakTest", flag);
    GetGame().GetCallqueue().CallLater(Second, 1000, true);
   }
   Print("[ACR] Scenario started");
@@ -59,6 +61,7 @@ class ACR_Mode : GenericEntity
  protected void Second()
  {
   m_iSeconds++;
+  if (m_bSoak) { Soak(); return; }
   if (!m_bSummary || m_iSeconds % 30 != 0) return;
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
@@ -66,6 +69,38 @@ class ACR_Mode : GenericEntity
   foreach (ACR_Base base : ACR_Base.s_All)
    PrintFormat("[ACR] SCENARIO   %1: %2", base.m_sName, manager.m_Bases.Describe(base));
   if (m_iSeconds >= 180) Print("[ACR] TEST COMPLETE");
+ }
+
+ // -acrSoakTest: AI against AI for 20 minutes (the player hands command to the
+ // AI), with a summary every minute for reading the whole battle afterwards.
+ protected void Soak()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  if (m_iSeconds == 5)
+  {
+   array<int> players = {};
+   GetGame().GetPlayerManager().GetPlayers(players);
+   foreach (int id : players)
+   {
+    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
+    if (pc) PrintFormat("[ACR] SOAK player %1: %2", id, manager.LeaveCommand(pc));
+   }
+  }
+  if (m_iSeconds % 60 == 0)
+  {
+   int us, ussr, usMen, ussrMen;
+   foreach (ACR_Squad squad : manager.m_Squads)
+   {
+    if (!squad.GetFaction()) continue;
+    if (squad.GetFaction().GetFactionKey() == "US") { us++; usMen += squad.CountAlive(); }
+    else { ussr++; ussrMen += squad.CountAlive(); }
+   }
+   PrintFormat("[ACR] SOAK t=%1 | US %2 squads/%3 men rp %4 | USSR %5 squads/%6 men rp %7", m_iSeconds, us, usMen, manager.m_Bases.GetRP("US"), ussr, ussrMen, manager.m_Bases.GetRP("USSR"));
+   foreach (ACR_Base base : ACR_Base.s_All)
+    PrintFormat("[ACR] SOAK   %1: %2", base.m_sName, manager.m_Bases.Describe(base));
+  }
+  if (m_iSeconds >= 1200) Print("[ACR] TEST COMPLETE");
  }
 
  override void EOnFrame(IEntity owner, float timeSlice)
