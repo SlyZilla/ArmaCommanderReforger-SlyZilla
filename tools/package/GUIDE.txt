@@ -156,7 +156,8 @@ TIPS
 - HELICOPTER / TRUCK INSERTIONS: order a squad to "Get in" your transport.
   Then (squad or transport selected) click "Unload at LZ" and right-click the
   landing zone: they jump out by themselves as soon as the vehicle is down
-  and slow near it (ground, a rooftop, or a few metres over water all count).
+  and slow near it: skids within about 3 m of the ground, a rooftop or the
+  water, which covers a low helocast.
   Flying or driving yourself? F6 drops every passenger squad right now; if
   you are still high or fast it warns you first, and F6 again drops them
   anyway (they may get hurt from high up).

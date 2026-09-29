@@ -4,8 +4,8 @@
 // roofs and helocasting work.
 class ACR_Transport
 {
- static const float SETTLED_SPEED = 4;    // m/s
- static const float SETTLED_HEIGHT = 6;   // m above ground, roof or water
+ static const float SETTLED_SPEED = 3;    // m/s
+ static const float SETTLED_HEIGHT = 3;   // m from the underside (skids/wheels) to ground, roof or water
  static const float LZ_RADIUS = 100;      // queued unload triggers within this of the LZ
 
  static IEntity VehicleOf(IEntity body)
@@ -82,7 +82,12 @@ class ACR_Transport
   s_TraceVehicle = vehicle;
   float fraction = world.TraceMove(trace, IgnoreOwnVehicle);
   if (fraction < 1) below = Math.Max(below, pos[1] - 80 * fraction);
-  height = pos[1] - below;
+  // Measure from the vehicle's underside, not its model origin.
+  vector mins, maxs;
+  vehicle.GetWorldBounds(mins, maxs);
+  float bottom = pos[1];
+  if (maxs[1] > mins[1]) bottom = Math.Min(pos[1], mins[1]);
+  height = Math.Max(0, bottom - below);
   return speed < SETTLED_SPEED && height < SETTLED_HEIGHT;
  }
 }
