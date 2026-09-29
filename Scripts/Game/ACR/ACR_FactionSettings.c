@@ -132,6 +132,8 @@ class ACR_FactionCatalog
    if (entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_TURRET) || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_AIRPLANE)) continue;
    string name = WidgetManager.Translate(entry.GetEntityName());
    if (name.IsEmpty()) name = FilePath.StripExtension(FilePath.StripPath(prefab));
+   // The catalog lists camouflage variants under the same name; offer each unit once.
+   if (HasName(result, name)) continue;
    ACR_RequisitionEntry item = new ACR_RequisitionEntry();
    if (type == EEntityCatalogType.GROUP)
    {
@@ -146,6 +148,13 @@ class ACR_FactionCatalog
    used.Insert(prefab);
    result.Insert(item);
   }
+ }
+
+ protected static bool HasName(array<ref ACR_RequisitionEntry> list, string name)
+ {
+  foreach (ACR_RequisitionEntry item : list)
+   if (item.m_sName == name) return true;
+  return false;
  }
 
  // 3 RP per soldier (Game Master's AI budget is one per soldier).

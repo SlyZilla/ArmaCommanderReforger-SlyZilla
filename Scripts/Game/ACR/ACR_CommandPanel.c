@@ -50,6 +50,7 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_RequisitionButton;
  protected Widget m_RequisitionWidget;
  protected Widget m_RequisitionSection;
+ protected Widget m_RequisitionBox;
  protected ref array<SCR_ButtonTextComponent> m_EntryButtons = {};
  protected SCR_ButtonTextComponent m_GetInButton;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
@@ -83,8 +84,14 @@ class ACR_CommandPanel : Managed
   m_CommandButton = AddButton(m_Content, "Take command", ACR_EPanelAction.TOGGLE_COMMAND);
   m_RequisitionButton = AddButton(m_Content, "Requisition", ACR_EPanelAction.TOGGLE_REQUISITION);
   m_RequisitionWidget = m_LastButtonWidget;
-  m_RequisitionSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
-  AlignableSlot.SetPadding(m_RequisitionSection, 0, 6, 0, 0);
+  // Long buy lists scroll inside a fixed-height box.
+  SizeLayoutWidget listBox = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content));
+  listBox.EnableHeightOverride(true);
+  listBox.SetHeightOverride(340);
+  AlignableSlot.SetPadding(listBox, 0, 6, 0, 0);
+  m_RequisitionBox = listBox;
+  Widget scroll = ws.CreateWidget(WidgetType.ScrollLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, listBox);
+  m_RequisitionSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, scroll);
 
   m_GroupSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
@@ -206,6 +213,7 @@ class ACR_CommandPanel : Managed
   if (!m_RequisitionSection) return;
   if (m_RequisitionWidget) m_RequisitionWidget.SetVisible(visible);
   m_RequisitionSection.SetVisible(visible && open);
+  if (m_RequisitionBox) m_RequisitionBox.SetVisible(visible && open);
   if (m_RequisitionButton)
   {
    if (open) m_RequisitionButton.SetText("Requisition  [close]");
