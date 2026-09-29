@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A0010061}Missions/ACR_Arland.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

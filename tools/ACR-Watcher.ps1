@@ -93,9 +93,12 @@ function Invoke-Request($file) {
     $extraFile = Join-Path $PSScriptRoot 'test-presets.txt'
     if (Test-Path -LiteralPath $extraFile) {
         foreach ($line in Get-Content -LiteralPath $extraFile) {
+            # optional 4th field: world, e.g. Worlds/ACR_Arland.ent
             $parts = $line.Split('|')
-            if ($parts.Count -ne 3 -or $parts[1] -notmatch '^-acr[A-Za-z]+Test 1$') { continue }
-            $Presets[$parts[0].Trim().ToLower()] = @{ Flags = $parts[1]; TimeoutSec = [int]$parts[2]; DoneWhen = '\[ACR\] TEST COMPLETE' }
+            if ($parts.Count -lt 3 -or $parts[1] -notmatch '^-acr[A-Za-z]+Test 1$') { continue }
+            $world = 'Worlds/ACR_TestRange.ent'
+            if ($parts.Count -ge 4 -and $parts[3] -match '^Worlds/[A-Za-z0-9_]+\.ent$') { $world = $parts[3] }
+            $Presets[$parts[0].Trim().ToLower()] = @{ Flags = $parts[1]; TimeoutSec = [int]$parts[2]; DoneWhen = '\[ACR\] TEST COMPLETE'; World = $world }
         }
     }
     if (!$Presets.ContainsKey($preset)) {
@@ -111,8 +114,10 @@ function Invoke-Request($file) {
 
     $config = $Presets[$preset]
     if ($config.Workbench) { Invoke-Inspect $id; return }
+    $world = 'Worlds/ACR_TestRange.ent'
+    if ($config.World) { $world = $config.World }
     $game = Find-Game
-    $gameArgs = '-addonsDir "' + $AddonsDir + '" -addons AC230926A0010001 -profile "' + $ProfileDir + '" -noSplash -noBackend -world "Worlds/ACR_TestRange.ent" ' + $config.Flags
+    $gameArgs = '-addonsDir "' + $AddonsDir + '" -addons AC230926A0010001 -profile "' + $ProfileDir + '" -noSplash -noBackend -world "' + $world + '" ' + $config.Flags
     Write-Host "[$time] Running '$preset'..." -ForegroundColor Cyan
     $started = Get-Date
     $proc = Start-Process -FilePath $game -ArgumentList $gameArgs -WorkingDirectory (Split-Path $game -Parent) -PassThru

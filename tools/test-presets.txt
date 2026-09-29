@@ -4,3 +4,4 @@ assault|-acrAssaultTest 1|190
 requisition|-acrRequisitionTest 1|150
 gamemaster|-acrGameMasterTest 1|90
 ai|-acrAITest 1|200
+arland|-acrScenarioTest 1|240|Worlds/ACR_Arland.ent

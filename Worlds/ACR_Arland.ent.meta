@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A0010060}Worlds/ACR_Arland.ent"
+ Configurations {
+  ENTResourceClass PC {
+  }
+  ENTResourceClass HEADLESS : PC {
+  }
+ }
+}

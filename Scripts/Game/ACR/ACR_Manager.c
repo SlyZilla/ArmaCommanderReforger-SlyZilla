@@ -575,11 +575,20 @@ class ACR_Manager : Managed
   entry.m_iBought++;
   string name = string.Format("%1 %2", entry.m_sName, entry.m_iBought);
 
+  SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, SpawnPoint(base, 10, 20), SpawnPoint(base, 5, 15));
+  PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
+  return string.Format("%1 deploying at %2", name, base.m_sName);
+ }
+
+ // Spawns a named unit: an infantry group, a vehicle (optionally crewed; the
+ // crew squad takes the name), and/or passengers that board the vehicle.
+ void SpawnUnit(string name, ResourceName group, ResourceName vehicleprefab, bool crewed, ResourceName passengers, vector vehiclePos, vector groupPos)
+ {
   IEntity vehicle;
-  if (!entry.m_sVehicle.IsEmpty())
+  if (!vehicleprefab.IsEmpty())
   {
-   vehicle = SpawnPrefab(entry.m_sVehicle, SpawnPoint(base, 10, 20));
-   if (vehicle && entry.m_bCrewed)
+   vehicle = SpawnPrefab(vehicleprefab, vehiclePos);
+   if (vehicle && crewed)
    {
     m_PendingCrewNames.Set(vehicle, name);
     SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
@@ -587,22 +596,20 @@ class ACR_Manager : Managed
     if (compartments) compartments.SpawnDefaultOccupants(seats);
    }
   }
-  if (!entry.m_sGroup.IsEmpty())
+  if (!group.IsEmpty())
   {
-   SCR_AIGroup group = SCR_AIGroup.Cast(SpawnPrefab(entry.m_sGroup, SpawnPoint(base, 5, 15)));
-   if (group) group.SetCustomName(name, 0);
+   SCR_AIGroup spawned = SCR_AIGroup.Cast(SpawnPrefab(group, groupPos));
+   if (spawned) spawned.SetCustomName(name, 0);
   }
-  if (!entry.m_sPassengers.IsEmpty())
+  if (!passengers.IsEmpty())
   {
-   SCR_AIGroup passengers = SCR_AIGroup.Cast(SpawnPrefab(entry.m_sPassengers, SpawnPoint(base, 5, 15)));
-   if (passengers)
+   SCR_AIGroup riders = SCR_AIGroup.Cast(SpawnPrefab(passengers, groupPos));
+   if (riders)
    {
-    passengers.SetCustomName(name + " infantry", 0);
-    if (vehicle) m_PendingBoarding.Set(passengers, vehicle);
+    riders.SetCustomName(name + " infantry", 0);
+    if (vehicle) m_PendingBoarding.Set(riders, vehicle);
    }
   }
-  PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
-  return string.Format("%1 deploying at %2", name, base.m_sName);
  }
 
  string Reinforce(SCR_PlayerController pc, RplId groupId)
