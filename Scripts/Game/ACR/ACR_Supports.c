@@ -625,6 +625,17 @@ class ACR_HeliRun : ACR_SupportRun
  }
 }
 
+// A support's danger area, shown on the map to that side until it is over.
+class ACR_SupportZone : Managed
+{
+ string m_sFaction;
+ vector m_Pos;
+ float m_fRadius;
+ string m_sName;
+ float m_fImpactAt;
+ float m_fEndAt;
+}
+
 class ACR_PendingLaunch : Managed
 {
  IEntity m_Entity;
@@ -651,6 +662,48 @@ class ACR_Supports : Managed
  protected ref array<ref ACR_SupportRun> m_Runs = {};
  protected ref array<ref ACR_PendingLaunch> m_Launches = {};
  protected int m_iFrame;
+ ref array<ref ACR_SupportZone> m_Zones = {};
+
+ void AddZone(string factionKey, vector pos, float radius, string name, int delaySeconds, int durationSeconds)
+ {
+  ACR_SupportZone zone = new ACR_SupportZone();
+  float now = GetGame().GetWorld().GetWorldTime();
+  zone.m_sFaction = factionKey;
+  zone.m_Pos = pos;
+  zone.m_fRadius = radius;
+  zone.m_sName = name;
+  zone.m_fImpactAt = now + delaySeconds * 1000;
+  zone.m_fEndAt = zone.m_fImpactAt + durationSeconds * 1000;
+  m_Zones.Insert(zone);
+ }
+
+ static float ZoneRadius(ACR_ESupportType type)
+ {
+  switch (type)
+  {
+   case ACR_ESupportType.MORTAR_HE_SMALL: return 30;
+   case ACR_ESupportType.MORTAR_HE_LARGE: return 60;
+   case ACR_ESupportType.MORTAR_CREEPING: return 80;
+   case ACR_ESupportType.MORTAR_SMOKE: return 40;
+   case ACR_ESupportType.ILLUMINATION: return 90;
+   case ACR_ESupportType.ROCKET_STRIKE: return 70;
+   case ACR_ESupportType.BOMB_RUN: return 70;
+   case ACR_ESupportType.HELI_GUN_RUN: return 40;
+   case ACR_ESupportType.HELI_LOITER: return ACR_HeliRun.LOITER_RADIUS;
+  }
+  return 50;
+ }
+ static int ZoneDuration(ACR_ESupportType type)
+ {
+  switch (type)
+  {
+   case ACR_ESupportType.ILLUMINATION: return 80;
+   case ACR_ESupportType.MORTAR_SMOKE: return 60;
+   case ACR_ESupportType.HELI_LOITER: return 100;
+   case ACR_ESupportType.MORTAR_CREEPING: return 30;
+  }
+  return 15;
+ }
 
  void ACR_Supports(ACR_Manager manager) { m_Manager = manager; }
 
@@ -813,6 +866,7 @@ class ACR_Supports : Managed
     break;
    }
   }
+  AddZone(factionKey, target, ZoneRadius(entry.m_eType), entry.m_sName, delay, ZoneDuration(entry.m_eType));
   string message = string.Format("%1 on %2, ETA %3 s.", entry.m_sName, where, delay);
   if (!byAI) m_Manager.NotifyFaction(factionKey, message);
   return message;
@@ -994,6 +1048,7 @@ class ACR_Supports : Managed
    m_Runs.Remove(r);
   }
   for (int v = m_Vehicles.Count() - 1; v >= 0; v--) if (!m_Vehicles[v]) m_Vehicles.Remove(v);
+  for (int z = m_Zones.Count() - 1; z >= 0; z--) if (now > m_Zones[z].m_fEndAt) m_Zones.Remove(z);
  }
 }
 

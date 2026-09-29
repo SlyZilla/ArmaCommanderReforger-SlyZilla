@@ -286,7 +286,9 @@ modded class SCR_PlayerController
    foreach (ACR_UnitMarker marker : m_ACR_Markers) manager.ACR_RemoveMarker(marker);
    foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) manager.ACR_RemoveMarker(groupMarker);
    foreach (ACR_UnitMarker baseMarker : m_ACR_BaseMarkers) manager.ACR_RemoveMarker(baseMarker);
+   foreach (ACR_UnitMarker zoneMarker : m_ACR_ZoneMarkers) manager.ACR_RemoveMarker(zoneMarker);
   }
+  m_ACR_ZoneMarkers.Clear();
   m_ACR_BaseMarkers.Clear();
   m_ACR_Markers.Clear();
   m_ACR_GroupMarkers.Clear();
@@ -366,6 +368,7 @@ modded class SCR_PlayerController
   original.RefreshStyle();
   ACR_UpdateGroupMarkers(manager);
   ACR_UpdateBaseMarkers(manager);
+  ACR_UpdateZoneMarkers(manager);
  }
  void ACR_UpdateGroupMarkers(SCR_MapMarkerManagerComponent manager)
  {
@@ -697,6 +700,7 @@ modded class SCR_PlayerController
   if (!m_ACR_OrderCanvas) return;
   m_ACR_OrderCommands.Clear();
   ACR_DrawBaseAreas(mapEntity);
+  ACR_DrawZones(mapEntity);
   foreach (int i, RplId groupId : m_ACR_OrderGroups)
   {
    int g = m_ACR_GroupIds.Find(groupId);
@@ -739,6 +743,71 @@ modded class SCR_PlayerController
  protected ref array<float> m_ACR_BaseRadii = {};
  protected ref array<int> m_ACR_BaseContested = {};
  protected ref array<ref ACR_UnitMarker> m_ACR_BaseMarkers = {};
+ // Support danger areas (friendly fire missions), red rings with a countdown label.
+ protected ref array<vector> m_ACR_ZonePositions = {};
+ protected ref array<float> m_ACR_ZoneRadii = {};
+ protected ref array<string> m_ACR_ZoneLabels = {};
+ protected ref array<ref ACR_UnitMarker> m_ACR_ZoneMarkers = {};
+
+ void ACR_SendZones(array<vector> positions, array<float> radii, array<string> labels)
+ {
+  Rpc(ACR_ZonesOwner, positions, radii, labels);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_ZonesOwner(array<vector> positions, array<float> radii, array<string> labels)
+ {
+  m_ACR_ZonePositions.Copy(positions);
+  m_ACR_ZoneRadii.Copy(radii);
+  m_ACR_ZoneLabels.Copy(labels);
+ }
+
+ protected void ACR_UpdateZoneMarkers(SCR_MapMarkerManagerComponent manager)
+ {
+  if (m_ACR_ZoneMarkers.Count() != m_ACR_ZoneLabels.Count())
+  {
+   foreach (ACR_UnitMarker old : m_ACR_ZoneMarkers) manager.ACR_RemoveMarker(old);
+   m_ACR_ZoneMarkers.Clear();
+   for (int i = 0; i < m_ACR_ZoneLabels.Count(); i++)
+   {
+    ACR_UnitMarker marker = new ACR_UnitMarker();
+    marker.SetType(SCR_EMapMarkerType.SIMPLE);
+    marker.SetMarkerConfigID(1);
+    marker.SetCanBeRemovedByOwner(false);
+    m_ACR_ZoneMarkers.Insert(marker);
+    manager.InsertStaticMarker(marker, true);
+    marker.SetMarkerOwnerID(-1);
+   }
+  }
+  foreach (int i, ACR_UnitMarker marker : m_ACR_ZoneMarkers)
+  {
+   marker.m_Label = m_ACR_ZoneLabels[i];
+   vector pos = m_ACR_ZonePositions[i];
+   marker.SetWorldPos(pos[0], pos[2]);
+   marker.RefreshStyle();
+   if (marker.GetRootWidget()) marker.ACR_SetColor(new Color(1, 0.2, 0.15, 1));
+  }
+ }
+
+ protected void ACR_DrawZones(SCR_MapEntity mapEntity)
+ {
+  foreach (int i, vector pos : m_ACR_ZonePositions)
+  {
+   int cx, cy, ex, ey;
+   mapEntity.WorldToScreen(pos[0], pos[2], cx, cy, true);
+   mapEntity.WorldToScreen(pos[0] + m_ACR_ZoneRadii[i], pos[2], ex, ey, true);
+   float radius = Math.Max(Math.AbsFloat(ex - cx), 6);
+   float fx = cx;
+   float fy = cy;
+   LineDrawCommand ring = new LineDrawCommand();
+   Color red = new Color(1, 0.15, 0.1, 0.95);
+   ring.m_iColor = red.PackToInt();
+   ring.m_fWidth = 3;
+   ring.m_bShouldEnclose = true;
+   ring.m_Vertices = {};
+   m_ACR_OrderCanvas.TessellateCircle(Vector(fx, fy, 0), radius, 48, ring.m_Vertices);
+   m_ACR_OrderCommands.Insert(ring);
+  }
+ }
  protected string m_ACR_SelectedBase;
 
  void ACR_SendBases(array<vector> positions, array<string> names, array<string> owners, array<string> details, array<float> radii, array<int> contested)

@@ -20,6 +20,7 @@ class ACR_MapFeed
    PublishBases(manager, pc, key);
    PublishRequisitions(manager, pc, key);
    PublishSupports(manager, pc, key);
+   PublishZones(manager, pc, key);
    PublishOrders(manager, pc, faction);
   }
  }
@@ -174,6 +175,26 @@ class ACR_MapFeed
    contested.Insert(flag);
   }
   pc.ACR_SendBases(positions, names, owners, details, radii, contested);
+ }
+ static void PublishZones(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
+ {
+  array<vector> positions = {};
+  array<float> radii = {};
+  array<string> labels = {};
+  if (manager.m_Supports)
+  {
+   float now = GetGame().GetWorld().GetWorldTime();
+   foreach (ACR_SupportZone zone : manager.m_Supports.m_Zones)
+   {
+    if (zone.m_sFaction != factionKey) continue;
+    positions.Insert(zone.m_Pos);
+    radii.Insert(zone.m_fRadius);
+    int left = Math.Ceil((zone.m_fImpactAt - now) / 1000);
+    if (left > 0) labels.Insert(string.Format("%1 - %2 s", zone.m_sName, left));
+    else labels.Insert(zone.m_sName + " - ACTIVE");
+   }
+  }
+  pc.ACR_SendZones(positions, radii, labels);
  }
  static void PublishSupports(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
  {
