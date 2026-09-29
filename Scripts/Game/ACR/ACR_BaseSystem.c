@@ -3,7 +3,7 @@
 class ACR_BaseSystem : Managed
 {
  static const float CAPTURE_RATE = 0.4;     // score per second per soldier of difference
- static const float CAPTURE_MAX_STEP = 2;   // cap per second
+ static const float CAPTURE_MAX_STEP = 6;   // cap per second (original mod: 2; raised so more troops cap faster)
  static const float SPAWN_RANGE = 400;      // enemies this close deploy the garrison
  static const float DESPAWN_RANGE = 450;    // no enemies this close: garrison packs up
  static const int POINTS_CAP = 1000;
