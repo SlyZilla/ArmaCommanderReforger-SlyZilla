@@ -25,6 +25,7 @@ $RequestDir  = Join-Path $ProjectRoot '.acr-requests'
 $ProfileDir  = Join-Path $ProjectRoot '.local-game'
 $LogRoot     = Join-Path $ProfileDir 'logs'
 New-Item -ItemType Directory -Force $RequestDir | Out-Null
+Set-Content -LiteralPath (Join-Path $RequestDir 'watcher-started.txt') -Value (Get-Date -Format o)
 
 function Find-Game {
     if ($GamePath -and (Test-Path -LiteralPath $GamePath)) { return $GamePath }
