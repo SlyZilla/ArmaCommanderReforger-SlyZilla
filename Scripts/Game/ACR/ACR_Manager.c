@@ -211,7 +211,14 @@ class ACR_Manager : Managed
   if (SCR_Global.IsAdmin(playerId)) return true;
   // Listen server / offline: the server's own player is the host.
   PlayerController local = GetGame().GetPlayerController();
-  return local && local.GetPlayerId() == playerId;
+  if (local) return local.GetPlayerId() == playerId;
+  // Dedicated server run from someone's PC (no admin configured): the first
+  // player still connected counts as the host.
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  int first = int.MAX;
+  foreach (int id : players) if (id < first) first = id;
+  return playerId == first;
  }
 
  protected void GrantGameMaster()

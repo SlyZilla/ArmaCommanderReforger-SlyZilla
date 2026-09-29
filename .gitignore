@@ -6,3 +6,4 @@ resourceDatabase.rdb
 .acr-requests/
 .local-inspect/
 dist/
+.local-server/

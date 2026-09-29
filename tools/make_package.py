@@ -5,11 +5,14 @@ out = root / 'dist' / 'ArmaCommander-Arland.zip'
 out.parent.mkdir(exist_ok=True)
 top = 'ArmaCommander-Arland'
 keep_dirs = ['Configs', 'Missions', 'Scripts', 'Worlds']
-keep_files = ['addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'Play-Test-Range.cmd', 'README.md']
+keep_files = ['addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'Play-Test-Range.cmd', 'README.md']
 def crlf(p): return p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
     z.writestr(f'{top}/READ ME FIRST.txt', crlf(root / 'tools/package/GUIDE.txt'))
-    z.writestr(f'{top}/Play-Arland.cmd', crlf(root / 'tools/package/Play-Arland.cmd'))
+    for name in ['Play-Arland.cmd', 'Host-Arland.cmd', 'Join-Arland.cmd']:
+        z.writestr(f'{top}/{name}', crlf(root / 'tools/package' / name))
+    for name in ['Host-Arland-online.cmd', 'Join-Arland-online.cmd']:
+        z.writestr(f'{top}/If joining fails/{name}', crlf(root / 'tools/package/alt' / name))
     for f in keep_files:
         z.write(root / f, f'{top}/ArmaCommanderReforger/{f}')
     for d in keep_dirs:

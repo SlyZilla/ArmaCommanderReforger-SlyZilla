@@ -23,6 +23,50 @@ HOW TO START
    If the game isn't found, it's installed somewhere unusual. Tell the person
    who sent you this.
 
+PLAYING TOGETHER (EXPERIMENTAL - FIRST EVER MULTIPLAYER TEST)
+-------------------------------------------------------------
+One person hosts on their PC and plays; the others join. Everyone needs this
+same folder (send them the same zip) and the same, up-to-date Reforger.
+
+HOST (one person):
+1. Install the free "Arma Reforger Server" tool once: in Steam, go to
+   Library, switch the filter to include Tools, find "Arma Reforger Server",
+   click Install.
+2. Double-click  Host-Arland.cmd
+   - A server window opens (leave it open) and Windows may ask about the
+     firewall: tick BOTH Private and Public and click Allow.
+   - The script prints your addresses, waits until the mission has loaded
+     (about 1 minute), then starts your game and joins automatically.
+3. Give your friend the address to join (see "Connecting" below).
+4. When done: quit the game, then close the server window.
+
+JOINING (everyone else):
+1. Double-click  Join-Arland.cmd  and type the host's address when asked.
+
+CONNECTING OVER THE INTERNET - pick ONE:
+ a) Easiest: a free "virtual LAN" app, e.g. Radmin VPN (no account) or
+    Tailscale. Both of you install it and join the same network. The host
+    then gives the address the VPN app shows (Radmin: 26.x.x.x,
+    Tailscale: 100.x.x.x). Host-Arland.cmd also lists it.
+ b) Port forwarding: the host forwards UDP port 2001 on their router to
+    their PC and gives their public IP (search "what is my ip").
+ On the same home network, just use the host's 192.168.x.x address.
+
+WHO DOES WHAT:
+- Everyone plays US. The first player in is the commander (map orders,
+  buying). The others can take over any US soldier (F7), drive gun trucks,
+  and fight. The commander can hand over with "Leave command" in the map
+  panel; the next player can then press "Take command".
+- The host (first player connected) gets Game Master (Y).
+
+IF IT DOESN'T CONNECT:
+- Both players close everything and try the files in the "If joining fails"
+  folder instead (Host-Arland-online / Join-Arland-online).
+- Check the address, that the server window is still open, and the firewall
+  question from step 2.
+- Logs: host server log in ArmaCommanderReforger\.local-server\logs, game
+  logs in ArmaCommanderReforger\.local-game\logs. Send the newest ones.
+
 THE SITUATION
 -------------
 You spawn at the US Airfield on the west side of Arland. Your forces nearby
@@ -102,8 +146,8 @@ TIPS
 
 KNOWN LIMITS (alpha)
 --------------------
-- Singleplayer only in this package. Multiplayer is built in but hasn't been
-  tested yet.
+- Multiplayer has never been tested before this package. Expect bugs;
+  logs and a short note of what happened are gold.
 - There's no artillery or air support yet, and no victory condition.
 - Logs are in ArmaCommanderReforger\.local-game\logs if something breaks.
   Sending the newest console.log helps a lot.
