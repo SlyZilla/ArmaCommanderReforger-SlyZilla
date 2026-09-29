@@ -119,6 +119,7 @@ class ACR_BaseSystem : Managed
   bool enemyNear, enemyInRange;
   foreach (int i, IEntity body : m_Bodies)
   {
+   if (!body) continue; // deleted this tick (e.g. a garrison packed up after a capture)
    string key = m_BodyFactions[i];
    float distance = vector.DistanceXZ(body.GetOrigin(), center);
    if (distance <= base.m_fRadius)

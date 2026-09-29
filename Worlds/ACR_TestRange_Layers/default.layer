@@ -78,3 +78,9 @@ ACR_Base ACR_Base_Hill {
  m_bHidden 1
  m_fRadius 50
 }
+PerceptionManager ACR_Perception : "{028DAEAD63E056BE}Prefabs/World/Game/PerceptionManager.et" {
+ coords 2400 111 2400
+}
+RadioManagerEntity ACR_Radio : "{B8E09FAB91C4ECCD}Prefabs/Systems/Radio/RadioManager.et" {
+ coords 2400 111 2400
+}
