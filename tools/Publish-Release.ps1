@@ -1,10 +1,13 @@
 # Publishes dist\ArmaCommander-Arland.zip as a GitHub release, so the launchers of
 # everyone who has the package pick it up on their next start.
-$ErrorActionPreference = 'Stop'
+# Windows PowerShell treats native stderr output as an error under 'Stop'; gh writes
+# normal status text to stderr, so keep 'Continue' and check exit codes instead.
+$ErrorActionPreference = 'Continue'
 $root = Split-Path $PSScriptRoot -Parent
 $repo = (Get-Content (Join-Path $root 'tools\package\update-source.txt') -Raw).Trim()
 $zip = Join-Path $root 'dist\ArmaCommander-Arland.zip'
 $versionFile = Join-Path $root 'dist\VERSION.txt'
+try { Start-Transcript -Path (Join-Path $root 'dist\publish-log.txt') -Force | Out-Null } catch {}
 
 function Fail($msg) { Write-Host ""; Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 
@@ -20,19 +23,19 @@ if (-not (Test-Path $zip)) { Fail "No package found at $zip. Ask Claude to rebui
 if (-not (Test-Path $versionFile)) { Fail "No dist\VERSION.txt. Ask Claude to rebuild the package." }
 $version = (Get-Content $versionFile -Raw).Trim()
 
-& $gh auth status 2>$null | Out-Null
+& $gh auth status 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail "Not logged in. Run: `"$gh`" auth login" }
 
 # Create the repository the first time (public, with a README so tags have a commit).
-& $gh repo view $repo 2>$null | Out-Null
+& $gh repo view $repo 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
   Write-Host "Creating public repository $repo ..."
-  & $gh repo create $repo --public --add-readme --description "Arma Commander for Arma Reforger - downloads are under Releases" | Out-Null
+  & $gh repo create $repo --public --add-readme --description "Arma Commander for Arma Reforger - downloads are under Releases"
   if ($LASTEXITCODE -ne 0) { Fail "Could not create repository $repo." }
   Start-Sleep -Seconds 3
 }
 
-& $gh release view $version --repo $repo 2>$null | Out-Null
+& $gh release view $version --repo $repo 2>&1 | Out-Null
 if ($LASTEXITCODE -eq 0) {
   Write-Host "$version is already published. Nothing to do." -ForegroundColor Yellow
   exit 0
