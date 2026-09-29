@@ -15,6 +15,7 @@ class ACR_MapFeed
    if (!faction) continue;
    PublishRoster(manager, pc, faction);
    PublishGroups(manager, pc, faction);
+   pc.ACR_SendCommandStatus(manager.IsCommander(id), manager.CommandStatus(id), manager.m_SharedCommand);
   }
  }
 
@@ -25,6 +26,7 @@ class ACR_MapFeed
   array<vector> positions = {};
   array<int> states = {};
   array<string> labels = {};
+  array<RplId> groupIds = {};
   array<AIAgent> agents = {};
   foreach (ACR_Squad squad : manager.m_Squads)
   {
@@ -37,6 +39,7 @@ class ACR_MapFeed
     ids.Insert(SCR_EntityHelper.EntityToRplId(soldier));
     positions.Insert(soldier.GetOrigin());
     labels.Insert(string.Format("%1-%2", squad.GetName(), squad.NumberOf(soldier)));
+    groupIds.Insert(SCR_EntityHelper.EntityToRplId(squad.m_Group));
     int state = 0;
     if (soldier.GetCharacterController().IsDead()) state = 2;
     else if (ACR_Squad.FindController(soldier) != 0) state = 1;
@@ -46,7 +49,7 @@ class ACR_MapFeed
   IEntity original = pc.GetMainEntity();
   vector originalPos;
   if (original) originalPos = original.GetOrigin();
-  pc.ACR_SendRoster(ids, positions, states, labels, originalPos);
+  pc.ACR_SendRoster(ids, positions, states, labels, groupIds, originalPos);
  }
 
  // A named, role-symbol marker at the leader of every friendly group: our
@@ -70,6 +73,9 @@ class ACR_MapFeed
   array<int> symbols = {};
   array<int> states = {};
   array<int> commandable = {};
+  array<RplId> groupIds = {};
+  array<string> details = {};
+  array<int> modes = {};
   foreach (SCR_AIGroup group : groups)
   {
    if (!group || group.GetFaction() != faction) continue;
@@ -114,7 +120,14 @@ class ACR_MapFeed
    int canCommand = 0;
    if (squad) canCommand = 1;
    commandable.Insert(canCommand);
+   groupIds.Insert(SCR_EntityHelper.EntityToRplId(group));
+   string detail;
+   if (squad) detail = squad.Describe();
+   details.Insert(detail);
+   int mode = 0;
+   if (squad) mode = squad.m_Mode;
+   modes.Insert(mode);
   }
-  pc.ACR_SendGroupMarkers(leaders, positions, names, symbols, states, commandable);
+  pc.ACR_SendGroupMarkers(leaders, positions, names, symbols, states, commandable, groupIds, details, modes);
  }
 }

@@ -5,6 +5,8 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  string m_Label;
  int m_State;          // 0 AI, 1 player-controlled, 2 dead
  bool m_Original;      // the player's command unit
+ bool m_Selected;
+ RplId m_GroupId;      // squad this marker belongs to
  ref ACR_MarkerClick m_Click;
  ref SCR_MilitarySymbol m_GroupSymbol;
  override void OnCreateMarker(bool skipProfanityFilter = false)
@@ -25,15 +27,19 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (m_State == 1) color = new Color(1, 0.75, 0.1, 1);
   if (m_State == 2) color = new Color(0.5, 0.5, 0.5, 1);
   if (m_Original) color = new Color(0.2, 1, 0.3, 1);
+  if (m_Selected) color = new Color(1, 1, 1, 1);
   m_MarkerWidgetComp.SetColor(color);
   if (m_GroupSymbol) m_MarkerWidgetComp.UpdateMilitarySymbol(m_GroupSymbol);
  }
+ // Left-click: select this marker's squad (Arma Commander style). The command
+ // unit marker instead returns you to your command unit.
  void Select()
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   if (!pc) return;
+  pc.ACR_MarkUiClick();
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
-  else pc.ACR_Request(ACR_ERequest.POSSESS, m_UnitId);
+  else pc.ACR_SelectGroup(m_GroupId);
  }
 }
 class ACR_MarkerClick : ScriptedWidgetEventHandler
@@ -90,6 +96,27 @@ modded class SCR_PlayerController
   SCR_HintManagerComponent.ShowCustomHint(message, "Arma Commander", 5, true);
  }
 
+ void ACR_Notify(string message)
+ {
+  Rpc(ACR_FeedbackOwner, message);
+ }
+
+ // ---------------------------------------------------------------- command status
+ protected bool m_ACR_IsCommander;
+ protected bool m_ACR_SharedCommand;
+ protected string m_ACR_CommandText;
+ void ACR_SendCommandStatus(bool isCommander, string text, bool shared)
+ {
+  Rpc(ACR_CommandStatusOwner, isCommander, text, shared);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_CommandStatusOwner(bool isCommander, string text, bool shared)
+ {
+  m_ACR_IsCommander = isCommander;
+  m_ACR_CommandText = text;
+  m_ACR_SharedCommand = shared;
+ }
+
  void ACR_PossessAimed()
  {
   vector camera[4];
@@ -128,17 +155,19 @@ modded class SCR_PlayerController
  protected ref array<vector> m_ACR_Positions = {};
  protected ref array<int> m_ACR_States = {};
  protected ref array<string> m_ACR_Labels = {};
+ protected ref array<RplId> m_ACR_UnitGroups = {};
  protected vector m_ACR_OriginalPos;
  protected ref array<ref ACR_UnitMarker> m_ACR_Markers = {};
  protected bool m_ACR_MapWasOpen;
 
- void ACR_SendRoster(array<RplId> ids, array<vector> positions, array<int> states, array<string> labels, vector original)
+ void ACR_SendRoster(array<RplId> ids, array<vector> positions, array<int> states, array<string> labels, array<RplId> groupIds, vector original)
  {
-  Rpc(ACR_RosterOwner, ids, positions, states, labels, original);
+  Rpc(ACR_RosterOwner, ids, positions, states, labels, groupIds, original);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_RosterOwner(array<RplId> ids, array<vector> positions, array<int> states, array<string> labels, vector original)
+ protected void ACR_RosterOwner(array<RplId> ids, array<vector> positions, array<int> states, array<string> labels, array<RplId> groupIds, vector original)
  {
+  m_ACR_UnitGroups.Copy(groupIds);
   m_ACR_Ids.Copy(ids);
   m_ACR_Positions.Copy(positions);
   m_ACR_States.Copy(states);
@@ -153,15 +182,21 @@ modded class SCR_PlayerController
  protected ref array<int> m_ACR_GroupSymbols = {};
  protected ref array<int> m_ACR_LeaderStates = {};
  protected ref array<int> m_ACR_Commandable = {};
+ protected ref array<RplId> m_ACR_GroupIds = {};
+ protected ref array<string> m_ACR_GroupDetails = {};
+ protected ref array<int> m_ACR_GroupModes = {};
  protected ref array<ref ACR_UnitMarker> m_ACR_GroupMarkers = {};
 
- void ACR_SendGroupMarkers(array<RplId> leaders, array<vector> positions, array<string> names, array<int> symbols, array<int> states, array<int> commandable)
+ void ACR_SendGroupMarkers(array<RplId> leaders, array<vector> positions, array<string> names, array<int> symbols, array<int> states, array<int> commandable, array<RplId> groupIds, array<string> details, array<int> modes)
  {
-  Rpc(ACR_GroupMarkersOwner, leaders, positions, names, symbols, states, commandable);
+  Rpc(ACR_GroupMarkersOwner, leaders, positions, names, symbols, states, commandable, groupIds, details, modes);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_GroupMarkersOwner(array<RplId> leaders, array<vector> positions, array<string> names, array<int> symbols, array<int> states, array<int> commandable)
+ protected void ACR_GroupMarkersOwner(array<RplId> leaders, array<vector> positions, array<string> names, array<int> symbols, array<int> states, array<int> commandable, array<RplId> groupIds, array<string> details, array<int> modes)
  {
+  m_ACR_GroupIds.Copy(groupIds);
+  m_ACR_GroupDetails.Copy(details);
+  m_ACR_GroupModes.Copy(modes);
   m_ACR_LeaderIds.Copy(leaders);
   m_ACR_LeaderPositions.Copy(positions);
   m_ACR_GroupNames.Copy(names);
@@ -202,14 +237,23 @@ modded class SCR_PlayerController
   bool open = mapEntity && mapEntity.IsOpen();
   if (!open)
   {
-   if (m_ACR_MapWasOpen) ACR_ClearMarkers();
+   if (m_ACR_MapWasOpen)
+   {
+    ACR_ClearMarkers();
+    ACR_ClosePanel();
+   }
    m_ACR_MapWasOpen = false;
    return;
   }
   SCR_MapMarkerManagerComponent manager = SCR_MapMarkerManagerComponent.GetInstance();
   if (!manager) return;
-  if (!m_ACR_MapWasOpen) GetGame().GetCallqueue().CallLater(ACR_CenterMap, 100, false);
+  if (!m_ACR_MapWasOpen)
+  {
+   GetGame().GetCallqueue().CallLater(ACR_CenterMap, 100, false);
+   ACR_OpenPanel(mapEntity);
+  }
   m_ACR_MapWasOpen = true;
+  ACR_UpdatePanel();
   int count = m_ACR_Ids.Count();
   if (m_ACR_Markers.Count() != count + 1)
   {
@@ -232,6 +276,8 @@ modded class SCR_PlayerController
    marker.m_UnitId = m_ACR_Ids[i];
    marker.m_State = m_ACR_States[i];
    marker.m_Label = m_ACR_Labels[i];
+   marker.m_GroupId = m_ACR_UnitGroups[i];
+   marker.m_Selected = m_ACR_SelectedGroup.IsValid() && marker.m_GroupId == m_ACR_SelectedGroup;
    if (marker.m_State == 1) marker.m_Label += " [PLAYER]";
    if (marker.m_State == 2) marker.m_Label += " [DEAD]";
    vector pos = m_ACR_Positions[i];
@@ -279,6 +325,8 @@ modded class SCR_PlayerController
    ACR_UnitMarker marker = m_ACR_GroupMarkers[i];
    marker.m_UnitId = m_ACR_LeaderIds[i];
    marker.m_Label = m_ACR_GroupNames[i];
+   marker.m_GroupId = m_ACR_GroupIds[i];
+   marker.m_Selected = m_ACR_SelectedGroup.IsValid() && marker.m_GroupId == m_ACR_SelectedGroup;
    marker.m_State = m_ACR_LeaderStates[i];
    if (marker.m_State == 1) marker.m_Label += " [PLAYER LEADER]";
    else marker.m_Label += " [AI LEADER]";
@@ -318,7 +366,8 @@ modded class SCR_PlayerController
    best = pixels;
    selected = marker;
   }
-  if (selected) selected.Select();
+  if (selected && selected.m_Original) ACR_Request(ACR_ERequest.RETURN);
+  else if (selected) ACR_Request(ACR_ERequest.POSSESS, selected.m_UnitId);
   else SCR_HintManagerComponent.ShowCustomHint("Place the cursor over a unit marker, then press F7", "Possess soldier", 4, true);
  }
 
@@ -328,7 +377,7 @@ modded class SCR_PlayerController
   array<ref ACR_UnitMarker> markers = m_ACR_Markers;
   if (groupMarker) markers = m_ACR_GroupMarkers;
   foreach (ACR_UnitMarker marker : markers)
-   if (marker.m_UnitId == id) { marker.Select(); return true; }
+   if (marker.m_UnitId == id) { ACR_Request(ACR_ERequest.POSSESS, marker.m_UnitId); return true; }
   return false;
  }
  string ACR_DescribeGroupMarker(RplId id)
@@ -337,5 +386,113 @@ modded class SCR_PlayerController
    if (marker.m_UnitId == id)
     return string.Format("label=%1 playerState=%2 widget=%3", marker.m_Label, marker.m_State, marker.GetRootWidget() != null);
   return "missing";
+ }
+
+ // ---------------------------------------------------------------- selection + command panel
+ protected RplId m_ACR_SelectedGroup = RplId.Invalid();
+ protected ACR_ECursorMode m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+ protected ref ACR_CommandPanel m_ACR_Panel;
+ protected int m_ACR_LastUiClick;
+
+ RplId ACR_GetSelectedGroup() { return m_ACR_SelectedGroup; }
+ void ACR_MarkUiClick() { m_ACR_LastUiClick = System.GetTickCount(); }
+
+ void ACR_SelectGroup(RplId groupId)
+ {
+  m_ACR_SelectedGroup = groupId;
+  m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+ }
+
+ protected void ACR_OpenPanel(SCR_MapEntity mapEntity)
+ {
+  ACR_ClosePanel();
+  Widget root = mapEntity.GetMapMenuRoot();
+  if (!root) return;
+  m_ACR_Panel = new ACR_CommandPanel();
+  m_ACR_Panel.Create(root, this);
+  SCR_MapEntity.GetOnSelection().Insert(ACR_OnMapClick);
+ }
+
+ protected void ACR_ClosePanel()
+ {
+  SCR_MapEntity.GetOnSelection().Remove(ACR_OnMapClick);
+  if (m_ACR_Panel) m_ACR_Panel.Destroy();
+  m_ACR_Panel = null;
+  m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+ }
+
+ // Left-click on empty map clears the selection. Clicks on markers or the panel don't.
+ protected void ACR_OnMapClick(vector screenPos)
+ {
+  if (System.GetTickCount() - m_ACR_LastUiClick < 400) return;
+  if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) return;
+  m_ACR_SelectedGroup = RplId.Invalid();
+  m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+ }
+
+ protected void ACR_UpdatePanel()
+ {
+  if (!m_ACR_Panel) return;
+  bool canTake = !m_ACR_IsCommander && (m_ACR_SharedCommand || m_ACR_CommandText == "Command: AI");
+  m_ACR_Panel.SetCommand(m_ACR_CommandText, m_ACR_IsCommander, canTake);
+  int index = -1;
+  if (m_ACR_SelectedGroup.IsValid()) index = m_ACR_GroupIds.Find(m_ACR_SelectedGroup);
+  if (index < 0)
+  {
+   // Selection vanished (squad wiped out, or not in the latest snapshot yet).
+   m_ACR_Panel.SetGroup("", "", false, false, 0, "");
+   return;
+  }
+  bool friendly = index < m_ACR_Commandable.Count() && m_ACR_Commandable[index] == 1;
+  string hint;
+  if (!friendly) hint = "Player group: not commandable";
+  else if (!m_ACR_IsCommander) hint = "Take command to give orders";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend that position";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in";
+  else hint = "Right-click: move there";
+  m_ACR_Panel.SetGroup(m_ACR_GroupNames[index], m_ACR_GroupDetails[index], friendly, m_ACR_IsCommander, m_ACR_GroupModes[index], hint);
+ }
+
+ void ACR_OnPanelAction(int action)
+ {
+  ACR_MarkUiClick();
+  switch (action)
+  {
+   case ACR_EPanelAction.TOGGLE_COMMAND:
+    if (m_ACR_IsCommander) ACR_Request(ACR_ERequest.LEAVE_COMMAND);
+    else ACR_Request(ACR_ERequest.TAKE_COMMAND);
+    return;
+   case ACR_EPanelAction.SWITCH: ACR_Request(ACR_ERequest.SWITCH_TO_GROUP, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.MODE_COMBAT: ACR_Request(ACR_ERequest.MODE_COMBAT, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.MODE_FAST: ACR_Request(ACR_ERequest.MODE_FAST, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.MODE_SILENT: ACR_Request(ACR_ERequest.MODE_SILENT, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.DEFEND: m_ACR_CursorMode = ACR_ECursorMode.DEFEND; return;
+   case ACR_EPanelAction.GET_IN: m_ACR_CursorMode = ACR_ECursorMode.GET_IN; return;
+   case ACR_EPanelAction.GET_OUT: ACR_Request(ACR_ERequest.ORDER_GET_OUT, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.UNLOAD: ACR_Request(ACR_ERequest.ORDER_UNLOAD, m_ACR_SelectedGroup); return;
+  }
+ }
+
+ // Called by the map radial menu hook. Returns true if the right-click was used.
+ bool ACR_HandleMapRightClick()
+ {
+  if (!ACR_Manager.GetInstance() || !m_ACR_SelectedGroup.IsValid()) return false;
+  int index = m_ACR_GroupIds.Find(m_ACR_SelectedGroup);
+  if (index < 0 || index >= m_ACR_Commandable.Count() || m_ACR_Commandable[index] != 1) return false;
+  if (!m_ACR_IsCommander)
+  {
+   SCR_HintManagerComponent.ShowCustomHint("Only the commander can give map orders. Take command in the panel.", "Arma Commander", 4, true);
+   return true;
+  }
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity) return false;
+  float x, z;
+  mapEntity.GetMapCursorWorldPosition(x, z);
+  int command = ACR_ERequest.MOVE_TO;
+  if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) command = ACR_ERequest.ORDER_DEFEND;
+  if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) command = ACR_ERequest.ORDER_GET_IN;
+  ACR_Request(command, m_ACR_SelectedGroup, Vector(x, 0, z));
+  m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+  return true;
  }
 }

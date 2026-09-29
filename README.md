@@ -8,17 +8,23 @@ APL-SA licensed, so this derivative must stay APL-SA with credit to the original
 Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo).
 **Host-Test-Range.cmd** opens the normal menu with the addon loaded, for hosting.
 
+**Command map** (M or F9):
+
+- Left-click a squad or soldier marker to select that squad. Left-click empty map to deselect.
+- The panel on the right shows the squad. **Switch to squad** takes over its leader (or another free soldier).
+- Commander only: **Combat / Fast / Silent** set how the squad moves; **right-click** the map to move it there.
+  **Defend** or **Get in**, then right-click, to defend a spot or board a vehicle near the click.
+  **Get out** dismounts it; **Unload** dismounts other squads riding in its vehicles.
+- One commander per side (the first player, automatically). **Leave command** hands it to the next player.
+  With nobody left in command, anyone can **Take command**.
+
 | Key | Action |
 | --- | --- |
-| F5 | On foot: selected squad advances 35 m. On map: selected squad moves to cursor |
-| F6 | Selected squad rallies to where it was first registered |
 | F7 | Possess the soldier under your crosshair, or the marker under the map cursor |
 | F8 | Return to your command unit |
 | F9 | Open/close the command map (no map item needed) |
+| F5 / F6 | Test hotkeys: move selected squad to cursor (map) or 35 m ahead / back to start |
 | Command menu key (default: backtick) | Native squad orders, only while possessing a squad leader |
-
-The "selected squad" is the squad you are in, otherwise the one you were last in. Proper
-map selection and the full order set (Move, Move Fast, Defend, Get In, Get Out) come next.
 
 Logs: `.local-game/logs/<date>/console.log`, tagged `[ACR]`.
 

@@ -1,10 +1,20 @@
 enum ACR_ERequest
 {
- ADVANCE,   // test hotkey: selected squad moves 35 m east of its home
- RALLY,     // test hotkey: selected squad returns home
- POSSESS,   // take control of a soldier (targetId)
- RETURN,    // go back to your command unit
- MOVE_TO    // selected squad moves to a map point
+ ADVANCE,          // test hotkey: selected squad moves 35 m east of its home
+ RALLY,            // test hotkey: selected squad returns home
+ POSSESS,          // take control of a soldier (targetId = soldier)
+ RETURN,           // go back to your command unit
+ MOVE_TO,          // squad (targetId = group, or selected) moves to point
+ SWITCH_TO_GROUP,  // possess the group's leader if free, else another free soldier
+ ORDER_DEFEND,     // defend point
+ ORDER_GET_IN,     // board vehicle near point / nearest vehicle
+ ORDER_GET_OUT,    // dismount
+ ORDER_UNLOAD,     // passengers of this squad's vehicles dismount
+ MODE_COMBAT,
+ MODE_FAST,
+ MODE_SILENT,
+ TAKE_COMMAND,
+ LEAVE_COMMAND
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -17,6 +27,11 @@ class ACR_Manager : Managed
  ref array<ref ACR_Squad> m_Squads = {};
  protected ref map<int, ACR_Squad> m_LastSquad = new map<int, ACR_Squad>();
  protected int m_SquadNumber;
+
+ // Command rules. One commander per faction unless shared command is on.
+ bool m_SharedCommand;
+ protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
+ protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
 
  // local input state
  protected IEntity m_LastLocalBody;
@@ -65,6 +80,7 @@ class ACR_Manager : Managed
  void Tick()
  {
   ScanForSquads();
+  EnsureCommanders();
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
@@ -159,6 +175,97 @@ class ACR_Manager : Managed
   return null;
  }
 
+ // ================================================================ command rules (server)
+
+ array<int> GetCommanders(Faction faction)
+ {
+  if (!faction) return null;
+  array<int> list;
+  if (!m_Commanders.Find(faction.GetFactionKey(), list))
+  {
+   list = {};
+   m_Commanders.Insert(faction.GetFactionKey(), list);
+  }
+  return list;
+ }
+
+ bool IsCommander(int playerId)
+ {
+  array<int> list = GetCommanders(SCR_FactionManager.SGetPlayerFaction(playerId));
+  return list && list.Contains(playerId);
+ }
+
+ // Drop commanders who left or switched sides; if a faction has players but
+ // no commander, the first one who hasn't opted out takes command.
+ void EnsureCommanders()
+ {
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (string key, array<int> list : m_Commanders)
+  {
+   for (int i = list.Count() - 1; i >= 0; i--)
+   {
+    Faction faction = SCR_FactionManager.SGetPlayerFaction(list[i]);
+    if (!players.Contains(list[i]) || !faction || faction.GetFactionKey() != key) list.RemoveOrdered(i);
+   }
+  }
+  for (int i = m_LeftCommand.Count() - 1; i >= 0; i--)
+   if (!players.Contains(m_LeftCommand[i])) m_LeftCommand.RemoveOrdered(i);
+  foreach (int id : players)
+  {
+   Faction playerFaction = SCR_FactionManager.SGetPlayerFaction(id);
+   if (!playerFaction || m_LeftCommand.Contains(id)) continue;
+   array<int> factionCommanders = GetCommanders(playerFaction);
+   if (!factionCommanders.IsEmpty()) continue;
+   factionCommanders.Insert(id);
+   Notify(id, "You are in command");
+   PrintFormat("[ACR] Commander: %1 takes command of %2", GetGame().GetPlayerManager().GetPlayerName(id), playerFaction.GetFactionKey());
+  }
+ }
+
+ string CommandStatus(int playerId)
+ {
+  array<int> list = GetCommanders(SCR_FactionManager.SGetPlayerFaction(playerId));
+  if (!list || list.IsEmpty()) return "Command: AI";
+  if (m_SharedCommand)
+  {
+   if (list.Contains(playerId)) return string.Format("Shared command (%1 commanders)", list.Count());
+   return "Shared command";
+  }
+  if (list.Contains(playerId)) return "You are in command";
+  return string.Format("Command: %1", GetGame().GetPlayerManager().GetPlayerName(list[0]));
+ }
+
+ string TakeCommand(SCR_PlayerController pc)
+ {
+  int id = pc.GetPlayerId();
+  array<int> list = GetCommanders(SCR_FactionManager.SGetPlayerFaction(id));
+  if (!list) return "You have no faction";
+  if (list.Contains(id)) return "You are already in command";
+  if (!m_SharedCommand && !list.IsEmpty())
+   return string.Format("%1 is in command", GetGame().GetPlayerManager().GetPlayerName(list[0]));
+  m_LeftCommand.RemoveItem(id);
+  list.Insert(id);
+  return "You are in command";
+ }
+
+ string LeaveCommand(SCR_PlayerController pc)
+ {
+  int id = pc.GetPlayerId();
+  array<int> list = GetCommanders(SCR_FactionManager.SGetPlayerFaction(id));
+  if (!list || !list.Contains(id)) return "You are not in command";
+  list.RemoveItem(id);
+  if (!m_LeftCommand.Contains(id)) m_LeftCommand.Insert(id);
+  EnsureCommanders();
+  return "You left command";
+ }
+
+ void Notify(int playerId, string message)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(playerId));
+  if (pc) pc.ACR_Notify(message);
+ }
+
  // ================================================================ requests (server)
 
  string HandleRequest(SCR_PlayerController pc, int command, RplId targetId, vector point)
@@ -166,11 +273,15 @@ class ACR_Manager : Managed
   if (!Replication.IsServer() || !pc) return "Server unavailable";
   ChimeraCharacter body = ChimeraCharacter.Cast(pc.GetControlledEntity());
   if (!body || body.GetCharacterController().IsDead()) return "Wait until you have spawned";
-  if (command == ACR_ERequest.RETURN) return ReturnToCommandUnit(pc, body);
-  if (command == ACR_ERequest.POSSESS) return Possess(pc, body, targetId);
-  if (command == ACR_ERequest.ADVANCE || command == ACR_ERequest.RALLY || command == ACR_ERequest.MOVE_TO)
-   return Order(pc, command, point);
-  return "Unknown command";
+  switch (command)
+  {
+   case ACR_ERequest.RETURN: return ReturnToCommandUnit(pc, body);
+   case ACR_ERequest.POSSESS: return Possess(pc, body, targetId);
+   case ACR_ERequest.SWITCH_TO_GROUP: return SwitchToGroup(pc, body, targetId);
+   case ACR_ERequest.TAKE_COMMAND: return TakeCommand(pc);
+   case ACR_ERequest.LEAVE_COMMAND: return LeaveCommand(pc);
+  }
+  return Order(pc, command, targetId, point);
  }
 
  string ReturnToCommandUnit(SCR_PlayerController pc, ChimeraCharacter body)
@@ -211,26 +322,104 @@ class ACR_Manager : Managed
   return string.Format("Now controlling %1-%2. F7 swaps again; F8 returns to your command unit.", squad.GetName(), squad.NumberOf(target));
  }
 
- string Order(SCR_PlayerController pc, int command, vector point)
+ // Arma Commander's Switch button: the leader if free, otherwise any free soldier.
+ string SwitchToGroup(SCR_PlayerController pc, ChimeraCharacter body, RplId groupId)
  {
-  ACR_Squad squad = GetSelectedSquad(pc);
-  if (!squad) return "No squad selected. Possess a squad soldier first.";
+  ACR_Squad squad = FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
+  if (!squad) return "Select a friendly squad first";
+  array<IEntity> candidates = {};
+  IEntity leader = squad.GetLeader();
+  if (leader) candidates.Insert(leader);
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+   if (agent.GetControlledEntity() && !candidates.Contains(agent.GetControlledEntity())) candidates.Insert(agent.GetControlledEntity());
+  foreach (IEntity candidate : candidates)
+  {
+   ChimeraCharacter soldier = ChimeraCharacter.Cast(candidate);
+   if (!soldier || soldier == body || soldier.GetCharacterController().IsDead() || ACR_Squad.FindController(soldier)) continue;
+   return Possess(pc, body, SCR_EntityHelper.EntityToRplId(soldier));
+  }
+  return string.Format("%1 has no free soldier to take over", squad.GetName());
+ }
+
+ string Order(SCR_PlayerController pc, int command, RplId groupId, vector point)
+ {
+  ACR_Squad squad = FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
+  if (!squad) squad = GetSelectedSquad(pc);
+  if (!squad) return "No squad selected";
   if (squad.GetFaction() != SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId())) return "That squad belongs to another faction";
+  if (!IsCommander(pc.GetPlayerId())) return "Only the commander can give map orders. Take command first.";
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return "That squad is not ready";
-  vector destination = squad.m_Home + Vector(35, 0, 0);
-  if (command == ACR_ERequest.RALLY) destination = squad.m_Home;
-  if (command == ACR_ERequest.MOVE_TO)
-  {
-   // Reject nonsense coordinates from a client.
-   if (vector.Distance(point, anchor.GetOrigin()) > 20000) return "Order is too far away";
-   destination = point;
-  }
-  destination = Ground(destination);
-  if (!squad.MoveTo(destination)) return "Could not create a movement order";
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN;
+  // Reject nonsense coordinates from a client.
+  if (usesPoint && vector.Distance(point, anchor.GetOrigin()) > 20000) return "Order is too far away";
+  if (usesPoint) point = Ground(point);
   m_LastSquad.Set(pc.GetPlayerId(), squad);
-  PrintFormat("[ACR] MOVE player=%1 squad=%2 target=%3 command=%4", pc.GetPlayerId(), squad.GetName(), destination, command);
-  return string.Format("%1: movement order accepted", squad.GetName());
+  string name = squad.GetName();
+  switch (command)
+  {
+   case ACR_ERequest.ADVANCE:
+    if (squad.MoveTo(Ground(squad.m_Home + Vector(35, 0, 0)))) return name + ": moving";
+    break;
+   case ACR_ERequest.RALLY:
+    if (squad.MoveTo(Ground(squad.m_Home))) return name + ": rallying";
+    break;
+   case ACR_ERequest.MOVE_TO:
+    if (squad.MoveTo(point))
+    {
+     PrintFormat("[ACR] MOVE player=%1 squad=%2 target=%3", pc.GetPlayerId(), name, point);
+     return name + ": moving";
+    }
+    break;
+   case ACR_ERequest.ORDER_DEFEND:
+    if (squad.Defend(point)) return name + ": defending";
+    break;
+   case ACR_ERequest.ORDER_GET_IN:
+    if (squad.GetIn(point)) return name + ": getting in";
+    return name + ": no vehicle found";
+   case ACR_ERequest.ORDER_GET_OUT:
+    if (squad.GetOut()) return name + ": getting out";
+    return name + " is not in a vehicle";
+   case ACR_ERequest.ORDER_UNLOAD:
+    return Unload(squad);
+   case ACR_ERequest.MODE_COMBAT:
+    squad.SetMode(ACR_EMoveMode.COMBAT);
+    return name + ": combat";
+   case ACR_ERequest.MODE_FAST:
+    squad.SetMode(ACR_EMoveMode.FAST);
+    return name + ": fast";
+   case ACR_ERequest.MODE_SILENT:
+    squad.SetMode(ACR_EMoveMode.SILENT);
+    return name + ": silent";
+   default:
+    return "Unknown command";
+  }
+  return name + ": could not create that order";
+ }
+
+ // Every other squad riding in this squad's vehicles dismounts.
+ string Unload(ACR_Squad transport)
+ {
+  array<IEntity> vehicles = {};
+  transport.GetVehicles(vehicles);
+  if (vehicles.IsEmpty()) return transport.GetName() + " is not in a vehicle";
+  int unloaded;
+  array<IEntity> passengerVehicles = {};
+  foreach (ACR_Squad squad : m_Squads)
+  {
+   if (squad == transport) continue;
+   squad.GetVehicles(passengerVehicles);
+   foreach (IEntity vehicle : passengerVehicles)
+   {
+    if (!vehicles.Contains(vehicle)) continue;
+    if (squad.GetOut()) unloaded++;
+    break;
+   }
+  }
+  if (!unloaded) return transport.GetName() + " has no passengers";
+  return string.Format("%1: unloading %2 squad(s)", transport.GetName(), unloaded);
  }
 
  // ================================================================ local input (every machine)
@@ -265,7 +454,7 @@ class ACR_Manager : Managed
   if (!m_HintShown)
   {
    m_HintShown = true;
-   SCR_HintManagerComponent.ShowCustomHint("F5: squad advance / move to map cursor | F6: squad rally | F7: possess aimed soldier (or map marker) | F8: return | F9: command map", "Arma Commander", 30, true);
+   SCR_HintManagerComponent.ShowCustomHint("Map: click a squad to select, right-click to order | F7: possess aimed soldier (or hovered marker) | F8: command unit | F9: map", "Arma Commander", 30, true);
   }
   if (input.GetActionTriggered("ACR_Move"))
   {
@@ -273,7 +462,7 @@ class ACR_Manager : Managed
    {
     float x, z;
     mapEntity.GetMapCursorWorldPosition(x, z);
-    pc.ACR_Request(ACR_ERequest.MOVE_TO, RplId.Invalid(), Vector(x, 0, z));
+    pc.ACR_Request(ACR_ERequest.MOVE_TO, pc.ACR_GetSelectedGroup(), Vector(x, 0, z));
    }
    else pc.ACR_Request(ACR_ERequest.ADVANCE);
   }

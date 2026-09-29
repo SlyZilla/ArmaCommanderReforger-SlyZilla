@@ -1,3 +1,10 @@
+enum ACR_EMoveMode
+{
+ COMBAT,
+ FAST,
+ SILENT
+}
+
 // One commandable AI squad. Server-side only.
 //
 // Native squad commands need a player-led playable group, so each squad owns a
@@ -230,19 +237,159 @@ class ACR_Squad : Managed
 
  // ---------------------------------------------------------------- orders
 
- // Replace every queued order (ours or native) with a single move waypoint.
- bool MoveTo(vector destination)
+ static const ResourceName WP_MOVE = "{750A8D1695BD6998}Prefabs/AI/Waypoints/AIWaypoint_Move.et";
+ static const ResourceName WP_DEFEND = "{93291E72AC23930F}Prefabs/AI/Waypoints/AIWaypoint_Defend.et";
+ static const ResourceName WP_GET_IN_NEAREST = "{B049D4C74FBC0C4D}Prefabs/AI/Waypoints/AIWaypoint_GetInNearest.et";
+ static const ResourceName WP_GET_IN = "{712F4795CF8B91C7}Prefabs/AI/Waypoints/AIWaypoint_GetIn.et";
+ static const ResourceName WP_GET_OUT = "{C40316EE26846CAB}Prefabs/AI/Waypoints/AIWaypoint_GetOut.et";
+
+ ACR_EMoveMode m_Mode = ACR_EMoveMode.COMBAT;
+ string m_Order = "Holding";
+
+ static string ModeName(ACR_EMoveMode mode)
  {
-  if (!m_Group) return false;
-  AIWaypoint replacement = AIWaypoint.Cast(ACR_Manager.SpawnPrefab("{750A8D1695BD6998}Prefabs/AI/Waypoints/AIWaypoint_Move.et", destination));
-  if (!replacement) return false;
+  if (mode == ACR_EMoveMode.FAST) return "Fast";
+  if (mode == ACR_EMoveMode.SILENT) return "Silent";
+  return "Combat";
+ }
+
+ // Movement behaviour, like Arma Commander's Combat / Transport / Silent:
+ //  Combat: normal pace, engage at will, orders can be interrupted by contact.
+ //  Fast:   run, orders take priority over contact (like a forced move).
+ //  Silent: walk, only return fire.
+ void SetMode(ACR_EMoveMode mode)
+ {
+  m_Mode = mode;
+  if (!m_Group) return;
+  SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+  if (utility)
+  {
+   if (mode == ACR_EMoveMode.SILENT) utility.SetCombatMode(EAIGroupCombatMode.RETURN_FIRE);
+   else utility.SetCombatMode(EAIGroupCombatMode.FIRE_AT_WILL);
+  }
+  SCR_AIGroupSettingsComponent settings = SCR_AIGroupSettingsComponent.Cast(m_Group.FindComponent(SCR_AIGroupSettingsComponent));
+  if (settings)
+  {
+   settings.RemoveSettingsOfTypeAndOrigin(SCR_AIGroupCharactersMovementSpeedSettingBase, SCR_EAISettingOrigin.COMMANDING);
+   if (mode == ACR_EMoveMode.FAST)
+    settings.AddSetting(SCR_AIGroupCharactersMovementSpeedSetting.Create(SCR_EAISettingOrigin.COMMANDING, EMovementType.RUN), false, true);
+   if (mode == ACR_EMoveMode.SILENT)
+    settings.AddSetting(SCR_AIGroupCharactersMovementSpeedSetting.Create(SCR_EAISettingOrigin.COMMANDING, EMovementType.WALK), false, true);
+  }
+ }
+
+ // Replace every queued order (ours or native) with a single waypoint.
+ AIWaypoint IssueWaypoint(ResourceName prefab, vector position, float completionRadius = -1, bool forced = false)
+ {
+  if (!m_Group) return null;
+  Resource resource = Resource.Load(prefab);
+  if (!resource.IsValid()) return null;
+  EntitySpawnParams params = new EntitySpawnParams();
+  params.TransformMode = ETransformMode.WORLD;
+  params.Transform[3] = position;
+  AIWaypoint waypoint = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(resource, null, params));
+  if (!waypoint) return null;
+  SCR_AIWaypoint scripted = SCR_AIWaypoint.Cast(waypoint);
+  if (scripted && (forced || m_Mode == ACR_EMoveMode.FAST)) scripted.SetPriorityLevel(SCR_AIActionBase.PRIORITY_LEVEL_PLAYER);
+  if (completionRadius >= 0) waypoint.SetCompletionRadius(completionRadius);
   array<AIWaypoint> previousOrders = {};
   m_Group.GetWaypoints(previousOrders);
   foreach (AIWaypoint previousOrder : previousOrders) m_Group.RemoveWaypoint(previousOrder);
   if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
-  m_Waypoint = replacement;
-  m_Group.AddWaypoint(m_Waypoint);
+  m_Waypoint = waypoint;
+  m_Group.AddWaypoint(waypoint);
+  return waypoint;
+ }
+
+ bool MoveTo(vector destination)
+ {
+  if (!IssueWaypoint(WP_MOVE, destination)) return false;
+  m_Order = "Moving";
   return true;
+ }
+
+ bool Defend(vector position)
+ {
+  if (!IssueWaypoint(WP_DEFEND, position, 15, true)) return false;
+  m_Order = "Defending";
+  return true;
+ }
+
+ // Board a specific vehicle if one is within 30 m of the point, otherwise the nearest free one.
+ bool GetIn(vector position)
+ {
+  Vehicle vehicle = FindVehicleNear(position, 30);
+  if (vehicle)
+  {
+   SCR_BoardingEntityWaypoint boarding = SCR_BoardingEntityWaypoint.Cast(IssueWaypoint(WP_GET_IN, vehicle.GetOrigin(), -1, true));
+   if (!boarding) return false;
+   boarding.SetEntity(vehicle);
+  }
+  else if (!IssueWaypoint(WP_GET_IN_NEAREST, position, 20, true)) return false;
+  m_Order = "Getting in";
+  return true;
+ }
+
+ bool GetOut()
+ {
+  array<IEntity> vehicles = {};
+  GetVehicles(vehicles);
+  if (vehicles.IsEmpty()) return false;
+  if (!IssueWaypoint(WP_GET_OUT, vehicles[0].GetOrigin(), -1, true)) return false;
+  m_Order = "Getting out";
+  return true;
+ }
+
+ // Vehicles any member currently sits in.
+ void GetVehicles(array<IEntity> vehicles)
+ {
+  vehicles.Clear();
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character || !character.IsInVehicle()) continue;
+   CompartmentAccessComponent compartment = character.GetCompartmentAccessComponent();
+   if (!compartment) continue;
+   IEntity vehicle = compartment.GetVehicleIn(character);
+   if (vehicle && !vehicles.Contains(vehicle)) vehicles.Insert(vehicle);
+  }
+ }
+
+ protected Vehicle m_FoundVehicle;
+ protected bool CollectVehicle(IEntity entity)
+ {
+  Vehicle vehicle = Vehicle.Cast(entity);
+  if (!vehicle) return true;
+  m_FoundVehicle = vehicle;
+  return false; // stop at the first hit
+ }
+ Vehicle FindVehicleNear(vector position, float radius)
+ {
+  m_FoundVehicle = null;
+  GetGame().GetWorld().QueryEntitiesBySphere(position, radius, CollectVehicle);
+  return m_FoundVehicle;
+ }
+
+ // One line for the command panel, e.g. "4/4 alive | Combat | Moving".
+ string Describe()
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  int alive;
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (character && !character.GetCharacterController().IsDead()) alive++;
+  }
+  string order = m_Order;
+  if (m_Group && !m_Group.GetCurrentWaypoint() && order != "Defending") order = "Holding";
+  string text = string.Format("%1 alive | %2 | %3", alive, ModeName(m_Mode), order);
+  array<IEntity> vehicles = {};
+  GetVehicles(vehicles);
+  if (!vehicles.IsEmpty()) text += " | mounted";
+  return text;
  }
 
  // ---------------------------------------------------------------- teardown
