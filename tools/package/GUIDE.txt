@@ -118,6 +118,10 @@ ON THE COMMAND MAP
     Defend, then right-click   defend that spot
     Get in, then right-click   board a vehicle near the click
     Get out / Unload       dismount the squad, or the passengers it carries
+    Ride, then right-click a free truck nearby (no more than 800 m away, and
+                           no farther than half the trip) picks the squad up,
+                           drives it there and drops it off. Trips under
+                           400 m are walked.
     Reinforce              refill missing soldiers (3 RP each). They appear
                            at your nearest base and then have to reach
                            the squad.
