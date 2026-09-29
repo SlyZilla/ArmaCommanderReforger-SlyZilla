@@ -15,6 +15,7 @@ class ACR_TestHarness : Managed
  static const int MODE_GAMEMASTER = 8;
  static const int MODE_AI = 9;
  static const int MODE_GUNNER = 10;
+ static const int MODE_PROBE = 11;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -44,6 +45,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrGameMasterTest", flag)) mode = MODE_GAMEMASTER;
   if (System.GetCLIParam("acrAITest", flag)) mode = MODE_AI;
   if (System.GetCLIParam("acrGunnerTest", flag)) mode = MODE_GUNNER;
+  if (System.GetCLIParam("acrProbeTest", flag)) mode = MODE_PROBE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -75,6 +77,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_GAMEMASTER) { TestGameMaster(); return; }
   if (m_Mode == MODE_AI) { TestAI(); return; }
   if (m_Mode == MODE_GUNNER) { TestGunner(); return; }
+  if (m_Mode == MODE_PROBE) { TestProbe(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -122,7 +125,7 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] INPUT possessing=%1 forward=%2 aim=%3 fire=%4", pc.IsPossessing(), input.IsActionActive("CharacterForward"), input.IsActionActive("CharacterAimUp"), input.IsActionActive("CharacterFire"));
   }
   if (m_Ticks == 12) pc.ACR_Request(ACR_ERequest.ADVANCE);
-  if (m_Ticks == 20) pc.ACR_Request(ACR_ERequest.MOVE_TO, RplId.Invalid(), Vector(2450, 0, 2400));
+  if (m_Ticks == 20) pc.ACR_Request(ACR_ERequest.MOVE_TO, RplId.Invalid(), Vector(1370, 0, 2832));
   if (m_Ticks == 22)
   {
    ChimeraCharacter testBody = ChimeraCharacter.Cast(pc.GetControlledEntity());
@@ -156,7 +159,7 @@ class ACR_TestHarness : Managed
    SCR_CommandingManagerComponent commandManager = SCR_CommandingManagerComponent.GetInstance();
    PrintFormat("[ACR] NATIVE TEST leader=%1 menuMove=%2", groupComp.IsPlayerLeaderOwnGroup(), commandManager.CanShowCommand("waypointMoveForced"));
    SCR_PlayerControllerCommandingComponent commanding = SCR_PlayerControllerCommandingComponent.GetLocalPlayerControllerCommandingComponent();
-   commanding.PrepareExecuteCommand("waypointMoveForced", Ground("2470 0 2420"));
+   commanding.PrepareExecuteCommand("waypointMoveForced", Ground("1390 0 2852"));
   }
   if (m_Ticks == 32)
   {
@@ -164,7 +167,7 @@ class ACR_TestHarness : Managed
    m_Range.m_Group.GetWaypoints(nativeOrders);
    bool foundNativeOrder;
    foreach (AIWaypoint order : nativeOrders)
-    if (vector.Distance(order.GetOrigin(), Ground("2470 0 2420")) < 2) foundNativeOrder = true;
+    if (vector.Distance(order.GetOrigin(), Ground("1390 0 2852")) < 2) foundNativeOrder = true;
    PrintFormat("[ACR] NATIVE TEST waypointAtRequestedPosition=%1", foundNativeOrder);
   }
   if (m_Ticks == 33)
@@ -186,7 +189,7 @@ class ACR_TestHarness : Managed
   {
    PrintFormat("[ACR] NATIVE TEST released=%1 members=%2", squad.m_Commander == 0, m_Range.m_Group.GetAgentsCount());
    SCR_CommandingManagerComponent commands = SCR_CommandingManagerComponent.GetInstance();
-   commands.RequestCommandExecution(commands.FindCommandIndex("waypointMoveForced"), RplId.Invalid(), SCR_EntityHelper.EntityToRplId(m_Range.m_Group), Ground("2500 0 2450"), pc.GetPlayerId(), 0);
+   commands.RequestCommandExecution(commands.FindCommandIndex("waypointMoveForced"), RplId.Invalid(), SCR_EntityHelper.EntityToRplId(m_Range.m_Group), Ground("1420 0 2862"), pc.GetPlayerId(), 0);
   }
   if (m_Ticks == 35)
   {
@@ -248,7 +251,7 @@ class ACR_TestHarness : Managed
    }
   }
   if (m_Ticks == 22 || m_Ticks == 54) pc.ACR_Request(ACR_ERequest.RETURN);
-  if (m_Ticks == 23) pc.ACR_Request(ACR_ERequest.MOVE_TO, RplId.Invalid(), Ground("2455 0 2400"));
+  if (m_Ticks == 23) pc.ACR_Request(ACR_ERequest.MOVE_TO, RplId.Invalid(), Ground("1375 0 2832"));
   if (m_Ticks == 43)
    PrintFormat("[ACR] MAP HANDOFF AI distance=%1 yawBefore=%2 yawAfter=%3", vector.Distance(m_MapTestBody.GetOrigin(), m_MapTestPosition), m_MapTestYaw, m_MapTestBody.GetYawPitchRoll()[0]);
   if (m_Ticks == 44)
@@ -270,8 +273,8 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 12 || m_Ticks == 40) pc.ACR_Request(ACR_ERequest.POSSESS, SCR_EntityHelper.EntityToRplId(squad.GetLeader()));
   if (m_Ticks == 15 || m_Ticks == 43 || m_Ticks == 65)
   {
-   m_OrderTarget = Ground("2450 0 2400");
-   if (m_Ticks == 43) m_OrderTarget = Ground("2415 0 2435");
+   m_OrderTarget = Ground("1370 0 2832");
+   if (m_Ticks == 43) m_OrderTarget = Ground("1335 0 2867");
    if (m_Ticks == 65) m_OrderTarget = pc.GetControlledEntity().GetOrigin();
    m_OrderUnits.Clear();
    m_OrderDistances.Clear();
@@ -305,8 +308,8 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 38 || m_Ticks == 88)
   {
    PrintFormat("[ACR] RESPONSE nonLeader menu=%1 allowed=%2 members=%3", manager.CanShowCommand("waypointMove"), commands.ACR_HasCommandAuthority(), m_Range.m_Group.GetAgentsCount());
-   commands.PrepareExecuteCommand("waypointMove", Ground("2500 0 2450"));
-   manager.RequestCommandExecution(manager.FindCommandIndex("waypointMove"), RplId.Invalid(), SCR_EntityHelper.EntityToRplId(m_Range.m_Group), Ground("2500 0 2450"), pc.GetPlayerId(), 0);
+   commands.PrepareExecuteCommand("waypointMove", Ground("1420 0 2862"));
+   manager.RequestCommandExecution(manager.FindCommandIndex("waypointMove"), RplId.Invalid(), SCR_EntityHelper.EntityToRplId(m_Range.m_Group), Ground("1420 0 2862"), pc.GetPlayerId(), 0);
   }
   if (m_Ticks == 50) GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   if (m_Ticks == 52) LogLeaderMarker();
@@ -373,8 +376,8 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] BASES count=%1", ACR_Base.s_All.Count());
    pc.ACR_Request(ACR_ERequest.MODE_FAST, SCR_EntityHelper.EntityToRplId(m_Range.m_Group));
   }
-  if (m_Ticks == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), "2560 0 2450".ToVector());
-  if (m_Ticks == 12) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), "2565 0 2445".ToVector());
+  if (m_Ticks == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), "1480 0 2860".ToVector());
+  if (m_Ticks == 12) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), "1485 0 2855".ToVector());
   if (m_Ticks % 10 == 0)
   {
    foreach (ACR_Base base : ACR_Base.s_All)
@@ -397,8 +400,8 @@ class ACR_TestHarness : Managed
   foreach (ACR_Base base : ACR_Base.s_All)
    if (base.m_sName == "Outpost") outpost = base;
   if (!outpost) return;
-  if (m_Ticks == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), "2948 0 2700".ToVector());
-  if (m_Ticks == 12) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), "2955 0 2695".ToVector());
+  if (m_Ticks == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), "1298 0 2192".ToVector());
+  if (m_Ticks == 12) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), "1305 0 2187".ToVector());
   if (m_Ticks % 10 == 0)
   {
    ACR_Squad alpha = manager.FindSquadByGroup(m_Range.m_Group);
@@ -542,7 +545,7 @@ class ACR_TestHarness : Managed
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!pc || !manager) return;
-  if (m_Ticks == 5) manager.SpawnUnit("Gun Truck", "", "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et", true, "", Ground("2470 0 2380"), Ground("2475 0 2370"));
+  if (m_Ticks == 5) manager.SpawnUnit("Gun Truck", "", "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et", true, "", Ground("1390 0 2795"), Ground("1395 0 2790"));
   if (m_Ticks == 14)
   {
    foreach (ACR_Squad squad : manager.m_Squads)
@@ -585,5 +588,47 @@ class ACR_TestHarness : Managed
   }
   if (m_Ticks == 50 || m_Ticks == 60) PrintFormat("[ACR] GUNNER after map order: drivenByGunner=%1 %2", manager.IsGunnerDriven(m_GunVehicle), GunState());
   if (m_Ticks == 62) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrProbeTest: obstacle map (32 m cells)
+ static const int PROBE_CELL = 32;
+ static const int PROBE_CELLS = 128;
+ protected int m_ProbeRow;
+ protected int m_ProbeHits;
+
+ bool ProbeCount(IEntity e)
+ {
+  if (!e || !e.GetPhysics()) return true;
+  if (GenericTerrainEntity.Cast(e)) return true;
+  m_ProbeHits++;
+  return true;
+ }
+
+ void TestProbe()
+ {
+  if (m_Ticks < 5) return;
+  BaseWorld world = GetGame().GetWorld();
+  for (int n = 0; n < 16 && m_ProbeRow < PROBE_CELLS; n++)
+  {
+   string row = "";
+   string heights = "";
+   float z = m_ProbeRow * PROBE_CELL + PROBE_CELL * 0.5;
+   for (int c = 0; c < PROBE_CELLS; c++)
+   {
+    float x = c * PROBE_CELL + PROBE_CELL * 0.5;
+    float y = world.GetSurfaceY(x, z);
+    heights += ((int)y).ToString() + ",";
+    if (y < 1) { row += "~"; continue; }
+    m_ProbeHits = 0;
+    world.QueryEntitiesBySphere(Vector(x, y + 1, z), PROBE_CELL * 0.5, ProbeCount, null, EQueryEntitiesFlags.STATIC);
+    if (m_ProbeHits == 0) row += ".";
+    else if (m_ProbeHits > 9) row += "#";
+    else row += m_ProbeHits.ToString();
+   }
+   PrintFormat("[ACR] PROBE %1 %2", m_ProbeRow, row);
+   PrintFormat("[ACR] PROBEH %1 %2", m_ProbeRow, heights);
+   m_ProbeRow++;
+  }
+  if (m_ProbeRow >= PROBE_CELLS) { Print("[ACR] TEST COMPLETE"); m_ProbeRow++; }
  }
 }
