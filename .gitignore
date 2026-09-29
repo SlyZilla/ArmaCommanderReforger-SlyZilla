@@ -5,3 +5,4 @@ resourceDatabase.rdb
 .local-game/
 .acr-requests/
 .local-inspect/
+dist/

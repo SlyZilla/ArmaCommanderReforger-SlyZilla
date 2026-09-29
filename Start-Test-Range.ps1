@@ -1,4 +1,4 @@
-param([switch]$HostMenu, [string]$GamePath, [string]$Extra = '')
+param([switch]$HostMenu, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
 $ErrorActionPreference = 'Stop'
 try {
  if (!$GamePath) {
@@ -21,7 +21,7 @@ try {
  $addonsPath = Split-Path $PSScriptRoot -Parent
  $profilePath = Join-Path $PSScriptRoot '.local-game'
  $arguments = '-addonsDir "' + $addonsPath + '" -addons AC230926A0010001 -profile "' + $profilePath + '" -noSplash'
- if (!$HostMenu) { $arguments += ' -noBackend -world "Worlds/ACR_TestRange.ent"' }
+ if (!$HostMenu) { $arguments += ' -noBackend -world "' + $World + '"' }
  if ($Extra) { $arguments += ' ' + $Extra }
  # User-invoked interactive game launcher.
  Start-Process -FilePath $GamePath -ArgumentList $arguments -WorkingDirectory (Split-Path $GamePath -Parent)

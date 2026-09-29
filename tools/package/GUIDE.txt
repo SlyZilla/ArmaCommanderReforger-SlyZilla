@@ -1,0 +1,107 @@
+ARMA COMMANDER: REFORGER - Arland test scenario
+===============================================
+An early fan remake of the Arma 3 "Arma Commander" mode: you're the US commander.
+You order squads around on the map, jump into any of your soldiers, buy
+reinforcements with RP, and take bases from an AI-run Soviet side.
+This is an alpha build, so expect rough edges.
+
+WHAT YOU NEED
+-------------
+- Arma Reforger on Steam, installed and up to date (Windows PC).
+- Nothing else. No Workshop download, and no Workbench.
+
+HOW TO START
+------------
+1. Unzip anywhere, e.g. your Desktop. Keep the files together, and don't
+   rename the "ArmaCommanderReforger" folder inside.
+2. Close Arma Reforger if it's running.
+3. Double-click  Play-Arland.cmd  (next to this guide).
+   The game starts straight into the scenario (singleplayer and offline).
+   The first load takes a while because the game compiles the mod's scripts.
+   If Windows SmartScreen asks, choose "More info" > "Run anyway". It's a
+   one-line script that starts the game with the mod loaded.
+   If the game isn't found, it's installed somewhere unusual. Tell the person
+   who sent you this.
+
+THE SITUATION
+-------------
+You spawn at the US Airfield on the west side of Arland. Your forces nearby
+are 1st Squad, 2nd Squad, a Weapons Team, a crewed truck (Truck 1) and a
+crewed Humvee (Humvee 1). The Soviets hold the east side with their own AI
+commander, which buys units, defends, and attacks your bases.
+
+Bases (distances are from your spawn at the Airfield):
+  Airfield .......... YOURS. Your HQ; you buy units here.
+  Barracks .......... yours, 0.5 km south-east
+  Harbor ............ neutral, 0.5 km north
+  Farm .............. neutral, 0.9 km east
+  Military Hill ..... neutral, 1.4 km east (worth extra)
+  Lighthouse ........ neutral control point, 1.7 km south (no income)
+  Ridge ............. neutral, 1.8 km south-east
+  Heide ............. SOVIET HQ, 1.9 km east (Heide town)
+  Arlberg ........... Soviet, 1.9 km south-east
+  Heide Lighthouse .. Soviet control point, 2.3 km east (on the coast)
+  Arlberg Harbor .... Soviet and HIDDEN until your troops get near it.
+                      It's 2.5 km south-east, on the coast past Arlberg.
+
+- To capture a base, get soldiers inside its ring and clear the enemies out.
+  More soldiers capture it faster. Garrisoned bases have defenders that appear
+  when you get close.
+- Bases you own give RP (Requisition Points) every minute. You can deploy
+  units you buy at any base you own that isn't under attack.
+- There's no win screen yet. Play until one side owns the map.
+
+CONTROLS
+--------
+F9 (or M)   Open or close the command map. No map item is needed.
+F7          Take over the soldier you're aiming at. On the map, F7 takes over
+            the marker under the cursor.
+F8          Go back to your own commander body.
+Y           Game Master (host/admin). This is a debug and "fix Arma" tool:
+            unstick vehicles, delete stuck units, spawn stuff. Press Y again
+            to return.
+`  (backtick, the default command menu key)
+            The normal Reforger squad orders. They only work while you're
+            controlling a squad leader.
+
+ON THE COMMAND MAP
+------------------
+- Left-click a squad marker to select it. Left-click empty ground to deselect.
+- The blue panel on the right shows the selected squad:
+    Combat / Fast / Silent  how the squad moves
+    Defend, then right-click   defend that spot
+    Get in, then right-click   board a vehicle near the click
+    Get out / Unload       dismount the squad, or the passengers it carries
+    Reinforce              refill missing soldiers (3 RP each). They appear
+                           at your nearest base and then have to reach
+                           the squad.
+    Switch to squad        jump into that squad's leader
+- RIGHT-CLICK on the map moves the selected squad there. A line shows each
+  squad's current order.
+- To toggle Defend or Get in off again, click the same button a second time.
+- BUYING UNITS: click "Requisition" at the top of the panel, click a unit in
+  the list, then left-click one of YOUR base markers on the map. The unit
+  deploys there. Right-click cancels. Vehicles come with crews. The list shows
+  the price and stock, and your RP is shown in the panel.
+- Base rings: blue = yours, red = enemy, yellow = neutral.
+
+TIPS
+----
+- Load a squad into Truck 1: select the squad, click "Get in", then right-click
+  on the truck. Then move the TRUCK's crew, and the passengers ride along.
+- You can fight in person too. Press F7 on any of your soldiers, then F8 to go
+  back to your commander.
+- Stuck AI or a flipped vehicle? Press Y (Game Master) and fix it.
+
+KNOWN LIMITS (alpha)
+--------------------
+- Singleplayer only in this package. Multiplayer is built in but hasn't been
+  tested yet.
+- There's no artillery or air support yet, and no victory condition.
+- Logs are in ArmaCommanderReforger\.local-game\logs if something breaks.
+  Sending the newest console.log helps a lot.
+
+CREDITS
+-------
+Based on "Arma Commander" for Arma 3 by its original authors (APL-SA licence).
+This remake keeps that licence.

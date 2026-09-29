@@ -31,6 +31,8 @@ class ACR_TestRange : GenericEntity
    if (m_Harness) GetGame().GetCallqueue().CallLater(m_Harness.Tick, 1000, true);
   }
   Print("[ACR] Range initialized");
+  // A scenario test that landed on the range (wrong world): end at once.
+  if (System.IsCLIParam("acrScenarioTest")) Print("[ACR] WRONG WORLD for scenario test. TEST COMPLETE");
  }
 
  void Setup()
