@@ -70,7 +70,7 @@ class ACR_RocketStrikeRun : ACR_SupportRun
    vector right = Vector(m_Dir[2], 0, -m_Dir[0]);
    vector aim = m_Target + m_Dir * Math.RandomFloat(-40, 60) + right * Math.RandomFloat(-18, 18);
    aim[1] = GetGame().GetWorld().GetSurfaceY(aim[0], aim[2]) + 1;
-   supports.FireProjectile(m_Rocket, m_Pos + right * Math.RandomFloat(-4, 4), aim, m_Dir * 110);
+   supports.FireProjectile(m_Rocket, m_Pos + right * Math.RandomFloat(-4, 4), aim);
    m_iLeft--;
    if (m_iLeft % 4 == 0) PrintFormat("[ACR] SUPPORT strike rockets left %1 from %2", m_iLeft, m_Pos);
    m_fNext = now + 110;
