@@ -62,7 +62,7 @@ ACR_Base ACR_Base_Crossroads {
  m_fRadius 40
 }
 ACR_Base ACR_Base_Outpost {
- coords 2650 111 2560
+ coords 2950 111 2700
  m_sName "Outpost"
  m_sOwner "USSR"
  m_iGarrison 3
@@ -70,7 +70,7 @@ ACR_Base ACR_Base_Outpost {
  m_fRadius 40
 }
 ACR_Base ACR_Base_Hill {
- coords 2750 111 2330
+ coords 3050 111 2250
  m_sName "Hill"
  m_sOwner "USSR"
  m_iGarrison 6
