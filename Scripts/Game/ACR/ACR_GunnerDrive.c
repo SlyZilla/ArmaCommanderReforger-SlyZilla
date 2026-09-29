@@ -8,6 +8,7 @@ class ACR_GunnerDrive
  static const float IDLE_RELEASE_MS = 20000;
  static const float SHIFT_COOLDOWN_MS = 700;
 
+
  IEntity m_Vehicle;
  ChimeraCharacter m_Driver;
  ACR_Squad m_Squad;
@@ -91,6 +92,9 @@ class ACR_GunnerDrive
   VehicleWheeledSimulation sim = car.GetSimulation();
   if (!sim) { m_EndReason = "no simulation"; return false; }
   if (m_Throttle != 0 && !car.IsEngineOn()) car.ForceStartEngine();
+  // A stopped vehicle's physics falls asleep and then ignores throttle.
+  Physics physics = m_Vehicle.GetPhysics();
+  if (physics && (m_Throttle != 0 || m_Steer != 0) && !physics.IsActive()) physics.SetActive(ActiveState.ACTIVE);
 
   int neutral = sim.GearboxGearsCount() - sim.GearboxForwardGearsCount() - 1;
   int gear = sim.GetGear();
@@ -122,20 +126,23 @@ class ACR_GunnerDrive
   if (throttle > 0 && gear > neutral)
   {
    float rpm = sim.EngineGetRPM();
-   if (rpm > sim.EngineGetRPMPeakPower() && gear < sim.GearboxGearsCount() - 1) Shift(sim, gear + 1, now, false);
+   if (rpm > sim.EngineGetRPMPeakPower() * 0.95 && gear < sim.GearboxGearsCount() - 1) Shift(sim, gear + 1, now, false);
    else if (rpm < sim.EngineGetRPMPeakTorque() * 0.6 && gear > neutral + 1) Shift(sim, gear - 1, now, false);
   }
 
   sim.SetClutch(1);
   sim.SetThrottle(throttle);
   sim.SetBreak(brake, false);
-  sim.SetSteering(m_Steer);
+  // Less steering lock at speed, so a tap of A/D doesn't spin the vehicle out.
+  float steerScale = Math.Clamp(1 - Math.AbsFloat(speed) / 25, 0.35, 1);
+  sim.SetSteering(m_Steer * steerScale);
   return true;
  }
 
  void Shift(VehicleWheeledSimulation sim, int gear, float now, bool force)
  {
   if (!force && now - m_LastShift < SHIFT_COOLDOWN_MS) return;
+  if (System.IsCLIParam("acrGunnerTest")) PrintFormat("[ACR] GUNNER shift %1 -> %2 rpm=%3 peakPower=%4 peakTorque=%5 max=%6", sim.GetGear(), gear, (int)sim.EngineGetRPM(), (int)sim.EngineGetRPMPeakPower(), (int)sim.EngineGetRPMPeakTorque(), (int)sim.EngineGetRPMMax());
   sim.SetGear(gear);
   m_LastShift = now;
  }

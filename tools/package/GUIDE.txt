@@ -91,6 +91,11 @@ TIPS
 ----
 - Load a squad into Truck 1: select the squad, click "Get in", then right-click
   on the truck. Then move the TRUCK's crew, and the passengers ride along.
+- GUNNER DRIVES: sitting in a vehicle's gun (e.g. a Humvee M2) with an AI
+  driver, use W/S to drive forward/back and A/D to steer, and shoot at the
+  same time. Give the squad a map order and the AI driver takes over again.
+  Typical flow: buy an armed Humvee, order it near the fight, press F7 on its
+  gunner, then drive it yourself.
 - You can fight in person too. Press F7 on any of your soldiers, then F8 to go
   back to your commander.
 - Stuck AI or a flipped vehicle? Press Y (Game Master) and fix it.

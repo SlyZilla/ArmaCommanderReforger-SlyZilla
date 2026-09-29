@@ -24,6 +24,7 @@ Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo).
 | F8 | Return to your command unit |
 | F9 | Open/close the command map (no map item needed) |
 | F5 / F6 | Test hotkeys: move selected squad to cursor (map) or 35 m ahead / back to start |
+| W/A/S/D in a turret | Gunner drives: steer the vehicle's AI driver (a map order hands control back) |
 | Command menu key (default: backtick) | Native squad orders, only while possessing a squad leader |
 
 Logs: `.local-game/logs/<date>/console.log`, tagged `[ACR]`.
@@ -35,6 +36,7 @@ Logs: `.local-game/logs/<date>/console.log`, tagged `[ACR]`.
 | `ACR/ACR_Manager.c` | Core. Registers every AI squad automatically (including squads spawned mid-game), handles possession/return/order requests on the server, and handles local hotkeys |
 | `ACR/ACR_Squad.c` | One commandable squad: roster, designated leader, native command handoff, orders |
 | `ACR/ACR_CommandMenu.c` | Restricts the native command menu to possessed squad leaders and routes orders to their squad |
+| `ACR/ACR_GunnerDrive.c` | Gunner drives: server-side throttle/steer override while a player mans a turret with an AI driver |
 | `ACR/ACR_MapFeed.c` | Server-to-player map snapshots (soldiers, group leaders) |
 | `ACR/ACR_PlayerController.c` | Player RPCs, map markers, aimed possession |
 | `ACR/ACR_MapHandoff.c` | Cleans up map gadget, focus, input and view flags when you leave a body |

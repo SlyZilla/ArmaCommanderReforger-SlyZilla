@@ -570,8 +570,9 @@ class ACR_TestHarness : Managed
    m_GunStart = m_GunVehicle.GetOrigin();
    m_GunYaw = m_GunVehicle.GetYawPitchRoll()[0];
   }
-  if (m_Ticks >= 18 && m_Ticks < 26) pc.ACR_TestDrive(m_GunVehicle, 1, 0);
-  if (m_Ticks >= 26 && m_Ticks < 31) pc.ACR_TestDrive(m_GunVehicle, 1, 1);
+  if (m_Ticks >= 18 && m_Ticks < 24) pc.ACR_TestDrive(m_GunVehicle, 1, 0);
+  if (m_Ticks >= 24 && m_Ticks < 26) pc.ACR_TestDrive(m_GunVehicle, 0, 0);
+  if (m_Ticks >= 26 && m_Ticks < 31) pc.ACR_TestDrive(m_GunVehicle, 0.5, 1);
   if (m_Ticks >= 31 && m_Ticks < 35) pc.ACR_TestDrive(m_GunVehicle, 0, 0);
   if (m_Ticks == 35) { m_GunStart = m_GunVehicle.GetOrigin(); m_GunYaw = m_GunVehicle.GetYawPitchRoll()[0]; }
   if (m_Ticks >= 35 && m_Ticks < 41) pc.ACR_TestDrive(m_GunVehicle, -1, 0);
