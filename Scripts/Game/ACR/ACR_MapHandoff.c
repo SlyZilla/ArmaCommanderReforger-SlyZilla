@@ -13,6 +13,18 @@ modded class SCR_MapGadgetComponent
 }
 class ACR_MapHandoff
 {
+ static void ClearCharacterInput(IEntity entity)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(entity);
+  if (!character) return;
+  CharacterControllerComponent controller = character.GetCharacterController();
+  CharacterInputContext context = controller.GetInputContext();
+  controller.SetMovement(0, vector.Zero);
+  if (!context) return;
+  context.SetMovement(0, vector.Zero);
+  context.SetWeaponPullTrigger(false);
+  context.SetAimChange(vector.Zero);
+ }
  static void SetMenuControls(IEntity entity, bool disabled)
  {
   ChimeraCharacter body = ChimeraCharacter.Cast(entity);
@@ -49,7 +61,7 @@ class ACR_MapHandoff
   controller.SetFreeLook(false, false, false);
   CharacterInputContext context = controller.GetInputContext();
   if (context) context.SetFreelook(false);
-  ACR_TestRange.ACR_ClearCharacterInput(body);
+  ClearCharacterInput(body);
  }
 }
 
