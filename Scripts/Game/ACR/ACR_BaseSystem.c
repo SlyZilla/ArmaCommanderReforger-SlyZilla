@@ -214,6 +214,7 @@ class ACR_BaseSystem : Managed
  {
   if (base.m_GarrisonGroup)
   {
+   ACR_Squad.KeepSimulated(base.m_GarrisonGroup);
    base.m_iGarrisonLeft = CountAlive(base.m_GarrisonGroup);
    if (!enemyInRange && !base.m_bContested) DespawnGarrison(base, true);
    return;
@@ -247,14 +248,19 @@ class ACR_BaseSystem : Managed
   SCR_AIGroup group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(prefabs[0], center));
   if (!group) return;
   m_GarrisonGroups.Insert(group); // before any soldier joins, so it is never registered as a squad
+  group.SetDeleteWhenEmpty(false); // we delete it ourselves; otherwise it vanishes mid-fight and respawns
   group.SetCustomName(base.m_sName + " garrison", 0);
   float spread = Math.Min(base.m_fRadius * 0.6, 25);
   for (int i = 0; i < base.m_iGarrisonLeft; i++)
   {
    vector offset = Vector(Math.RandomFloat(-spread, spread), 0, Math.RandomFloat(-spread, spread));
    IEntity soldier = ACR_Manager.SpawnPrefab(prefabs[1], center + offset);
-   if (soldier) group.AddAIEntityToGroup(soldier);
+   if (!soldier) continue;
+   group.AddAIEntityToGroup(soldier);
+   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(soldier.FindComponent(FactionAffiliationComponent));
+   if (affiliation) affiliation.SetAffiliatedFactionByKey(base.m_sOwner);
   }
+  ACR_Squad.KeepSimulated(group);
   base.m_GarrisonGroup = group;
   AIWaypoint defend = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(Resource.Load(ACR_Squad.WP_DEFEND), null, SpawnParams(center)));
   if (defend)

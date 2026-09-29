@@ -192,8 +192,20 @@ class ACR_Squad : Managed
  }
 
  // Grant or revoke native command authority to match who controls the leader.
+ // Reforger disables AI far from every player ("max LOD"). Arma Commander
+ // battles happen anywhere on the map, so commanded squads stay fully simulated.
+ static void KeepSimulated(AIGroup group)
+ {
+  if (!group) return;
+  group.PreventMaxLOD();
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents) agent.PreventMaxLOD();
+ }
+
  void Refresh()
  {
+  KeepSimulated(m_Group);
   if (!m_Group || !m_CommandGroup) return;
   UpdateFormationLeader();
   int leaderPlayer;

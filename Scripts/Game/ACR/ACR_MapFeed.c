@@ -38,14 +38,13 @@ class ACR_MapFeed
    foreach (AIAgent agent : agents)
    {
     ChimeraCharacter soldier = ChimeraCharacter.Cast(agent.GetControlledEntity());
-    if (!soldier) continue;
+    if (!soldier || soldier.GetCharacterController().IsDead()) continue;
     ids.Insert(SCR_EntityHelper.EntityToRplId(soldier));
     positions.Insert(soldier.GetOrigin());
     labels.Insert(string.Format("%1-%2", squad.GetName(), squad.NumberOf(soldier)));
     groupIds.Insert(SCR_EntityHelper.EntityToRplId(squad.m_Group));
     int state = 0;
-    if (soldier.GetCharacterController().IsDead()) state = 2;
-    else if (ACR_Squad.FindController(soldier) != 0) state = 1;
+    if (ACR_Squad.FindController(soldier) != 0) state = 1;
     states.Insert(state);
    }
   }

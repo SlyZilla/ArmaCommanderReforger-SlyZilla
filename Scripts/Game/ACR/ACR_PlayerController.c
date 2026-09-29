@@ -267,7 +267,11 @@ modded class SCR_PlayerController
   m_ACR_MapWasOpen = true;
   ACR_UpdatePanel();
   ACR_DrawOrders(mapEntity);
-  int count = m_ACR_Ids.Count();
+  // Leaders are drawn by their group marker, so they get no plain soldier marker.
+  array<int> shown = {};
+  foreach (int rosterIndex, RplId unitId : m_ACR_Ids)
+   if (!m_ACR_LeaderIds.Contains(unitId)) shown.Insert(rosterIndex);
+  int count = shown.Count();
   if (m_ACR_Markers.Count() != count + 1)
   {
    foreach (ACR_UnitMarker old : m_ACR_Markers) manager.RemoveStaticMarker(old);
@@ -287,15 +291,15 @@ modded class SCR_PlayerController
   }
   for (int i = 0; i < count; i++)
   {
+   int r = shown[i];
    ACR_UnitMarker marker = m_ACR_Markers[i];
-   marker.m_UnitId = m_ACR_Ids[i];
-   marker.m_State = m_ACR_States[i];
-   marker.m_Label = m_ACR_Labels[i];
-   marker.m_GroupId = m_ACR_UnitGroups[i];
+   marker.m_UnitId = m_ACR_Ids[r];
+   marker.m_State = m_ACR_States[r];
+   marker.m_Label = m_ACR_Labels[r];
+   marker.m_GroupId = m_ACR_UnitGroups[r];
    marker.m_Selected = m_ACR_SelectedGroup.IsValid() && marker.m_GroupId == m_ACR_SelectedGroup;
    if (marker.m_State == 1) marker.m_Label += " [PLAYER]";
-   if (marker.m_State == 2) marker.m_Label += " [DEAD]";
-   vector pos = m_ACR_Positions[i];
+   vector pos = m_ACR_Positions[r];
    IEntity streamed = SCR_EntityHelper.RplIdToEntity(marker.m_UnitId);
    if (streamed) pos = streamed.GetOrigin();
    marker.SetWorldPos(pos[0], pos[2]);
@@ -356,14 +360,6 @@ modded class SCR_PlayerController
    marker.m_GroupSymbol.Set(EMilitarySymbolIdentity.BLUFOR, m_ACR_GroupSymbols[i * 4 + 1], m_ACR_GroupSymbols[i * 4], m_ACR_GroupSymbols[i * 4 + 2]);
    marker.RefreshStyle();
   }
-  // The leader marker replaces that soldier's plain marker.
-  foreach (ACR_UnitMarker unit : m_ACR_Markers)
-  {
-   if (unit.m_Original) continue;
-   bool leader = m_ACR_LeaderIds.Contains(unit.m_UnitId);
-   unit.SetServerDisabled(leader);
-   unit.SetVisible(!leader);
-  }
  }
  void ACR_PossessMapCursor()
  {
@@ -373,7 +369,10 @@ modded class SCR_PlayerController
   mapEntity.GetMapCursorWorldPosition(x, z);
   float best = 24;
   ACR_UnitMarker selected;
-  foreach (ACR_UnitMarker marker : m_ACR_Markers)
+  array<ACR_UnitMarker> candidates = {};
+  foreach (ACR_UnitMarker unitMarker : m_ACR_Markers) candidates.Insert(unitMarker);
+  foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) candidates.Insert(groupMarker);
+  foreach (ACR_UnitMarker marker : candidates)
   {
    int pos[2];
    marker.GetWorldPos(pos);
