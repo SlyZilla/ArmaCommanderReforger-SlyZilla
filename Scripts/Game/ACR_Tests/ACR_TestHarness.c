@@ -10,6 +10,7 @@ class ACR_TestHarness : Managed
  static const int MODE_MAP_HANDOFF = 3;
  static const int MODE_VEHICLE = 4;
  static const int MODE_BASES = 5;
+ static const int MODE_ASSAULT = 6;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -34,6 +35,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrMapHandoffTest", flag)) mode = MODE_MAP_HANDOFF;
   if (System.GetCLIParam("acrVehicleTest", flag)) mode = MODE_VEHICLE;
   if (System.GetCLIParam("acrBasesTest", flag)) mode = MODE_BASES;
+  if (System.GetCLIParam("acrAssaultTest", flag)) mode = MODE_ASSAULT;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -60,6 +62,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_VEHICLE && m_Ticks == 140) Print("[ACR] TEST COMPLETE");
   if (m_Mode == MODE_VEHICLE) { TestVehicle(); return; }
   if (m_Mode == MODE_BASES) { TestBases(); return; }
+  if (m_Mode == MODE_ASSAULT) { TestAssault(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -368,4 +371,39 @@ class ACR_TestHarness : Managed
   }
   if (m_Ticks == 200) Print("[ACR] TEST COMPLETE");
  }
+
+ // ---------------------------------------------------------------- -acrAssaultTest
+ // Alpha and Bravo assault the enemy Outpost (garrison 3) while the player stays
+ // at spawn ~600 m away. Checks the garrison fights, doesn't respawn, and the base flips.
+ protected bool m_AssaultDone;
+ void TestAssault()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager || !m_Range.m_Group || !m_Range.m_Bravo) return;
+  ACR_Base outpost;
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_sName == "Outpost") outpost = base;
+  if (!outpost) return;
+  if (m_Ticks == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Group), "2945 0 2700".ToVector());
+  if (m_Ticks == 12) pc.ACR_Request(ACR_ERequest.MOVE_TO, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), "2955 0 2695".ToVector());
+  if (m_Ticks % 15 == 0)
+  {
+   ACR_Squad alpha = manager.FindSquadByGroup(m_Range.m_Group);
+   ACR_Squad bravo = manager.FindSquadByGroup(m_Range.m_Bravo);
+   string a = "gone";
+   string b = "gone";
+   if (alpha) a = alpha.Describe();
+   if (bravo) b = bravo.Describe();
+   PrintFormat("[ACR] ASSAULT t=%1 outpost: %2 | alpha: %3 | bravo: %4", m_Ticks, manager.m_Bases.Describe(outpost), a, b);
+  }
+  if (!m_AssaultDone && outpost.m_sOwner == "US")
+  {
+   m_AssaultDone = true;
+   PrintFormat("[ACR] ASSAULT captured at t=%1", m_Ticks);
+   GetGame().GetCallqueue().CallLater(PrintComplete, 5000, false);
+  }
+  if (m_Ticks == 400) Print("[ACR] TEST COMPLETE");
+ }
+ void PrintComplete() { Print("[ACR] TEST COMPLETE"); }
 }
