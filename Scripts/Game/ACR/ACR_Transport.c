@@ -84,10 +84,11 @@ class ACR_Transport
   if (fraction < 1) below = Math.Max(below, pos[1] - 80 * fraction);
   // Measure from the vehicle's underside, not its model origin.
   vector mins, maxs;
-  vehicle.GetWorldBounds(mins, maxs);
+  vehicle.GetBounds(mins, maxs); // model space: mins[1] is how far the underside sits below the origin
   float bottom = pos[1];
-  if (maxs[1] > mins[1]) bottom = Math.Min(pos[1], mins[1]);
+  if (maxs[1] > mins[1] && mins[1] < 0 && mins[1] > -10) bottom = pos[1] + mins[1];
   height = Math.Max(0, bottom - below);
+  if (System.IsCLIParam("acrTransportTest")) PrintFormat("[ACR] SETTLE origin %1 underside %2 below %3 -> %4 m", pos[1], bottom, below, height);
   return speed < SETTLED_SPEED && height < SETTLED_HEIGHT;
  }
 }
