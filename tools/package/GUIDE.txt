@@ -129,6 +129,17 @@ ON THE COMMAND MAP
   the list, then left-click one of YOUR base markers on the map. The unit
   deploys there. Right-click cancels. Vehicles come with crews. The list shows
   the price and stock, and your RP is shown in the panel.
+- SUPPORTS: click "Supports" in the panel, click one (price and cooldown are
+  listed), then RIGHT-CLICK the target on the map. Everyone on your side gets
+  a message with the grid and arrival time. Available:
+    Mortars: HE small / HE large / creeping barrage / smoke screen
+    Illumination flares (4 flares over about a minute)
+    Air: rocket strike, bomb run (off-map jets: you see and hear the rockets
+         and bombs, not the plane)
+    Helicopter: gun run (one rocket pass) or loiter (circles the target for
+         90 s; door gunners and rocket salvos). It flies in from your nearest
+         base and CAN be shot down.
+  Keep your own troops out of the target area!
 - Base rings: blue = yours, red = enemy, yellow = neutral.
 
 TIPS
@@ -143,12 +154,15 @@ TIPS
 - You can fight in person too. Press F7 on any of your soldiers, then F8 to go
   back to your commander.
 - Stuck AI or a flipped vehicle? Press Y (Game Master) and fix it.
+- If your commander body dies you respawn at your HQ (or nearest base you
+  own) after 15 s. If it dies while you are controlling another soldier, you
+  keep playing that soldier and a new commander body is waiting at base (F8).
 
 KNOWN LIMITS (alpha)
 --------------------
 - Multiplayer has never been tested before this package. Expect bugs;
   logs and a short note of what happened are gold.
-- There's no artillery or air support yet, and no victory condition.
+- No victory condition: play until one side is clearly beaten.
 - Logs are in ArmaCommanderReforger\.local-game\logs if something breaks.
   Sending the newest console.log helps a lot.
 
