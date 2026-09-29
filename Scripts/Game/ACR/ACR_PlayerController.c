@@ -532,10 +532,11 @@ modded class SCR_PlayerController
  {
   float alpha = 0.75;
   if (selected) alpha = 1;
-  if (kind == 1) return new Color(0.35, 0.90, 0.40, alpha).PackToInt(); // defend: green
-  if (kind == 2) return new Color(1.00, 0.85, 0.25, alpha).PackToInt(); // get in: yellow
-  if (kind == 3) return new Color(1.00, 0.55, 0.20, alpha).PackToInt(); // get out: orange
-  return new Color(0.30, 0.65, 1.00, alpha).PackToInt();                 // move: blue
+  Color color = new Color(0.30, 0.65, 1.00, alpha);               // move: blue
+  if (kind == 1) color = new Color(0.35, 0.90, 0.40, alpha);      // defend: green
+  if (kind == 2) color = new Color(1.00, 0.85, 0.25, alpha);      // get in: yellow
+  if (kind == 3) color = new Color(1.00, 0.55, 0.20, alpha);      // get out: orange
+  return color.PackToInt();
  }
 
  protected void ACR_DrawOrders(SCR_MapEntity mapEntity)
