@@ -21,6 +21,7 @@ class ACR_TestHarness : Managed
  static const int MODE_GUNSHIP = 14;
  static const int MODE_TACTICS = 15;
  static const int MODE_TRANSPORT = 16;
+ static const int MODE_STALL = 17;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -56,6 +57,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrGunshipTest", flag)) mode = MODE_GUNSHIP;
   if (System.GetCLIParam("acrTacticsTest", flag)) mode = MODE_TACTICS;
   if (System.GetCLIParam("acrTransportTest", flag)) mode = MODE_TRANSPORT;
+  if (System.GetCLIParam("acrStallTest", flag)) mode = MODE_STALL;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -93,6 +95,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_GUNSHIP) { TestGunship(); return; }
   if (m_Mode == MODE_TACTICS) { TestTactics(); return; }
   if (m_Mode == MODE_TRANSPORT) { TestTransport(); return; }
+  if (m_Mode == MODE_STALL) { TestStall(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -946,5 +949,114 @@ class ACR_TestHarness : Managed
   }
   if (m_Ticks == 88) PrintFormat("[ACR] TRANSPORT final: Bravo aboard %1, alive %2", Aboard(m_Range.m_Bravo), AliveIn(m_Range.m_Bravo));
   if (m_Ticks == 89) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrStallTest
+ // Stuck Truck: its driver "freezes" (AI off) on a move order, and again after each
+ // back-up: two tries, then the crew bails and walks on. Lone Truck: gunner killed,
+ // made too heavy to move, enemies close: the crew bails at once and takes cover.
+ protected ACR_Squad m_StuckSquad;
+ protected ACR_Squad m_LoneSquad;
+ protected IEntity m_StuckVehicle;
+ protected IEntity m_LoneVehicle;
+ protected bool m_bWasUnsticking;
+ protected vector m_UnstickFrom;
+ protected vector m_StallStart;
+ protected vector m_LoneStart;
+
+ ACR_Squad NamedSquad(ACR_Manager manager, string name)
+ {
+  foreach (ACR_Squad squad : manager.m_Squads)
+   if (squad.GetName() == name) return squad;
+  return null;
+ }
+
+ void Freeze(IEntity vehicle)
+ {
+  ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
+  if (!driver) return;
+  AIControlComponent ai = AIControlComponent.Cast(driver.FindComponent(AIControlComponent));
+  if (ai && ai.IsAIActivated()) ai.DeactivateAI();
+ }
+
+ string StallState(ACR_Squad squad, IEntity vehicle, vector from)
+ {
+  if (!squad) return "no squad";
+  int alive;
+  int aboard;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!ACR_Respawn.IsAlive(body)) continue;
+   alive++;
+   if (ACR_Transport.VehicleOf(body)) aboard++;
+  }
+  float moved;
+  if (vehicle) moved = vector.DistanceXZ(vehicle.GetOrigin(), from);
+  float walked;
+  IEntity anchor = squad.GetAnchor();
+  if (anchor && vehicle) walked = vector.DistanceXZ(anchor.GetOrigin(), vehicle.GetOrigin());
+  return string.Format("alive=%1 aboard=%2 order='%3' tries=%4 unsticking=%5 vehicleMoved=%6m squadFromVehicle=%7m combat=%8", alive, aboard, squad.m_Order, squad.UnstickTries(), squad.IsUnsticking(), (int)moved, (int)walked, squad.IsCombatUnit());
+ }
+
+ void TestStall()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+  }
+  ResourceName gunTruck = "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et";
+  if (m_Ticks == 5)
+  {
+   manager.SpawnUnit("Stuck Truck", "", gunTruck, true, "", Ground("1390 0 2795"), Ground("1395 0 2790"));
+   manager.SpawnUnit("Lone Truck", "", gunTruck, true, "", Ground("1300 0 2530"), Ground("1305 0 2535"));
+  }
+  if (m_Ticks == 14)
+  {
+   m_StuckSquad = NamedSquad(manager, "Stuck Truck");
+   m_LoneSquad = NamedSquad(manager, "Lone Truck");
+   if (!m_StuckSquad || !m_LoneSquad) { Print("[ACR] STALL FAIL: trucks missing"); return; }
+   m_StuckVehicle = ACR_Transport.CrewedVehicle(m_StuckSquad);
+   m_LoneVehicle = ACR_Transport.CrewedVehicle(m_LoneSquad);
+   if (!m_StuckVehicle || !m_LoneVehicle) { Print("[ACR] STALL FAIL: crews not aboard"); return; }
+   array<AIAgent> agents = {};
+   m_LoneSquad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+    if (ACR_Transport.SeatOf(agent.GetControlledEntity()) == ECompartmentType.TURRET) Kill(agent.GetControlledEntity());
+   Physics heavy = m_LoneVehicle.GetPhysics();
+   if (heavy) heavy.SetMass(heavy.GetMass() * 200);
+   ResourceName team = FireTeamOf(manager, "USSR");
+   if (!team.IsEmpty()) ACR_Manager.SpawnPrefab(team, Ground("1300 0 2400"));
+   m_StuckSquad.MoveTo(Ground("1700 0 2800"));
+   m_LoneSquad.MoveTo(Ground("1300 0 2250"));
+   m_StallStart = m_StuckVehicle.GetOrigin();
+   m_LoneStart = m_LoneVehicle.GetOrigin();
+   Freeze(m_StuckVehicle);
+   PrintFormat("[ACR] STALL start: enemy team=%1", team);
+  }
+  if (!m_StuckSquad || !m_LoneSquad || m_Ticks <= 14) return;
+  bool unsticking = m_StuckSquad.IsUnsticking();
+  if (unsticking && !m_bWasUnsticking)
+  {
+   m_UnstickFrom = m_StuckVehicle.GetOrigin();
+   PrintFormat("[ACR] STALL unstick try %1 began at t=%2", m_StuckSquad.UnstickTries(), m_Ticks);
+  }
+  if (!unsticking && m_bWasUnsticking)
+  {
+   PrintFormat("[ACR] STALL unstick ended at t=%1: backed %2 m", m_Ticks, (int)vector.DistanceXZ(m_StuckVehicle.GetOrigin(), m_UnstickFrom));
+   Freeze(m_StuckVehicle); // still "stuck"
+  }
+  m_bWasUnsticking = unsticking;
+  if (m_Ticks % 5 == 0)
+  {
+   PrintFormat("[ACR] STALL t=%1 stuck: %2", m_Ticks, StallState(m_StuckSquad, m_StuckVehicle, m_StallStart));
+   PrintFormat("[ACR] STALL t=%1 lone: %2", m_Ticks, StallState(m_LoneSquad, m_LoneVehicle, m_LoneStart));
+  }
+  if (m_Ticks == 110) Print("[ACR] TEST COMPLETE");
  }
 }

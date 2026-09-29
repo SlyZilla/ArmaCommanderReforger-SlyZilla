@@ -512,7 +512,232 @@ class ACR_Squad : Managed
     PrintFormat("[ACR] TACTICS %1: arrived, taking positions", m_Name);
    }
   }
+  DriveWatch(now, contact);
  }
+
+ // ---------------------------------------------------------------- stalled vehicles
+ // The game's AI drivers get stuck on obstacles (and sit there honking), or stop
+ // dead under fire. A driven vehicle with somewhere to go that hasn't moved for a
+ // while is backed up and turned (scripted, like "gunner drives") and sent on its
+ // way again; after two tries, or at once when it is under fire with no working
+ // gun, the crew bails out and carries on (or takes cover) on foot.
+ static const float STALL_SECONDS = 15;
+ static const float STALL_SECONDS_FIGHTING = 40; // armed and in contact: the gunner may be busy, give it longer
+ static const float STALL_SECONDS_HELPLESS = 6;  // under fire with no gunner
+ static const int UNSTICK_TRIES = 2;
+ static const int UNSTICK_STEPS = 30;             // x 100 ms of reversing
+
+ protected IEntity m_StallVehicle;
+ protected vector m_StallPos;
+ protected float m_fStallSince;
+ protected int m_iUnsticks;
+ protected bool m_bUnsticking;
+ protected int m_iUnstickStep;
+ protected float m_fUnstickSteer;
+ protected ChimeraCharacter m_UnstickDriver;
+ protected bool m_bResumeOnFoot;
+ int UnstickTries() { return m_iUnsticks; }
+ bool IsUnsticking() { return m_bUnsticking; }
+
+ static ChimeraCharacter DriverOf(IEntity vehicle)
+ {
+  if (!vehicle) return null;
+  CarControllerComponent car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
+  if (!car || !car.GetPilotCompartmentSlot()) return null;
+  return ChimeraCharacter.Cast(car.GetPilotCompartmentSlot().GetOccupant());
+ }
+
+ protected bool IsMember(IEntity body)
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+   if (agent.GetControlledEntity() == body) return true;
+  return false;
+ }
+
+ // A living member of this squad is manning one of the vehicle's guns.
+ bool HasGunner(IEntity vehicle)
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!ACR_Respawn.IsAlive(body)) continue;
+   if (ACR_Transport.VehicleOf(body) == vehicle && ACR_Transport.SeatOf(body) == ECompartmentType.TURRET) return true;
+  }
+  return false;
+ }
+
+ // Can fight: infantry of two or more, or a vehicle crew with a manned gun.
+ // A lone driver or an unarmed truck crew is not sent to take or hold ground.
+ bool IsCombatUnit()
+ {
+  IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  if (vehicle) return HasGunner(vehicle);
+  return CountAlive() >= 2;
+ }
+
+ // Suitability as a base of fire (support-role teams are not).
+ int FirePower()
+ {
+  string name = m_Name;
+  name.ToLower();
+  if (name.Contains("logistic") || name.Contains("medic") || name.Contains("engineer") || name.Contains("supply") || name.Contains("sniper"))
+   return 0;
+  int value = CountAlive();
+  IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  if (vehicle && HasGunner(vehicle)) value += 6;
+  return value;
+ }
+
+ protected void DriveWatch(float now, bool contact)
+ {
+  if (m_bUnsticking || !m_Group) return;
+  IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  ChimeraCharacter driver = DriverOf(vehicle);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  bool eligible = driver != null && ACR_Respawn.IsAlive(driver) && IsMember(driver) && FindController(driver) == 0;
+  if (eligible && manager && manager.IsGunnerDriven(vehicle)) eligible = false;
+  bool wantsToMove;
+  if (eligible)
+  {
+   array<AIWaypoint> waypoints = {};
+   m_Group.GetWaypoints(waypoints);
+   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
+   wantsToMove = !waypoints.IsEmpty() && movingOrder && vector.DistanceXZ(vehicle.GetOrigin(), m_MoveTarget) > 40;
+  }
+  if (!wantsToMove || vehicle != m_StallVehicle || vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5)
+  {
+   if (vehicle != m_StallVehicle || !wantsToMove) m_iUnsticks = 0;
+   m_StallVehicle = vehicle;
+   if (vehicle) m_StallPos = vehicle.GetOrigin();
+   m_fStallSince = now;
+   return;
+  }
+  float stalled = (now - m_fStallSince) / 1000;
+  bool armed = HasGunner(vehicle);
+  bool underFire = contact && KnownEnemies(300) > 0;
+  if (underFire && !armed && stalled >= STALL_SECONDS_HELPLESS) { Bail(vehicle, "stopped under fire with no gunner", false); return; }
+  float limit = STALL_SECONDS;
+  if (underFire) limit = STALL_SECONDS_FIGHTING;
+  if (stalled < limit) return;
+  if (m_iUnsticks >= UNSTICK_TRIES) { Bail(vehicle, "stuck", !underFire); return; }
+  m_iUnsticks++;
+  BeginUnstick(vehicle, driver);
+ }
+
+ protected void BeginUnstick(IEntity vehicle, ChimeraCharacter driver)
+ {
+  m_bUnsticking = true;
+  m_UnstickDriver = driver;
+  m_iUnstickStep = 0;
+  m_fUnstickSteer = 0.8;
+  if (m_iUnsticks % 2 == 0) m_fUnstickSteer = -0.8;
+  AIControlComponent ai = AIControlComponent.Cast(driver.FindComponent(AIControlComponent));
+  if (ai && ai.IsAIActivated()) ai.DeactivateAI();
+  PrintFormat("[ACR] DRIVE %1: stuck, backing up (try %2)", m_Name, m_iUnsticks);
+  GetGame().GetCallqueue().CallLater(UnstickStep, 100, true);
+ }
+
+ protected void UnstickStep()
+ {
+  m_iUnstickStep++;
+  IEntity vehicle = m_StallVehicle;
+  bool alive = vehicle != null && m_UnstickDriver != null && ACR_Respawn.IsAlive(m_UnstickDriver) && ACR_Transport.VehicleOf(m_UnstickDriver) == vehicle;
+  CarControllerComponent car;
+  if (alive) car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
+  if (!car || !car.GetSimulation() || m_iUnstickStep > UNSTICK_STEPS + 8)
+  {
+   EndUnstick(car);
+   return;
+  }
+  VehicleWheeledSimulation sim = car.GetSimulation();
+  Physics physics = vehicle.GetPhysics();
+  if (physics && !physics.IsActive()) physics.SetActive(ActiveState.ACTIVE);
+  if (!car.IsEngineOn()) car.ForceStartEngine();
+  car.SetPersistentHandBrake(false);
+  int neutral = sim.GearboxGearsCount() - sim.GearboxForwardGearsCount() - 1;
+  sim.SetClutch(1);
+  if (m_iUnstickStep <= UNSTICK_STEPS)
+  {
+   if (sim.GetGear() >= neutral) sim.SetGear(neutral - 1);
+   sim.SetBreak(0, false);
+   sim.SetThrottle(0.7);
+   sim.SetSteering(m_fUnstickSteer);
+  }
+  else
+  {
+   sim.SetThrottle(0);
+   sim.SetSteering(0);
+   sim.SetBreak(1, false);
+  }
+ }
+
+ protected void EndUnstick(CarControllerComponent car)
+ {
+  GetGame().GetCallqueue().Remove(UnstickStep);
+  if (car && car.GetSimulation())
+  {
+   VehicleWheeledSimulation sim = car.GetSimulation();
+   sim.SetThrottle(0);
+   sim.SetSteering(0);
+   sim.SetBreak(0, false);
+   int neutral = sim.GearboxGearsCount() - sim.GearboxForwardGearsCount() - 1;
+   sim.SetGear(neutral + 1);
+  }
+  if (m_UnstickDriver && ACR_Respawn.IsAlive(m_UnstickDriver) && !FindController(m_UnstickDriver))
+  {
+   AIControlComponent ai = AIControlComponent.Cast(m_UnstickDriver.FindComponent(AIControlComponent));
+   if (ai && !ai.IsAIActivated()) ai.ActivateAI();
+  }
+  m_bUnsticking = false;
+  if (m_StallVehicle) m_StallPos = m_StallVehicle.GetOrigin();
+  m_fStallSince = GetGame().GetWorld().GetWorldTime();
+  // Fresh order, so the driver plans a new route from here.
+  if (m_Group && !m_sOrderPrefab.IsEmpty())
+  {
+   string order = m_Order;
+   int kind = m_OrderKind;
+   IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius);
+   m_Order = order;
+   m_OrderKind = kind;
+  }
+ }
+
+ // Everyone out of the vehicle, passengers included. With resume the crew then
+ // carries on to its destination on foot; otherwise it takes cover where it is.
+ protected void Bail(IEntity vehicle, string why, bool resume)
+ {
+  PrintFormat("[ACR] DRIVE %1: %2, crew bails out", m_Name, why);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager)
+  {
+   array<ACR_Squad> riders = {};
+   ACR_Transport.PassengerSquads(manager, vehicle, riders);
+   foreach (ACR_Squad rider : riders) if (rider != this && !rider.HasPlayer()) rider.DismountNow();
+  }
+  ResourceName prefab = m_sOrderPrefab;
+  vector target = m_MoveTarget;
+  float radius = m_fOrderRadius;
+  string order = m_Order;
+  int kind = m_OrderKind;
+  DismountNow();
+  m_StallVehicle = null;
+  m_iUnsticks = 0;
+  m_bResumeOnFoot = resume && !prefab.IsEmpty();
+  m_sResumePrefab = prefab;
+  m_ResumeTarget = target;
+  m_fResumeRadius = radius;
+  m_sResumeOrder = order;
+  m_iResumeKind = kind;
+ }
+ protected ResourceName m_sResumePrefab;
+ protected vector m_ResumeTarget;
+ protected float m_fResumeRadius;
+ protected string m_sResumeOrder;
+ protected int m_iResumeKind;
 
  // ---------------------------------------------------------------- transport
  vector m_LZ;
@@ -572,6 +797,14 @@ class ACR_Squad : Managed
   }
   IEntity anchor = GetAnchor();
   if (!m_Group || !anchor) return;
+  if (m_bResumeOnFoot)
+  {
+   m_bResumeOnFoot = false;
+   IssueWaypoint(m_sResumePrefab, m_ResumeTarget, m_fResumeRadius);
+   m_Order = m_sResumeOrder;
+   m_OrderKind = m_iResumeKind;
+   return;
+  }
   IssueWaypoint(WP_DEFEND, anchor.GetOrigin(), 20);
   m_Order = "Holding position";
   m_OrderKind = 1;
@@ -590,12 +823,14 @@ class ACR_Squad : Managed
   return alive;
  }
 
- // Rough fighting value: soldiers, plus 5 per vehicle (Arma Commander's default vehicle value).
+ // Rough fighting value: soldiers, plus 5 per armed (manned gun) vehicle (Arma Commander's default vehicle value).
  int Strength()
  {
   array<IEntity> vehicles = {};
   GetVehicles(vehicles);
-  return CountAlive() + vehicles.Count() * 5;
+  int armed;
+  foreach (IEntity vehicle : vehicles) if (HasGunner(vehicle)) armed++;
+  return CountAlive() + armed * 5;
  }
 
  bool HasPlayer()
@@ -705,6 +940,7 @@ class ACR_Squad : Managed
 
  void Dispose()
  {
+  GetGame().GetCallqueue().Remove(UnstickStep);
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);
   if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);

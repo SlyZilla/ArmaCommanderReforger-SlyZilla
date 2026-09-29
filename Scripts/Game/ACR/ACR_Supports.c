@@ -770,15 +770,17 @@ class ACR_Supports : Managed
   return 120;
  }
  // Seconds from the call until rounds land / aircraft arrive (helicopters: flight time).
+ // Mortar missions take a realistic, somewhat random time: the call goes up the
+ // chain, the section lays the tubes, then the rounds' time of flight.
  static int DefaultDelay(ACR_ESupportType type)
  {
   switch (type)
   {
-   case ACR_ESupportType.MORTAR_HE_SMALL: return 12;
-   case ACR_ESupportType.MORTAR_HE_LARGE: return 15;
-   case ACR_ESupportType.MORTAR_CREEPING: return 15;
-   case ACR_ESupportType.MORTAR_SMOKE: return 10;
-   case ACR_ESupportType.ILLUMINATION: return 6;
+   case ACR_ESupportType.MORTAR_HE_SMALL: return Math.RandomIntInclusive(45, 90);
+   case ACR_ESupportType.MORTAR_HE_LARGE: return Math.RandomIntInclusive(50, 95);
+   case ACR_ESupportType.MORTAR_CREEPING: return Math.RandomIntInclusive(60, 110);
+   case ACR_ESupportType.MORTAR_SMOKE: return Math.RandomIntInclusive(40, 75);
+   case ACR_ESupportType.ILLUMINATION: return Math.RandomIntInclusive(30, 60);
    case ACR_ESupportType.ROCKET_STRIKE: return 15;
    case ACR_ESupportType.BOMB_RUN: return 20;
   }
@@ -881,7 +883,10 @@ class ACR_Supports : Managed
    }
   }
   AddZone(factionKey, target, ZoneRadius(entry.m_eType), entry.m_sName, delay, ZoneDuration(entry.m_eType));
-  string message = string.Format("%1 on %2, ETA %3 s.", entry.m_sName, where, delay);
+  // Long waits are only announced roughly (to the nearest 15 s).
+  string eta = string.Format("%1 s", delay);
+  if (delay >= 30) eta = string.Format("about %1 s", (int)Math.Round(delay / 15.0) * 15);
+  string message = string.Format("%1 on %2, ETA %3.", entry.m_sName, where, eta);
   if (!byAI) m_Manager.NotifyFaction(factionKey, message);
   return message;
  }

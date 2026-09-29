@@ -104,6 +104,7 @@ class ACR_AICommander : Managed
    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
    if (squad.HasPlayer() || !squad.GetAnchor()) continue; // players lead themselves
    if (freeOnly && squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED) continue;
+   if (freeOnly && !squad.IsCombatUnit()) continue; // lone drivers, unarmed crews: kept out of the fighting
    result.Insert(squad);
   }
  }
@@ -372,7 +373,6 @@ class ACR_AICommander : Managed
     if (!candidate.m_sOwner.IsEmpty() || !Visible(candidate) || IsAttacking(candidate)) continue;
     foreach (ACR_Squad squad : free)
     {
-     if (squad.Strength() < 2) continue; // not a lone driver
      float speed = 3;
      if (squad.IsMounted()) speed = 9;
      float time = vector.DistanceXZ(PositionOf(squad), candidate.GetOrigin()) / speed;
@@ -453,9 +453,18 @@ class ACR_AICommander : Managed
    attack.m_aStaging.Insert(ACR_Manager.Ground(target.GetOrigin() + rotated * ring));
   }
   bool empty = target.m_sOwner.IsEmpty();
-  // With two or more squads on a held base, the one on the direct approach
-  // becomes the base of fire while the others manoeuvre.
-  if (!empty && attack.m_Squads.Count() >= 2) attack.m_Suppressor = attack.m_Squads[0];
+  // With two or more squads on a held base, one becomes the base of fire
+  // while the others manoeuvre.
+  // Picked by firepower (a gun vehicle or the biggest rifle squad), never a support team.
+  if (!empty && attack.m_Squads.Count() >= 2)
+  {
+   int bestFire = 2;
+   foreach (ACR_Squad fireCandidate : attack.m_Squads)
+   {
+    int firepower = fireCandidate.FirePower();
+    if (firepower > bestFire) { bestFire = firepower; attack.m_Suppressor = fireCandidate; }
+   }
+  }
   attack.m_fStageDeadline = GetGame().GetWorld().GetWorldTime() + STAGING_TIMEOUT * 1000;
   foreach (ACR_Squad squad : attack.m_Squads)
   {
@@ -530,6 +539,13 @@ class ACR_AICommander : Managed
    {
     ACR_Squad squad = attack.m_Squads[s];
     if (!squad || !m_Manager.m_Squads.Contains(squad) || squad.HasPlayer()) { attack.Remove(s); continue; }
+    // Lost its gunner (or down to one man): no use in an attack.
+    if (!squad.IsCombatUnit())
+    {
+     FallBack(squad, "can no longer fight");
+     attack.Remove(s);
+     continue;
+    }
     // Badly hurt and still under fire: pull out instead of dying in place.
     if (attack.m_bAssaulting && squad.StrengthRatio() < RETREAT_RATIO && squad.KnownEnemies(300) > 0)
     {
