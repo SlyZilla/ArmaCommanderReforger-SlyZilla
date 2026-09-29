@@ -23,6 +23,7 @@ class ACR_TestHarness : Managed
  static const int MODE_TRANSPORT = 16;
  static const int MODE_STALL = 17;
  static const int MODE_RIDE = 18;
+ static const int MODE_LOGISTICS = 19;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -60,6 +61,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrTransportTest", flag)) mode = MODE_TRANSPORT;
   if (System.GetCLIParam("acrStallTest", flag)) mode = MODE_STALL;
   if (System.GetCLIParam("acrRideTest", flag)) mode = MODE_RIDE;
+  if (System.GetCLIParam("acrLogisticsTest", flag)) mode = MODE_LOGISTICS;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -99,6 +101,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_TRANSPORT) { TestTransport(); return; }
   if (m_Mode == MODE_STALL) { TestStall(); return; }
   if (m_Mode == MODE_RIDE) { TestRide(); return; }
+  if (m_Mode == MODE_LOGISTICS) { TestLogistics(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -1159,5 +1162,84 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] RIDE t=%1 alpha='%2' stragglers(60)=%3 stragglers(25)=%4", m_Ticks, m_WalkSquad.m_Order, m_WalkSquad.Stragglers(60), m_WalkSquad.Stragglers(25));
   }
   if (m_Ticks == 170) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrLogisticsTest
+ // Alpha's spare magazines are taken away, then it walks to an ammo truck and
+ // must be topped up (the truck's stock goes down). A gun truck is damaged and
+ // drained of fuel next to a repair truck and a tanker, and must be fixed up.
+ protected ACR_Squad m_GunCrew;
+ protected IEntity m_AmmoTruck;
+
+ void TestLogistics()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+  }
+  if (m_Ticks == 5)
+  {
+   manager.SpawnUnit("Ammo Truck", "", "{92264FF932676C13}Prefabs/Vehicles/Wheeled/M923A1/M923A1_ammo.et", true, "", Ground("1400 0 2832"), Ground("1405 0 2836"));
+   manager.SpawnUnit("Repair Truck", "", "{A042ACE5C2B13206}Prefabs/Vehicles/Wheeled/M923A1/M923A1_repair.et", true, "", Ground("1450 0 2800"), Ground("1455 0 2805"));
+   manager.SpawnUnit("Fuel Truck", "", "{2BE1F8B9299B67C1}Prefabs/Vehicles/Wheeled/M923A1/M923A1_tanker.et", true, "", Ground("1450 0 2815"), Ground("1455 0 2820"));
+   manager.SpawnUnit("Gun Truck", "", "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et", true, "", Ground("1465 0 2807"), Ground("1470 0 2810"));
+  }
+  ACR_Squad alpha = Squad();
+  if (m_Ticks == 14)
+  {
+   m_GunCrew = NamedSquad(manager, "Gun Truck");
+   ACR_Squad ammoCrew = NamedSquad(manager, "Ammo Truck");
+   if (ammoCrew) m_AmmoTruck = ACR_Transport.CrewedVehicle(ammoCrew);
+   PrintFormat("[ACR] LOGI service flags: ammo=%1 repair=%2 fuel=%3", ACR_Logistics.ServiceOf(m_AmmoTruck), ACR_Logistics.ServiceOf(ACR_Transport.CrewedVehicle(NamedSquad(manager, "Repair Truck"))), ACR_Logistics.ServiceOf(ACR_Transport.CrewedVehicle(NamedSquad(manager, "Fuel Truck"))));
+   // Take Alpha's spare magazines.
+   int taken;
+   array<AIAgent> agents = {};
+   alpha.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity soldier = agent.GetControlledEntity();
+    InventoryStorageManagerComponent inventory = InventoryStorageManagerComponent.Cast(soldier.FindComponent(InventoryStorageManagerComponent));
+    if (!inventory) continue;
+    array<IEntity> items = {};
+    inventory.GetItems(items);
+    foreach (IEntity item : items)
+    {
+     if (!item.FindComponent(BaseMagazineComponent)) continue;
+     if (item.GetParent() && item.GetParent().FindComponent(BaseWeaponComponent)) continue; // loaded
+     if (inventory.TryDeleteItem(item)) taken++;
+    }
+   }
+   // Damage and drain the gun truck.
+   IEntity gun = ACR_Transport.CrewedVehicle(m_GunCrew);
+   if (gun)
+   {
+    SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(gun.FindComponent(SCR_DamageManagerComponent));
+    if (damage) damage.SetHealthScaled(0.35);
+    SCR_FuelManagerComponent fuel = SCR_FuelManagerComponent.Cast(gun.FindComponent(SCR_FuelManagerComponent));
+    if (fuel) fuel.SetTotalFuelPercentage(0.1);
+    array<BaseMagazineComponent> belts = {};
+    ACR_Logistics.TurretMagazines(gun, belts);
+    foreach (BaseMagazineComponent belt : belts) belt.SetAmmoCount(0);
+   }
+   PrintFormat("[ACR] LOGI drained: %1 magazines taken from Alpha; gun truck health %2 fuel %3 gun ammo %4", taken, ACR_Logistics.Health(gun), ACR_Logistics.Fuel(gun), ACR_Logistics.VehicleAmmo(gun));
+  }
+  if (m_Ticks == 22 && alpha && m_AmmoTruck) alpha.MoveTo(m_AmmoTruck.GetOrigin() + Vector(-8, 0, 0));
+  if (m_Ticks == 30)
+  {
+   // The gun truck drives up to the ammo truck too, for its M2 belt.
+   IEntity gunVehicle = ACR_Transport.CrewedVehicle(m_GunCrew);
+   PrintFormat("[ACR] LOGI gun truck after repair/fuel stop: health %1 fuel %2", ACR_Logistics.Health(gunVehicle), ACR_Logistics.Fuel(gunVehicle));
+   if (m_GunCrew && m_AmmoTruck) m_GunCrew.MoveTo(m_AmmoTruck.GetOrigin() + Vector(12, 0, 8));
+  }
+  if (m_Ticks % 5 == 0 && m_Ticks >= 15 && alpha)
+  {
+   IEntity gunNow = ACR_Transport.CrewedVehicle(m_GunCrew);
+   PrintFormat("[ACR] LOGI t=%1 alpha: %2 | gun truck: health %3 fuel %4 gunAmmo %5 | ammo truck stock %6%%", m_Ticks, alpha.Describe(), ACR_Logistics.Health(gunNow), ACR_Logistics.Fuel(gunNow), ACR_Logistics.VehicleAmmo(gunNow), manager.m_Logistics.StockPercent(m_AmmoTruck));
+  }
+  if (m_Ticks == 100) Print("[ACR] TEST COMPLETE");
  }
 }
