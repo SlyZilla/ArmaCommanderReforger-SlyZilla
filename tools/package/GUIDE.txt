@@ -232,6 +232,7 @@ Made by Jacob (propst-design) and Claude. This mod is openly vibecoded:
 nearly all of the code, launchers and this guide were written by Claude,
 Anthropic's AI model (in Claude Cowork); Jacob directed, designed and
 play-tested it.
+Playtesters: PoppiPoppins and Hexxyz.
 
 Based on "Arma Commander" for Arma 3 by Martin Hajek
 (https://gitlab.com/silliaris/arma-commander), ported from the community fork by
