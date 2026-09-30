@@ -16,7 +16,8 @@ Expect rough edges; bug reports with logs help a lot.
 
 Based on **Arma Commander** for Arma 3 by **Martin Hájek**
 ([original project](https://gitlab.com/silliaris/arma-commander)), ported from the community
-fork by **Will** and **Anarch Cassius**. Rebuilt for Arma Reforger with new features; see
+fork by **Will** and **Anarch Cassius**, which **Ilyushkius** carried on developing after the
+original author stepped away. Rebuilt for Arma Reforger with new features; see
 [LICENSE.md](LICENSE.md) for what changed.
 
 Licensed under the [Arma Public License Share Alike (APL-SA)](https://www.bohemia.net/community/licenses/arma-public-license-share-alike),

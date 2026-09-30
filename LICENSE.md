@@ -8,6 +8,8 @@
 - **Arma Commander** for Arma 3, by **Martin Hájek**: https://gitlab.com/silliaris/arma-commander
 - Ported from the community fork "Arma Commander Fork" (authors credited in the
   mod as **Will** and **Anarch Cassius**), which carries the same license.
+- **Ilyushkius**, who carried on developing the community fork after the original
+  author stepped away (Arma Commander community Discord).
 
 Both are licensed under the **Arma Public License Share Alike (APL-SA)**:
 https://www.bohemia.net/community/licenses/arma-public-license-share-alike
