@@ -28,6 +28,7 @@ class ACR_TestHarness : Managed
  static const int MODE_CLEANUP = 21;
  static const int MODE_SIDE = 22;
  static const int MODE_INTEL = 23;
+ static const int MODE_STALLED = 24;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -70,6 +71,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrCleanupTest", flag)) mode = MODE_CLEANUP;
   if (System.GetCLIParam("acrSideTest", flag)) mode = MODE_SIDE;
   if (System.GetCLIParam("acrIntelTest", flag)) mode = MODE_INTEL;
+  if (System.GetCLIParam("acrStalledTest", flag)) mode = MODE_STALLED;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -114,6 +116,20 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_CLEANUP) { TestCleanup(); return; }
   if (m_Mode == MODE_SIDE) { TestSide(); return; }
   if (m_Mode == MODE_INTEL) { TestIntel(); return; }
+  if (m_Mode == MODE_STALLED)
+  {
+   // The tactics scenario with attack time limits cut to seconds: attacks
+   // that don't take their base must be called off, not hang forever.
+   if (m_Ticks == 1)
+   {
+    ACR_AICommander.ASSAULT_TIMEOUT = 25;
+    ACR_AICommander.ASSAULT_HARD_TIMEOUT = 50;
+    ACR_AICommander.GRAB_TIMEOUT = 30;
+    ACR_AICommander.STAGING_TIMEOUT = 20;
+   }
+   TestTactics();
+   return;
+  }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();

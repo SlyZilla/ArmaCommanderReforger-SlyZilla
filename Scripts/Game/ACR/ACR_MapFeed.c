@@ -49,6 +49,7 @@ class ACR_MapFeed
   foreach (int i, string line : intel.m_Feed)
   {
    int seconds = (now - intel.m_FeedTime[i]) / 1000;
+   if (seconds > 600) break; // older than 10 min: not news any more
    string when = seconds.ToString() + "s";
    if (seconds >= 60)
    {

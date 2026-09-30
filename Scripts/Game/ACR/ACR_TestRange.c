@@ -35,7 +35,7 @@ class ACR_TestRange : ACR_Mode
   string flag;
   bool assault = System.GetCLIParam("acrAssaultTest", flag);
   if (assault) m_Rally = ACR_Manager.Ground("1280 0 2300");
-  bool tactics = System.GetCLIParam("acrTacticsTest", flag);
+  bool tactics = System.GetCLIParam("acrTacticsTest", flag) || System.GetCLIParam("acrStalledTest", flag);
   if (tactics) m_Rally = ACR_Manager.Ground("1300 0 2530");
   m_Target = ACR_Manager.Ground("1370 0 2832");
   m_Group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab("{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et", m_Rally));

@@ -20,6 +20,8 @@ class ACR_AIAttack
  int m_iStartStrength;
  bool m_bCounter;
  bool m_bGrab;                       // quick grab of an empty base (doesn't count against the attack limit)
+ float m_fAssaultStart;              // world time the assault (or grab) began
+ float m_fNextPush;                  // next time idle attackers are sent in again
 
  vector StagingOf(ACR_Squad squad)
  {
@@ -50,7 +52,15 @@ class ACR_AICommander : Managed
  static const float DEFENSE_RATIO = 1.1;      // defenders want 1.1x the threat
  static const float CONCEDE_RATIO = 4;        // give a base up against 4x the defence
  static const int PLAYER_STRENGTH = 5;
- static const float STAGING_TIMEOUT = 300;    // seconds
+ static float STAGING_TIMEOUT = 300;          // seconds
+ // An assault that hasn't taken the base by now is called off (it would
+ // otherwise hold the attack slot forever). A foothold inside the base ring
+ // buys it more time. Grabs of empty bases get less.
+ static float ASSAULT_TIMEOUT = 720;          // s, nobody of ours inside the ring
+ static float ASSAULT_HARD_TIMEOUT = 1200;    // s, even with a foothold
+ static float GRAB_TIMEOUT = 480;             // s  (the test harness shortens these)
+ static const float STALLED_COOLDOWN = 300;   // s before the same base is tried again
+ static const float PUSH_INTERVAL = 120;      // s between re-issuing assault orders
  // Initiative: with no attack launched for a while, the commander accepts
  // worse odds (down to 65% of the usual strength) and commits its reserve,
  // so two AI sides don't sit facing each other forever.
@@ -78,6 +88,8 @@ class ACR_AICommander : Managed
  protected ref map<ACR_Base, int> m_Threat = new map<ACR_Base, int>();
  protected ref map<ACR_Base, string> m_LastOwner = new map<ACR_Base, string>();
  protected ACR_Base m_CounterTarget;
+ protected ref map<ACR_Base, float> m_StalledUntil = new map<ACR_Base, float>();
+ protected float m_fNextStatus;
  protected float m_fCounterUntil;
  static const float RETREAT_RATIO = 0.4;   // a squad below 40% in contact falls back
  static const float ABORT_RATIO = 0.35;    // an attack below 35% of its strength is called off
@@ -110,6 +122,7 @@ class ACR_AICommander : Managed
   PostIdle();
   ManageLogistics();
   Requisition();
+  LogStatus();
  }
 
  protected ACR_FactionSettings Settings() { return ACR_FactionSettings.Find(m_sFaction); }
@@ -151,6 +164,12 @@ class ACR_AICommander : Managed
    }
    squads[j + 1] = current;
   }
+ }
+
+ protected bool CoolingDown(ACR_Base base)
+ {
+  float until;
+  return m_StalledUntil.Find(base, until) && GetGame().GetWorld().GetWorldTime() < until;
  }
 
  protected bool Visible(ACR_Base base)
@@ -465,7 +484,7 @@ class ACR_AICommander : Managed
    float bestTime = float.MAX;
    foreach (ACR_Base candidate : ACR_Base.s_All)
    {
-    if (!candidate.m_sOwner.IsEmpty() || !Visible(candidate) || IsAttacking(candidate)) continue;
+    if (!candidate.m_sOwner.IsEmpty() || !Visible(candidate) || IsAttacking(candidate) || CoolingDown(candidate)) continue;
     foreach (ACR_Squad squad : free)
     {
      float speed = 3;
@@ -479,6 +498,7 @@ class ACR_AICommander : Managed
    grab.m_Target = empty;
    grab.m_bGrab = true;
    grab.m_bAssaulting = true;
+   grab.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
    grab.m_Squads.Insert(runner);
    grab.m_aStaging.Insert(empty.GetOrigin());
    grab.m_iStartStrength = runner.Strength();
@@ -513,7 +533,7 @@ class ACR_AICommander : Managed
   {
    foreach (ACR_Base base : ACR_Base.s_All)
    {
-    if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || IsAttacking(base)) continue;
+    if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
     float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
     float score = cost * (vector.DistanceXZ(base.GetOrigin(), from) / 1000 + 0.1);
     int at = 0;
@@ -695,6 +715,74 @@ class ACR_AICommander : Managed
   return false;
  }
 
+ // True when an assault or grab has gone on too long without taking the base.
+ protected bool Stalled(ACR_AIAttack attack)
+ {
+  if (!attack.m_bAssaulting || attack.m_fAssaultStart <= 0) return false;
+  float seconds = (GetGame().GetWorld().GetWorldTime() - attack.m_fAssaultStart) / 1000;
+  if (attack.m_bGrab) return seconds > GRAB_TIMEOUT;
+  if (seconds > ASSAULT_HARD_TIMEOUT) return true;
+  if (seconds <= ASSAULT_TIMEOUT) return false;
+  foreach (ACR_Squad squad : attack.m_Squads)
+   if (vector.DistanceXZ(PositionOf(squad), attack.m_Target.GetOrigin()) < attack.m_Target.m_fRadius) return false;
+  return true;
+ }
+
+ // Every couple of minutes, send attackers that stopped short of the base in again.
+ protected void PushAttackers(ACR_AIAttack attack)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (attack.m_bGrab || now < attack.m_fNextPush) return;
+  if (attack.m_fNextPush > 0)
+  {
+   foreach (ACR_Squad squad : attack.m_Squads)
+   {
+    if (squad == attack.m_Suppressor) continue;
+    if (vector.DistanceXZ(PositionOf(squad), attack.m_Target.GetOrigin()) < attack.m_Target.m_fRadius * 0.6) continue;
+    squad.SetMode(ACR_EMoveMode.COMBAT);
+    squad.Assault(attack.m_Target.GetOrigin());
+   }
+  }
+  attack.m_fNextPush = now + PUSH_INTERVAL * 1000;
+ }
+
+ // A line in the server log every 5 minutes: what this commander is doing.
+ protected void LogStatus()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < m_fNextStatus) return;
+  m_fNextStatus = now + 300000;
+  array<ACR_Squad> all = {};
+  MySquads(all, false);
+  int nFree = 0;
+  int nDefend = 0;
+  int nAttack = 0;
+  int nOther = 0;
+  foreach (ACR_Squad squad : all)
+  {
+   if (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED) nFree++;
+   else if (squad.m_iAITask == ACR_EAITask.DEFEND) nDefend++;
+   else if (squad.m_iAITask == ACR_EAITask.ATTACK) nAttack++;
+   else nOther++;
+  }
+  string attacks;
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   if (!attack.m_Target) continue;
+   string phase = "staging";
+   if (attack.m_bGrab) phase = "grab";
+   else if (attack.m_bAssaulting) phase = "assault";
+   int minutes = 0;
+   if (attack.m_fAssaultStart > 0) minutes = (now - attack.m_fAssaultStart) / 60000;
+   attacks += string.Format(" %1(%2 %3m)", attack.m_Target.m_sName, phase, minutes);
+  }
+  int visible;
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_sOwner != m_sFaction && !base.m_sOwner.IsEmpty() && Visible(base)) visible++;
+  PrintFormat("[ACR] AI %1 status: %2 squads (free %3, defending %4, attacking %5, other %6), attacks:%7, enemy bases known %8, RP %9",
+   m_sFaction, all.Count(), nFree, nDefend, nAttack, nOther, attacks, visible, m_Manager.m_Bases.GetRP(m_sFaction));
+ }
+
  protected void UpdateAttacks()
  {
   for (int i = m_Attacks.Count() - 1; i >= 0; i--)
@@ -737,11 +825,17 @@ class ACR_AICommander : Managed
    int strength;
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
    bool broken = attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * ABORT_RATIO;
-   if (!target || won || attack.m_Squads.IsEmpty() || broken)
+   bool stalled = !won && target && Stalled(attack);
+   if (!target || won || attack.m_Squads.IsEmpty() || broken || stalled)
    {
     string outcome = "failed";
     if (won) outcome = "won";
     if (broken) outcome = "called off (too many losses)";
+    if (stalled)
+    {
+     outcome = "called off (stalled)";
+     m_StalledUntil.Set(target, GetGame().GetWorld().GetWorldTime() + STALLED_COOLDOWN * 1000);
+    }
     if (target) PrintFormat("[ACR] AI %1: attack on %2 %3", m_sFaction, target.m_sName, outcome);
     foreach (ACR_Squad squad : attack.m_Squads)
     {
@@ -753,6 +847,7 @@ class ACR_AICommander : Managed
    }
    if (attack.m_bAssaulting)
    {
+    PushAttackers(attack);
     // Base of fire keeps suppressing until the assault squads are on the
     // objective, then lifts fire and joins in.
     if (attack.m_Suppressor)
@@ -777,6 +872,7 @@ class ACR_AICommander : Managed
    if (gathered || GetGame().GetWorld().GetWorldTime() > attack.m_fStageDeadline)
    {
     attack.m_bAssaulting = true;
+    attack.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
     // Preparation: shell the objective, screen the approach with smoke.
     if (!CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, target.GetOrigin(), "preparation fire on " + target.m_sName))
      CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, target.GetOrigin(), "preparation fire on " + target.m_sName);
