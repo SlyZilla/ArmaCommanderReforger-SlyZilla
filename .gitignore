@@ -7,3 +7,5 @@ resourceDatabase.rdb
 .local-inspect/
 dist/
 .local-server/
+game-paths.txt
+launcher-log.txt

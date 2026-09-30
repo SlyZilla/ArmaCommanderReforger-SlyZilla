@@ -4,23 +4,10 @@
 #   Join: connects the game to a host's address.
 param([ValidateSet('Host', 'Join')][string]$Mode = 'Join', [string]$Address = '', [int]$Port = 2001, [switch]$Online)
 $ErrorActionPreference = 'Stop'
+# Everything this window shows also goes to launcher-log.txt (send it if something fails).
+try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force | Out-Null } catch {}
 
-function Find-SteamApp([string]$folder, [string]$exe) {
-  $steamRoot = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
-  $libraries = @($steamRoot, 'C:\Program Files (x86)\Steam', 'D:\SteamLibrary', 'E:\SteamLibrary', 'F:\SteamLibrary')
-  if ($steamRoot) {
-    $libraryFile = Join-Path $steamRoot 'steamapps\libraryfolders.vdf'
-    if (Test-Path -LiteralPath $libraryFile) {
-      foreach ($m in [regex]::Matches((Get-Content -LiteralPath $libraryFile -Raw), '"path"\s+"([^"]+)"')) { $libraries += $m.Groups[1].Value.Replace('\\', '\') }
-    }
-  }
-  foreach ($library in $libraries) {
-    if (!$library) { continue }
-    $candidate = Join-Path $library "steamapps\common\$folder\$exe"
-    if (Test-Path -LiteralPath $candidate) { return $candidate }
-  }
-  return $null
-}
+. (Join-Path $PSScriptRoot 'ACR-Find.ps1')
 
 
 . (Join-Path $PSScriptRoot 'ACR-Update.ps1')

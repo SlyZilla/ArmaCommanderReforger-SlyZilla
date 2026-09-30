@@ -1,5 +1,7 @@
 param([switch]$HostMenu, [switch]$TestProfile, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
 $ErrorActionPreference = 'Stop'
+# Everything this window shows also goes to launcher-log.txt (send it if something fails).
+try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force | Out-Null } catch {}
 try {
  # Packaged copies keep themselves up to date (the development folder never updates).
  if (!$TestProfile) {
@@ -14,20 +16,8 @@ try {
   }
  }
  if (!$GamePath) {
-  $steamRoot = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
-  $libraries = @($steamRoot, 'E:\SteamLibrary', 'C:\Program Files (x86)\Steam')
-  if ($steamRoot) {
-   $libraryFile = Join-Path $steamRoot 'steamapps\libraryfolders.vdf'
-   if (Test-Path -LiteralPath $libraryFile) {
-    $matches = [regex]::Matches((Get-Content -LiteralPath $libraryFile -Raw), '"path"\s+"([^"]+)"')
-    foreach ($match in $matches) { $libraries += $match.Groups[1].Value.Replace('\\','\') }
-   }
-  }
-  foreach ($library in $libraries) {
-   if (!$library) { continue }
-   $candidate = Join-Path $library 'steamapps\common\Arma Reforger\ArmaReforgerSteam.exe'
-   if (Test-Path -LiteralPath $candidate) { $GamePath = $candidate; break }
-  }
+  . (Join-Path $PSScriptRoot 'ACR-Find.ps1')
+  $GamePath = Find-SteamApp 'Arma Reforger' 'ArmaReforgerSteam.exe'
  }
  if (!$GamePath -or !(Test-Path -LiteralPath $GamePath)) { throw 'Arma Reforger was not found. Run this script with -GamePath pointing to ArmaReforgerSteam.exe.' }
  $addonsPath = Split-Path $PSScriptRoot -Parent

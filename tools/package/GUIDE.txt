@@ -20,8 +20,10 @@ HOW TO START
    The first load takes a while because the game compiles the mod's scripts.
    If Windows SmartScreen asks, choose "More info" > "Run anyway". It's a
    one-line script that starts the game with the mod loaded.
-   If the game isn't found, it's installed somewhere unusual. Tell the person
-   who sent you this.
+   The launcher finds the game in any Steam library. If it can't, a window
+   asks you to pick ArmaReforgerSteam.exe once (in ...\steamapps\common\
+   Arma Reforger\); it remembers the answer. If anything fails, send
+   ArmaCommanderReforger\launcher-log.txt to the person who sent you this.
 
 PLAYING TOGETHER (EXPERIMENTAL - FIRST EVER MULTIPLAYER TEST)
 -------------------------------------------------------------

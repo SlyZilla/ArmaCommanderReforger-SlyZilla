@@ -5,7 +5,7 @@ out = root / 'dist' / 'ArmaCommander-Arland.zip'
 out.parent.mkdir(exist_ok=True)
 top = 'ArmaCommander-Arland'
 keep_dirs = ['Configs', 'Missions', 'Scripts', 'Worlds']
-keep_files = ['LICENSE.md', 'addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'ACR-Update.ps1', 'Play-Test-Range.cmd', 'README.md']
+keep_files = ['LICENSE.md', 'addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'ACR-Update.ps1', 'ACR-Find.ps1', 'Play-Test-Range.cmd', 'README.md']
 def crlf(p): return p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
 # Version: first argument, else date + commit.
 try:
