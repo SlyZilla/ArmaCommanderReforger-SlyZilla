@@ -6,6 +6,10 @@
 # log lines. It can only run these presets. It never touches a game you started
 # yourself: if Reforger is already running, the request is refused.
 #
+# Besides test presets it accepts one other request, 'publish': it runs
+# tools\Publish-Release.ps1 exactly like double-clicking Publish-Release.cmd
+# (uploads the already-built dist\ACActual-Arland.zip with your GitHub login).
+#
 # Close this window (or press Ctrl+C) to stop it.
 
 param([string]$GamePath)
@@ -78,6 +82,22 @@ function Invoke-Inspect($id) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 'inspect' finished: $outcome, $exports files" -ForegroundColor Green
 }
 
+# Runs the release script unattended and reports its outcome and log.
+function Invoke-Publish($id) {
+    $script = Join-Path $PSScriptRoot 'Publish-Release.ps1'
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Publishing the current package to GitHub..." -ForegroundColor Cyan
+    $started = Get-Date
+    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $script + '"') -WindowStyle Hidden -PassThru
+    $outcome = 'completed'
+    if (!$proc.WaitForExit(300000)) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; $outcome = 'timeout' }
+    elseif ($proc.ExitCode -ne 0) { $outcome = 'failed' }
+    $result = @("status=$outcome", 'preset=publish', "seconds=$([int]((Get-Date) - $started).TotalSeconds)", '---')
+    $logFile = Join-Path $ProjectRoot 'dist\publish-log.txt'
+    if (Test-Path -LiteralPath $logFile) { $result += Get-Content -LiteralPath $logFile | Select-Object -Last 25 }
+    Write-Result $id $result
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Publish finished: $outcome" -ForegroundColor Green
+}
+
 function Write-Result($id, $lines) {
     $path = Join-Path $RequestDir "$id.result.txt"
     $lines | Set-Content -LiteralPath $path -Encoding UTF8
@@ -102,6 +122,7 @@ function Invoke-Request($file) {
             $Presets[$parts[0].Trim().ToLower()] = @{ Flags = $parts[1]; TimeoutSec = [int]$parts[2]; DoneWhen = '\[ACR\] TEST COMPLETE'; World = $world }
         }
     }
+    if ($preset -eq 'publish') { Invoke-Publish $id; return }
     if (!$Presets.ContainsKey($preset)) {
         Write-Host "[$time] Refused unknown preset '$preset'" -ForegroundColor Yellow
         Write-Result $id @("status=refused", "reason=unknown preset '$preset'")
