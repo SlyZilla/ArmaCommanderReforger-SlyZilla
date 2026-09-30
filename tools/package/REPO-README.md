@@ -2,7 +2,7 @@
 
 An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode to Arma Reforger.
 
-**Download:** [ACActual-Arland.zip](https://github.com/propst-design/ArmaCommanderReforger/releases/latest/download/ACActual-Arland.zip).
+**Download:** [ACActual-Arland.zip](https://github.com/propst-design/ACActual/releases/latest/download/ACActual-Arland.zip).
 Unzip it and open "READ ME FIRST.txt". The Host and Join launchers update themselves from this page.
 
 ## Made with AI
