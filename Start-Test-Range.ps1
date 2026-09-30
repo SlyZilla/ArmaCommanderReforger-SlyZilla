@@ -1,6 +1,18 @@
 param([switch]$HostMenu, [switch]$TestProfile, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
 $ErrorActionPreference = 'Stop'
 try {
+ # Packaged copies keep themselves up to date (the development folder never updates).
+ if (!$TestProfile) {
+  . (Join-Path $PSScriptRoot 'ACR-Update.ps1')
+  if (Update-FromGitHub) {
+   $again = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-World', $World)
+   if ($HostMenu) { $again += '-HostMenu' }
+   if ($Extra) { $again += @('-Extra', $Extra) }
+   if ($GamePath) { $again += @('-GamePath', $GamePath) }
+   & powershell.exe @again
+   exit $LASTEXITCODE
+  }
+ }
  if (!$GamePath) {
   $steamRoot = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
   $libraries = @($steamRoot, 'E:\SteamLibrary', 'C:\Program Files (x86)\Steam')

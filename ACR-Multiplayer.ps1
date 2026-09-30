@@ -23,44 +23,17 @@ function Find-SteamApp([string]$folder, [string]$exe) {
 }
 
 
-# Self-update from GitHub releases (package copies only; the development folder,
-# which has a .git folder, is never touched). The repository comes from
-# update-source.txt ("owner/name"); the installed version from VERSION.txt.
-function Update-FromGitHub {
-  if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git')) { return }
-  $sourceFile = Join-Path $PSScriptRoot 'update-source.txt'
-  if (!(Test-Path -LiteralPath $sourceFile)) { return }
-  $repo = (Get-Content -LiteralPath $sourceFile -Raw).Trim()
-  if (!$repo) { return }
-  $versionFile = Join-Path $PSScriptRoot 'VERSION.txt'
-  $local = ''
-  if (Test-Path -LiteralPath $versionFile) { $local = (Get-Content -LiteralPath $versionFile -Raw).Trim() }
-  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-  try { $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'ACR-Updater' } -TimeoutSec 15 }
-  catch { Write-Host 'Could not check for updates (offline?). Continuing with the installed version.' -ForegroundColor Yellow; return }
-  if (!$release -or $release.tag_name -eq $local) { Write-Host ('Up to date (' + $local + ')'); return }
-  $asset = $release.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
-  if (!$asset) { return }
-  Write-Host ('Updating ' + $local + ' -> ' + $release.tag_name + ' ...') -ForegroundColor Cyan
-  $temp = Join-Path $env:TEMP ('acr-update-' + [guid]::NewGuid().ToString('N'))
-  New-Item -ItemType Directory -Force $temp | Out-Null
-  $zip = Join-Path $temp 'update.zip'
-  Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing
-  Expand-Archive -LiteralPath $zip -DestinationPath $temp -Force
-  $source = Get-ChildItem -LiteralPath $temp -Directory | Select-Object -First 1
-  $packageRoot = Split-Path $PSScriptRoot -Parent
-  # Replace the mod's content folders so files removed upstream disappear too.
-  foreach ($folder in 'Scripts', 'Worlds', 'Configs', 'Missions') {
-    $old = Join-Path $PSScriptRoot $folder
-    if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
-  }
-  Copy-Item -Path (Join-Path $source.FullName '*') -Destination $packageRoot -Recurse -Force
-  Remove-Item -LiteralPath $temp -Recurse -Force
-  Write-Host ('Updated to ' + $release.tag_name + '.') -ForegroundColor Green
-}
+. (Join-Path $PSScriptRoot 'ACR-Update.ps1')
 
 try {
-  Update-FromGitHub
+  if (Update-FromGitHub) {
+    # Run the freshly downloaded launcher instead of this old copy.
+    $again = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Mode', $Mode, '-Port', $Port)
+    if ($Address) { $again += @('-Address', $Address) }
+    if ($Online) { $again += '-Online' }
+    & powershell.exe @again
+    exit $LASTEXITCODE
+  }
   $addonsPath = Split-Path $PSScriptRoot -Parent
   $mod = '-addonsDir "' + $addonsPath + '" -addons AC230926A0010001'
   $backend = ' -noBackend'
