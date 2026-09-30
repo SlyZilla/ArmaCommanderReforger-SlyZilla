@@ -1318,6 +1318,7 @@ class ACR_Squad : Managed
  void Dispose()
  {
   m_bUnsticking = false;
+  m_bOrderSetAside = false; // being removed: nothing to resume
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);
   if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
