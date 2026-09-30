@@ -672,14 +672,15 @@ class ACR_Squad : Managed
  static const float STALL_SECONDS_FIGHTING = 40; // armed and in contact: the gunner may be busy, give it longer
  static const float STALL_SECONDS_HELPLESS = 6;  // under fire with no gunner
  static const int UNSTICK_TRIES = 2;
- static const int UNSTICK_STEPS = 30;             // x 100 ms of reversing
+ static const float UNSTICK_REVERSE_MS = 3500;    // reversing, then a short brake
+ static const float UNSTICK_TOTAL_MS = 4300;
 
  protected IEntity m_StallVehicle;
  protected vector m_StallPos;
  protected float m_fStallSince;
  protected int m_iUnsticks;
  protected bool m_bUnsticking;
- protected int m_iUnstickStep;
+ protected float m_fUnstickStart;
  protected float m_fUnstickSteer;
  protected ChimeraCharacter m_UnstickDriver;
  protected bool m_bResumeOnFoot;
@@ -779,26 +780,30 @@ class ACR_Squad : Managed
  {
   m_bUnsticking = true;
   m_UnstickDriver = driver;
-  m_iUnstickStep = 0;
+  m_fUnstickStart = GetGame().GetWorld().GetWorldTime();
   m_fUnstickSteer = 0.8;
   if (m_iUnsticks % 2 == 0) m_fUnstickSteer = -0.8;
   AIControlComponent ai = AIControlComponent.Cast(driver.FindComponent(AIControlComponent));
   if (ai && ai.IsAIActivated()) ai.DeactivateAI();
   PrintFormat("[ACR] DRIVE %1: stuck, backing up (try %2)", m_Name, m_iUnsticks);
-  GetGame().GetCallqueue().CallLater(UnstickStep, 100, true);
+  // Applied every frame (like gunner drive): the controller drops inputs set less often.
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager && !manager.m_Unsticking.Contains(this)) manager.m_Unsticking.Insert(this);
  }
 
- protected void UnstickStep()
+ // Returns false when finished.
+ bool UnstickFrame()
  {
-  m_iUnstickStep++;
+  if (!m_bUnsticking) return false;
+  float elapsed = GetGame().GetWorld().GetWorldTime() - m_fUnstickStart;
   IEntity vehicle = m_StallVehicle;
   bool alive = vehicle != null && m_UnstickDriver != null && ACR_Respawn.IsAlive(m_UnstickDriver) && ACR_Transport.VehicleOf(m_UnstickDriver) == vehicle;
   CarControllerComponent car;
   if (alive) car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
-  if (!car || !car.GetSimulation() || m_iUnstickStep > UNSTICK_STEPS + 8)
+  if (!car || !car.GetSimulation() || elapsed > UNSTICK_TOTAL_MS)
   {
    EndUnstick(car);
-   return;
+   return false;
   }
   VehicleWheeledSimulation sim = car.GetSimulation();
   Physics physics = vehicle.GetPhysics();
@@ -807,7 +812,7 @@ class ACR_Squad : Managed
   car.SetPersistentHandBrake(false);
   int neutral = sim.GearboxGearsCount() - sim.GearboxForwardGearsCount() - 1;
   sim.SetClutch(1);
-  if (m_iUnstickStep <= UNSTICK_STEPS)
+  if (elapsed <= UNSTICK_REVERSE_MS)
   {
    if (sim.GetGear() >= neutral) sim.SetGear(neutral - 1);
    sim.SetBreak(0, false);
@@ -820,11 +825,11 @@ class ACR_Squad : Managed
    sim.SetSteering(0);
    sim.SetBreak(1, false);
   }
+  return true;
  }
 
  protected void EndUnstick(CarControllerComponent car)
  {
-  GetGame().GetCallqueue().Remove(UnstickStep);
   if (car && car.GetSimulation())
   {
    VehicleWheeledSimulation sim = car.GetSimulation();
@@ -864,6 +869,16 @@ class ACR_Squad : Managed
    array<ACR_Squad> riders = {};
    ACR_Transport.PassengerSquads(manager, vehicle, riders);
    foreach (ACR_Squad rider : riders) if (rider != this && !rider.HasPlayer()) rider.DismountNow();
+  }
+  // Anyone whose AI was parked (backing up, gunner drive) must be able to walk away.
+  array<AIAgent> crew = {};
+  GetAgents(crew);
+  foreach (AIAgent member : crew)
+  {
+   IEntity body = member.GetControlledEntity();
+   if (!body || FindController(body) != 0) continue;
+   AIControlComponent control = AIControlComponent.Cast(body.FindComponent(AIControlComponent));
+   if (control && !control.IsAIActivated()) control.ActivateAI();
   }
   ResourceName prefab = m_sOrderPrefab;
   if (!resume) prefab = "";
@@ -906,6 +921,9 @@ class ACR_Squad : Managed
  int DismountNow()
  {
   int dropped;
+  array<IEntity> leaving = {};
+  GetVehicles(leaving);
+  ForgetVehicles(leaving);
   array<AIAgent> agents = {};
   GetAgents(agents);
   foreach (AIAgent agent : agents)
@@ -929,6 +947,58 @@ class ACR_Squad : Managed
   m_iDismountSweeps = 0;
   GetGame().GetCallqueue().CallLater(HoldAfterDismount, 3000, false);
   return dropped;
+ }
+
+ // Put members near the vehicle into its free passenger seats. The game's AI
+ // won't board a vehicle another group is driving, so this is done directly:
+ // climbing in normally when close, or placed in once they've had time to walk up.
+ int BoardCargo(IEntity vehicle, float reach, bool placeFar)
+ {
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return 0;
+  array<BaseCompartmentSlot> seats = {};
+  compartments.GetCompartmentsOfType(seats, ECompartmentType.CARGO);
+  int started;
+  array<BaseCompartmentSlot> taken = {};
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character || !ACR_Respawn.IsAlive(character) || character.IsInVehicle()) continue;
+   CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+   float distance = vector.DistanceXZ(character.GetOrigin(), vehicle.GetOrigin());
+   if (!access || access.IsGettingIn()) continue;
+   bool teleport = distance > 4;
+   if (distance > reach || (teleport && !placeFar)) continue;
+   foreach (BaseCompartmentSlot seat : seats)
+   {
+    if (seat.GetOccupant() || taken.Contains(seat) || (seat.IsReserved() && !seat.IsReservedBy(character))) continue;
+    taken.Insert(seat);
+    bool ok = access.GetInVehicle(vehicle, seat, teleport, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+    if (System.IsCLIParam("acrRideTest")) PrintFormat("[ACR] BOARD %1 m, seat %2, placed %3 -> %4", (int)distance, seat.GetCompartmentName(), teleport, ok);
+    if (ok)
+    {
+     started++;
+     break;
+    }
+   }
+  }
+  return started;
+ }
+
+ // The game's AI treats vehicles it has used as its own and climbs back in;
+ // once we've ordered a squad out, it should stay out.
+ void ForgetVehicles(array<IEntity> vehicles)
+ {
+  if (!m_Group || vehicles.IsEmpty()) return;
+  SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+  if (!utility) return;
+  foreach (IEntity vehicle : vehicles)
+  {
+   SCR_AIVehicleUsageComponent usage = SCR_AIVehicleUsageComponent.Cast(vehicle.FindComponent(SCR_AIVehicleUsageComponent));
+   if (usage && utility.IsUsableVehicle(usage)) utility.RemoveUsableVehicle(usage);
+  }
  }
 
  protected int m_iDismountSweeps;
@@ -1186,7 +1256,7 @@ class ACR_Squad : Managed
 
  void Dispose()
  {
-  GetGame().GetCallqueue().Remove(UnstickStep);
+  m_bUnsticking = false;
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);
   if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);

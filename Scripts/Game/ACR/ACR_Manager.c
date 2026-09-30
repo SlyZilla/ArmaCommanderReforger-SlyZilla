@@ -44,6 +44,7 @@ class ACR_Manager : Managed
  ref ACR_Supports m_Supports;
  ref ACR_Rides m_Rides;
  ref ACR_Logistics m_Logistics;
+ ref array<ACR_Squad> m_Unsticking = {};   // vehicles being backed out of trouble (applied every frame)
  protected int m_iStatusTick;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
@@ -833,6 +834,8 @@ class ACR_Manager : Managed
   if (!m_Supports) m_Supports = new ACR_Supports(this);
   m_Supports.Frame(timeSlice);
   CheckLandingZones();
+  for (int u = m_Unsticking.Count() - 1; u >= 0; u--)
+   if (!m_Unsticking[u] || !m_Unsticking[u].UnstickFrame()) m_Unsticking.RemoveOrdered(u);
   if (m_Drives.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
   array<IEntity> ended = {};

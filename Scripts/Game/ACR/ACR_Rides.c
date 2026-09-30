@@ -29,6 +29,7 @@ class ACR_Ride
  float m_fDriveBudgetMs;
  int m_iRiderSerial;
  int m_iTaxiSerial;
+ float m_fTaxiLostSince = -1;   // crew briefly out (seat swaps, a stumble): only give up after a while
 }
 
 class ACR_Rides : Managed
@@ -243,9 +244,15 @@ class ACR_Rides : Managed
   }
   int alive;
   int aboard = Aboard(ride, alive);
+  if (taxiOk) ride.m_fTaxiLostSince = -1;
+  else if (ride.m_Vehicle && ACR_Logistics.Health(ride.m_Vehicle) > 0 && ride.m_Taxi && m_Manager.m_Squads.Contains(ride.m_Taxi))
+  {
+   if (ride.m_fTaxiLostSince < 0) ride.m_fTaxiLostSince = now;
+   if (now - ride.m_fTaxiLostSince < 15000) return true;
+  }
   if (!taxiOk)
   {
-   Log(ride, "transport lost, continuing on foot");
+   Log(ride, string.Format("transport lost (driver %1 alive %2, crewing %3), continuing on foot", driver != null, (driver != null && ACR_Respawn.IsAlive(driver)), (ride.m_Taxi != null && ACR_Transport.CrewedVehicle(ride.m_Taxi) == ride.m_Vehicle)));
    Finish(ride, aboard > 0);
    return false;
   }
@@ -273,7 +280,8 @@ class ACR_Rides : Managed
     if (riderAnchor && vector.DistanceXZ(ride.m_Vehicle.GetOrigin(), riderAnchor.GetOrigin()) < PICKUP_REACHED)
     {
      ride.m_Taxi.Halt("Loading " + ride.m_Rider.GetName());
-     ride.m_Rider.BoardVehicle(ride.m_Vehicle, ride.m_Vehicle.GetOrigin());
+     ride.m_Rider.MoveTo(ride.m_Vehicle.GetOrigin());
+     ride.m_Rider.m_Order = "Boarding";
      ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
      ride.m_iTaxiSerial = ride.m_Taxi.m_iOrderSerial;
      SetState(ride, ACR_ERideState.BOARDING);
@@ -291,8 +299,12 @@ class ACR_Rides : Managed
    }
    case ACR_ERideState.BOARDING:
    {
+    if (alive > 0 && aboard < alive)
+     ride.m_Rider.BoardCargo(ride.m_Vehicle, 40, inState > 8000);
     if (alive > 0 && aboard >= alive)
     {
+     ride.m_Rider.Halt("Riding");
+     ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
      ride.m_Taxi.MoveTo(ride.m_Drop);
      ride.m_Taxi.m_Order = "Driving " + ride.m_Rider.GetName();
      ride.m_Rider.m_Order = "Riding";

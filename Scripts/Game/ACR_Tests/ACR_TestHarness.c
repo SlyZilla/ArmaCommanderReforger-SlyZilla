@@ -1034,8 +1034,9 @@ class ACR_TestHarness : Managed
    m_LoneSquad.GetAgents(agents);
    foreach (AIAgent agent : agents)
     if (ACR_Transport.SeatOf(agent.GetControlledEntity()) == ECompartmentType.TURRET) Kill(agent.GetControlledEntity());
-   Physics heavy = m_LoneVehicle.GetPhysics();
-   if (heavy) heavy.SetMass(heavy.GetMass() * 200);
+   // Out of fuel: stranded.
+   SCR_FuelManagerComponent tank = SCR_FuelManagerComponent.Cast(m_LoneVehicle.FindComponent(SCR_FuelManagerComponent));
+   if (tank) tank.SetTotalFuelPercentage(0);
    ResourceName team = FireTeamOf(manager, "USSR");
    if (!team.IsEmpty()) ACR_Manager.SpawnPrefab(team, Ground("1300 0 2400"));
    m_StuckSquad.MoveTo(Ground("1700 0 2800"));
@@ -1045,7 +1046,8 @@ class ACR_TestHarness : Managed
    Freeze(m_StuckVehicle);
    PrintFormat("[ACR] STALL start: enemy team=%1", team);
   }
-  if (!m_StuckSquad || !m_LoneSquad || m_Ticks <= 14) return;
+  if (m_Ticks == 110) Print("[ACR] TEST COMPLETE");
+  if (!m_StuckSquad || m_Ticks <= 14) return;
   bool unsticking = m_StuckSquad.IsUnsticking();
   if (unsticking && !m_bWasUnsticking)
   {
@@ -1061,9 +1063,8 @@ class ACR_TestHarness : Managed
   if (m_Ticks % 5 == 0)
   {
    PrintFormat("[ACR] STALL t=%1 stuck: %2", m_Ticks, StallState(m_StuckSquad, m_StuckVehicle, m_StallStart));
-   PrintFormat("[ACR] STALL t=%1 lone: %2", m_Ticks, StallState(m_LoneSquad, m_LoneVehicle, m_LoneStart));
+   if (m_LoneSquad) PrintFormat("[ACR] STALL t=%1 lone: %2", m_Ticks, StallState(m_LoneSquad, m_LoneVehicle, m_LoneStart));
   }
-  if (m_Ticks == 110) Print("[ACR] TEST COMPLETE");
  }
 
  // ---------------------------------------------------------------- -acrRideTest

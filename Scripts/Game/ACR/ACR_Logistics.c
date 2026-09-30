@@ -47,6 +47,15 @@ class ACR_Logistics : Managed
   ResourceName prefab = vehicle.GetPrefabData().GetPrefabName();
   int cached;
   if (s_ServiceCache.Find(prefab, cached)) return cached;
+  int flags = ServiceOfName(prefab);
+  // Parts (fuel nozzles etc.) are not vehicles.
+  if (!Vehicle.Cast(vehicle)) flags = 0;
+  s_ServiceCache.Set(prefab, flags);
+  return flags;
+ }
+
+ static int ServiceOfName(string prefab)
+ {
   string name = prefab;
   name.ToLower();
   int flags;
@@ -54,34 +63,31 @@ class ACR_Logistics : Managed
   if (name.Contains("repair")) flags |= ACR_EService.REPAIR;
   if (name.Contains("tanker") || name.Contains("_fuel")) flags |= ACR_EService.FUEL;
   if (name.Contains("ambulance")) flags |= ACR_EService.MEDICAL;
-  // Parts (fuel nozzles etc.) are not vehicles.
-  if (!Vehicle.Cast(vehicle)) flags = 0;
-  s_ServiceCache.Set(prefab, flags);
   return flags;
  }
 
  static string ServiceName(int flags)
  {
-  if (flags & ACR_EService.AMMO) return "ammo";
-  if (flags & ACR_EService.REPAIR) return "repair";
-  if (flags & ACR_EService.FUEL) return "fuel";
-  if (flags & ACR_EService.MEDICAL) return "medical";
+  if ((flags & ACR_EService.AMMO) != 0) return "ammo";
+  if ((flags & ACR_EService.REPAIR) != 0) return "repair";
+  if ((flags & ACR_EService.FUEL) != 0) return "fuel";
+  if ((flags & ACR_EService.MEDICAL) != 0) return "medical";
   return "";
  }
 
  static float Capacity(int flags)
  {
-  if (flags & ACR_EService.AMMO) return CAPACITY_AMMO;
-  if (flags & ACR_EService.REPAIR) return CAPACITY_REPAIR;
-  if (flags & ACR_EService.FUEL) return CAPACITY_FUEL;
-  if (flags & ACR_EService.MEDICAL) return CAPACITY_MEDICAL;
+  if ((flags & ACR_EService.AMMO) != 0) return CAPACITY_AMMO;
+  if ((flags & ACR_EService.REPAIR) != 0) return CAPACITY_REPAIR;
+  if ((flags & ACR_EService.FUEL) != 0) return CAPACITY_FUEL;
+  if ((flags & ACR_EService.MEDICAL) != 0) return CAPACITY_MEDICAL;
   return 0;
  }
 
  float StockOf(IEntity vehicle)
  {
   int flags = ServiceOf(vehicle);
-  if (!flags) return 0;
+  if (flags == 0) return 0;
   float stock;
   if (!m_Stock.Find(vehicle, stock))
   {
@@ -241,7 +247,7 @@ class ACR_Logistics : Managed
   foreach (ACR_Base base : ACR_Base.s_All)
    GetGame().GetWorld().QueryEntitiesBySphere(base.GetOrigin(), base.m_fRadius + 150, CollectVehicle);
   foreach (IEntity vehicle : m_Found)
-   if (ServiceOf(vehicle) && !m_ServiceVehicles.Contains(vehicle) && Health(vehicle) > 0) m_ServiceVehicles.Insert(vehicle);
+   if (ServiceOf(vehicle) != 0 && !m_ServiceVehicles.Contains(vehicle) && Health(vehicle) > 0) m_ServiceVehicles.Insert(vehicle);
  }
 
  void Tick()
@@ -306,16 +312,17 @@ class ACR_Logistics : Managed
   float last;
   if (m_SoldierServedAt.Find(soldier, last) && now - last < SOLDIER_COOLDOWN_MS) return;
   bool served;
-  if ((flags & ACR_EService.AMMO) && SoldierMagazines(soldier) < magazineTarget - 0.5)
+  if ((flags & ACR_EService.AMMO) != 0 && SoldierMagazines(soldier) < magazineTarget * 0.75)
   {
    SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(soldier.FindComponent(SCR_InventoryStorageManagerComponent));
-   if (inventory && Use(station, 1))
+   // Only spend stock when a magazine can actually be added (right weapon, room in the pack).
+   if (inventory && inventory.IsResupplyMagazinesAvailable(Math.Max(2, magazineTarget - 1)) && Use(station, 1))
    {
     inventory.ResupplyMagazines(Math.Max(2, magazineTarget - 1));
     served = true;
    }
   }
-  if ((flags & ACR_EService.MEDICAL) && Health(soldier) < 0.95)
+  if ((flags & ACR_EService.MEDICAL) != 0 && Health(soldier) < 0.95)
   {
    SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(soldier.FindComponent(SCR_DamageManagerComponent));
    if (damage && Use(station, 1))
@@ -329,7 +336,7 @@ class ACR_Logistics : Managed
 
  protected void ServeVehicle(IEntity station, int flags, IEntity vehicle)
  {
-  if (flags & ACR_EService.AMMO)
+  if ((flags & ACR_EService.AMMO) != 0)
   {
    array<BaseMagazineComponent> magazines = {};
    TurretMagazines(vehicle, magazines);
@@ -340,13 +347,16 @@ class ACR_Logistics : Managed
     magazine.SetAmmoCount(magazine.GetMaxAmmoCount());
    }
   }
-  if (flags & ACR_EService.REPAIR)
+  if ((flags & ACR_EService.REPAIR) != 0)
   {
    SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(vehicle.FindComponent(SCR_DamageManagerComponent));
    if (damage && !damage.IsDestroyed() && damage.GetHealthScaled() < 0.99 && Use(station, 1))
+   {
     damage.HealHitZones(damage.GetMaxHealth() * 0.15);
+    damage.SetHealthScaled(Math.Min(1, damage.GetHealthScaled() + 0.15));
+   }
   }
-  if (flags & ACR_EService.FUEL)
+  if ((flags & ACR_EService.FUEL) != 0)
   {
    float fuel = Fuel(vehicle);
    SCR_FuelManagerComponent tanks = SCR_FuelManagerComponent.Cast(vehicle.FindComponent(SCR_FuelManagerComponent));
@@ -375,7 +385,7 @@ class ACR_Logistics : Managed
   result.Clear();
   foreach (IEntity station : m_ServiceVehicles)
   {
-   if (!(ServiceOf(station) & service) || FactionOfVehicle(station) != faction) continue;
+   if ((ServiceOf(station) & service) == 0 || FactionOfVehicle(station) != faction) continue;
    if (StockOf(station) < 1) continue;
    result.Insert(station);
   }
@@ -385,7 +395,7 @@ class ACR_Logistics : Managed
  {
   int count;
   foreach (IEntity station : m_ServiceVehicles)
-   if ((ServiceOf(station) & service) && FactionOfVehicle(station) == faction) count++;
+   if ((ServiceOf(station) & service) != 0 && FactionOfVehicle(station) == faction) count++;
   return count;
  }
 }

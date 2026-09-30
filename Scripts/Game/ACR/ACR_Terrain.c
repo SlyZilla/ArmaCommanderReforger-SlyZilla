@@ -131,7 +131,9 @@ class ACR_Terrain
   int walk = goal;
   while (walk >= 0)
   {
-   chain.InsertAt(Vector(minX + (walk % w + 0.5) * cell, 0, minZ + (walk / w + 0.5) * cell), 0);
+   int wx = walk % w;
+   int wz = walk / w;
+   chain.InsertAt(Vector(minX + (wx + 0.5) * cell, 0, minZ + (wz + 0.5) * cell), 0);
    if (walk == start) break;
    walk = parent[walk];
   }
@@ -161,8 +163,12 @@ class ACR_Terrain
 
  protected static float Heuristic(int from, int to, int w, float cell)
  {
-  float dx = (from % w) - (to % w);
-  float dz = (from / w) - (to / w);
+  int fromX = from % w;
+  int toX = to % w;
+  int fromZ = from / w;
+  int toZ = to / w;
+  float dx = fromX - toX;
+  float dz = fromZ - toZ;
   return Math.Sqrt(dx * dx + dz * dz) * cell;
  }
 
@@ -181,9 +187,9 @@ class ACR_Terrain
   }
  }
 
- // Note: a node pushed twice keeps only its latest key in the key table, so an
- // older heap entry may sort by the newer (smaller) key; popped duplicates are
- // skipped as already closed, which keeps the search correct.
+ // Keys are lowered in place without re-sorting, so pops can come slightly out
+ // of order: the route may be a little longer than the shortest, which is fine
+ // for 50 m cells. Popped duplicates are skipped as already closed.
  protected static int HeapPop(array<int> heap, array<float> key)
  {
   int top = heap[0];
