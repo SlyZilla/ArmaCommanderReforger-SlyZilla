@@ -26,6 +26,7 @@ class ACR_TestHarness : Managed
  static const int MODE_LOGISTICS = 19;
  static const int MODE_QUEUE = 20;
  static const int MODE_CLEANUP = 21;
+ static const int MODE_SIDE = 22;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -66,6 +67,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrLogisticsTest", flag)) mode = MODE_LOGISTICS;
   if (System.GetCLIParam("acrQueueTest", flag)) mode = MODE_QUEUE;
   if (System.GetCLIParam("acrCleanupTest", flag)) mode = MODE_CLEANUP;
+  if (System.GetCLIParam("acrSideTest", flag)) mode = MODE_SIDE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -108,6 +110,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_LOGISTICS) { TestLogistics(); return; }
   if (m_Mode == MODE_QUEUE) { TestQueue(); return; }
   if (m_Mode == MODE_CLEANUP) { TestCleanup(); return; }
+  if (m_Mode == MODE_SIDE) { TestSide(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -1347,5 +1350,35 @@ class ACR_TestHarness : Managed
    Print("[ACR] CLEANUP player moved away");
   }
   if (m_Ticks == 75) Print("[ACR] TEST COMPLETE");
+ }
+ // ---------------------------------------------------------------- -acrSideTest
+ // Host option "players' side" = USSR while the player starts as US: once his
+ // body is gone he must be moved to USSR, and a request back to US refused.
+ void TestSide()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (!pc) return;
+  SCR_PlayerFactionAffiliationComponent affiliation = SCR_PlayerFactionAffiliationComponent.Cast(pc.FindComponent(SCR_PlayerFactionAffiliationComponent));
+  FactionManager factions = GetGame().GetFactionManager();
+  if (m_Ticks == 3)
+  {
+   PrintFormat("[ACR] SIDE start faction=%1", FactionKey(pc));
+   ACR_PlayerSide.Force("USSR");
+   Kill(pc.GetControlledEntity());
+  }
+  if (m_Ticks == 10 && affiliation)
+  {
+   PrintFormat("[ACR] SIDE after: faction=%1 (want USSR); may request US=%2 (want 0)", FactionKey(pc), affiliation.ACR_WouldAllow(factions.GetFactionByKey("US")));
+   ACR_PlayerSide.Force("");
+   PrintFormat("[ACR] SIDE free choice again: may request US=%1 (want 1)", affiliation.ACR_WouldAllow(factions.GetFactionByKey("US")));
+  }
+  if (m_Ticks == 12) Print("[ACR] TEST COMPLETE");
+ }
+
+ protected string FactionKey(SCR_PlayerController pc)
+ {
+  Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
+  if (!faction) return "none";
+  return faction.GetFactionKey();
  }
 }

@@ -138,6 +138,7 @@ class ACR_Manager : Managed
    if (setAI) settings.m_bAICommander = ai == "both" || ai == key;
    if (setCap && unitCap.ToInt() > 0) settings.m_iAIUnitCap = unitCap.ToInt();
   }
+  ACR_PlayerSide.Key();
   PrintFormat("[ACR] Host options: skill %1, reaction %2, soldier cap %3, AI %4, unit cap %5, start RP %6, income x%7",
    m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption());
  }
@@ -164,6 +165,7 @@ class ACR_Manager : Managed
   EnsureCommanders();
   m_Bases.Tick(this);
   GrantGameMaster();
+  ACR_PlayerSide.Enforce();
   TickAICommanders();
   if (!m_Respawn) m_Respawn = new ACR_Respawn(this);
   m_Respawn.Tick();

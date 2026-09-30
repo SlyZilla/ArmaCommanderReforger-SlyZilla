@@ -35,8 +35,9 @@ HOST (one person):
    Library, switch the filter to include Tools, find "Arma Reforger Server",
    click Install.
 2. Double-click  Host-Arland.cmd
-   - First a HOST SETUP list appears: starting RP, income, which sides get
-     an AI commander, AI skill and reaction speed, soldier and squad
+   - First a HOST SETUP list appears: players' side (any, or everyone on
+     US / USSR with the AI commanding the other), starting RP, income,
+     which sides get an AI commander, AI skill and reaction speed, soldier and squad
      limits, respawn delay, Game Master for everyone. Type a number to
      change one, Enter to start. Your choices are remembered.
    - A server window opens (leave it open) and Windows may ask about the
@@ -65,7 +66,7 @@ WHO DOES WHAT:
   buying). The others can take over any US soldier (F7), drive gun trucks,
   and fight. The commander can hand over with "Leave command" in the map
   panel; the next player can then press "Take command".
-- The host (first player connected) gets Game Master (Y). Option 10 in the
+- The host (first player connected) gets Game Master (Y). Option 11 in the
   host setup gives it to everyone who joins.
 
 IF IT DOESN'T CONNECT:
