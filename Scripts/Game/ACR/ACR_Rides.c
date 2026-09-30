@@ -185,8 +185,7 @@ class ACR_Rides : Managed
    rider.m_Order = "Waiting for ride";
   }
   taxi.SetMode(ACR_EMoveMode.FAST);
-  taxi.MoveTo(pickup);
-  taxi.m_Order = "Picking up " + rider.GetName();
+  taxi.RouteTo(pickup, ACR_Squad.WP_MOVE, -1, "Picking up " + rider.GetName(), 0);
   ride.m_iRiderSerial = rider.m_iOrderSerial;
   ride.m_iTaxiSerial = taxi.m_iOrderSerial;
   SetState(ride, ACR_ERideState.TO_PICKUP);
@@ -322,8 +321,7 @@ class ACR_Rides : Managed
     {
      ride.m_Rider.Halt("Riding");
      ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
-     ride.m_Taxi.MoveTo(ride.m_Drop);
-     ride.m_Taxi.m_Order = "Driving " + ride.m_Rider.GetName();
+     ride.m_Taxi.RouteTo(ride.m_Drop, ACR_Squad.WP_MOVE, -1, "Driving " + ride.m_Rider.GetName(), 0);
      ride.m_Rider.m_Order = "Riding";
      ride.m_iTaxiSerial = ride.m_Taxi.m_iOrderSerial;
      SetState(ride, ACR_ERideState.TO_DROP);

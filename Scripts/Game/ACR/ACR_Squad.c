@@ -588,15 +588,36 @@ class ACR_Squad : Managed
  {
   // Vehicle crews: aim for the nearest road point, which AI drivers can reach.
   vector road;
-  if (ACR_Transport.CrewedVehicle(this) && ACR_Terrain.RoadPointNear(destination, 250, road)) destination = road;
+  IEntity driven = ACR_Transport.CrewedVehicle(this);
+  if (driven && ACR_Terrain.RoadPointNear(destination, 250, road)) destination = road;
   IEntity anchor = GetAnchor();
   array<vector> legs = {};
+  // ...and on longer trips, along the roads in short hops.
+  if (driven && anchor && vector.DistanceXZ(anchor.GetOrigin(), destination) > 400)
+  {
+   int nodes, millis;
+   if (ACR_Roads.Route(driven.GetOrigin(), destination, legs, nodes, millis) && legs.Count() > 1)
+   {
+    PrintFormat("[ACR] ROAD %1: %2 hops over %3 road points (%4 ms)", m_Name, legs.Count(), nodes, millis);
+    if (System.IsCLIParam("acrRideTest")) foreach (vector hop : legs) PrintFormat("[ACR] ROAD   hop %1", hop);
+    StartRoute(legs, prefab, radius, order, kind);
+    return true;
+   }
+   legs.Clear();
+  }
   if (!anchor || IsMounted() || !ACR_Terrain.LandRoute(anchor.GetOrigin(), destination, legs))
   {
    if (prefab == WP_DEFEND) return Defend(destination);
    if (prefab == WP_SEARCH_DESTROY) return Assault(destination);
    return MoveTo(destination);
   }
+  PrintFormat("[ACR] ROUTE %1: straight line crosses water, going round in %2 legs", m_Name, legs.Count());
+  StartRoute(legs, prefab, radius, order, kind);
+  return true;
+ }
+
+ protected void StartRoute(array<vector> legs, ResourceName prefab, float radius, string order, int kind)
+ {
   m_iOrderSerial++;
   m_bRegrouping = false;
   ClearPlans();
@@ -605,9 +626,7 @@ class ACR_Squad : Managed
   m_fRouteRadius = radius;
   m_sRouteOrder = order;
   m_iRouteKind = kind;
-  PrintFormat("[ACR] ROUTE %1: straight line crosses water, going round in %2 legs", m_Name, legs.Count());
   NextLeg();
-  return true;
  }
 
  protected void NextLeg()

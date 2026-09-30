@@ -118,6 +118,11 @@ Y           Game Master (host/admin). This is a debug and "fix Arma" tool:
 ON THE COMMAND MAP
 ------------------
 - Left-click a squad marker to select it. Left-click empty ground to deselect.
+- Several squads: hold Ctrl and drag a box around them (a plain drag still
+  pans the map), or Shift+click markers to add/remove. Orders then go to all
+  of them; move orders spread them in a line about 40 m apart.
+- Waypoints: Shift+right-click adds a waypoint after the current order (up to
+  8; with Defend armed, the last stop is a defend). The line shows the chain.
 - The blue panel on the right shows the selected squad:
     Combat / Fast / Silent  how the squad moves
     Defend, then right-click   defend that spot

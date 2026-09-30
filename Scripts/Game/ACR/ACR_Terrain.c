@@ -198,7 +198,7 @@ class ACR_Terrain
   return Math.Sqrt(dx * dx + dz * dz) * cell;
  }
 
- protected static void HeapPush(array<int> heap, array<float> key, int node)
+ static void HeapPush(array<int> heap, array<float> key, int node)
  {
   heap.Insert(node);
   int i = heap.Count() - 1;
@@ -216,7 +216,7 @@ class ACR_Terrain
  // Keys are lowered in place without re-sorting, so pops can come slightly out
  // of order: the route may be a little longer than the shortest, which is fine
  // for 50 m cells. Popped duplicates are skipped as already closed.
- protected static int HeapPop(array<int> heap, array<float> key)
+ static int HeapPop(array<int> heap, array<float> key)
  {
   int top = heap[0];
   int last = heap[heap.Count() - 1];
