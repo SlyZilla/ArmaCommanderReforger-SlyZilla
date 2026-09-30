@@ -8,7 +8,7 @@ arland|-acrScenarioTest 1|240|Worlds/ACR_Arland.ent
 gunner|-acrGunnerTest 1|120
 probe|-acrProbeTest 1|90
 respawn|-acrRespawnTest 1|90
-support|-acrSupportTest 1|180
+support|-acrSupportTest 1|260
 gunship|-acrGunshipTest 1|180
 tactics|-acrTacticsTest 1|200
 transport|-acrTransportTest 1|130
