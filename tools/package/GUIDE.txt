@@ -167,6 +167,17 @@ ON THE COMMAND MAP
   friendly soldiers and vehicles within 25 m while they are stopped. Each
   carries limited stock and restocks only while parked at one of your spawn
   bases. The AI uses them too, so hunting its supply trucks pays off.
+- HUNT: with a squad selected, right-click a red enemy marker. The squad
+  follows that enemy group wherever your side last saw it, until it is
+  destroyed, the trail goes cold, or your squad can no longer fight
+  (red order line).
+- YOUR EMPTY VEHICLES show as light blue markers while any of your
+  soldiers is within 400 m (or they're at one of your bases); otherwise at
+  their last known spot for 10 min. Right-click next to one with Get in.
+  Vehicle crews always show their vehicle's symbol, "(dismounted)" when
+  they're out of it.
+- RADIO: sightings by your AI squads and sentries also come in as short
+  radio calls in chat (at most one every 15 s).
 - INTEL: enemies your side has actually seen show as red hostile symbols
   (infantry, vehicle, armed vehicle, armour, helicopter) at the spot they
   were last seen. After 30 s they turn dashed ("suspected"), after 90 s

@@ -358,6 +358,7 @@ class ACR_Squad : Managed
  string m_Order = "Holding";
  // AI commander bookkeeping
  int m_iAITask;          // ACR_EAITask
+ IEntity m_OwnVehicle;   // the vehicle this squad came with (crews), even when dismounted
  ACR_Base m_AITarget;
  int m_OrderKind;   // for map symbology: 0 move, 1 defend, 2 get in, 3 get out
 
@@ -514,6 +515,116 @@ class ACR_Squad : Managed
   return false;
  }
 
+ // Is anyone of this squad aboard its own vehicle?
+ bool InOwnVehicle()
+ {
+  if (!m_OwnVehicle) return false;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (body && ACR_Respawn.IsAlive(body) && ACR_Transport.VehicleOf(body) == m_OwnVehicle) return true;
+  }
+  return false;
+ }
+
+ // The vehicle that defines this squad's map symbol: its own (if still
+ // intact), else whatever it is crewing.
+ IEntity MarkVehicle()
+ {
+  if (m_OwnVehicle && ACR_Logistics.Health(m_OwnVehicle) > 0) return m_OwnVehicle;
+  return ACR_Transport.CrewedVehicle(this);
+ }
+
+ // ---------------------------------------------------------------- hunt
+ // Doggedly pursue one enemy group: follow its latest known position (our
+ // side's intel) until it is destroyed, the trail goes cold, or we are no
+ // longer fit to fight.
+ protected ACR_Squad m_HuntSquad;
+ protected IEntity m_HuntBody;
+ protected bool m_bHunting;
+ protected int m_iHuntSerial;
+ protected string m_sHuntWhat;
+ protected vector m_HuntPos;
+ protected float m_fHuntSeen;       // world time of the latest sighting we are following
+ protected float m_fNextHuntCheck;
+ static const float HUNT_CHECK_MS = 8000;
+ static const float HUNT_COLD_MS = 180000;   // no new sighting this long after reaching the last one: lost
+ static const float HUNT_GIVE_UP_MS = 420000; // no new sighting at all this long: lost
+
+ void Hunt(ACR_Squad target, IEntity body, vector position, string what)
+ {
+  m_iOrderSerial++;
+  ClearPlans();
+  m_bRegrouping = false;
+  m_HuntSquad = target;
+  m_HuntBody = body;
+  m_sHuntWhat = what;
+  m_HuntPos = position;
+  m_fHuntSeen = GetGame().GetWorld().GetWorldTime();
+  m_fNextHuntCheck = 0;
+  m_bHunting = true;
+  IssueWaypoint(WP_SEARCH_DESTROY, position, 30);
+  m_Order = "Hunting " + what;
+  m_OrderKind = 4;
+  m_iHuntSerial = m_iOrderSerial;
+ }
+
+ bool IsHunting() { return m_bHunting; }
+
+ protected void EndHunt(string reason)
+ {
+  m_bHunting = false;
+  m_HuntSquad = null;
+  m_HuntBody = null;
+  PrintFormat("[ACR] HUNT %1: %2", m_Name, reason);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager && GetFaction()) manager.NotifyFaction(GetFaction().GetFactionKey(), m_Name + ": " + reason);
+  IEntity anchor = GetAnchor();
+  if (anchor) Defend(anchor.GetOrigin());
+ }
+
+ protected void HuntTick(float now)
+ {
+  if (!m_bHunting) return;
+  // Any other order ends the hunt quietly.
+  if (m_iOrderSerial != m_iHuntSerial) { m_bHunting = false; m_HuntSquad = null; m_HuntBody = null; return; }
+  if (now < m_fNextHuntCheck) return;
+  m_fNextHuntCheck = now + HUNT_CHECK_MS;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !GetFaction()) return;
+  bool gone;
+  if (m_HuntSquad) gone = !manager.m_Squads.Contains(m_HuntSquad) || m_HuntSquad.CountAlive() == 0;
+  else gone = !m_HuntBody || !ACR_Respawn.IsAlive(m_HuntBody);
+  if (gone) { EndHunt("target destroyed, holding here"); return; }
+  if (StrengthRatio() < 0.35 || !IsCombatUnit() || (m_iAmmoPct >= 0 && m_iAmmoPct < 15))
+  {
+   EndHunt("breaking off the hunt, no longer fit to fight");
+   return;
+  }
+  ACR_Intel intel = manager.IntelFor(GetFaction().GetFactionKey());
+  vector known;
+  float seen;
+  if (intel && intel.LastKnown(m_HuntSquad, m_HuntBody, known, seen) && seen > m_fHuntSeen)
+  {
+   m_fHuntSeen = seen;
+   // Follow it when it has moved on.
+   if (vector.DistanceXZ(known, m_HuntPos) > 40)
+   {
+    m_HuntPos = known;
+    IssueWaypoint(WP_SEARCH_DESTROY, known, 30);
+    m_Order = "Hunting " + m_sHuntWhat;
+    m_OrderKind = 4;
+   }
+   return;
+  }
+  IEntity anchor = GetAnchor();
+  bool atLastKnown = anchor && vector.DistanceXZ(anchor.GetOrigin(), m_HuntPos) < 60;
+  if ((atLastKnown && now - m_fHuntSeen > HUNT_COLD_MS) || now - m_fHuntSeen > HUNT_GIVE_UP_MS)
+   EndHunt("lost track of the " + m_sHuntWhat);
+ }
+
  float StrengthRatio()
  {
   int full;
@@ -545,6 +656,7 @@ class ACR_Squad : Managed
   // A player is leading (or riding with) this squad: they give the orders, e.g.
   // with the command wheel. Re-issuing our last map order would wipe theirs.
   if (HasPlayer()) return;
+  HuntTick(now);
   bool contact = KnownEnemies(350) > 0;
   FollowRoute();
   Cohesion(now, contact);
@@ -722,8 +834,9 @@ class ACR_Squad : Managed
  // are within 25 m, then carries on. Not in contact, and at most once a minute.
  static const float STRAGGLER_DISTANCE = 60;
  static const float REGROUPED_DISTANCE = 25;
- static const float REGROUP_TIMEOUT_MS = 45000;
+ static const float REGROUP_TIMEOUT_MS = 60000;
  static const float REGROUP_COOLDOWN_MS = 60000;
+ static const float REGROUP_FAILED_COOLDOWN_MS = 150000; // didn't close up: don't stop-start every minute
 
  protected bool m_bRegrouping;
  protected float m_fRegroupSince;
@@ -733,6 +846,25 @@ class ACR_Squad : Managed
  protected float m_fRegroupRadius;
  protected string m_sRegroupOrder;
  protected int m_iRegroupKind;
+
+ // Middle of the living members on foot (where a strung-out squad meets up).
+ bool Centroid(out vector center)
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  vector sum;
+  int n;
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body) || ACR_Transport.VehicleOf(body)) continue;
+   sum = sum + body.GetOrigin();
+   n++;
+  }
+  if (n == 0) return false;
+  center = ACR_Manager.Ground(sum * (1.0 / n));
+  return true;
+ }
 
  // Living members on foot farther than this from the leader.
  int Stragglers(float radius)
@@ -759,6 +891,7 @@ class ACR_Squad : Managed
    if (!closed && !contact && now - m_fRegroupSince < REGROUP_TIMEOUT_MS) return;
    m_bRegrouping = false;
    m_fNextRegroup = now + REGROUP_COOLDOWN_MS;
+   if (!closed) m_fNextRegroup = now + REGROUP_FAILED_COOLDOWN_MS;
    IssueWaypoint(m_sRegroupPrefab, m_RegroupTarget, m_fRegroupRadius);
    m_Order = m_sRegroupOrder;
    m_OrderKind = m_iRegroupKind;
@@ -782,6 +915,11 @@ class ACR_Squad : Managed
   m_sRegroupOrder = m_Order;
   m_iRegroupKind = m_OrderKind;
   ClearOrders();
+  // Everyone heads for the middle of the squad: the front waits and walks
+  // back a little, the stragglers catch up, instead of the leader standing
+  // still while the tail wanders.
+  vector gather;
+  if (Centroid(gather)) IssueWaypoint(WP_MOVE, gather, 10);
   m_Order = "Regrouping";
   m_bRegrouping = true;
   m_fRegroupSince = now;

@@ -48,6 +48,7 @@ class ACR_AICommander : Managed
  static const float DEFENSE_DISTANCE = 450;   // squads this close count as defending a base
  static const float THREAT_DISTANCE = 400;    // enemies this far past the ring threaten it
  static const float STAGING_DISTANCE = 275;   // staging point outside the target ring
+ static const float STAGING_CLEARANCE = 350;  // m kept between a staging point and any other enemy base ring
  static const float ATTACK_RATIO = 1.8;       // attackers want 1.8x the defence
  static const float DEFENSE_RATIO = 1.1;      // defenders want 1.1x the threat
  static const float CONCEDE_RATIO = 4;        // give a base up against 4x the defence
@@ -56,8 +57,8 @@ class ACR_AICommander : Managed
  // An assault that hasn't taken the base by now is called off (it would
  // otherwise hold the attack slot forever). A foothold inside the base ring
  // buys it more time. Grabs of empty bases get less.
- static float ASSAULT_TIMEOUT = 720;          // s, nobody of ours inside the ring
- static float ASSAULT_HARD_TIMEOUT = 1200;    // s, even with a foothold
+ static float ASSAULT_TIMEOUT = 1200;         // s, nobody of ours inside the ring
+ static float ASSAULT_HARD_TIMEOUT = 1800;    // s, even with a foothold
  static float GRAB_TIMEOUT = 480;             // s  (the test harness shortens these)
  static const float STALLED_COOLDOWN = 300;   // s before the same base is tried again
  static const float PUSH_INTERVAL = 120;      // s between re-issuing assault orders
@@ -94,6 +95,7 @@ class ACR_AICommander : Managed
  static const float RETREAT_RATIO = 0.4;   // a squad below 40% in contact falls back
  static const float ABORT_RATIO = 0.35;    // an attack below 35% of its strength is called off
  static const int SUPPORT_RESERVE = 15;    // RP the AI keeps back when calling supports
+ static const int SUPPORT_BUDGET_MAX = 60;  // most RP it holds back from buying for supports
  static const int MAX_GRABS = 3;           // empty bases it goes for at the same time
 
  void ACR_AICommander(ACR_Manager manager, string factionKey)
@@ -120,6 +122,7 @@ class ACR_AICommander : Managed
   AssignDefenders();
   AssignAttacks();
   PostIdle();
+  Recrew();
   ManageLogistics();
   Requisition();
   LogStatus();
@@ -206,6 +209,30 @@ class ACR_AICommander : Managed
   foreach (int i, ACR_SupportEntry entry : m_Manager.m_Bases.GetFaction(m_sFaction).m_aSupports)
    if (entry.m_eType == type) return i;
   return -1;
+ }
+
+ // RP kept back from unit purchases so a fire mission is always affordable:
+ // the dearest mortar mission plus the usual reserve (capped).
+ protected int SupportBudget()
+ {
+  int dearest;
+  foreach (ACR_SupportEntry entry : m_Manager.m_Bases.GetFaction(m_sFaction).m_aSupports)
+  {
+   if (entry.m_eType != ACR_ESupportType.MORTAR_HE_SMALL && entry.m_eType != ACR_ESupportType.MORTAR_HE_LARGE && entry.m_eType != ACR_ESupportType.MORTAR_SMOKE) continue;
+   dearest = Math.Max(dearest, entry.m_iCost);
+  }
+  if (dearest == 0) return 0;
+  return Math.Min(SUPPORT_BUDGET_MAX, dearest + SUPPORT_RESERVE);
+ }
+
+ // Needing troops beats keeping fire support money: well under strength, or a
+ // base threatened by more than it has defending it.
+ protected bool UrgentTroops(int combatUnits, int cap)
+ {
+  if (combatUnits < cap / 2) return true;
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_sOwner == m_sFaction && ThreatTo(base) > DefenceOf(base)) return true;
+  return false;
  }
 
  protected bool SupportReady(ACR_ESupportType type)
@@ -512,7 +539,8 @@ class ACR_AICommander : Managed
    PrintFormat("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime);
   }
   if (free.IsEmpty()) return;
-  if (free.Count() >= 4) maxAttacks++; // plenty of idle troops: open a second front
+  // Plenty of idle troops: open more fronts (one more per 4 free squads, up to 3 more).
+  maxAttacks += Math.Min(3, free.Count() / 4);
   if (attacks >= maxAttacks && !counterDue) return;
 
   // Target: a counterattack on a base just lost, otherwise the enemy base with
@@ -566,11 +594,14 @@ class ACR_AICommander : Managed
   attack.m_Target = target;
   attack.m_bCounter = counterDue;
   int strength;
+  // With troops to spare, send a margin above the bare minimum.
+  float margin = 1;
+  if (free.Count() > 4) margin = 1 + Math.Min(0.5, (free.Count() - 4) * 0.05);
   foreach (ACR_Squad squad : free)
   {
    attack.m_Squads.Insert(squad);
    strength += squad.Strength();
-   if (strength >= required) break;
+   if (strength >= required * margin) break;
   }
   if (strength < required)
   {
@@ -587,14 +618,14 @@ class ACR_AICommander : Managed
   attack.m_Staging = ACR_Manager.Ground(target.GetOrigin() + dir * ring);
   // Staging points on dry land with a dry run in (no forming up in a bay).
   vector dryMain;
-  if (ACR_Terrain.DryApproach(target.GetOrigin(), dir, ring, dryMain)) attack.m_Staging = dryMain;
+  if (StagingPoint(target, dir, ring, dryMain)) attack.m_Staging = dryMain;
   array<float> angles = {0, 55, -55, 90, -90};
   foreach (int i, ACR_Squad member : attack.m_Squads)
   {
    float angle = angles[i % angles.Count()] * Math.DEG2RAD;
    vector rotated = Vector(dir[0] * Math.Cos(angle) - dir[2] * Math.Sin(angle), 0, dir[0] * Math.Sin(angle) + dir[2] * Math.Cos(angle));
    vector stage;
-   if (!ACR_Terrain.DryApproach(target.GetOrigin(), rotated, ring, stage)) stage = attack.m_Staging;
+   if (!StagingPoint(target, rotated, ring, stage)) stage = attack.m_Staging;
    attack.m_aStaging.Insert(stage);
   }
   bool empty = target.m_sOwner.IsEmpty();
@@ -776,9 +807,24 @@ class ACR_AICommander : Managed
    if (attack.m_fAssaultStart > 0) minutes = (now - attack.m_fAssaultStart) / 60000;
    attacks += string.Format(" %1(%2 %3m)", attack.m_Target.m_sName, phase, minutes);
   }
+  array<ACR_Squad> ready = {};
+  MySquads(ready, true);
+  attacks += string.Format(" | combat-ready idle %1", ready.Count());
+  map<string, int> idleAt = new map<string, int>();
+  foreach (ACR_Squad idle : ready)
+  {
+   ACR_Base near = NearestOwnBase(PositionOf(idle));
+   string where = "field";
+   if (near && vector.DistanceXZ(PositionOf(idle), near.GetOrigin()) < near.m_fRadius + 150) where = near.m_sName;
+   int had;
+   idleAt.Find(where, had);
+   idleAt.Set(where, had + 1);
+  }
+  foreach (string place, int n : idleAt) attacks += string.Format(" %1:%2", place, n);
   int visible;
   foreach (ACR_Base base : ACR_Base.s_All)
    if (base.m_sOwner != m_sFaction && !base.m_sOwner.IsEmpty() && Visible(base)) visible++;
+  attacks += string.Format(" | support budget %1", SupportBudget());
   PrintFormat("[ACR] AI %1 status: %2 squads (free %3, defending %4, attacking %5, other %6), attacks:%7, enemy bases known %8, RP %9",
    m_sFaction, all.Count(), nFree, nDefend, nAttack, nOther, attacks, visible, m_Manager.m_Bases.GetRP(m_sFaction));
  }
@@ -904,12 +950,16 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : free)
   {
    if (squad.m_iAITask == ACR_EAITask.POSTED) continue;
+   // Nearest frontline base, but spread out: each squad already posted
+   // there counts as 400 m farther, so idle troops don't pile up in one place.
    ACR_Base nearest;
    float best = float.MAX;
+   float bestScore = float.MAX;
    foreach (ACR_Base base : front)
    {
     float d = vector.DistanceXZ(PositionOf(squad), base.GetOrigin());
-    if (d < best) { best = d; nearest = base; }
+    float score = d + PostedAt(base) * 400;
+    if (score < bestScore) { bestScore = score; best = d; nearest = base; }
    }
    squad.m_iAITask = ACR_EAITask.POSTED;
    if (!nearest || best < 150) continue;
@@ -917,6 +967,67 @@ class ACR_AICommander : Managed
    Travel(squad, nearest.GetOrigin(), true, 0);
    PrintFormat("[ACR] AI %1: %2 posted to %3", m_sFaction, squad.GetName(), nearest.m_sName);
   }
+ }
+
+ // A staging point around the target, as close to the wanted direction as
+ // possible, that is dry, has a dry run in, and stays clear of every other
+ // enemy base we know of (forming up next to one drags the force into a fight
+ // it didn't plan).
+ protected bool StagingPoint(ACR_Base target, vector dir, float ring, out vector point)
+ {
+  array<float> turns = {0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150, 180};
+  foreach (float turn : turns)
+  {
+   float angle = turn * Math.DEG2RAD;
+   vector rotated = Vector(dir[0] * Math.Cos(angle) - dir[2] * Math.Sin(angle), 0, dir[0] * Math.Sin(angle) + dir[2] * Math.Cos(angle));
+   vector candidate;
+   if (!ACR_Terrain.DryApproach(target.GetOrigin(), rotated, ring, candidate)) continue;
+   if (NearOtherEnemyBase(candidate, target)) continue;
+   point = candidate;
+   return true;
+  }
+  return ACR_Terrain.DryApproach(target.GetOrigin(), dir, ring, point);
+ }
+
+ protected bool NearOtherEnemyBase(vector point, ACR_Base except)
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base == except || base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base)) continue;
+   if (vector.DistanceXZ(point, base.GetOrigin()) < base.m_fRadius + STAGING_CLEARANCE) return true;
+  }
+  return false;
+ }
+
+ // Crews that ended up on foot next to their own intact, empty vehicle get
+ // back in (the game's AI sometimes bails out and leaves a BTR standing).
+ protected ref map<ACR_Squad, float> m_NextRecrew = new map<ACR_Squad, float>();
+ protected void Recrew()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  foreach (ACR_Squad squad : mine)
+  {
+   IEntity vehicle = squad.m_OwnVehicle;
+   if (!vehicle || squad.IsMounted() || squad.m_iAITask == ACR_EAITask.RESUPPLY) continue;
+   if (ACR_Logistics.Health(vehicle) < 0.25 || !ACR_Vehicles.IsEmpty(vehicle)) continue;
+   if (vector.DistanceXZ(PositionOf(squad), vehicle.GetOrigin()) > 400 || squad.KnownEnemies(120) > 0) continue;
+   float next;
+   if (m_NextRecrew.Find(squad, next) && now < next) continue;
+   m_NextRecrew.Set(squad, now + 90000);
+   if (squad.GetIn(vehicle.GetOrigin())) PrintFormat("[ACR] AI %1: %2 gets back into its vehicle", m_sFaction, squad.GetName());
+  }
+ }
+
+ protected int PostedAt(ACR_Base base)
+ {
+  int count;
+  array<ACR_Squad> mine = {};
+  MySquads(mine, true);
+  foreach (ACR_Squad squad : mine)
+   if (squad.m_iAITask == ACR_EAITask.POSTED && vector.DistanceXZ(PositionOf(squad), base.GetOrigin()) < base.m_fRadius + 150) count++;
+  return count;
  }
 
  // ---------------------------------------------------------------- 5. requisition
@@ -987,6 +1098,9 @@ class ACR_AICommander : Managed
   // power (rifle squads, MG teams, armed vehicles) wins over a swarm of cheap
   // two-man teams; specialist teams (engineers, sappers, medics, logistics,
   // recon) are rare and never doubled up.
+  // Keep a fire-support budget unless troops are needed more.
+  int keep = 0;
+  if (!UrgentTroops(mine.Count(), cap)) keep = SupportBudget();
   for (int n = 0; n < 2 && mine.Count() + n < cap; n++)
   {
    array<int> options = {};
@@ -994,7 +1108,7 @@ class ACR_AICommander : Managed
    float total;
    foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
    {
-    if (entry.m_iRemaining <= 0 || entry.m_iCost > data.m_iRP) continue;
+    if (entry.m_iRemaining <= 0 || entry.m_iCost > data.m_iRP - keep) continue;
     // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
     if (entry.m_bAircraft || entry.m_sVehicle.Contains("/Helicopters/") || entry.m_sVehicle.Contains("/Planes/")) continue;
     // Nor service vehicles (bought on need) or unarmed cars (nothing to fight with).

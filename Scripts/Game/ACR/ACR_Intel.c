@@ -12,6 +12,9 @@ class ACR_Contact : Managed
  float m_fSeen;        // world time of the newest sighting
  string m_sKey;        // squad or player, for the feed
  string m_sSpotter;
+ bool m_bByPlayer;     // seen by a player (not radioed: they saw it themselves)
+ ACR_Squad m_Squad;    // the enemy squad (or null)
+ IEntity m_Body;       // ...or one soldier of a group we don't manage
 }
 
 class ACR_Intel : Managed
@@ -32,11 +35,21 @@ class ACR_Intel : Managed
  ref map<IEntity, vector> m_SeenAt = new map<IEntity, vector>();
  ref map<IEntity, float> m_SeenTime = new map<IEntity, float>();
  protected ref map<IEntity, string> m_SeenBy = new map<IEntity, string>();
+ protected ref map<IEntity, bool> m_SeenByPlayer = new map<IEntity, bool>();
+ protected ref array<string> m_Radio = {};
+ protected float m_fNextRadio;
+ static const float RADIO_GAP_MS = 15000;   // at most one radio report per side this often
+ static const int RADIO_QUEUE = 3;          // older unsent reports are dropped
  protected ref map<string, float> m_Reported = new map<string, float>();
  ref array<string> m_Feed = {};
  ref array<float> m_FeedTime = {};
  ref array<ref ACR_Contact> m_Contacts = {};
  protected int m_iTicks;
+ // Our own empty vehicles that someone of ours can see (or saw), for the map.
+ static const float VEHICLE_SIGHT = 400;          // m from any of our soldiers
+ static const float VEHICLE_MEMORY_MS = 600000;   // last known spot kept 10 min
+ ref map<IEntity, vector> m_VehicleAt = new map<IEntity, vector>();
+ ref map<IEntity, float> m_VehicleSeen = new map<IEntity, float>();
 
  void ACR_Intel(ACR_Manager manager, string faction)
  {
@@ -52,12 +65,13 @@ class ACR_Intel : Managed
   return affiliation.GetAffiliatedFaction().GetFactionKey();
  }
 
- protected void Note(IEntity enemy, float now, string spotter)
+ protected void Note(IEntity enemy, float now, string spotter, bool byPlayer = false)
  {
   if (!enemy || !ACR_Respawn.IsAlive(enemy)) return;
   m_SeenAt.Set(enemy, enemy.GetOrigin());
   m_SeenTime.Set(enemy, now);
   m_SeenBy.Set(enemy, spotter);
+  m_SeenByPlayer.Set(enemy, byPlayer);
  }
 
  // Called every second by the manager.
@@ -105,6 +119,7 @@ class ACR_Intel : Managed
   }
   // 3. Our players' eyes (every 2 s): enemies in range with a clear line of sight.
   if (m_iTicks % 2 == 0) PlayerSightings(players, now);
+  else TrackVehicles(players, now);
   // Forget the stale and the dead.
   array<IEntity> stale = {};
   foreach (IEntity enemy, float when : m_SeenTime)
@@ -114,6 +129,7 @@ class ACR_Intel : Managed
    m_SeenTime.Remove(gone);
    m_SeenAt.Remove(gone);
    m_SeenBy.Remove(gone);
+   m_SeenByPlayer.Remove(gone);
   }
   BuildContacts(now);
   Report(now);
@@ -153,9 +169,64 @@ class ACR_Intel : Managed
    {
     if (vector.Distance(eye.GetOrigin(), enemy.GetOrigin()) > PLAYER_RANGE) continue;
     if (!LineOfSight(eye, enemy)) continue;
-    Note(enemy, now, names[e]);
+    Note(enemy, now, names[e], true);
     break;
    }
+  }
+ }
+
+ // Our empty vehicles: known where one of our soldiers (or a base of ours) is
+ // near enough to keep an eye on them; otherwise the last seen spot, for a while.
+ protected void TrackVehicles(array<int> players, float now)
+ {
+  array<vector> eyes = {};
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (body && ACR_Respawn.IsAlive(body)) eyes.Insert(body.GetOrigin());
+   }
+  }
+  foreach (int id : players)
+  {
+   IEntity player = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
+   if (player && ACR_Respawn.IsAlive(player) && FactionKeyOf(player) == m_sFaction) eyes.Insert(player.GetOrigin());
+  }
+  array<IEntity> vehicles = {};
+  ACR_Vehicles.All(vehicles);
+  foreach (IEntity vehicle : vehicles)
+  {
+   bool ours = ACR_Vehicles.FactionOf(vehicle) == m_sFaction && ACR_Vehicles.IsEmpty(vehicle) && ACR_Logistics.Health(vehicle) > 0;
+   if (!ours)
+   {
+    m_VehicleAt.Remove(vehicle);
+    m_VehicleSeen.Remove(vehicle);
+    continue;
+   }
+   vector at = vehicle.GetOrigin();
+   bool seen = false;
+   foreach (ACR_Base base : ACR_Base.s_All)
+    if (base.m_sOwner == m_sFaction && vector.DistanceXZ(at, base.GetOrigin()) < base.m_fRadius + 50) { seen = true; break; }
+   if (!seen)
+    foreach (vector eye : eyes)
+     if (vector.DistanceXZ(at, eye) < VEHICLE_SIGHT) { seen = true; break; }
+   if (seen)
+   {
+    m_VehicleAt.Set(vehicle, at);
+    m_VehicleSeen.Set(vehicle, now);
+   }
+  }
+  array<IEntity> stale = {};
+  foreach (IEntity known, float when : m_VehicleSeen)
+   if (!known || now - when > VEHICLE_MEMORY_MS) stale.Insert(known);
+  foreach (IEntity gone : stale)
+  {
+   m_VehicleAt.Remove(gone);
+   m_VehicleSeen.Remove(gone);
   }
  }
 
@@ -216,6 +287,7 @@ class ACR_Intel : Managed
     {
      contact = new ACR_Contact();
      contact.m_sKey = "S" + squad.GetName();
+     contact.m_Squad = squad;
      contact.m_fSeen = -1;
     }
     contact.m_iCount++;
@@ -226,6 +298,7 @@ class ACR_Intel : Managed
      contact.m_fSeen = when;
      contact.m_Pos = m_SeenAt.Get(body);
      contact.m_sSpotter = m_SeenBy.Get(body);
+     contact.m_bByPlayer = m_SeenByPlayer.Get(body);
     }
    }
    if (contact) m_Contacts.Insert(contact);
@@ -244,6 +317,7 @@ class ACR_Intel : Managed
     other.m_sKey = "E" + body.GetID();
     if (group) other.m_sKey = "G" + group.GetID();
     other.m_fSeen = -1;
+    other.m_Body = body;
     m_Contacts.Insert(other);
     if (group) byGroup.Insert(group, other);
    }
@@ -255,6 +329,7 @@ class ACR_Intel : Managed
     other.m_fSeen = when;
     other.m_Pos = m_SeenAt.Get(body);
     other.m_sSpotter = m_SeenBy.Get(body);
+    other.m_bByPlayer = m_SeenByPlayer.Get(body);
    }
   }
  }
@@ -270,6 +345,11 @@ class ACR_Intel : Managed
  {
   IEntity vehicle = ACR_Transport.VehicleOf(body);
   if (!vehicle) return KIND_INFANTRY;
+  return VehicleKind(vehicle);
+ }
+
+ static int VehicleKind(IEntity vehicle)
+ {
   string name = "";
   if (vehicle.GetPrefabData()) name = vehicle.GetPrefabData().GetPrefabName();
   name.ToUpper();
@@ -277,6 +357,56 @@ class ACR_Intel : Managed
   if (name.Contains("BTR") || name.Contains("BMP") || name.Contains("BRDM") || name.Contains("LAV") || name.Contains("T72") || name.Contains("M1A") || name.Contains("M2A") || name.Contains("TRACKED")) return KIND_ARMOUR;
   if (ACR_Squad.HasTurret(vehicle)) return KIND_ARMED;
   return KIND_VEHICLE;
+ }
+
+ // Map symbol for a kind (shared by enemy contacts and our vehicle crews).
+ static int IconOf(int kind)
+ {
+  if (kind == KIND_AIR) return EMilitarySymbolIcon.ROTARY_WING;
+  if (kind == KIND_ARMOUR) return EMilitarySymbolIcon.ARMOR;
+  if (kind == KIND_ARMED) return EMilitarySymbolIcon.MOTORIZED | EMilitarySymbolIcon.MACHINEGUN;
+  if (kind == KIND_VEHICLE) return EMilitarySymbolIcon.MOTORIZED;
+  return EMilitarySymbolIcon.INFANTRY;
+ }
+
+ static int DimensionOf(int kind)
+ {
+  if (kind == KIND_AIR) return EMilitarySymbolDimension.AIR;
+  return EMilitarySymbolDimension.LAND;
+ }
+
+ // Freshest sighting of an enemy squad (or a lone soldier).
+ bool LastKnown(ACR_Squad squad, IEntity body, out vector position, out float when)
+ {
+  when = -1;
+  if (squad)
+  {
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity member = agent.GetControlledEntity();
+    float seen;
+    if (!member || !m_SeenTime.Find(member, seen) || seen <= when) continue;
+    when = seen;
+    position = m_SeenAt.Get(member);
+   }
+  }
+  else if (body && m_SeenTime.Find(body, when)) position = m_SeenAt.Get(body);
+  return when >= 0;
+ }
+
+ // The known enemy group nearest to a point (within radius).
+ ACR_Contact ContactNear(vector point, float radius)
+ {
+  ACR_Contact best;
+  float bestDistance = radius;
+  foreach (ACR_Contact contact : m_Contacts)
+  {
+   float d = vector.DistanceXZ(contact.m_Pos, point);
+   if (d < bestDistance) { bestDistance = d; best = contact; }
+  }
+  return best;
  }
 
  static string Describe(int kind, int count)
@@ -317,7 +447,47 @@ class ACR_Intel : Managed
    string spotter = contact.m_sSpotter;
    if (spotter.IsEmpty()) spotter = "Contact";
    AddFeed(now, string.Format("%1: %2 %3", spotter, Describe(contact.m_iKind, contact.m_iCount), Place(contact.m_Pos)));
+   if (!contact.m_bByPlayer) QueueRadio(string.Format("%1: contact, %2, %3.", spotter, Describe(contact.m_iKind, contact.m_iCount), Relative(contact.m_Pos)));
   }
+ }
+
+ // Radio-style position: "200 m E of Barracks", "at Barracks", or a grid.
+ string Relative(vector pos)
+ {
+  ACR_Base nearest;
+  float best = 2000;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base.IsVisibleTo(m_sFaction)) continue;
+   float d = vector.DistanceXZ(base.GetOrigin(), pos);
+   if (d < best) { best = d; nearest = base; }
+  }
+  if (!nearest) return Place(pos);
+  if (best < nearest.m_fRadius + 40) return "at " + nearest.m_sName;
+  int metres = Math.Round(best / 50) * 50;
+  vector dir = pos - nearest.GetOrigin();
+  float angle = Math.Atan2(dir[0], dir[2]) * Math.RAD2DEG; // 0 = north, 90 = east
+  if (angle < 0) angle += 360;
+  int sector = Math.Round(angle / 45);
+  if (sector >= 8) sector = 0;
+  array<string> compass = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+  return string.Format("%1 m %2 of %3", metres, compass[sector], nearest.m_sName);
+ }
+
+ protected void QueueRadio(string line)
+ {
+  m_Radio.Insert(line);
+  while (m_Radio.Count() > RADIO_QUEUE) m_Radio.RemoveOrdered(0);
+ }
+
+ // Next radio report to send now, or "" (rate-limited so chat never floods).
+ string PopRadio(float now)
+ {
+  if (m_Radio.IsEmpty() || now < m_fNextRadio) return "";
+  string line = m_Radio[0];
+  m_Radio.RemoveOrdered(0);
+  m_fNextRadio = now + RADIO_GAP_MS;
+  return line;
  }
 
  void AddFeed(float now, string line)

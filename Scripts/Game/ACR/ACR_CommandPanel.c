@@ -40,6 +40,7 @@ class ACR_CommandPanel : Managed
  Widget m_Root;
  protected Widget m_FeedRoot;
  protected TextWidget m_FeedText;
+ protected ref array<TextWidget> m_FeedLines = {};
  protected string m_sFeedShown = "-";
  protected Widget m_Content;
  protected TextWidget m_Status;
@@ -159,7 +160,7 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetAnchorMin(m_FeedRoot, 0, 0);
   FrameSlot.SetAnchorMax(m_FeedRoot, 0, 0);
   FrameSlot.SetAlignment(m_FeedRoot, 0, 0);
-  FrameSlot.SetPos(m_FeedRoot, 24, 96);
+  FrameSlot.SetPos(m_FeedRoot, 110, 96); // clear of the map toolbar on the left
   FrameSlot.SetSizeToContent(m_FeedRoot, true);
   m_FeedRoot.SetZOrder(1000);
   Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(0.02, 0.13, 0.30, 0.80), 0, m_FeedRoot);
@@ -171,25 +172,34 @@ class ACR_CommandPanel : Managed
   AlignableSlot.SetPadding(size, 12, 8, 12, 10);
   Widget column = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, size);
   AddText(column, LAYOUT_HEADING, "INTEL");
+  // One text widget per line: a single multi-line text doesn't grow the
+  // box, so later lines ran off the bottom of the background.
   m_FeedText = AddText(column, LAYOUT_TEXT, "No contacts reported");
+  m_FeedLines.Clear();
+  for (int i = 0; i < 6; i++)
+  {
+   TextWidget line = AddText(column, LAYOUT_TEXT, "");
+   if (!line) continue;
+   line.SetVisible(false);
+   m_FeedLines.Insert(line);
+  }
  }
 
  void SetFeed(array<string> lines)
  {
   if (!m_FeedText) return;
-  string text = "No contacts reported";
-  if (lines && !lines.IsEmpty())
+  string key = "";
+  if (lines) foreach (string l : lines) key += l + "|";
+  if (key == m_sFeedShown) return;
+  m_sFeedShown = key;
+  bool none = !lines || lines.IsEmpty();
+  m_FeedText.SetVisible(none);
+  foreach (int i, TextWidget line : m_FeedLines)
   {
-   text = "";
-   foreach (int i, string line : lines)
-   {
-    if (i > 0) text += "\n";
-    text += line;
-   }
+   bool used = !none && i < lines.Count();
+   line.SetVisible(used);
+   if (used) line.SetText(lines[i]);
   }
-  if (text == m_sFeedShown) return;
-  m_sFeedShown = text;
-  m_FeedText.SetText(text);
  }
 
  protected TextWidget AddText(Widget parent, ResourceName layout, string text)
@@ -397,6 +407,7 @@ class ACR_CommandPanel : Managed
   if (m_FeedRoot) m_FeedRoot.RemoveFromHierarchy();
   m_FeedRoot = null;
   m_FeedText = null;
+  m_FeedLines.Clear();
   m_Actions.Clear();
   m_ModeButtons.Clear();
   m_EntryButtons.Clear();

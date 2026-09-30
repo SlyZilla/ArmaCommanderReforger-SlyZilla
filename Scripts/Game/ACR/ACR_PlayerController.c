@@ -35,6 +35,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (m_State == 1) color = new Color(1, 0.75, 0.1, 1);
   if (m_State == 2) color = new Color(0.5, 0.5, 0.5, 1);
   if (m_State == 3) color = new Color(1, 0.25, 0.2, 1);   // spotted enemy
+  if (m_State == 4) color = new Color(0.65, 0.8, 0.95, 1); // our empty vehicle
   if (m_Original) color = new Color(0.2, 1, 0.3, 1);
   if (m_Selected) color = new Color(1, 1, 1, 1);
   m_MarkerWidgetComp.SetColor(color);
@@ -47,6 +48,14 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   if (!pc) return;
   pc.ACR_MarkUiClick();
+  // Deploying: a click on a squad standing on a base counts as a click on the base.
+  if (m_BaseIndex < 0 && pc.ACR_DeployPending())
+  {
+   int pos[2];
+   GetWorldPos(pos);
+   pc.ACR_ClickBaseAt(pos[0], pos[1]);
+   return;
+  }
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
   else if (m_BaseIndex >= 0) pc.ACR_ClickBase(m_Label);
   else pc.ACR_SelectGroup(m_GroupId);
@@ -410,7 +419,9 @@ modded class SCR_PlayerController
    foreach (ACR_UnitMarker baseMarker : m_ACR_BaseMarkers) manager.ACR_RemoveMarker(baseMarker);
    foreach (ACR_UnitMarker zoneMarker : m_ACR_ZoneMarkers) manager.ACR_RemoveMarker(zoneMarker);
    foreach (ACR_UnitMarker contactMarker : m_ACR_ContactMarkers) manager.ACR_RemoveMarker(contactMarker);
+   foreach (ACR_UnitMarker vehicleMarker : m_ACR_VehicleMarkers) manager.ACR_RemoveMarker(vehicleMarker);
   }
+  m_ACR_VehicleMarkers.Clear();
   m_ACR_ContactMarkers.Clear();
   m_ACR_ZoneMarkers.Clear();
   m_ACR_BaseMarkers.Clear();
@@ -495,6 +506,7 @@ modded class SCR_PlayerController
   ACR_UpdateBaseMarkers(manager);
   ACR_UpdateZoneMarkers(manager);
   ACR_UpdateContactMarkers(manager);
+  ACR_UpdateVehicleMarkers(manager);
   if (m_ACR_Panel) m_ACR_Panel.SetFeed(m_ACR_Feed);
  }
  void ACR_UpdateGroupMarkers(SCR_MapMarkerManagerComponent manager)
@@ -844,6 +856,16 @@ modded class SCR_PlayerController
   if (System.GetTickCount() - m_ACR_LastUiClick < 400) return;
   if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) return;
   if (ACR_ModifierHeld("ACR_MapShift") || ACR_ModifierHeld("ACR_MapCtrl")) return;
+  if (m_ACR_PendingEntry >= 0)
+  {
+   SCR_MapEntity deployMap = SCR_MapEntity.GetMapInstance();
+   float dx, dz;
+   if (deployMap)
+   {
+    deployMap.GetMapCursorWorldPosition(dx, dz);
+    if (ACR_ClickBaseAt(dx, dz)) return;
+   }
+  }
   m_ACR_SelectedGroups.Clear();
   m_ACR_SelectedGroup = RplId.Invalid();
   m_ACR_SelectedBase = "";
@@ -1024,6 +1046,16 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.LZ) command = ACR_ERequest.ORDER_SET_LZ;
   if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) command = ACR_ERequest.ORDER_RIDE;
   vector target = Vector(x, 0, z);
+  // Right-click on a spotted enemy: hunt it down.
+  if (m_ACR_CursorMode == ACR_ECursorMode.MOVE && !append)
+  {
+   int hunted = ACR_ContactUnderCursor(mapEntity, x, z);
+   if (hunted >= 0)
+   {
+    command = ACR_ERequest.ORDER_HUNT;
+    target = m_ACR_ContactPositions[hunted];
+   }
+  }
   bool spread = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_RIDE;
   // Several squads: a loose line across the direction of travel, 40 m apart,
   // each keeping its place in the line (sorted left to right).
@@ -1093,6 +1125,7 @@ modded class SCR_PlayerController
   if (kind == 1) color = new Color(0.35, 0.90, 0.40, alpha);      // defend: green
   if (kind == 2) color = new Color(1.00, 0.85, 0.25, alpha);      // get in: yellow
   if (kind == 3) color = new Color(1.00, 0.55, 0.20, alpha);      // get out: orange
+  if (kind == 4) color = new Color(1.00, 0.25, 0.20, alpha);      // hunt: red
   return color.PackToInt();
  }
 
@@ -1217,22 +1250,109 @@ modded class SCR_PlayerController
  }
 
  int ACR_ContactCount() { return m_ACR_ContactPositions.Count(); }
+
+ // Index of the enemy contact marker within 16 px of the map cursor, or -1.
+ protected int ACR_ContactUnderCursor(SCR_MapEntity mapEntity, float x, float z)
+ {
+  int cx, cy;
+  mapEntity.WorldToScreen(x, z, cx, cy, true);
+  int best = -1;
+  float bestPixels = 16;
+  foreach (int i, vector pos : m_ACR_ContactPositions)
+  {
+   int px, py;
+   mapEntity.WorldToScreen(pos[0], pos[2], px, py, true);
+   float dx = px - cx;
+   float dy = py - cy;
+   float pixels = Math.Sqrt(dx * dx + dy * dy);
+   if (pixels < bestPixels) { bestPixels = pixels; best = i; }
+  }
+  return best;
+ }
+ int ACR_VehicleCount() { return m_ACR_VehiclePositions.Count(); }
+
+ // Our side's empty vehicles (fog of war: only those our people can see,
+ // or their last known spot for a while).
+ protected ref array<vector> m_ACR_VehiclePositions = {};
+ protected ref array<string> m_ACR_VehicleNames = {};
+ protected ref array<int> m_ACR_VehicleAges = {};
+ protected ref array<ref ACR_UnitMarker> m_ACR_VehicleMarkers = {};
+
+ void ACR_SendVehicles(array<vector> positions, array<string> names, array<int> ages)
+ {
+  Rpc(ACR_VehiclesOwner, positions, names, ages);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_VehiclesOwner(array<vector> positions, array<string> names, array<int> ages)
+ {
+  m_ACR_VehiclePositions.Copy(positions);
+  m_ACR_VehicleNames.Copy(names);
+  m_ACR_VehicleAges.Copy(ages);
+ }
+
+ protected void ACR_UpdateVehicleMarkers(SCR_MapMarkerManagerComponent manager)
+ {
+  if (m_ACR_VehicleMarkers.Count() != m_ACR_VehiclePositions.Count())
+  {
+   foreach (ACR_UnitMarker old : m_ACR_VehicleMarkers) manager.ACR_RemoveMarker(old);
+   m_ACR_VehicleMarkers.Clear();
+   for (int i = 0; i < m_ACR_VehiclePositions.Count(); i++)
+   {
+    ACR_UnitMarker marker = new ACR_UnitMarker();
+    marker.m_bContact = true; // clicks go through: right-click next to it for Get in
+    marker.SetType(SCR_EMapMarkerType.SIMPLE);
+    marker.SetMarkerConfigID(1);
+    marker.SetCanBeRemovedByOwner(false);
+    m_ACR_VehicleMarkers.Insert(marker);
+    manager.InsertStaticMarker(marker, true);
+    marker.SetMarkerOwnerID(-1);
+   }
+  }
+  foreach (int v, ACR_UnitMarker vehicleMarker : m_ACR_VehicleMarkers)
+  {
+   // The server sends the game's name key (e.g. "#AR-Vehicle_..._Name"),
+   // maybe followed by ", crew: ...": translate the key here on the client.
+   string raw = m_ACR_VehicleNames[v];
+   string rest = "";
+   int comma = raw.IndexOf(",");
+   if (comma >= 0)
+   {
+    rest = raw.Substring(comma, raw.Length() - comma);
+    raw = raw.Substring(0, comma);
+   }
+   if (raw.StartsWith("#")) raw = WidgetManager.Translate(raw);
+   string label = raw + " (empty)" + rest;
+   int age = m_ACR_VehicleAges[v];
+   if (age > 20)
+   {
+    int minutes = age / 60;
+    if (minutes < 1) label += ", seen " + age.ToString() + " s ago";
+    else label += ", seen " + minutes.ToString() + " min ago";
+   }
+   vehicleMarker.m_Label = label;
+   vehicleMarker.m_State = 4;
+   vector pos = m_ACR_VehiclePositions[v];
+   vehicleMarker.SetWorldPos(pos[0], pos[2]);
+   vehicleMarker.RefreshStyle();
+  }
+ }
+ int m_ACR_RadioCount; // received radio calls (tests)
+
+ void ACR_SendRadio(string message)
+ {
+  Rpc(ACR_RadioOwner, message);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_RadioOwner(string message)
+ {
+  m_ACR_RadioCount++;
+  SCR_ChatPanelManager chat = SCR_ChatPanelManager.GetInstance();
+  if (chat) chat.OnNewMessage("[Radio] " + message);
+ }
  int ACR_FeedCount() { return m_ACR_Feed.Count(); }
 
- protected static int ACR_ContactIcon(int kind)
- {
-  if (kind == ACR_Intel.KIND_AIR) return EMilitarySymbolIcon.ROTARY_WING;
-  if (kind == ACR_Intel.KIND_ARMOUR) return EMilitarySymbolIcon.ARMOR;
-  if (kind == ACR_Intel.KIND_ARMED) return EMilitarySymbolIcon.MOTORIZED | EMilitarySymbolIcon.MACHINEGUN;
-  if (kind == ACR_Intel.KIND_VEHICLE) return EMilitarySymbolIcon.MOTORIZED;
-  return EMilitarySymbolIcon.INFANTRY;
- }
-
- protected static int ACR_ContactDimension(int kind)
- {
-  if (kind == ACR_Intel.KIND_AIR) return EMilitarySymbolDimension.AIR;
-  return EMilitarySymbolDimension.LAND;
- }
+ protected static int ACR_ContactIcon(int kind) { return ACR_Intel.IconOf(kind); }
+ protected static int ACR_ContactDimension(int kind) { return ACR_Intel.DimensionOf(kind); }
 
  protected void ACR_UpdateContactMarkers(SCR_MapMarkerManagerComponent manager)
  {
@@ -1504,6 +1624,25 @@ modded class SCR_PlayerController
  }
 
  // Base marker clicked: deploy the armed purchase there, otherwise select the base.
+ bool ACR_DeployPending() { return m_ACR_PendingEntry >= 0; }
+
+ // Deploy (or select) at the base whose ring contains this map point.
+ bool ACR_ClickBaseAt(float x, float z)
+ {
+  int best = -1;
+  float bestDistance = float.MAX;
+  foreach (int i, vector pos : m_ACR_BasePositions)
+  {
+   float d = vector.DistanceXZ(pos, Vector(x, 0, z));
+   float reach = 60;
+   if (i < m_ACR_BaseRadii.Count()) reach = Math.Max(reach, m_ACR_BaseRadii[i]);
+   if (d < reach && d < bestDistance) { bestDistance = d; best = i; }
+  }
+  if (best < 0) return false;
+  ACR_ClickBase(m_ACR_BaseNames[best]);
+  return true;
+ }
+
  void ACR_ClickBase(string label)
  {
   if (m_ACR_PendingEntry >= 0)

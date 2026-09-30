@@ -21,3 +21,5 @@ soak|-acrSoakTest 1|1320|Worlds/ACR_Arland.ent
 side|-acrSideTest 1|90
 intel|-acrIntelTest 1|100
 stalled|-acrStalledTest 1|260
+hunt|-acrHuntTest 1|110
+launcher|-acrLauncherTest 1|80

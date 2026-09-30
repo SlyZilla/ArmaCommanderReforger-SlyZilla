@@ -10,6 +10,10 @@
 # tools\Publish-Release.ps1 exactly like double-clicking Publish-Release.cmd
 # (uploads the already-built dist\ACActual-Arland.zip with your GitHub login).
 #
+# A request of the form 'srv:<preset>' runs the test on a hidden dedicated
+# server instead (no game window, no focus stolen, you can keep using the PC
+# or even play at the same time; it uses its own profile and port).
+#
 # Close this window (or press Ctrl+C) to stop it.
 
 param([string]$GamePath)
@@ -24,6 +28,9 @@ $Presets = @{
 }
 
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
+. (Join-Path $ProjectRoot 'ACR-Find.ps1')
+$TestServerProfile = Join-Path $ProjectRoot '.local-testserver'
+$script:TestServerPid = 0
 $AddonsDir   = Split-Path $ProjectRoot -Parent
 $RequestDir  = Join-Path $ProjectRoot '.acr-requests'
 $ProfileDir  = Join-Path $ProjectRoot '.local-game'
@@ -98,6 +105,55 @@ function Invoke-Publish($id) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Publish finished: $outcome" -ForegroundColor Green
 }
 
+# Runs a test preset on a hidden dedicated server (own profile, port 2302).
+function Invoke-ServerTest($id, $preset, $config) {
+    $time = Get-Date -Format 'HH:mm:ss'
+    if ($config.Workbench) { Write-Result $id @('status=refused', 'reason=inspect cannot run on the server'); return }
+    # Never two test servers at once (an old one is closed first).
+    if ($script:TestServerPid) { Stop-Process -Id $script:TestServerPid -ErrorAction SilentlyContinue; $script:TestServerPid = 0 }
+    $server = Find-SteamApp 'Arma Reforger Server' 'ArmaReforgerServer.exe'
+    if (!$server) { Write-Result $id @('status=refused', 'reason=Arma Reforger Server not found'); return }
+    $world = 'Worlds/ACR_TestRange.ent'
+    if ($config.World) { $world = $config.World }
+    New-Item -ItemType Directory -Force $TestServerProfile | Out-Null
+    $serverArgs = '-server "' + $world + '" -addonsDir "' + $AddonsDir + '" -addons AC230926A0010001 -profile "' + $TestServerProfile + '" -bindPort 2302 -maxFPS 60 -noBackend ' + $config.Flags
+    Write-Host "[$time] Running '$preset' on a hidden test server..." -ForegroundColor Cyan
+    $started = Get-Date
+    $proc = Start-Process -FilePath $server -ArgumentList $serverArgs -WorkingDirectory (Split-Path $server -Parent) -WindowStyle Hidden -PassThru
+    $script:TestServerPid = $proc.Id
+    $serverLogs = Join-Path $TestServerProfile 'logs'
+    $outcome = 'timeout'
+    $log = $null
+    while ($true) {
+        Start-Sleep -Seconds 3
+        if (!$log -and (Test-Path -LiteralPath $serverLogs)) {
+            $dir = Get-ChildItem -LiteralPath $serverLogs -Directory | Where-Object { $_.CreationTime -ge $started.AddSeconds(-5) } |
+                   Sort-Object CreationTime -Descending | Select-Object -First 1
+            if ($dir) { $log = Join-Path $dir.FullName 'console.log' }
+        }
+        if ($proc.HasExited) { $outcome = 'server exited'; break }
+        if ($log -and (Test-Path -LiteralPath $log)) {
+            $text = Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue
+            $text = ($text -split "`n" | Where-Object { $_ -notmatch 'SCR_InstigatorContextData: instigatorType' }) -join "`n"
+            $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_AIProcessFailedMovementResult'", 'vanilla AI null-leader exception (ignored)')
+            $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: No suppression volume provided!", 'vanilla suppression exception (ignored)')
+            if ($text -match 'SCRIPT\s+\(E\)') { Start-Sleep -Seconds 3; $outcome = 'script error'; break }
+            if ($text -match $config.DoneWhen) { Start-Sleep -Seconds 2; $outcome = 'completed'; break }
+        }
+        if (((Get-Date) - $started).TotalSeconds -gt ($config.TimeoutSec + 30)) { break }
+    }
+    if (!$proc.HasExited) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue }
+    $script:TestServerPid = 0
+    $result = @("status=$outcome", "preset=srv:$preset", "started=$($started.ToString('s'))", "seconds=$([int]((Get-Date) - $started).TotalSeconds)", "log=$log", '---')
+    if ($log -and (Test-Path -LiteralPath $log)) {
+        $result += Get-Content -LiteralPath $log | Where-Object { $_ -match '\[ACR\]|SCRIPT\s+\(E\)|SCRIPT\s+\(W\).*ACR|Can.t compile' }
+    } else {
+        $result += 'No server console.log was found for this run.'
+    }
+    Write-Result $id $result
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 'srv:$preset' finished: $outcome" -ForegroundColor Green
+}
+
 function Write-Result($id, $lines) {
     $path = Join-Path $RequestDir "$id.result.txt"
     $lines | Set-Content -LiteralPath $path -Encoding UTF8
@@ -106,6 +162,8 @@ function Write-Result($id, $lines) {
 function Invoke-Request($file) {
     $id = [IO.Path]::GetFileNameWithoutExtension($file.Name)
     $preset = (Get-Content -LiteralPath $file.FullName -Raw).Trim().ToLower()
+    $onServer = $false
+    if ($preset.StartsWith('srv:')) { $onServer = $true; $preset = $preset.Substring(4) }
     Remove-Item -LiteralPath $file.FullName
     $time = Get-Date -Format 'HH:mm:ss'
     # Extra test presets from tools\test-presets.txt ("name|-acrSomethingTest 1|timeoutSec"),
@@ -128,6 +186,7 @@ function Invoke-Request($file) {
         Write-Result $id @("status=refused", "reason=unknown preset '$preset'")
         return
     }
+    if ($onServer) { Invoke-ServerTest $id $preset $Presets[$preset]; return }
     if (Get-Process -Name 'ArmaReforgerSteam', 'ArmaReforger_BE' -ErrorAction SilentlyContinue) {
         Write-Host "[$time] Refused '$preset': Reforger is already running" -ForegroundColor Yellow
         Write-Result $id @("status=refused", "reason=Reforger is already running")

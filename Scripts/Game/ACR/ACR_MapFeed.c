@@ -59,6 +59,22 @@ class ACR_MapFeed
    feed.Insert("[" + when + "] " + line);
   }
   pc.ACR_SendIntel(positions, kinds, counts, ages, feed);
+  // Our empty vehicles we know about (for Get in orders).
+  array<vector> vehiclePositions = {};
+  array<string> vehicleNames = {};
+  array<int> vehicleAges = {};
+  foreach (IEntity vehicle, float seen : intel.m_VehicleSeen)
+  {
+   if (!vehicle) continue;
+   vehiclePositions.Insert(intel.m_VehicleAt.Get(vehicle));
+   string vehicleName = ACR_Vehicles.NameOf(vehicle);
+   foreach (ACR_Squad crew : manager.m_Squads)
+    if (crew.m_OwnVehicle == vehicle) { vehicleName += ", crew: " + crew.GetName(); break; }
+   vehicleNames.Insert(vehicleName);
+   int vehicleAge = (now - seen) / 1000;
+   vehicleAges.Insert(vehicleAge);
+  }
+  pc.ACR_SendVehicles(vehiclePositions, vehicleNames, vehicleAges);
  }
 
  // Capture bar for a player standing in a base ring (empty label = hide).
@@ -200,6 +216,17 @@ class ACR_MapFeed
     icons = symbol.GetIcons();
     dimension = symbol.GetDimension();
     amplifier = symbol.GetAmplifier();
+   }
+   // Vehicle crews show their vehicle's symbol, mounted or not; the label
+   // says when they are out of it.
+   IEntity crewVehicle;
+   if (squad) crewVehicle = squad.MarkVehicle();
+   if (crewVehicle)
+   {
+    int vehicleKind = ACR_Intel.VehicleKind(crewVehicle);
+    icons = ACR_Intel.IconOf(vehicleKind);
+    dimension = ACR_Intel.DimensionOf(vehicleKind);
+    if (squad.m_OwnVehicle == crewVehicle && !squad.InOwnVehicle()) name += " (dismounted)";
    }
    leaders.Insert(id);
    positions.Insert(leader.GetOrigin());

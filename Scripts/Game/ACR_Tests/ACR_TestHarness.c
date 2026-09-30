@@ -29,6 +29,8 @@ class ACR_TestHarness : Managed
  static const int MODE_SIDE = 22;
  static const int MODE_INTEL = 23;
  static const int MODE_STALLED = 24;
+ static const int MODE_HUNT = 25;
+ static const int MODE_LAUNCHER = 26;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -72,6 +74,8 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrSideTest", flag)) mode = MODE_SIDE;
   if (System.GetCLIParam("acrIntelTest", flag)) mode = MODE_INTEL;
   if (System.GetCLIParam("acrStalledTest", flag)) mode = MODE_STALLED;
+  if (System.GetCLIParam("acrHuntTest", flag)) mode = MODE_HUNT;
+  if (System.GetCLIParam("acrLauncherTest", flag)) mode = MODE_LAUNCHER;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -85,6 +89,34 @@ class ACR_TestHarness : Managed
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager || !m_Range) return null;
   return manager.FindSquadByGroup(m_Range.m_Group);
+ }
+
+ // Dedicated-server runs have no local player: the tests look through Alpha's
+ // eyes instead, and client-side checks report -1.
+ IEntity Eye(SCR_PlayerController pc)
+ {
+  if (pc && pc.GetControlledEntity()) return pc.GetControlledEntity();
+  ACR_Squad alpha = Squad();
+  if (alpha) return alpha.GetAnchor();
+  return null;
+ }
+ int ClientContacts(SCR_PlayerController pc)
+ {
+  int n = -1;
+  if (pc) n = pc.ACR_ContactCount();
+  return n;
+ }
+ int ClientFeed(SCR_PlayerController pc)
+ {
+  int n = -1;
+  if (pc) n = pc.ACR_FeedCount();
+  return n;
+ }
+ int ClientVehicles(SCR_PlayerController pc)
+ {
+  int n = -1;
+  if (pc) n = pc.ACR_VehicleCount();
+  return n;
  }
 
  vector Ground(string point) { return ACR_Manager.Ground(point.ToVector()); }
@@ -116,6 +148,8 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_CLEANUP) { TestCleanup(); return; }
   if (m_Mode == MODE_SIDE) { TestSide(); return; }
   if (m_Mode == MODE_INTEL) { TestIntel(); return; }
+  if (m_Mode == MODE_HUNT) { TestHunt(); return; }
+  if (m_Mode == MODE_LAUNCHER) { TestLauncher(); return; }
   if (m_Mode == MODE_STALLED)
   {
    // The tactics scenario with attack time limits cut to seconds: attacks
@@ -867,7 +901,7 @@ class ACR_TestHarness : Managed
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!pc || !manager) return;
+  if (!manager) return;
   if (m_Ticks == 1)
   {
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
@@ -877,7 +911,7 @@ class ACR_TestHarness : Managed
   {
    foreach (ACR_Base held : ACR_Base.s_All) if (held.m_sName == "Crossroads") held.m_sOwner = "US";
   }
-  if (m_Ticks == 5) pc.ACR_Request(ACR_ERequest.LEAVE_COMMAND);
+  if (m_Ticks == 5 && pc) pc.ACR_Request(ACR_ERequest.LEAVE_COMMAND);
   if (m_Ticks == 3)
   {
    manager.m_Bases.GetFaction("US").m_iRP = 300;
@@ -1206,11 +1240,13 @@ class ACR_TestHarness : Managed
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!pc || !manager) return;
+  if (!manager) return;
   if (m_Ticks == 1)
   {
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
    if (soviets) soviets.m_bAICommander = false;
+   ACR_FactionSettings ours = ACR_FactionSettings.Find("US");
+   if (ours) ours.m_bAICommander = false; // (on a dedicated server nobody holds US command)
   }
   if (m_Ticks == 5)
   {
@@ -1338,7 +1374,7 @@ class ACR_TestHarness : Managed
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!pc || !manager || !manager.m_Cleanup) return;
+  if (!manager || !manager.m_Cleanup) return;
   if (m_Ticks == 1)
   {
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
@@ -1364,7 +1400,8 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 40)
   {
    // Walk away: move the player's body 1.5 km off.
-   IEntity body = pc.GetControlledEntity();
+   IEntity body;
+   if (pc) body = pc.GetControlledEntity();
    if (body) body.SetOrigin(Ground("1320 0 1300"));
    Print("[ACR] CLEANUP player moved away");
   }
@@ -1411,7 +1448,7 @@ class ACR_TestHarness : Managed
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!pc || !manager) return;
+  if (!manager) return;
   ACR_Intel us = manager.IntelFor("US");
   ACR_Intel soviets = manager.IntelFor("USSR");
   if (m_Ticks == 2)
@@ -1430,7 +1467,7 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 12)
   {
    PrintFormat("[ACR] INTELTEST far: US contacts %1 (want 0)", us.m_Contacts.Count());
-   IEntity body = pc.GetControlledEntity();
+   IEntity body = Eye(pc);
    if (body && m_IntelEnemy)
    {
     vector p = body.GetOrigin();
@@ -1440,11 +1477,23 @@ class ACR_TestHarness : Managed
   if (m_Ticks == 20)
   {
    PrintFormat("[ACR] INTELTEST near: US contacts %1 (want >=1), feed %2, client contacts %3, client feed %4, USSR knows %5",
-    us.m_Contacts.Count(), us.m_Feed.Count(), pc.ACR_ContactCount(), pc.ACR_FeedCount(), soviets.m_Contacts.Count());
+    us.m_Contacts.Count(), us.m_Feed.Count(), ClientContacts(pc), ClientFeed(pc), soviets.m_Contacts.Count());
    foreach (string line : us.m_Feed) PrintFormat("[ACR] INTELTEST feed: %1", line);
    foreach (ACR_Contact c : us.m_Contacts) PrintFormat("[ACR] INTELTEST contact kind %1 count %2 at %3 by %4", c.m_iKind, c.m_iCount, c.m_Pos, c.m_sSpotter);
    foreach (ACR_Contact sc : soviets.m_Contacts) PrintFormat("[ACR] INTELTEST soviet contact %1 count %2 at %3", sc.m_sKey, sc.m_iCount, sc.m_Pos);
    foreach (IEntity seenBody, float t : soviets.m_SeenTime) PrintFormat("[ACR] INTELTEST soviet sees %1 squad %2", seenBody, manager.FindSquadBySoldier(seenBody) != null);
+  }
+  if (m_Ticks == 20)
+  {
+   manager.SendRadio("US", "Test: radio check.");
+   IEntity me = Eye(pc);
+   if (me) PrintFormat("[ACR] INTELTEST relative: %1 | %2", us.Relative(me.GetOrigin()), us.Relative(me.GetOrigin() + Vector(300, 0, 20)));
+  }
+  if (m_Ticks == 21 && pc) PrintFormat("[ACR] INTELTEST radio received by client: %1 (want >=1)", pc.m_ACR_RadioCount);
+  if (m_Ticks == 21)
+  {
+   PrintFormat("[ACR] INTELTEST our empty vehicles: server knows %1, client shows %2", us.m_VehicleSeen.Count(), ClientVehicles(pc));
+   foreach (IEntity v, vector at : us.m_VehicleAt) PrintFormat("[ACR] INTELTEST vehicle %1 at %2", ACR_Vehicles.NameOf(v), at);
   }
   if (m_Ticks == 22) Print("[ACR] TEST COMPLETE");
  }
@@ -1460,5 +1509,109 @@ class ACR_TestHarness : Managed
    if (body) body.SetOrigin(Ground((center + Vector(i * 3, 0, 0)).ToString(false)));
   }
   squad.Halt("Test");
+ }
+ // ---------------------------------------------------------------- -acrHuntTest
+ // A Soviet team is spotted 200 m from the player. Alpha is ordered to hunt it
+ // (through the same request a right-click on its marker sends). Alpha must
+ // head for it; once the team is dead the hunt must end on its own.
+ protected ACR_Squad m_HuntTarget;
+ protected int m_iHuntOrderedAt;
+ void TestHunt()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  ACR_Squad alpha = manager.FindSquadByGroup(m_Range.m_Group);
+  if (m_Ticks == 2)
+  {
+   ACR_FactionSettings sov = ACR_FactionSettings.Find("USSR");
+   if (sov) sov.m_bAICommander = false;
+   ACR_FactionSettings us = ACR_FactionSettings.Find("US");
+   if (us) us.m_bAICommander = false;
+  }
+  if (m_Ticks == 6)
+  {
+   foreach (ACR_Squad squad : manager.m_Squads)
+    if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == "USSR" && squad.CountAlive() > 0) { m_HuntTarget = squad; break; }
+   IEntity body = Eye(pc);
+   if (body && m_HuntTarget) MoveSquad(m_HuntTarget, (body.GetOrigin() + Vector(120, 0, 0)).ToString(false));
+  }
+  // Order the hunt once the US has actually spotted the team (as a player
+  // would: right-clicking a marker on the map).
+  if (m_Ticks >= 8 && m_Ticks <= 40 && m_iHuntOrderedAt == 0 && alpha && m_HuntTarget && m_HuntTarget.GetAnchor())
+  {
+   ACR_Intel intel = manager.IntelFor("US");
+   ACR_Contact seen = intel.ContactNear(m_HuntTarget.GetAnchor().GetOrigin(), 150);
+   if (seen)
+   {
+    PrintFormat("[ACR] HUNTTEST order at t=%1: %2", m_Ticks, manager.Hunt(alpha, seen.m_Pos));
+    m_iHuntOrderedAt = m_Ticks;
+   }
+  }
+  if (m_Ticks == 41 && m_iHuntOrderedAt == 0) Print("[ACR] HUNTTEST the enemy was never spotted");
+  if (m_iHuntOrderedAt > 0 && m_Ticks == m_iHuntOrderedAt + 15 && alpha && m_HuntTarget.GetAnchor() && alpha.GetAnchor())
+   PrintFormat("[ACR] HUNTTEST after 15 s: alpha '%1', hunting %2 (want 1), distance %3 m", alpha.m_Order, alpha.IsHunting(), (int)vector.DistanceXZ(alpha.GetAnchor().GetOrigin(), m_HuntTarget.GetAnchor().GetOrigin()));
+  if (m_iHuntOrderedAt > 0 && m_Ticks == m_iHuntOrderedAt + 17 && m_HuntTarget)
+  {
+   array<AIAgent> agents = {};
+   m_HuntTarget.GetAgents(agents);
+   foreach (AIAgent agent : agents) Kill(agent.GetControlledEntity());
+  }
+  if (m_iHuntOrderedAt > 0 && m_Ticks == m_iHuntOrderedAt + 32 && alpha) PrintFormat("[ACR] HUNTTEST after the kill: alpha '%1', hunting %2 (want 0)", alpha.m_Order, alpha.IsHunting());
+  if (m_Ticks == 80 || (m_iHuntOrderedAt > 0 && m_Ticks == m_iHuntOrderedAt + 34)) Print("[ACR] TEST COMPLETE");
+ }
+ // ---------------------------------------------------------------- -acrLauncherTest
+ // An AI soldier's disposable launcher is emptied (as if fired): he must drop
+ // it, and a rearm must give him a loaded one of the same kind back.
+ protected IEntity m_LauncherMan;
+ void TestLauncher()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !manager.m_Launchers) return;
+  if (m_Ticks == 2)
+  {
+   ACR_FactionSettings sov = ACR_FactionSettings.Find("USSR");
+   if (sov) sov.m_bAICommander = false;
+  }
+  if (m_Ticks == 8)
+  {
+   foreach (ACR_Squad squad : manager.m_Squads)
+   {
+    array<AIAgent> agents = {};
+    squad.GetAgents(agents);
+    foreach (AIAgent agent : agents)
+    {
+     IEntity body = agent.GetControlledEntity();
+     if (body && ACR_Launchers.DisposableOf(body) && ACR_Squad.FindController(body) == 0) { m_LauncherMan = body; break; }
+    }
+    if (m_LauncherMan) break;
+   }
+   if (!m_LauncherMan) { Print("[ACR] LAUNCHERTEST no soldier with a disposable launcher found"); return; }
+   IEntity tube = ACR_Launchers.DisposableOf(m_LauncherMan);
+   BaseWeaponComponent weapon = BaseWeaponComponent.Cast(tube.FindComponent(BaseWeaponComponent));
+   PrintFormat("[ACR] LAUNCHERTEST soldier has %1 with %2 round(s)", ACR_Vehicles.NameOf(tube), ACR_Launchers.Loaded(tube));
+   if (weapon && weapon.GetCurrentMagazine()) weapon.GetCurrentMagazine().SetAmmoCount(0);
+   if (weapon)
+   {
+    array<BaseMuzzleComponent> muzzles = {};
+    weapon.GetMuzzlesList(muzzles);
+    foreach (BaseMuzzleComponent muzzle : muzzles)
+     for (int b = 0; b < muzzle.GetBarrelsCount(); b++) muzzle.ClearChamber(b);
+   }
+   PrintFormat("[ACR] LAUNCHERTEST emptied: %1 round(s) left", ACR_Launchers.Loaded(tube));
+  }
+  if (m_Ticks == 16 && m_LauncherMan)
+  {
+   PrintFormat("[ACR] LAUNCHERTEST dropped %1 (want 1), still carries one: %2 (want 0), owed: %3", manager.m_Launchers.m_iDropped, ACR_Launchers.DisposableOf(m_LauncherMan) != null, manager.m_Launchers.IsOwed(m_LauncherMan));
+   PrintFormat("[ACR] LAUNCHERTEST rearm: %1", manager.m_Launchers.Rearm(m_LauncherMan));
+  }
+  if (m_Ticks == 20 && m_LauncherMan)
+  {
+   IEntity fresh = ACR_Launchers.DisposableOf(m_LauncherMan);
+   int rounds = -1;
+   if (fresh) rounds = ACR_Launchers.Loaded(fresh);
+   PrintFormat("[ACR] LAUNCHERTEST after rearm: has launcher %1 (want 1), rounds %2 (want 1)", fresh != null, rounds);
+  }
+  if (m_Ticks == 22) Print("[ACR] TEST COMPLETE");
  }
 }

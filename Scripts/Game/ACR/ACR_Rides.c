@@ -34,6 +34,7 @@ class ACR_Ride
 
 class ACR_Rides : Managed
 {
+ static const float WASTED_SEAT_M = 30;        // m: penalty per empty seat when picking a transport
  static const float MAX_PICKUP = 800;          // m: farthest a transport is fetched from
  static const float PICKUP_SHARE = 0.5;        // ... and no farther than this share of the trip
  static const float MIN_TRIP = 400;            // m: shorter than this, just walk
@@ -101,13 +102,20 @@ class ACR_Rides : Managed
   float limit = Math.Min(MAX_PICKUP, trip * PICKUP_SHARE);
   ACR_Squad best;
   distance = float.MAX;
+  float bestScore = float.MAX;
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
    if (!IsFreeTransport(squad, faction)) continue;
    IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
    float d = vector.DistanceXZ(vehicle.GetOrigin(), pickup);
-   if (d > limit || d >= distance) continue;
-   if (FreeSeats(vehicle) < seatsNeeded) continue;
+   if (d > limit) continue;
+   int seats = FreeSeats(vehicle);
+   if (seats < seatsNeeded) continue;
+   // Right-sized first: every empty seat counts as WASTED_SEAT_M metres farther,
+   // so two men take the jeep next door rather than a truck just as close.
+   float score = d + (seats - seatsNeeded) * WASTED_SEAT_M;
+   if (score >= bestScore) continue;
+   bestScore = score;
    distance = d;
    best = squad;
   }
@@ -249,7 +257,7 @@ class ACR_Rides : Managed
   if (taxiOk) taxiOk = ACR_Respawn.IsAlive(driver) && ACR_Transport.CrewedVehicle(ride.m_Taxi) == ride.m_Vehicle && !ride.m_Taxi.HasPlayer();
   if (!riderOk)
   {
-   if (taxiOk) SendHome(ride);
+   ReleaseTaxi(ride);
    return false;
   }
   int alive;
@@ -263,6 +271,9 @@ class ACR_Rides : Managed
   if (!taxiOk)
   {
    Log(ride, string.Format("transport lost (driver %1 alive %2, crewing %3), continuing on foot", driver != null, (driver != null && ACR_Respawn.IsAlive(driver)), (ride.m_Taxi != null && ACR_Transport.CrewedVehicle(ride.m_Taxi) == ride.m_Vehicle)));
+   // The crew still has our pickup/drop route: stop it, or the vehicle would
+   // carry on empty once its driver gets back in.
+   ReleaseTaxi(ride);
    Finish(ride, aboard > 0);
    return false;
   }
@@ -381,6 +392,16 @@ class ACR_Rides : Managed
   if (ride.m_sFinalPrefab == ACR_Squad.WP_DEFEND) rider.Defend(ride.m_Final);
   else if (ride.m_sFinalPrefab == ACR_Squad.WP_SEARCH_DESTROY) rider.Assault(ride.m_Final);
   else rider.MoveTo(ride.m_Final);
+ }
+
+ // Ride over: if the transport is still following this ride's orders, send it
+ // home (or hold, when its crew is out of the vehicle).
+ protected void ReleaseTaxi(ACR_Ride ride)
+ {
+  ACR_Squad taxi = ride.m_Taxi;
+  if (!taxi || !m_Manager.m_Squads.Contains(taxi) || taxi.m_iOrderSerial != ride.m_iTaxiSerial) return;
+  if (ride.m_Vehicle && ACR_Transport.CrewedVehicle(taxi) == ride.m_Vehicle) SendHome(ride);
+  else taxi.Halt("Holding");
  }
 
  // Empty transport back to the nearest safe base of its side (or where it is).

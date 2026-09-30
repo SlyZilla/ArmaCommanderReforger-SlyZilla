@@ -312,6 +312,15 @@ class ACR_Logistics : Managed
   float last;
   if (m_SoldierServedAt.Find(soldier, last) && now - last < SOLDIER_COOLDOWN_MS) return;
   bool served;
+  // A new disposable launcher for one who threw his spent one away.
+  if ((flags & ACR_EService.AMMO) != 0 && m_Manager.m_Launchers && m_Manager.m_Launchers.IsOwed(soldier) && StockOf(station) >= ACR_Launchers.REARM_COST)
+  {
+   if (m_Manager.m_Launchers.Rearm(soldier))
+   {
+    Use(station, ACR_Launchers.REARM_COST);
+    served = true;
+   }
+  }
   if ((flags & ACR_EService.AMMO) != 0 && SoldierMagazines(soldier) < magazineTarget * 0.75)
   {
    SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(soldier.FindComponent(SCR_InventoryStorageManagerComponent));

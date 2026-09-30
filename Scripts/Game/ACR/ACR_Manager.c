@@ -20,7 +20,8 @@ enum ACR_ERequest
  UNLOAD_HERE,      // player in a vehicle: every passenger squad out now
  ORDER_RIDE,       // a nearby free transport picks the squad up and drives it to point
  QUEUE_MOVE,       // Shift + right-click: move there after the current order
- QUEUE_DEFEND      // ... defend there after the current order
+ QUEUE_DEFEND,     // ... defend there after the current order
+ ORDER_HUNT        // pursue the spotted enemy group at point until it's destroyed or lost
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -34,6 +35,7 @@ class ACR_Manager : Managed
  ref ACR_BaseSystem m_Bases = new ACR_BaseSystem();
  protected ref map<string, ref ACR_AICommander> m_AICommanders = new map<string, ref ACR_AICommander>();
  protected ref map<string, ref ACR_Intel> m_Intel = new map<string, ref ACR_Intel>();
+ protected string m_sSpawningFaction; // side paying for the unit being spawned
  protected ref map<int, ACR_Squad> m_LastSquad = new map<int, ACR_Squad>();
  protected int m_SquadNumber;
 
@@ -49,6 +51,7 @@ class ACR_Manager : Managed
  ref ACR_Rides m_Rides;
  ref ACR_Logistics m_Logistics;
  ref ACR_Cleanup m_Cleanup;
+ ref ACR_Launchers m_Launchers;
  int m_iSoldierCap = 100;   // living AI soldiers per side (purchases stop above it)
  protected bool m_bHostOptionsApplied;
  ref array<ACR_Squad> m_Unsticking = {};   // vehicles being backed out of trouble (applied every frame)
@@ -177,6 +180,8 @@ class ACR_Manager : Managed
   m_Logistics.Tick();
   if (!m_Cleanup) m_Cleanup = new ACR_Cleanup(this);
   m_Cleanup.Tick();
+  if (!m_Launchers) m_Launchers = new ACR_Launchers(this);
+  m_Launchers.Tick();
   if (!m_bHostOptionsApplied) ApplyHostOptions();
   m_iStatusTick++;
   bool statusDue = m_iStatusTick % 5 == 0;
@@ -234,6 +239,7 @@ class ACR_Manager : Managed
   squad.GetVehicles(vehicles);
   foreach (IEntity vehicle : vehicles)
   {
+   if (!squad.m_OwnVehicle) squad.m_OwnVehicle = vehicle;
    string crewName;
    if (!m_PendingCrewNames.Find(vehicle, crewName)) continue;
    squad.Rename(crewName);
@@ -355,6 +361,19 @@ class ACR_Manager : Managed
   }
  }
 
+ // Hunt the known enemy group nearest to point (the side's intel, no map hacks).
+ string Hunt(ACR_Squad squad, vector point)
+ {
+  ACR_Intel intel = IntelFor(squad.GetFaction().GetFactionKey());
+  ACR_Contact contact;
+  if (intel) contact = intel.ContactNear(point, 120);
+  if (!contact) return squad.GetName() + ": no known enemy there";
+  string what = ACR_Intel.Describe(contact.m_iKind, contact.m_iCount);
+  squad.Hunt(contact.m_Squad, contact.m_Body, contact.m_Pos, what);
+  PrintFormat("[ACR] HUNT %1 -> %2 at %3", squad.GetName(), what, contact.m_Pos);
+  return squad.GetName() + ": hunting " + what;
+ }
+
  // What each side has seen of the enemy (see ACR_Intel).
  ACR_Intel IntelFor(string factionKey)
  {
@@ -370,8 +389,29 @@ class ACR_Manager : Managed
 
  protected void TickIntel()
  {
+  float now = GetGame().GetWorld().GetWorldTime();
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
-   IntelFor(settings.m_sFaction).Tick();
+  {
+   ACR_Intel intel = IntelFor(settings.m_sFaction);
+   intel.Tick();
+   string radio = intel.PopRadio(now);
+   if (!radio.IsEmpty()) SendRadio(settings.m_sFaction, radio);
+  }
+ }
+
+ // A short radio call in the chat of every player on that side.
+ void SendRadio(string factionKey, string message)
+ {
+  PrintFormat("[ACR] RADIO %1: %2", factionKey, message);
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (int id : players)
+  {
+   Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
+   if (!faction || faction.GetFactionKey() != factionKey) continue;
+   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
+   if (pc) pc.ACR_SendRadio(message);
+  }
  }
 
  bool IsAIInCommand(string factionKey)
@@ -575,7 +615,7 @@ class ACR_Manager : Managed
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can give map orders. Take command first.";
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return "That squad is not ready";
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND;
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT;
   // Reject nonsense coordinates from a client.
   if (usesPoint && vector.Distance(point, anchor.GetOrigin()) > 20000) return "Order is too far away";
   if (usesPoint) point = Ground(point);
@@ -611,6 +651,8 @@ class ACR_Manager : Managed
     return SetLZ(squad, point);
    case ACR_ERequest.ORDER_RIDE:
     return Ride(squad, point);
+   case ACR_ERequest.ORDER_HUNT:
+    return Hunt(squad, point);
    case ACR_ERequest.QUEUE_MOVE:
     if (squad.Queue(point, false)) return name + ": waypoint added";
     return name + ": waypoint list is full";
@@ -815,7 +857,9 @@ class ACR_Manager : Managed
   entry.m_iBought++;
   string name = string.Format("%1 %2", entry.m_sName, entry.m_iBought);
 
+  m_sSpawningFaction = key;
   SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, SpawnPoint(base, 10, 25, 4), SpawnPoint(base, 5, 15, 1.5));
+  m_sSpawningFaction = "";
   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
   return string.Format("%1 deploying at %2", name, base.m_sName);
  }
@@ -829,6 +873,7 @@ class ACR_Manager : Managed
   {
    vehicle = SpawnPrefab(vehicleprefab, vehiclePos);
    if (vehicle && m_Cleanup) m_Cleanup.Watch(vehicle);
+   if (vehicle) ACR_Vehicles.SetOwner(vehicle, m_sSpawningFaction);
    if (vehicle && crewed)
    {
     m_PendingCrewNames.Set(vehicle, name);

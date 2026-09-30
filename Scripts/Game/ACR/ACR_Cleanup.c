@@ -19,6 +19,8 @@ class ACR_Cleanup : Managed
  protected ref array<IEntity> m_Wrecks = {};
  protected ref array<float> m_WreckTimes = {};
  protected ref array<IEntity> m_WatchedVehicles = {};
+ protected ref array<IEntity> m_Litter = {};       // e.g. spent launchers thrown away
+ protected ref array<float> m_LitterTimes = {};
  protected float m_fNextCheck;
  int m_iRemovedBodies;
  int m_iRemovedWrecks;
@@ -41,6 +43,14 @@ class ACR_Cleanup : Managed
    return;
   }
   if (Vehicle.Cast(entity)) AddWreck(entity, now);
+ }
+
+ // Things soldiers throw away (spent launchers): removed after a few minutes out of sight.
+ void AddLitter(IEntity item)
+ {
+  if (!item || m_Litter.Contains(item)) return;
+  m_Litter.Insert(item);
+  m_LitterTimes.Insert(GetGame().GetWorld().GetWorldTime());
  }
 
  // Vehicles we spawn (purchases, supports) are watched for destruction too,
@@ -76,6 +86,7 @@ class ACR_Cleanup : Managed
   PlayerPositions(players);
   Sweep(m_Bodies, m_BodyTimes, m_fBodySeconds, BODY_PRIVACY, MAX_BODIES, players, now, true);
   Sweep(m_Wrecks, m_WreckTimes, m_fWreckSeconds, WRECK_PRIVACY, MAX_WRECKS, players, now, false);
+  Sweep(m_Litter, m_LitterTimes, 180, 60, 60, players, now, false, true);
  }
 
  protected void PlayerPositions(notnull array<vector> result)
@@ -97,7 +108,7 @@ class ACR_Cleanup : Managed
  }
 
  // Oldest first (they were added in order of death).
- protected void Sweep(array<IEntity> list, array<float> times, float minSeconds, float privacy, int cap, array<vector> players, float now, bool bodies)
+ protected void Sweep(array<IEntity> list, array<float> times, float minSeconds, float privacy, int cap, array<vector> players, float now, bool bodies, bool litter = false)
  {
   int excess = list.Count() - cap;
   for (int i = 0; i < list.Count(); i++)
@@ -116,6 +127,8 @@ class ACR_Cleanup : Managed
    if (!old && !early) continue;
    // A body someone climbed back into (revived) or a vehicle still crewed is left alone.
    if (bodies && ACR_Respawn.IsAlive(entity)) { list.RemoveOrdered(i); times.RemoveOrdered(i); i--; continue; }
+   // Litter someone picked up again is theirs now.
+   if (litter && entity.GetParent()) { list.RemoveOrdered(i); times.RemoveOrdered(i); i--; continue; }
    if (Watched(entity.GetOrigin(), privacy, players)) continue;
    vector at = entity.GetOrigin();
    SCR_EntityHelper.DeleteEntityAndChildren(entity);
@@ -124,7 +137,7 @@ class ACR_Cleanup : Managed
     RemoveDroppedWeapons(at);
     m_iRemovedBodies++;
    }
-   else m_iRemovedWrecks++;
+   else if (!litter) m_iRemovedWrecks++;
    list.RemoveOrdered(i);
    times.RemoveOrdered(i);
    i--;
