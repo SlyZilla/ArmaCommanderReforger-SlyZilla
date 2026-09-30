@@ -19,3 +19,4 @@ queue|-acrQueueTest 1|140
 cleanup|-acrCleanupTest 1|120
 soak|-acrSoakTest 1|1320|Worlds/ACR_Arland.ent
 side|-acrSideTest 1|90
+intel|-acrIntelTest 1|100

@@ -33,6 +33,7 @@ class ACR_Manager : Managed
  ref array<ref ACR_Squad> m_Squads = {};
  ref ACR_BaseSystem m_Bases = new ACR_BaseSystem();
  protected ref map<string, ref ACR_AICommander> m_AICommanders = new map<string, ref ACR_AICommander>();
+ protected ref map<string, ref ACR_Intel> m_Intel = new map<string, ref ACR_Intel>();
  protected ref map<int, ACR_Squad> m_LastSquad = new map<int, ACR_Squad>();
  protected int m_SquadNumber;
 
@@ -166,6 +167,7 @@ class ACR_Manager : Managed
   m_Bases.Tick(this);
   GrantGameMaster();
   ACR_PlayerSide.Enforce();
+  TickIntel();
   TickAICommanders();
   if (!m_Respawn) m_Respawn = new ACR_Respawn(this);
   m_Respawn.Tick();
@@ -351,6 +353,25 @@ class ACR_Manager : Managed
    array<int> commanders = GetCommanders(faction);
    ai.Tick(commanders == null || commanders.IsEmpty());
   }
+ }
+
+ // What each side has seen of the enemy (see ACR_Intel).
+ ACR_Intel IntelFor(string factionKey)
+ {
+  if (factionKey.IsEmpty()) return null;
+  ACR_Intel intel;
+  if (!m_Intel.Find(factionKey, intel))
+  {
+   intel = new ACR_Intel(this, factionKey);
+   m_Intel.Insert(factionKey, intel);
+  }
+  return intel;
+ }
+
+ protected void TickIntel()
+ {
+  foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
+   IntelFor(settings.m_sFaction).Tick();
  }
 
  bool IsAIInCommand(string factionKey)

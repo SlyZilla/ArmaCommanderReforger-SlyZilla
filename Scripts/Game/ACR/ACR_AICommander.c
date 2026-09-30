@@ -259,54 +259,14 @@ class ACR_AICommander : Managed
   return affiliation.GetAffiliatedFaction().GetFactionKey();
  }
 
- // Every second: what our people can see right now.
+ // Every second: the side's shared picture (ACR_Intel, gathered by the manager
+ // from our squads, sentries and players).
  protected void GatherIntel()
  {
-  float now = GetGame().GetWorld().GetWorldTime();
-  foreach (ACR_Squad squad : m_Manager.m_Squads)
-  {
-   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction || !squad.m_Group) continue;
-   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(squad.m_Group.FindComponent(SCR_AIGroupUtilityComponent));
-   if (!utility || !utility.m_Perception) continue;
-   foreach (IEntity seen : utility.m_Perception.m_aTargetEntities)
-   {
-    string key = FactionKeyOf(seen);
-    if (!key.IsEmpty() && key != m_sFaction) Note(seen, now);
-   }
-  }
-  // Sentries: anyone inside (or right at) one of our bases is seen.
-  foreach (ACR_Base base : ACR_Base.s_All)
-  {
-   if (base.m_sOwner != m_sFaction) continue;
-   float reach = base.m_fRadius + SENTRY_RANGE;
-   foreach (ACR_Squad intruders : m_Manager.m_Squads)
-   {
-    if (!intruders.GetFaction() || intruders.GetFaction().GetFactionKey() == m_sFaction) continue;
-    array<AIAgent> agents = {};
-    intruders.GetAgents(agents);
-    foreach (AIAgent agent : agents)
-    {
-     IEntity body = agent.GetControlledEntity();
-     if (body && vector.DistanceXZ(body.GetOrigin(), base.GetOrigin()) < reach) Note(body, now);
-    }
-   }
-   array<int> players = {};
-   GetGame().GetPlayerManager().GetPlayers(players);
-   foreach (int id : players)
-   {
-    IEntity player = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
-    if (player && FactionKeyOf(player) != m_sFaction && vector.DistanceXZ(player.GetOrigin(), base.GetOrigin()) < reach) Note(player, now);
-   }
-  }
-  // Forget the stale and the dead.
-  array<IEntity> stale = {};
-  foreach (IEntity enemy, float when : m_SeenTime)
-   if (!enemy || now - when > INTEL_MEMORY_MS || !ACR_Respawn.IsAlive(enemy)) stale.Insert(enemy);
-  foreach (IEntity gone : stale)
-  {
-   m_SeenTime.Remove(gone);
-   m_SeenAt.Remove(gone);
-  }
+  ACR_Intel intel = m_Manager.IntelFor(m_sFaction);
+  if (!intel) return;
+  m_SeenAt = intel.m_SeenAt;
+  m_SeenTime = intel.m_SeenTime;
  }
 
  // Where we last saw any member of this enemy squad (false: we haven't).

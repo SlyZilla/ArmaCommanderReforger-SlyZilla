@@ -23,7 +23,41 @@ class ACR_MapFeed
    PublishZones(manager, pc, key);
    PublishOrders(manager, pc, faction);
    PublishCapture(pc, key);
+   PublishIntel(manager, pc, key);
   }
+ }
+
+ // Spotted enemies (hostile markers) and the sighting feed for this side.
+ static void PublishIntel(ACR_Manager manager, SCR_PlayerController pc, string key)
+ {
+  ACR_Intel intel = manager.IntelFor(key);
+  if (!intel) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  array<vector> positions = {};
+  array<int> kinds = {};
+  array<int> counts = {};
+  array<int> ages = {};
+  foreach (ACR_Contact contact : intel.m_Contacts)
+  {
+   positions.Insert(contact.m_Pos);
+   kinds.Insert(contact.m_iKind);
+   counts.Insert(contact.m_iCount);
+   int age = (now - contact.m_fSeen) / 1000;
+   ages.Insert(age);
+  }
+  array<string> feed = {};
+  foreach (int i, string line : intel.m_Feed)
+  {
+   int seconds = (now - intel.m_FeedTime[i]) / 1000;
+   string when = seconds.ToString() + "s";
+   if (seconds >= 60)
+   {
+    int minutes = seconds / 60;
+    when = minutes.ToString() + "m";
+   }
+   feed.Insert("[" + when + "] " + line);
+  }
+  pc.ACR_SendIntel(positions, kinds, counts, ages, feed);
  }
 
  // Capture bar for a player standing in a base ring (empty label = hide).

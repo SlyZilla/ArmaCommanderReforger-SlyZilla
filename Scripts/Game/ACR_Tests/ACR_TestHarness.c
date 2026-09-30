@@ -27,6 +27,7 @@ class ACR_TestHarness : Managed
  static const int MODE_QUEUE = 20;
  static const int MODE_CLEANUP = 21;
  static const int MODE_SIDE = 22;
+ static const int MODE_INTEL = 23;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -68,6 +69,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrQueueTest", flag)) mode = MODE_QUEUE;
   if (System.GetCLIParam("acrCleanupTest", flag)) mode = MODE_CLEANUP;
   if (System.GetCLIParam("acrSideTest", flag)) mode = MODE_SIDE;
+  if (System.GetCLIParam("acrIntelTest", flag)) mode = MODE_INTEL;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -111,6 +113,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_QUEUE) { TestQueue(); return; }
   if (m_Mode == MODE_CLEANUP) { TestCleanup(); return; }
   if (m_Mode == MODE_SIDE) { TestSide(); return; }
+  if (m_Mode == MODE_INTEL) { TestIntel(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -1380,5 +1383,66 @@ class ACR_TestHarness : Managed
   Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
   if (!faction) return "none";
   return faction.GetFactionKey();
+ }
+ // ---------------------------------------------------------------- -acrIntelTest
+ // Nothing is known at first. A Soviet team is put in the open 120 m from the
+ // player: the US side must pick it up (player's eyes or a squad), report it in
+ // the feed, and the player's map must get the contact. A team moved far away
+ // out of anyone's sight must not be known.
+ protected ACR_Squad m_IntelEnemy;
+
+ void TestIntel()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  ACR_Intel us = manager.IntelFor("US");
+  ACR_Intel soviets = manager.IntelFor("USSR");
+  if (m_Ticks == 2)
+  {
+   ACR_FactionSettings sov = ACR_FactionSettings.Find("USSR");
+   if (sov) sov.m_bAICommander = false;
+  }
+  if (m_Ticks == 6)
+  {
+   foreach (ACR_Squad squad : manager.m_Squads)
+    if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == "USSR" && squad.CountAlive() > 0) { m_IntelEnemy = squad; break; }
+   PrintFormat("[ACR] INTELTEST before: US knows %1 contacts, enemy team %2", us.m_Contacts.Count(), m_IntelEnemy != null);
+   // Far away first: 1.4 km, nobody near.
+   if (m_IntelEnemy) MoveSquad(m_IntelEnemy, "1320 0 1300");
+  }
+  if (m_Ticks == 12)
+  {
+   PrintFormat("[ACR] INTELTEST far: US contacts %1 (want 0)", us.m_Contacts.Count());
+   IEntity body = pc.GetControlledEntity();
+   if (body && m_IntelEnemy)
+   {
+    vector p = body.GetOrigin();
+    MoveSquad(m_IntelEnemy, (p + Vector(120, 0, 0)).ToString(false));
+   }
+  }
+  if (m_Ticks == 20)
+  {
+   PrintFormat("[ACR] INTELTEST near: US contacts %1 (want >=1), feed %2, client contacts %3, client feed %4, USSR knows %5",
+    us.m_Contacts.Count(), us.m_Feed.Count(), pc.ACR_ContactCount(), pc.ACR_FeedCount(), soviets.m_Contacts.Count());
+   foreach (string line : us.m_Feed) PrintFormat("[ACR] INTELTEST feed: %1", line);
+   foreach (ACR_Contact c : us.m_Contacts) PrintFormat("[ACR] INTELTEST contact kind %1 count %2 at %3 by %4", c.m_iKind, c.m_iCount, c.m_Pos, c.m_sSpotter);
+   foreach (ACR_Contact sc : soviets.m_Contacts) PrintFormat("[ACR] INTELTEST soviet contact %1 count %2 at %3", sc.m_sKey, sc.m_iCount, sc.m_Pos);
+   foreach (IEntity seenBody, float t : soviets.m_SeenTime) PrintFormat("[ACR] INTELTEST soviet sees %1 squad %2", seenBody, manager.FindSquadBySoldier(seenBody) != null);
+  }
+  if (m_Ticks == 22) Print("[ACR] TEST COMPLETE");
+ }
+
+ protected void MoveSquad(ACR_Squad squad, string where)
+ {
+  vector center = Ground(where);
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (int i, AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (body) body.SetOrigin(Ground((center + Vector(i * 3, 0, 0)).ToString(false)));
+  }
+  squad.Halt("Test");
  }
 }

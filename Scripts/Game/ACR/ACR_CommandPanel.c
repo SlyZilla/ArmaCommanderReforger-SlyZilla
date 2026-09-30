@@ -38,6 +38,9 @@ class ACR_CommandPanel : Managed
  protected static const float WIDTH = 340;
 
  Widget m_Root;
+ protected Widget m_FeedRoot;
+ protected TextWidget m_FeedText;
+ protected string m_sFeedShown = "-";
  protected Widget m_Content;
  protected TextWidget m_Status;
  protected TextWidget m_Economy;
@@ -144,6 +147,49 @@ class ACR_CommandPanel : Managed
   m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
+  CreateFeed(parent);
+ }
+
+ // Intel feed: a small box at the top left, newest sighting first. Clicks go
+ // through it to the map.
+ protected void CreateFeed(Widget parent)
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  m_FeedRoot = ws.CreateWidget(WidgetType.OverlayWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, parent);
+  FrameSlot.SetAnchorMin(m_FeedRoot, 0, 0);
+  FrameSlot.SetAnchorMax(m_FeedRoot, 0, 0);
+  FrameSlot.SetAlignment(m_FeedRoot, 0, 0);
+  FrameSlot.SetPos(m_FeedRoot, 24, 96);
+  FrameSlot.SetSizeToContent(m_FeedRoot, true);
+  m_FeedRoot.SetZOrder(1000);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(0.02, 0.13, 0.30, 0.80), 0, m_FeedRoot);
+  AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
+  SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 1, m_FeedRoot));
+  size.EnableWidthOverride(true);
+  size.SetWidthOverride(380);
+  AlignableSlot.SetPadding(size, 12, 8, 12, 10);
+  Widget column = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, size);
+  AddText(column, LAYOUT_HEADING, "INTEL");
+  m_FeedText = AddText(column, LAYOUT_TEXT, "No contacts reported");
+ }
+
+ void SetFeed(array<string> lines)
+ {
+  if (!m_FeedText) return;
+  string text = "No contacts reported";
+  if (lines && !lines.IsEmpty())
+  {
+   text = "";
+   foreach (int i, string line : lines)
+   {
+    if (i > 0) text += "\n";
+    text += line;
+   }
+  }
+  if (text == m_sFeedShown) return;
+  m_sFeedShown = text;
+  m_FeedText.SetText(text);
  }
 
  protected TextWidget AddText(Widget parent, ResourceName layout, string text)
@@ -348,6 +394,9 @@ class ACR_CommandPanel : Managed
  {
   if (m_Root) m_Root.RemoveFromHierarchy();
   m_Root = null;
+  if (m_FeedRoot) m_FeedRoot.RemoveFromHierarchy();
+  m_FeedRoot = null;
+  m_FeedText = null;
   m_Actions.Clear();
   m_ModeButtons.Clear();
   m_EntryButtons.Clear();

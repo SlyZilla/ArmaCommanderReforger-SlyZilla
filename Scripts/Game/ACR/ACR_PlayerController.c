@@ -8,6 +8,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  bool m_Selected;
  RplId m_GroupId;      // squad this marker belongs to
  int m_BaseIndex = -1; // >= 0: this marker is a base
+ bool m_bContact;      // spotted enemy: clicks go through to the map
  ref ACR_MarkerClick m_Click;
  ref SCR_MilitarySymbol m_GroupSymbol;
  override void OnCreateMarker(bool skipProfanityFilter = false)
@@ -33,6 +34,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   Color color = new Color(0.1, 0.65, 1, 1);
   if (m_State == 1) color = new Color(1, 0.75, 0.1, 1);
   if (m_State == 2) color = new Color(0.5, 0.5, 0.5, 1);
+  if (m_State == 3) color = new Color(1, 0.25, 0.2, 1);   // spotted enemy
   if (m_Original) color = new Color(0.2, 1, 0.3, 1);
   if (m_Selected) color = new Color(1, 1, 1, 1);
   m_MarkerWidgetComp.SetColor(color);
@@ -55,7 +57,7 @@ class ACR_MarkerClick : ScriptedWidgetEventHandler
  ACR_UnitMarker m_Marker;
  override bool OnMouseButtonDown(Widget w, int x, int y, int button)
  {
-  if (button != 0 || !m_Marker) return false;
+  if (button != 0 || !m_Marker || m_Marker.m_bContact) return false;
   m_Marker.Select();
   return true;
  }
@@ -407,7 +409,9 @@ modded class SCR_PlayerController
    foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) manager.ACR_RemoveMarker(groupMarker);
    foreach (ACR_UnitMarker baseMarker : m_ACR_BaseMarkers) manager.ACR_RemoveMarker(baseMarker);
    foreach (ACR_UnitMarker zoneMarker : m_ACR_ZoneMarkers) manager.ACR_RemoveMarker(zoneMarker);
+   foreach (ACR_UnitMarker contactMarker : m_ACR_ContactMarkers) manager.ACR_RemoveMarker(contactMarker);
   }
+  m_ACR_ContactMarkers.Clear();
   m_ACR_ZoneMarkers.Clear();
   m_ACR_BaseMarkers.Clear();
   m_ACR_Markers.Clear();
@@ -490,6 +494,8 @@ modded class SCR_PlayerController
   ACR_UpdateGroupMarkers(manager);
   ACR_UpdateBaseMarkers(manager);
   ACR_UpdateZoneMarkers(manager);
+  ACR_UpdateContactMarkers(manager);
+  if (m_ACR_Panel) m_ACR_Panel.SetFeed(m_ACR_Feed);
  }
  void ACR_UpdateGroupMarkers(SCR_MapMarkerManagerComponent manager)
  {
@@ -1182,6 +1188,101 @@ modded class SCR_PlayerController
   float right = x + width * fill;
   bar.m_Vertices = {x, y, right, y, right, y + height, x, y + height};
   m_ACR_OrderCommands.Insert(bar);
+ }
+
+ // ---------------------------------------------------------------- intel
+ // Enemies our side has spotted (server-side ACR_Intel), as hostile map symbols
+ // that turn "suspected" (dashed) after a while and vanish when forgotten.
+ protected ref array<vector> m_ACR_ContactPositions = {};
+ protected ref array<int> m_ACR_ContactKinds = {};
+ protected ref array<int> m_ACR_ContactCounts = {};
+ protected ref array<int> m_ACR_ContactAges = {};
+ protected ref array<string> m_ACR_Feed = {};
+ protected ref array<ref ACR_UnitMarker> m_ACR_ContactMarkers = {};
+ protected ref array<int> m_ACR_ContactMarkerKinds = {};
+ static const int ACR_CONTACT_SUSPECTED = 30; // s: older sightings are drawn as suspected
+
+ void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed)
+ {
+  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, feed);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed)
+ {
+  m_ACR_ContactPositions.Copy(positions);
+  m_ACR_ContactKinds.Copy(kinds);
+  m_ACR_ContactCounts.Copy(counts);
+  m_ACR_ContactAges.Copy(ages);
+  m_ACR_Feed.Copy(feed);
+ }
+
+ int ACR_ContactCount() { return m_ACR_ContactPositions.Count(); }
+ int ACR_FeedCount() { return m_ACR_Feed.Count(); }
+
+ protected static int ACR_ContactIcon(int kind)
+ {
+  if (kind == ACR_Intel.KIND_AIR) return EMilitarySymbolIcon.ROTARY_WING;
+  if (kind == ACR_Intel.KIND_ARMOUR) return EMilitarySymbolIcon.ARMOR;
+  if (kind == ACR_Intel.KIND_ARMED) return EMilitarySymbolIcon.MOTORIZED | EMilitarySymbolIcon.MACHINEGUN;
+  if (kind == ACR_Intel.KIND_VEHICLE) return EMilitarySymbolIcon.MOTORIZED;
+  return EMilitarySymbolIcon.INFANTRY;
+ }
+
+ protected static int ACR_ContactDimension(int kind)
+ {
+  if (kind == ACR_Intel.KIND_AIR) return EMilitarySymbolDimension.AIR;
+  return EMilitarySymbolDimension.LAND;
+ }
+
+ protected void ACR_UpdateContactMarkers(SCR_MapMarkerManagerComponent manager)
+ {
+  // Rebuild when the number or the kinds change (the symbol shape is set at creation).
+  bool rebuild = m_ACR_ContactMarkers.Count() != m_ACR_ContactKinds.Count();
+  if (!rebuild)
+   foreach (int k, int kind : m_ACR_ContactKinds)
+    if (m_ACR_ContactMarkerKinds[k] != kind) rebuild = true;
+  if (rebuild)
+  {
+   foreach (ACR_UnitMarker old : m_ACR_ContactMarkers) manager.ACR_RemoveMarker(old);
+   m_ACR_ContactMarkers.Clear();
+   m_ACR_ContactMarkerKinds.Clear();
+   foreach (int kindToMake : m_ACR_ContactKinds)
+   {
+    ACR_UnitMarker marker = new ACR_UnitMarker();
+    marker.m_bContact = true;
+    SCR_MapMarkerBase prepared = manager.PrepareMilitaryMarker(EMilitarySymbolIdentity.OPFOR, ACR_ContactDimension(kindToMake), ACR_ContactIcon(kindToMake));
+    if (prepared)
+    {
+     marker.SetType(prepared.GetType());
+     marker.SetMarkerConfigID(prepared.GetMarkerConfigID());
+     marker.SetFlags(prepared.GetFlags());
+    }
+    else
+    {
+     marker.SetType(SCR_EMapMarkerType.SIMPLE);
+     marker.SetMarkerConfigID(1);
+    }
+    marker.SetCanBeRemovedByOwner(false);
+    m_ACR_ContactMarkers.Insert(marker);
+    m_ACR_ContactMarkerKinds.Insert(kindToMake);
+    manager.InsertStaticMarker(marker, true);
+    marker.SetMarkerOwnerID(-1);
+   }
+  }
+  foreach (int i, ACR_UnitMarker contact : m_ACR_ContactMarkers)
+  {
+   int age = m_ACR_ContactAges[i];
+   int kindNow = m_ACR_ContactKinds[i];
+   contact.m_Label = ACR_Intel.Describe(kindNow, m_ACR_ContactCounts[i]) + " (" + age.ToString() + "s)";
+   contact.m_State = 3;
+   vector pos = m_ACR_ContactPositions[i];
+   contact.SetWorldPos(pos[0], pos[2]);
+   int identity = EMilitarySymbolIdentity.OPFOR;
+   if (age > ACR_CONTACT_SUSPECTED) identity = EMilitarySymbolIdentity.ASSUMED_OPFOR;
+   if (!contact.m_GroupSymbol) contact.m_GroupSymbol = new SCR_MilitarySymbol();
+   contact.m_GroupSymbol.Set(identity, ACR_ContactDimension(kindNow), ACR_ContactIcon(kindNow), EMilitarySymbolAmplifier.NONE);
+   contact.RefreshStyle();
+  }
  }
 
  // ---------------------------------------------------------------- bases
