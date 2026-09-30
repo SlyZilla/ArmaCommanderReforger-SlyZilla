@@ -12,6 +12,62 @@ try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force
 
 . (Join-Path $PSScriptRoot 'ACR-Update.ps1')
 
+# Host setup menu: session settings chosen before the server starts (remembered
+# in host-settings.txt). Returns the extra server arguments and the world.
+function Show-HostSetup {
+  $file = Join-Path $PSScriptRoot 'host-settings.txt'
+  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; StartRP = '100'; Income = '1'; AI = 'both'; Skill = 'Veteran';
+                   Reaction = '1.6'; SoldierCap = '100'; UnitCap = '8'; Respawn = '15'; ShareGM = 'no' }
+  if (Test-Path -LiteralPath $file) {
+    foreach ($line in Get-Content -LiteralPath $file) {
+      $kv = $line.Split('=', 2)
+      if ($kv.Count -eq 2 -and $s.Contains($kv[0].Trim())) { $s[$kv[0].Trim()] = $kv[1].Trim() }
+    }
+  }
+  $worlds = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Worlds') -Filter 'ACR_*.ent' -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -notlike '*TestRange*' } | ForEach-Object { 'Worlds/' + $_.Name })
+  if ($worlds.Count -eq 0) { $worlds = @('Worlds/ACR_Arland.ent') }
+  if ($worlds -notcontains $s.World) { $s.World = $worlds[0] }
+  $skills = [ordered]@{ Rookie = 20; Regular = 50; Veteran = 70; Expert = 80 }
+  while ($true) {
+    $mapName = [IO.Path]::GetFileNameWithoutExtension($s.World) -replace '^ACR_', ''
+    Write-Host ''
+    Write-Host '=== HOST SETUP ===  (type a number to change, Enter to start)' -ForegroundColor Cyan
+    Write-Host ('  1  Map / scenario          ' + $mapName)
+    Write-Host ('  2  Starting RP             ' + $s.StartRP)
+    Write-Host ('  3  Income                  x' + $s.Income)
+    Write-Host ('  4  AI commanders           ' + $s.AI + '   (both / none / one faction key, e.g. USSR)')
+    Write-Host ('  5  AI skill                ' + $s.Skill + '   (Rookie / Regular / Veteran / Expert)')
+    Write-Host ('  6  AI reaction speed       ' + $s.Reaction + '   (1 = game default, higher = faster spotting)')
+    Write-Host ('  7  Soldier limit per side  ' + $s.SoldierCap)
+    Write-Host ('  8  AI squad limit          ' + $s.UnitCap)
+    Write-Host ('  9  Commander respawn       ' + $s.Respawn + ' s')
+    Write-Host (' 10  Game Master for all     ' + $s.ShareGM)
+    $choice = (Read-Host 'Choice').Trim()
+    if ($choice -eq '') { break }
+    switch ($choice) {
+      '1' { if ($worlds.Count -gt 1) { $i = [array]::IndexOf($worlds, $s.World); $s.World = $worlds[($i + 1) % $worlds.Count] } else { Write-Host 'Only one map is available so far.' -ForegroundColor Yellow } }
+      '2' { $v = Read-Host 'Starting RP (e.g. 100)'; if ($v -match '^\d+$') { $s.StartRP = $v } }
+      '3' { $v = Read-Host 'Income multiplier (e.g. 0.5, 1, 2)'; if ($v -match '^\d+(\.\d+)?$') { $s.Income = $v } }
+      '4' { $v = Read-Host 'AI commanders: both, none, or the faction key that gets one (US, USSR, ...)'; if ($v.Trim()) { $s.AI = $v.Trim() } }
+      '5' { $v = Read-Host 'AI skill: Rookie, Regular, Veteran or Expert'; foreach ($k in $skills.Keys) { if ($k -like ($v.Trim() + '*') -and $v.Trim()) { $s.Skill = $k } } }
+      '6' { $v = Read-Host 'AI reaction speed (0.5 - 3)'; if ($v -match '^\d+(\.\d+)?$') { $s.Reaction = $v } }
+      '7' { $v = Read-Host 'Soldier limit per side (e.g. 100)'; if ($v -match '^\d+$') { $s.SoldierCap = $v } }
+      '8' { $v = Read-Host 'AI squad limit (e.g. 8)'; if ($v -match '^\d+$') { $s.UnitCap = $v } }
+      '9' { $v = Read-Host 'Commander respawn delay in seconds'; if ($v -match '^\d+$') { $s.Respawn = $v } }
+      '10' { if ($s.ShareGM -eq 'yes') { $s.ShareGM = 'no' } else { $s.ShareGM = 'yes' } }
+      default { Write-Host 'Type a number from the list, or press Enter to start.' -ForegroundColor Yellow }
+    }
+  }
+  $s.Keys | ForEach-Object { $_ + '=' + $s[$_] } | Set-Content -LiteralPath $file
+  $skill = $skills[$s.Skill]
+  if (!$skill) { $skill = 70 }
+  $extra = ' -acrStartRP ' + $s.StartRP + ' -acrIncome ' + $s.Income + ' -acrAI ' + $s.AI + ' -acrSkill ' + $skill +
+           ' -acrReaction ' + $s.Reaction + ' -acrSoldierCap ' + $s.SoldierCap + ' -acrUnitCap ' + $s.UnitCap + ' -acrRespawnSeconds ' + $s.Respawn
+  if ($s.ShareGM -eq 'yes') { $extra += ' -acrGameMasterAll 1' }
+  return @{ Args = $extra; World = $s.World }
+}
+
 try {
   if (Update-FromGitHub) {
     # Run the freshly downloaded launcher instead of this old copy.
@@ -33,10 +89,8 @@ try {
     if (!$server) { throw 'The "Arma Reforger Server" tool is not installed. In Steam: Library > (filter) Tools > Arma Reforger Server > Install. It is free. Then run this again.' }
     $serverProfile = Join-Path $PSScriptRoot '.local-server'
     $started = Get-Date
-    $serverArgs = '-server "Worlds/ACR_Arland.ent" ' + $mod + ' -profile "' + $serverProfile + '" -bindPort ' + $Port + ' -maxFPS 60' + $backend
-    # Game Master: normally only the host. Friends' sessions can share it.
-    $shareGM = Read-Host 'Give Game Master (Y key) to everyone who joins, not just you? (y/N)'
-    if ($shareGM -match '^[yY]') { $serverArgs += ' -acrGameMasterAll 1'; Write-Host 'Everyone who joins gets Game Master.' -ForegroundColor Yellow }
+    $setup = Show-HostSetup
+    $serverArgs = '-server "' + $setup.World + '" ' + $mod + ' -profile "' + $serverProfile + '" -bindPort ' + $Port + ' -maxFPS 60' + $backend + $setup.Args
     Write-Host 'Starting the server (a second window opens; leave it running)...' -ForegroundColor Cyan
     $proc = Start-Process -FilePath $server -ArgumentList $serverArgs -WorkingDirectory (Split-Path $server -Parent) -PassThru
 
