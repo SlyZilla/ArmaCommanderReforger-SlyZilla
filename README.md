@@ -1,7 +1,7 @@
 # Arma Commander Actual (AC: Actual) - development
 
 A Reforger rebuild of the Arma 3 **Arma Commander** hybrid RTS/FPS mode. The original (by
-Martin Hájek; ported from the fork by Will and Anarch Cassius, with later fork work by
+Martin Hájek; ported from the fork by Will and Anarch Cassius, with contributions from
 Ilyushkius) is APL-SA licensed, so this
 derivative stays APL-SA with credit to the original authors. See LICENSE.md.
 
