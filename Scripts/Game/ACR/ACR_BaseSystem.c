@@ -39,6 +39,7 @@ class ACR_BaseSystem : Managed
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
   data.m_iRP = m_iStartingRP;
   if (settings) data.m_iRP = settings.m_iStartingRP;
+  if (ACR_Manager.StartRPOption() > 0) data.m_iRP = ACR_Manager.StartRPOption();
   ACR_FactionCatalog.BuildRequisitions(factionKey, settings, data.m_aRequisitions);
   ACR_FactionCatalog.BuildGarrisonPool(factionKey, settings, data.m_aGarrison);
   if (!settings || settings.m_bSupports)
@@ -102,7 +103,7 @@ class ACR_BaseSystem : Managed
   foreach (Faction faction : factions)
   {
    string key = faction.GetFactionKey();
-   int added = GetIncome(key);
+   int added = Math.Round(GetIncome(key) * ACR_Manager.IncomeOption());
    ACR_FactionData data = GetFaction(key);
    data.m_iRP = Math.Min(data.m_iRP + added, POINTS_CAP);
   }

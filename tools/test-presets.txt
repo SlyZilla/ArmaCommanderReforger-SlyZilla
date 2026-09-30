@@ -16,4 +16,5 @@ stall|-acrStallTest 1|150
 ride|-acrRideTest 1|200
 logistics|-acrLogisticsTest 1|130
 queue|-acrQueueTest 1|140
+cleanup|-acrCleanupTest 1|120
 soak|-acrSoakTest 1|1320|Worlds/ACR_Arland.ent

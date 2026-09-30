@@ -47,6 +47,9 @@ class ACR_Manager : Managed
  ref ACR_Supports m_Supports;
  ref ACR_Rides m_Rides;
  ref ACR_Logistics m_Logistics;
+ ref ACR_Cleanup m_Cleanup;
+ int m_iSoldierCap = 100;   // living AI soldiers per side (purchases stop above it)
+ protected bool m_bHostOptionsApplied;
  ref array<ACR_Squad> m_Unsticking = {};   // vehicles being backed out of trouble (applied every frame)
  protected int m_iStatusTick;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
@@ -111,6 +114,48 @@ class ACR_Manager : Managed
   return GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), parameters);
  }
 
+ // ================================================================ host options
+ // Chosen in the host launcher's setup menu and passed on the server's command
+ // line; they override the scenario's own settings for this session.
+ //  -acrStartRP N  -acrIncome X  -acrAI both|none|<faction>  -acrSkill N
+ //  -acrReaction X  -acrSoldierCap N  -acrUnitCap N  (-acrGameMasterAll, -acrRespawnSeconds)
+ protected void ApplyHostOptions()
+ {
+  m_bHostOptionsApplied = true;
+  string value;
+  if (System.GetCLIParam("acrSkill", value) && value.ToInt() > 0) m_iAISkill = value.ToInt();
+  if (System.GetCLIParam("acrReaction", value) && value.ToFloat() > 0) m_fAIPerception = value.ToFloat();
+  if (System.GetCLIParam("acrSoldierCap", value) && value.ToInt() > 0) m_iSoldierCap = value.ToInt();
+  string ai;
+  bool setAI = System.GetCLIParam("acrAI", ai);
+  ai.ToLower();
+  string unitCap;
+  bool setCap = System.GetCLIParam("acrUnitCap", unitCap);
+  foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
+  {
+   string key = settings.m_sFaction;
+   key.ToLower();
+   if (setAI) settings.m_bAICommander = ai == "both" || ai == key;
+   if (setCap && unitCap.ToInt() > 0) settings.m_iAIUnitCap = unitCap.ToInt();
+  }
+  PrintFormat("[ACR] Host options: skill %1, reaction %2, soldier cap %3, AI %4, unit cap %5, start RP %6, income x%7",
+   m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption());
+ }
+
+ static int StartRPOption()
+ {
+  string value;
+  if (System.GetCLIParam("acrStartRP", value) && value.ToInt() > 0) return value.ToInt();
+  return -1;
+ }
+
+ static float IncomeOption()
+ {
+  string value;
+  if (System.GetCLIParam("acrIncome", value) && value.ToFloat() > 0) return value.ToFloat();
+  return 1;
+ }
+
  // ================================================================ registry (server)
 
  void Tick()
@@ -126,6 +171,9 @@ class ACR_Manager : Managed
   m_Rides.Tick();
   if (!m_Logistics) m_Logistics = new ACR_Logistics(this);
   m_Logistics.Tick();
+  if (!m_Cleanup) m_Cleanup = new ACR_Cleanup(this);
+  m_Cleanup.Tick();
+  if (!m_bHostOptionsApplied) ApplyHostOptions();
   m_iStatusTick++;
   bool statusDue = m_iStatusTick % 5 == 0;
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
@@ -738,6 +786,7 @@ class ACR_Manager : Managed
   if (!base || base.m_sOwner != key) return "Deploy at one of your own bases";
   if (!base.m_bAllowSpawn) return base.m_sName + " can't deploy units";
   if (base.m_bContested) return base.m_sName + " is under attack";
+  if (m_Cleanup && m_Cleanup.SoldiersOf(key) >= m_iSoldierCap) return string.Format("Too many soldiers in the field (limit %1)", m_iSoldierCap);
   if (!m_Bases.Spend(key, entry.m_iCost)) return string.Format("Not enough RP (%1 needed)", entry.m_iCost);
   entry.m_iRemaining--;
   entry.m_iBought++;
@@ -756,6 +805,7 @@ class ACR_Manager : Managed
   if (!vehicleprefab.IsEmpty())
   {
    vehicle = SpawnPrefab(vehicleprefab, vehiclePos);
+   if (vehicle && m_Cleanup) m_Cleanup.Watch(vehicle);
    if (vehicle && crewed)
    {
     m_PendingCrewNames.Set(vehicle, name);

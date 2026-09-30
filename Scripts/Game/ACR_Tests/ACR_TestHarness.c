@@ -25,6 +25,7 @@ class ACR_TestHarness : Managed
  static const int MODE_RIDE = 18;
  static const int MODE_LOGISTICS = 19;
  static const int MODE_QUEUE = 20;
+ static const int MODE_CLEANUP = 21;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -64,6 +65,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRideTest", flag)) mode = MODE_RIDE;
   if (System.GetCLIParam("acrLogisticsTest", flag)) mode = MODE_LOGISTICS;
   if (System.GetCLIParam("acrQueueTest", flag)) mode = MODE_QUEUE;
+  if (System.GetCLIParam("acrCleanupTest", flag)) mode = MODE_CLEANUP;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -105,6 +107,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_RIDE) { TestRide(); return; }
   if (m_Mode == MODE_LOGISTICS) { TestLogistics(); return; }
   if (m_Mode == MODE_QUEUE) { TestQueue(); return; }
+  if (m_Mode == MODE_CLEANUP) { TestCleanup(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -1300,5 +1303,49 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] QUEUE group order: alpha '%1' | bravo '%2' with %3 queued; a plain move cleared alpha's queue: %4", alpha.m_Order, bravo.m_Order, bravoPlan.Count(), true);
   }
   if (m_Ticks == 106) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrCleanupTest
+ // Bravo is killed and the range truck destroyed. Cleanup times are shortened.
+ // While the player stands next to them nothing may go; once he's moved away
+ // the bodies, their weapons and the wreck must be removed.
+ protected IEntity m_CleanupTruck;
+ protected int m_iBravoBodies;
+
+ void TestCleanup()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager || !manager.m_Cleanup) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+   manager.m_Cleanup.m_fBodySeconds = 15;
+   manager.m_Cleanup.m_fWreckSeconds = 15;
+   manager.m_Cleanup.m_iCheckMs = 2000;
+  }
+  if (m_Ticks == 10)
+  {
+   ACR_Squad bravo = manager.FindSquadByGroup(m_Range.m_Bravo);
+   array<AIAgent> agents = {};
+   if (bravo) bravo.GetAgents(agents);
+   foreach (AIAgent agent : agents) { Kill(agent.GetControlledEntity()); m_iBravoBodies++; }
+   m_CleanupTruck = m_Range.m_Truck;
+   SCR_DamageManagerComponent damage;
+   if (m_CleanupTruck) damage = SCR_DamageManagerComponent.Cast(m_CleanupTruck.FindComponent(SCR_DamageManagerComponent));
+   if (damage) damage.SetHealthScaled(0);
+   if (m_CleanupTruck) manager.m_Cleanup.Watch(m_CleanupTruck);
+   PrintFormat("[ACR] CLEANUP killed %1 of Bravo, truck destroyed=%2", m_iBravoBodies, damage != null && damage.IsDestroyed());
+  }
+  if (m_Ticks % 5 == 0 && m_Ticks > 10) PrintFormat("[ACR] CLEANUP t=%1 %2 | truck exists=%3", m_Ticks, manager.m_Cleanup.Status(), m_CleanupTruck != null);
+  if (m_Ticks == 40)
+  {
+   // Walk away: move the player's body 1.5 km off.
+   IEntity body = pc.GetControlledEntity();
+   if (body) body.SetOrigin(Ground("1320 0 1300"));
+   Print("[ACR] CLEANUP player moved away");
+  }
+  if (m_Ticks == 75) Print("[ACR] TEST COMPLETE");
  }
 }
