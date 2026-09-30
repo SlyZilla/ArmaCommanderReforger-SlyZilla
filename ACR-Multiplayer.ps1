@@ -74,6 +74,9 @@ try {
     $serverProfile = Join-Path $PSScriptRoot '.local-server'
     $started = Get-Date
     $serverArgs = '-server "Worlds/ACR_Arland.ent" ' + $mod + ' -profile "' + $serverProfile + '" -bindPort ' + $Port + ' -maxFPS 60' + $backend
+    # Game Master: normally only the host. Friends' sessions can share it.
+    $shareGM = Read-Host 'Give Game Master (Y key) to everyone who joins, not just you? (y/N)'
+    if ($shareGM -match '^[yY]') { $serverArgs += ' -acrGameMasterAll 1'; Write-Host 'Everyone who joins gets Game Master.' -ForegroundColor Yellow }
     Write-Host 'Starting the server (a second window opens; leave it running)...' -ForegroundColor Cyan
     $proc = Start-Process -FilePath $server -ArgumentList $serverArgs -WorkingDirectory (Split-Path $server -Parent) -PassThru
 

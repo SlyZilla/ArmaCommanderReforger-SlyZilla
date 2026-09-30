@@ -267,9 +267,10 @@ class ACR_Manager : Managed
   if (!core) return;
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
+  bool everyone = System.IsCLIParam("acrGameMasterAll"); // host chose to share it (Host-Arland asks)
   foreach (int id : players)
   {
-   if (!IsHostOrAdmin(id)) continue;
+   if (!everyone && !IsHostOrAdmin(id)) continue;
    SCR_EditorManagerEntity editor = core.GetEditorManager(id);
    if (!editor || editor.HasMode(EEditorMode.EDIT)) continue;
    editor.AddEditorModes(EEditorModeAccess.BASE, EEditorMode.EDIT);

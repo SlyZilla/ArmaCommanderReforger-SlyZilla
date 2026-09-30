@@ -57,7 +57,8 @@ WHO DOES WHAT:
   buying). The others can take over any US soldier (F7), drive gun trucks,
   and fight. The commander can hand over with "Leave command" in the map
   panel; the next player can then press "Take command".
-- The host (first player connected) gets Game Master (Y).
+- The host (first player connected) gets Game Master (Y). When starting
+  Host-Arland you are asked whether everyone who joins should get it too.
 
 IF IT DOESN'T CONNECT:
 - Both players close everything and try the files in the "If joining fails"
