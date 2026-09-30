@@ -94,7 +94,7 @@ class ACR_CommandPanel : Managed
   AlignableSlot.SetPadding(size, 14, 12, 14, 16);
   m_Content = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
 
-  AddText(m_Content, LAYOUT_HEADING, "ARMA COMMANDER");
+  AddText(m_Content, LAYOUT_HEADING, "AC: ACTUAL");
   m_Economy = AddText(m_Content, LAYOUT_TEXT, "");
   m_Status = AddText(m_Content, LAYOUT_TEXT, "");
   m_CommandButton = AddButton(m_Content, "Take command", ACR_EPanelAction.TOGGLE_COMMAND);

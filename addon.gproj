@@ -1,7 +1,7 @@
 GameProject {
  ID "ArmaCommanderReforger"
  GUID "AC230926A0010001"
- TITLE "Arma Commander Reforger - Development"
+ TITLE "Arma Commander Actual - Development"
  Dependencies {
   "58D0FB3206B6F859"
  }

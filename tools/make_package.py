@@ -1,9 +1,9 @@
-# Builds dist/ArmaCommander-Arland.zip: a player-only copy of the addon plus guide and launcher.
+# Builds dist/ACActual-Arland.zip: a player-only copy of the addon plus guide and launcher.
 import os, sys, zipfile, pathlib, subprocess, datetime
 root = pathlib.Path(__file__).resolve().parent.parent
-out = root / 'dist' / 'ArmaCommander-Arland.zip'
+out = root / 'dist' / 'ACActual-Arland.zip'
 out.parent.mkdir(exist_ok=True)
-top = 'ArmaCommander-Arland'
+top = 'ACActual-Arland'
 keep_dirs = ['Configs', 'Missions', 'Scripts', 'Worlds']
 keep_files = ['LICENSE.md', 'addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'ACR-Update.ps1', 'ACR-Find.ps1', 'Play-Test-Range.cmd', 'README.md']
 def crlf(p): return p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')

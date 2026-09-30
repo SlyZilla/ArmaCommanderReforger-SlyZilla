@@ -1,6 +1,6 @@
 # License and credits
 
-**Arma Commander: Reforger** is a derivative work: a port of the Arma 3 mod
+**Arma Commander Actual** (AC: Actual) is a derivative work: a port of the Arma 3 mod
 **Arma Commander** to Arma Reforger.
 
 ## Original work
@@ -22,6 +22,14 @@ requisition points, requisition, and the AI commander (adapted from
 command-unit respawn, helicopter transport, "gunner drives" and multiplayer
 launchers. The command panel's look is an homage to the original's.
 No Arma 3 assets (models, textures, sounds) are included.
+
+## Who made this port
+
+The port was openly vibecoded: nearly all of its code, launchers and documentation
+were written by **Claude**, Anthropic's AI model (in Claude Cowork), directed,
+designed and play-tested by **Jacob** (propst-design). It is an unofficial fan
+project, not affiliated with or endorsed by Bohemia Interactive or the original
+authors.
 
 ## License of this work
 

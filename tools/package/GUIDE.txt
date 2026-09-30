@@ -1,6 +1,6 @@
-ARMA COMMANDER: REFORGER - Arland test scenario
-===============================================
-An early fan remake of the Arma 3 "Arma Commander" mode: you're the US commander.
+AC: ACTUAL (Arma Commander Actual) - Arland scenario
+===================================================
+An early, unofficial fan remake of the Arma 3 "Arma Commander" mode: you're the US commander.
 You order squads around on the map, jump into any of your soldiers, buy
 reinforcements with RP, and take bases from an AI-run Soviet side.
 This is an alpha build, so expect rough edges.
@@ -217,6 +217,11 @@ KNOWN LIMITS (alpha)
 
 CREDITS
 -------
+Made by Jacob (propst-design) and Claude. This mod is openly vibecoded:
+nearly all of the code, launchers and this guide were written by Claude,
+Anthropic's AI model (in Claude Cowork); Jacob directed, designed and
+play-tested it.
+
 Based on "Arma Commander" for Arma 3 by Martin Hajek
 (https://gitlab.com/silliaris/arma-commander), ported from the community fork by
 Will and Anarch Cassius. Rebuilt for Arma Reforger with new features.

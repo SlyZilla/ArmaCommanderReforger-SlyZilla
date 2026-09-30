@@ -1,11 +1,11 @@
-# Publishes dist\ArmaCommander-Arland.zip as a GitHub release, so the launchers of
+# Publishes dist\ACActual-Arland.zip as a GitHub release, so the launchers of
 # everyone who has the package pick it up on their next start.
 # Windows PowerShell treats native stderr output as an error under 'Stop'; gh writes
 # normal status text to stderr, so keep 'Continue' and check exit codes instead.
 $ErrorActionPreference = 'Continue'
 $root = Split-Path $PSScriptRoot -Parent
 $repo = (Get-Content (Join-Path $root 'tools\package\update-source.txt') -Raw).Trim()
-$zip = Join-Path $root 'dist\ArmaCommander-Arland.zip'
+$zip = Join-Path $root 'dist\ACActual-Arland.zip'
 $versionFile = Join-Path $root 'dist\VERSION.txt'
 try { Start-Transcript -Path (Join-Path $root 'dist\publish-log.txt') -Force | Out-Null } catch {}
 
@@ -30,7 +30,7 @@ if ($LASTEXITCODE -ne 0) { Fail "Not logged in. Run: `"$gh`" auth login" }
 & $gh repo view $repo 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
   Write-Host "Creating public repository $repo ..."
-  & $gh repo create $repo --public --add-readme --description "Arma Commander for Arma Reforger - downloads are under Releases"
+  & $gh repo create $repo --public --add-readme --description "Arma Commander Actual (AC: Actual) for Arma Reforger - downloads are under Releases"
   if ($LASTEXITCODE -ne 0) { Fail "Could not create repository $repo." }
   Start-Sleep -Seconds 3
 }
@@ -55,6 +55,7 @@ function Sync-RepoFile($localPath, $repoPath) {
 }
 Sync-RepoFile (Join-Path $root 'tools\package\REPO-README.md') 'README.md'
 Sync-RepoFile (Join-Path $root 'LICENSE.md') 'LICENSE.md'
+& $gh repo edit $repo --description "Arma Commander Actual (AC: Actual): unofficial, vibecoded fan port of Arma Commander to Arma Reforger. Downloads under Releases." 2>&1 | Out-Null
 Start-Sleep -Seconds 1
 
 # Remove drafts left behind by a failed upload.
@@ -68,11 +69,11 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host "Publishing $version to $repo ..."
-$notes = "Download ArmaCommander-Arland.zip below, unzip it, and read 'READ ME FIRST.txt'.`nAlready have it? Just start Host-Arland or Join-Arland; they update themselves."
+$notes = "Download ACActual-Arland.zip below, unzip it, and read 'READ ME FIRST.txt'.`nAlready have it? Just start Host-Arland or Join-Arland; they update themselves."
 & $gh release create $version $zip --repo $repo --title $version --notes $notes --latest
 if ($LASTEXITCODE -ne 0) { Fail "Release upload failed (see above)." }
 
 Write-Host ""
 Write-Host "Published $version." -ForegroundColor Green
 Write-Host "Permanent download link for your buddies:"
-Write-Host "  https://github.com/$repo/releases/latest/download/ArmaCommander-Arland.zip"
+Write-Host "  https://github.com/$repo/releases/latest/download/ACActual-Arland.zip"

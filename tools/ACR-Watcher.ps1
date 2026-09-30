@@ -1,4 +1,4 @@
-# Arma Commander test launcher for Claude.
+# AC: Actual test launcher for Claude.
 #
 # Leave this window open. Claude drops a request file into .acr-requests\ naming
 # one of the presets below; this script launches Reforger, waits for the run to
@@ -163,7 +163,7 @@ function Invoke-Request($file) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] '$preset' finished: $outcome" -ForegroundColor Green
 }
 
-Write-Host 'Arma Commander test launcher is running. Leave this window open; close it to stop.' -ForegroundColor Green
+Write-Host 'AC: Actual test launcher is running. Leave this window open; close it to stop.' -ForegroundColor Green
 Write-Host "Watching $RequestDir"
 while ($true) {
     try {

@@ -129,7 +129,7 @@ modded class SCR_PlayerController
  protected void ACR_FeedbackOwner(string message)
  {
   Print("[ACR] " + message);
-  SCR_HintManagerComponent.ShowCustomHint(message, "Arma Commander", 5, true);
+  SCR_HintManagerComponent.ShowCustomHint(message, "AC: Actual", 5, true);
  }
 
  // ---------------------------------------------------------------- gunner drives
@@ -1005,7 +1005,7 @@ modded class SCR_PlayerController
   if (index < 0 || index >= m_ACR_Commandable.Count() || m_ACR_Commandable[index] != 1) return false;
   if (!m_ACR_IsCommander)
   {
-   SCR_HintManagerComponent.ShowCustomHint("Only the commander can give map orders. Take command in the panel.", "Arma Commander", 4, true);
+   SCR_HintManagerComponent.ShowCustomHint("Only the commander can give map orders. Take command in the panel.", "AC: Actual", 4, true);
    return true;
   }
   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();

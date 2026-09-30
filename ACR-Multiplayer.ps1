@@ -1,4 +1,4 @@
-# Arma Commander Reforger - multiplayer launcher for the Arland scenario.
+# AC: Actual (Arma Commander Actual) - multiplayer launcher for the Arland scenario.
 #   Host: starts the Arma Reforger Server tool on this PC with the mod, waits for
 #         the scenario to load, then joins it with the game.
 #   Join: connects the game to a host's address.

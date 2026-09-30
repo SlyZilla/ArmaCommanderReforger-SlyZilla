@@ -1,8 +1,15 @@
-# Arma Commander: Reforger (development)
+# Arma Commander Actual (AC: Actual) - development
 
 A Reforger rebuild of the Arma 3 **Arma Commander** hybrid RTS/FPS mode. The original (by
 Martin Hájek; ported from the fork by Will and Anarch Cassius) is APL-SA licensed, so this
 derivative stays APL-SA with credit to the original authors. See LICENSE.md.
+
+## Made with AI
+
+This project is openly vibecoded. Nearly all of the code, launchers and documentation
+were written by **Claude** (Anthropic's AI model, working in Claude Cowork), directed,
+designed and play-tested by **Jacob** ([propst-design](https://github.com/propst-design)).
+Expect rough edges; bug reports with logs help a lot.
 
 ## Playing the test range
 

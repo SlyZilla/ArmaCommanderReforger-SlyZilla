@@ -978,14 +978,14 @@ class ACR_Manager : Managed
    driveThrottle = input.GetActionValue("ACR_DriveForward") - input.GetActionValue("ACR_DriveBack");
    driveSteer = input.GetActionValue("ACR_DriveRight") - input.GetActionValue("ACR_DriveLeft");
    if (driveVehicle != m_LastDriveVehicle)
-    SCR_HintManagerComponent.ShowCustomHint("Gunner seat: W/S drive forward/back, A/D steer. The AI driver takes over again when you give the squad a map order.", "Arma Commander", 8, true);
+    SCR_HintManagerComponent.ShowCustomHint("Gunner seat: W/S drive forward/back, A/D steer. The AI driver takes over again when you give the squad a map order.", "AC: Actual", 8, true);
   }
   m_LastDriveVehicle = driveVehicle;
   pc.ACR_UpdateGunnerDrive(driveVehicle, driveThrottle, driveSteer);
   if (!m_HintShown)
   {
    m_HintShown = true;
-   SCR_HintManagerComponent.ShowCustomHint("Map: click a squad to select, right-click to order | F7: possess aimed soldier (or hovered marker) | F8: command unit | F9: map", "Arma Commander", 30, true);
+   SCR_HintManagerComponent.ShowCustomHint("Map: click a squad to select, right-click to order | F7: possess aimed soldier (or hovered marker) | F8: command unit | F9: map", "AC: Actual", 30, true);
   }
   if (input.GetActionTriggered("ACR_Move"))
   {
@@ -1005,7 +1005,7 @@ class ACR_Manager : Managed
   }
   IEntity rideNow = ACR_Transport.VehicleOf(localBody);
   if (rideNow != m_LastRide && rideNow && ACR_Transport.SeatOf(localBody) == ECompartmentType.PILOT)
-   SCR_HintManagerComponent.ShowCustomHint("Transporting troops? F6 drops every passenger squad (press twice if you are not down yet). Map: select them, 'Unload at LZ', right-click the LZ to have them jump out on landing.", "Arma Commander", 8, true);
+   SCR_HintManagerComponent.ShowCustomHint("Transporting troops? F6 drops every passenger squad (press twice if you are not down yet). Map: select them, 'Unload at LZ', right-click the LZ to have them jump out on landing.", "AC: Actual", 8, true);
   m_LastRide = rideNow;
   if (input.GetActionTriggered("ACR_Possess"))
   {

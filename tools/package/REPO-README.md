@@ -1,9 +1,16 @@
-# Arma Commander: Reforger
+# Arma Commander Actual (AC: Actual)
 
-A fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode to Arma Reforger.
+An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode to Arma Reforger.
 
-**Download:** [ArmaCommander-Arland.zip](https://github.com/propst-design/ArmaCommanderReforger/releases/latest/download/ArmaCommander-Arland.zip).
+**Download:** [ACActual-Arland.zip](https://github.com/propst-design/ArmaCommanderReforger/releases/latest/download/ACActual-Arland.zip).
 Unzip it and open "READ ME FIRST.txt". The Host and Join launchers update themselves from this page.
+
+## Made with AI
+
+This project is openly vibecoded. Nearly all of the code, launchers and documentation
+were written by **Claude** (Anthropic's AI model, working in Claude Cowork), directed,
+designed and play-tested by **Jacob** ([propst-design](https://github.com/propst-design)).
+Expect rough edges; bug reports with logs help a lot.
 
 ## Credits and license
 
