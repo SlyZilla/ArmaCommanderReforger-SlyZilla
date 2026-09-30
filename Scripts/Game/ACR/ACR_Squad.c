@@ -202,6 +202,13 @@ class ACR_Squad : Managed
   return body && !body.GetCharacterController().IsDead() && body == GetLeader();
  }
 
+ protected bool m_bOrderSetAside;
+ protected ResourceName m_sAsidePrefab;
+ protected vector m_AsideTarget;
+ protected float m_fAsideRadius;
+ protected string m_sAsideOrder;
+ protected int m_iAsideKind;
+
  void Release()
  {
   if (!m_Commander) return;
@@ -220,6 +227,20 @@ class ACR_Squad : Managed
    m_DetachedLeader = null;
   }
   if (previous) previous.SetCanDeleteIfNoPlayer(m_PreviousDeleteIfEmpty);
+  // Back to the map order it had before, unless the player left it busy with one of his own.
+  if (m_bOrderSetAside && m_Group)
+  {
+   array<AIWaypoint> current = {};
+   m_Group.GetWaypoints(current);
+   if (current.IsEmpty())
+   {
+    IssueWaypoint(m_sAsidePrefab, m_AsideTarget, m_fAsideRadius);
+    m_Order = m_sAsideOrder;
+    m_OrderKind = m_iAsideKind;
+    PrintFormat("[ACR] %1: resumes its map order (%2)", m_Name, m_Order);
+   }
+  }
+  m_bOrderSetAside = false;
   PrintFormat("[ACR] %1: native command released player=%2", m_Name, m_Commander);
   m_Commander = 0;
   m_PreviousGroup = -1;
@@ -304,8 +325,14 @@ class ACR_Squad : Managed
   m_CommandGroup.SetGroupLeader(leaderPlayer);
   m_CommandGroup.SetCustomName(m_Name, 0);
   m_Commander = leaderPlayer;
-  // Drop our standing map order, or the squad keeps doing it and the player's
-  // command-wheel orders queue up behind it.
+  // Set our standing map order aside, or the squad keeps doing it and the
+  // player's command-wheel orders queue up behind it. It resumes when he leaves.
+  m_bOrderSetAside = m_Waypoint != null && !m_sOrderPrefab.IsEmpty();
+  m_sAsidePrefab = m_sOrderPrefab;
+  m_AsideTarget = m_MoveTarget;
+  m_fAsideRadius = m_fOrderRadius;
+  m_sAsideOrder = m_Order;
+  m_iAsideKind = m_OrderKind;
   Halt("Following you");
   PrintFormat("[ACR] %1: native command granted player=%2 group=%3 linked=%4", m_Name, leaderPlayer, component.GetGroupID(), m_CommandGroup.GetSlave() == m_Group);
  }
