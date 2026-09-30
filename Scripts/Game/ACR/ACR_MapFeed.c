@@ -22,7 +22,61 @@ class ACR_MapFeed
    PublishSupports(manager, pc, key);
    PublishZones(manager, pc, key);
    PublishOrders(manager, pc, faction);
+   PublishCapture(pc, key);
   }
+ }
+
+ // Capture bar for a player standing in a base ring (empty label = hide).
+ //  tone: 0 ours / neutral progress, 1 we are taking it, 2 the enemy is taking it
+ static void PublishCapture(SCR_PlayerController pc, string key)
+ {
+  IEntity body = pc.GetControlledEntity();
+  string label;
+  float progress;
+  int tone;
+  if (body)
+  {
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (vector.DistanceXZ(body.GetOrigin(), base.GetOrigin()) > base.m_fRadius || !base.IsVisibleTo(key)) continue;
+    if (base.m_sOwner == key)
+    {
+     if (!base.m_bContested && base.m_fScore >= 100) break;
+     label = base.m_sName + ": holding";
+     if (base.m_bContested) label = base.m_sName + ": under attack";
+     progress = (base.m_fScore + 100) / 200;
+     tone = 2;
+     if (!base.m_bContested) tone = 0;
+    }
+    else if (!base.m_sOwner.IsEmpty())
+    {
+     label = "Capturing " + base.m_sName;
+     progress = (100 - base.m_fScore) / 200;
+     tone = 1;
+    }
+    else if (base.m_sCapturer == key)
+    {
+     label = "Capturing " + base.m_sName;
+     progress = base.m_fScore / 100;
+     tone = 1;
+    }
+    else if (!base.m_sCapturer.IsEmpty())
+    {
+     label = base.m_sName + ": enemy capturing";
+     progress = base.m_fScore / 100;
+     tone = 2;
+    }
+    else
+    {
+     label = base.m_sName + ": neutral";
+     progress = 0;
+     tone = 0;
+    }
+    if (base.m_bContested && tone == 1) label += " (contested)";
+    break;
+   }
+  }
+  pc.ACR_SendCapture(label, progress, tone);
  }
 
  // Every soldier of every friendly squad, plus the player's command unit.

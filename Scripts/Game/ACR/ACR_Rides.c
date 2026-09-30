@@ -260,15 +260,21 @@ class ACR_Rides : Managed
   if (ride.m_Rider.m_iOrderSerial != ride.m_iRiderSerial || ride.m_Taxi.m_iOrderSerial != ride.m_iTaxiSerial)
   {
    // (the transport crew bailing out also lands here, with the riders already told to get out)
-   Log(ride, "cancelled by a new order");
+   bool riderReordered = ride.m_Rider.m_iOrderSerial != ride.m_iRiderSerial && ride.m_Rider.m_Order != "Dismounting";
+   if (riderReordered) Log(ride, "cancelled: the riders got a new order");
+   else Log(ride, "cancelled: the transport crew was given other orders or bailed out");
    if (ride.m_Taxi.m_iOrderSerial == ride.m_iTaxiSerial) SendHome(ride);
    // Riders thrown out on the way (the transport got stuck or hit) still go on to their objective.
    ACR_Squad rider = ride.m_Rider;
    if (ride.m_State == ACR_ERideState.TO_DROP && rider.m_Order == "Dismounting")
     rider.ContinueAfterDismount(ride.m_sFinalPrefab, ride.m_Final, ride.m_fFinalRadius, ride.m_sFinalOrder, ride.m_iFinalKind);
    // Riders given a new order while aboard: out first, then carry it out on foot.
-   else if (aboard > 0 && rider.m_iOrderSerial != ride.m_iRiderSerial && rider.m_sOrderPrefab != ACR_Squad.WP_GET_OUT && rider.m_Order != "Dismounting")
+   else if (aboard > 0 && riderReordered && rider.m_sOrderPrefab != ACR_Squad.WP_GET_OUT)
     rider.DismountAndContinue(rider.m_sOrderPrefab, rider.m_MoveTarget, rider.m_fOrderRadius, rider.m_Order, rider.m_OrderKind);
+   // The transport let them down, not a new order: carry on to the objective on foot
+   // instead of standing around where the ride ended.
+   else if (!riderReordered)
+    Finish(ride, aboard > 0);
    return false;
   }
   float inState = now - ride.m_fStateSince;

@@ -92,6 +92,10 @@ class ACR_GunnerDrive
   VehicleWheeledSimulation sim = car.GetSimulation();
   if (!sim) { m_EndReason = "no simulation"; return false; }
   if (m_Throttle != 0 && !car.IsEngineOn()) car.ForceStartEngine();
+  // The parked AI driver (or the game) can leave the handbrake on: the rear wheels
+  // lock, the front skids sideways and the vehicle crawls up hills. Keep it off
+  // whenever the gunner wants to move.
+  if (m_Throttle != 0 || m_Steer != 0) car.SetPersistentHandBrake(false);
   // A stopped vehicle's physics falls asleep and then ignores throttle.
   Physics physics = m_Vehicle.GetPhysics();
   if (physics && (m_Throttle != 0 || m_Steer != 0) && !physics.IsActive()) physics.SetActive(ActiveState.ACTIVE);
@@ -133,6 +137,7 @@ class ACR_GunnerDrive
   sim.SetClutch(1);
   sim.SetThrottle(throttle);
   sim.SetBreak(brake, false);
+  if (brake == 0 && sim.IsHandbrakeOn()) car.SetPersistentHandBrake(false);
   // Less steering lock at speed, so a tap of A/D doesn't spin the vehicle out.
   float steerScale = Math.Clamp(1 - Math.AbsFloat(speed) / 25, 0.35, 1);
   sim.SetSteering(m_Steer * steerScale);

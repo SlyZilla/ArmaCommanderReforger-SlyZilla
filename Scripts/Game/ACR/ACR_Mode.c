@@ -10,6 +10,8 @@ class ACR_Mode : GenericEntity
 
  [Attribute("70", UIWidgets.ComboBox, "Skill of all Arma Commander AI soldiers", "", ParamEnumArray.FromEnum(EAISkill))]
  int m_iAISkill;
+ [Attribute("1.6", UIWidgets.EditBox, "AI reaction speed: how fast AI spot and identify targets (game default 1)")]
+ float m_fAIPerception;
  [Attribute("15", UIWidgets.EditBox, "Seconds before a killed command unit respawns at base")]
  int m_iRespawnSeconds;
 
@@ -32,6 +34,7 @@ class ACR_Mode : GenericEntity
   manager.m_SharedCommand = m_bSharedCommand;
   manager.m_iRespawnSeconds = m_iRespawnSeconds;
   if (m_iAISkill > 0) manager.m_iAISkill = m_iAISkill;
+  if (m_fAIPerception > 0) manager.m_fAIPerception = m_fAIPerception;
   string respawnFlag;
   if (System.GetCLIParam("acrRespawnSeconds", respawnFlag)) manager.m_iRespawnSeconds = respawnFlag.ToInt();
   if (Replication.IsServer())

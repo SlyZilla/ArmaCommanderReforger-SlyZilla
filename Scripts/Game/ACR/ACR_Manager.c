@@ -40,6 +40,7 @@ class ACR_Manager : Managed
  bool m_bHostGameMaster = true;
  int m_iRespawnSeconds = 15;
  int m_iAISkill = 70; // EAISkill.VETERAN
+ float m_fAIPerception = 1.6; // how fast AI spots and identifies targets (game default 1)
  ref ACR_Respawn m_Respawn;
  ref ACR_Supports m_Supports;
  ref ACR_Rides m_Rides;

@@ -927,25 +927,66 @@ class ACR_AICommander : Managed
     return;
    }
   }
-  // Buy up to two squads per tick from what's affordable, favouring infantry.
+  // Buy up to two units per tick. The pick is weighted by price, so real fighting
+  // power (rifle squads, MG teams, armed vehicles) wins over a swarm of cheap
+  // two-man teams; specialist teams (engineers, sappers, medics, logistics,
+  // recon) are rare and never doubled up.
   for (int n = 0; n < 2 && mine.Count() + n < cap; n++)
   {
    array<int> options = {};
+   array<float> weights = {};
+   float total;
    foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
    {
     if (entry.m_iRemaining <= 0 || entry.m_iCost > data.m_iRP) continue;
     // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
     if (entry.m_bAircraft || entry.m_sVehicle.Contains("/Helicopters/") || entry.m_sVehicle.Contains("/Planes/")) continue;
-    // Nor service vehicles (fuel, repair, ammo, medical, command): nothing for the AI to do with them.
+    // Nor service vehicles (bought on need) or unarmed cars (nothing to fight with).
     if (IsServiceVehicle(entry)) continue;
-    // Keep infantry the backbone: three chances in four for infantry-only entries.
-    if (!entry.m_sVehicle.IsEmpty() && Math.RandomFloat(0, 1) < 0.75) continue;
+    if (!entry.m_sVehicle.IsEmpty() && !entry.m_bArmed) continue;
+    float weight = entry.m_iCost;
+    if (IsSpecialistTeam(entry))
+    {
+     if (OwnsLike(entry)) continue;
+     weight *= 0.3;
+    }
+    // Keep infantry the backbone.
+    if (!entry.m_sVehicle.IsEmpty()) weight *= 0.5;
     options.Insert(i);
+    weights.Insert(weight);
+    total += weight;
    }
    if (options.IsEmpty()) return;
-   string result = m_Manager.PurchaseAt(m_sFaction, options.GetRandomElement(), spawn);
+   float roll = Math.RandomFloat(0, total);
+   int pick = options[options.Count() - 1];
+   foreach (int k, float w : weights)
+   {
+    roll -= w;
+    if (roll <= 0) { pick = options[k]; break; }
+   }
+   string result = m_Manager.PurchaseAt(m_sFaction, pick, spawn);
    PrintFormat("[ACR] AI %1 requisition: %2", m_sFaction, result);
   }
+ }
+
+ static bool IsSpecialistTeam(ACR_RequisitionEntry entry)
+ {
+  string name = entry.m_sName;
+  name.ToLower();
+  array<string> words = {"engineer", "sapper", "medic", "logistic", "supply", "recon", "sniper", "hq", "radio"};
+  foreach (string word : words)
+   if (name.Contains(word)) return true;
+  return false;
+ }
+
+ // Already have a unit bought from this entry (names are numbered per purchase).
+ protected bool OwnsLike(ACR_RequisitionEntry entry)
+ {
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  foreach (ACR_Squad squad : mine)
+   if (squad.GetName().StartsWith(entry.m_sName)) return true;
+  return false;
  }
 
  // ---------------------------------------------------------------- 6. logistics

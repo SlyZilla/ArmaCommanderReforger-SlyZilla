@@ -948,6 +948,10 @@ class ACR_Supports : Managed
   impact[1] = GetGame().GetWorld().GetSurfaceY(impact[0], impact[2]) + 0.3;
   IEntity bomb = ACR_Manager.SpawnPrefab(BOMB, impact);
   PrintFormat("[ACR] SUPPORT bomb at %1 spawned=%2", impact, bomb != null);
+  // The explosion's flash and sound only play where it is created (the server,
+  // which on a dedicated host nobody hears): replay it on every client.
+  SCR_BaseGameMode mode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+  if (mode) mode.ACR_BroadcastExplosion(impact);
  }
 
  // Spawns a rocket/shell pointing at the target; it is launched next frame on the
@@ -1077,6 +1081,21 @@ modded class SCR_BaseGameMode
  void ACR_BroadcastLaunch(RplId id, vector dir, vector parentVelocity)
  {
   Rpc(ACR_RpcLaunch, id, dir, parentVelocity);
+ }
+ void ACR_BroadcastExplosion(vector at)
+ {
+  Rpc(ACR_RpcExplosion, at);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
+ protected void ACR_RpcExplosion(vector at)
+ {
+  if (Replication.IsServer()) return;
+  Resource resource = Resource.Load(ACR_Supports.BOMB);
+  if (!resource.IsValid()) return;
+  EntitySpawnParams params = new EntitySpawnParams();
+  params.TransformMode = ETransformMode.WORLD;
+  params.Transform[3] = at;
+  GetGame().SpawnEntityPrefabLocal(resource, GetGame().GetWorld(), params);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
  protected void ACR_RpcLaunch(RplId id, vector dir, vector parentVelocity)

@@ -20,6 +20,7 @@ class ACR_RequisitionEntry
  int m_iStock;
  bool m_bAircraft;   // set automatically; the AI commander never buys these (its AI cannot fly)
  bool m_bTransport;  // set automatically: an unarmed truck, which the AI commander buys to ferry squads
+ bool m_bArmed = true; // set automatically for vehicles: has a weapon (the AI doesn't buy unarmed cars to fight with)
 
  // runtime
  int m_iRemaining;
@@ -162,6 +163,7 @@ class ACR_FactionCatalog
     int cost = VehicleCost(entry);
     item.Set(name, "", prefab, cost, StockFor(cost, 90, 4));
     item.m_bAircraft = entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_HELICOPTER) || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_AIRPLANE);
+    item.m_bArmed = entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED);
     item.m_bTransport = entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_TRUCK) && !entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED) && !item.m_bAircraft;
    }
    used.Insert(prefab);

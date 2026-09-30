@@ -304,6 +304,9 @@ class ACR_Squad : Managed
   m_CommandGroup.SetGroupLeader(leaderPlayer);
   m_CommandGroup.SetCustomName(m_Name, 0);
   m_Commander = leaderPlayer;
+  // Drop our standing map order, or the squad keeps doing it and the player's
+  // command-wheel orders queue up behind it.
+  Halt("Following you");
   PrintFormat("[ACR] %1: native command granted player=%2 group=%3 linked=%4", m_Name, leaderPlayer, component.GetGroupID(), m_CommandGroup.GetSlave() == m_Group);
  }
 
@@ -507,7 +510,14 @@ class ACR_Squad : Managed
    if (!body) continue;
    SCR_AICombatComponent combat = SCR_AICombatComponent.Cast(body.FindComponent(SCR_AICombatComponent));
    if (combat && combat.GetAISkill() != skill) combat.SetAISkill(skill);
+   // Faster target identification: less standing and staring at a player
+   // while deciding whether he's an enemy.
+   ACR_Manager manager = ACR_Manager.GetInstance();
+   if (combat && manager && combat.GetPerceptionFactor() != manager.m_fAIPerception) combat.SetPerceptionFactor(manager.m_fAIPerception);
   }
+  // A player is leading (or riding with) this squad: they give the orders, e.g.
+  // with the command wheel. Re-issuing our last map order would wipe theirs.
+  if (HasPlayer()) return;
   bool contact = KnownEnemies(350) > 0;
   FollowRoute();
   Cohesion(now, contact);
@@ -718,6 +728,15 @@ class ACR_Squad : Managed
   return false;
  }
 
+ static bool HasTurret(IEntity vehicle)
+ {
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return false;
+  array<BaseCompartmentSlot> turrets = {};
+  compartments.GetCompartmentsOfType(turrets, ECompartmentType.TURRET);
+  return !turrets.IsEmpty();
+ }
+
  // Can fight: infantry of two or more, or a vehicle crew with a manned gun.
  // A lone driver or an unarmed truck crew is not sent to take or hold ground.
  bool IsCombatUnit()
@@ -766,12 +785,27 @@ class ACR_Squad : Managed
   }
   float stalled = (now - m_fStallSince) / 1000;
   bool armed = HasGunner(vehicle);
+  // Fighting vehicles (anything with a turret: LAV, BTR, BRDM, gun trucks) keep
+  // their crew aboard; only soft, unarmed vehicles are abandoned.
+  bool fightingVehicle = HasTurret(vehicle);
   bool underFire = contact && KnownEnemies(300) > 0;
-  if (underFire && !armed && stalled >= STALL_SECONDS_HELPLESS) { Bail(vehicle, "stopped under fire with no gunner", false); return; }
+  if (underFire && !fightingVehicle && stalled >= STALL_SECONDS_HELPLESS) { Bail(vehicle, "stopped under fire, unarmed", false); return; }
   float limit = STALL_SECONDS;
-  if (underFire) limit = STALL_SECONDS_FIGHTING;
+  if (underFire || armed) limit = STALL_SECONDS_FIGHTING;
   if (stalled < limit) return;
-  if (m_iUnsticks >= UNSTICK_TRIES) { Bail(vehicle, "stuck", !underFire); return; }
+  if (m_iUnsticks >= UNSTICK_TRIES)
+  {
+   if (fightingVehicle)
+   {
+    // Hold where it is and fight from there instead of walking away from the vehicle.
+    Halt("Stuck, holding");
+    m_iUnsticks = 0;
+    PrintFormat("[ACR] DRIVE %1: stuck, holding position (armed vehicle)", m_Name);
+    return;
+   }
+   Bail(vehicle, "stuck", !underFire);
+   return;
+  }
   m_iUnsticks++;
   BeginUnstick(vehicle, driver);
  }

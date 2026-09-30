@@ -157,6 +157,87 @@ modded class SCR_PlayerController
   if (possessing) possessing.SetMainEntity(GetPlayerId(), GetControlledEntity(), entity, true);
  }
 
+ // ---------------------------------------------------------------- capture bar (HUD)
+ protected string m_ACR_CaptureSent = "-";
+ protected Widget m_ACR_CaptureRoot;
+ protected TextWidget m_ACR_CaptureText;
+ protected ImageWidget m_ACR_CaptureFill;
+ static const float CAPTURE_BAR_WIDTH = 260;
+
+ void ACR_SendCapture(string label, float progress, int tone)
+ {
+  string key = label + "|" + ((int)(progress * 100)).ToString() + "|" + tone.ToString();
+  if (key == m_ACR_CaptureSent) return;
+  m_ACR_CaptureSent = key;
+  Rpc(ACR_CaptureOwner, label, progress, tone);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_CaptureOwner(string label, float progress, int tone)
+ {
+  if (label.IsEmpty())
+  {
+   if (m_ACR_CaptureRoot) m_ACR_CaptureRoot.SetVisible(false);
+   return;
+  }
+  if (!m_ACR_CaptureRoot) ACR_CreateCaptureBar();
+  if (!m_ACR_CaptureRoot) return;
+  m_ACR_CaptureRoot.SetVisible(true);
+  if (m_ACR_CaptureText) m_ACR_CaptureText.SetText(label + "  " + ((int)(Math.Clamp(progress, 0, 1) * 100)).ToString() + "%");
+  if (m_ACR_CaptureFill)
+  {
+   FrameSlot.SetSize(m_ACR_CaptureFill, CAPTURE_BAR_WIDTH * Math.Clamp(progress, 0, 1), 8);
+   Color color = new Color(0.85, 0.85, 0.85, 0.95);
+   if (tone == 1) color = new Color(0.30, 0.60, 1.00, 0.95);
+   if (tone == 2) color = new Color(1.00, 0.30, 0.20, 0.95);
+   m_ACR_CaptureFill.SetColor(color);
+  }
+ }
+
+ protected void ACR_CreateCaptureBar()
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  if (!ws) return;
+  m_ACR_CaptureRoot = ws.CreateWidget(WidgetType.FrameWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, ws);
+  FrameSlot.SetAnchorMin(m_ACR_CaptureRoot, 0.5, 0);
+  FrameSlot.SetAnchorMax(m_ACR_CaptureRoot, 0.5, 0);
+  FrameSlot.SetAlignment(m_ACR_CaptureRoot, 0.5, 0);
+  FrameSlot.SetPos(m_ACR_CaptureRoot, 0, 70);
+  FrameSlot.SetSize(m_ACR_CaptureRoot, CAPTURE_BAR_WIDTH, 40);
+  m_ACR_CaptureRoot.SetZOrder(900);
+  m_ACR_CaptureText = TextWidget.Cast(ws.CreateWidgets("{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout", m_ACR_CaptureRoot));
+  if (m_ACR_CaptureText)
+  {
+   FrameSlot.SetPos(m_ACR_CaptureText, 0, 0);
+   FrameSlot.SetSize(m_ACR_CaptureText, CAPTURE_BAR_WIDTH, 22);
+  }
+  Widget back = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(0, 0, 0, 0.55), 0, m_ACR_CaptureRoot);
+  FrameSlot.SetPos(back, 0, 26);
+  FrameSlot.SetSize(back, CAPTURE_BAR_WIDTH, 8);
+  m_ACR_CaptureFill = ImageWidget.Cast(ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(0.3, 0.6, 1, 0.95), 1, m_ACR_CaptureRoot));
+  if (m_ACR_CaptureFill)
+  {
+   FrameSlot.SetPos(m_ACR_CaptureFill, 0, 26);
+   FrameSlot.SetSize(m_ACR_CaptureFill, 0, 8);
+  }
+ }
+
+ // After taking over a soldier from the command map, close the map: reopening
+ // the game view re-initialises the camera and the damage/bleeding screen
+ // effects for the new body (otherwise the view can stay zoomed in and the
+ // effects may be missing until the map is toggled by hand).
+ override void OnControlledEntityChanged(IEntity from, IEntity to)
+ {
+  super.OnControlledEntityChanged(from, to);
+  if (!to || to == GetMainEntity() || !ACR_Manager.GetInstance() || GetGame().GetPlayerController() != this) return;
+  GetGame().GetCallqueue().CallLater(ACR_CloseMapAfterSwitch, 250, false);
+ }
+
+ protected void ACR_CloseMapAfterSwitch()
+ {
+  MenuManager menus = GetGame().GetMenuManager();
+  if (menus && menus.FindMenuByPreset(ChimeraMenuPreset.MapMenu)) menus.CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+ }
+
  void ACR_Notify(string message)
  {
   Rpc(ACR_FeedbackOwner, message);
