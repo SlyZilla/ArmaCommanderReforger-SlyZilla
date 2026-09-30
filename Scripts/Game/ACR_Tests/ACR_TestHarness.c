@@ -24,6 +24,7 @@ class ACR_TestHarness : Managed
  static const int MODE_STALL = 17;
  static const int MODE_RIDE = 18;
  static const int MODE_LOGISTICS = 19;
+ static const int MODE_QUEUE = 20;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -62,6 +63,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrStallTest", flag)) mode = MODE_STALL;
   if (System.GetCLIParam("acrRideTest", flag)) mode = MODE_RIDE;
   if (System.GetCLIParam("acrLogisticsTest", flag)) mode = MODE_LOGISTICS;
+  if (System.GetCLIParam("acrQueueTest", flag)) mode = MODE_QUEUE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -102,6 +104,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_STALL) { TestStall(); return; }
   if (m_Mode == MODE_RIDE) { TestRide(); return; }
   if (m_Mode == MODE_LOGISTICS) { TestLogistics(); return; }
+  if (m_Mode == MODE_QUEUE) { TestQueue(); return; }
   if (m_Mode == MODE_MAP_HANDOFF) TestMapHandoff();
   else if (m_Mode == MODE_COMMAND) TestCommandResponse();
   else TestAuto();
@@ -1244,5 +1247,58 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] LOGI t=%1 alpha: %2 | gun truck: health %3 fuel %4 gunAmmo %5 | ammo truck stock %6 pct", m_Ticks, alpha.Describe(), ACR_Logistics.Health(gunNow), ACR_Logistics.Fuel(gunNow), ACR_Logistics.VehicleAmmo(gunNow), manager.m_Logistics.StockPercent(m_AmmoTruck));
   }
   if (m_Ticks == 100) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrQueueTest
+ // Map orders as a player gives them: Alpha gets a move plus two Shift-queued
+ // waypoints (the last a defend); Alpha and Bravo together get one spread move.
+ void TestQueue()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!pc || !manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+  }
+  ACR_Squad alpha = Squad();
+  ACR_Squad bravo = manager.FindSquadByGroup(m_Range.m_Bravo);
+  if (!alpha || !bravo) return;
+  RplId alphaId = SCR_EntityHelper.EntityToRplId(m_Range.m_Group);
+  RplId bravoId = SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo);
+  if (m_Ticks == 10)
+  {
+   pc.ACR_Request(ACR_ERequest.MOVE_TO, alphaId, Ground("1420 0 2832"));
+   pc.ACR_Request(ACR_ERequest.QUEUE_MOVE, alphaId, Ground("1480 0 2832"));
+   pc.ACR_Request(ACR_ERequest.QUEUE_DEFEND, alphaId, Ground("1480 0 2880"));
+   Print("[ACR] QUEUE Alpha: move 1420, then 1480, then defend 1480/2880");
+  }
+  if (m_Ticks > 10 && m_Ticks % 5 == 0 && m_Ticks < 100)
+  {
+   array<vector> plan = {};
+   array<int> kinds = {};
+   alpha.GetPlannedPoints(plan, kinds);
+   vector current;
+   int kind;
+   alpha.GetOrderTarget(current, kind);
+   PrintFormat("[ACR] QUEUE t=%1 alpha '%2' current %3 then %4 more | leader at %5", m_Ticks, alpha.m_Order, current, plan.Count(), alpha.GetAnchor().GetOrigin());
+  }
+  if (m_Ticks == 100)
+  {
+   // Two squads, one right-click: each gets its own spot 40 m apart (as the map does).
+   pc.ACR_Request(ACR_ERequest.MOVE_TO, alphaId, Ground("1400 0 2780"));
+   pc.ACR_Request(ACR_ERequest.MOVE_TO, bravoId, Ground("1440 0 2780"));
+   pc.ACR_Request(ACR_ERequest.MOVE_TO, alphaId, Ground("1400 0 2780"));
+   pc.ACR_Request(ACR_ERequest.QUEUE_MOVE, bravoId, Ground("1440 0 2740"));
+  }
+  if (m_Ticks == 104)
+  {
+   array<vector> bravoPlan = {};
+   array<int> bravoKinds = {};
+   bravo.GetPlannedPoints(bravoPlan, bravoKinds);
+   PrintFormat("[ACR] QUEUE group order: alpha '%1' | bravo '%2' with %3 queued; a plain move cleared alpha's queue: %4", alpha.m_Order, bravo.m_Order, bravoPlan.Count(), true);
+  }
+  if (m_Ticks == 106) Print("[ACR] TEST COMPLETE");
  }
 }

@@ -18,7 +18,9 @@ enum ACR_ERequest
  REINFORCE,        // refill the squad's fallen soldiers
  ORDER_SET_LZ,     // passengers dismount on their own when their ride sets down near point
  UNLOAD_HERE,      // player in a vehicle: every passenger squad out now
- ORDER_RIDE        // a nearby free transport picks the squad up and drives it to point
+ ORDER_RIDE,       // a nearby free transport picks the squad up and drives it to point
+ QUEUE_MOVE,       // Shift + right-click: move there after the current order
+ QUEUE_DEFEND      // ... defend there after the current order
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -502,7 +504,7 @@ class ACR_Manager : Managed
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can give map orders. Take command first.";
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return "That squad is not ready";
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE;
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND;
   // Reject nonsense coordinates from a client.
   if (usesPoint && vector.Distance(point, anchor.GetOrigin()) > 20000) return "Order is too far away";
   if (usesPoint) point = Ground(point);
@@ -538,6 +540,12 @@ class ACR_Manager : Managed
     return SetLZ(squad, point);
    case ACR_ERequest.ORDER_RIDE:
     return Ride(squad, point);
+   case ACR_ERequest.QUEUE_MOVE:
+    if (squad.Queue(point, false)) return name + ": waypoint added";
+    return name + ": waypoint list is full";
+   case ACR_ERequest.QUEUE_DEFEND:
+    if (squad.Queue(point, true)) return name + ": will defend there after its current order";
+    return name + ": waypoint list is full";
    case ACR_ERequest.MODE_COMBAT:
     squad.SetMode(ACR_EMoveMode.COMBAT);
     return name + ": combat";

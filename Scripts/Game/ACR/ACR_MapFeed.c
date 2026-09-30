@@ -220,9 +220,20 @@ class ACR_MapFeed
    vector target;
    int kind;
    if (!squad.GetOrderTarget(target, kind)) continue;
-   groupIds.Insert(SCR_EntityHelper.EntityToRplId(squad.m_Group));
+   RplId groupId = SCR_EntityHelper.EntityToRplId(squad.m_Group);
+   groupIds.Insert(groupId);
    targets.Insert(target);
    kinds.Insert(kind);
+   // Then the rest of the plan (route legs, queued waypoints) as a chain.
+   array<vector> planned = {};
+   array<int> plannedKinds = {};
+   squad.GetPlannedPoints(planned, plannedKinds);
+   foreach (int p, vector point : planned)
+   {
+    groupIds.Insert(groupId);
+    targets.Insert(point);
+    kinds.Insert(plannedKinds[p]);
+   }
   }
   pc.ACR_SendOrders(groupIds, targets, kinds);
  }

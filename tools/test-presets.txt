@@ -15,4 +15,5 @@ transport|-acrTransportTest 1|130
 stall|-acrStallTest 1|150
 ride|-acrRideTest 1|200
 logistics|-acrLogisticsTest 1|130
+queue|-acrQueueTest 1|140
 soak|-acrSoakTest 1|1320|Worlds/ACR_Arland.ent

@@ -61,6 +61,24 @@ class ACR_MarkerClick : ScriptedWidgetEventHandler
  }
 }
 
+// Ctrl + drag on the command map (see ACR_BoxDown / ACR_BoxUp).
+class ACR_BoxHandler : ScriptedWidgetEventHandler
+{
+ SCR_PlayerController m_Owner;
+ override bool OnMouseButtonDown(Widget w, int x, int y, int button)
+ {
+  if (button != 0 || !m_Owner) return false;
+  m_Owner.ACR_BoxDown(x, y);
+  return true;
+ }
+ override bool OnMouseButtonUp(Widget w, int x, int y, int button)
+ {
+  if (button != 0 || !m_Owner) return false;
+  m_Owner.ACR_BoxUp(x, y);
+  return true;
+ }
+}
+
 modded class SCR_PlayerController
 {
  // ---------------------------------------------------------------- menu control flags
@@ -80,6 +98,8 @@ modded class SCR_PlayerController
 
  // ---------------------------------------------------------------- requests
  protected float m_ACR_LastCommand = -1000;
+ protected float m_ACR_CommandWindow = -1000;
+ protected int m_ACR_CommandsInWindow;
  void ACR_Request(int command, RplId targetId = RplId.Invalid(), vector point = vector.Zero)
  {
   if (!ACR_Manager.GetInstance()) return;
@@ -91,9 +111,15 @@ modded class SCR_PlayerController
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
+  // Flood guard: up to 24 orders a second (one click can order a dozen squads).
   float now = GetGame().GetWorld().GetWorldTime();
-  if (now - m_ACR_LastCommand < 300) return;
-  m_ACR_LastCommand = now;
+  if (now - m_ACR_CommandWindow > 1000)
+  {
+   m_ACR_CommandWindow = now;
+   m_ACR_CommandsInWindow = 0;
+  }
+  m_ACR_CommandsInWindow++;
+  if (m_ACR_CommandsInWindow > 24) return;
   string message = manager.HandleRequest(this, command, targetId, point);
   Rpc(ACR_FeedbackOwner, message);
  }
@@ -417,6 +443,7 @@ modded class SCR_PlayerController
   }
   m_ACR_MapWasOpen = true;
   ACR_UpdatePanel();
+  ACR_UpdateBoxLayer();
   ACR_DrawOrders(mapEntity);
   // Leaders are drawn by their group marker, so they get no plain soldier marker.
   array<int> shown = {};
@@ -448,7 +475,7 @@ modded class SCR_PlayerController
    marker.m_State = m_ACR_States[r];
    marker.m_Label = m_ACR_Labels[r];
    marker.m_GroupId = m_ACR_UnitGroups[r];
-   marker.m_Selected = m_ACR_SelectedGroup.IsValid() && marker.m_GroupId == m_ACR_SelectedGroup;
+   marker.m_Selected = ACR_IsSelected(marker.m_GroupId);
    if (marker.m_State == 1) marker.m_Label += " [PLAYER]";
    vector pos = m_ACR_Positions[r];
    IEntity streamed = SCR_EntityHelper.RplIdToEntity(marker.m_UnitId);
@@ -500,7 +527,7 @@ modded class SCR_PlayerController
    marker.m_UnitId = m_ACR_LeaderIds[i];
    marker.m_Label = m_ACR_GroupNames[i];
    marker.m_GroupId = m_ACR_GroupIds[i];
-   marker.m_Selected = m_ACR_SelectedGroup.IsValid() && marker.m_GroupId == m_ACR_SelectedGroup;
+   marker.m_Selected = ACR_IsSelected(marker.m_GroupId);
    marker.m_State = m_ACR_LeaderStates[i];
    if (marker.m_State == 1) marker.m_Label += " [PLAYER LEADER]";
    else marker.m_Label += " [AI LEADER]";
@@ -566,11 +593,210 @@ modded class SCR_PlayerController
  RplId ACR_GetSelectedGroup() { return m_ACR_SelectedGroup; }
  void ACR_MarkUiClick() { m_ACR_LastUiClick = System.GetTickCount(); }
 
+ // Several squads can be selected (Ctrl + drag a box, Shift + click to add or
+ // remove one). m_ACR_SelectedGroup is the first of them: the one the panel shows.
+ protected ref array<RplId> m_ACR_SelectedGroups = {};
+
+ bool ACR_IsSelected(RplId groupId)
+ {
+  return groupId.IsValid() && m_ACR_SelectedGroups.Contains(groupId);
+ }
+
+ protected void ACR_SetSelection(array<RplId> groups)
+ {
+  m_ACR_SelectedGroups.Clear();
+  foreach (RplId id : groups) if (id.IsValid() && !m_ACR_SelectedGroups.Contains(id)) m_ACR_SelectedGroups.Insert(id);
+  m_ACR_SelectedGroup = RplId.Invalid();
+  if (!m_ACR_SelectedGroups.IsEmpty()) m_ACR_SelectedGroup = m_ACR_SelectedGroups[0];
+ }
+
+ protected bool ACR_ModifierHeld(string action)
+ {
+  InputManager input = GetGame().GetInputManager();
+  return input && input.GetActionValue(action) > 0.5;
+ }
+
  void ACR_SelectGroup(RplId groupId)
  {
   m_ACR_SelectedBase = "";
-  m_ACR_SelectedGroup = groupId;
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+  array<RplId> next = {};
+  if (ACR_ModifierHeld("ACR_MapShift"))
+  {
+   next.Copy(m_ACR_SelectedGroups);
+   if (next.Contains(groupId)) next.RemoveItem(groupId);
+   else next.Insert(groupId);
+  }
+  else next.Insert(groupId);
+  ACR_SetSelection(next);
+ }
+
+ // Send a command for every selected squad (orders without a map point).
+ protected void ACR_RequestSelected(int command)
+ {
+  foreach (RplId id : m_ACR_SelectedGroups) ACR_Request(command, id);
+ }
+
+ // ---------------------------------------------------------------- box selection
+ // Hold Ctrl: a see-through layer covers the map, so a left-drag draws a box
+ // instead of panning. The squads inside are worked out once, on release, in
+ // map coordinates, so frame rate, zoom or panning can't throw the result off.
+ // A Ctrl+click without dragging (under ~6 px) picks the nearest squad instead.
+ protected Widget m_ACR_BoxLayer;
+ protected ref ACR_BoxHandler m_ACR_BoxHandler;
+ protected bool m_ACR_Boxing;
+ protected vector m_ACR_BoxStart;
+ protected int m_ACR_BoxStartX;
+ protected int m_ACR_BoxStartY;
+ static const int BOX_DEAD_ZONE = 6;
+
+ protected void ACR_CreateBoxLayer(Widget root)
+ {
+  m_ACR_BoxLayer = GetGame().GetWorkspace().CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0, 0, 0, 0.01), 0, root);
+  if (!m_ACR_BoxLayer) return;
+  FrameSlot.SetAnchorMin(m_ACR_BoxLayer, 0, 0);
+  FrameSlot.SetAnchorMax(m_ACR_BoxLayer, 1, 1);
+  FrameSlot.SetOffsets(m_ACR_BoxLayer, 0, 0, 0, 0);
+  m_ACR_BoxLayer.SetZOrder(950); // over the map and markers, under the panel
+  m_ACR_BoxLayer.SetVisible(false);
+  m_ACR_BoxHandler = new ACR_BoxHandler();
+  m_ACR_BoxHandler.m_Owner = this;
+  m_ACR_BoxLayer.AddHandler(m_ACR_BoxHandler);
+ }
+
+ // Each map frame: the layer is up only while Ctrl is held (or a box is in progress).
+ protected void ACR_UpdateBoxLayer()
+ {
+  if (!m_ACR_BoxLayer) return;
+  bool want = m_ACR_Boxing || (m_ACR_IsCommander && ACR_ModifierHeld("ACR_MapCtrl"));
+  if (m_ACR_BoxLayer.IsVisible() != want) m_ACR_BoxLayer.SetVisible(want);
+ }
+
+ void ACR_BoxDown(int x, int y)
+ {
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity) return;
+  float wx, wz;
+  mapEntity.GetMapCursorWorldPosition(wx, wz);
+  m_ACR_BoxStart = Vector(wx, 0, wz);
+  m_ACR_BoxStartX = x;
+  m_ACR_BoxStartY = y;
+  m_ACR_Boxing = true;
+ }
+
+ void ACR_BoxUp(int x, int y)
+ {
+  if (!m_ACR_Boxing) return;
+  m_ACR_Boxing = false;
+  ACR_MarkUiClick(); // the map's own click handler must not clear what we just picked
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity) return;
+  float wx, wz;
+  mapEntity.GetMapCursorWorldPosition(wx, wz);
+  vector end = Vector(wx, 0, wz);
+  bool drag = Math.AbsInt(x - m_ACR_BoxStartX) > BOX_DEAD_ZONE || Math.AbsInt(y - m_ACR_BoxStartY) > BOX_DEAD_ZONE;
+  array<RplId> picked = {};
+  if (ACR_ModifierHeld("ACR_MapShift")) picked.Copy(m_ACR_SelectedGroups);
+  if (drag)
+  {
+   float minX = Math.Min(m_ACR_BoxStart[0], end[0]);
+   float maxX = Math.Max(m_ACR_BoxStart[0], end[0]);
+   float minZ = Math.Min(m_ACR_BoxStart[2], end[2]);
+   float maxZ = Math.Max(m_ACR_BoxStart[2], end[2]);
+   foreach (int i, RplId groupId : m_ACR_GroupIds)
+   {
+    if (i >= m_ACR_Commandable.Count() || m_ACR_Commandable[i] != 1) continue;
+    vector pos = ACR_LeaderPos(i);
+    if (pos[0] >= minX && pos[0] <= maxX && pos[2] >= minZ && pos[2] <= maxZ && !picked.Contains(groupId)) picked.Insert(groupId);
+   }
+  }
+  else
+  {
+   // Nearest commandable squad within ~14 px of the click toggles in or out.
+   int best = -1;
+   float bestDistance = 14;
+   foreach (int j, RplId candidate : m_ACR_GroupIds)
+   {
+    if (j >= m_ACR_Commandable.Count() || m_ACR_Commandable[j] != 1) continue;
+    vector leader = ACR_LeaderPos(j);
+    int sx, sy, cx, cy;
+    mapEntity.WorldToScreen(leader[0], leader[2], sx, sy, true);
+    mapEntity.WorldToScreen(end[0], end[2], cx, cy, true);
+    float d = Math.Sqrt((sx - cx) * (sx - cx) + (sy - cy) * (sy - cy));
+    if (d < bestDistance) { bestDistance = d; best = j; }
+   }
+   if (best >= 0)
+   {
+    RplId hit = m_ACR_GroupIds[best];
+    if (picked.Contains(hit)) picked.RemoveItem(hit);
+    else picked.Insert(hit);
+   }
+  }
+  m_ACR_SelectedBase = "";
+  m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+  ACR_SetSelection(picked);
+ }
+
+ protected vector ACR_LeaderPos(int index)
+ {
+  vector pos = m_ACR_LeaderPositions[index];
+  IEntity leader = SCR_EntityHelper.RplIdToEntity(m_ACR_LeaderIds[index]);
+  if (leader) pos = leader.GetOrigin();
+  return pos;
+ }
+
+ protected void ACR_DrawBox(SCR_MapEntity mapEntity)
+ {
+  if (!m_ACR_Boxing) return;
+  float wx, wz;
+  mapEntity.GetMapCursorWorldPosition(wx, wz);
+  int x0, y0, x1, y1;
+  mapEntity.WorldToScreen(m_ACR_BoxStart[0], m_ACR_BoxStart[2], x0, y0, true);
+  mapEntity.WorldToScreen(wx, wz, x1, y1, true);
+  LineDrawCommand box = new LineDrawCommand();
+  Color white = new Color(1, 1, 1, 0.9);
+  box.m_iColor = white.PackToInt();
+  box.m_fWidth = 1.5;
+  box.m_bShouldEnclose = true;
+  box.m_Vertices = {x0, y0, x1, y0, x1, y1, x0, y1};
+  m_ACR_OrderCommands.Insert(box);
+ }
+
+ // ---------------------------------------------------------------- pending orders
+ // Drawn faint the moment you click, until the server's order lines catch up.
+ protected ref array<vector> m_ACR_PendingFrom = {};
+ protected ref array<vector> m_ACR_PendingTo = {};
+ protected ref array<int> m_ACR_PendingUntil = {};
+
+ protected void ACR_AddPending(vector from, vector to)
+ {
+  m_ACR_PendingFrom.Insert(from);
+  m_ACR_PendingTo.Insert(to);
+  m_ACR_PendingUntil.Insert(System.GetTickCount() + 2500);
+ }
+
+ protected void ACR_DrawPending(SCR_MapEntity mapEntity)
+ {
+  int now = System.GetTickCount();
+  for (int i = m_ACR_PendingTo.Count() - 1; i >= 0; i--)
+  {
+   if (now > m_ACR_PendingUntil[i])
+   {
+    m_ACR_PendingFrom.Remove(i);
+    m_ACR_PendingTo.Remove(i);
+    m_ACR_PendingUntil.Remove(i);
+    continue;
+   }
+   int x0, y0, x1, y1;
+   mapEntity.WorldToScreen(m_ACR_PendingFrom[i][0], m_ACR_PendingFrom[i][2], x0, y0, true);
+   mapEntity.WorldToScreen(m_ACR_PendingTo[i][0], m_ACR_PendingTo[i][2], x1, y1, true);
+   LineDrawCommand line = new LineDrawCommand();
+   Color faint = new Color(1, 1, 1, 0.45);
+   line.m_iColor = faint.PackToInt();
+   line.m_fWidth = 2;
+   line.m_Vertices = {x0, y0, x1, y1};
+   m_ACR_OrderCommands.Insert(line);
+  }
  }
 
  protected void ACR_OpenPanel(SCR_MapEntity mapEntity)
@@ -589,6 +815,7 @@ modded class SCR_PlayerController
    FrameSlot.SetOffsets(m_ACR_OrderCanvas, 0, 0, 0, 0);
    m_ACR_OrderCanvas.SetZOrder(900);
   }
+  ACR_CreateBoxLayer(root);
   SCR_MapEntity.GetOnSelection().Insert(ACR_OnMapClick);
  }
 
@@ -599,6 +826,9 @@ modded class SCR_PlayerController
   m_ACR_Panel = null;
   if (m_ACR_OrderCanvas) m_ACR_OrderCanvas.RemoveFromHierarchy();
   m_ACR_OrderCanvas = null;
+  if (m_ACR_BoxLayer) m_ACR_BoxLayer.RemoveFromHierarchy();
+  m_ACR_BoxLayer = null;
+  m_ACR_Boxing = false;
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
  }
 
@@ -607,6 +837,8 @@ modded class SCR_PlayerController
  {
   if (System.GetTickCount() - m_ACR_LastUiClick < 400) return;
   if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) return;
+  if (ACR_ModifierHeld("ACR_MapShift") || ACR_ModifierHeld("ACR_MapCtrl")) return;
+  m_ACR_SelectedGroups.Clear();
   m_ACR_SelectedGroup = RplId.Invalid();
   m_ACR_SelectedBase = "";
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
@@ -659,7 +891,23 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.LZ) hint = "Right-click the landing zone: they jump out when their ride sets down there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) hint = "Right-click the destination: a free truck nearby picks them up and drops them there";
   else hint = "Right-click: move there";
-  m_ACR_Panel.SetGroup(m_ACR_GroupNames[index], m_ACR_GroupDetails[index], friendly, m_ACR_IsCommander, m_ACR_GroupSymbols[index * 4 + 3], m_ACR_CursorMode, hint);
+  string title = m_ACR_GroupNames[index];
+  string detail = m_ACR_GroupDetails[index];
+  if (m_ACR_SelectedGroups.Count() > 1)
+  {
+   title = string.Format("%1 squads selected", m_ACR_SelectedGroups.Count());
+   string names;
+   foreach (RplId member : m_ACR_SelectedGroups)
+   {
+    int memberIndex = m_ACR_GroupIds.Find(member);
+    if (memberIndex < 0) continue;
+    if (!names.IsEmpty()) names += ", ";
+    names += m_ACR_GroupNames[memberIndex];
+   }
+   detail = names + " | orders go to all (switch: first)";
+  }
+  if (friendly && m_ACR_IsCommander && m_ACR_CursorMode == ACR_ECursorMode.MOVE) hint += "  |  Shift+right-click: add waypoint  |  Ctrl+drag: select squads";
+  m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, m_ACR_GroupSymbols[index * 4 + 3], m_ACR_CursorMode, hint);
   bool missing = m_ACR_GroupDetails[index].Contains("missing");
   m_ACR_Panel.SetReinforce("Reinforce (3 RP per soldier)", missing);
  }
@@ -674,9 +922,9 @@ modded class SCR_PlayerController
     else ACR_Request(ACR_ERequest.TAKE_COMMAND);
     return;
    case ACR_EPanelAction.SWITCH: ACR_Request(ACR_ERequest.SWITCH_TO_GROUP, m_ACR_SelectedGroup); return;
-   case ACR_EPanelAction.MODE_COMBAT: ACR_Request(ACR_ERequest.MODE_COMBAT, m_ACR_SelectedGroup); return;
-   case ACR_EPanelAction.MODE_FAST: ACR_Request(ACR_ERequest.MODE_FAST, m_ACR_SelectedGroup); return;
-   case ACR_EPanelAction.MODE_SILENT: ACR_Request(ACR_ERequest.MODE_SILENT, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.MODE_COMBAT: ACR_RequestSelected(ACR_ERequest.MODE_COMBAT); return;
+   case ACR_EPanelAction.MODE_FAST: ACR_RequestSelected(ACR_ERequest.MODE_FAST); return;
+   case ACR_EPanelAction.MODE_SILENT: ACR_RequestSelected(ACR_ERequest.MODE_SILENT); return;
    // Defend / Get in arm the next right-click; pressing the same button again
    // cancels back to a plain move.
    case ACR_EPanelAction.DEFEND:
@@ -695,9 +943,9 @@ modded class SCR_PlayerController
     if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
     else m_ACR_CursorMode = ACR_ECursorMode.RIDE;
     return;
-   case ACR_EPanelAction.GET_OUT: ACR_Request(ACR_ERequest.ORDER_GET_OUT, m_ACR_SelectedGroup); return;
-   case ACR_EPanelAction.UNLOAD: ACR_Request(ACR_ERequest.ORDER_UNLOAD, m_ACR_SelectedGroup); return;
-   case ACR_EPanelAction.REINFORCE: ACR_Request(ACR_ERequest.REINFORCE, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.GET_OUT: ACR_RequestSelected(ACR_ERequest.ORDER_GET_OUT); return;
+   case ACR_EPanelAction.UNLOAD: ACR_RequestSelected(ACR_ERequest.ORDER_UNLOAD); return;
+   case ACR_EPanelAction.REINFORCE: ACR_RequestSelected(ACR_ERequest.REINFORCE); return;
    case ACR_EPanelAction.TOGGLE_REQUISITION:
     m_ACR_RequisitionOpen = !m_ACR_RequisitionOpen;
     if (m_ACR_RequisitionOpen) m_ACR_SupportOpen = false;
@@ -758,12 +1006,53 @@ modded class SCR_PlayerController
   if (!mapEntity) return false;
   float x, z;
   mapEntity.GetMapCursorWorldPosition(x, z);
+  bool append = ACR_ModifierHeld("ACR_MapShift");
   int command = ACR_ERequest.MOVE_TO;
-  if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) command = ACR_ERequest.ORDER_DEFEND;
+  if (append) command = ACR_ERequest.QUEUE_MOVE;
+  if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND)
+  {
+   command = ACR_ERequest.ORDER_DEFEND;
+   if (append) command = ACR_ERequest.QUEUE_DEFEND;
+  }
   if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) command = ACR_ERequest.ORDER_GET_IN;
   if (m_ACR_CursorMode == ACR_ECursorMode.LZ) command = ACR_ERequest.ORDER_SET_LZ;
   if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) command = ACR_ERequest.ORDER_RIDE;
-  ACR_Request(command, m_ACR_SelectedGroup, Vector(x, 0, z));
+  vector target = Vector(x, 0, z);
+  bool spread = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_RIDE;
+  // Several squads: a loose line across the direction of travel, 40 m apart,
+  // each keeping its place in the line (sorted left to right).
+  array<RplId> squads = {};
+  foreach (RplId selectedId : m_ACR_SelectedGroups)
+  {
+   int selectedIndex = m_ACR_GroupIds.Find(selectedId);
+   if (selectedIndex >= 0 && selectedIndex < m_ACR_Commandable.Count() && m_ACR_Commandable[selectedIndex] == 1) squads.Insert(selectedId);
+  }
+  vector center;
+  foreach (RplId sq : squads) center = center + ACR_LeaderPos(m_ACR_GroupIds.Find(sq));
+  if (!squads.IsEmpty()) center = center * (1.0 / squads.Count());
+  vector dir = target - center;
+  dir[1] = 0;
+  if (dir.Length() < 1) dir = "0 0 1";
+  dir.Normalize();
+  vector side = Vector(dir[2], 0, -dir[0]);
+  // order squads by where they stand across the line of travel
+  array<float> across = {};
+  foreach (RplId sq2 : squads) across.Insert(vector.Dot(ACR_LeaderPos(m_ACR_GroupIds.Find(sq2)) - center, side));
+  for (int a = 1; a < squads.Count(); a++)
+  {
+   for (int b = a; b > 0 && across[b] < across[b - 1]; b--)
+   {
+    float t = across[b]; across[b] = across[b - 1]; across[b - 1] = t;
+    RplId tid = squads[b]; squads[b] = squads[b - 1]; squads[b - 1] = tid;
+   }
+  }
+  foreach (int k, RplId squadId : squads)
+  {
+   vector point = target;
+   if (spread && squads.Count() > 1) point = target + side * ((k - (squads.Count() - 1) * 0.5) * 40);
+   ACR_Request(command, squadId, point);
+   if (spread) ACR_AddPending(ACR_LeaderPos(m_ACR_GroupIds.Find(squadId)), point);
+  }
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   return true;
  }
@@ -814,6 +1103,8 @@ modded class SCR_PlayerController
    vector from = m_ACR_LeaderPositions[g];
    IEntity leader = SCR_EntityHelper.RplIdToEntity(m_ACR_LeaderIds[g]);
    if (leader) from = leader.GetOrigin();
+   // Later entries of the same squad are the rest of its plan: chain them.
+   if (i > 0 && m_ACR_OrderGroups[i - 1] == groupId) from = m_ACR_OrderTargets[i - 1];
    vector to = m_ACR_OrderTargets[i];
    int sx0, sy0, sx1, sy1;
    mapEntity.WorldToScreen(from[0], from[2], sx0, sy0, true);
@@ -822,7 +1113,7 @@ modded class SCR_PlayerController
    float y0 = sy0;
    float x1 = sx1;
    float y1 = sy1;
-   bool selected = m_ACR_SelectedGroup.IsValid() && groupId == m_ACR_SelectedGroup;
+   bool selected = ACR_IsSelected(groupId);
    int color = ACR_OrderColor(m_ACR_OrderKinds[i], selected);
 
    LineDrawCommand line = new LineDrawCommand();
@@ -839,6 +1130,8 @@ modded class SCR_PlayerController
    m_ACR_OrderCommands.Insert(dot);
   }
   ACR_DrawStatusBars(mapEntity);
+  ACR_DrawPending(mapEntity);
+  ACR_DrawBox(mapEntity);
   m_ACR_OrderCanvas.SetDrawCommands(m_ACR_OrderCommands);
  }
 
@@ -983,6 +1276,7 @@ modded class SCR_PlayerController
 
  void ACR_SelectBase(string label)
  {
+  m_ACR_SelectedGroups.Clear();
   m_ACR_SelectedGroup = RplId.Invalid();
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   m_ACR_SelectedBase = label;

@@ -427,7 +427,7 @@ class ACR_Squad : Managed
   ClearOrders();
   m_Order = label;
   m_iOrderSerial++;
-  m_aRoute.Clear();
+  ClearPlans();
  }
 
  protected void ClearOrders()
@@ -443,7 +443,7 @@ class ACR_Squad : Managed
  bool MoveTo(vector destination)
  {
   m_iOrderSerial++;
-  m_aRoute.Clear();
+  ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_MOVE, destination)) return false;
   m_Order = "Moving";
@@ -454,7 +454,7 @@ class ACR_Squad : Managed
  bool Defend(vector position)
  {
   m_iOrderSerial++;
-  m_aRoute.Clear();
+  ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
   m_Order = "Defending";
@@ -466,7 +466,7 @@ class ACR_Squad : Managed
  bool Assault(vector position)
  {
   m_iOrderSerial++;
-  m_aRoute.Clear();
+  ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SEARCH_DESTROY, position, 30)) return false;
   m_Order = "Assaulting";
@@ -478,7 +478,7 @@ class ACR_Squad : Managed
  bool Suppress(vector position)
  {
   m_iOrderSerial++;
-  m_aRoute.Clear();
+  ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SUPPRESS, position)) return false;
   m_Order = "Suppressing";
@@ -599,7 +599,7 @@ class ACR_Squad : Managed
   }
   m_iOrderSerial++;
   m_bRegrouping = false;
-  m_aRoute.Clear();
+  ClearPlans();
   foreach (vector leg : legs) m_aRoute.Insert(leg);
   m_sRoutePrefab = prefab;
   m_fRouteRadius = radius;
@@ -620,8 +620,75 @@ class ACR_Squad : Managed
   m_OrderKind = m_iRouteKind;
  }
 
+ // ---- queued orders (Shift + right-click on the map)
+ static const int MAX_QUEUED = 8;
+ protected ref array<vector> m_aQueuePos = {};
+ protected ref array<int> m_aQueueKind = {};   // 0 move, 1 defend
+
+ void ClearPlans()
+ {
+  m_aRoute.Clear();
+  m_aQueuePos.Clear();
+  m_aQueueKind.Clear();
+ }
+
+ // Add an order after the current one (or carry it out now if there's nothing to do).
+ bool Queue(vector position, bool defend)
+ {
+  if (!m_Group) return false;
+  bool busy = m_Group.GetCurrentWaypoint() != null || !m_aRoute.IsEmpty() || !m_aQueuePos.IsEmpty();
+  if (!busy)
+  {
+   if (defend) return Defend(position);
+   return MoveTo(position);
+  }
+  if (m_aQueuePos.Count() >= MAX_QUEUED) return false;
+  m_aQueuePos.Insert(position);
+  int kind = 0;
+  if (defend) kind = 1;
+  m_aQueueKind.Insert(kind);
+  return true;
+ }
+
+ // Every point still ahead of the squad, in order: route legs, then queued orders.
+ void GetPlannedPoints(notnull array<vector> points, notnull array<int> kinds)
+ {
+  foreach (vector leg : m_aRoute)
+  {
+   points.Insert(leg);
+   kinds.Insert(m_iRouteKind);
+  }
+  foreach (int i, vector queued : m_aQueuePos)
+  {
+   points.Insert(queued);
+   kinds.Insert(m_aQueueKind[i]);
+  }
+ }
+
+ protected void FollowQueue()
+ {
+  if (m_aQueuePos.IsEmpty() || !m_aRoute.IsEmpty() || m_bRegrouping || !m_Group) return;
+  if (m_Group.GetCurrentWaypoint()) return;
+  vector next = m_aQueuePos[0];
+  int kind = m_aQueueKind[0];
+  m_aQueuePos.RemoveOrdered(0);
+  m_aQueueKind.RemoveOrdered(0);
+  if (kind == 1)
+  {
+   IssueWaypoint(WP_DEFEND, next, 15);
+   m_Order = "Defending";
+  }
+  else
+  {
+   IssueWaypoint(WP_MOVE, next);
+   m_Order = "Moving";
+  }
+  m_OrderKind = kind;
+ }
+
  protected void FollowRoute()
  {
+  FollowQueue();
   if (m_aRoute.IsEmpty() || m_bRegrouping || !m_Group) return;
   array<AIWaypoint> waypoints = {};
   m_Group.GetWaypoints(waypoints);
@@ -1143,7 +1210,7 @@ class ACR_Squad : Managed
  bool BoardVehicle(Vehicle vehicle, vector position)
  {
   m_iOrderSerial++;
-  m_aRoute.Clear();
+  ClearPlans();
   m_bRegrouping = false;
   if (vehicle)
   {
@@ -1160,7 +1227,7 @@ class ACR_Squad : Managed
  bool GetOut()
  {
   m_iOrderSerial++;
-  m_aRoute.Clear();
+  ClearPlans();
   array<IEntity> vehicles = {};
   GetVehicles(vehicles);
   if (vehicles.IsEmpty()) return false;
