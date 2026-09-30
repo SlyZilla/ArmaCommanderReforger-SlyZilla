@@ -146,6 +146,12 @@ ON THE COMMAND MAP
   A red ring with a countdown marks each incoming support on the map.
   Keep your own troops out of it!
 - Base rings: blue = yours, red = enemy, yellow = neutral.
+- Two small bars under each of your squads: health (green, amber, red) and
+  ammo (blue, red when low). The panel shows the numbers, plus low fuel.
+- LOGISTICS: ammo trucks, repair trucks, fuel tankers and ambulances top up
+  friendly soldiers and vehicles within 25 m while they are stopped. Each
+  carries limited stock and restocks only while parked at one of your spawn
+  bases. The AI uses them too, so hunting its supply trucks pays off.
 
 THE ENEMY AI
 ------------
