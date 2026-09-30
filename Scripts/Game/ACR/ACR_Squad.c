@@ -586,6 +586,9 @@ class ACR_Squad : Managed
 
  bool RouteTo(vector destination, ResourceName prefab, float radius, string order, int kind)
  {
+  // Vehicle crews: aim for the nearest road point, which AI drivers can reach.
+  vector road;
+  if (ACR_Transport.CrewedVehicle(this) && ACR_Terrain.RoadPointNear(destination, 250, road)) destination = road;
   IEntity anchor = GetAnchor();
   array<vector> legs = {};
   if (!anchor || IsMounted() || !ACR_Terrain.LandRoute(anchor.GetOrigin(), destination, legs))

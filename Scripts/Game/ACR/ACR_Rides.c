@@ -166,15 +166,26 @@ class ACR_Rides : Managed
   dir[1] = 0;
   dir.Normalize();
   ride.m_Drop = ACR_Manager.Ground(destination - dir * Math.Min(dropShort, trip * 0.5));
+  // Pick up and drop off on roads when there is one nearby: the game's AI
+  // drivers often can't reach off-road spots and abandon the vehicle.
+  vector road;
+  if (ACR_Terrain.RoadPointNear(ride.m_Drop, 350, road)) ride.m_Drop = road;
+  vector pickup = from;
+  if (ACR_Terrain.RoadPointNear(from, 250, road)) pickup = road;
   ride.m_sFinalPrefab = finalPrefab;
   ride.m_Final = destination;
   ride.m_fFinalRadius = finalRadius;
   ride.m_sFinalOrder = finalOrder;
   ride.m_iFinalKind = finalKind;
   ride.m_fDriveBudgetMs = (trip / 4 + 150) * 1000; // generous: 4 m/s average plus slack
-  rider.Halt("Waiting for ride");
+  if (pickup == from) rider.Halt("Waiting for ride");
+  else
+  {
+   rider.MoveTo(pickup);
+   rider.m_Order = "Waiting for ride";
+  }
   taxi.SetMode(ACR_EMoveMode.FAST);
-  taxi.MoveTo(from);
+  taxi.MoveTo(pickup);
   taxi.m_Order = "Picking up " + rider.GetName();
   ride.m_iRiderSerial = rider.m_iOrderSerial;
   ride.m_iTaxiSerial = taxi.m_iOrderSerial;

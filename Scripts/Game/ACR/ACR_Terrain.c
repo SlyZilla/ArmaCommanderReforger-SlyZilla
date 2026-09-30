@@ -11,6 +11,32 @@ class ACR_Terrain
  static const float MARGIN = 1500;        // search area around the two ends
  static const int MAX_CELLS = 60000;
 
+ // The nearest point on a road within maxDistance (false if none). The game's AI
+ // drivers can't reach many off-road spots: the move fails and the crew gets
+ // out and walks. Sending vehicles to road points avoids that.
+ static bool RoadPointNear(vector pos, float maxDistance, out vector point)
+ {
+  ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  if (!aiWorld) return false;
+  RoadNetworkManager roads = aiWorld.GetRoadNetworkManager();
+  if (!roads) return false;
+  BaseRoad road;
+  float distance;
+  roads.GetClosestRoad(pos, road, distance);
+  if (!road || distance > maxDistance) return false;
+  array<vector> points = {};
+  road.GetPoints(points);
+  float best = float.MAX;
+  foreach (vector p : points)
+  {
+   float d = vector.DistanceXZ(p, pos);
+   if (d < best) { best = d; point = p; }
+  }
+  if (best > maxDistance) return false;
+  point = ACR_Manager.Ground(point);
+  return true;
+ }
+
  static bool IsWater(float x, float z)
  {
   return GetGame().GetWorld().GetSurfaceY(x, z) < SEA_LEVEL;

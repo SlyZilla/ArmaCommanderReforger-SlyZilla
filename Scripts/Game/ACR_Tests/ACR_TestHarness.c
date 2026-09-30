@@ -1089,7 +1089,9 @@ class ACR_TestHarness : Managed
   float taxiMoved = -1;
   IEntity truck = ACR_Transport.CrewedVehicle(m_TaxiSquad);
   if (truck) taxiMoved = vector.DistanceXZ(truck.GetOrigin(), Ground("1400 0 2850"));
-  return string.Format("ride=%1 bravo='%2' aboard=%3/%4 toDest=%5m | taxi='%6' truckFromStart=%7m", state, m_RideSquad.m_Order, Aboard(m_Range.m_Bravo), AliveIn(m_Range.m_Bravo), (int)toDest, m_TaxiSquad.m_Order, (int)taxiMoved);
+  vector truckAt;
+  if (truck) truckAt = truck.GetOrigin();
+  return string.Format("ride=%1 bravo='%2' aboard=%3/%4 toDest=%5m | taxi='%6' truckFromStart=%7m truck at %8", state, m_RideSquad.m_Order, Aboard(m_Range.m_Bravo), AliveIn(m_Range.m_Bravo), (int)toDest, m_TaxiSquad.m_Order, (int)taxiMoved, truckAt);
  }
 
  void TestRide()

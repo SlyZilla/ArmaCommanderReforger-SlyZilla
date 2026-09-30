@@ -554,12 +554,12 @@ class ACR_Manager : Managed
  }
 
  // A free transport nearby (never fetched from far away) picks the squad up,
- // drops it at the point and it takes positions there.
+ // drops it at the point and it takes positions there (walking the rest if the ride fails).
  string Ride(ACR_Squad squad, vector point)
  {
   if (!m_Rides) m_Rides = new ACR_Rides(this);
   string why;
-  if (!m_Rides.Request(squad, point, 0, "", -1, "Holding position", 1, why)) return squad.GetName() + ": no ride, " + why;
+  if (!m_Rides.Request(squad, point, 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why)) return squad.GetName() + ": no ride, " + why;
   ACR_Ride ride = m_Rides.RideOf(squad);
   string taxi = "a transport";
   if (ride) taxi = ride.m_Taxi.GetName();
