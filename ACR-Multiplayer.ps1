@@ -69,9 +69,27 @@ try {
     $Address = '127.0.0.1'
   }
   else {
-    if (!$Address) { $Address = Read-Host 'Host address (e.g. 26.12.34.56 or 192.168.1.20)' }
-    $Address = $Address.Trim()
-    if (!$Address) { throw 'No address given.' }
+    # Ask until we get something that looks like an address (an IP like 26.12.34.56,
+    # or a name with a dot), remembering the last one used.
+    $lastFile = Join-Path $PSScriptRoot 'last-host.txt'
+    $last = ''
+    if (Test-Path -LiteralPath $lastFile) { $last = (Get-Content -LiteralPath $lastFile -Raw).Trim() }
+    while ($true) {
+      if (!$Address) {
+        Write-Host ''
+        Write-Host 'Type the HOST''S ADDRESS: the IP the host''s window shows, e.g. 26.12.34.56 (Radmin/Hamachi)' -ForegroundColor Yellow
+        Write-Host 'or 192.168.1.20 (same house). Not "y" -- the address.'
+        $prompt = 'Host address'
+        if ($last) { $prompt += ' [Enter = ' + $last + ']' }
+        $Address = Read-Host $prompt
+        if (!$Address.Trim() -and $last) { $Address = $last }
+      }
+      $Address = $Address.Trim()
+      if ($Address -match '^(\d{1,3}(\.\d{1,3}){3}|localhost|[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+)(:\d+)?$') { break }
+      Write-Host ('"' + $Address + '" is not an address. It should look like 26.12.34.56') -ForegroundColor Red
+      $Address = ''
+    }
+    Set-Content -LiteralPath $lastFile -Value $Address
   }
 
   if ($Address -notmatch ':\d+$') { $Address = $Address + ':' + $Port }

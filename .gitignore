@@ -9,3 +9,4 @@ dist/
 .local-server/
 game-paths.txt
 launcher-log.txt
+last-host.txt

@@ -43,7 +43,9 @@ HOST (one person):
 4. When done: quit the game, then close the server window.
 
 JOINING (everyone else):
-1. Double-click  Join-Arland.cmd  and type the host's address when asked.
+1. Double-click  Join-Arland.cmd  and type the host's address when asked:
+   numbers like 26.12.34.56 (the host reads it off their Host-Arland
+   window). Next time just press Enter to reuse it.
 
 CONNECTING OVER THE INTERNET - pick ONE:
  a) Easiest: a free "virtual LAN" app, e.g. Radmin VPN (no account) or
