@@ -191,7 +191,7 @@ class ACR_Rides : Managed
   ride.m_iTaxiSerial = taxi.m_iOrderSerial;
   SetState(ride, ACR_ERideState.TO_PICKUP);
   m_Rides.Insert(ride);
-  PrintFormat("[ACR] RIDE %1 -> %2: %3 fetched from %4 m, trip %5 m", rider.GetName(), ACR_Manager.Grid(destination), taxi.GetName(), (int)fetch, (int)trip);
+  PrintFormat("[ACR] RIDE %1 -> %2: %3 fetched from %4 m, trip %5 m, pickup %6 drop %7", rider.GetName(), ACR_Manager.Grid(destination), taxi.GetName(), (int)fetch, (int)trip, pickup, ride.m_Drop);
   return ride;
  }
 

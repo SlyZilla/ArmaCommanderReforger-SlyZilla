@@ -139,6 +139,8 @@ function Invoke-Request($file) {
             if (Test-Path -LiteralPath $scriptLog) { $text += Get-Content -LiteralPath $scriptLog -Raw -ErrorAction SilentlyContinue }
             # Known harmless vanilla errors (e.g. deaths caused by Game Master effect modules).
             $text = ($text -split "`n" | Where-Object { $_ -notmatch 'SCR_InstigatorContextData: instigatorType' }) -join "`n"
+            # Vanilla AI bug: a group whose members all died processes a failed move (null leader).
+            $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_AIProcessFailedMovementResult'", 'vanilla AI null-leader exception (ignored)')
             if ($text -match 'SCRIPT\s+\(E\)') { Start-Sleep -Seconds 3; $outcome = 'script error'; break }
             if ($text -match $config.DoneWhen) { Start-Sleep -Seconds 2; $outcome = 'completed'; break }
         }
