@@ -279,6 +279,8 @@ class ACR_HeliRun : ACR_SupportRun
  ResourceName m_Rocket;
  int m_iRockets;
  float m_fNextRocket;
+ int m_iSalvoLeft;          // loiter: rockets still to fire in the current salvo
+ vector m_SalvoAim;
  int m_iPhase;       // 0 inbound, 1 on station, 2 outbound
  float m_fOrbitEnd;
  vector m_ExitDir;
@@ -548,6 +550,13 @@ class ACR_HeliRun : ACR_SupportRun
     aim = m_Target + Vector(Math.RandomFloat(-15, 15), 3, Math.RandomFloat(-15, 15));
     if (shoot) pitch = -8;
    }
+   else if (m_iSalvoLeft > 0)
+   {
+    // A salvo, once started, is fired complete at the same spot (no odd pair of rockets).
+    shoot = true;
+    aim = m_SalvoAim + Vector(Math.RandomFloat(-8, 8), 0, Math.RandomFloat(-8, 8));
+    pitch = -8;
+   }
    else if (m_iPhase == 1)
    {
     IEntity enemy = supports.FindEnemyNear(m_sFaction, m_Target, 220);
@@ -556,7 +565,12 @@ class ACR_HeliRun : ACR_SupportRun
     enemyFlat[1] = 0;
     shoot = enemy != null && vector.Dot(enemyFlat.Normalized(), nose) > 0.9 && enemyFlat.Length() < 650 && enemyFlat.Length() > 150;
     if (enemy) aim = enemy.GetOrigin() + Vector(Math.RandomFloat(-6, 6), 2, Math.RandomFloat(-6, 6));
-    if (shoot) pitch = -8;
+    if (shoot)
+    {
+     pitch = -8;
+     m_iSalvoLeft = Math.Min(4, m_iRockets);
+     m_SalvoAim = enemy.GetOrigin() + Vector(0, 2, 0);
+    }
    }
    if (shoot)
    {
@@ -568,7 +582,11 @@ class ACR_HeliRun : ACR_SupportRun
     m_iRockets--;
     PrintFormat("[ACR] SUPPORT heli rocket, %1 left, range %2", m_iRockets, vector.Distance(m_Pos, aim));
     m_fNextRocket = now + 280;
-    if (m_bLoiter && m_iRockets % 4 == 0) m_fNextRocket = now + 8000;
+    if (m_bLoiter)
+    {
+     m_iSalvoLeft--;
+     if (m_iSalvoLeft <= 0) m_fNextRocket = now + 8000;
+    }
    }
   }
 
