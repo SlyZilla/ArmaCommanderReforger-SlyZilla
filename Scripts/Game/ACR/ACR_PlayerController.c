@@ -261,7 +261,7 @@ modded class SCR_PlayerController
  {
   WorkspaceWidget ws = GetGame().GetWorkspace();
   if (!ws) return;
-  m_ACR_CaptureRoot = ws.CreateWidget(WidgetType.FrameWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, ws);
+  m_ACR_CaptureRoot = ACR_Hud.Track(ws.CreateWidget(WidgetType.FrameWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, ws));
   FrameSlot.SetAnchorMin(m_ACR_CaptureRoot, 0.5, 0);
   FrameSlot.SetAnchorMax(m_ACR_CaptureRoot, 0.5, 0);
   FrameSlot.SetAlignment(m_ACR_CaptureRoot, 0.5, 0);

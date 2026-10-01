@@ -96,6 +96,7 @@ class ACR_Manager : Managed
 
  static void Stop()
  {
+  ACR_Hud.Clear();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   s_Instance = null;

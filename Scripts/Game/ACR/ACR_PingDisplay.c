@@ -210,7 +210,7 @@ class ACR_PingDisplay
  {
   WorkspaceWidget ws = GetGame().GetWorkspace();
   if (!ws) return;
-  s_HudCanvas = CanvasWidget.Cast(ws.CreateWidget(WidgetType.CanvasWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.BLEND, Color.FromInt(Color.WHITE), 0, ws));
+  s_HudCanvas = CanvasWidget.Cast(ACR_Hud.Track(ws.CreateWidget(WidgetType.CanvasWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.BLEND, Color.FromInt(Color.WHITE), 0, ws)));
   if (!s_HudCanvas) return;
   FrameSlot.SetAnchorMin(s_HudCanvas, 0, 0);
   FrameSlot.SetAnchorMax(s_HudCanvas, 1, 1);
@@ -225,7 +225,7 @@ class ACR_PingDisplay
  {
   while (s_HudLabels.Count() <= index)
   {
-   TextWidget text = TextWidget.Cast(GetGame().GetWorkspace().CreateWidgets("{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout", GetGame().GetWorkspace()));
+   TextWidget text = TextWidget.Cast(ACR_Hud.Track(GetGame().GetWorkspace().CreateWidgets("{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout", GetGame().GetWorkspace())));
    if (!text) return null;
    text.SetFlags(WidgetFlags.IGNORE_CURSOR);
    FrameSlot.SetSize(text, 200, 22);
@@ -247,7 +247,7 @@ class ACR_PingDisplay
   if (!s_HoldHint)
   {
    WorkspaceWidget ws = GetGame().GetWorkspace();
-   s_HoldHint = TextWidget.Cast(ws.CreateWidgets("{0D7FF083FDE39877}UI/layouts/WidgetLibrary/TextWidgets/Text_Heading4.layout", ws));
+   s_HoldHint = TextWidget.Cast(ACR_Hud.Track(ws.CreateWidgets("{0D7FF083FDE39877}UI/layouts/WidgetLibrary/TextWidgets/Text_Heading4.layout", ws)));
    if (!s_HoldHint) return;
    s_HoldHint.SetFlags(WidgetFlags.IGNORE_CURSOR);
    FrameSlot.SetAnchorMin(s_HoldHint, 0.5, 0.5);
@@ -268,6 +268,18 @@ class ACR_PingDisplay
   s_HoldHint.SetText("Ping: " + text + "   (let go to place)");
   s_HoldHint.SetColor(KindColor(kind, 1));
   s_HoldHint.SetVisible(true);
+ }
+
+ // The mode stopped (ACR_Hud removed our widgets): start fresh next mission.
+ static void Forget()
+ {
+  s_HudCanvas = null;
+  s_HudCommands.Clear();
+  s_HudLabels.Clear();
+  s_HudPainter = null;
+  s_HoldHint = null;
+  s_Markers.Clear();
+  s_Heard.Clear();
  }
 
  // Test hook: how many pings the HUD drew last frame.

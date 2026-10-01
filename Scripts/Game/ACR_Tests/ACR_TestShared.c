@@ -241,6 +241,16 @@ class ACR_TestShared
    foreach (int o, int issuer : data.m_OrderIssuers) if (issuer == 999) dashed++;
    Check("other commander's order reaches the map", dashed >= 1, dashed.ToString());
   }
+  if (tick == 62)
+  {
+   // HUD widgets live on the workspace: the mode's end must take them away.
+   ACR_PingDisplay.ShowHoldHint(ACR_EPing.ATTACK);
+   int before = ACR_Hud.s_iCleared;
+   ACR_Hud.Clear();
+   Check("HUD widgets removed when the mode stops", ACR_Hud.s_iCleared > before, string.Format("%1 removed", ACR_Hud.s_iCleared - before));
+   ACR_PingDisplay.ShowHoldHint(ACR_EPing.LOOK);
+   ACR_PingDisplay.ShowHoldHint(-1);
+  }
   if (tick == 64) Print("[ACR] TEST COMPLETE");
  }
 }
