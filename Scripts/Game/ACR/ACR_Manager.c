@@ -333,11 +333,36 @@ class ACR_Manager : Managed
   {
    if (!everyone && !IsHostOrAdmin(id)) continue;
    SCR_EditorManagerEntity editor = core.GetEditorManager(id);
-   if (!editor || editor.HasMode(EEditorMode.EDIT)) continue;
+   if (!editor) continue;
+   if (editor.HasMode(EEditorMode.EDIT))
+   {
+    ResetEditorMode(id, editor);
+    continue;
+   }
    editor.AddEditorModes(EEditorModeAccess.BASE, EEditorMode.EDIT);
    PrintFormat("[ACR] Game Master granted to player %1", id);
    Notify(id, "Game Master available: press Y");
   }
+ }
+
+ // Building from a construction truck switches the editor to building mode and
+ // leaves it there (then on photo mode once the truck's mode goes away), so Y
+ // no longer opened Game Master. Once the editor has been closed a few seconds,
+ // its mode goes back to Game Master; the truck's Build action sets its own.
+ protected ref map<int, int> m_EditorClosedFor = new map<int, int>();
+ protected void ResetEditorMode(int playerId, SCR_EditorManagerEntity editor)
+ {
+  if (editor.IsOpened() || editor.GetCurrentMode() == EEditorMode.EDIT)
+  {
+   m_EditorClosedFor.Set(playerId, 0);
+   return;
+  }
+  int seconds = m_EditorClosedFor.Get(playerId) + 1;
+  m_EditorClosedFor.Set(playerId, seconds);
+  if (seconds < 3) return;
+  editor.SetCurrentMode(EEditorMode.EDIT);
+  m_EditorClosedFor.Set(playerId, 0);
+  PrintFormat("[ACR] Editor of player %1 set back to Game Master", playerId);
  }
 
  // ================================================================ AI commanders (server)

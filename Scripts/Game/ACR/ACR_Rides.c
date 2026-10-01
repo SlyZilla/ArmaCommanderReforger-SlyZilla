@@ -42,6 +42,8 @@ class ACR_Rides : Managed
  static const float DROP_REACHED = 60;         // m from the drop-off point
  static const float PICKUP_TIMEOUT_MS = 240000;
  static const float BOARDING_TIMEOUT_MS = 75000;
+ static const float STRAGGLER_WAIT_MS = 20000;  // then leave without riders this far away
+ static const float STRAGGLER_DISTANCE = 60;
 
  protected ACR_Manager m_Manager;
  ref array<ref ACR_Ride> m_Rides = {};
@@ -247,6 +249,23 @@ class ACR_Rides : Managed
   return aboard;
  }
 
+ // Riders not aboard, none of them anywhere near the transport (stuck at a spawn,
+ // wandered off): the ride shouldn't wait for them.
+ protected int Stragglers(ACR_Ride ride)
+ {
+  int distant;
+  array<AIAgent> agents = {};
+  ride.m_Rider.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!ACR_Respawn.IsAlive(body) || ACR_Transport.VehicleOf(body) == ride.m_Vehicle) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), ride.m_Vehicle.GetOrigin()) <= STRAGGLER_DISTANCE) return -1;
+   distant++;
+  }
+  return distant;
+ }
+
  // Returns false when the ride is over.
  protected bool Step(ACR_Ride ride)
  {
@@ -328,8 +347,11 @@ class ACR_Rides : Managed
    {
     if (alive > 0 && aboard < alive)
      ride.m_Rider.BoardCargo(ride.m_Vehicle, 40, inState > 8000);
-    if (alive > 0 && aboard >= alive)
+    int leftBehind = 0;
+    if (alive > 0 && aboard > 0 && aboard < alive && inState > STRAGGLER_WAIT_MS) leftBehind = Stragglers(ride);
+    if (alive > 0 && (aboard >= alive || leftBehind > 0))
     {
+     if (leftBehind > 0) Log(ride, string.Format("leaving without %1 rider(s) more than %2 m away", leftBehind, STRAGGLER_DISTANCE));
      ride.m_Rider.Halt("Riding");
      ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
      ride.m_Taxi.RouteTo(ride.m_Drop, ACR_Squad.WP_MOVE, -1, "Driving " + ride.m_Rider.GetName(), 0);

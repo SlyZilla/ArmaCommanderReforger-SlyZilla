@@ -58,7 +58,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   }
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
   else if (m_BaseIndex >= 0) pc.ACR_ClickBase(m_Label);
-  else pc.ACR_SelectGroup(m_GroupId);
+  else pc.ACR_SelectGroup(pc.ACR_CycleOverlap(this));
  }
 }
 class ACR_MarkerClick : ScriptedWidgetEventHandler
@@ -583,6 +583,39 @@ modded class SCR_PlayerController
   if (selected && selected.m_Original) ACR_Request(ACR_ERequest.RETURN);
   else if (selected) ACR_Request(ACR_ERequest.POSSESS, selected.m_UnitId);
   else SCR_HintManagerComponent.ShowCustomHint("Place the cursor over a unit marker, then press F7", "Possess soldier", 4, true);
+ }
+
+ // Squads whose markers overlap (a squad riding in a truck, a crew next to its
+ // vehicle): the first click selects the marker on top, each further click on
+ // the pile selects the next squad in it.
+ RplId ACR_CycleOverlap(ACR_UnitMarker clicked)
+ {
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!clicked) return RplId.Invalid();
+  if (!mapEntity || !mapEntity.GetMapWidget() || !clicked.m_GroupId.IsValid()) return clicked.m_GroupId;
+  int at[2];
+  clicked.GetWorldPos(at);
+  float pixelsPerMetre = mapEntity.GetMapWidget().PixelPerUnit();
+  array<ACR_UnitMarker> candidates = {};
+  foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) candidates.Insert(groupMarker);
+  foreach (ACR_UnitMarker unitMarker : m_ACR_Markers) candidates.Insert(unitMarker);
+  array<RplId> pile = {};
+  foreach (ACR_UnitMarker marker : candidates)
+  {
+   if (!marker || marker.m_bContact || marker.m_BaseIndex >= 0 || marker.m_Original) continue;
+   if (!marker.m_GroupId.IsValid() || pile.Contains(marker.m_GroupId)) continue;
+   int pos[2];
+   marker.GetWorldPos(pos);
+   float dx = pos[0] - at[0];
+   float dz = pos[1] - at[1];
+   if (Math.Sqrt(dx * dx + dz * dz) * pixelsPerMetre > 14) continue;
+   pile.Insert(marker.m_GroupId);
+  }
+  int index = pile.Find(m_ACR_SelectedGroup);
+  if (pile.Count() < 2 || index < 0) return clicked.m_GroupId;
+  int next = index + 1;
+  if (next >= pile.Count()) next = 0;
+  return pile[next];
  }
 
  // ---------------------------------------------------------------- test harness hooks
