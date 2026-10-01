@@ -1926,6 +1926,16 @@ modded class SCR_PlayerController
  bool ACR_TestConfirmOverride(array<RplId> squads) { return ACR_ConfirmOverride(squads); }
  void ACR_TestClickPing(int pingId) { ACR_ClickPing(pingId); }
  bool ACR_TestHasSupportTarget() { return m_ACR_HasSupportTarget; }
+ bool ACR_TestPicker(vector pos, int kind)
+ {
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity || !mapEntity.IsOpen() || !m_ACR_Panel) return false;
+  ACR_OpenPicker(mapEntity, pos);
+  bool shown = m_ACR_Panel.PickerShown();
+  ACR_OnPanelAction(ACR_EPanelAction.PING_LOOK + kind);
+  return shown && !m_ACR_Panel.PickerShown();
+ }
+ bool ACR_TestMapOpen() { return m_ACR_Panel != null && m_ACR_Display.GetCanvas() != null; }
 
  protected void ACR_UpdateSharedMarkers(SCR_MapMarkerManagerComponent manager)
  {

@@ -1,8 +1,8 @@
 // Shared command tests.
 //  -acrTagsTest 1   (server-capable) short names, ping rules, map feed volume
 //  -acrSharedTest 1 (needs the game) orders credited to their commander, Halt,
-//                   override warning, pings (data and HUD), the support link,
-//                   selections, the spending log.
+//                   override warning, pings (map, picker, HUD), the support link,
+//                   selections, the spending log, with the command map open.
 class ACR_TestShared
 {
  static void Check(string name, bool ok, string detail = "")
@@ -119,15 +119,17 @@ class ACR_TestShared
   int me = pc.GetPlayerId();
   ACR_MapData data = pc.ACR_TestData();
   IEntity body = pc.GetControlledEntity();
-  // (The map itself isn't opened: in launcher runs the game's map tool UI
-  // throws on open, see documentation. Its drawing needs a live look.)
+  // The map opens at t=8 (needs the launcher from 1 Oct, which ignores the
+  // vanilla map tool exception on open); drawing runs every frame while open.
   if (tick < 20) return;
   tick -= 12;
   if (tick == 8)
   {
    Check("shared command on by default", manager.m_SharedCommand, "");
    Check("player is a commander", manager.IsCommander(me), manager.CommandStatus(me));
+   GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   }
+  if (tick == 10) Check("command map open", pc.ACR_TestMapOpen(), "");
   if (tick == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, alphaId, harness.Ground("1420 0 2832"));
   if (tick == 13)
   {
@@ -182,14 +184,21 @@ class ACR_TestShared
    ahead.Normalize();
    pc.ACR_RequestPing(ACR_EPing.SUPPORT, body.GetOrigin() + ahead * 45 + Vector(8, 0, 0), true);
   }
-  if (tick == 23) pc.ACR_RequestPing(ACR_EPing.ATTACK, harness.Ground("1450 0 2850"), false);
+  if (tick == 23)
+  {
+   bool picked = pc.ACR_TestPicker(harness.Ground("1450 0 2850"), ACR_EPing.ATTACK);
+   Check("map ping picker places a ping", picked, "");
+  }
   if (tick == 25)
   {
    Check("client has the pings", data.m_PingIds.Count() >= 3, data.m_PingIds.Count().ToString());
   }
+
   if (tick == 29)
   {
-   Check("pings on the HUD", pc.ACR_TestHudPings() >= 1, pc.ACR_TestHudPings().ToString());
+   // The map stays open (closing it from a test throws in vanilla map UI code):
+   // the HUD layer must be hidden then. With the map closed it showed 3 (1 Oct run).
+   Check("HUD pings hidden while the map is open", pc.ACR_TestHudPings() == 0, pc.ACR_TestHudPings().ToString());
   }
   if (tick == 33)
   {
