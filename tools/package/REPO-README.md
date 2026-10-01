@@ -5,6 +5,22 @@ An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode
 **Download:** [ACActual-Arland.zip](https://github.com/propst-design/ACActual/releases/latest/download/ACActual-Arland.zip).
 Unzip it and open "READ ME FIRST.txt". The Host and Join launchers update themselves from this page.
 
+## Features
+
+- **Command from the map.** Select squads (click, Shift+click or Ctrl+drag), then give move, defend, assault, get in/out, ride and hunt orders, chaining up to 8 waypoints. Each squad shows health and ammo bars.
+- **Jump into any soldier** (F7), and back to your commander (F8).
+- **Requisition.** Bases you own earn RP. Spend it on infantry squads and crewed vehicles, deployed at any base you own.
+- **Supports.** Mortars (HE, creeping barrage, smoke), illumination flares, rocket and bomb runs, and helicopter gun runs or loiters that can be shot down.
+- **Bases.** Capture a base by clearing it and holding its ring. Garrisons appear when you get close, and some enemy bases stay hidden until you find them.
+- **An AI commander** for either side. It buys units, keeps a reserve, attacks from several directions with smoke and mortars, counterattacks and defends.
+- **Fog of war.** Only enemies your side has actually seen show on the map, and they fade after about 90 s. An intel feed and radio calls report sightings, and the enemy AI plays by the same rules.
+- **Logistics.** Ammo, repair, fuel and medical trucks resupply nearby units, carry limited stock and restock at your bases. Players can use arsenal, supply and construction trucks too.
+- **Vehicles.** Rides by truck or helicopter to a landing zone, road-following AI drivers, and gunner drive (steer from the gun seat while the AI drives).
+- **Multiplayer.** Host and Join launchers that update themselves. The host picks the players' side, RP, income, AI skill and limits. Several players can command the same side together, with tagged orders, map and 3D pings, and one shared RP pool.
+- **Game Master** for the host, to unstick vehicles and fix things.
+
+Current map: Arland. Everon is next.
+
 ## Help test it
 
 Multiplayer has had very little testing. If you play it with friends, these are the things we most want to hear about, working or not:
