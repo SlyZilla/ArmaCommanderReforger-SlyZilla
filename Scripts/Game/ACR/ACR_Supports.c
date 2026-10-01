@@ -819,8 +819,10 @@ class ACR_Supports : Managed
   }
  }
 
+ // ("USSR" contains "US": the old Contains test gave the Soviets the UH-1H and Hydras.)
  static bool IsWestern(string factionKey)
  {
+  if (factionKey.StartsWith("USSR")) return false;
   return factionKey == "US" || factionKey.Contains("US") || factionKey == "NATO" || factionKey == "BLUFOR";
  }
 
