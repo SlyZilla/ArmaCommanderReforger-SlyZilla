@@ -15,6 +15,15 @@ class ACR_GunnerDrive
  int m_PlayerId;
  float m_Throttle;
  float m_Steer;
+ // Holding W eases the throttle in (1 Oct live test: a full-throttle start put the
+ // Humvee into a barrier before the gunner could steer, and the crash killed the driver).
+ static const float THROTTLE_START = 0.3;
+ static const float THROTTLE_RAMP_PER_S = 0.3; // full throttle after about 2.3 s
+ float m_fThrottleRamp;
+ float m_fLastApply = -1;
+ // Steering also eases in and out (a key is all-or-nothing).
+ static const float STEER_RATE_PER_S = 2.5;
+ float m_fSteerNow;
  float m_LastInput;
  float m_LastShift;
  float m_LastDiag;
@@ -196,6 +205,14 @@ class ACR_GunnerDrive
    m_Steps++;
    if (Math.AbsFloat(sim.GetSteering() - m_SetSteer) > 0.01 || Math.AbsFloat(sim.GetThrottle() - m_SetThrottle) > 0.01) m_Overrides++;
   }
+  float dt = 0;
+  if (m_fLastApply >= 0) dt = Math.Clamp((now - m_fLastApply) / 1000, 0, 0.1);
+  m_fLastApply = now;
+  if (m_Throttle == 0) m_fThrottleRamp = 0;
+  else if (m_fThrottleRamp == 0) m_fThrottleRamp = THROTTLE_START;
+  else m_fThrottleRamp = Math.Min(1, m_fThrottleRamp + THROTTLE_RAMP_PER_S * dt);
+  float steerStep = STEER_RATE_PER_S * dt;
+  m_fSteerNow += Math.Clamp(m_Steer - m_fSteerNow, -steerStep, steerStep);
   int neutral = sim.GearboxGearsCount() - sim.GearboxForwardGearsCount() - 1;
   int gear = sim.GetGear();
   float speed = ForwardSpeed();
@@ -207,7 +224,7 @@ class ACR_GunnerDrive
    else
    {
     if (gear <= neutral) Shift(sim, neutral + 1, now, true);
-    throttle = m_Throttle;
+    throttle = m_Throttle * m_fThrottleRamp;
    }
   }
   else if (m_Throttle < 0)
@@ -216,7 +233,7 @@ class ACR_GunnerDrive
    else
    {
     if (gear >= neutral) Shift(sim, neutral - 1, now, true);
-    throttle = -m_Throttle;
+    throttle = -m_Throttle * m_fThrottleRamp;
    }
   }
   // Keys released: coast like a real driver lifting off (braking at once made every
@@ -267,10 +284,10 @@ class ACR_GunnerDrive
   if (brake == 0 && sim.IsHandbrakeOn()) car.SetPersistentHandBrake(false);
   // Less steering lock at speed, so a tap of A/D doesn't spin the vehicle out.
   float steerScale = Math.Clamp(1 - Math.AbsFloat(speed) / 25, 0.35, 1);
-  if (!s_bFixedOnly) sim.SetSteering(m_Steer * steerScale);
+  if (!s_bFixedOnly) sim.SetSteering(m_fSteerNow * steerScale);
   m_SetThrottle = throttle;
   m_SetBrake = brake;
-  m_SetSteer = m_Steer * steerScale;
+  m_SetSteer = m_fSteerNow * steerScale;
   m_bHasSet = true;
   if (m_bTest && now - m_LastFineDiag > 150 && m_Throttle != 0)
   {

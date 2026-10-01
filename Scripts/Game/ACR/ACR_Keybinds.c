@@ -15,21 +15,25 @@ modded class SCR_KeybindSetting
     category.m_sName = "ACR";
     category.m_sDisplayName = "AC: Actual";
     category.m_KeyBindingEntries = {};
-    category.m_KeyBindingEntries.Insert(Entry("ACR_Ping", "Ping (tap: look, hold: pick)"));
-    category.m_KeyBindingEntries.Insert(Entry("ACR_Map", "Command map"));
-    category.m_KeyBindingEntries.Insert(Entry("ACR_Possess", "Take over soldier"));
-    category.m_KeyBindingEntries.Insert(Entry("ACR_Return", "Command unit"));
+    category.m_KeyBindingEntries.Insert(Entry("ACR_Ping", "Ping (tap: look, hold: pick)", "pressed"));
+    category.m_KeyBindingEntries.Insert(Entry("ACR_Map", "Command map", "click"));
+    category.m_KeyBindingEntries.Insert(Entry("ACR_Possess", "Take over soldier", "click"));
+    category.m_KeyBindingEntries.Insert(Entry("ACR_Return", "Command unit", "click"));
     m_KeybindConfig.m_KeyBindingCategories.Insert(category);
    }
   }
   super.InsertCategoriesToComboBox();
  }
 
- protected SCR_KeyBindingEntry Entry(string action, string name)
+ // preset: the binding kind the Controls menu adds (vanilla names: "click", "pressed",
+ // "hold"); without one its Add button stays grey. Our default keys carry the same
+ // FilterPreset in ACR_Input.conf so the menu lists them.
+ protected SCR_KeyBindingEntry Entry(string action, string name, string preset)
  {
   SCR_KeyBindingEntry entry = new SCR_KeyBindingEntry();
   entry.m_sActionName = action;
   entry.m_sDisplayName = name;
+  entry.m_sPreset = preset;
   // Script-made entries skip the config defaults: the Controls menu reads the platform
   // list unchecked (a null one crashed it and hid our category).
   entry.m_aPlatforms = {};

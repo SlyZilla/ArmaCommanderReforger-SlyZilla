@@ -920,7 +920,8 @@ class ACR_TestHarness : Managed
   if (!manager.m_Supports) return;
   ACR_ESupportType miType = ACR_ESupportType.HELI_LOITER;
   ACR_ESupportType uhType = ACR_ESupportType.HELI_LOITER;
-  if (s_bHeliVariant) { miType = ACR_ESupportType.HELI_DOOR_GUNS; uhType = ACR_ESupportType.HELI_GUN_RUN; }
+  // (the UH-1H orbits with its doors, so its door gunners show the side swap; the Mi-8 flies passes)
+  if (s_bHeliVariant) { miType = ACR_ESupportType.HELI_GUN_RUN; uhType = ACR_ESupportType.HELI_DOOR_GUNS; }
   if (m_Ticks == 10) PrintFormat("[ACR] GUNSHIPTEST Mi-8: %1", manager.m_Supports.Call("USSR", SupportIndex(manager, miType), miSpot, true));
   if (m_Ticks == 12) PrintFormat("[ACR] GUNSHIPTEST UH-1H: %1", manager.m_Supports.Call("US", SupportIndex(manager, uhType), uhSpot, true));
   if (m_Ticks % 10 == 0 && m_Ticks >= 20) PrintFormat("[ACR] GUNSHIPTEST t=%1 UH-1H target alive %2 | Mi-8 target alive %3", m_Ticks, AliveIn(m_UHTarget), AliveIn(m_MiTarget));

@@ -47,6 +47,7 @@ class ACR_Rides : Managed
  // Leave once this share is aboard and the rest have had this long (1 Oct MP: two rides
  // gave up after 75 s with 7 and 8 of 9 aboard, the last ones stuck at the truck).
  static const float MOSTLY_ABOARD_SHARE = 0.75;
+ static const float STUCK_BOARDING_MS = 20000; // then place the stragglers within 40 m straight in
  static const float MOSTLY_ABOARD_WAIT_MS = 30000;
 
  protected ACR_Manager m_Manager;
@@ -369,7 +370,7 @@ class ACR_Rides : Managed
    case ACR_ERideState.BOARDING:
    {
     if (alive > 0 && aboard < alive)
-     ride.m_Rider.BoardCargo(ride.m_Vehicle, 40, inState > 8000);
+     ride.m_Rider.BoardCargo(ride.m_Vehicle, 40, inState > 8000, inState > STUCK_BOARDING_MS);
     int leftBehind = 0;
     if (alive > 0 && aboard > 0 && aboard < alive && inState > STRAGGLER_WAIT_MS) leftBehind = Stragglers(ride);
     bool mostly = alive > 0 && aboard < alive && inState > MOSTLY_ABOARD_WAIT_MS && MostlyAboard(aboard, alive);

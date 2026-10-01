@@ -277,6 +277,8 @@ class ACR_HeliRun : ACR_SupportRun
  string m_sFaction;
  bool m_bLoiter;
  bool m_bDoorGuns;   // transport version: no rockets
+ static const float DOOR_SIDE_SWAP_MS = 30000;
+ float m_fNextSideSwap;
  float m_fLoiterMs = LOITER_TIME_MS;
  float m_fClimb;     // smoothed vertical speed (m/s)
  float m_fNextAltLog;
@@ -482,6 +484,7 @@ class ACR_HeliRun : ACR_SupportRun
    {
     m_iPhase = 1;
     m_fOrbitEnd = now + m_fLoiterMs;
+    m_fNextSideSwap = now + DOOR_SIDE_SWAP_MS;
     supports.m_Manager.NotifyFaction(m_sFaction, StationName() + " on station.");
     PrintFormat("[ACR] SUPPORT gunship on station at %1", m_Pos);
    }
@@ -499,9 +502,13 @@ class ACR_HeliRun : ACR_SupportRun
     if (!m_bPasses && now >= m_fNextSideCheck)
     {
      m_fNextSideCheck = now + 2000;
-     if (!SideCanFire(m_fSideBearing) && SideCanFire(-m_fSideBearing))
+     // Door gunners: turn the other door in every 30 s, so both gunners get to fire
+     // (the one on the outside of the orbit never could, 1 Oct live test).
+     bool turnAbout = m_bDoorGuns && now >= m_fNextSideSwap && SideCanFire(-m_fSideBearing);
+     if (turnAbout || (!SideCanFire(m_fSideBearing) && SideCanFire(-m_fSideBearing)))
      {
       m_fSideBearing = -m_fSideBearing;
+      m_fNextSideSwap = now + DOOR_SIDE_SWAP_MS;
       PrintFormat("[ACR] SUPPORT gunship switching to its other side (bearing %1)", m_fSideBearing);
      }
     }
@@ -1096,16 +1103,15 @@ class ACR_Supports : Managed
  // Plays the large blast at a point, independent of any entity (clients only).
  static bool PlayBlast(vector at)
  {
-  SCR_SoundManagerModule sound = SCR_SoundManagerModule.GetInstance(GetGame().GetWorld());
-  if (!sound) return false;
-  SCR_AudioSourceConfiguration config = new SCR_AudioSourceConfiguration();
-  config.m_sSoundProject = BOMB_SOUND;
-  config.m_sSoundEventName = "SOUND_EXPLOSION";
-  config.m_eFlags = EAudioSourceConfigurationFlag.Static | EAudioSourceConfigurationFlag.EnvironmentSignals;
-  SCR_AudioSource source = sound.CreateAudioSource(config, at);
-  if (!source) return false;
-  sound.PlayAudioSource(source);
-  return true;
+  // Straight through the audio system (the sound manager route stayed silent in the
+  // 1 Oct live test); the sound graph reads distance and surroundings itself.
+  vector mat[4];
+  Math3D.MatrixIdentity4(mat);
+  mat[3] = at;
+  AudioHandle handle = AudioSystem.PlayEvent(BOMB_SOUND, "SOUND_EXPLOSION", mat);
+  bool ok = handle != AudioHandle.Invalid;
+  PrintFormat("[ACR] SUPPORT blast sound at %1 played=%2", at, ok);
+  return ok;
  }
 
  static void LaunchLocal(IEntity projectile, vector dir, vector parentVelocity)

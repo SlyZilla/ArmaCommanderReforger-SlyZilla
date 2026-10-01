@@ -917,7 +917,12 @@ class ACR_Squad : Managed
   array<AIWaypoint> waypoints = {};
   m_Group.GetWaypoints(waypoints);
   IEntity leader = GetLeader();
-  if (waypoints.IsEmpty() || (leader && vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget) < 30)) NextLeg();
+  // Vehicles get the next road hop well before reaching this one: the AI driver
+  // brakes as it nears the end of a waypoint, so handing over at 30 m made it stop
+  // for a second at every hop (1 Oct live test).
+  float handover = 30;
+  if (IsMounted() && ACR_Transport.CrewedVehicle(this)) handover = 70;
+  if (waypoints.IsEmpty() || (leader && vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget) < handover)) NextLeg();
  }
 
  // ---------------------------------------------------------------- cohesion
@@ -1339,7 +1344,9 @@ class ACR_Squad : Managed
  // Put members near the vehicle into its free passenger seats. The game's AI
  // won't board a vehicle another group is driving, so this is done directly:
  // climbing in normally when close, or placed in once they've had time to walk up.
- int BoardCargo(IEntity vehicle, float reach, bool placeFar)
+ // forceAll: also seat soldiers who are walking up but stuck (the last one or two of a
+ // squad often never made it in, 1 Oct live test).
+ int BoardCargo(IEntity vehicle, float reach, bool placeFar, bool forceAll = false)
  {
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   if (!compartments) return 0;
@@ -1355,8 +1362,8 @@ class ACR_Squad : Managed
    if (!character || !ACR_Respawn.IsAlive(character) || character.IsInVehicle()) continue;
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
    float distance = vector.DistanceXZ(character.GetOrigin(), vehicle.GetOrigin());
-   if (!access || access.IsGettingIn()) continue;
-   bool teleport = distance > 4;
+   if (!access || (access.IsGettingIn() && !forceAll)) continue;
+   bool teleport = distance > 4 || forceAll;
    if (distance > reach || (teleport && !placeFar)) continue;
    foreach (BaseCompartmentSlot seat : seats)
    {

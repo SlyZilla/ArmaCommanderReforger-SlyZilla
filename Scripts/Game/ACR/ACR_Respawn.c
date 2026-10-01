@@ -283,14 +283,18 @@ modded class SCR_CharacterRankComponent
  }
 }
 
-// A construction truck's build mode is a "limited" editor, and the game stops any
-// possession when a limited editor opens: building from a possessed soldier dropped
-// him and closing it put the player back in the command unit. Keep the possession.
+// The game stops any possession when an editor opens, when the editor's mode changes
+// and when it becomes "limited". A construction truck's build mode is a limited
+// editor, and we switch the editor back to Game Master a few seconds after it closes:
+// building from a possessed soldier dropped him, and closing it returned the player
+// to the command unit (live tests 1 Oct, still so after OnLimitedChange alone was
+// kept). Keep the possession unless full Game Master is being opened.
 modded class SCR_PlayersManagerEditorComponent
 {
- override protected void OnLimitedChange(bool isLimited)
+ override protected void StopPosessing()
  {
-  if (isLimited && ACR_Manager.GetInstance()) return;
-  super.OnLimitedChange(isLimited);
+  SCR_EditorManagerEntity manager = GetManager();
+  if (ACR_Manager.GetInstance() && manager && (!manager.IsOpened() || manager.IsLimited())) return;
+  super.StopPosessing();
  }
 }

@@ -1319,6 +1319,10 @@ class ACR_Manager : Managed
    string squadName = "?";
    if (drive.m_Squad) squadName = drive.m_Squad.GetName();
    PrintFormat("[ACR] GUNNER DRIVE end: %1 (%2)", squadName, drive.m_EndReason);
+   // Say so when it stops by itself (after a crash killed the driver, A/D went back to
+   // turning the turret with no word why, 1 Oct live test).
+   if (drive.m_EndReason == "vehicle or driver lost") Notify(drive.m_PlayerId, "Gunner drive ended: the driver is down.");
+   else if (drive.m_EndReason == "idle") Notify(drive.m_PlayerId, "Gunner drive ended (no input for 20 s): the AI driver has the wheel again.");
    m_Drives.Remove(vehicle);
   }
  }
