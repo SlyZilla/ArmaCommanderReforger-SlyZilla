@@ -67,6 +67,8 @@ class ACR_FactionSettings : GenericEntity
  ref array<ref ACR_SupportEntry> m_aSupports;
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Gunship for helicopter supports (empty = UH-1H for western factions, Mi-8 otherwise)", "et")]
  ResourceName m_sSupportHelicopter;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Transport helicopter for the door-gunner support (empty = armed UH-1H for western factions, armed Mi-8 otherwise)", "et")]
+ ResourceName m_sSupportTransportHelicopter;
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Rocket for rocket strikes and gunships (empty = Hydra 70 / S-5)", "et")]
  ResourceName m_sSupportRocket;
 

@@ -450,8 +450,48 @@ class ACR_Manager : Managed
    }
    Faction faction = GetGame().GetFactionManager().GetFactionByKey(settings.m_sFaction);
    array<int> commanders = GetCommanders(faction);
-   ai.Tick(commanders == null || commanders.IsEmpty());
+   bool noCommander = commanders == null || commanders.IsEmpty();
+   bool hold = noCommander && HoldAIFor(settings.m_sFaction);
+   if (hold && !m_AIHeld.Contains(settings.m_sFaction))
+   {
+    m_AIHeld.Insert(settings.m_sFaction);
+    PrintFormat("[ACR] AI commander %1 held: players are still loading in", settings.m_sFaction);
+   }
+   if (!hold) m_AIHeld.RemoveItem(settings.m_sFaction);
+   ai.Tick(noCommander && !hold);
   }
+ }
+
+ // The AI commander waits while players may still be loading in, so it doesn't spend
+ // the side's RP and send its squads off before a player can take command: the first
+ // AI_START_HOLD_MS of the scenario (not in test runs), and AI_JOIN_HOLD_MS after a
+ // player who may end up on that side first shows up.
+ static const float AI_START_HOLD_MS = 45000;
+ static const float AI_JOIN_HOLD_MS = 60000;
+ float m_fAIHoldStart = -1; // (regress test resets it)
+ protected ref map<int, float> m_PlayerSeenAt = new map<int, float>();
+ protected ref array<string> m_AIHeld = {};
+ bool HoldAIFor(string factionKey)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (m_fAIHoldStart < 0) m_fAIHoldStart = now;
+  if (!ACR_Perf.s_bChecks && now - m_fAIHoldStart < AI_START_HOLD_MS) return true;
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (int playerId : players)
+  {
+   float seen;
+   if (!m_PlayerSeenAt.Find(playerId, seen)) { seen = now; m_PlayerSeenAt.Set(playerId, now); }
+   if (now - seen >= AI_JOIN_HOLD_MS) continue;
+   Faction faction = SCR_FactionManager.SGetPlayerFaction(playerId);
+   if (faction && faction.GetFactionKey() == factionKey) return true;
+   if (!faction)
+   {
+    string forced = ACR_PlayerSide.Key();
+    if (forced == "" || forced == factionKey) return true;
+   }
+  }
+  return false;
  }
 
  // Hunt the known enemy group nearest to point (the side's intel, no map hacks).
@@ -630,6 +670,14 @@ class ACR_Manager : Managed
 
  // ================================================================ requests (server)
 
+ static bool EditorOpenFor(int playerId)
+ {
+  SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
+  if (!core) return false;
+  SCR_EditorManagerEntity editor = core.GetEditorManager(playerId);
+  return editor && editor.IsOpened();
+ }
+
  string HandleRequest(SCR_PlayerController pc, int command, RplId targetId, vector point)
  {
   if (!Replication.IsServer() || !pc) return "Server unavailable";
@@ -791,6 +839,8 @@ class ACR_Manager : Managed
   bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT;
   // Reject nonsense coordinates from a client.
   if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !OnMap(point))) return "Order is too far away";
+  // Map clicks made inside Game Master / build mode are not orders (the client checks too).
+  if (usesPoint && EditorOpenFor(pc.GetPlayerId())) return "Close the editor to give map orders";
   if (usesPoint) point = Ground(point);
   m_LastSquad.Set(pc.GetPlayerId(), squad);
   string name = squad.GetName();

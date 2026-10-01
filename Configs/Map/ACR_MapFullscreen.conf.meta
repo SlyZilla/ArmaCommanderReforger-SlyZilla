@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AC230926A0010098}Configs/Map/ACR_MapFullscreen.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

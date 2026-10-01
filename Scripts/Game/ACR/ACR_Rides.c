@@ -44,6 +44,10 @@ class ACR_Rides : Managed
  static const float BOARDING_TIMEOUT_MS = 75000;
  static const float STRAGGLER_WAIT_MS = 20000;  // then leave without riders this far away
  static const float STRAGGLER_DISTANCE = 60;
+ // Leave once this share is aboard and the rest have had this long (1 Oct MP: two rides
+ // gave up after 75 s with 7 and 8 of 9 aboard, the last ones stuck at the truck).
+ static const float MOSTLY_ABOARD_SHARE = 0.75;
+ static const float MOSTLY_ABOARD_WAIT_MS = 30000;
 
  protected ACR_Manager m_Manager;
  ref array<ref ACR_Ride> m_Rides = {};
@@ -368,9 +372,11 @@ class ACR_Rides : Managed
      ride.m_Rider.BoardCargo(ride.m_Vehicle, 40, inState > 8000);
     int leftBehind = 0;
     if (alive > 0 && aboard > 0 && aboard < alive && inState > STRAGGLER_WAIT_MS) leftBehind = Stragglers(ride);
-    if (alive > 0 && (aboard >= alive || leftBehind > 0))
+    bool mostly = alive > 0 && aboard < alive && inState > MOSTLY_ABOARD_WAIT_MS && MostlyAboard(aboard, alive);
+    if (alive > 0 && (aboard >= alive || leftBehind > 0 || mostly))
     {
      if (leftBehind > 0) Log(ride, string.Format("leaving without %1 rider(s) more than %2 m away", leftBehind, STRAGGLER_DISTANCE));
+     else if (mostly) Log(ride, string.Format("leaving with %1/%2 aboard", aboard, alive));
      ride.m_Rider.Halt("Riding");
      ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
      ride.m_Taxi.RouteTo(ride.m_Drop, ACR_Squad.WP_MOVE, -1, "Driving " + ride.m_Rider.GetName(), 0);
@@ -468,8 +474,20 @@ class ACR_Rides : Managed
   taxi.m_Order = "Returning";
  }
 
+ static bool MostlyAboard(int aboard, int alive)
+ {
+  // Compare as floats: with an int on the left, Enforce did the sum and the comparison in ints.
+  float share = aboard;
+  share /= alive;
+  return alive > 0 && share >= MOSTLY_ABOARD_SHARE;
+ }
+
+ // (Either squad may already be gone: the taxi's crew can die with the ride under way.)
  protected void Log(ACR_Ride ride, string what)
  {
-  PrintFormat("[ACR] RIDE %1 (%2): %3", ride.m_Rider.GetName(), ride.m_Taxi.GetName(), what);
+  string rider = "?", taxi = "?";
+  if (ride.m_Rider) rider = ride.m_Rider.GetName();
+  if (ride.m_Taxi) taxi = ride.m_Taxi.GetName();
+  PrintFormat("[ACR] RIDE %1 (%2): %3", rider, taxi, what);
  }
 }

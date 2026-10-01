@@ -30,6 +30,10 @@ modded class SCR_KeybindSetting
   SCR_KeyBindingEntry entry = new SCR_KeyBindingEntry();
   entry.m_sActionName = action;
   entry.m_sDisplayName = name;
+  // Script-made entries skip the config defaults: the Controls menu reads the platform
+  // list unchecked (a null one crashed it and hid our category).
+  entry.m_aPlatforms = {};
+  entry.m_ePrefixType = SCR_EActionPrefixType.NON_CONTINUOUS;
   return entry;
  }
 }

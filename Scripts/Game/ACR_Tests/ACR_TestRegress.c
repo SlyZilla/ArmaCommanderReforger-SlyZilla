@@ -9,6 +9,12 @@ class ACR_TestRegress
   PrintFormat("[ACR] REGRESS %1 %2 %3", verdict, name, detail);
  }
 
+ static string Verdict(bool ok)
+ {
+  if (ok) return "PASS";
+  return "FAIL";
+ }
+
  static ACR_Squad s_Defender;
 
  static void Run(ACR_TestHarness harness, int tick)
@@ -51,6 +57,7 @@ class ACR_TestRegress
   {
    if (!manager.m_Supports) manager.m_Supports = new ACR_Supports(manager);
    Check("USSR gets the Mi-8", manager.m_Supports.HelicopterFor("USSR") == ACR_Supports.HELI_EAST, manager.m_Supports.HelicopterFor("USSR"));
+   Check("door-gunner helicopters exist", Resource.Load(ACR_Supports.HELI_TRANSPORT_WEST).IsValid() && Resource.Load(ACR_Supports.HELI_TRANSPORT_EAST).IsValid(), "");
    Check("US gets the UH-1H", manager.m_Supports.HelicopterFor("US") == ACR_Supports.HELI_WEST, manager.m_Supports.HelicopterFor("US"));
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
    string saved = soviets.m_sSupportHelicopter;
@@ -69,6 +76,29 @@ class ACR_TestRegress
   {
    Check("point on the map", ACR_Manager.OnMap(harness.Ground("1400 0 2832")), "");
    Check("point off the map", !ACR_Manager.OnMap(Vector(9000000, 0, 9000000)), "");
+  }
+  // 5. (1 Oct MP) The AI commander waits while players load in, outside test runs.
+  if (tick == 24)
+  {
+   float savedStart = manager.m_fAIHoldStart;
+   manager.m_fAIHoldStart = GetGame().GetWorld().GetWorldTime();
+   ACR_Perf.s_bChecks = false;
+   bool held = manager.HoldAIFor("US");
+   ACR_Perf.s_bChecks = true;
+   bool free = !manager.HoldAIFor("US");
+   manager.m_fAIHoldStart = savedStart;
+   Check("AI commander held at scenario start, not in test runs", held && free, string.Format("held %1 free in tests %2", held, free));
+  }
+  // 6. (1 Oct MP) Rides leave once most riders are aboard.
+  if (tick == 25)
+   Check("ride leaves with 7 of 9 aboard, not 6", ACR_Rides.MostlyAboard(7, 9) && !ACR_Rides.MostlyAboard(6, 9), "");
+  // 7. (1 Oct MP) Our full-screen map config (denser contours) is the one in use and loads.
+  if (tick == 27)
+  {
+   SCR_MapConfigComponent mapConfig = SCR_MapConfigComponent.Cast(GetGame().GetGameMode().FindComponent(SCR_MapConfigComponent));
+   ResourceName used;
+   if (mapConfig) used = mapConfig.GetGadgetMapConfig();
+   Check("map uses the dense-contour config", used.Contains("ACR_MapFullscreen") && Resource.Load(used).IsValid(), used);
   }
   // 4. An AI commander leaves the other side's defenders alone (with both
   //    sides on AI it used to set them free every 15 s).

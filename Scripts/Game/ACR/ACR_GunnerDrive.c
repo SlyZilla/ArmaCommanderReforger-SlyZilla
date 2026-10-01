@@ -143,13 +143,33 @@ class ACR_GunnerDrive
   return vector.Dot(physics.GetVelocity(), m_Vehicle.GetTransformAxis(2));
  }
 
+ // True while the body still sits in a turret of our vehicle with our driver at the wheel.
+ // (DrivableFrom can't be used once the session runs: the driver seat is unhooked from
+ // the controller then, so it no longer finds a driver and every session ended at once.)
+ bool StillGunning(IEntity body)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(body);
+  if (!character || !m_Vehicle || !m_Driver) return false;
+  CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+  if (!access) return false;
+  BaseCompartmentSlot slot = access.GetCompartment();
+  if (!slot || slot.GetType() != ECompartmentType.TURRET || slot.GetVehicle() != m_Vehicle) return false;
+  PilotCompartmentSlot pilot = m_DetachedPilot;
+  if (!pilot)
+  {
+   CarControllerComponent car = Car();
+   if (car) pilot = car.GetPilotCompartmentSlot();
+  }
+  return pilot && pilot.GetOccupant() == m_Driver;
+ }
+
  // Returns false when the session should end.
  bool Apply(float now)
  {
   if (!m_Vehicle || !m_Driver || m_Driver.GetCharacterController().IsDead()) { m_EndReason = "vehicle or driver lost"; return false; }
   PlayerController pc = GetGame().GetPlayerManager().GetPlayerController(m_PlayerId);
   ChimeraCharacter driver;
-  if (!m_bTest && (!pc || DrivableFrom(pc.GetControlledEntity(), driver) != m_Vehicle || driver != m_Driver)) { m_EndReason = "gunner left"; return false; }
+  if (!m_bTest && (!pc || !StillGunning(pc.GetControlledEntity()))) { m_EndReason = "gunner left"; return false; }
   if (now - m_LastInput > IDLE_RELEASE_MS) { m_EndReason = "idle"; return false; }
   if (m_Squad.m_Group)
   {

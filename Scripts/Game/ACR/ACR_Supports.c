@@ -4,9 +4,10 @@
 //  - Rocket strike and bomb run are "virtual aircraft": rockets launched from a
 //    moving point in the sky / large explosions along a line. No aircraft model
 //    is needed, so a modded jet can replace this later.
-//  - Helicopter gun run / loiter use a real crewed gunship that the script flies
-//    along a path (the AI cannot fly). Its door gunners fight on their own; it
-//    fires rocket salvos itself. It can be shot down.
+//  - Helicopter rocket run / gunship loiter use a real crewed gunship that the script
+//    flies along a path (the AI cannot fly). Its door gunners fight on their own; it
+//    fires rocket salvos itself. It can be shot down. The door-gunner support is the
+//    transport version (no rockets) orbiting longer for less.
 enum ACR_ESupportType
 {
  MORTAR_HE_SMALL,
@@ -16,8 +17,9 @@ enum ACR_ESupportType
  ILLUMINATION,
  ROCKET_STRIKE,
  BOMB_RUN,
- HELI_GUN_RUN,
- HELI_LOITER
+ HELI_GUN_RUN,   // "rocket run" (the enum name stays: saved settings use it)
+ HELI_LOITER,
+ HELI_DOOR_GUNS  // transport helicopter, door gunners only, orbiting
 }
 
 [BaseContainerProps(), SCR_BaseContainerCustomTitleField("m_sName")]
@@ -252,7 +254,8 @@ class ACR_HeliGun : Managed
 }
 
 // A crewed gunship flown by script (the AI cannot fly).
-//  Gun run: one straight pass with a rocket salvo.
+//  Rocket run: one straight pass with a rocket salvo at enemies around the target
+//  (or spread over the area), then a climb on the way out.
 //  Loiter: the helicopter's guns are measured when it arrives, and it flies the
 //  pattern that keeps the most guns on the target:
 //   - side guns (UH-1H doors): a pylon-turn orbit with the gun side toward the target;
@@ -266,10 +269,18 @@ class ACR_HeliRun : ACR_SupportRun
  static const float LOITER_TIME_MS = 90000;
  static const float ALT_TRANSIT = 70;
  static const float ALT_LOITER = 55;
+ static const float ALT_EGRESS = 150;  // climb away after the attack (out of small-arms reach)
+ static const float RUN_TARGET_RADIUS = 120; // rocket run: enemies this close to the target are aimed at
+ static const float RUN_SPREAD = 35;   // rocket run with no enemy seen: spread over the area
 
  IEntity m_Vehicle;
  string m_sFaction;
  bool m_bLoiter;
+ bool m_bDoorGuns;   // transport version: no rockets
+ float m_fLoiterMs = LOITER_TIME_MS;
+ float m_fClimb;     // smoothed vertical speed (m/s)
+ float m_fNextAltLog;
+ bool m_bAimedAtEnemy;
  vector m_Target;
  vector m_Dir;
  vector m_Pos;
@@ -331,6 +342,7 @@ class ACR_HeliRun : ACR_SupportRun
   PrintFormat("[ACR] SUPPORT helicopter %1 inbound from %2", prefab, m_Pos);
   m_iRockets = 14;
   if (m_bLoiter) m_iRockets = 16;
+  if (m_bDoorGuns) m_iRockets = 0;
   return true;
  }
 
@@ -339,9 +351,10 @@ class ACR_HeliRun : ACR_SupportRun
  {
   BaseWorld world = GetGame().GetWorld();
   float ground = 0;
-  for (int i = 0; i < 4; i++)
+  // Looks 400 m ahead so climbs start early instead of at the slope's foot.
+  for (int i = 0; i < 6; i++)
   {
-   vector probe = pos + forward * (i * 90);
+   vector probe = pos + forward * (i * 80);
    ground = Math.Max(ground, world.GetSurfaceY(probe[0], probe[2]));
   }
   return ground + above;
@@ -468,15 +481,15 @@ class ACR_HeliRun : ACR_SupportRun
    if (m_iPhase == 0 && distance < LOITER_RADIUS + 60)
    {
     m_iPhase = 1;
-    m_fOrbitEnd = now + LOITER_TIME_MS;
-    supports.m_Manager.NotifyFaction(m_sFaction, "Gunship on station.");
+    m_fOrbitEnd = now + m_fLoiterMs;
+    supports.m_Manager.NotifyFaction(m_sFaction, StationName() + " on station.");
     PrintFormat("[ACR] SUPPORT gunship on station at %1", m_Pos);
    }
    if (m_iPhase == 1 && now > m_fOrbitEnd)
    {
     m_iPhase = 2;
     m_ExitDir = -toTarget;
-    supports.m_Manager.NotifyFaction(m_sFaction, "Gunship leaving station.");
+    supports.m_Manager.NotifyFaction(m_sFaction, StationName() + " leaving station.");
    }
    if (m_iPhase == 0) desired = toTarget;
    else if (m_iPhase == 1)
@@ -513,8 +526,14 @@ class ACR_HeliRun : ACR_SupportRun
      bodyOffset = Math.Clamp(bodyOffset, -35, 35);
     }
    }
-   else desired = m_ExitDir;
+   else
+   {
+    desired = m_ExitDir;
+    altitude = ALT_EGRESS;
+   }
   }
+  // Rocket run: once past the firing window, climb out.
+  else if (vector.Dot(m_Target - m_Pos, m_Dir) < 250) altitude = ALT_EGRESS;
 
   // Track: turn toward the desired heading at a helicopter-like rate, banking into it.
   float desiredYaw = Math.Atan2(desired[0], desired[2]) * Math.RAD2DEG;
@@ -534,8 +553,21 @@ class ACR_HeliRun : ACR_SupportRun
   vector previous = m_Pos;
   m_Pos = m_Pos + forward * (speed * dt);
   float wantedY = SafeAltitude(m_Pos, forward, altitude);
-  m_Pos[1] = previous[1] + Math.Clamp(wantedY - previous[1], -10 * dt, 12 * dt);
-  float pitch = -4;
+  // Vertical speed eases toward what the terrain asks for (it used to jump straight
+  // to the limit, so the flight looked rigid over hills).
+  float maxUp = 12;
+  if (altitude == ALT_EGRESS) maxUp = 16;
+  float wantedClimb = Math.Clamp((wantedY - previous[1]) * 0.5, -10, maxUp);
+  m_fClimb += (wantedClimb - m_fClimb) * Math.Min(1, dt * 1.2);
+  m_Pos[1] = previous[1] + m_fClimb * dt;
+  float floorY = SafeAltitude(m_Pos, forward, 20);
+  if (m_Pos[1] < floorY) { m_Pos[1] = previous[1] + Math.Min(floorY - previous[1], 20 * dt); m_fClimb = Math.Max(m_fClimb, 0); }
+  float pitch = -4 + Math.Clamp(m_fClimb * 0.25, -3, 3);
+  if (now >= m_fNextAltLog)
+  {
+   m_fNextAltLog = now + 5000;
+   PrintFormat("[ACR] SUPPORT heli height %1 m above ground, climb %2 m/s, phase %3, %4 m from target", (int)(m_Pos[1] - GetGame().GetWorld().GetSurfaceY(m_Pos[0], m_Pos[2])), (int)m_fClimb, m_iPhase, (int)distance);
+  }
 
   // Rockets: gun run fires one pass on the way in; loiter fires salvos at
   // enemies near the target whenever the nose points at them.
@@ -547,8 +579,23 @@ class ACR_HeliRun : ACR_SupportRun
    {
     float along = vector.Dot(m_Target - m_Pos, m_Dir);
     shoot = along < 650 && along > 280;
-    aim = m_Target + Vector(Math.RandomFloat(-15, 15), 3, Math.RandomFloat(-15, 15));
-    if (shoot) pitch = -8;
+    if (shoot)
+    {
+     // Spread the salvo over the enemies seen around the target; with none seen,
+     // walk it over the whole area.
+     if (now >= m_fNextEnemyScan)
+     {
+      m_fNextEnemyScan = now + 500;
+      m_aEnemies.Clear();
+      supports.FindEnemies(m_sFaction, m_Target, RUN_TARGET_RADIUS, m_aEnemies);
+     }
+     IEntity runTarget;
+     if (!m_aEnemies.IsEmpty()) runTarget = m_aEnemies[m_iRockets % m_aEnemies.Count()];
+     m_bAimedAtEnemy = runTarget != null;
+     if (runTarget) aim = runTarget.GetOrigin() + Vector(Math.RandomFloat(-6, 6), 1, Math.RandomFloat(-6, 6));
+     else aim = m_Target + Vector(Math.RandomFloat(-RUN_SPREAD, RUN_SPREAD), 3, Math.RandomFloat(-RUN_SPREAD, RUN_SPREAD));
+     pitch = -8;
+    }
    }
    else if (m_iSalvoLeft > 0)
    {
@@ -580,7 +627,7 @@ class ACR_HeliRun : ACR_SupportRun
     if (m_iRockets % 2 == 0) sideOffset = -1.6;
     supports.FireProjectile(m_Rocket, m_Pos + nose * 6 + right * sideOffset - Vector(0, 1.2, 0), aim, forward * speed);
     m_iRockets--;
-    PrintFormat("[ACR] SUPPORT heli rocket, %1 left, range %2", m_iRockets, vector.Distance(m_Pos, aim));
+    PrintFormat("[ACR] SUPPORT heli rocket, %1 left, range %2, at an enemy %3", m_iRockets, vector.Distance(m_Pos, aim), m_bAimedAtEnemy);
     m_fNextRocket = now + 280;
     if (m_bLoiter)
     {
@@ -635,9 +682,15 @@ class ACR_HeliRun : ACR_SupportRun
    physics.SetAngularVelocity(vector.Zero);
   }
 
-  if (!m_bLoiter) return vector.Dot(m_Target - m_Pos, m_Dir) > -1800;
+  if (!m_bLoiter) return vector.Dot(m_Target - m_Pos, m_Dir) > -2000;
   if (m_iPhase == 2) return distance < 2000;
   return true;
+ }
+
+ string StationName()
+ {
+  if (m_bDoorGuns) return "Door gunners";
+  return "Gunship";
  }
 
  override void Finish()
@@ -686,6 +739,8 @@ class ACR_Supports : Managed
  static const ResourceName BOMB = "{72BEEF40AF179763}Prefabs/Weapons/Warheads/Explosions/Explosion_Tnt_Large.et";
  static const ResourceName HELI_WEST = "{21E9A875C0A3C409}Prefabs/Vehicles/Helicopters/UH1H/UH1H_armed_gunship_HE.et";
  static const ResourceName HELI_EAST = "{3C6B3ED0C3AC30D5}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed_gunship_HE.et";
+ static const ResourceName HELI_TRANSPORT_WEST = "{DDDD9B51F1234DF3}Prefabs/Vehicles/Helicopters/UH1H/UH1H_armed.et";
+ static const ResourceName HELI_TRANSPORT_EAST = "{7BD282AF716ED639}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed.et";
  static const ResourceName ROCKET_WEST = "{072A755D5CB85D47}Prefabs/Weapons/Ammo/Ammo_Rocket_Hydra70_HE_M229.et";
  static const ResourceName ROCKET_EAST = "{EF17BED6DCEE4DE4}Prefabs/Weapons/Ammo/Ammo_Rocket_S5_FRAG_S5MO.et";
 
@@ -722,6 +777,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.BOMB_RUN: return 70;
    case ACR_ESupportType.HELI_GUN_RUN: return 40;
    case ACR_ESupportType.HELI_LOITER: return ACR_HeliRun.LOITER_RADIUS;
+   case ACR_ESupportType.HELI_DOOR_GUNS: return ACR_HeliRun.LOITER_RADIUS;
   }
   return 50;
  }
@@ -732,6 +788,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.ILLUMINATION: return 80;
    case ACR_ESupportType.MORTAR_SMOKE: return 60;
    case ACR_ESupportType.HELI_LOITER: return 100;
+   case ACR_ESupportType.HELI_DOOR_GUNS: return 130;
    case ACR_ESupportType.MORTAR_CREEPING: return 30;
   }
   return 15;
@@ -750,8 +807,9 @@ class ACR_Supports : Managed
    case ACR_ESupportType.ILLUMINATION: return "Illumination flares";
    case ACR_ESupportType.ROCKET_STRIKE: return "Air: rocket strike";
    case ACR_ESupportType.BOMB_RUN: return "Air: bomb run";
-   case ACR_ESupportType.HELI_GUN_RUN: return "Helicopter: gun run";
-   case ACR_ESupportType.HELI_LOITER: return "Helicopter: loiter (90 s)";
+   case ACR_ESupportType.HELI_GUN_RUN: return "Helicopter: rocket run";
+   case ACR_ESupportType.HELI_LOITER: return "Helicopter: gunship (90 s)";
+   case ACR_ESupportType.HELI_DOOR_GUNS: return "Helicopter: door gunners (120 s)";
   }
   return "Support";
  }
@@ -768,6 +826,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.BOMB_RUN: return 35;
    case ACR_ESupportType.HELI_GUN_RUN: return 30;
    case ACR_ESupportType.HELI_LOITER: return 45;
+   case ACR_ESupportType.HELI_DOOR_GUNS: return 20;
   }
   return 20;
  }
@@ -784,6 +843,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.BOMB_RUN: return 240;
    case ACR_ESupportType.HELI_GUN_RUN: return 180;
    case ACR_ESupportType.HELI_LOITER: return 300;
+   case ACR_ESupportType.HELI_DOOR_GUNS: return 150;
   }
   return 120;
  }
@@ -808,7 +868,7 @@ class ACR_Supports : Managed
  // Every support type, used when a faction's settings list none.
  static void BuildDefaults(array<ref ACR_SupportEntry> entries)
  {
-  for (int type = ACR_ESupportType.MORTAR_HE_SMALL; type <= ACR_ESupportType.HELI_LOITER; type++)
+  for (int type = ACR_ESupportType.MORTAR_HE_SMALL; type <= ACR_ESupportType.HELI_DOOR_GUNS; type++)
   {
    ACR_SupportEntry entry = new ACR_SupportEntry();
    entry.m_eType = type;
@@ -889,14 +949,19 @@ class ACR_Supports : Managed
     break;
    case ACR_ESupportType.HELI_GUN_RUN:
    case ACR_ESupportType.HELI_LOITER:
+   case ACR_ESupportType.HELI_DOOR_GUNS:
    {
     ACR_HeliRun heli = new ACR_HeliRun();
     heli.m_sFaction = factionKey;
-    heli.m_bLoiter = entry.m_eType == ACR_ESupportType.HELI_LOITER;
+    heli.m_bDoorGuns = entry.m_eType == ACR_ESupportType.HELI_DOOR_GUNS;
+    heli.m_bLoiter = entry.m_eType == ACR_ESupportType.HELI_LOITER || heli.m_bDoorGuns;
+    if (heli.m_bDoorGuns) heli.m_fLoiterMs = 120000;
     heli.m_Target = target;
     heli.m_Dir = dir;
     heli.m_Rocket = RocketFor(factionKey);
-    if (!heli.Start(this, HelicopterFor(factionKey), now))
+    ResourceName helicopter = HelicopterFor(factionKey);
+    if (heli.m_bDoorGuns) helicopter = TransportHelicopterFor(factionKey);
+    if (!heli.Start(this, helicopter, now))
     {
      // Nothing flew: give the RP and the cooldown back.
      data.m_iRP += entry.m_iCost;
@@ -923,6 +988,15 @@ class ACR_Supports : Managed
   if (settings && !settings.m_sSupportHelicopter.IsEmpty()) return settings.m_sSupportHelicopter;
   if (IsWestern(factionKey)) return HELI_WEST;
   return HELI_EAST;
+ }
+
+ // Door-gunner support: the side's transport helicopter with its door guns.
+ ResourceName TransportHelicopterFor(string factionKey)
+ {
+  ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  if (settings && !settings.m_sSupportTransportHelicopter.IsEmpty()) return settings.m_sSupportTransportHelicopter;
+  if (IsWestern(factionKey)) return HELI_TRANSPORT_WEST;
+  return HELI_TRANSPORT_EAST;
  }
 
  ResourceName RocketFor(string factionKey)

@@ -874,6 +874,7 @@ modded class SCR_PlayerController
  // Left-click on empty map clears the selection. Clicks on markers or the panel don't.
  protected void ACR_OnMapClick(vector screenPos)
  {
+  if (ACR_EditorOpen()) return;
   if (System.GetTickCount() - m_ACR_LastUiClick < 400) return;
   if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) return;
   ACR_ClosePicker();
@@ -1066,9 +1067,18 @@ modded class SCR_PlayerController
  }
 
  // Called by the map radial menu hook. Returns true if the right-click was used.
+ // Game Master or a construction truck's build mode is open: its map clicks are its own
+ // (in build mode they used to reach a possessed vehicle's squad as move orders).
+ static bool ACR_EditorOpen()
+ {
+  SCR_EditorManagerEntity editor = SCR_EditorManagerEntity.GetInstance();
+  return editor && editor.IsOpened();
+ }
+
  bool ACR_HandleMapRightClick()
  {
   if (!ACR_Manager.GetInstance()) return false;
+  if (ACR_EditorOpen()) return false;
   if (ACR_ModifierHeld("ACR_MapAlt"))
   {
    SCR_MapEntity pickerMap = SCR_MapEntity.GetMapInstance();

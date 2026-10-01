@@ -71,6 +71,8 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRespawnTest", flag)) mode = MODE_RESPAWN;
   if (System.GetCLIParam("acrSupportTest", flag)) mode = MODE_SUPPORT;
   if (System.GetCLIParam("acrGunshipTest", flag)) mode = MODE_GUNSHIP;
+  // -acrHeliTest 1: door gunners (Mi-8) and a rocket run (UH-1H) instead of two gunships.
+  if (System.GetCLIParam("acrHeliTest", flag)) { mode = MODE_GUNSHIP; s_bHeliVariant = true; }
   if (System.GetCLIParam("acrTacticsTest", flag)) mode = MODE_TACTICS;
   if (System.GetCLIParam("acrTransportTest", flag)) mode = MODE_TRANSPORT;
   if (System.GetCLIParam("acrStallTest", flag)) mode = MODE_STALL;
@@ -895,6 +897,7 @@ class ACR_TestHarness : Managed
   return "";
  }
 
+ static bool s_bHeliVariant;
  void TestGunship()
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -915,8 +918,11 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] GUNSHIPTEST targets %1 %2", m_UHTarget, m_MiTarget);
   }
   if (!manager.m_Supports) return;
-  if (m_Ticks == 10) PrintFormat("[ACR] GUNSHIPTEST Mi-8: %1", manager.m_Supports.Call("USSR", SupportIndex(manager, ACR_ESupportType.HELI_LOITER), miSpot, true));
-  if (m_Ticks == 12) PrintFormat("[ACR] GUNSHIPTEST UH-1H: %1", manager.m_Supports.Call("US", SupportIndex(manager, ACR_ESupportType.HELI_LOITER), uhSpot, true));
+  ACR_ESupportType miType = ACR_ESupportType.HELI_LOITER;
+  ACR_ESupportType uhType = ACR_ESupportType.HELI_LOITER;
+  if (s_bHeliVariant) { miType = ACR_ESupportType.HELI_DOOR_GUNS; uhType = ACR_ESupportType.HELI_GUN_RUN; }
+  if (m_Ticks == 10) PrintFormat("[ACR] GUNSHIPTEST Mi-8: %1", manager.m_Supports.Call("USSR", SupportIndex(manager, miType), miSpot, true));
+  if (m_Ticks == 12) PrintFormat("[ACR] GUNSHIPTEST UH-1H: %1", manager.m_Supports.Call("US", SupportIndex(manager, uhType), uhSpot, true));
   if (m_Ticks % 10 == 0 && m_Ticks >= 20) PrintFormat("[ACR] GUNSHIPTEST t=%1 UH-1H target alive %2 | Mi-8 target alive %3", m_Ticks, AliveIn(m_UHTarget), AliveIn(m_MiTarget));
   if (m_Ticks == 150) Print("[ACR] TEST COMPLETE");
  }
@@ -1471,6 +1477,12 @@ class ACR_TestHarness : Managed
   {
    CarControllerComponent hc = CarControllerComponent.Cast(m_DriveBackCar.FindComponent(CarControllerComponent));
    PrintFormat("[ACR] DRIVE handback t=%1 moved=%2 m session=%3 pilot=%4", m_Ticks, (int)vector.Distance(m_DriveBackFrom, m_DriveBackCar.GetOrigin()), manager.IsGunnerDriven(m_DriveBackCar), hc && hc.GetPilotCompartmentSlot() != null);
+  }
+  // Regression (1 Oct MP): every real session ended at once with "gunner left".
+  if (m_Ticks == 16 && m_TestDriveSession)
+  {
+   ChimeraCharacter gunner = ACR_GunnerDrive.SquadGunner(m_TestDriveSession.m_Squad);
+   PrintFormat("[ACR] REGRESS %1 gunner still counted in the turret after the driver seat is unhooked (gunner %2)", ACR_TestRegress.Verdict(gunner && m_TestDriveSession.StillGunning(gunner)), gunner != null);
   }
   if (m_Ticks == 76) Print("[ACR] TEST COMPLETE");
   if (!m_TestDriveSession) return;
