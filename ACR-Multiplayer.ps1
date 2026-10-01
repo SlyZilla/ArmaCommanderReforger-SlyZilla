@@ -116,17 +116,28 @@ try {
     $proc = Start-Process -FilePath $server -ArgumentList $serverArgs -WorkingDirectory (Split-Path $server -Parent) -PassThru
 
     Write-Host ''
-    if ($zt) {
-      Write-Host ('Tell your friends this address: ' + $zt + '   (ZeroTier)') -ForegroundColor Yellow
-      Write-Host 'They also need your ZeroTier network ID (it is in zerotier.txt in the ArmaCommanderReforger folder).'
-      Write-Host 'Other addresses of this PC (same house, other VPNs):'
-    } else {
-      Write-Host 'Tell your friend one of these addresses (and port' $Port 'UDP):' -ForegroundColor Yellow
+    # Public IP for friends coming over the internet (needs UDP port forwarding).
+    $public = $null
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+    foreach ($url in 'https://api.ipify.org', 'https://checkip.amazonaws.com') {
+      try {
+        $r = (Invoke-RestMethod -Uri $url -TimeoutSec 5 -UseBasicParsing).ToString().Trim()
+        if ($r -match '^\d{1,3}(\.\d{1,3}){3}$') { $public = $r; break }
+      } catch {}
     }
+    Write-Host ('Tell your friends ONE of these addresses (port ' + $Port + ' UDP):') -ForegroundColor Yellow
+    if ($zt) {
+      Write-Host ('   ' + $zt + '   <- friends on ZeroTier (they also need your network ID, in zerotier.txt)') -ForegroundColor Yellow
+    }
+    if ($public) {
+      Write-Host ('   ' + $public + '   <- friends over the internet without ZeroTier (needs UDP ' + $Port + ' forwarded on your router)') -ForegroundColor Yellow
+    } else {
+      Write-Host '   (Could not look up your public IP: search "what is my ip". Needs port forwarding.)'
+    }
+    Write-Host 'Other addresses of this PC (same house, other VPN apps):'
     Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-      Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+      Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -ne $zt } |
       ForEach-Object { Write-Host ('   ' + $_.IPAddress + '   (' + $_.InterfaceAlias + ')') }
-    Write-Host '   Over the internet without a VPN: your public IP (search "what is my ip") + port forwarding.'
     Write-Host ''
 
     # Wait until the scenario has loaded on the server (it prints "[ACR] Scenario started").
