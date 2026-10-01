@@ -41,12 +41,43 @@ class ACR_PlayerSide
   return s_sKey;
  }
 
+ // The scenario may only have a spawn point for one side (Arland: US at the airfield).
+ // With players forced onto a side that has none, the game's auto-spawn retried every
+ // second forever and the game never finished loading (1 Oct, -acrPlayers USSR).
+ // Place one at that side's own base farthest from the other side's spawn points.
+ static const ResourceName SPAWN_POINT = "{5A2220DD0C16958B}Prefabs/MP/Spawning/SpawnPoint_US.et";
+ static bool s_bSpawnChecked; // (regress test resets it)
+ static void EnsureSpawnPoint()
+ {
+  if (s_bSpawnChecked) return;
+  string key = Key();
+  if (key == "") { s_bSpawnChecked = true; return; }
+  if (ACR_Base.s_All.IsEmpty()) return; // bases not registered yet
+  s_bSpawnChecked = true;
+  if (SCR_SpawnPoint.GetSpawnPointCountForFaction(key) > 0) return;
+  ACR_Base best;
+  float bestDistance = -1;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != key || !base.m_bAllowSpawn) continue;
+   float nearestEnemy = 1000000;
+   foreach (SCR_SpawnPoint other : SCR_SpawnPoint.GetSpawnPoints())
+    if (other && other.GetFactionKey() != key) nearestEnemy = Math.Min(nearestEnemy, vector.Distance(other.GetOrigin(), base.GetOrigin()));
+   if (nearestEnemy > bestDistance) { bestDistance = nearestEnemy; best = base; }
+  }
+  if (!best) { PrintFormat("[ACR] No base of %1 to put a player spawn point at", key); return; }
+  SCR_SpawnPoint point = SCR_SpawnPoint.Cast(ACR_Manager.SpawnPrefab(SPAWN_POINT, ACR_Manager.Ground(best.GetOrigin() + Vector(6, 0, 6))));
+  if (point) point.SetFactionKey(key);
+  PrintFormat("[ACR] Player spawn point for %1 placed at %2: %3", key, best.m_sName, point != null);
+ }
+
  // Server tick: anyone not on the chosen side is moved to it (only while not
  // alive in the field, so nobody is yanked mid-fight).
  static void Enforce()
  {
   string key = Key();
   if (key == "") return;
+  EnsureSpawnPoint();
   Faction target = GetGame().GetFactionManager().GetFactionByKey(key);
   if (!target) return;
   array<int> ids = {};
@@ -77,5 +108,40 @@ modded class SCR_PlayerFactionAffiliationComponent
   string key = ACR_PlayerSide.Key();
   if (key != "" && faction && faction.GetFactionKey() != key) return false;
   return super.CanRequestFaction_S(faction);
+ }
+}
+
+// The scenario's auto-spawn names a fixed side (US on Arland): with a forced players'
+// side, spawn players on that side instead (the faction request for US was refused).
+// (The container attribute must be repeated on a modded config class, or the world's
+// respawn component loads without its spawn logic.)
+[BaseContainerProps(category: "Respawn")]
+modded class SCR_AutoSpawnLogic
+{
+ override protected bool GetForcedFaction(out Faction faction)
+ {
+  string key = ACR_PlayerSide.Key();
+  if (key != "")
+  {
+   faction = GetGame().GetFactionManager().GetFactionByKey(key);
+   if (faction) return true;
+  }
+  return super.GetForcedFaction(faction);
+ }
+
+ // Players who left keep a queued auto-spawn retry; the game's own retry then threw a
+ // null exception every second (no player controller any more).
+ override protected void DoSpawn_S(int playerId)
+ {
+  if (!GetGame().GetPlayerManager().GetPlayerController(playerId)) return;
+  super.DoSpawn_S(playerId);
+ }
+
+ // For the regression test.
+ Faction ACR_ForcedFaction()
+ {
+  Faction faction;
+  GetForcedFaction(faction);
+  return faction;
  }
 }

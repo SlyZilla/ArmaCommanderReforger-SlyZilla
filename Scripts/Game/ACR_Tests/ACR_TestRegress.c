@@ -123,6 +123,22 @@ class ACR_TestRegress
    }
    Check("construction truck driver has a shovel", shovel, ACR_Manager.s_sLastShovel);
   }
+  // 9. (1 Oct) Hosting with players on USSR: Arland has only a US player spawn point and
+  //    the auto-spawn names US, so the game never finished loading.
+  if (tick == 30)
+  {
+   ACR_PlayerSide.Force("USSR");
+   ACR_PlayerSide.s_bSpawnChecked = false;
+   ACR_PlayerSide.EnsureSpawnPoint();
+   bool point = SCR_SpawnPoint.GetSpawnPointCountForFaction("USSR") > 0;
+   SCR_AutoSpawnLogic autoSpawn = new SCR_AutoSpawnLogic();
+   Faction forced;
+   if (autoSpawn) forced = autoSpawn.ACR_ForcedFaction();
+   bool faction = forced && forced.GetFactionKey() == "USSR";
+   Check("players forced onto USSR get a spawn point and spawn as USSR", point && faction, string.Format("spawn point %1, auto-spawn %2, logic %3", point, faction, autoSpawn != null));
+   foreach (SCR_SpawnPoint added : SCR_SpawnPoint.GetSpawnPointsForFaction("USSR")) SCR_EntityHelper.DeleteEntityAndChildren(added);
+   ACR_PlayerSide.Force("");
+  }
   // 4. An AI commander leaves the other side's defenders alone (with both
   //    sides on AI it used to set them free every 15 s).
   if (tick == 26)
