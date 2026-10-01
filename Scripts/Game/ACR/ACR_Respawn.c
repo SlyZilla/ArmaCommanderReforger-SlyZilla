@@ -294,7 +294,10 @@ modded class SCR_PlayersManagerEditorComponent
  override protected void StopPosessing()
  {
   SCR_EditorManagerEntity manager = GetManager();
-  if (ACR_Manager.GetInstance() && manager && (!manager.IsOpened() || manager.IsLimited())) return;
+  // IsLimited() is false for a host who also has Game Master, so building mode
+  // looked like full Game Master (live 1 Oct 17:53: possession dropped on opening
+  // build mode). Only an open editor in Game Master (EDIT) mode stops possession.
+  if (ACR_Manager.GetInstance() && manager && !ACR_Manager.EditorStopsPossession(manager)) return;
   super.StopPosessing();
  }
 }

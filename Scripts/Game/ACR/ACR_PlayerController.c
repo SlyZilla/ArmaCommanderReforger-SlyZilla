@@ -1898,27 +1898,59 @@ modded class SCR_PlayerController
  protected int m_ACR_PingDownAt = -1;
  protected int m_ACR_PingHoldKind;
 
+ protected bool m_ACR_PingOnMap;      // the current press started with the map open
+ protected bool m_ACR_PingPickerShown; // map hold: the picker is already up
+
  void ACR_UpdateWorldPing(bool mapOpen)
  {
   InputManager input = GetGame().GetInputManager();
-  bool held = !mapOpen && input && input.GetActionValue("ACR_Ping") > 0.5;
+  bool held = input && input.GetActionValue("ACR_Ping") > 0.5;
   int now = System.GetTickCount();
   if (held)
   {
-   if (m_ACR_PingDownAt < 0) m_ACR_PingDownAt = now;
-   int down = now - m_ACR_PingDownAt;
-   if (down >= PING_TAP_MS)
+   if (m_ACR_PingDownAt < 0)
    {
-    m_ACR_PingHoldKind = ((down - PING_TAP_MS) / PING_CYCLE_MS) % 4;
-    ACR_PingDisplay.ShowHoldHint(m_ACR_PingHoldKind);
+    m_ACR_PingDownAt = now;
+    m_ACR_PingOnMap = mapOpen;
+    m_ACR_PingPickerShown = false;
    }
+   int down = now - m_ACR_PingDownAt;
+   if (down < PING_TAP_MS) return;
+   if (m_ACR_PingOnMap)
+   {
+    // On the map: holding opens the four-way picker at the cursor.
+    if (!m_ACR_PingPickerShown && mapOpen && !ACR_EditorOpen())
+    {
+     SCR_MapEntity holdMap = SCR_MapEntity.GetMapInstance();
+     float hx, hz;
+     if (holdMap)
+     {
+      holdMap.GetMapCursorWorldPosition(hx, hz);
+      ACR_OpenPicker(holdMap, Vector(hx, 0, hz));
+     }
+     m_ACR_PingPickerShown = true;
+    }
+    return;
+   }
+   m_ACR_PingHoldKind = ((down - PING_TAP_MS) / PING_CYCLE_MS) % 4;
+   ACR_PingDisplay.ShowHoldHint(m_ACR_PingHoldKind);
    return;
   }
   if (m_ACR_PingDownAt < 0) return;
   int heldFor = now - m_ACR_PingDownAt;
   m_ACR_PingDownAt = -1;
   ACR_PingDisplay.ShowHoldHint(-1);
-  if (mapOpen) return;
+  if (m_ACR_PingOnMap || mapOpen)
+  {
+   // Map tap: Look here at the cursor (a hold already opened the picker).
+   if (!m_ACR_PingOnMap || !mapOpen || m_ACR_PingPickerShown || ACR_EditorOpen()) return;
+   SCR_MapEntity tapMap = SCR_MapEntity.GetMapInstance();
+   if (!tapMap) return;
+   float tx, tz;
+   tapMap.GetMapCursorWorldPosition(tx, tz);
+   ACR_RequestPing(ACR_EPing.LOOK, Vector(tx, 0, tz), false);
+   return;
+  }
   int kind = ACR_EPing.LOOK;
   if (heldFor >= PING_TAP_MS) kind = m_ACR_PingHoldKind;
   vector aim;

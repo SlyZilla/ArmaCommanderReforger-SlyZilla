@@ -368,6 +368,17 @@ class ACR_HeliRun : ACR_SupportRun
   return damage && damage.GetState() == EDamageState.DESTROYED;
  }
 
+ // Script flies the helicopter, so the game's own loss of lift never applied: with
+ // a rotor shot off it kept flying (live 1 Oct, Mi-8). The damage manager's movement
+ // damage combines engine, gearbox and every rotor (a lost tail rotor counts too).
+ static const float CRIPPLED_MOVEMENT_DAMAGE = 0.75;
+ float MovementDamage()
+ {
+  DamageManagerComponent damage = DamageManagerComponent.Cast(m_Vehicle.FindComponent(DamageManagerComponent));
+  if (!damage) return 0;
+  return damage.GetMovementDamage();
+ }
+
  static vector Heading(float yaw)
  {
   return Vector(Math.Sin(yaw * Math.DEG2RAD), 0, Math.Cos(yaw * Math.DEG2RAD));
@@ -449,20 +460,22 @@ class ACR_HeliRun : ACR_SupportRun
    else if (g2.CoversBearing(180) || g2.CoversBearing(170) || g2.CoversBearing(-170)) noseTail++;
   }
   m_fSideBearing = bestBearing;
-  m_bPasses = bestCount == 0 || noseTail > bestCount;
+  // Door gunners always orbit (the Mi-8's side window guns barely got a look in on passes).
+  m_bPasses = bestCount == 0 || (!m_bDoorGuns && noseTail > bestCount);
   PrintFormat("[ACR] SUPPORT gunship pattern: %1 (side guns %2 at %3 deg, nose/tail guns %4)", m_bPasses, bestCount, bestBearing, noseTail);
  }
 
  override bool Frame(ACR_Supports supports, float dt, float now)
  {
   if (!m_Vehicle) return false;
-  if (IsDestroyed())
+  float movementDamage = MovementDamage();
+  if (IsDestroyed() || movementDamage >= CRIPPLED_MOVEMENT_DAMAGE)
   {
    m_bDestroyed = true;
    Physics wreck = m_Vehicle.GetPhysics();
    if (wreck) wreck.EnableGravity(true);
    supports.m_Manager.NotifyFaction(m_sFaction, "Support helicopter is going down!");
-   Print("[ACR] SUPPORT helicopter destroyed");
+   PrintFormat("[ACR] SUPPORT helicopter going down (destroyed=%1 movement damage=%2)", IsDestroyed(), movementDamage);
    return false;
   }
   if (now - m_fStarted > 300000) return false;
@@ -754,6 +767,17 @@ class ACR_Supports : Managed
  ACR_Manager m_Manager;
  ref array<IEntity> m_Vehicles = {};
  protected ref array<ref ACR_SupportRun> m_Runs = {};
+
+ // Test hook: the running helicopter support of a side (null if none).
+ ACR_HeliRun TestHeliRun(string faction)
+ {
+  foreach (ACR_SupportRun run : m_Runs)
+  {
+   ACR_HeliRun heli = ACR_HeliRun.Cast(run);
+   if (heli && heli.m_sFaction == faction) return heli;
+  }
+  return null;
+ }
  protected ref array<ref ACR_PendingLaunch> m_Launches = {};
  protected int m_iFrame;
  ref array<ref ACR_SupportZone> m_Zones = {};

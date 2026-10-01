@@ -191,7 +191,10 @@ class ACR_PingDisplay
     float distance = vector.Distance(body.GetOrigin(), data.m_PingPositions[i]);
     float alpha = 0.95;
     if (!data.m_PingAnswers[i].IsEmpty()) alpha = 0.5;
-    DrawShape(s_HudPainter, screen[0], screen[1], data.m_PingKinds[i], 0.9, alpha);
+    // The canvas draws in native pixels; ProjWorldToScreen is in reference units
+    // (labels). Mixing them put the icon off the ping on screens other than 1080p.
+    vector nativePos = workspace.ProjWorldToScreenNative(pos, world);
+    DrawShape(s_HudPainter, nativePos[0], nativePos[1], data.m_PingKinds[i], 0.9, alpha);
     TextWidget label = HudLabel(used);
     used++;
     if (!label) continue;

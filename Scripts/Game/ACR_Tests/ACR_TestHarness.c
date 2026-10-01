@@ -898,6 +898,7 @@ class ACR_TestHarness : Managed
  }
 
  static bool s_bHeliVariant;
+ protected ref ACR_HeliRun m_HipRun;
  void TestGunship()
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -920,8 +921,33 @@ class ACR_TestHarness : Managed
   if (!manager.m_Supports) return;
   ACR_ESupportType miType = ACR_ESupportType.HELI_LOITER;
   ACR_ESupportType uhType = ACR_ESupportType.HELI_LOITER;
-  // (the UH-1H orbits with its doors, so its door gunners show the side swap; the Mi-8 flies passes)
-  if (s_bHeliVariant) { miType = ACR_ESupportType.HELI_GUN_RUN; uhType = ACR_ESupportType.HELI_DOOR_GUNS; }
+  // Variant: Mi-8 door gunners (must orbit, then lose their rotors and go down) and a UH-1H rocket run.
+  if (s_bHeliVariant) { miType = ACR_ESupportType.HELI_DOOR_GUNS; uhType = ACR_ESupportType.HELI_GUN_RUN; }
+  if (s_bHeliVariant && m_Ticks == 30)
+  {
+   m_HipRun = manager.m_Supports.TestHeliRun("USSR");
+   bool orbit = m_HipRun && m_HipRun.m_bAnalyzed && !m_HipRun.m_bPasses;
+   PrintFormat("[ACR] REGRESS %1 Mi-8 door gunners orbit instead of flying passes (run %2)", ACR_TestRegress.Verdict(orbit), m_HipRun != null);
+  }
+  if (s_bHeliVariant && m_Ticks == 60 && m_HipRun && m_HipRun.m_Vehicle)
+  {
+   int rotors = 0;
+   HitZoneContainerComponent zones = HitZoneContainerComponent.Cast(m_HipRun.m_Vehicle.FindComponent(HitZoneContainerComponent));
+   array<HitZone> hitZones = {};
+   if (zones) zones.GetAllHitZonesInHierarchy(hitZones);
+   foreach (HitZone zone : hitZones)
+   {
+    if (!SCR_RotorHitZone.Cast(zone)) continue;
+    zone.HandleDamage(zone.GetMaxHealth() * 2, EDamageType.TRUE, null);
+    rotors++;
+   }
+   PrintFormat("[ACR] GUNSHIPTEST shot off %1 rotor(s) of the Mi-8, movement damage %2", rotors, m_HipRun.MovementDamage());
+  }
+  if (s_bHeliVariant && m_Ticks == 64)
+  {
+   bool down = m_HipRun && m_HipRun.m_bDestroyed;
+   PrintFormat("[ACR] REGRESS %1 a helicopter with its rotors shot off stops flying and goes down", ACR_TestRegress.Verdict(down));
+  }
   if (m_Ticks == 10) PrintFormat("[ACR] GUNSHIPTEST Mi-8: %1", manager.m_Supports.Call("USSR", SupportIndex(manager, miType), miSpot, true));
   if (m_Ticks == 12) PrintFormat("[ACR] GUNSHIPTEST UH-1H: %1", manager.m_Supports.Call("US", SupportIndex(manager, uhType), uhSpot, true));
   if (m_Ticks % 10 == 0 && m_Ticks >= 20) PrintFormat("[ACR] GUNSHIPTEST t=%1 UH-1H target alive %2 | Mi-8 target alive %3", m_Ticks, AliveIn(m_UHTarget), AliveIn(m_MiTarget));

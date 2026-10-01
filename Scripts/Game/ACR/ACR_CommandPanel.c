@@ -194,7 +194,29 @@ class ACR_CommandPanel : Managed
  void ShowPicker(bool show, float x, float y)
  {
   if (!m_PickerRoot) return;
-  if (show) FrameSlot.SetPos(m_PickerRoot, x + 12, y + 12);
+  // x, y are the cursor in native pixels: the picker is placed in reference units
+  // and kept on screen (it opened below the bottom edge near it, live 1 Oct).
+  if (show)
+  {
+   WorkspaceWidget ws = GetGame().GetWorkspace();
+   float ux = ws.DPIUnscale(x);
+   float uy = ws.DPIUnscale(y);
+   float screenW = ws.DPIUnscale(ws.GetWidth());
+   float screenH = ws.DPIUnscale(ws.GetHeight());
+   float w, h;
+   m_PickerRoot.GetScreenSize(w, h);
+   w = ws.DPIUnscale(w);
+   h = ws.DPIUnscale(h);
+   if (w < 1) w = 182;
+   if (h < 1) h = 170;
+   float px = ux + 12;
+   float py = uy + 12;
+   if (px + w > screenW - 8) px = ux - 12 - w;
+   if (py + h > screenH - 8) py = uy - 12 - h;
+   px = Math.Clamp(px, 8, Math.Max(8, screenW - w - 8));
+   py = Math.Clamp(py, 8, Math.Max(8, screenH - h - 8));
+   FrameSlot.SetPos(m_PickerRoot, px, py);
+  }
   m_PickerRoot.SetVisible(show);
  }
 

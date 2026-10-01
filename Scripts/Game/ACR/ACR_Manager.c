@@ -670,6 +670,14 @@ class ACR_Manager : Managed
 
  // ================================================================ requests (server)
 
+ // The game stops a possession whenever an editor opens or changes mode. We keep it
+ // unless full Game Master (EDIT) is open: building mode and the mode resets after
+ // closing it must not drop the possessed soldier.
+ static bool EditorStopsPossession(SCR_EditorManagerEntity editor)
+ {
+  return editor && editor.IsOpened() && editor.GetCurrentMode() == EEditorMode.EDIT;
+ }
+
  static bool EditorOpenFor(int playerId)
  {
   SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
