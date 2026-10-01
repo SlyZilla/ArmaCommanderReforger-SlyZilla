@@ -1792,7 +1792,8 @@ class ACR_TestHarness : Managed
    }
   }
   if (m_Ticks == 41 && m_iHuntOrderedAt == 0) Print("[ACR] HUNTTEST the enemy was never spotted");
-  if (m_iHuntOrderedAt > 0 && m_Ticks == m_iHuntOrderedAt + 15 && alpha && m_HuntTarget.GetAnchor() && alpha.GetAnchor())
+  // (m_HuntTarget is null once the squad is gone: Alpha may finish it off first)
+  if (m_iHuntOrderedAt > 0 && m_Ticks == m_iHuntOrderedAt + 15 && alpha && m_HuntTarget && m_HuntTarget.GetAnchor() && alpha.GetAnchor())
    PrintFormat("[ACR] HUNTTEST after 15 s: alpha '%1', hunting %2 (want 1), distance %3 m", alpha.m_Order, alpha.IsHunting(), (int)vector.DistanceXZ(alpha.GetAnchor().GetOrigin(), m_HuntTarget.GetAnchor().GetOrigin()));
   if (m_iHuntOrderedAt > 0 && m_Ticks == m_iHuntOrderedAt + 17 && m_HuntTarget)
   {
