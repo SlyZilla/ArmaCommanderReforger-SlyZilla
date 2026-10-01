@@ -271,3 +271,14 @@ modded class SCR_PossessingManagerComponent
   return false;
  }
 }
+
+// Vanilla rank changes assume the Conflict game mode (renegade handling) and hit a
+// null pointer anywhere else; skip that part when there is no Conflict mode.
+modded class SCR_CharacterRankComponent
+{
+ override protected void SpecialRankHandling(SCR_ECharacterRank newRank, SCR_ECharacterRank prevRank)
+ {
+  if (!SCR_GameModeCampaign.GetInstance()) return;
+  super.SpecialRankHandling(newRank, prevRank);
+ }
+}

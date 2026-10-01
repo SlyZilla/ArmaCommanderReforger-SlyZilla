@@ -30,12 +30,6 @@ SCR_FactionManager ACR_Factions : "{589540B35EBA8CDC}Prefabs/MP/Managers/Faction
  coords 1320 38 2832
 }
 SCR_LoadoutManager ACR_Loadouts : "{97EF4C1A41F63DDB}Prefabs/MP/Managers/Loadouts/LoadoutManager_USxUSSR.et" {
- m_aPlayerLoadouts {
-  SCR_FactionPlayerLoadout "{01AF3D171FAEF204}" : "{FD9337B1D5432C5A}Configs/Loadouts/US/Regular/Loadout_US_Officer.conf" {
-  }
-  SCR_FactionPlayerLoadout "{25BF21EE527B444E}" : "{4CAE966D675071B3}Configs/Loadouts/USSR/Regular/Loadout_USSR_Officer.conf" {
-  }
- }
  coords 1320 38 2832
 }
 SCR_SpawnPoint ACR_PlayerSpawn : "{5A2220DD0C16958B}Prefabs/MP/Spawning/SpawnPoint_US.et" {
