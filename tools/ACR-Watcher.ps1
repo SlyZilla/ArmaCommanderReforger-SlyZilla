@@ -159,8 +159,6 @@ function Remove-KnownNoise($text) {
     # Vanilla AI bug: a group whose members all died processes a failed move (null leader).
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_AIProcessFailedMovementResult'", 'vanilla AI null-leader exception (ignored)')
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: No suppression volume provided!", 'vanilla suppression exception (ignored)')
-    # Opening the map from a test script: the game's map tool UI has no cursor module yet.
-    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_MapToolInteractionUI'", 'vanilla map tool exception (ignored)')
     # Vanilla SCR_AIGetFireTimes: RandomFloat(0.1, m_fShotSpan * 1.9) when the shot span is 0.
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Math\.RandomFloat: invalid parameters min = 0\.100000 max = 0\.000000", 'vanilla AI fire-time warning (ignored)')
     return $text
