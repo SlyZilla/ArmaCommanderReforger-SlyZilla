@@ -998,6 +998,25 @@ class ACR_Manager : Managed
 
  bool IsGunnerDriven(IEntity vehicle) { return m_Drives.Contains(vehicle); }
 
+ // Server test hook: a gunner drive without a player.
+ ACR_GunnerDrive TestDrive(IEntity vehicle, ChimeraCharacter driver, ACR_Squad squad)
+ {
+  ACR_GunnerDrive drive = new ACR_GunnerDrive();
+  drive.m_Vehicle = vehicle;
+  drive.m_Driver = driver;
+  drive.m_Squad = squad;
+  drive.m_bTest = true;
+  drive.Begin();
+  m_Drives.Insert(vehicle, drive);
+  return drive;
+ }
+
+ void SimulateStep()
+ {
+  if (m_Drives.IsEmpty() || !Replication.IsServer()) return;
+  foreach (IEntity vehicle, ACR_GunnerDrive drive : m_Drives) drive.Reapply();
+ }
+
  // Every frame on the server (physics inputs must be refreshed continuously).
  void ServerFrame(float timeSlice)
  {

@@ -6,7 +6,7 @@
 class ACR_GunnerDrive
 {
  static const float IDLE_RELEASE_MS = 20000;
- static const float SHIFT_COOLDOWN_MS = 700;
+ static const float SHIFT_COOLDOWN_MS = 1500; // the gearbox's own clutch needs time to couple after a shift
 
 
  IEntity m_Vehicle;
@@ -18,8 +18,23 @@ class ACR_GunnerDrive
  float m_LastInput;
  float m_LastShift;
  float m_LastDiag;
+ float m_LastFineDiag;
+ // Last inputs written; re-written before every physics step (see Reapply).
+ float m_SetThrottle;
+ float m_SetBrake;
+ float m_SetSteer;
+ float m_SetClutch = 1;
+ bool m_bHasSet;
+ int m_Overrides;
+ int m_Steps;
  bool m_AIWasOn;
  bool m_VehicleAIWasOn;
+ bool m_bTest; // server test: no player in the turret
+ static bool s_bParkVehicleAI = false;
+ static bool s_bParkDriverAI = true;
+ static bool s_bSlipClutch = false;
+ static bool s_bOwnGearbox = true;
+ float m_fClutch = 1;
  string m_EndReason;
 
  // The AI gunner of one of the squad's vehicles (null if none, or a player holds it).
@@ -71,7 +86,7 @@ class ACR_GunnerDrive
  {
   m_Squad.Halt("Driven by gunner");
   AIControlComponent ai = AIControlComponent.Cast(m_Driver.FindComponent(AIControlComponent));
-  if (ai && ai.IsAIActivated())
+  if (s_bParkDriverAI && ai && ai.IsAIActivated())
   {
    ai.DeactivateAI();
    m_AIWasOn = true;
@@ -80,7 +95,7 @@ class ACR_GunnerDrive
   // it keeps braking and centring the wheel against the gunner's input every frame:
   // that felt like a stuck handbrake, worst when turning.
   AIControlComponent vehicleAI = AIControlComponent.Cast(m_Vehicle.FindComponent(ChimeraAIVehicleControlComponent));
-  if (vehicleAI && vehicleAI.IsAIActivated())
+  if (s_bParkVehicleAI && vehicleAI && vehicleAI.IsAIActivated())
   {
    vehicleAI.DeactivateAI();
    m_VehicleAIWasOn = true;
@@ -113,7 +128,7 @@ class ACR_GunnerDrive
   if (!m_Vehicle || !m_Driver || m_Driver.GetCharacterController().IsDead()) { m_EndReason = "vehicle or driver lost"; return false; }
   PlayerController pc = GetGame().GetPlayerManager().GetPlayerController(m_PlayerId);
   ChimeraCharacter driver;
-  if (!pc || DrivableFrom(pc.GetControlledEntity(), driver) != m_Vehicle || driver != m_Driver) { m_EndReason = "gunner left"; return false; }
+  if (!m_bTest && (!pc || DrivableFrom(pc.GetControlledEntity(), driver) != m_Vehicle || driver != m_Driver)) { m_EndReason = "gunner left"; return false; }
   if (now - m_LastInput > IDLE_RELEASE_MS) { m_EndReason = "idle"; return false; }
   if (m_Squad.m_Group)
   {
@@ -134,6 +149,12 @@ class ACR_GunnerDrive
   Physics physics = m_Vehicle.GetPhysics();
   if (physics && (m_Throttle != 0 || m_Steer != 0) && !physics.IsActive()) physics.SetActive(ActiveState.ACTIVE);
 
+  // Did anything else change the inputs since our last write (previous frame)?
+  if (m_bHasSet)
+  {
+   m_Steps++;
+   if (Math.AbsFloat(sim.GetSteering() - m_SetSteer) > 0.01 || Math.AbsFloat(sim.GetThrottle() - m_SetThrottle) > 0.01) m_Overrides++;
+  }
   int neutral = sim.GearboxGearsCount() - sim.GearboxForwardGearsCount() - 1;
   int gear = sim.GetGear();
   float speed = ForwardSpeed();
@@ -161,22 +182,49 @@ class ACR_GunnerDrive
   // tap of W and every A/D on its own feel like a stuck handbrake); hold only once slow.
   else if (Math.AbsFloat(speed) < 1.5) brake = 1;
 
-  // Simple automatic gearbox for the forward gears.
+  // Simple automatic gearbox with a slipping clutch, like a torque converter: with
+  // the clutch locked the engine was dragged down to 1000-1500 rpm, far below its
+  // power band, and the truck lugged in first gear (worse in turns, which load it).
+  // Slipping lets the engine rev to its peak torque; the clutch locks as road speed
+  // catches up.
   gear = sim.GetGear();
-  if (throttle > 0 && gear > neutral)
+  float clutch = m_fClutch;
+  float rpm = sim.EngineGetRPM();
+  float idle = sim.EngineGetRPMIdle();
+  float peakTorque = sim.EngineGetRPMPeakTorque();
+  if (s_bOwnGearbox && throttle > 0 && gear > neutral)
   {
-   float rpm = sim.EngineGetRPM();
-   if (rpm > sim.EngineGetRPMPeakPower() * 0.95 && gear < sim.GearboxGearsCount() - 1) Shift(sim, gear + 1, now, false);
-   else if (rpm < sim.EngineGetRPMPeakTorque() * 0.6 && gear > neutral + 1) Shift(sim, gear - 1, now, false);
+   // Shift on the drivetrain's rpm (what the wheels turn the engine at), not the
+   // engine's own: the gearbox's automatic clutch slips when pulling away, so the
+   // engine sits at the limiter long before first gear is used up. Shifting on that
+   // left the clutch uncoupled and the truck lugging in the wrong gear.
+   float driven = sim.EngineGetRPMFeedback();
+   // One gear at a time, and only once the last shift has gone through (the gearbox
+   // reports the new gear late, so shifting again on the old one skipped gears).
+   bool settled = now - m_LastShift > SHIFT_COOLDOWN_MS;
+   if (settled && driven > sim.EngineGetRPMPeakPower() * 0.9 && gear < sim.GearboxGearsCount() - 1) Shift(sim, gear + 1, now, true);
+   else if (settled && driven < peakTorque * 0.75 && gear > neutral + 1) Shift(sim, gear - 1, now, true);
   }
+  if (s_bSlipClutch && throttle > 0 && peakTorque > idle)
+   clutch = Math.Min(m_fClutch, Math.Clamp((rpm - idle) / (peakTorque - idle), 0.25, 1));
+  m_SetClutch = clutch;
 
-  sim.SetClutch(1);
+  sim.SetClutch(clutch);
   sim.SetThrottle(throttle);
   sim.SetBreak(brake, false);
   if (brake == 0 && sim.IsHandbrakeOn()) car.SetPersistentHandBrake(false);
   // Less steering lock at speed, so a tap of A/D doesn't spin the vehicle out.
   float steerScale = Math.Clamp(1 - Math.AbsFloat(speed) / 25, 0.35, 1);
   sim.SetSteering(m_Steer * steerScale);
+  m_SetThrottle = throttle;
+  m_SetBrake = brake;
+  m_SetSteer = m_Steer * steerScale;
+  m_bHasSet = true;
+  if (m_bTest && now - m_LastFineDiag > 150 && m_Throttle != 0)
+  {
+   m_LastFineDiag = now;
+   PrintFormat("[ACR] DRIVE fine thr=%1 steer=%2 gear=%3 rpm=%4 driven=%5 speed=%6", sim.GetThrottle(), sim.GetSteering(), sim.GetGear(), (int)sim.EngineGetRPM(), (int)sim.EngineGetRPMFeedback(), speed);
+  }
   // Diagnostics while this is being tuned in play-tests (every 2 s per vehicle).
   if (now - m_LastDiag > 2000)
   {
@@ -184,9 +232,28 @@ class ACR_GunnerDrive
    AIControlComponent vehicleAI = AIControlComponent.Cast(m_Vehicle.FindComponent(ChimeraAIVehicleControlComponent));
    AIControlComponent driverAI = AIControlComponent.Cast(m_Driver.FindComponent(AIControlComponent));
    PrintFormat("[ACR] GUNNER DIAG keys thr=%1 steer=%2 | sim thr=%3 steer=%4 brake=%5 hb=%6 carHb=%7 persistHb=%8 gear=%9", m_Throttle, m_Steer, sim.GetThrottle(), sim.GetSteering(), sim.GetBrake(), sim.IsHandbrakeOn(), car.GetHandBrake(), car.GetPersistentHandBrake(), sim.GetGear());
-   PrintFormat("[ACR] GUNNER DIAG speed=%1 rpm=%2 engine=%3 vehicleAI=%4 driverAI=%5", speed, (int)sim.EngineGetRPM(), car.IsEngineOn(), vehicleAI != null && vehicleAI.IsAIActivated(), driverAI != null && driverAI.IsAIActivated());
+   PrintFormat("[ACR] GUNNER DIAG speed=%1 rpm=%2 engine=%3 vehicleAI=%4 driverAI=%5 inputs changed by something else in %6 of %7 frames, clutch %8", speed, (int)sim.EngineGetRPM(), car.IsEngineOn(), vehicleAI != null && vehicleAI.IsAIActivated(), driverAI != null && driverAI.IsAIActivated(), m_Overrides, m_Steps, sim.GetClutch());
+   m_Overrides = 0;
+   m_Steps = 0;
   }
   return true;
+ }
+
+ // Before every physics step: something in the vehicle (its controller, reading the
+ // parked driver's empty input) writes its own inputs between our once-per-frame
+ // writes, so the wheel twitched between centre and the gunner's steer and the
+ // throttle pulsed (stuck in first gear, lugging). Writing again right before
+ // each step makes ours the ones the physics uses.
+ void Reapply()
+ {
+  if (!m_bHasSet || !m_Vehicle) return;
+  CarControllerComponent car = Car();
+  if (!car || !car.GetSimulation()) return;
+  VehicleWheeledSimulation sim = car.GetSimulation();
+  sim.SetClutch(m_SetClutch);
+  sim.SetThrottle(m_SetThrottle);
+  sim.SetBreak(m_SetBrake, false);
+  sim.SetSteering(m_SetSteer);
  }
 
  void Shift(VehicleWheeledSimulation sim, int gear, float now, bool force)

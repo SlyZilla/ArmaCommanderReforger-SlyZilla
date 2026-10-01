@@ -22,7 +22,7 @@ class ACR_Mode : GenericEntity
 
  void ACR_Mode(IEntitySource src, IEntity parent)
  {
-  SetEventMask(EntityEvent.INIT | EntityEvent.FRAME);
+  SetEventMask(EntityEvent.INIT | EntityEvent.FRAME | EntityEvent.POSTFRAME);
  }
 
  override void EOnInit(IEntity owner)
@@ -104,6 +104,13 @@ class ACR_Mode : GenericEntity
     PrintFormat("[ACR] SOAK   %1: %2", base.m_sName, manager.m_Bases.Describe(base));
   }
   if (m_iSeconds >= 1200) Print("[ACR] TEST COMPLETE");
+ }
+
+ // After the frame's other updates (gunner drives re-assert their inputs).
+ override void EOnPostFrame(IEntity owner, float timeSlice)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (s_Instance == this && manager) manager.SimulateStep();
  }
 
  override void EOnFrame(IEntity owner, float timeSlice)

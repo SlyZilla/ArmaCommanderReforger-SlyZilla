@@ -32,6 +32,7 @@ class ACR_TestHarness : Managed
  static const int MODE_HUNT = 25;
  static const int MODE_LAUNCHER = 26;
  static const int MODE_SUPPLIES = 27;
+ static const int MODE_DRIVE = 28;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -78,6 +79,8 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrHuntTest", flag)) mode = MODE_HUNT;
   if (System.GetCLIParam("acrLauncherTest", flag)) mode = MODE_LAUNCHER;
   if (System.GetCLIParam("acrSuppliesTest", flag)) mode = MODE_SUPPLIES;
+  if (System.GetCLIParam("acrDriveTest", flag)) mode = MODE_DRIVE;
+  if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag)) mode = MODE_DRIVE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -153,6 +156,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_HUNT) { TestHunt(); return; }
   if (m_Mode == MODE_LAUNCHER) { TestLauncher(); return; }
   if (m_Mode == MODE_SUPPLIES) { TestSupplies(); return; }
+  if (m_Mode == MODE_DRIVE) { TestDrive(); return; }
   if (m_Mode == MODE_STALLED)
   {
    // The tactics scenario with attack time limits cut to seconds: attacks
@@ -1406,6 +1410,61 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] SUPPLY CHECK construction truck full of supplies: %1", full);
    Print("[ACR] TEST COMPLETE");
   }
+ }
+
+ // ---------------------------------------------------------------- -acrDriveTest
+ // Gunner drive inputs on the server, no player needed: full throttle straight,
+ // then full throttle with full left lock. The diagnostics count how often
+ // something else changed the inputs between physics steps.
+ protected ACR_GunnerDrive m_TestDriveSession;
+ void TestDrive()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+   ACR_FactionSettings ours = ACR_FactionSettings.Find("US");
+   if (ours) ours.m_bAICommander = false;
+  }
+  if (m_Ticks == 5) manager.SpawnUnit("Gun Truck", "", "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et", true, "", Ground("1390 0 2795"), Ground("1395 0 2790"));
+  if (m_Ticks == 14)
+  {
+   ACR_Squad squad = NamedSquad(manager, "Gun Truck");
+   IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
+   ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
+   PrintFormat("[ACR] DRIVE vehicle=%1 driver=%2", vehicle != null, driver != null);
+   // Variants: -acrDriveAITest keeps the driver's AI on, -acrDriveLockTest never slips the clutch.
+   if (System.IsCLIParam("acrDriveAITest")) ACR_GunnerDrive.s_bParkDriverAI = false;
+   if (System.IsCLIParam("acrDriveLockTest")) { ACR_GunnerDrive.s_bSlipClutch = false; ACR_GunnerDrive.s_bOwnGearbox = false; }
+   PrintFormat("[ACR] DRIVE variant: park driver AI %1, park vehicle AI %2, slip clutch %3", ACR_GunnerDrive.s_bParkDriverAI, ACR_GunnerDrive.s_bParkVehicleAI, ACR_GunnerDrive.s_bSlipClutch);
+   if (vehicle && driver) m_TestDriveSession = manager.TestDrive(vehicle, driver, squad);
+  }
+  if (!m_TestDriveSession) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  m_TestDriveSession.m_LastInput = now;
+  // Clutch 1 for the first run, 0 for the second (which way round is "engaged"?).
+  if (m_Ticks >= 15 && m_Ticks < 23) { m_TestDriveSession.m_Throttle = 1; m_TestDriveSession.m_Steer = 0; m_TestDriveSession.m_fClutch = 1; }
+  if (m_Ticks >= 23 && m_Ticks < 28) { m_TestDriveSession.m_Throttle = 1; m_TestDriveSession.m_Steer = -1; }
+  if (m_Ticks >= 28 && m_Ticks < 32) { m_TestDriveSession.m_Throttle = 0; m_TestDriveSession.m_Steer = 0; }
+  if (m_Ticks >= 32 && m_Ticks < 40) { m_TestDriveSession.m_Throttle = 1; m_TestDriveSession.m_Steer = 0; m_TestDriveSession.m_fClutch = 1; }
+  if (m_Ticks >= 40) { m_TestDriveSession.m_Throttle = 0; m_TestDriveSession.m_Steer = 0; m_TestDriveSession.m_fClutch = 1; }
+  if (m_Ticks >= 15 && m_Ticks <= 42 && m_TestDriveSession.m_Vehicle)
+  {
+   IEntity car = m_TestDriveSession.m_Vehicle;
+   float speed = 0;
+   if (car.GetPhysics()) speed = car.GetPhysics().GetVelocity().Length();
+   PrintFormat("[ACR] DRIVE t=%1 speed=%2 yaw=%3", m_Ticks, speed, car.GetYawPitchRoll()[0]);
+   CarControllerComponent cc = CarControllerComponent.Cast(car.FindComponent(CarControllerComponent));
+   if (cc && cc.GetSimulation() && m_Ticks == 17)
+   {
+    VehicleWheeledSimulation ws = cc.GetSimulation();
+    PrintFormat("[ACR] DRIVE engine load=%1 torque %2/%3 power %4/%5 gearbox eff %6/%7 rpmFeedback=%8 gears=%9", ws.EngineGetLoad(), ws.EngineGetPeakTorqueState(), ws.EngineGetPeakTorque(), ws.EngineGetPeakPowerState(), ws.EngineGetPeakPower(), ws.GearboxGetEfficiencyState(), ws.GearboxGetEfficiency(), ws.EngineGetRPMFeedback(), ws.GearboxGearsCount());
+    PrintFormat("[ACR] DRIVE rpm idle=%1 peakTorque=%2 peakPower=%3 max=%4", ws.EngineGetRPMIdle(), ws.EngineGetRPMPeakTorque(), ws.EngineGetRPMPeakPower(), ws.EngineGetRPMMax());
+   }
+  }
+  if (m_Ticks == 43) Print("[ACR] TEST COMPLETE");
  }
 
  // ---------------------------------------------------------------- -acrQueueTest
