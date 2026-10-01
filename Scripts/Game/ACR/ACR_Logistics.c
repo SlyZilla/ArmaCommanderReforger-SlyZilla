@@ -5,12 +5,20 @@
 // empty truck restocks slowly while parked inside one of its side's spawn bases,
 // so a truck that is intercepted on the way to the front is a real loss.
 // Also home of the ammo / health / fuel measurements used for status markers.
+//
+// Game supplies: trucks that carry a vanilla supply container (arsenal, ammo,
+// repair and construction trucks) share one pool with the game. Every tick the
+// mod's stock is written into the container (stock x points per load), and any
+// change made by the game since the last write (players taking gear from the
+// arsenal, resupplying, building, loading or unloading supplies by hand) is read
+// back into the stock first. So AI resupply and player use drain the same number.
 enum ACR_EService
 {
  AMMO = 1,
  REPAIR = 2,
  FUEL = 4,
- MEDICAL = 8
+ MEDICAL = 8,
+ CONSTRUCTION = 16
 }
 
 class ACR_Logistics : Managed
@@ -24,12 +32,21 @@ class ACR_Logistics : Managed
  static const float CAPACITY_REPAIR = 30;
  static const float CAPACITY_FUEL = 30;
  static const float CAPACITY_MEDICAL = 30;
+ static const float CAPACITY_CONSTRUCTION = 40;
+ // Game supply points per load, per truck type (full truck: ammo/arsenal 1000,
+ // repair 600, construction 1000), so one arsenal visit doesn't empty a truck.
+ static const float SUPPLIES_PER_LOAD_AMMO = 25;
+ static const float SUPPLIES_PER_LOAD_REPAIR = 20;
+ static const float SUPPLIES_PER_LOAD_FUEL = 20;
+ static const float SUPPLIES_PER_LOAD_MEDICAL = 20;
+ static const float SUPPLIES_PER_LOAD_CONSTRUCTION = 25;
  static const float RESTOCK_PER_TICK = 0.04;   // share of capacity per tick at a spawn base (about 50 s to fill)
 
  protected ACR_Manager m_Manager;
  protected float m_fNextTick;
  protected ref map<IEntity, float> m_Stock = new map<IEntity, float>();
  protected ref map<IEntity, float> m_SoldierServedAt = new map<IEntity, float>();
+ protected ref map<IEntity, float> m_GameSupplies = new map<IEntity, float>(); // container value after our last write
  protected static ref map<ResourceName, int> s_ServiceCache = new map<ResourceName, int>();
 
  void ACR_Logistics(ACR_Manager manager)
@@ -63,6 +80,7 @@ class ACR_Logistics : Managed
   if (name.Contains("repair")) flags |= ACR_EService.REPAIR;
   if (name.Contains("tanker") || name.Contains("_fuel")) flags |= ACR_EService.FUEL;
   if (name.Contains("ambulance")) flags |= ACR_EService.MEDICAL;
+  if (name.Contains("engineer")) flags |= ACR_EService.CONSTRUCTION;
   return flags;
  }
 
@@ -72,6 +90,7 @@ class ACR_Logistics : Managed
   if ((flags & ACR_EService.REPAIR) != 0) return "repair";
   if ((flags & ACR_EService.FUEL) != 0) return "fuel";
   if ((flags & ACR_EService.MEDICAL) != 0) return "medical";
+  if ((flags & ACR_EService.CONSTRUCTION) != 0) return "construction";
   return "";
  }
 
@@ -81,6 +100,17 @@ class ACR_Logistics : Managed
   if ((flags & ACR_EService.REPAIR) != 0) return CAPACITY_REPAIR;
   if ((flags & ACR_EService.FUEL) != 0) return CAPACITY_FUEL;
   if ((flags & ACR_EService.MEDICAL) != 0) return CAPACITY_MEDICAL;
+  if ((flags & ACR_EService.CONSTRUCTION) != 0) return CAPACITY_CONSTRUCTION;
+  return 0;
+ }
+
+ static float SuppliesPerLoad(int flags)
+ {
+  if ((flags & ACR_EService.AMMO) != 0) return SUPPLIES_PER_LOAD_AMMO;
+  if ((flags & ACR_EService.REPAIR) != 0) return SUPPLIES_PER_LOAD_REPAIR;
+  if ((flags & ACR_EService.FUEL) != 0) return SUPPLIES_PER_LOAD_FUEL;
+  if ((flags & ACR_EService.MEDICAL) != 0) return SUPPLIES_PER_LOAD_MEDICAL;
+  if ((flags & ACR_EService.CONSTRUCTION) != 0) return SUPPLIES_PER_LOAD_CONSTRUCTION;
   return 0;
  }
 
@@ -104,12 +134,75 @@ class ACR_Logistics : Managed
   return (int)(100 * StockOf(vehicle) / capacity);
  }
 
- protected bool Use(IEntity vehicle, float amount)
+ bool Use(IEntity vehicle, float amount)
  {
   float stock = StockOf(vehicle);
   if (stock < amount) return false;
   m_Stock.Set(vehicle, stock - amount);
   return true;
+ }
+
+ // ---------------------------------------------------------------- game supplies
+
+ // The vanilla supply container of a vehicle: on the vehicle itself or on one
+ // of its parts (the cargo box of M923A1/Ural service trucks).
+ static SCR_ResourceContainer SupplyContainer(IEntity vehicle)
+ {
+  if (!vehicle) return null;
+  SCR_ResourceComponent resources = SCR_ResourceComponent.Cast(vehicle.FindComponent(SCR_ResourceComponent));
+  if (resources)
+  {
+   SCR_ResourceContainer own = resources.GetContainer(EResourceType.SUPPLIES);
+   if (own) return own;
+  }
+  IEntity child = vehicle.GetChildren();
+  while (child)
+  {
+   SCR_ResourceComponent part = SCR_ResourceComponent.Cast(child.FindComponent(SCR_ResourceComponent));
+   if (part)
+   {
+    SCR_ResourceContainer found = part.GetContainer(EResourceType.SUPPLIES);
+    if (found) return found;
+   }
+   child = child.GetSibling();
+  }
+  return null;
+ }
+
+ // Game supplies in the truck right now (-1 = no container).
+ static float GameSupplies(IEntity vehicle)
+ {
+  SCR_ResourceContainer container = SupplyContainer(vehicle);
+  if (!container) return -1;
+  return container.GetResourceValue();
+ }
+
+ // What the game did to the container since our last write goes into the stock.
+ protected void ReadGameSupplies(IEntity station, int flags)
+ {
+  float written;
+  if (!m_GameSupplies.Find(station, written)) return;
+  SCR_ResourceContainer container = SupplyContainer(station);
+  float perLoad = SuppliesPerLoad(flags);
+  if (!container || perLoad <= 0) return;
+  float delta = container.GetResourceValue() - written;
+  if (Math.AbsFloat(delta) < 0.01) return;
+  float stock = StockOf(station);
+  m_Stock.Set(station, Math.Clamp(stock + delta / perLoad, 0, Capacity(flags)));
+  m_GameSupplies.Set(station, container.GetResourceValue());
+ }
+
+ // The stock goes into the container (sized to the truck's full stock).
+ protected void WriteGameSupplies(IEntity station, int flags)
+ {
+  SCR_ResourceContainer container = SupplyContainer(station);
+  float perLoad = SuppliesPerLoad(flags);
+  if (!container || perLoad <= 0) return;
+  float max = Capacity(flags) * perLoad;
+  if (Math.AbsFloat(container.GetMaxResourceValue() - max) > 0.5) container.SetMaxResourceValue(max);
+  float target = StockOf(station) * perLoad;
+  if (Math.AbsFloat(container.GetResourceValue() - target) >= 0.5) container.SetResourceValue(target);
+  m_GameSupplies.Set(station, container.GetResourceValue());
  }
 
  // ---------------------------------------------------------------- measurements
@@ -256,6 +349,9 @@ class ACR_Logistics : Managed
   if (now < m_fNextTick) return;
   m_fNextTick = now + TICK_MS;
   RefreshServiceVehicles(now);
+  bool gameSupplies = SCR_ResourceSystemHelper.IsGlobalResourceTypeEnabled();
+  if (gameSupplies)
+   foreach (IEntity synced : m_ServiceVehicles) ReadGameSupplies(synced, ServiceOf(synced));
   foreach (IEntity station : m_ServiceVehicles)
   {
    int flags = ServiceOf(station);
@@ -287,6 +383,8 @@ class ACR_Logistics : Managed
     if (ridden) ServeVehicle(station, flags, ridden);
    }
   }
+  if (gameSupplies)
+   foreach (IEntity written : m_ServiceVehicles) WriteGameSupplies(written, ServiceOf(written));
  }
 
  protected void ServeSquad(IEntity station, int flags, ACR_Squad squad, float now)

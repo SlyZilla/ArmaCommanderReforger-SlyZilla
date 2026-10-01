@@ -23,3 +23,4 @@ intel|-acrIntelTest 1|100
 stalled|-acrStalledTest 1|260
 hunt|-acrHuntTest 1|110
 launcher|-acrLauncherTest 1|80
+supplies|-acrSuppliesTest 1|120

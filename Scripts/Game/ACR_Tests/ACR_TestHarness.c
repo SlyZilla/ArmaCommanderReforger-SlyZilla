@@ -31,6 +31,7 @@ class ACR_TestHarness : Managed
  static const int MODE_STALLED = 24;
  static const int MODE_HUNT = 25;
  static const int MODE_LAUNCHER = 26;
+ static const int MODE_SUPPLIES = 27;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -76,6 +77,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrStalledTest", flag)) mode = MODE_STALLED;
   if (System.GetCLIParam("acrHuntTest", flag)) mode = MODE_HUNT;
   if (System.GetCLIParam("acrLauncherTest", flag)) mode = MODE_LAUNCHER;
+  if (System.GetCLIParam("acrSuppliesTest", flag)) mode = MODE_SUPPLIES;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -150,6 +152,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_INTEL) { TestIntel(); return; }
   if (m_Mode == MODE_HUNT) { TestHunt(); return; }
   if (m_Mode == MODE_LAUNCHER) { TestLauncher(); return; }
+  if (m_Mode == MODE_SUPPLIES) { TestSupplies(); return; }
   if (m_Mode == MODE_STALLED)
   {
    // The tactics scenario with attack time limits cut to seconds: attacks
@@ -1308,6 +1311,90 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] LOGI t=%1 alpha: %2 | gun truck: health %3 fuel %4 gunAmmo %5 | ammo truck stock %6 pct", m_Ticks, alpha.Describe(), ACR_Logistics.Health(gunNow), ACR_Logistics.Fuel(gunNow), ACR_Logistics.VehicleAmmo(gunNow), manager.m_Logistics.StockPercent(m_AmmoTruck));
   }
   if (m_Ticks == 100) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrSuppliesTest
+ // Service trucks carry game supplies synced with the mod's stock: arsenal,
+ // ammo and construction trucks start full; supplies taken the game's way
+ // (as the arsenal does) lower the mod's stock, and stock the AI uses lowers
+ // the game supplies. Runs on the server (no player needed).
+ protected IEntity m_ArsenalTruck;
+ protected IEntity m_SupplyAmmoTruck;
+ protected IEntity m_EngineerTruck;
+ protected float m_fSuppliesBefore;
+
+ protected void LogSupplies(string label, IEntity truck)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  SCR_ResourceContainer container = ACR_Logistics.SupplyContainer(truck);
+  float max = -1;
+  if (container) max = container.GetMaxResourceValue();
+  PrintFormat("[ACR] SUPPLY %1 t=%2: flags=%3 container=%4 supplies=%5/%6 stock=%7 (%8 pct)", label, m_Ticks, ACR_Logistics.ServiceOf(truck), container != null, ACR_Logistics.GameSupplies(truck), max, manager.m_Logistics.StockOf(truck), manager.m_Logistics.StockPercent(truck));
+ }
+
+ void TestSupplies()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  if (m_Ticks == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+   ACR_FactionSettings ours = ACR_FactionSettings.Find("US");
+   if (ours) ours.m_bAICommander = false;
+   PrintFormat("[ACR] SUPPLY global supplies enabled=%1 building manager=%2", SCR_ResourceSystemHelper.IsGlobalResourceTypeEnabled(), GetGame().GetGameMode().FindComponent(SCR_CampaignBuildingManagerComponent) != null);
+  }
+  if (m_Ticks == 5)
+  {
+   manager.SpawnUnit("Arsenal Truck", "", "{1FF144F8A209239D}Prefabs/Vehicles/Wheeled/M923A1/M923A1_arsenal.et", true, "", Ground("1400 0 2832"), Ground("1405 0 2836"));
+   manager.SpawnUnit("Ammo Truck", "", "{92264FF932676C13}Prefabs/Vehicles/Wheeled/M923A1/M923A1_ammo.et", true, "", Ground("1420 0 2832"), Ground("1425 0 2836"));
+   manager.SpawnUnit("Engineer Truck", "", "{2D74C39A650A3030}Prefabs/Vehicles/Wheeled/M923A1/M923A1_engineer.et", true, "", Ground("1440 0 2832"), Ground("1445 0 2836"));
+  }
+  if (m_Ticks == 16)
+  {
+   m_ArsenalTruck = ACR_Transport.CrewedVehicle(NamedSquad(manager, "Arsenal Truck"));
+   m_SupplyAmmoTruck = ACR_Transport.CrewedVehicle(NamedSquad(manager, "Ammo Truck"));
+   m_EngineerTruck = ACR_Transport.CrewedVehicle(NamedSquad(manager, "Engineer Truck"));
+   LogSupplies("arsenal start", m_ArsenalTruck);
+   LogSupplies("ammo start", m_SupplyAmmoTruck);
+   LogSupplies("engineer start", m_EngineerTruck);
+   bool provider;
+   if (m_EngineerTruck)
+   {
+    IEntity part = m_EngineerTruck.GetChildren();
+    while (part)
+    {
+     if (part.FindComponent(SCR_CampaignBuildingProviderComponent)) provider = true;
+     part = part.GetSibling();
+    }
+   }
+   PrintFormat("[ACR] SUPPLY engineer truck building provider=%1", provider);
+   // A player takes gear from the arsenal: the game's own consume path.
+   m_fSuppliesBefore = ACR_Logistics.GameSupplies(m_ArsenalTruck);
+   SCR_ResourceComponent resources = SCR_ResourceComponent.FindResourceComponent(m_ArsenalTruck);
+   int reason = -1;
+   if (resources) reason = SCR_ResourceSystemHelper.ConsumeResources(resources, 200, true);
+   PrintFormat("[ACR] SUPPLY arsenal visit: consumed 200 (reason %1), supplies now %2", reason, ACR_Logistics.GameSupplies(m_ArsenalTruck));
+  }
+  if (m_Ticks == 21)
+  {
+   LogSupplies("arsenal after visit", m_ArsenalTruck);
+   float stock = manager.m_Logistics.StockOf(m_ArsenalTruck);
+   PrintFormat("[ACR] SUPPLY CHECK player use reaches the stock: %1 (stock %2, expected about %3)", Math.AbsFloat(stock - (ACR_Logistics.CAPACITY_AMMO - 200 / ACR_Logistics.SUPPLIES_PER_LOAD_AMMO)) < 0.6, stock, ACR_Logistics.CAPACITY_AMMO - 200 / ACR_Logistics.SUPPLIES_PER_LOAD_AMMO);
+   // The AI resupplies from the ammo truck: 10 loads.
+   manager.m_Logistics.Use(m_SupplyAmmoTruck, 10);
+  }
+  if (m_Ticks == 26)
+  {
+   LogSupplies("ammo after AI use", m_SupplyAmmoTruck);
+   float expected = (ACR_Logistics.CAPACITY_AMMO - 10) * ACR_Logistics.SUPPLIES_PER_LOAD_AMMO;
+   PrintFormat("[ACR] SUPPLY CHECK AI use reaches the game supplies: %1 (supplies %2, expected %3)", Math.AbsFloat(ACR_Logistics.GameSupplies(m_SupplyAmmoTruck) - expected) < 1, ACR_Logistics.GameSupplies(m_SupplyAmmoTruck), expected);
+   LogSupplies("arsenal steady", m_ArsenalTruck);
+   LogSupplies("engineer steady", m_EngineerTruck);
+   bool full = ACR_Logistics.GameSupplies(m_EngineerTruck) >= ACR_Logistics.CAPACITY_CONSTRUCTION * ACR_Logistics.SUPPLIES_PER_LOAD_CONSTRUCTION - 1;
+   PrintFormat("[ACR] SUPPLY CHECK construction truck full of supplies: %1", full);
+   Print("[ACR] TEST COMPLETE");
+  }
  }
 
  // ---------------------------------------------------------------- -acrQueueTest
