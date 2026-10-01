@@ -37,6 +37,7 @@ class ACR_TestHarness : Managed
  static const int MODE_SPAWNSPOT = 30;
  static const int MODE_TAGS = 31;
  static const int MODE_SHARED = 32;
+ static const int MODE_REGRESS = 33;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -170,6 +171,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_SPAWNSPOT) { TestSpawnSpot(); return; }
   if (m_Mode == MODE_TAGS) { ACR_TestShared.TestTags(this, m_Ticks); return; }
   if (m_Mode == MODE_SHARED) { ACR_TestShared.TestShared(this, m_Ticks); return; }
+  if (m_Mode == MODE_REGRESS) { ACR_TestRegress.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADS) { TestRoads(); return; }
   if (m_Mode == MODE_STALLED)
   {

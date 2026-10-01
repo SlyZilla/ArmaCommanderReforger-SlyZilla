@@ -35,3 +35,4 @@ perf|-acrPerfTest 1|260|Worlds/ACR_Arland.ent
 tags|-acrTagsTest 1|90
 shared|-acrSharedTest 1|150
 maphandoff|-acrMapHandoffTest 1|100
+regress|-acrRegressTest 1|100
