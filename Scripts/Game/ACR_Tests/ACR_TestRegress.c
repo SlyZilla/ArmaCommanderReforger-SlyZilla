@@ -9,7 +9,7 @@ class ACR_TestRegress
   PrintFormat("[ACR] REGRESS %1 %2 %3", verdict, name, detail);
  }
 
- static int s_iRP;
+ static ACR_Squad s_Defender;
 
  static void Run(ACR_TestHarness harness, int tick)
  {
@@ -70,8 +70,25 @@ class ACR_TestRegress
    Check("point on the map", ACR_Manager.OnMap(harness.Ground("1400 0 2832")), "");
    Check("point off the map", !ACR_Manager.OnMap(Vector(9000000, 0, 9000000)), "");
   }
-  if (tick == 25)
+  // 4. An AI commander leaves the other side's defenders alone (with both
+  //    sides on AI it used to set them free every 15 s).
+  if (tick == 26)
   {
+   foreach (ACR_Squad squad : manager.m_Squads)
+   {
+    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != "USSR") continue;
+    foreach (ACR_Base base : ACR_Base.s_All)
+     if (base.m_sOwner == "USSR") { squad.m_iAITask = ACR_EAITask.DEFEND; squad.m_AITarget = base; s_Defender = squad; break; }
+    if (s_Defender) break;
+   }
+   ACR_FactionSettings us = ACR_FactionSettings.Find("US");
+   if (us) us.m_bAICommander = true;
+   PrintFormat("[ACR] REGRESS info: Soviet defender %1, US AI on", s_Defender != null);
+  }
+  if (tick == 50)
+  {
+   bool kept = s_Defender && s_Defender.m_iAITask == ACR_EAITask.DEFEND;
+   Check("AI commander leaves the other side's defenders alone", kept, "");
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Print("[ACR] TEST COMPLETE");
   }
