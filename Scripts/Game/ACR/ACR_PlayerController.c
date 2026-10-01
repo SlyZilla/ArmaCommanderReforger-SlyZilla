@@ -459,6 +459,7 @@ modded class SCR_PlayerController
   vector pos = GetControlledEntity().GetOrigin();
   mapEntity.ZoomPanSmooth(4, pos[0], pos[2]);
  }
+ protected IEntity m_ACR_BodyAtMapClose;
  void ACR_UpdateMap()
  {
   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
@@ -470,6 +471,7 @@ modded class SCR_PlayerController
    {
     ACR_ClearMarkers();
     ACR_ClosePanel();
+    m_ACR_BodyAtMapClose = GetControlledEntity();
    }
    m_ACR_MapWasOpen = false;
    ACR_PingDisplay.UpdateHud(m_ACR_Data, GetControlledEntity(), true);
@@ -491,6 +493,16 @@ modded class SCR_PlayerController
   if (!manager) return;
   if (!m_ACR_MapWasOpen)
   {
+   // The map opens in a different body than it was closed in (took over a soldier,
+   // went back, build mode...): drop the old selection, or the next right-click orders
+   // a squad picked long ago (1 Oct live test: the construction truck drove off east).
+   if (GetControlledEntity() != m_ACR_BodyAtMapClose)
+   {
+    m_ACR_Data.m_Selected.Clear();
+    m_ACR_SelectedGroup = RplId.Invalid();
+    m_ACR_SelectedBase = "";
+    m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+   }
    GetGame().GetCallqueue().CallLater(ACR_CenterMap, 100, false);
    ACR_OpenPanel(mapEntity);
   }
