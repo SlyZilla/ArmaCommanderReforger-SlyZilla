@@ -7,8 +7,8 @@
 // the ground beside the vehicle.
 class ACR_Gates : Managed
 {
- static const float LOOK_AHEAD = 9;     // m in front of the vehicle
- static const float LOOK_RADIUS = 12;
+ static const float LOOK_AHEAD = 25;    // m in front of the vehicle: the AI driver stops
+ static const float LOOK_RADIUS = 25;   // for a gate up to ~45 m ahead
  static const float GATE_MIN_WIDTH = 2.2; // smaller doors are house doors: left alone
  static const float BED_HEIGHT = 0.9;    // m above the ground
 
@@ -42,15 +42,31 @@ class ACR_Gates : Managed
  {
   if (!squad.m_Group) return;
   IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
-  if (!vehicle || m_Manager.IsGunnerDriven(vehicle)) return;
+  // The driver may already be out, walking to the gate: still open it, he gets back in.
+  if (!vehicle && squad.m_OwnVehicle && ACR_Logistics.Health(squad.m_OwnVehicle) > 0 && squad.GetAnchor() && vector.DistanceXZ(squad.m_OwnVehicle.GetOrigin(), squad.GetAnchor().GetOrigin()) < 80) vehicle = squad.m_OwnVehicle;
+  if (!vehicle || m_Manager.IsGunnerDriven(vehicle) || squad.HasPlayer()) return;
   ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
-  if (!driver || !ACR_Respawn.IsAlive(driver) || ACR_Squad.FindController(driver)) return;
+  if (driver && ACR_Squad.FindController(driver)) return;
   array<AIWaypoint> waypoints = {};
   squad.m_Group.GetWaypoints(waypoints);
   if (waypoints.IsEmpty()) return;
   vector ahead = vehicle.GetOrigin() + vehicle.GetTransformAxis(2) * LOOK_AHEAD;
   m_Found.Clear();
   GetGame().GetWorld().QueryEntitiesBySphere(ahead, LOOK_RADIUS, CollectDoor);
+  // The obstacle the game's AI driver is stopping for, if it says.
+  AICarMovementComponent movement = AICarMovementComponent.Cast(vehicle.FindComponent(AICarMovementComponent));
+  IEntity navlink;
+  if (movement) navlink = movement.GetLastNavlinkEntity();
+  if (navlink && vector.Distance(navlink.GetOrigin(), vehicle.GetOrigin()) < 80)
+  {
+   CollectDoor(navlink);
+   IEntity child = navlink.GetChildren();
+   while (child)
+   {
+    CollectDoor(child);
+    child = child.GetSibling();
+   }
+  }
   foreach (IEntity entity : m_Found)
   {
    BaseDoorComponent door = BaseDoorComponent.Cast(entity.FindComponent(BaseDoorComponent));
