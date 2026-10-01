@@ -202,8 +202,16 @@ class ACR_GunnerDrive
    // One gear at a time, and only once the last shift has gone through (the gearbox
    // reports the new gear late, so shifting again on the old one skipped gears).
    bool settled = now - m_LastShift > SHIFT_COOLDOWN_MS;
-   if (settled && driven > sim.EngineGetRPMPeakPower() * 0.9 && gear < sim.GearboxGearsCount() - 1) Shift(sim, gear + 1, now, true);
-   else if (settled && driven < peakTorque * 0.75 && gear > neutral + 1) Shift(sim, gear - 1, now, true);
+   // Shift points like the vehicles' own automatic gearbox (Humvee: up near 2500,
+   // down near 1200 drivetrain rpm). Up at 90% of peak power was never reached while
+   // steering or climbing: play-tests stayed in first at the limiter (~30 km/h).
+   // The gap leaves room for the next gear's ratio (1st->2nd drops rpm to ~0.6x),
+   // so it doesn't hunt between gears.
+   if (settled && driven > sim.EngineGetRPMPeakPower() * 0.65 && gear < sim.GearboxGearsCount() - 1) Shift(sim, gear + 1, now, true);
+   // Down only while the clutch is coupled (engine and drivetrain agree): right after
+   // an up-shift the drivetrain rpm reads low until the clutch bites, and shifting
+   // back down on that made it hunt between gears.
+   else if (settled && driven < peakTorque * 0.6 && Math.AbsFloat(rpm - driven) < 250 && gear > neutral + 1) Shift(sim, gear - 1, now, true);
   }
   if (s_bSlipClutch && throttle > 0 && peakTorque > idle)
    clutch = Math.Min(m_fClutch, Math.Clamp((rpm - idle) / (peakTorque - idle), 0.25, 1));
@@ -232,7 +240,7 @@ class ACR_GunnerDrive
    AIControlComponent vehicleAI = AIControlComponent.Cast(m_Vehicle.FindComponent(ChimeraAIVehicleControlComponent));
    AIControlComponent driverAI = AIControlComponent.Cast(m_Driver.FindComponent(AIControlComponent));
    PrintFormat("[ACR] GUNNER DIAG keys thr=%1 steer=%2 | sim thr=%3 steer=%4 brake=%5 hb=%6 carHb=%7 persistHb=%8 gear=%9", m_Throttle, m_Steer, sim.GetThrottle(), sim.GetSteering(), sim.GetBrake(), sim.IsHandbrakeOn(), car.GetHandBrake(), car.GetPersistentHandBrake(), sim.GetGear());
-   PrintFormat("[ACR] GUNNER DIAG speed=%1 rpm=%2 engine=%3 vehicleAI=%4 driverAI=%5 inputs changed by something else in %6 of %7 frames, clutch %8", speed, (int)sim.EngineGetRPM(), car.IsEngineOn(), vehicleAI != null && vehicleAI.IsAIActivated(), driverAI != null && driverAI.IsAIActivated(), m_Overrides, m_Steps, sim.GetClutch());
+   PrintFormat("[ACR] GUNNER DIAG speed=%1 rpm=%2 engine=%3 vehicleAI=%4 driverAI=%5 inputs changed by something else in %6 of %7 frames, clutch %8 driven=%9", speed, (int)sim.EngineGetRPM(), car.IsEngineOn(), vehicleAI != null && vehicleAI.IsAIActivated(), driverAI != null && driverAI.IsAIActivated(), m_Overrides, m_Steps, sim.GetClutch(), (int)sim.EngineGetRPMFeedback());
    m_Overrides = 0;
    m_Steps = 0;
   }
