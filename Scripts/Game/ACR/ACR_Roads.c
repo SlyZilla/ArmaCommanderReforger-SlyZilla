@@ -12,6 +12,10 @@ class ACR_Roads
  static const float LEG = 160;        // distance between the hops given to the driver
  static const float MAX_OFFROAD = 300;// ends farther than this from any road: no road route
  static const int MAX_NODES = 40000;
+ static const float DEAD_END_LINK = 30; // a road's end this close to another road joins it
+ static const float MAX_DETOUR = 1.8;  // road trip longer than this x the straight line (+250 m): drive direct
+ static float s_fLastLength;          // length of the last route found (m)
+ static bool s_bLastDetour;           // the last route was refused as a long way round
 
  // Legs along the roads from a to b (last one the road point nearest b).
  // Returns false when there is no sensible road route (then drive direct).
@@ -19,6 +23,8 @@ class ACR_Roads
  {
   legs.Clear();
   nodeCount = 0;
+  s_bLastDetour = false;
+  s_fLastLength = 0;
   int started = System.GetTickCount();
   millis = 0;
   ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
@@ -42,18 +48,33 @@ class ACR_Roads
    road.GetPoints(points);
    int last = -1;
    vector lastPos;
+   // Raw road points can be 50+ m apart on straight stretches; fill in points every
+   // SPACING so a side road joining mid-stretch finds a point to link to (missing
+   // junctions sent trucks on 2 km detours for 600 m trips).
+   array<vector> dense = {};
    foreach (int p, vector point : points)
    {
-    bool isEnd = p == 0 || p == points.Count() - 1;
-    if (last >= 0 && !isEnd && vector.DistanceXZ(point, lastPos) < SPACING) continue;
+    if (p > 0)
+    {
+     vector from = points[p - 1];
+     float gap = vector.DistanceXZ(from, point);
+     int steps = Math.Floor(gap / SPACING);
+     for (int f = 1; f < steps; f++) dense.Insert(from + (point - from) * (f / (float)steps));
+    }
+    dense.Insert(point);
+   }
+   foreach (int q, vector densePoint : dense)
+   {
+    bool isEnd = q == 0 || q == dense.Count() - 1;
+    if (last >= 0 && !isEnd && vector.DistanceXZ(densePoint, lastPos) < SPACING * 0.5) continue;
     int id = pos.Count();
-    pos.Insert(point);
+    pos.Insert(densePoint);
     prev.Insert(last);
     next.Insert(-1);
     roadOf.Insert(r);
     if (last >= 0) next[last] = id;
     last = id;
-    lastPos = point;
+    lastPos = densePoint;
     if (pos.Count() >= MAX_NODES) break;
    }
    if (pos.Count() >= MAX_NODES) break;
@@ -94,6 +115,35 @@ class ACR_Roads
       AddLink(links, k, j);
      }
     }
+   }
+  }
+
+  // Road ends (dead ends, gaps in the data) join the nearest point of another road nearby.
+  for (int e = 0; e < count; e++)
+  {
+   if (prev[e] >= 0 && next[e] >= 0) continue;
+   int nearest = -1;
+   float nearestDistance = DEAD_END_LINK;
+   int ex = Math.Floor(pos[e][0] / LINK);
+   int ez = Math.Floor(pos[e][2] / LINK);
+   for (int gx = -3; gx <= 3; gx++)
+   {
+    for (int gz = -3; gz <= 3; gz++)
+    {
+     array<int> cellNodes;
+     if (!grid.Find((ex + gx) * 100003 + (ez + gz), cellNodes)) continue;
+     foreach (int o : cellNodes)
+     {
+      if (roadOf[o] == roadOf[e]) continue;
+      float dd = vector.DistanceXZ(pos[e], pos[o]);
+      if (dd < nearestDistance) { nearestDistance = dd; nearest = o; }
+     }
+    }
+   }
+   if (nearest >= 0)
+   {
+    AddLink(links, e, nearest);
+    AddLink(links, nearest, e);
    }
   }
 
@@ -146,6 +196,15 @@ class ACR_Roads
   }
   millis = System.GetTickCount() - started;
   if (!found) return false;
+  // A long way round is no time saver: the game's driver goes direct instead.
+  s_fLastLength = cost[goal] + vector.DistanceXZ(a, pos[start]) + vector.DistanceXZ(pos[goal], b);
+  float direct = vector.DistanceXZ(a, b);
+  if (s_fLastLength > direct * MAX_DETOUR + 250)
+  {
+   PrintFormat("[ACR] ROAD detour too long: %1 m by road for %2 m direct, driving direct", (int)s_fLastLength, (int)direct);
+   s_bLastDetour = true;
+   return false;
+  }
 
   // Path back from the goal, then one hop every LEG metres (plus the goal).
   array<vector> path = {};

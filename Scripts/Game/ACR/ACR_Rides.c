@@ -167,6 +167,22 @@ class ACR_Rides : Managed
    why = string.Format("no free transport with %1 seats within %2 m", seats, (int)Math.Min(MAX_PICKUP, trip * PICKUP_SHARE));
    return null;
   }
+  // Only worth it if driving beats walking. Where the roads (which the game's own
+  // drivers follow too) go a long way round, a truck took 3 minutes and 2 km for a
+  // 600 m hop: then they walk.
+  array<vector> roadLegs = {};
+  int roadNodes, roadMillis;
+  ACR_Roads.Route(from, destination, roadLegs, roadNodes, roadMillis);
+  if (ACR_Roads.s_bLastDetour)
+  {
+   float driveSeconds = fetch / 4 + 45 + ACR_Roads.s_fLastLength / 4; // trucks average about 4 m/s door to door
+   float walkSeconds = trip / 1.4;
+   if (driveSeconds > walkSeconds * 0.8)
+   {
+    why = string.Format("no quick road there (%1 m by road for %2 m): walking is faster", (int)ACR_Roads.s_fLastLength, (int)trip);
+    return null;
+   }
+  }
   ACR_Ride ride = new ACR_Ride();
   ride.m_Rider = rider;
   ride.m_Taxi = taxi;

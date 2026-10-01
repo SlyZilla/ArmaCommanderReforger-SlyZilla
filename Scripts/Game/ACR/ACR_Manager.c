@@ -722,7 +722,12 @@ class ACR_Manager : Managed
  {
   if (!m_Rides) m_Rides = new ACR_Rides(this);
   string why;
-  if (!m_Rides.Request(squad, point, 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why)) return squad.GetName() + ": no ride, " + why;
+  if (!m_Rides.Request(squad, point, 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why))
+  {
+   // Walking beats the road there: just go.
+   if (why.Contains("walking is faster") && squad.MoveTo(point)) return squad.GetName() + ": " + why + ", on foot";
+   return squad.GetName() + ": no ride, " + why;
+  }
   ACR_Ride ride = m_Rides.RideOf(squad);
   string taxi = "a transport";
   if (ride) taxi = ride.m_Taxi.GetName();

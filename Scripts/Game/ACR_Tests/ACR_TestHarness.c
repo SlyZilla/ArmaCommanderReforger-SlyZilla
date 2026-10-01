@@ -33,6 +33,7 @@ class ACR_TestHarness : Managed
  static const int MODE_LAUNCHER = 26;
  static const int MODE_SUPPLIES = 27;
  static const int MODE_DRIVE = 28;
+ static const int MODE_ROADS = 29;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -80,6 +81,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrLauncherTest", flag)) mode = MODE_LAUNCHER;
   if (System.GetCLIParam("acrSuppliesTest", flag)) mode = MODE_SUPPLIES;
   if (System.GetCLIParam("acrDriveTest", flag)) mode = MODE_DRIVE;
+  if (System.GetCLIParam("acrRoadsTest", flag)) mode = MODE_ROADS;
   if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag)) mode = MODE_DRIVE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
@@ -157,6 +159,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_LAUNCHER) { TestLauncher(); return; }
   if (m_Mode == MODE_SUPPLIES) { TestSupplies(); return; }
   if (m_Mode == MODE_DRIVE) { TestDrive(); return; }
+  if (m_Mode == MODE_ROADS) { TestRoads(); return; }
   if (m_Mode == MODE_STALLED)
   {
    // The tactics scenario with attack time limits cut to seconds: attacks
@@ -1209,7 +1212,12 @@ class ACR_TestHarness : Managed
     }
     PrintFormat("[ACR] ROUTETEST %1 -> %2: straight water %3 m, routed=%4 legs=%5 worst leg water %6 m, %7 ms", from, to, (int)ACR_Terrain.WaterAlong(from, to), routed, legs.Count(), (int)worst, took);
    }
-   m_RideDest = Ground("1290 0 2300");
+   // South to 1290/2300 the roads go 2 km round for 550 m: refused, they'd walk.
+   string why;
+   ACR_Ride refused = manager.m_Rides.Request(m_RideSquad, Ground("1290 0 2300"), 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why);
+   PrintFormat("[ACR] RIDE CHECK long way round refused: %1 (%2)", refused == null, why);
+   // East along a decent road instead.
+   m_RideDest = Ground("2000 0 3050");
    pc.ACR_Request(ACR_ERequest.ORDER_RIDE, SCR_EntityHelper.EntityToRplId(m_Range.m_Bravo), m_RideDest);
    m_WalkSquad.MoveTo(Ground("1750 0 2832"));
   }
@@ -1465,6 +1473,23 @@ class ACR_TestHarness : Managed
    }
   }
   if (m_Ticks == 43) Print("[ACR] TEST COMPLETE");
+ }
+
+ // ---------------------------------------------------------------- -acrRoadsTest
+ // Road routes for a few trips: length by road against the straight line.
+ void TestRoads()
+ {
+  if (m_Ticks != 5) return;
+  array<vector> from = {"1365 0 2857", "1236 0 2795", "1236 0 2795", "1445 0 2367", "1365 0 2857", "1365 0 2857", "1365 0 2857", "1365 0 2857"};
+  array<vector> to = {"1305 0 2311", "3163 0 2778", "1445 0 2367", "2580 0 2373", "1900 0 2850", "2000 0 3050", "1800 0 2600", "1700 0 3100"};
+  foreach (int i, vector a : from)
+  {
+   array<vector> legs = {};
+   int nodes, millis;
+   bool ok = ACR_Roads.Route(ACR_Manager.Ground(a), ACR_Manager.Ground(to[i]), legs, nodes, millis);
+   PrintFormat("[ACR] ROADS trip %1: road=%2 length=%3 m direct=%4 m hops=%5 nodes=%6 (%7 ms)", i, ok, (int)ACR_Roads.s_fLastLength, (int)vector.DistanceXZ(a, to[i]), legs.Count(), nodes, millis);
+  }
+  Print("[ACR] TEST COMPLETE");
  }
 
  // ---------------------------------------------------------------- -acrQueueTest
