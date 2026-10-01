@@ -1328,6 +1328,10 @@ class ACR_Squad : Managed
   m_bHasLZ = false;
   Halt("Dismounting");
   m_iDismountSweeps = 0;
+  // One follow-up per squad: a second dismount (bail-out during a ride, F6 twice)
+  // used to leave two queued, and the later one replaced the resumed order with
+  // "Holding position".
+  GetGame().GetCallqueue().Remove(HoldAfterDismount);
   GetGame().GetCallqueue().CallLater(HoldAfterDismount, 3000, false);
   return dropped;
  }
