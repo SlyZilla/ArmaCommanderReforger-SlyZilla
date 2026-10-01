@@ -225,6 +225,9 @@ KNOWN LIMITS (alpha)
 - No victory condition: play until one side is clearly beaten.
 - Game logs are in Documents\My Games\ArmaReforger\logs if something breaks.
   Sending the newest console.log helps a lot.
+- Found a bug? Report it at https://github.com/propst-design/ACActual/issues
+  (what happened, version, host or client, and the newest log folder zipped).
+  The project page lists what most needs multiplayer testing.
 
 CREDITS
 -------

@@ -55,6 +55,8 @@ function Sync-RepoFile($localPath, $repoPath) {
 }
 Sync-RepoFile (Join-Path $root 'tools\package\REPO-README.md') 'README.md'
 Sync-RepoFile (Join-Path $root 'LICENSE.md') 'LICENSE.md'
+Sync-RepoFile (Join-Path $root 'tools\package\github\ISSUE_TEMPLATE\bug_report.md') '.github/ISSUE_TEMPLATE/bug_report.md'
+Sync-RepoFile (Join-Path $root 'tools\package\github\ISSUE_TEMPLATE\config.yml') '.github/ISSUE_TEMPLATE/config.yml'
 & $gh repo edit $repo --description "Arma Commander Actual (AC: Actual): unofficial, vibecoded fan port of Arma Commander to Arma Reforger. Downloads under Releases." 2>&1 | Out-Null
 Start-Sleep -Seconds 1
 
@@ -69,7 +71,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host "Publishing $version to $repo ..."
-$notes = "Download ACActual-Arland.zip below, unzip it, and read 'READ ME FIRST.txt'.`nAlready have it? Just start Host-Arland or Join-Arland; they update themselves."
+$notes = "Download ACActual-Arland.zip below, unzip it, and read 'READ ME FIRST.txt'.`nAlready have it? Just start Host-Arland or Join-Arland; they update themselves.`nFound a bug? [Report it here](https://github.com/$repo/issues/new/choose); the README lists what most needs multiplayer testing."
 & $gh release create $version $zip --repo $repo --title $version --notes $notes --latest
 if ($LASTEXITCODE -ne 0) { Fail "Release upload failed (see above)." }
 
