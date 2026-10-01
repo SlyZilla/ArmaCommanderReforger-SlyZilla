@@ -188,7 +188,12 @@ function Connect-ZeroTier {
     $msi = ''
     if (!(Test-ZtInstalled)) {
       Write-Host 'Downloading ZeroTier One from zerotier.com ...' -ForegroundColor Cyan
-      $msi = Get-ZtInstaller
+      try { $msi = Get-ZtInstaller }
+      catch {
+        Write-Host ('   ' + $_.Exception.Message) -ForegroundColor Yellow
+        Write-Host 'Continuing without ZeroTier.' -ForegroundColor Yellow
+        return $null
+      }
       $what = 'install ZeroTier One and join network ' + $s.Network
     } else {
       $what = 'join network ' + $s.Network + ' (ZeroTier is already installed)'
