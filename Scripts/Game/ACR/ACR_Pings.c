@@ -66,7 +66,7 @@ class ACR_Pings : Managed
   if (!faction) return "You have no side";
   IEntity body = GetGame().GetPlayerManager().GetPlayerControlledEntity(playerId);
   if (fromWorld && body && vector.Distance(body.GetOrigin(), pos) > WORLD_REACH + 50) return "Too far to ping";
-  if (pos[0] < -100000 || pos[0] > 100000 || pos[2] < -100000 || pos[2] > 100000) return "Not on the map";
+  if (!ACR_Manager.OnMap(pos)) return "Not on the map";
   float now = GetGame().GetWorld().GetWorldTime();
   float last;
   if (m_LastPlaced.Find(playerId, last) && now - last < MIN_GAP_MS) return "";

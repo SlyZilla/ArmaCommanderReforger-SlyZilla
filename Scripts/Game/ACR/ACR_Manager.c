@@ -107,6 +107,14 @@ class ACR_Manager : Managed
   return point;
  }
 
+ // A point a client sent (an order, a support target, a ping) lies inside the world.
+ static bool OnMap(vector point)
+ {
+  vector mins, maxs;
+  GetGame().GetWorld().GetBoundBox(mins, maxs);
+  return point[0] >= mins[0] && point[0] <= maxs[0] && point[2] >= mins[2] && point[2] <= maxs[2];
+ }
+
  // Arma-style 6-digit grid reference (10 m precision).
  static string Grid(vector position)
  {
@@ -120,6 +128,7 @@ class ACR_Manager : Managed
   Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
   if (!faction) return "You have no faction";
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can call supports";
+  if (!OnMap(target)) return "That target is off the map";
   if (!m_Supports) m_Supports = new ACR_Supports(this);
   string key = faction.GetFactionKey();
   int before = m_Bases.GetRP(key);
@@ -780,7 +789,7 @@ class ACR_Manager : Managed
   if (!anchor) return "That squad is not ready";
   bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT;
   // Reject nonsense coordinates from a client.
-  if (usesPoint && vector.Distance(point, anchor.GetOrigin()) > 20000) return "Order is too far away";
+  if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !OnMap(point))) return "Order is too far away";
   if (usesPoint) point = Ground(point);
   m_LastSquad.Set(pc.GetPlayerId(), squad);
   string name = squad.GetName();
