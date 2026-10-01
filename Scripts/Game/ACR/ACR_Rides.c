@@ -285,7 +285,10 @@ class ACR_Rides : Managed
   else if (ride.m_Vehicle && ACR_Logistics.Health(ride.m_Vehicle) > 0 && ride.m_Taxi && m_Manager.m_Squads.Contains(ride.m_Taxi))
   {
    if (ride.m_fTaxiLostSince < 0) ride.m_fTaxiLostSince = now;
-   if (now - ride.m_fTaxiLostSince < 15000) return true;
+   // (45 s: the game's AI driver may hop out to open a gate the gate helper missed)
+   float patience = 15000;
+   if (ride.m_Taxi.IsAlive() && !ride.m_Taxi.HasPlayer()) patience = 45000;
+   if (now - ride.m_fTaxiLostSince < patience) return true;
   }
   if (!taxiOk)
   {

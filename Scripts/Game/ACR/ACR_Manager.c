@@ -177,6 +177,8 @@ class ACR_Manager : Managed
   m_Respawn.Tick();
   if (!m_Rides) m_Rides = new ACR_Rides(this);
   m_Rides.Tick();
+  if (!m_Gates) m_Gates = new ACR_Gates(this);
+  m_Gates.Tick();
   if (!m_Logistics) m_Logistics = new ACR_Logistics(this);
   m_Logistics.Tick();
   if (!m_Cleanup) m_Cleanup = new ACR_Cleanup(this);
@@ -966,6 +968,7 @@ class ACR_Manager : Managed
 
  // ================================================================ gunner drives (server)
 
+ protected ref ACR_Gates m_Gates;
  protected ref map<IEntity, ref ACR_GunnerDrive> m_Drives = new map<IEntity, ref ACR_GunnerDrive>();
 
  void GunnerDriveInput(SCR_PlayerController pc, IEntity vehicle, float throttle, float steer)

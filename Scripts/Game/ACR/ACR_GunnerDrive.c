@@ -17,6 +17,7 @@ class ACR_GunnerDrive
  float m_Steer;
  float m_LastInput;
  float m_LastShift;
+ float m_LastDiag;
  bool m_AIWasOn;
  bool m_VehicleAIWasOn;
  string m_EndReason;
@@ -156,7 +157,9 @@ class ACR_GunnerDrive
     throttle = -m_Throttle;
    }
   }
-  else brake = 1;                               // keys released: stop and hold
+  // Keys released: coast like a real driver lifting off (braking at once made every
+  // tap of W and every A/D on its own feel like a stuck handbrake); hold only once slow.
+  else if (Math.AbsFloat(speed) < 1.5) brake = 1;
 
   // Simple automatic gearbox for the forward gears.
   gear = sim.GetGear();
@@ -174,6 +177,15 @@ class ACR_GunnerDrive
   // Less steering lock at speed, so a tap of A/D doesn't spin the vehicle out.
   float steerScale = Math.Clamp(1 - Math.AbsFloat(speed) / 25, 0.35, 1);
   sim.SetSteering(m_Steer * steerScale);
+  // Diagnostics while this is being tuned in play-tests (every 2 s per vehicle).
+  if (now - m_LastDiag > 2000)
+  {
+   m_LastDiag = now;
+   AIControlComponent vehicleAI = AIControlComponent.Cast(m_Vehicle.FindComponent(ChimeraAIVehicleControlComponent));
+   AIControlComponent driverAI = AIControlComponent.Cast(m_Driver.FindComponent(AIControlComponent));
+   PrintFormat("[ACR] GUNNER DIAG keys thr=%1 steer=%2 | sim thr=%3 steer=%4 brake=%5 hb=%6 carHb=%7 persistHb=%8 gear=%9", m_Throttle, m_Steer, sim.GetThrottle(), sim.GetSteering(), sim.GetBrake(), sim.IsHandbrakeOn(), car.GetHandBrake(), car.GetPersistentHandBrake(), sim.GetGear());
+   PrintFormat("[ACR] GUNNER DIAG speed=%1 rpm=%2 engine=%3 vehicleAI=%4 driverAI=%5", speed, (int)sim.EngineGetRPM(), car.IsEngineOn(), vehicleAI != null && vehicleAI.IsAIActivated(), driverAI != null && driverAI.IsAIActivated());
+  }
   return true;
  }
 
