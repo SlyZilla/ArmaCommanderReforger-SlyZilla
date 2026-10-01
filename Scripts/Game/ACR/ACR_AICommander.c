@@ -413,9 +413,11 @@ class ACR_AICommander : Managed
  protected void AssignDefenders()
  {
   // Release defenders of bases that are no longer threatened (or no longer ours).
+  // (only our own: with both sides on AI, the other commander's defenders
+  // were set free here every tick, since their base isn't ours)
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
-   if (squad.m_iAITask != ACR_EAITask.DEFEND) continue;
+   if (squad.m_iAITask != ACR_EAITask.DEFEND || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
    ACR_Base held = squad.m_AITarget;
    if (!held || held.m_sOwner != m_sFaction || ThreatTo(held) == 0) { squad.m_iAITask = ACR_EAITask.FREE; continue; }
    // A defence that is being overrun: the badly hurt get out rather than die in place.

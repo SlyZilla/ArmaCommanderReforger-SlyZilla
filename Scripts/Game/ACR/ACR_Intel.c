@@ -133,6 +133,12 @@ class ACR_Intel : Managed
   }
   BuildContacts(now);
   Report(now);
+  if (m_iTicks % 60 == 0)
+  {
+   array<string> old = {};
+   foreach (string key, float when : m_Reported) if (now - when > REPORT_AGAIN_MS) old.Insert(key);
+   foreach (string done : old) m_Reported.Remove(done);
+  }
  }
 
  protected void PlayerSightings(array<int> players, float now)

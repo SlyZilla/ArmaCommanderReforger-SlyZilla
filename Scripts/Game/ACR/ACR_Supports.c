@@ -894,7 +894,13 @@ class ACR_Supports : Managed
     heli.m_Target = target;
     heli.m_Dir = dir;
     heli.m_Rocket = RocketFor(factionKey);
-    if (!heli.Start(this, HelicopterFor(factionKey), now)) return "No helicopter available";
+    if (!heli.Start(this, HelicopterFor(factionKey), now))
+    {
+     // Nothing flew: give the RP and the cooldown back.
+     data.m_iRP += entry.m_iCost;
+     entry.m_fReadyAt = now;
+     return "No helicopter available";
+    }
     m_Runs.Insert(heli);
     delay = (int)(2200 / ACR_HeliRun.SPEED_RUN);
     break;

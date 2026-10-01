@@ -305,8 +305,8 @@ class ACR_Manager : Managed
    if (squad.m_Commander == pc.GetPlayerId()) squad.Release();
  }
 
- // Squad that hotkey/map orders apply to until real map selection exists:
- // the squad you are in, else the squad you were last in, else your faction's first.
+ // Fallback for orders sent without a squad (test hotkeys): the squad you are
+ // in, else the squad you were last in, else your faction's first.
  ACR_Squad GetSelectedSquad(SCR_PlayerController pc)
  {
   ACR_Squad squad = FindSquadBySoldier(pc.GetControlledEntity());

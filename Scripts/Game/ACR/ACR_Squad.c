@@ -1,3 +1,13 @@
+// What a squad's order looks like on the map (order line colour).
+enum ACR_EOrderKind
+{
+ MOVE,
+ DEFEND,
+ GET_IN,
+ GET_OUT,
+ HUNT
+}
+
 enum ACR_EMoveMode
 {
  COMBAT,
@@ -360,7 +370,7 @@ class ACR_Squad : Managed
  int m_iAITask;          // ACR_EAITask
  IEntity m_OwnVehicle;   // the vehicle this squad came with (crews), even when dismounted
  ACR_Base m_AITarget;
- int m_OrderKind;   // for map symbology: 0 move, 1 defend, 2 get in, 3 get out
+ int m_OrderKind;   // ACR_EOrderKind, for map symbology
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -448,7 +458,7 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_MOVE, destination)) return false;
   m_Order = "Moving";
-  m_OrderKind = 0;
+  m_OrderKind = ACR_EOrderKind.MOVE;
   return true;
  }
 
@@ -459,7 +469,7 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
   m_Order = "Defending";
-  m_OrderKind = 1;
+  m_OrderKind = ACR_EOrderKind.DEFEND;
   return true;
  }
 
@@ -471,7 +481,7 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SEARCH_DESTROY, position, 30)) return false;
   m_Order = "Assaulting";
-  m_OrderKind = 0;
+  m_OrderKind = ACR_EOrderKind.MOVE;
   return true;
  }
 
@@ -483,7 +493,7 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SUPPRESS, position)) return false;
   m_Order = "Suppressing";
-  m_OrderKind = 0;
+  m_OrderKind = ACR_EOrderKind.MOVE;
   return true;
  }
 
@@ -567,7 +577,7 @@ class ACR_Squad : Managed
   m_bHunting = true;
   IssueWaypoint(WP_SEARCH_DESTROY, position, 30);
   m_Order = "Hunting " + what;
-  m_OrderKind = 4;
+  m_OrderKind = ACR_EOrderKind.HUNT;
   m_iHuntSerial = m_iOrderSerial;
  }
 
@@ -615,7 +625,7 @@ class ACR_Squad : Managed
     m_HuntPos = known;
     IssueWaypoint(WP_SEARCH_DESTROY, known, 30);
     m_Order = "Hunting " + m_sHuntWhat;
-    m_OrderKind = 4;
+    m_OrderKind = ACR_EOrderKind.HUNT;
    }
    return;
   }
@@ -671,7 +681,7 @@ class ACR_Squad : Managed
    m_Order = order;
    PrintFormat("[ACR] TACTICS %1: contact, fighting its way forward", m_Name);
   }
-  if (m_Order == "Moving" && m_OrderKind == 0 && !IsMounted())
+  if (m_Order == "Moving" && m_OrderKind == ACR_EOrderKind.MOVE && !IsMounted())
   {
    array<AIWaypoint> waypoints = {};
    m_Group.GetWaypoints(waypoints);
@@ -680,7 +690,7 @@ class ACR_Squad : Managed
    {
     IssueWaypoint(WP_DEFEND, m_MoveTarget, 20);
     m_Order = "Holding position";
-    m_OrderKind = 1;
+    m_OrderKind = ACR_EOrderKind.DEFEND;
     PrintFormat("[ACR] TACTICS %1: arrived, taking positions", m_Name);
    }
   }
@@ -1322,7 +1332,7 @@ class ACR_Squad : Managed
   }
   IssueWaypoint(WP_DEFEND, anchor.GetOrigin(), 20);
   m_Order = "Holding position";
-  m_OrderKind = 1;
+  m_OrderKind = ACR_EOrderKind.DEFEND;
  }
 
  int CountAlive()
@@ -1377,7 +1387,7 @@ class ACR_Squad : Managed
   }
   else if (!IssueWaypoint(WP_GET_IN_NEAREST, position, 20, true)) return false;
   m_Order = "Getting in";
-  m_OrderKind = 2;
+  m_OrderKind = ACR_EOrderKind.GET_IN;
   return true;
  }
 
@@ -1390,7 +1400,7 @@ class ACR_Squad : Managed
   if (vehicles.IsEmpty()) return false;
   if (!IssueWaypoint(WP_GET_OUT, vehicles[0].GetOrigin(), -1, true)) return false;
   m_Order = "Getting out";
-  m_OrderKind = 3;
+  m_OrderKind = ACR_EOrderKind.GET_OUT;
   return true;
  }
 
@@ -1548,6 +1558,7 @@ class ACR_Squad : Managed
   m_bOrderSetAside = false; // being removed: nothing to resume
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);
+  GetGame().GetCallqueue().Remove(HoldAfterDismount);
   if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
   SCR_GroupsManagerComponent manager = SCR_GroupsManagerComponent.GetInstance();
   if (manager && m_CommandGroup) manager.DeleteAndUnregisterGroup(m_CommandGroup);
@@ -1557,6 +1568,8 @@ class ACR_Squad : Managed
 
  void ~ACR_Squad()
  {
-  if (GetGame()) GetGame().GetCallqueue().Remove(LinkSquad);
+  if (!GetGame()) return;
+  GetGame().GetCallqueue().Remove(LinkSquad);
+  GetGame().GetCallqueue().Remove(HoldAfterDismount);
  }
 }
