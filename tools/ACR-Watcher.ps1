@@ -134,11 +134,7 @@ function Invoke-ServerTest($id, $preset, $config) {
         if ($proc.HasExited) { $outcome = 'server exited'; break }
         if ($log -and (Test-Path -LiteralPath $log)) {
             $text = Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue
-            $text = ($text -split "`n" | Where-Object { $_ -notmatch 'SCR_InstigatorContextData: instigatorType' }) -join "`n"
-            $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_AIProcessFailedMovementResult'", 'vanilla AI null-leader exception (ignored)')
-            $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: No suppression volume provided!", 'vanilla suppression exception (ignored)')
-            # Opening the map from a test script: the game's map tool UI has no cursor module yet.
-            $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_MapToolInteractionUI'", 'vanilla map tool exception (ignored)')
+            $text = Remove-KnownNoise $text
             if ($text -match 'SCRIPT\s+\(E\)') { Start-Sleep -Seconds 3; $outcome = 'script error'; break }
             if ($text -match $config.DoneWhen) { Start-Sleep -Seconds 2; $outcome = 'completed'; break }
         }
@@ -154,6 +150,20 @@ function Invoke-ServerTest($id, $preset, $config) {
     }
     Write-Result $id $result
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 'srv:$preset' finished: $outcome" -ForegroundColor Green
+}
+
+# Known harmless vanilla errors, shared by game and server tests.
+function Remove-KnownNoise($text) {
+    # Deaths caused by Game Master effect modules.
+    $text = ($text -split "`n" | Where-Object { $_ -notmatch 'SCR_InstigatorContextData: instigatorType' }) -join "`n"
+    # Vanilla AI bug: a group whose members all died processes a failed move (null leader).
+    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_AIProcessFailedMovementResult'", 'vanilla AI null-leader exception (ignored)')
+    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: No suppression volume provided!", 'vanilla suppression exception (ignored)')
+    # Opening the map from a test script: the game's map tool UI has no cursor module yet.
+    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_MapToolInteractionUI'", 'vanilla map tool exception (ignored)')
+    # Vanilla SCR_AIGetFireTimes: RandomFloat(0.1, m_fShotSpan * 1.9) when the shot span is 0.
+    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Math\.RandomFloat: invalid parameters min = 0\.100000 max = 0\.000000", 'vanilla AI fire-time warning (ignored)')
+    return $text
 }
 
 function Write-Result($id, $lines) {
@@ -189,6 +199,8 @@ function Invoke-Request($file) {
         return
     }
     if ($onServer) { Invoke-ServerTest $id $preset $Presets[$preset]; return }
+    # A game the previous test just stopped can take a few seconds to close.
+    for ($w = 0; $w -lt 15 -and (Get-Process -Name 'ArmaReforgerSteam', 'ArmaReforger_BE' -ErrorAction SilentlyContinue); $w++) { Start-Sleep -Seconds 2 }
     if (Get-Process -Name 'ArmaReforgerSteam', 'ArmaReforger_BE' -ErrorAction SilentlyContinue) {
         Write-Host "[$time] Refused '$preset': Reforger is already running" -ForegroundColor Yellow
         Write-Result $id @("status=refused", "reason=Reforger is already running")
@@ -219,12 +231,7 @@ function Invoke-Request($file) {
             $text = Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue
             $scriptLog = Join-Path (Split-Path $log -Parent) 'script.log'
             if (Test-Path -LiteralPath $scriptLog) { $text += Get-Content -LiteralPath $scriptLog -Raw -ErrorAction SilentlyContinue }
-            # Known harmless vanilla errors (e.g. deaths caused by Game Master effect modules).
-            $text = ($text -split "`n" | Where-Object { $_ -notmatch 'SCR_InstigatorContextData: instigatorType' }) -join "`n"
-            # Vanilla AI bug: a group whose members all died processes a failed move (null leader).
-            $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_AIProcessFailedMovementResult'", 'vanilla AI null-leader exception (ignored)')
-            # Opening the map from a test script: the game's map tool UI has no cursor module yet.
-            $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_MapToolInteractionUI'", 'vanilla map tool exception (ignored)')
+            $text = Remove-KnownNoise $text
             if ($text -match 'SCRIPT\s+\(E\)') { Start-Sleep -Seconds 3; $outcome = 'script error'; break }
             if ($text -match $config.DoneWhen) { Start-Sleep -Seconds 2; $outcome = 'completed'; break }
         }
