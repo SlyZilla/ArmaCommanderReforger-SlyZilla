@@ -130,6 +130,15 @@ class ACR_TestShared
    GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   }
   if (tick == 10) Check("command map open", pc.ACR_TestMapOpen(), "");
+  if (tick == 10)
+  {
+   // The game's own map controls (pan, zoom, select) live in the cursor module;
+   // without it only our widgets respond to the mouse.
+   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+   SCR_MapCursorModule cursor;
+   if (mapEntity) cursor = SCR_MapCursorModule.Cast(mapEntity.GetMapModule(SCR_MapCursorModule));
+   Check("map cursor module active", cursor != null, "");
+  }
   if (tick == 10) pc.ACR_Request(ACR_ERequest.MOVE_TO, alphaId, harness.Ground("1420 0 2832"));
   if (tick == 13)
   {

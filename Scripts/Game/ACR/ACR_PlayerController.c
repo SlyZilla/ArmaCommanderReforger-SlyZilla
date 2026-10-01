@@ -679,8 +679,6 @@ modded class SCR_PlayerController
 
  RplId ACR_GetSelectedGroup() { return m_ACR_SelectedGroup; }
  void ACR_MarkUiClick() { m_ACR_LastUiClick = System.GetTickCount(); }
- // True while the mouse is over the command panel or the intel box.
- bool ACR_CursorOnPanel() { return m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor()); }
 
  // Several squads can be selected (Ctrl + drag a box, Shift + click to add or
  // remove one). m_ACR_SelectedGroup is the first of them: the one the panel shows.
