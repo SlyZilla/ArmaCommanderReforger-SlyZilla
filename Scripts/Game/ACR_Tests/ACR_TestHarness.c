@@ -651,7 +651,10 @@ class ACR_TestHarness : Managed
    foreach (BaseCompartmentSlot turret : turrets)
     if (turret.GetOccupant()) m_Gunner = ChimeraCharacter.Cast(turret.GetOccupant());
    PrintFormat("[ACR] GUNNER turrets=%1 gunner=%2", turrets.Count(), m_Gunner);
-   if (m_Gunner) pc.ACR_Request(ACR_ERequest.POSSESS, SCR_EntityHelper.EntityToRplId(m_Gunner));
+   // The panel's "Take over gunner" button.
+   ACR_Squad gunSquad = manager.FindSquadBySoldier(m_Gunner);
+   PrintFormat("[ACR] GUNNER squad gunner found=%1", ACR_GunnerDrive.SquadGunner(gunSquad) == m_Gunner);
+   if (gunSquad) pc.ACR_Request(ACR_ERequest.TAKE_GUNNER, SCR_EntityHelper.EntityToRplId(gunSquad.m_Group));
   }
   if (!m_GunVehicle) return;
   if (m_Ticks == 17)
@@ -664,7 +667,7 @@ class ACR_TestHarness : Managed
   }
   if (m_Ticks >= 18 && m_Ticks < 24) pc.ACR_TestDrive(m_GunVehicle, 1, 0);
   if (m_Ticks >= 24 && m_Ticks < 26) pc.ACR_TestDrive(m_GunVehicle, 0, 0);
-  if (m_Ticks >= 26 && m_Ticks < 31) pc.ACR_TestDrive(m_GunVehicle, 0.5, 1);
+  if (m_Ticks >= 26 && m_Ticks < 31) pc.ACR_TestDrive(m_GunVehicle, 1, 1);
   if (m_Ticks >= 31 && m_Ticks < 35) pc.ACR_TestDrive(m_GunVehicle, 0, 0);
   if (m_Ticks == 35) { m_GunStart = m_GunVehicle.GetOrigin(); m_GunYaw = m_GunVehicle.GetYawPitchRoll()[0]; }
   if (m_Ticks >= 35 && m_Ticks < 41) pc.ACR_TestDrive(m_GunVehicle, -1, 0);
@@ -1369,6 +1372,14 @@ class ACR_TestHarness : Managed
     }
    }
    PrintFormat("[ACR] SUPPLY engineer truck building provider=%1", provider);
+   // Placed compositions need an outline (the silhouette players dig out with the shovel).
+   SCR_CampaignBuildingManagerComponent building = SCR_CampaignBuildingManagerComponent.Cast(GetGame().GetGameMode().FindComponent(SCR_CampaignBuildingManagerComponent));
+   IEntity barricade = ACR_Manager.SpawnPrefab("{6FE74C9C75DA8A52}PrefabsEditable/Auto/Compositions/Slotted/SlotRoadMedium/E_Barricade_M_US_01.et", Ground("1460 0 2832"));
+   SCR_EditableEntityComponent editable;
+   if (barricade) editable = SCR_EditableEntityComponent.Cast(barricade.FindComponent(SCR_EditableEntityComponent));
+   string outline;
+   if (building && building.GetOutlineManager() && editable) outline = building.GetOutlineManager().GetCompositionOutline(editable);
+   PrintFormat("[ACR] SUPPLY CHECK placed compositions get a build outline: %1 (%2)", !outline.IsEmpty(), outline);
    // A player takes gear from the arsenal: the game's own consume path.
    m_fSuppliesBefore = ACR_Logistics.GameSupplies(m_ArsenalTruck);
    SCR_ResourceComponent resources = SCR_ResourceComponent.FindResourceComponent(m_ArsenalTruck);

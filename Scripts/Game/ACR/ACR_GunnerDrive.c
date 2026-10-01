@@ -18,7 +18,31 @@ class ACR_GunnerDrive
  float m_LastInput;
  float m_LastShift;
  bool m_AIWasOn;
+ bool m_VehicleAIWasOn;
  string m_EndReason;
+
+ // The AI gunner of one of the squad's vehicles (null if none, or a player holds it).
+ static ChimeraCharacter SquadGunner(ACR_Squad squad)
+ {
+  if (!squad) return null;
+  array<IEntity> vehicles = {};
+  squad.GetVehicles(vehicles);
+  foreach (IEntity vehicle : vehicles)
+  {
+   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+   if (!compartments) continue;
+   array<BaseCompartmentSlot> turrets = {};
+   compartments.GetCompartmentsOfType(turrets, ECompartmentType.TURRET);
+   foreach (BaseCompartmentSlot turret : turrets)
+   {
+    ChimeraCharacter gunner = ChimeraCharacter.Cast(turret.GetOccupant());
+    if (!gunner || !gunner.GetCharacterController() || gunner.GetCharacterController().IsDead()) continue;
+    if (ACR_Squad.FindController(gunner)) continue;
+    return gunner;
+   }
+  }
+  return null;
+ }
 
  // Vehicle the body may drive from its turret (null if not a turret seat, no AI driver, ...).
  static IEntity DrivableFrom(IEntity body, out ChimeraCharacter driver)
@@ -50,6 +74,15 @@ class ACR_GunnerDrive
   {
    ai.DeactivateAI();
    m_AIWasOn = true;
+  }
+  // The vehicle has its own AI (it does the actual driving for an AI driver). Left on,
+  // it keeps braking and centring the wheel against the gunner's input every frame:
+  // that felt like a stuck handbrake, worst when turning.
+  AIControlComponent vehicleAI = AIControlComponent.Cast(m_Vehicle.FindComponent(ChimeraAIVehicleControlComponent));
+  if (vehicleAI && vehicleAI.IsAIActivated())
+  {
+   vehicleAI.DeactivateAI();
+   m_VehicleAIWasOn = true;
   }
   CarControllerComponent car = Car();
   if (car)
@@ -161,6 +194,11 @@ class ACR_GunnerDrive
    sim.SetThrottle(0);
    sim.SetSteering(0);
    sim.SetBreak(1, false);
+  }
+  if (m_VehicleAIWasOn && m_Vehicle)
+  {
+   AIControlComponent vehicleAI = AIControlComponent.Cast(m_Vehicle.FindComponent(ChimeraAIVehicleControlComponent));
+   if (vehicleAI && !vehicleAI.IsAIActivated()) vehicleAI.ActivateAI();
   }
   if (m_AIWasOn && m_Driver && !ACR_Squad.FindController(m_Driver))
   {

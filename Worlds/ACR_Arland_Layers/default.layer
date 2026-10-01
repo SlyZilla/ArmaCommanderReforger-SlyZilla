@@ -4,6 +4,17 @@ SCR_BaseGameMode ACR_GameMode : "{1B76F75A3175E85C}Prefabs/MP/Modes/Plain/GameMo
    m_sFreeRoamBuildingClientTrigger "{5E191CEAF4B95816}Prefabs/MP/FreeRoamBuildingClientTrigger.et"
    m_BudgetType CAMPAIGN
    m_iCompositionRefundPercentage 100
+   m_iXpRewardTreshold 5
+   m_iInitialRewardInterval 5
+   m_fRewardCurveIncrement 0.2
+   m_OutlineManager SCR_CampaignBuildingCompositionOutlineManager "{5D7A73031D9A11E1}" : "{96A8B496A076F1C0}scripts/Game/Building/CampaignBuildingCompositionOutline.conf" {
+    m_aCompositionLayouts {
+     SCR_CampaignBuildingCompositionOutline "{65A6BAECE8BB1339}" {
+      m_sEditableEntity "{6676FBB212B337D6}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_USSR_01.et"
+      m_sCompositionLayout "{F28A8D6AC99AD4E8}Prefabs/Compositions/Misc/FreeRoamBuilding/Layouts/FRB_VehicleMaintenance_M_01.et"
+     }
+    }
+   }
    m_sPrefabsToBuildResource "{D2527D9AA5B4A33E}Configs/Editor/PlaceableEntities/Compositions/Compositions_FreeRoamBuilding.conf"
    m_sPrefabToHoldSupplyOnRefund "{4BBE0A784C01900E}Prefabs/Props/Military/SupplyBox/SupplyCrate/SupplyCrate_01/SupplyCrate_01_FreeRoamBuilding.et"
   }

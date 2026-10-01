@@ -14,6 +14,7 @@ enum ACR_EPanelAction
  TOGGLE_REQUISITION,
  TOGGLE_SUPPORTS,
  RIDE,
+ TAKE_GUNNER,
  REQUISITION_ENTRY = 100, // + entry index (below 200)
  SUPPORT_ENTRY = 200     // + entry index
 }
@@ -52,6 +53,7 @@ class ACR_CommandPanel : Managed
  protected TextWidget m_GroupName;
  protected TextWidget m_GroupDetail;
  protected SCR_ButtonTextComponent m_SwitchButton;
+ protected Widget m_GunnerWidget;
  protected Widget m_OrderSection;
  protected ref array<SCR_ButtonTextComponent> m_ModeButtons = {};
  protected TextWidget m_Hint;
@@ -127,6 +129,9 @@ class ACR_CommandPanel : Managed
   m_GroupDetail = AddText(m_GroupSection, LAYOUT_TEXT, "");
   m_SwitchButton = AddButton(m_GroupSection, "Switch to squad", ACR_EPanelAction.SWITCH);
   m_SwitchWidget = m_LastButtonWidget;
+  AddButton(m_GroupSection, "Take over gunner", ACR_EPanelAction.TAKE_GUNNER);
+  m_GunnerWidget = m_LastButtonWidget;
+  if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
 
   m_OrderSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_GroupSection);
   AlignableSlot.SetPadding(m_OrderSection, 0, 10, 0, 0);
@@ -376,6 +381,11 @@ class ACR_CommandPanel : Managed
   }
  }
 
+ void SetGunner(bool visible)
+ {
+  if (m_GunnerWidget) m_GunnerWidget.SetVisible(visible);
+ }
+
  void SetReinforce(string text, bool enabled)
  {
   if (!m_ReinforceButton) return;
@@ -396,6 +406,7 @@ class ACR_CommandPanel : Managed
   m_GroupName.SetText(name);
   m_GroupDetail.SetText(detail);
   if (m_SwitchWidget) m_SwitchWidget.SetVisible(false);
+  if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
   if (m_Hint) m_Hint.SetText("");
  }

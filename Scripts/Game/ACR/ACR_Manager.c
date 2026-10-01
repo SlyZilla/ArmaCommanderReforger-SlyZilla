@@ -21,7 +21,8 @@ enum ACR_ERequest
  ORDER_RIDE,       // a nearby free transport picks the squad up and drives it to point
  QUEUE_MOVE,       // Shift + right-click: move there after the current order
  QUEUE_DEFEND,     // ... defend there after the current order
- ORDER_HUNT        // pursue the spotted enemy group at point until it's destroyed or lost
+ ORDER_HUNT,       // pursue the spotted enemy group at point until it's destroyed or lost
+ TAKE_GUNNER       // possess the gunner of the squad's armed vehicle (targetId = group)
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -559,6 +560,7 @@ class ACR_Manager : Managed
    case ACR_ERequest.RETURN: return ReturnToCommandUnit(pc, body);
    case ACR_ERequest.POSSESS: return Possess(pc, body, targetId);
    case ACR_ERequest.SWITCH_TO_GROUP: return SwitchToGroup(pc, body, targetId);
+   case ACR_ERequest.TAKE_GUNNER: return TakeGunner(pc, body, targetId);
    case ACR_ERequest.TAKE_COMMAND: return TakeCommand(pc);
    case ACR_ERequest.REINFORCE: return Reinforce(pc, targetId);
    case ACR_ERequest.LEAVE_COMMAND: return LeaveCommand(pc);
@@ -611,6 +613,19 @@ class ACR_Manager : Managed
  }
 
  // Arma Commander's Switch button: the leader if free, otherwise any free soldier.
+ // Straight into the turret of the squad's armed vehicle. Plain possession: the
+ // squad keeps its leader and order; drive from the turret (W/A/S/D) or give
+ // the squad map orders as usual.
+ string TakeGunner(SCR_PlayerController pc, ChimeraCharacter body, RplId groupId)
+ {
+  ACR_Squad squad = FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
+  if (!squad) return "Select a friendly squad first";
+  ChimeraCharacter gunner = ACR_GunnerDrive.SquadGunner(squad);
+  if (!gunner) return "That squad has no manned turret";
+  if (gunner == body) return "You are already the gunner";
+  return Possess(pc, body, SCR_EntityHelper.EntityToRplId(gunner));
+ }
+
  string SwitchToGroup(SCR_PlayerController pc, ChimeraCharacter body, RplId groupId)
  {
   ACR_Squad squad = FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));

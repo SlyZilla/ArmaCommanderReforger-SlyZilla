@@ -968,7 +968,9 @@ modded class SCR_PlayerController
    detail = names + " | orders go to all (switch: first)";
   }
   if (friendly && m_ACR_IsCommander && m_ACR_CursorMode == ACR_ECursorMode.MOVE) hint += "  |  Shift+right-click: add waypoint  |  Ctrl+drag: select squads";
-  m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, m_ACR_GroupSymbols[index * 4 + 3], m_ACR_CursorMode, hint);
+  int modeAndFlags = m_ACR_GroupSymbols[index * 4 + 3];
+  m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, modeAndFlags & 15, m_ACR_CursorMode, hint);
+  m_ACR_Panel.SetGunner(friendly && (modeAndFlags & 16) != 0 && m_ACR_SelectedGroups.Count() <= 1);
   bool missing = m_ACR_GroupDetails[index].Contains("missing");
   m_ACR_Panel.SetReinforce("Reinforce (3 RP per soldier)", missing);
  }
@@ -983,6 +985,7 @@ modded class SCR_PlayerController
     else ACR_Request(ACR_ERequest.TAKE_COMMAND);
     return;
    case ACR_EPanelAction.SWITCH: ACR_Request(ACR_ERequest.SWITCH_TO_GROUP, m_ACR_SelectedGroup); return;
+   case ACR_EPanelAction.TAKE_GUNNER: ACR_Request(ACR_ERequest.TAKE_GUNNER, m_ACR_SelectedGroup); return;
    case ACR_EPanelAction.MODE_COMBAT: ACR_RequestSelected(ACR_ERequest.MODE_COMBAT); return;
    case ACR_EPanelAction.MODE_FAST: ACR_RequestSelected(ACR_ERequest.MODE_FAST); return;
    case ACR_EPanelAction.MODE_SILENT: ACR_RequestSelected(ACR_ERequest.MODE_SILENT); return;

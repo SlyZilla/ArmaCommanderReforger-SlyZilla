@@ -236,7 +236,8 @@ class ACR_MapFeed
    symbols.Insert(amplifier);
    int mode = 0;
    if (squad) mode = squad.m_Mode;
-   symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode
+   if (squad && ACR_GunnerDrive.SquadGunner(squad)) mode |= 16; // + flag: has an AI-manned turret
+   symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret)
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    states.Insert(state);
