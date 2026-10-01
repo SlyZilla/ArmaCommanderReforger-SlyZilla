@@ -167,6 +167,20 @@ class ACR_Respawn : Managed
   return left;
  }
 
+ // Command units are officers (officer loadouts in the world's loadout manager)
+ // ranked colonel. Checked every second, so it covers native spawns and ours.
+ static void MakeColonel(SCR_PlayerController pc)
+ {
+  if (!pc) return;
+  IEntity unit = pc.GetControlledEntity();
+  if (pc.IsPossessing()) unit = pc.GetMainEntity();
+  if (!IsAlive(unit)) return;
+  SCR_CharacterRankComponent rank = SCR_CharacterRankComponent.GetCharacterRankComponent(unit);
+  if (!rank || SCR_CharacterRankComponent.GetCharacterRank(unit) == SCR_ECharacterRank.COLONEL) return;
+  rank.SetCharacterRank(SCR_ECharacterRank.COLONEL, true);
+  PrintFormat("[ACR] Command unit of player %1 ranked colonel", pc.GetPlayerId());
+ }
+
  // Every second: command units that died while their player was elsewhere.
  void Tick()
  {
@@ -177,6 +191,7 @@ class ACR_Respawn : Managed
   foreach (int id : players)
   {
    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
+   MakeColonel(pc);
    if (!pc || !pc.IsPossessing() || IsAlive(pc.GetMainEntity()))
    {
     m_DueAt.Remove(id);

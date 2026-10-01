@@ -747,7 +747,9 @@ class ACR_TestHarness : Managed
   IEntity main = pc.GetMainEntity();
   float distance = -1;
   if (main && crossroads) distance = vector.Distance(main.GetOrigin(), crossroads.GetOrigin());
-  return string.Format("possessing=%1 controlledAlive=%2 mainAlive=%3 mainIsNew=%4 mainToCrossroads=%5", pc.IsPossessing(), ACR_Respawn.IsAlive(controlled), ACR_Respawn.IsAlive(main), main != m_RespawnOldMain, distance);
+  string officer = "none";
+  if (main && main.GetPrefabData()) officer = string.Format("%1 rank=%2", FilePath.StripPath(main.GetPrefabData().GetPrefabName()), typename.EnumToString(SCR_ECharacterRank, SCR_CharacterRankComponent.GetCharacterRank(main)));
+  return string.Format("possessing=%1 controlledAlive=%2 mainAlive=%3 mainIsNew=%4 mainToCrossroads=%5 main=%6", pc.IsPossessing(), ACR_Respawn.IsAlive(controlled), ACR_Respawn.IsAlive(main), main != m_RespawnOldMain, distance, officer);
  }
 
  ChimeraCharacter AlphaMember(int index)
