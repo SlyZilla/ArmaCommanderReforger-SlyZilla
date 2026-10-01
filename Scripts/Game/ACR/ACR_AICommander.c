@@ -117,14 +117,22 @@ class ACR_AICommander : Managed
   GatherIntel();
   m_iSeconds++;
   if (m_iSeconds % TICK_SECONDS != 1) return;
+  int t = System.GetTickCount();
   Assess();
+  t = ACR_Perf.Lap("ai.assess", t);
   UpdateAttacks();
+  t = ACR_Perf.Lap("ai.attacks", t);
   AssignDefenders();
+  t = ACR_Perf.Lap("ai.defend", t);
   AssignAttacks();
+  t = ACR_Perf.Lap("ai.plan", t);
   PostIdle();
   Recrew();
+  t = ACR_Perf.Lap("ai.post", t);
   ManageLogistics();
+  t = ACR_Perf.Lap("ai.logistics", t);
   Requisition();
+  t = ACR_Perf.Lap("ai.buy", t);
   LogStatus();
  }
 
