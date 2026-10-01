@@ -1479,6 +1479,17 @@ class ACR_TestHarness : Managed
    CarControllerComponent hc = CarControllerComponent.Cast(m_DriveBackCar.FindComponent(CarControllerComponent));
    PrintFormat("[ACR] DRIVE handback t=%1 moved=%2 m session=%3 pilot=%4", m_Ticks, (int)vector.Distance(m_DriveBackFrom, m_DriveBackCar.GetOrigin()), manager.IsGunnerDriven(m_DriveBackCar), hc && hc.GetPilotCompartmentSlot() != null);
   }
+  // Regression (1 Oct live tests): inputs after the first one were dropped, so the vehicle
+  // kept its first key for good. Feed two inputs as the gunner through the real path.
+  if (m_Ticks == 35 && m_TestDriveSession)
+  {
+   ChimeraCharacter feeder = ACR_GunnerDrive.SquadGunner(m_TestDriveSession.m_Squad);
+   manager.GunnerDriveInputFor(feeder, 0, m_TestDriveSession.m_Squad.GetFaction(), m_TestDriveSession.m_Vehicle, 0.4, 0);
+   bool first = m_TestDriveSession.m_Throttle == 0.4;
+   manager.GunnerDriveInputFor(feeder, 0, m_TestDriveSession.m_Squad.GetFaction(), m_TestDriveSession.m_Vehicle, 0, -1);
+   bool second = m_TestDriveSession.m_Throttle == 0 && m_TestDriveSession.m_Steer == -1;
+   PrintFormat("[ACR] REGRESS %1 gunner drive takes every input, not just the first (first %2 second %3)", ACR_TestRegress.Verdict(first && second), first, second);
+  }
   // Regression (1 Oct MP): every real session ended at once with "gunner left".
   if (m_Ticks == 16 && m_TestDriveSession)
   {

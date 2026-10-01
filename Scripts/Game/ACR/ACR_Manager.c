@@ -1252,24 +1252,39 @@ class ACR_Manager : Managed
 
  void GunnerDriveInput(SCR_PlayerController pc, IEntity vehicle, float throttle, float steer)
  {
-  ChimeraCharacter driver;
-  if (!vehicle || ACR_GunnerDrive.DrivableFrom(pc.GetControlledEntity(), driver) != vehicle) return;
-  ACR_Squad squad = FindSquadBySoldier(driver);
-  if (!squad || squad.GetFaction() != SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId())) return;
+  if (!pc) return;
+  GunnerDriveInputFor(pc.GetControlledEntity(), pc.GetPlayerId(), SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId()), vehicle, throttle, steer);
+ }
+
+ // (split out so srv:drive can feed it as the AI gunner)
+ void GunnerDriveInputFor(IEntity body, int playerId, Faction faction, IEntity vehicle, float throttle, float steer)
+ {
+  if (!vehicle) return;
+  // A running session: the driver seat is unhooked then, so DrivableFrom no longer
+  // finds the driver and every input after the first was dropped (the vehicle kept
+  // the first key for good; 1 Oct live tests). Check the stored seat instead.
   ACR_GunnerDrive drive = m_Drives.Get(vehicle);
-  if (!drive)
+  if (drive)
   {
+   if (!drive.StillGunning(body)) return;
+  }
+  else
+  {
+   ChimeraCharacter driver;
+   if (ACR_GunnerDrive.DrivableFrom(body, driver) != vehicle) return;
+   ACR_Squad squad = FindSquadBySoldier(driver);
+   if (!squad || squad.GetFaction() != faction) return;
    if (throttle == 0 && steer == 0) return;
    drive = new ACR_GunnerDrive();
    drive.m_Vehicle = vehicle;
    drive.m_Driver = driver;
    drive.m_Squad = squad;
-   drive.m_PlayerId = pc.GetPlayerId();
+   drive.m_PlayerId = playerId;
    drive.Begin();
    m_Drives.Insert(vehicle, drive);
-   PrintFormat("[ACR] GUNNER DRIVE start: %1 (player %2)", squad.GetName(), pc.GetPlayerId());
+   PrintFormat("[ACR] GUNNER DRIVE start: %1 (player %2)", squad.GetName(), playerId);
   }
-  drive.m_PlayerId = pc.GetPlayerId();
+  drive.m_PlayerId = playerId;
   drive.m_Throttle = Math.Clamp(throttle, -1, 1);
   drive.m_Steer = Math.Clamp(steer, -1, 1);
   drive.m_LastInput = GetGame().GetWorld().GetWorldTime();
@@ -1386,6 +1401,10 @@ class ACR_Manager : Managed
   ChimeraCharacter driveDriver;
   IEntity driveVehicle;
   if (!mapOpen) driveVehicle = ACR_GunnerDrive.DrivableFrom(localBody, driveDriver);
+  // Mid-session the seat is unhooked (on a hosting player's own machine too), so
+  // DrivableFrom finds no driver: keep driving while still in that vehicle's turret.
+  if (!mapOpen && !driveVehicle && m_LastDriveVehicle && ACR_GunnerDrive.TurretVehicleOf(localBody) == m_LastDriveVehicle)
+   driveVehicle = m_LastDriveVehicle;
   float driveThrottle, driveSteer;
   if (driveVehicle)
   {

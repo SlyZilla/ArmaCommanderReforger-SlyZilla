@@ -84,6 +84,16 @@ class ACR_GunnerDrive
   return null;
  }
 
+ // Vehicle whose turret the body sits in (null if none).
+ static IEntity TurretVehicleOf(IEntity body)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(body);
+  if (!character || !character.GetCompartmentAccessComponent()) return null;
+  BaseCompartmentSlot slot = character.GetCompartmentAccessComponent().GetCompartment();
+  if (!slot || slot.GetType() != ECompartmentType.TURRET) return null;
+  return slot.GetVehicle();
+ }
+
  // Vehicle the body may drive from its turret (null if not a turret seat, no AI driver, ...).
  static IEntity DrivableFrom(IEntity body, out ChimeraCharacter driver)
  {
