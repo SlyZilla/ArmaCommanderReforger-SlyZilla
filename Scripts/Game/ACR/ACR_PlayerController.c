@@ -476,6 +476,15 @@ modded class SCR_PlayerController
    return;
   }
   ACR_PingDisplay.UpdateHud(m_ACR_Data, GetControlledEntity(), false);
+  // The mouse wheel over our panel scrolls its lists, not the map: the cursor module's
+  // public wheel multiplier is set to 0 there (modding the module itself broke the map).
+  SCR_MapCursorModule cursorModule = SCR_MapCursorModule.Cast(mapEntity.GetMapModule(SCR_MapCursorModule));
+  if (cursorModule)
+  {
+   float wheel = 1;
+   if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) wheel = 0;
+   cursorModule.SetWheelZoomMultiplier(wheel);
+  }
   ACR_UpdatePicker();
   ACR_SendSelectionIfChanged();
   SCR_MapMarkerManagerComponent manager = SCR_MapMarkerManagerComponent.GetInstance();

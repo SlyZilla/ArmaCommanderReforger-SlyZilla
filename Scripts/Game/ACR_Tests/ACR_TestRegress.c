@@ -100,6 +100,29 @@ class ACR_TestRegress
    if (mapConfig) used = mapConfig.GetGadgetMapConfig();
    Check("map uses the dense-contour config", used.Contains("ACR_MapFullscreen") && Resource.Load(used).IsValid(), used);
   }
+  // 8. (1 Oct MP) A construction truck's crew gets the building shovel.
+  if (tick == 28)
+  {
+   foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction("US").m_aRequisitions)
+   {
+    if ((ACR_Logistics.ServiceOfName(entry.m_sVehicle) & ACR_EService.CONSTRUCTION) == 0) continue;
+    manager.SpawnUnit("Shovel Test", "", entry.m_sVehicle, true, "", harness.Ground("1420 0 2790"), harness.Ground("1425 0 2790"));
+    PrintFormat("[ACR] REGRESS info: construction truck %1", entry.m_sVehicle);
+    break;
+   }
+  }
+  if (tick == 33)
+  {
+   bool shovel = false;
+   foreach (ACR_Squad squad : manager.m_Squads)
+   {
+    if (squad.GetName() != "Shovel Test") continue;
+    IEntity shovelTruck = ACR_Transport.CrewedVehicle(squad);
+    ChimeraCharacter driver = ACR_Squad.DriverOf(shovelTruck);
+    shovel = driver && ACR_Manager.HasShovel(driver);
+   }
+   Check("construction truck driver has a shovel", shovel, ACR_Manager.s_sLastShovel);
+  }
   // 4. An AI commander leaves the other side's defenders alone (with both
   //    sides on AI it used to set them free every 15 s).
   if (tick == 26)

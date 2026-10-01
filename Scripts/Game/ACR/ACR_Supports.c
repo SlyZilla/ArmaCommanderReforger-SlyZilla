@@ -1046,33 +1046,66 @@ class ACR_Supports : Managed
  protected void Explode(vector impact)
  {
   impact[1] = GetGame().GetWorld().GetSurfaceY(impact[0], impact[2]) + 0.3;
-  IEntity bomb = ACR_Manager.SpawnPrefab(BOMB, impact);
+  // Local on the server (damage only): the prefab replicates, and the replicated copy
+  // died before it could show anything on clients. Each client makes its own (below).
+  IEntity bomb = SpawnLocal(BOMB, impact, vector.Zero);
   PrintFormat("[ACR] SUPPORT bomb at %1 spawned=%2", impact, bomb != null);
-  // The explosion's flash and sound only play where it is created (the server,
-  // which on a dedicated host nobody hears): replay it on every client.
+  // Every client spawns its own explosion and plays the blast sound itself: the
+  // explosion's own sound is cut off when the entity removes itself (1 Oct MP: the
+  // bombs were seen but not heard).
   SCR_BaseGameMode mode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
   if (mode) mode.ACR_BroadcastExplosion(impact);
+  if (GetGame().GetPlayerController()) PlayBlast(impact); // a hosting player hears it too
  }
 
  // Spawns a rocket/shell pointing at the target; it is launched next frame on the
  // server and every client (projectiles are simulated locally everywhere).
+ // Like the game's own weapons, each machine fires its own local projectile: the
+ // server's does the damage, the clients' show and sound the flight and impact. (A
+ // replicated rocket was deleted on clients when the server's hit first, often
+ // before the client's copy reached the ground, so its blast never played there.)
  void FireProjectile(ResourceName prefab, vector from, vector to, vector parentVelocity = "0 0 0")
  {
-  Resource resource = Resource.Load(prefab);
-  if (!resource.IsValid()) return;
   vector dir = (to - from).Normalized();
-  EntitySpawnParams parameters = new EntitySpawnParams();
-  parameters.TransformMode = ETransformMode.WORLD;
-  Math3D.MatrixFromForwardVec(dir, parameters.Transform);
-  parameters.Transform[3] = from;
-  IEntity projectile = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), parameters);
+  IEntity projectile = SpawnLocal(prefab, from, dir);
   if (!projectile) return;
+  SCR_BaseGameMode gameMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+  if (gameMode) gameMode.ACR_BroadcastFire(prefab, from, dir, parentVelocity);
   ACR_PendingLaunch launch = new ACR_PendingLaunch();
   launch.m_Entity = projectile;
   launch.m_Dir = dir;
   launch.m_Velocity = parentVelocity;
   launch.m_iFrame = m_iFrame;
   m_Launches.Insert(launch);
+ }
+
+ // A non-replicated copy of prefab at pos, nose along dir (zero: upright).
+ static IEntity SpawnLocal(ResourceName prefab, vector pos, vector dir)
+ {
+  Resource resource = Resource.Load(prefab);
+  if (!resource.IsValid()) return null;
+  EntitySpawnParams parameters = new EntitySpawnParams();
+  parameters.TransformMode = ETransformMode.WORLD;
+  if (dir != vector.Zero) Math3D.MatrixFromForwardVec(dir, parameters.Transform);
+  else Math3D.MatrixIdentity4(parameters.Transform);
+  parameters.Transform[3] = pos;
+  return GetGame().SpawnEntityPrefabLocal(resource, GetGame().GetWorld(), parameters);
+ }
+
+ static const ResourceName BOMB_SOUND = "{E4EF3755472EC669}Sounds/Particles/Logistics/Explosion/TNT/Particles_Explosions_TNT_Large.acp";
+ // Plays the large blast at a point, independent of any entity (clients only).
+ static bool PlayBlast(vector at)
+ {
+  SCR_SoundManagerModule sound = SCR_SoundManagerModule.GetInstance(GetGame().GetWorld());
+  if (!sound) return false;
+  SCR_AudioSourceConfiguration config = new SCR_AudioSourceConfiguration();
+  config.m_sSoundProject = BOMB_SOUND;
+  config.m_sSoundEventName = "SOUND_EXPLOSION";
+  config.m_eFlags = EAudioSourceConfigurationFlag.Static | EAudioSourceConfigurationFlag.EnvironmentSignals;
+  SCR_AudioSource source = sound.CreateAudioSource(config, at);
+  if (!source) return false;
+  sound.PlayAudioSource(source);
+  return true;
  }
 
  static void LaunchLocal(IEntity projectile, vector dir, vector parentVelocity)
@@ -1160,8 +1193,6 @@ class ACR_Supports : Managed
    m_Launches.Remove(l);
    if (!launch.m_Entity) continue;
    LaunchLocal(launch.m_Entity, launch.m_Dir, launch.m_Velocity);
-   SCR_BaseGameMode gameMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
-   if (gameMode) gameMode.ACR_BroadcastLaunch(SCR_EntityHelper.EntityToRplId(launch.m_Entity), launch.m_Dir, launch.m_Velocity);
   }
   for (int r = m_Runs.Count() - 1; r >= 0; r--)
   {
@@ -1186,9 +1217,22 @@ modded class SCR_BaseGameMode
   if (manager && manager.m_Cleanup && Replication.IsServer()) manager.m_Cleanup.OnDestroyed(entity);
  }
 
- void ACR_BroadcastLaunch(RplId id, vector dir, vector parentVelocity)
+ void ACR_BroadcastFire(ResourceName prefab, vector from, vector dir, vector parentVelocity)
  {
-  Rpc(ACR_RpcLaunch, id, dir, parentVelocity);
+  Rpc(ACR_RpcFire, prefab, from, dir, parentVelocity);
+ }
+ // Client: its own copy of a support projectile, launched a frame after it exists
+ // (as on the server).
+ [RplRpc(RplChannel.Unreliable, RplRcver.Broadcast)]
+ protected void ACR_RpcFire(ResourceName prefab, vector from, vector dir, vector parentVelocity)
+ {
+  if (Replication.IsServer()) return;
+  IEntity projectile = ACR_Supports.SpawnLocal(prefab, from, dir);
+  if (projectile) GetGame().GetCallqueue().CallLater(ACR_LaunchLater, 20, false, projectile, dir, parentVelocity);
+ }
+ protected void ACR_LaunchLater(IEntity projectile, vector dir, vector parentVelocity)
+ {
+  ACR_Supports.LaunchLocal(projectile, dir, parentVelocity);
  }
  void ACR_BroadcastExplosion(vector at)
  {
@@ -1198,16 +1242,7 @@ modded class SCR_BaseGameMode
  protected void ACR_RpcExplosion(vector at)
  {
   if (Replication.IsServer()) return;
-  Resource resource = Resource.Load(ACR_Supports.BOMB);
-  if (!resource.IsValid()) return;
-  EntitySpawnParams params = new EntitySpawnParams();
-  params.TransformMode = ETransformMode.WORLD;
-  params.Transform[3] = at;
-  GetGame().SpawnEntityPrefabLocal(resource, GetGame().GetWorld(), params);
- }
- [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
- protected void ACR_RpcLaunch(RplId id, vector dir, vector parentVelocity)
- {
-  ACR_Supports.LaunchLocal(SCR_EntityHelper.RplIdToEntity(id), dir, parentVelocity);
+  ACR_Supports.SpawnLocal(ACR_Supports.BOMB, at, vector.Zero);
+  ACR_Supports.PlayBlast(at);
  }
 }

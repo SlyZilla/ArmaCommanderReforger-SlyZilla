@@ -282,3 +282,15 @@ modded class SCR_CharacterRankComponent
   super.SpecialRankHandling(newRank, prevRank);
  }
 }
+
+// A construction truck's build mode is a "limited" editor, and the game stops any
+// possession when a limited editor opens: building from a possessed soldier dropped
+// him and closing it put the player back in the command unit. Keep the possession.
+modded class SCR_PlayersManagerEditorComponent
+{
+ override protected void OnLimitedChange(bool isLimited)
+ {
+  if (isLimited && ACR_Manager.GetInstance()) return;
+  super.OnLimitedChange(isLimited);
+ }
+}

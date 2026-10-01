@@ -1148,6 +1148,9 @@ class ACR_Manager : Managed
     SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
     array<ECompartmentType> seats = {ECompartmentType.PILOT, ECompartmentType.TURRET};
     if (compartments) compartments.SpawnDefaultOccupants(seats);
+    // A construction truck's crew gets the building shovel (the default crew has none).
+    if ((ACR_Logistics.ServiceOfName(vehicleprefab) & ACR_EService.CONSTRUCTION) != 0)
+     GetGame().GetCallqueue().CallLater(GiveShovels, 1500, false, vehicle, m_sSpawningFaction);
    }
   }
   if (!group.IsEmpty())
@@ -1164,6 +1167,55 @@ class ACR_Manager : Managed
     if (vehicle) m_PendingBoarding.Set(riders, vehicle);
    }
   }
+ }
+
+ static const ResourceName SHOVEL_WEST = "{6E35D94130954509}Prefabs/Items/Equipment/Accessories/ETool_ALICE/ETool_ALICE_FreeRoamBuilding_Gadget.et";
+ static const ResourceName SHOVEL_EAST = "{062E2F1D7F6739D6}Prefabs/Items/Equipment/Accessories/ETool_MPL50/ETool_MPL50_FreeRoamBuilding_Gadget.et";
+ // Returns how many crewmen got one.
+ int GiveShovels(IEntity vehicle, string factionKey)
+ {
+  if (!vehicle) return 0;
+  ResourceName shovel = SHOVEL_EAST;
+  if (ACR_Supports.IsWestern(factionKey)) shovel = SHOVEL_WEST;
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return 0;
+  array<BaseCompartmentSlot> slots = {};
+  compartments.GetCompartments(slots);
+  int given;
+  foreach (BaseCompartmentSlot slot : slots)
+  {
+   IEntity crewman = slot.GetOccupant();
+   if (!crewman || HasShovel(crewman)) continue;
+   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(crewman.FindComponent(FactionAffiliationComponent));
+   if (affiliation && affiliation.GetAffiliatedFaction())
+   {
+    shovel = SHOVEL_EAST;
+    if (ACR_Supports.IsWestern(affiliation.GetAffiliatedFaction().GetFactionKey())) shovel = SHOVEL_WEST;
+   }
+   SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(crewman.FindComponent(SCR_InventoryStorageManagerComponent));
+   if (!inventory) continue;
+   bool ok = inventory.TrySpawnPrefabToStorage(shovel, null, -1, EStoragePurpose.PURPOSE_GADGET_PROXY);
+   if (!ok) ok = inventory.TrySpawnPrefabToStorage(shovel);
+   if (ok) given++;
+  }
+  PrintFormat("[ACR] Construction crew given shovels: %1", given);
+  return given;
+ }
+ static string s_sLastShovel;
+ static bool HasShovel(IEntity character)
+ {
+  SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(character.FindComponent(SCR_InventoryStorageManagerComponent));
+  if (!inventory) return false;
+  array<IEntity> items = {};
+  inventory.GetItems(items);
+  foreach (IEntity item : items)
+  {
+   if (!item || !item.GetPrefabData()) continue;
+   string prefab = item.GetPrefabData().GetPrefabName();
+   // (the pouch, "ETool_..._carrier", is not the shovel)
+   if (prefab.Contains("ETool") && !prefab.Contains("carrier")) { s_sLastShovel = prefab; return true; }
+  }
+  return false;
  }
 
  string Reinforce(SCR_PlayerController pc, RplId groupId)
