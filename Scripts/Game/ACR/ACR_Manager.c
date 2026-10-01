@@ -879,17 +879,32 @@ class ACR_Manager : Managed
   return fallback;
  }
 
- string Purchase(SCR_PlayerController pc, int entryIndex, string baseLabel)
+ // A clear spot near the commander's click, pulled inside the base ring.
+ protected vector SpotInBase(ACR_Base base, vector spot, float clearance)
+ {
+  vector centre = base.GetOrigin();
+  float ring = Math.Max(base.m_fRadius, 30);
+  vector flat = Vector(spot[0] - centre[0], 0, spot[2] - centre[2]);
+  if (flat.Length() > ring) spot = centre + flat.Normalized() * ring;
+  vector candidate = Ground(spot);
+  vector free;
+  if (SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 15, clearance, 2.5)) return Ground(free);
+  return candidate;
+ }
+
+ string Purchase(SCR_PlayerController pc, int entryIndex, string baseLabel, vector spot = "0 0 0", bool hasSpot = false)
  {
   Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
   if (!faction) return "You have no faction";
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can requisition units";
   string key = faction.GetFactionKey();
-  return PurchaseAt(key, entryIndex, FindSpawnBase(key, baseLabel));
+  return PurchaseAt(key, entryIndex, FindSpawnBase(key, baseLabel), spot, hasSpot);
  }
 
  // Shared by the player commander and the AI commander.
- string PurchaseAt(string key, int entryIndex, ACR_Base base)
+ // hasSpot: the commander clicked a point in the base ring; the unit appears there
+ // (the AI commander and old callers get a random clear point in the ring).
+ string PurchaseAt(string key, int entryIndex, ACR_Base base, vector spot = "0 0 0", bool hasSpot = false)
  {
   ACR_FactionData data = m_Bases.GetFaction(key);
   if (entryIndex < 0 || entryIndex >= data.m_aRequisitions.Count()) return "Unknown unit";
@@ -905,7 +920,21 @@ class ACR_Manager : Managed
   string name = string.Format("%1 %2", entry.m_sName, entry.m_iBought);
 
   m_sSpawningFaction = key;
-  SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, SpawnPoint(base, 10, 25, 4), SpawnPoint(base, 5, 15, 1.5));
+  vector vehiclePos, groupPos;
+  if (hasSpot)
+  {
+   vehiclePos = SpotInBase(base, spot, 4);
+   // Infantry alone stands on the click; with a vehicle, beside it.
+   if (entry.m_sVehicle.IsEmpty()) groupPos = SpotInBase(base, spot, 1.5);
+   else groupPos = SpotInBase(base, vehiclePos + Vector(6, 0, 6), 1.5);
+   PrintFormat("[ACR] PURCHASE spot %1 -> vehicle %2 group %3", spot, vehiclePos, groupPos);
+  }
+  else
+  {
+   vehiclePos = SpawnPoint(base, 10, 25, 4);
+   groupPos = SpawnPoint(base, 5, 15, 1.5);
+  }
+  SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);
   m_sSpawningFaction = "";
   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
   return string.Format("%1 deploying at %2", name, base.m_sName);

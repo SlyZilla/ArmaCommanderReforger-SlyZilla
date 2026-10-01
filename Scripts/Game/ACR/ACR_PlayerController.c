@@ -56,6 +56,18 @@ class ACR_UnitMarker : SCR_MapMarkerBase
    pc.ACR_ClickBaseAt(pos[0], pos[1]);
    return;
   }
+  // Deploying on a base marker: the unit appears where the cursor is.
+  if (m_BaseIndex >= 0 && pc.ACR_DeployPending())
+  {
+   SCR_MapEntity markerMap = SCR_MapEntity.GetMapInstance();
+   float cx, cz;
+   if (markerMap)
+   {
+    markerMap.GetMapCursorWorldPosition(cx, cz);
+    pc.ACR_ClickBase(m_Label, Vector(cx, 0, cz), true);
+    return;
+   }
+  }
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
   else if (m_BaseIndex >= 0) pc.ACR_ClickBase(m_Label);
   else pc.ACR_SelectGroup(pc.ACR_CycleOverlap(this));
@@ -643,6 +655,8 @@ modded class SCR_PlayerController
 
  RplId ACR_GetSelectedGroup() { return m_ACR_SelectedGroup; }
  void ACR_MarkUiClick() { m_ACR_LastUiClick = System.GetTickCount(); }
+ // True while the mouse is over the command panel or the intel box.
+ bool ACR_CursorOnPanel() { return m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor()); }
 
  // Several squads can be selected (Ctrl + drag a box, Shift + click to add or
  // remove one). m_ACR_SelectedGroup is the first of them: the one the panel shows.
@@ -1675,15 +1689,16 @@ modded class SCR_PlayerController
    if (d < reach && d < bestDistance) { bestDistance = d; best = i; }
   }
   if (best < 0) return false;
-  ACR_ClickBase(m_ACR_BaseNames[best]);
+  ACR_ClickBase(m_ACR_BaseNames[best], Vector(x, 0, z), true);
   return true;
  }
 
- void ACR_ClickBase(string label)
+ // spot: the clicked map point, where a deployed unit appears.
+ void ACR_ClickBase(string label, vector spot = "0 0 0", bool hasSpot = false)
  {
   if (m_ACR_PendingEntry >= 0)
   {
-   Rpc(ACR_PurchaseServer, m_ACR_PendingEntry, label);
+   Rpc(ACR_PurchaseServer, m_ACR_PendingEntry, label, spot[0], spot[2], hasSpot);
    m_ACR_PendingEntry = -1;
    return;
   }
@@ -1691,20 +1706,20 @@ modded class SCR_PlayerController
  }
 
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
- protected void ACR_PurchaseServer(int entryIndex, string baseLabel)
+ protected void ACR_PurchaseServer(int entryIndex, string baseLabel, float spotX, float spotZ, bool hasSpot)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
   float now = GetGame().GetWorld().GetWorldTime();
   if (now - m_ACR_LastCommand < 300) return;
   m_ACR_LastCommand = now;
-  Rpc(ACR_FeedbackOwner, manager.Purchase(this, entryIndex, baseLabel));
+  Rpc(ACR_FeedbackOwner, manager.Purchase(this, entryIndex, baseLabel, Vector(spotX, 0, spotZ), hasSpot));
  }
 
  // Test hook: buy entry at base without the UI.
- void ACR_TestPurchase(int entryIndex, string baseLabel)
+ void ACR_TestPurchase(int entryIndex, string baseLabel, vector spot = "0 0 0", bool hasSpot = false)
  {
-  Rpc(ACR_PurchaseServer, entryIndex, baseLabel);
+  Rpc(ACR_PurchaseServer, entryIndex, baseLabel, spot[0], spot[2], hasSpot);
  }
  int ACR_TestFindEntry(string namePart)
  {

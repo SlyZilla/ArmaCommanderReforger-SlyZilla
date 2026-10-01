@@ -34,6 +34,7 @@ class ACR_TestHarness : Managed
  static const int MODE_SUPPLIES = 27;
  static const int MODE_DRIVE = 28;
  static const int MODE_ROADS = 29;
+ static const int MODE_SPAWNSPOT = 30;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -82,6 +83,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrSuppliesTest", flag)) mode = MODE_SUPPLIES;
   if (System.GetCLIParam("acrDriveTest", flag)) mode = MODE_DRIVE;
   if (System.GetCLIParam("acrRoadsTest", flag)) mode = MODE_ROADS;
+  if (System.GetCLIParam("acrSpawnSpotTest", flag)) mode = MODE_SPAWNSPOT;
   if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag) || System.GetCLIParam("acrDriveFixedTest", flag) || System.GetCLIParam("acrDriveAttachedTest", flag)) mode = MODE_DRIVE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
@@ -159,6 +161,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_LAUNCHER) { TestLauncher(); return; }
   if (m_Mode == MODE_SUPPLIES) { TestSupplies(); return; }
   if (m_Mode == MODE_DRIVE) { TestDrive(); return; }
+  if (m_Mode == MODE_SPAWNSPOT) { TestSpawnSpot(); return; }
   if (m_Mode == MODE_ROADS) { TestRoads(); return; }
   if (m_Mode == MODE_STALLED)
   {
@@ -1492,6 +1495,36 @@ class ACR_TestHarness : Managed
  }
  vector m_DriveBackFrom;
  IEntity m_DriveBackCar;
+
+ // ---------------------------------------------------------------- -acrSpawnSpotTest
+ // Requisition at a clicked spot: infantry and a vehicle appear at the click, a click
+ // outside the ring is pulled in to its edge.
+ void TestSpawnSpot()
+ {
+  if (m_Ticks != 8) { if (m_Ticks == 12) Print("[ACR] TEST COMPLETE"); return; }
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  ACR_Base base;
+  foreach (ACR_Base candidate : ACR_Base.s_All)
+   if (candidate.m_sOwner == "US" && candidate.m_bAllowSpawn && !candidate.m_bContested) { base = candidate; break; }
+  if (!base) { Print("[ACR] SPAWNSPOT no US base"); return; }
+  ACR_FactionData data = manager.m_Bases.GetFaction("US");
+  data.m_iRP = 10000;
+  int infantry = -1, vehicle = -1;
+  foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
+  {
+   if (entry.m_iRemaining <= 0) continue;
+   if (infantry < 0 && entry.m_sVehicle.IsEmpty()) infantry = i;
+   if (vehicle < 0 && !entry.m_sVehicle.IsEmpty()) vehicle = i;
+  }
+  float ring = Math.Max(base.m_fRadius, 30);
+  vector inside = base.GetOrigin() + Vector(ring * 0.6, 0, 0);
+  vector outside = base.GetOrigin() + Vector(0, 0, ring * 3);
+  PrintFormat("[ACR] SPAWNSPOT base %1 radius %2 centre %3", base.m_sName, ring, base.GetOrigin());
+  if (infantry >= 0) PrintFormat("[ACR] SPAWNSPOT infantry inside: %1", manager.PurchaseAt("US", infantry, base, inside, true));
+  if (vehicle >= 0) PrintFormat("[ACR] SPAWNSPOT vehicle inside: %1", manager.PurchaseAt("US", vehicle, base, inside + Vector(0, 0, 12), true));
+  if (infantry >= 0) PrintFormat("[ACR] SPAWNSPOT infantry outside: %1", manager.PurchaseAt("US", infantry, base, outside, true));
+ }
 
  // ---------------------------------------------------------------- -acrRoadsTest
  // Road routes for a few trips: length by road against the straight line.

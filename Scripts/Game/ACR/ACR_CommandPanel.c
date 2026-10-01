@@ -246,7 +246,7 @@ class ACR_CommandPanel : Managed
  {
   while (widget)
   {
-   if (widget == m_Root) return true;
+   if (widget == m_Root || (m_FeedRoot && widget == m_FeedRoot)) return true;
    widget = widget.GetParent();
   }
   return false;

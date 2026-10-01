@@ -30,3 +30,4 @@ drivelock|-acrDriveLockTest 1|130
 drivefixed|-acrDriveFixedTest 1|130
 driveattached|-acrDriveAttachedTest 1|130
 roads|-acrRoadsTest 1|60
+spawnspot|-acrSpawnSpotTest 1|60
