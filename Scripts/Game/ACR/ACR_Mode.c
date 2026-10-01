@@ -18,6 +18,7 @@ class ACR_Mode : GenericEntity
  static ACR_Mode s_Instance;
  protected bool m_bSummary;
  protected bool m_bSoak;
+ protected bool m_bPerf;
  protected int m_iSeconds;
 
  void ACR_Mode(IEntitySource src, IEntity parent)
@@ -42,7 +43,10 @@ class ACR_Mode : GenericEntity
    GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 2000, false);
    string flag;
    m_bSummary = System.GetCLIParam("acrScenarioTest", flag);
-  m_bSoak = System.GetCLIParam("acrSoakTest", flag);
+   m_bSoak = System.GetCLIParam("acrSoakTest", flag);
+   // -acrPerfTest: the soak battle for 3 minutes with tick timings in the log.
+   m_bPerf = System.GetCLIParam("acrPerfTest", flag);
+   if (m_bPerf) { m_bSoak = true; ACR_Perf.s_bOn = true; }
    GetGame().GetCallqueue().CallLater(Second, 1000, true);
   }
   Print("[ACR] Scenario started");
@@ -103,7 +107,7 @@ class ACR_Mode : GenericEntity
    foreach (ACR_Base base : ACR_Base.s_All)
     PrintFormat("[ACR] SOAK   %1: %2", base.m_sName, manager.m_Bases.Describe(base));
   }
-  if (m_iSeconds >= 1200) Print("[ACR] TEST COMPLETE");
+  if (m_iSeconds >= 1200 || (m_bPerf && m_iSeconds >= 185)) Print("[ACR] TEST COMPLETE");
  }
 
  // After the frame's other updates (gunner drives re-assert their inputs).

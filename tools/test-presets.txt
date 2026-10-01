@@ -31,3 +31,4 @@ drivefixed|-acrDriveFixedTest 1|130
 driveattached|-acrDriveAttachedTest 1|130
 roads|-acrRoadsTest 1|60
 spawnspot|-acrSpawnSpotTest 1|60
+perf|-acrPerfTest 1|260|Worlds/ACR_Arland.ent

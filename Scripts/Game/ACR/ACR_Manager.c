@@ -166,25 +166,34 @@ class ACR_Manager : Managed
 
  void Tick()
  {
+  int t = System.GetTickCount();
   ScanForSquads();
+  t = ACR_Perf.Lap("scan", t);
   EnsureCommanders();
   m_Bases.Tick(this);
+  t = ACR_Perf.Lap("bases", t);
   GrantGameMaster();
   ACR_PlayerSide.Enforce();
   TickIntel();
+  t = ACR_Perf.Lap("intel", t);
   TickAICommanders();
+  t = ACR_Perf.Lap("aicmd", t);
   if (!m_Respawn) m_Respawn = new ACR_Respawn(this);
   m_Respawn.Tick();
   if (!m_Rides) m_Rides = new ACR_Rides(this);
   m_Rides.Tick();
+  t = ACR_Perf.Lap("rides", t);
   if (!m_Gates) m_Gates = new ACR_Gates(this);
   m_Gates.Tick();
+  t = ACR_Perf.Lap("gates", t);
   if (!m_Logistics) m_Logistics = new ACR_Logistics(this);
   m_Logistics.Tick();
+  t = ACR_Perf.Lap("logistics", t);
   if (!m_Cleanup) m_Cleanup = new ACR_Cleanup(this);
   m_Cleanup.Tick();
   if (!m_Launchers) m_Launchers = new ACR_Launchers(this);
   m_Launchers.Tick();
+  t = ACR_Perf.Lap("cleanup", t);
   if (!m_bHostOptionsApplied) ApplyHostOptions();
   m_iStatusTick++;
   bool statusDue = m_iStatusTick % 5 == 0;
@@ -202,7 +211,10 @@ class ACR_Manager : Managed
    squad.Dispose();
    m_Squads.RemoveOrdered(i);
   }
+  t = ACR_Perf.Lap("squads", t);
   ACR_MapFeed.PublishAll(this);
+  t = ACR_Perf.Lap("feed", t);
+  ACR_Perf.EndTick();
  }
 
  // Any AI squad in the world, including ones spawned mid-game, is picked up
@@ -1055,8 +1067,10 @@ class ACR_Manager : Managed
  void ServerFrame(float timeSlice)
  {
   if (!Replication.IsServer()) return;
+  int t = System.GetTickCount();
   if (!m_Supports) m_Supports = new ACR_Supports(this);
   m_Supports.Frame(timeSlice);
+  ACR_Perf.Lap("frames", t);
   CheckLandingZones();
   for (int u = m_Unsticking.Count() - 1; u >= 0; u--)
    if (!m_Unsticking[u] || !m_Unsticking[u].UnstickFrame()) m_Unsticking.RemoveOrdered(u);
