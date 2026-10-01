@@ -87,7 +87,21 @@ class ACR_PlayerSide
    PlayerController pc = GetGame().GetPlayerManager().GetPlayerController(id);
    if (!pc) continue;
    SCR_PlayerFactionAffiliationComponent affiliation = SCR_PlayerFactionAffiliationComponent.Cast(pc.FindComponent(SCR_PlayerFactionAffiliationComponent));
-   if (!affiliation || affiliation.GetAffiliatedFaction() == target) continue;
+   if (!affiliation) continue;
+   // The faction manager's record is what everything else reads (command, map, RP).
+   // Set straight after connecting, it was wiped when the player finished registering,
+   // while the player's own component kept USSR: he spawned, but as nobody's
+   // commander (1 Oct, hosting as USSR). Re-sync the record when they differ.
+   if (affiliation.GetAffiliatedFaction() == target)
+   {
+    if (SCR_FactionManager.SGetPlayerFaction(id) != target)
+    {
+     SCR_FactionManager factionManager = SCR_FactionManager.Cast(GetGame().GetFactionManager());
+     if (factionManager) factionManager.UpdatePlayerFaction_S(affiliation);
+     PrintFormat("[ACR] %1: faction record re-synced to %2 (now %3)", GetGame().GetPlayerManager().GetPlayerName(id), key, SCR_FactionManager.SGetPlayerFaction(id) == target);
+    }
+    continue;
+   }
    IEntity body = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
    if (body && ACR_Respawn.IsAlive(body)) continue;
    if (affiliation.SetFaction_S(target)) PrintFormat("[ACR] %1 assigned to %2", GetGame().GetPlayerManager().GetPlayerName(id), key);
