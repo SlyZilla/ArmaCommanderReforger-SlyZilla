@@ -4,6 +4,8 @@
 class ACR_Perf
 {
  static bool s_bOn;
+ static bool s_bChecks;          // test runs: invariant checks every tick
+ static int s_iInvariantErrors;
  static ref map<string, int> s_Total = new map<string, int>();
  static ref map<string, int> s_Max = new map<string, int>();
  static ref array<string> s_Order = {};

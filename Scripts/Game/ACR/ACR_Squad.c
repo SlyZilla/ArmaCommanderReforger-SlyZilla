@@ -8,6 +8,23 @@ enum ACR_EOrderKind
  HUNT
 }
 
+// What a squad is doing, for the logic (m_Order is only the label shown on the
+// map). NONE: a label someone else wrote directly (rides, gunner drive) or one
+// that carries no state of its own.
+enum ACR_EOrderState
+{
+ NONE,
+ HOLD,       // halted, dismounting, waiting...
+ MOVE,       // "Moving"
+ DEFEND,     // defending / holding position
+ ASSAULT,
+ SUPPRESS,
+ GET_IN,
+ GET_OUT,
+ HUNT,
+ REGROUP
+}
+
 enum ACR_EMoveMode
 {
  COMBAT,
@@ -217,6 +234,7 @@ class ACR_Squad : Managed
  protected vector m_AsideTarget;
  protected float m_fAsideRadius;
  protected string m_sAsideOrder;
+ protected ACR_EOrderState m_eAsideState;
  protected int m_iAsideKind;
 
  void Release()
@@ -245,7 +263,7 @@ class ACR_Squad : Managed
    if (current.IsEmpty())
    {
     IssueWaypoint(m_sAsidePrefab, m_AsideTarget, m_fAsideRadius);
-    m_Order = m_sAsideOrder;
+    SetOrder(m_sAsideOrder, m_eAsideState);
     m_OrderKind = m_iAsideKind;
     PrintFormat("[ACR] %1: resumes its map order (%2)", m_Name, m_Order);
    }
@@ -342,6 +360,7 @@ class ACR_Squad : Managed
   m_AsideTarget = m_MoveTarget;
   m_fAsideRadius = m_fOrderRadius;
   m_sAsideOrder = m_Order;
+  m_eAsideState = OrderState();
   m_iAsideKind = m_OrderKind;
   Halt("Following you");
   PrintFormat("[ACR] %1: native command granted player=%2 group=%3 linked=%4", m_Name, leaderPlayer, component.GetGroupID(), m_CommandGroup.GetSlave() == m_Group);
@@ -369,7 +388,58 @@ class ACR_Squad : Managed
  float m_fContactLogged;
 
  ACR_EMoveMode m_Mode = ACR_EMoveMode.COMBAT;
- string m_Order = "Holding";
+ string m_Order = "Holding";   // label for the map and panel; logic uses OrderState()
+ protected ACR_EOrderState m_eOrderState = ACR_EOrderState.HOLD;
+ protected string m_sStateLabel = "Holding"; // the label m_eOrderState belongs to
+
+ // Set the order label and what it means together.
+ void SetOrder(string label, ACR_EOrderState state)
+ {
+  m_Order = label;
+  m_eOrderState = state;
+  m_sStateLabel = label;
+ }
+
+ // What the squad is doing. NONE when the label was written directly by code
+ // that doesn't set a state (ACR_Rides, ACR_GunnerDrive: still awaiting their
+ // live check before they move over to SetOrder).
+ ACR_EOrderState OrderState()
+ {
+  if (m_Order != m_sStateLabel) return ACR_EOrderState.NONE;
+  return m_eOrderState;
+ }
+
+ // For the order labels that callers pass in as text (RouteTo and the dismount
+ // hand-overs, used by the AI commander and rides): the state a label stands for.
+ static ACR_EOrderState StateOfLabel(string label)
+ {
+  if (label == "Moving") return ACR_EOrderState.MOVE;
+  if (label == "Defending" || label == "Holding position") return ACR_EOrderState.DEFEND;
+  if (label == "Assaulting") return ACR_EOrderState.ASSAULT;
+  if (label == "Suppressing") return ACR_EOrderState.SUPPRESS;
+  if (label == "Getting in") return ACR_EOrderState.GET_IN;
+  if (label == "Getting out") return ACR_EOrderState.GET_OUT;
+  return ACR_EOrderState.NONE;
+ }
+
+ // Test runs: the state must say what the old label tests said (any mismatch
+ // is printed, and counted in ACR_Perf.s_iInvariantErrors).
+ void CheckOrderState()
+ {
+  ACR_EOrderState state = OrderState();
+  string label = m_Order;
+  bool oldMoving = label == "Moving";
+  bool oldFinished = oldMoving || label == "Assaulting" || label == "Suppressing" || label == "Getting in" || label == "Getting out";
+  if ((state == ACR_EOrderState.MOVE) == oldMoving && FinishesOnArrival(state) == oldFinished) return;
+  ACR_Perf.s_iInvariantErrors++;
+  PrintFormat("[ACR] INVARIANT order state %1 doesn't match label '%2' (%3)", typename.EnumToString(ACR_EOrderState, state), label, m_Name);
+ }
+
+ // An order the squad finishes by arriving (shown as "Holding" afterwards).
+ static bool FinishesOnArrival(ACR_EOrderState state)
+ {
+  return state == ACR_EOrderState.MOVE || state == ACR_EOrderState.ASSAULT || state == ACR_EOrderState.SUPPRESS || state == ACR_EOrderState.GET_IN || state == ACR_EOrderState.GET_OUT;
+ }
  // AI commander bookkeeping
  int m_iAITask;          // ACR_EAITask
  IEntity m_OwnVehicle;   // the vehicle this squad came with (crews), even when dismounted
@@ -448,7 +518,7 @@ class ACR_Squad : Managed
  {
   if (!m_Group) return;
   ClearOrders();
-  m_Order = label;
+  SetOrder(label, ACR_EOrderState.HOLD);
   NewOrder();
   ClearPlans();
  }
@@ -469,7 +539,7 @@ class ACR_Squad : Managed
   ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_MOVE, destination)) return false;
-  m_Order = "Moving";
+  SetOrder("Moving", ACR_EOrderState.MOVE);
   m_OrderKind = ACR_EOrderKind.MOVE;
   return true;
  }
@@ -480,7 +550,7 @@ class ACR_Squad : Managed
   ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
-  m_Order = "Defending";
+  SetOrder("Defending", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   return true;
  }
@@ -492,7 +562,7 @@ class ACR_Squad : Managed
   ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SEARCH_DESTROY, position, 30)) return false;
-  m_Order = "Assaulting";
+  SetOrder("Assaulting", ACR_EOrderState.ASSAULT);
   m_OrderKind = ACR_EOrderKind.MOVE;
   return true;
  }
@@ -504,7 +574,7 @@ class ACR_Squad : Managed
   ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SUPPRESS, position)) return false;
-  m_Order = "Suppressing";
+  SetOrder("Suppressing", ACR_EOrderState.SUPPRESS);
   m_OrderKind = ACR_EOrderKind.MOVE;
   return true;
  }
@@ -588,7 +658,7 @@ class ACR_Squad : Managed
   m_fNextHuntCheck = 0;
   m_bHunting = true;
   IssueWaypoint(WP_SEARCH_DESTROY, position, 30);
-  m_Order = "Hunting " + what;
+  SetOrder("Hunting " + what, ACR_EOrderState.HUNT);
   m_OrderKind = ACR_EOrderKind.HUNT;
   m_iHuntSerial = m_iOrderSerial;
  }
@@ -636,7 +706,7 @@ class ACR_Squad : Managed
    {
     m_HuntPos = known;
     IssueWaypoint(WP_SEARCH_DESTROY, known, 30);
-    m_Order = "Hunting " + m_sHuntWhat;
+    SetOrder("Hunting " + m_sHuntWhat, ACR_EOrderState.HUNT);
     m_OrderKind = ACR_EOrderKind.HUNT;
    }
    return;
@@ -686,15 +756,13 @@ class ACR_Squad : Managed
   // (not after a Halt: m_Waypoint is gone then, and the old order must not come back)
   if (m_bForced && movingOrder && contact && m_Waypoint && !IsMounted() && !m_bRegrouping)
   {
-   string order = m_Order;
    ACR_EMoveMode mode = m_Mode;
    m_Mode = ACR_EMoveMode.COMBAT;
    IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius);
    m_Mode = mode;
-   m_Order = order;
    PrintFormat("[ACR] TACTICS %1: contact, fighting its way forward", m_Name);
   }
-  if (m_Order == "Moving" && m_OrderKind == ACR_EOrderKind.MOVE && !IsMounted())
+  if (OrderState() == ACR_EOrderState.MOVE && m_OrderKind == ACR_EOrderKind.MOVE && !IsMounted())
   {
    array<AIWaypoint> waypoints = {};
    m_Group.GetWaypoints(waypoints);
@@ -702,7 +770,7 @@ class ACR_Squad : Managed
    if (waypoints.IsEmpty() && anchor && vector.DistanceXZ(anchor.GetOrigin(), m_MoveTarget) < 60)
    {
     IssueWaypoint(WP_DEFEND, m_MoveTarget, 20);
-    m_Order = "Holding position";
+    SetOrder("Holding position", ACR_EOrderState.DEFEND);
     m_OrderKind = ACR_EOrderKind.DEFEND;
     PrintFormat("[ACR] TACTICS %1: arrived, taking positions", m_Name);
    }
@@ -717,6 +785,7 @@ class ACR_Squad : Managed
  protected ResourceName m_sRoutePrefab;
  protected float m_fRouteRadius;
  protected string m_sRouteOrder;
+ protected ACR_EOrderState m_eRouteState;
  protected int m_iRouteKind;
 
  bool RouteTo(vector destination, ResourceName prefab, float radius, string order, int kind)
@@ -760,6 +829,7 @@ class ACR_Squad : Managed
   m_sRoutePrefab = prefab;
   m_fRouteRadius = radius;
   m_sRouteOrder = order;
+  m_eRouteState = StateOfLabel(order);
   m_iRouteKind = kind;
   NextLeg();
  }
@@ -770,7 +840,7 @@ class ACR_Squad : Managed
   m_aRoute.RemoveOrdered(0);
   if (m_aRoute.IsEmpty()) IssueWaypoint(m_sRoutePrefab, leg, m_fRouteRadius);
   else IssueWaypoint(WP_MOVE, leg, 25);
-  m_Order = m_sRouteOrder;
+  SetOrder(m_sRouteOrder, m_eRouteState);
   m_OrderKind = m_iRouteKind;
  }
 
@@ -830,12 +900,12 @@ class ACR_Squad : Managed
   if (kind == 1)
   {
    IssueWaypoint(WP_DEFEND, next, 15);
-   m_Order = "Defending";
+   SetOrder("Defending", ACR_EOrderState.DEFEND);
   }
   else
   {
    IssueWaypoint(WP_MOVE, next);
-   m_Order = "Moving";
+   SetOrder("Moving", ACR_EOrderState.MOVE);
   }
   m_OrderKind = kind;
  }
@@ -868,6 +938,7 @@ class ACR_Squad : Managed
  protected vector m_RegroupTarget;
  protected float m_fRegroupRadius;
  protected string m_sRegroupOrder;
+ protected ACR_EOrderState m_eRegroupState;
  protected int m_iRegroupKind;
 
  // Middle of the living members on foot (where a strung-out squad meets up).
@@ -916,7 +987,7 @@ class ACR_Squad : Managed
    m_fNextRegroup = now + REGROUP_COOLDOWN_MS;
    if (!closed) m_fNextRegroup = now + REGROUP_FAILED_COOLDOWN_MS;
    IssueWaypoint(m_sRegroupPrefab, m_RegroupTarget, m_fRegroupRadius);
-   m_Order = m_sRegroupOrder;
+   SetOrder(m_sRegroupOrder, m_eRegroupState);
    m_OrderKind = m_iRegroupKind;
    PrintFormat("[ACR] TACTICS %1: regrouped (%2 s), moving on", m_Name, (int)((now - m_fRegroupSince) / 1000));
    return;
@@ -936,6 +1007,7 @@ class ACR_Squad : Managed
   m_RegroupTarget = m_MoveTarget;
   m_fRegroupRadius = m_fOrderRadius;
   m_sRegroupOrder = m_Order;
+  m_eRegroupState = OrderState();
   m_iRegroupKind = m_OrderKind;
   ClearOrders();
   // Everyone heads for the middle of the squad: the front waits and walks
@@ -943,7 +1015,7 @@ class ACR_Squad : Managed
   // still while the tail wanders.
   vector gather;
   if (Centroid(gather)) IssueWaypoint(WP_MOVE, gather, 10);
-  m_Order = "Regrouping";
+  SetOrder("Regrouping", ACR_EOrderState.REGROUP);
   m_bRegrouping = true;
   m_fRegroupSince = now;
   PrintFormat("[ACR] TACTICS %1: %2 of %3 strung out, regrouping", m_Name, behind, alive);
@@ -1161,10 +1233,8 @@ class ACR_Squad : Managed
   // Fresh order, so the driver plans a new route from here.
   if (m_Group && !m_sOrderPrefab.IsEmpty())
   {
-   string order = m_Order;
    int kind = m_OrderKind;
    IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius);
-   m_Order = order;
    m_OrderKind = kind;
   }
  }
@@ -1214,12 +1284,14 @@ class ACR_Squad : Managed
   m_ResumeTarget = target;
   m_fResumeRadius = radius;
   m_sResumeOrder = order;
+  m_eResumeState = StateOfLabel(order);
   m_iResumeKind = kind;
  }
  protected ResourceName m_sResumePrefab;
  protected vector m_ResumeTarget;
  protected float m_fResumeRadius;
  protected string m_sResumeOrder;
+ protected ACR_EOrderState m_eResumeState;
  protected int m_iResumeKind;
 
  // ---------------------------------------------------------------- transport
@@ -1339,12 +1411,12 @@ class ACR_Squad : Managed
   {
    m_bResumeOnFoot = false;
    IssueWaypoint(m_sResumePrefab, m_ResumeTarget, m_fResumeRadius);
-   m_Order = m_sResumeOrder;
+   SetOrder(m_sResumeOrder, m_eResumeState);
    m_OrderKind = m_iResumeKind;
    return;
   }
   IssueWaypoint(WP_DEFEND, anchor.GetOrigin(), 20);
-  m_Order = "Holding position";
+  SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
  }
 
@@ -1399,7 +1471,7 @@ class ACR_Squad : Managed
    boarding.SetEntity(vehicle);
   }
   else if (!IssueWaypoint(WP_GET_IN_NEAREST, position, 20, true)) return false;
-  m_Order = "Getting in";
+  SetOrder("Getting in", ACR_EOrderState.GET_IN);
   m_OrderKind = ACR_EOrderKind.GET_IN;
   return true;
  }
@@ -1412,7 +1484,7 @@ class ACR_Squad : Managed
   GetVehicles(vehicles);
   if (vehicles.IsEmpty()) return false;
   if (!IssueWaypoint(WP_GET_OUT, vehicles[0].GetOrigin(), -1, true)) return false;
-  m_Order = "Getting out";
+  SetOrder("Getting out", ACR_EOrderState.GET_OUT);
   m_OrderKind = ACR_EOrderKind.GET_OUT;
   return true;
  }
@@ -1473,8 +1545,7 @@ class ACR_Squad : Managed
    if (character && !character.GetCharacterController().IsDead()) alive++;
   }
   string order = m_Order;
-  bool finished = order == "Moving" || order == "Assaulting" || order == "Suppressing" || order == "Getting in" || order == "Getting out";
-  if (m_Group && !m_Group.GetCurrentWaypoint() && finished) order = "Holding";
+  if (m_Group && !m_Group.GetCurrentWaypoint() && FinishesOnArrival(OrderState())) order = "Holding";
   string text = string.Format("%1 alive | %2 | %3", alive, ModeName(m_Mode), order);
   text += " | HP " + m_iHealthPct.ToString() + "%";
   if (m_iAmmoPct >= 0) text += " | ammo " + m_iAmmoPct.ToString() + "%";

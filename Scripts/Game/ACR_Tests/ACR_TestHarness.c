@@ -88,12 +88,14 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrSpawnSpotTest", flag)) mode = MODE_SPAWNSPOT;
   if (System.GetCLIParam("acrTagsTest", flag)) mode = MODE_TAGS;
   if (System.GetCLIParam("acrSharedTest", flag)) mode = MODE_SHARED;
+  if (System.GetCLIParam("acrRegressTest", flag)) mode = MODE_REGRESS;
   if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag) || System.GetCLIParam("acrDriveFixedTest", flag) || System.GetCLIParam("acrDriveAttachedTest", flag)) mode = MODE_DRIVE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
   harness.m_Mode = mode;
   PrintFormat("[ACR] Test harness mode=%1", mode);
+  ACR_Perf.s_bChecks = true;
   return harness;
  }
 

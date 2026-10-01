@@ -254,6 +254,7 @@ class ACR_Manager : Managed
    m_Squads.RemoveOrdered(i);
   }
   t = ACR_Perf.Lap("squads", t);
+  if (ACR_Perf.s_bChecks) foreach (ACR_Squad checked : m_Squads) checked.CheckOrderState();
   ACR_MapFeed.PublishAll(this);
   t = ACR_Perf.Lap("feed", t);
   ACR_Perf.EndTick();

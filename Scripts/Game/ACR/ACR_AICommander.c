@@ -1272,7 +1272,7 @@ class ACR_AICommander : Managed
    ACR_Base goal = supplyPoint;
    if (logistics.StockPercent(serviceVehicle) < 25) goal = HomeBase();
    if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
-   if (idleCrew.m_Order == "Moving" && vector.DistanceXZ(idleCrew.m_MoveTarget, goal.GetOrigin()) < goal.m_fRadius) continue;
+   if (idleCrew.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(idleCrew.m_MoveTarget, goal.GetOrigin()) < goal.m_fRadius) continue;
    idleCrew.RouteTo(ACR_Manager.Ground(goal.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
    PrintFormat("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(ACR_Logistics.ServiceOf(serviceVehicle)));
   }
