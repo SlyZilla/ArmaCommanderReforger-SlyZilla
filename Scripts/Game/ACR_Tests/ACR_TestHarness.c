@@ -82,7 +82,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrSuppliesTest", flag)) mode = MODE_SUPPLIES;
   if (System.GetCLIParam("acrDriveTest", flag)) mode = MODE_DRIVE;
   if (System.GetCLIParam("acrRoadsTest", flag)) mode = MODE_ROADS;
-  if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag)) mode = MODE_DRIVE;
+  if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag) || System.GetCLIParam("acrDriveFixedTest", flag) || System.GetCLIParam("acrDriveAttachedTest", flag)) mode = MODE_DRIVE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
   harness.m_Range = range;
@@ -1445,10 +1445,19 @@ class ACR_TestHarness : Managed
    PrintFormat("[ACR] DRIVE vehicle=%1 driver=%2", vehicle != null, driver != null);
    // Variants: -acrDriveAITest keeps the driver's AI on, -acrDriveLockTest never slips the clutch.
    if (System.IsCLIParam("acrDriveAITest")) ACR_GunnerDrive.s_bParkDriverAI = false;
+   if (System.IsCLIParam("acrDriveFixedTest")) ACR_GunnerDrive.s_bFixedOnly = true;
+   if (System.IsCLIParam("acrDriveAttachedTest")) ACR_GunnerDrive.s_bDetachPilot = false;
    if (System.IsCLIParam("acrDriveLockTest")) { ACR_GunnerDrive.s_bSlipClutch = false; ACR_GunnerDrive.s_bOwnGearbox = false; }
-   PrintFormat("[ACR] DRIVE variant: park driver AI %1, park vehicle AI %2, slip clutch %3", ACR_GunnerDrive.s_bParkDriverAI, ACR_GunnerDrive.s_bParkVehicleAI, ACR_GunnerDrive.s_bSlipClutch);
+   PrintFormat("[ACR] DRIVE variant: park driver AI %1, park vehicle AI %2, slip clutch %3, pilot detached %4", ACR_GunnerDrive.s_bParkDriverAI, ACR_GunnerDrive.s_bParkVehicleAI, ACR_GunnerDrive.s_bSlipClutch, ACR_GunnerDrive.s_bDetachPilot);
    if (vehicle && driver) m_TestDriveSession = manager.TestDrive(vehicle, driver, squad);
   }
+  // After the hand-back the session is gone: watch the AI driver take over.
+  if (m_Ticks > 43 && m_Ticks <= 75 && m_Ticks % 4 == 0 && m_DriveBackCar)
+  {
+   CarControllerComponent hc = CarControllerComponent.Cast(m_DriveBackCar.FindComponent(CarControllerComponent));
+   PrintFormat("[ACR] DRIVE handback t=%1 moved=%2 m session=%3 pilot=%4", m_Ticks, (int)vector.Distance(m_DriveBackFrom, m_DriveBackCar.GetOrigin()), manager.IsGunnerDriven(m_DriveBackCar), hc && hc.GetPilotCompartmentSlot() != null);
+  }
+  if (m_Ticks == 76) Print("[ACR] TEST COMPLETE");
   if (!m_TestDriveSession) return;
   float now = GetGame().GetWorld().GetWorldTime();
   m_TestDriveSession.m_LastInput = now;
@@ -1472,8 +1481,17 @@ class ACR_TestHarness : Managed
     PrintFormat("[ACR] DRIVE rpm idle=%1 peakTorque=%2 peakPower=%3 max=%4", ws.EngineGetRPMIdle(), ws.EngineGetRPMPeakTorque(), ws.EngineGetRPMPeakPower(), ws.EngineGetRPMMax());
    }
   }
-  if (m_Ticks == 43) Print("[ACR] TEST COMPLETE");
+  // Hand back: a map order ends the session; the AI driver must drive again.
+  if (m_Ticks == 43 && m_TestDriveSession.m_Squad && m_TestDriveSession.m_Vehicle)
+  {
+   vector ahead = m_TestDriveSession.m_Vehicle.GetOrigin() + m_TestDriveSession.m_Vehicle.GetTransformAxis(2) * -150;
+   m_DriveBackFrom = m_TestDriveSession.m_Vehicle.GetOrigin();
+   m_DriveBackCar = m_TestDriveSession.m_Vehicle;
+   PrintFormat("[ACR] DRIVE handback order: %1", m_TestDriveSession.m_Squad.MoveTo(ACR_Manager.Ground(ahead)));
+  }
  }
+ vector m_DriveBackFrom;
+ IEntity m_DriveBackCar;
 
  // ---------------------------------------------------------------- -acrRoadsTest
  // Road routes for a few trips: length by road against the straight line.

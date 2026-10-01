@@ -22,7 +22,7 @@ class ACR_Mode : GenericEntity
 
  void ACR_Mode(IEntitySource src, IEntity parent)
  {
-  SetEventMask(EntityEvent.INIT | EntityEvent.FRAME | EntityEvent.POSTFRAME);
+  SetEventMask(EntityEvent.INIT | EntityEvent.FRAME | EntityEvent.POSTFRAME | EntityEvent.FIXEDFRAME);
  }
 
  override void EOnInit(IEntity owner)
@@ -111,6 +111,15 @@ class ACR_Mode : GenericEntity
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (s_Instance == this && manager) manager.SimulateStep();
+ }
+
+ // Every fixed (physics) frame, several per frame at low fps: gunner drives write their
+ // inputs again. (EOnSimulate never fires for this entity.)
+ override void EOnFixedFrame(IEntity owner, float timeSlice)
+ {
+  ACR_GunnerDrive.s_iFixedCalls++;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (s_Instance == this && manager) manager.SimulateStep(1);
  }
 
  override void EOnFrame(IEntity owner, float timeSlice)

@@ -1016,10 +1016,10 @@ class ACR_Manager : Managed
   return drive;
  }
 
- void SimulateStep()
+ void SimulateStep(int source = 0)
  {
   if (m_Drives.IsEmpty() || !Replication.IsServer()) return;
-  foreach (IEntity vehicle, ACR_GunnerDrive drive : m_Drives) drive.Reapply();
+  foreach (IEntity vehicle, ACR_GunnerDrive drive : m_Drives) drive.Reapply(source);
  }
 
  // Every frame on the server (physics inputs must be refreshed continuously).

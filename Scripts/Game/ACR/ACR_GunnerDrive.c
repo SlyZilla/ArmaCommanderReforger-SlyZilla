@@ -27,6 +27,14 @@ class ACR_GunnerDrive
  bool m_bHasSet;
  int m_Overrides;
  int m_Steps;
+ int m_StepOverrides; // inputs found changed right before a physics step
+ int m_StepWrites;
+ float m_MaxSlip;
+ string m_SeenOverride;
+ static int s_iSimulateCalls;
+ static int s_iFixedCalls;
+ int m_FixedOverrides;
+ static int s_iPostFixedCalls;
  bool m_AIWasOn;
  bool m_VehicleAIWasOn;
  bool m_bTest; // server test: no player in the turret
@@ -34,6 +42,13 @@ class ACR_GunnerDrive
  static bool s_bParkDriverAI = true;
  static bool s_bSlipClutch = false;
  static bool s_bOwnGearbox = true;
+ // The vehicle's controller keeps feeding the (parked) driver seat's empty input into
+ // the simulation every physics step: throttle and steering went to 0 on every other
+ // step, so the wheels stuttered and the vehicle crawled. Unhooking the driver seat
+ // from the controller for the session stops that (restored in End).
+ static bool s_bDetachPilot = true;
+ PilotCompartmentSlot m_DetachedPilot;
+ static bool s_bFixedOnly = false; // test variant: write inputs only in the fixed (physics) frame
  float m_fClutch = 1;
  string m_EndReason;
 
@@ -101,6 +116,12 @@ class ACR_GunnerDrive
    m_VehicleAIWasOn = true;
   }
   CarControllerComponent car = Car();
+  if (car && s_bDetachPilot)
+  {
+   m_DetachedPilot = car.GetPilotCompartmentSlot();
+   car.SetPilotCompartmentSlot(null);
+   PrintFormat("[ACR] GUNNER pilot slot detached: %1", m_DetachedPilot != null);
+  }
   if (car)
   {
    car.SetPersistentHandBrake(false);
@@ -217,13 +238,16 @@ class ACR_GunnerDrive
    clutch = Math.Min(m_fClutch, Math.Clamp((rpm - idle) / (peakTorque - idle), 0.25, 1));
   m_SetClutch = clutch;
 
-  sim.SetClutch(clutch);
-  sim.SetThrottle(throttle);
-  sim.SetBreak(brake, false);
+  if (!s_bFixedOnly)
+  {
+   sim.SetClutch(clutch);
+   sim.SetThrottle(throttle);
+   sim.SetBreak(brake, false);
+  }
   if (brake == 0 && sim.IsHandbrakeOn()) car.SetPersistentHandBrake(false);
   // Less steering lock at speed, so a tap of A/D doesn't spin the vehicle out.
   float steerScale = Math.Clamp(1 - Math.AbsFloat(speed) / 25, 0.35, 1);
-  sim.SetSteering(m_Steer * steerScale);
+  if (!s_bFixedOnly) sim.SetSteering(m_Steer * steerScale);
   m_SetThrottle = throttle;
   m_SetBrake = brake;
   m_SetSteer = m_Steer * steerScale;
@@ -241,8 +265,13 @@ class ACR_GunnerDrive
    AIControlComponent driverAI = AIControlComponent.Cast(m_Driver.FindComponent(AIControlComponent));
    PrintFormat("[ACR] GUNNER DIAG keys thr=%1 steer=%2 | sim thr=%3 steer=%4 brake=%5 hb=%6 carHb=%7 persistHb=%8 gear=%9", m_Throttle, m_Steer, sim.GetThrottle(), sim.GetSteering(), sim.GetBrake(), sim.IsHandbrakeOn(), car.GetHandBrake(), car.GetPersistentHandBrake(), sim.GetGear());
    PrintFormat("[ACR] GUNNER DIAG speed=%1 rpm=%2 engine=%3 vehicleAI=%4 driverAI=%5 inputs changed by something else in %6 of %7 frames, clutch %8 driven=%9", speed, (int)sim.EngineGetRPM(), car.IsEngineOn(), vehicleAI != null && vehicleAI.IsAIActivated(), driverAI != null && driverAI.IsAIActivated(), m_Overrides, m_Steps, sim.GetClutch(), (int)sim.EngineGetRPMFeedback());
+   PrintFormat("[ACR] GUNNER DIAG steps: inputs changed before %1 of %2 physics steps, max wheel slip %3 (fixed-frame %8), simulate/fixed/postfixed events %4/%5/%6, last foreign inputs: %7", m_StepOverrides, m_StepWrites, m_MaxSlip, s_iSimulateCalls, s_iFixedCalls, s_iPostFixedCalls, m_SeenOverride, m_FixedOverrides);
+   m_FixedOverrides = 0;
    m_Overrides = 0;
    m_Steps = 0;
+   m_StepOverrides = 0;
+   m_StepWrites = 0;
+   m_MaxSlip = 0;
   }
   return true;
  }
@@ -252,12 +281,21 @@ class ACR_GunnerDrive
  // writes, so the wheel twitched between centre and the gunner's steer and the
  // throttle pulsed (stuck in first gear, lugging). Writing again right before
  // each step makes ours the ones the physics uses.
- void Reapply()
+ void Reapply(int source = 0)
  {
   if (!m_bHasSet || !m_Vehicle) return;
+  if (s_bFixedOnly && source != 1) return;
   CarControllerComponent car = Car();
   if (!car || !car.GetSimulation()) return;
   VehicleWheeledSimulation sim = car.GetSimulation();
+  m_StepWrites++;
+  if (Math.AbsFloat(sim.GetSteering() - m_SetSteer) > 0.01 || Math.AbsFloat(sim.GetThrottle() - m_SetThrottle) > 0.01 || Math.AbsFloat(sim.GetBrake() - m_SetBrake) > 0.01)
+  {
+   m_StepOverrides++;
+   if (source == 1) m_FixedOverrides++;
+   m_SeenOverride = string.Format("thr %1 steer %2 brake %3 clutch %4 gear %5", sim.GetThrottle(), sim.GetSteering(), sim.GetBrake(), sim.GetClutch(), sim.GetGear());
+  }
+  for (int w = 0; w < sim.WheelCount(); w++) m_MaxSlip = Math.Max(m_MaxSlip, Math.AbsFloat(sim.WheelGetLongitudinalSlip(w)));
   sim.SetClutch(m_SetClutch);
   sim.SetThrottle(m_SetThrottle);
   sim.SetBreak(m_SetBrake, false);
@@ -275,6 +313,7 @@ class ACR_GunnerDrive
  void End()
  {
   CarControllerComponent car = Car();
+  if (car && m_DetachedPilot) car.SetPilotCompartmentSlot(m_DetachedPilot);
   if (car && car.GetSimulation())
   {
    VehicleWheeledSimulation sim = car.GetSimulation();

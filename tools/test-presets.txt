@@ -24,7 +24,9 @@ stalled|-acrStalledTest 1|260
 hunt|-acrHuntTest 1|110
 launcher|-acrLauncherTest 1|80
 supplies|-acrSuppliesTest 1|120
-drive|-acrDriveTest 1|90
-driveai|-acrDriveAITest 1|90
-drivelock|-acrDriveLockTest 1|90
+drive|-acrDriveTest 1|130
+driveai|-acrDriveAITest 1|130
+drivelock|-acrDriveLockTest 1|130
+drivefixed|-acrDriveFixedTest 1|130
+driveattached|-acrDriveAttachedTest 1|130
 roads|-acrRoadsTest 1|60
