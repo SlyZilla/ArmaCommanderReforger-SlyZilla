@@ -41,6 +41,8 @@ HOST (one person):
      limits, respawn delay, Game Master for everyone, shared command.
      Type a number to
      change one, Enter to start. Your choices are remembered.
+   - The first time, it explains ZeroTier and asks whether to set it up
+     (see "Connecting" below).
    - A server window opens (leave it open) and Windows may ask about the
      firewall: tick BOTH Private and Public and click Allow.
    - The script prints your addresses, waits until the mission has loaded
@@ -49,15 +51,27 @@ HOST (one person):
 4. When done: quit the game, then close the server window.
 
 JOINING (everyone else):
-1. Double-click  Join-Arland.cmd  and type the host's address when asked:
-   numbers like 26.12.34.56 (the host reads it off their Host-Arland
-   window). Next time just press Enter to reuse it.
+1. Double-click  Join-Arland.cmd
+   - The first time, it explains ZeroTier and asks whether to set it up
+     (see "Connecting" below). Say Y and paste the network ID the host
+     sent you.
+   - Then type the host's address: numbers like 10.147.17.5 (the host
+     reads it off their Host-Arland window). Next time just press Enter
+     to reuse it.
 
 CONNECTING OVER THE INTERNET - pick ONE:
- a) Easiest: a free "virtual LAN" app, e.g. Radmin VPN (no account) or
-    Tailscale. Both of you install it and join the same network. The host
-    then gives the address the VPN app shows (Radmin: 26.x.x.x,
-    Tailscale: 100.x.x.x). Host-Arland.cmd also lists it.
+ a) Easiest: ZeroTier, set up by the launcher. ZeroTier is a free app that
+    puts your PCs on one small private network, as if you were on the same
+    home Wi-Fi. Host-Arland.cmd and Join-Arland.cmd explain exactly what it
+    does and ask first; if you say yes they download it from zerotier.com,
+    check its signature, install it and join the host's network (Windows
+    asks for administrator permission once). No account needed for
+    players. The host sends everyone the network ID (16 characters) and
+    the ZeroTier address their window shows.
+    To disconnect: Leave-ZeroTier.cmd. To remove it: Windows Settings >
+    Apps > ZeroTier One > Uninstall.
+    Already using another virtual-LAN app (Radmin, Tailscale...)? Say N
+    to ZeroTier and use that app's address instead.
  b) Port forwarding: the host forwards UDP port 2001 on their router to
     their PC and gives their public IP (search "what is my ip").
  On the same home network, just use the host's 192.168.x.x address.

@@ -2,7 +2,8 @@
 #   Host: starts the Arma Reforger Server tool on this PC with the mod, waits for
 #         the scenario to load, then joins it with the game.
 #   Join: connects the game to a host's address.
-param([ValidateSet('Host', 'Join')][string]$Mode = 'Join', [string]$Address = '', [int]$Port = 2001, [switch]$Online)
+#   Leave: leaves the ZeroTier network (see ACR-ZeroTier.ps1).
+param([ValidateSet('Host', 'Join', 'Leave')][string]$Mode = 'Join', [string]$Address = '', [int]$Port = 2001, [switch]$Online)
 $ErrorActionPreference = 'Stop'
 # Everything this window shows also goes to launcher-log.txt (send it if something fails).
 try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force | Out-Null } catch {}
@@ -11,6 +12,8 @@ try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force
 
 
 . (Join-Path $PSScriptRoot 'ACR-Update.ps1')
+
+. (Join-Path $PSScriptRoot 'ACR-ZeroTier.ps1')
 
 # Host setup menu: session settings chosen before the server starts (remembered
 # in host-settings.txt). Returns the extra server arguments and the world.
@@ -81,6 +84,11 @@ function Show-HostSetup {
 }
 
 try {
+  if ($Mode -eq 'Leave') {
+    Disconnect-ZeroTier
+    Read-Host 'Press Enter to close'
+    exit 0
+  }
   if (Update-FromGitHub) {
     # Run the freshly downloaded launcher instead of this old copy.
     $again = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Mode', $Mode, '-Port', $Port)
@@ -102,12 +110,19 @@ try {
     $serverProfile = Join-Path $PSScriptRoot '.local-server'
     $started = Get-Date
     $setup = Show-HostSetup
+    $zt = Connect-ZeroTier
     $serverArgs = '-server "' + $setup.World + '" ' + $mod + ' -profile "' + $serverProfile + '" -bindPort ' + $Port + ' -maxFPS 60' + $backend + $setup.Args
     Write-Host 'Starting the server (a second window opens; leave it running)...' -ForegroundColor Cyan
     $proc = Start-Process -FilePath $server -ArgumentList $serverArgs -WorkingDirectory (Split-Path $server -Parent) -PassThru
 
     Write-Host ''
-    Write-Host 'Tell your friend one of these addresses (and port' $Port 'UDP):' -ForegroundColor Yellow
+    if ($zt) {
+      Write-Host ('Tell your friends this address: ' + $zt + '   (ZeroTier)') -ForegroundColor Yellow
+      Write-Host 'They also need your ZeroTier network ID (it is in zerotier.txt in the ArmaCommanderReforger folder).'
+      Write-Host 'Other addresses of this PC (same house, other VPNs):'
+    } else {
+      Write-Host 'Tell your friend one of these addresses (and port' $Port 'UDP):' -ForegroundColor Yellow
+    }
     Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
       Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
       ForEach-Object { Write-Host ('   ' + $_.IPAddress + '   (' + $_.InterfaceAlias + ')') }
@@ -135,6 +150,7 @@ try {
     $Address = '127.0.0.1'
   }
   else {
+    $zt = Connect-ZeroTier
     # Ask until we get something that looks like an address (an IP like 26.12.34.56,
     # or a name with a dot), remembering the last one used.
     $lastFile = Join-Path $PSScriptRoot 'last-host.txt'
@@ -143,7 +159,7 @@ try {
     while ($true) {
       if (!$Address) {
         Write-Host ''
-        Write-Host 'Type the HOST''S ADDRESS: the IP the host''s window shows, e.g. 26.12.34.56 (Radmin/Hamachi)' -ForegroundColor Yellow
+        Write-Host 'Type the HOST''S ADDRESS: the IP the host''s window shows, e.g. 10.147.17.5' -ForegroundColor Yellow
         Write-Host 'or 192.168.1.20 (same house). Not "y" -- the address.'
         $prompt = 'Host address'
         if ($last) { $prompt += ' [Enter = ' + $last + ']' }
@@ -152,7 +168,7 @@ try {
       }
       $Address = $Address.Trim()
       if ($Address -match '^(\d{1,3}(\.\d{1,3}){3}|localhost|[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+)(:\d+)?$') { break }
-      Write-Host ('"' + $Address + '" is not an address. It should look like 26.12.34.56') -ForegroundColor Red
+      Write-Host ('"' + $Address + '" is not an address. It should look like 10.147.17.5') -ForegroundColor Red
       $Address = ''
     }
     Set-Content -LiteralPath $lastFile -Value $Address

@@ -5,7 +5,7 @@ out = root / 'dist' / 'ACActual-Arland.zip'
 out.parent.mkdir(exist_ok=True)
 top = 'ACActual-Arland'
 keep_dirs = ['Configs', 'Missions', 'Scripts', 'Worlds']
-keep_files = ['LICENSE.md', 'addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'ACR-Update.ps1', 'ACR-Find.ps1', 'Play-Test-Range.cmd', 'README.md']
+keep_files = ['LICENSE.md', 'addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'ACR-Update.ps1', 'ACR-Find.ps1', 'ACR-ZeroTier.ps1', 'Play-Test-Range.cmd', 'README.md']
 def crlf(p): return p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
 # Version: first argument, else date + commit.
 try:
@@ -20,7 +20,7 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
     if update_source:
         z.writestr(f'{top}/ArmaCommanderReforger/update-source.txt', update_source + '\n')
     z.writestr(f'{top}/READ ME FIRST.txt', crlf(root / 'tools/package/GUIDE.txt'))
-    for name in ['Play-Arland.cmd', 'Host-Arland.cmd', 'Join-Arland.cmd']:
+    for name in ['Play-Arland.cmd', 'Host-Arland.cmd', 'Join-Arland.cmd', 'Leave-ZeroTier.cmd']:
         z.writestr(f'{top}/{name}', crlf(root / 'tools/package' / name))
     for name in ['Host-Arland-online.cmd', 'Join-Arland-online.cmd']:
         z.writestr(f'{top}/If joining fails/{name}', crlf(root / 'tools/package/alt' / name))
