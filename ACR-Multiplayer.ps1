@@ -17,7 +17,7 @@ try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force
 function Show-HostSetup {
   $file = Join-Path $PSScriptRoot 'host-settings.txt'
   $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Players = 'any'; StartRP = '100'; Income = '1'; AI = 'both'; Skill = 'Veteran';
-                   Reaction = '1.6'; SoldierCap = '100'; UnitCap = '8'; Respawn = '15'; ShareGM = 'no' }
+                   Reaction = '1.6'; SoldierCap = '100'; UnitCap = '8'; Respawn = '15'; ShareGM = 'no'; SharedCommand = 'yes' }
   if (Test-Path -LiteralPath $file) {
     foreach ($line in Get-Content -LiteralPath $file) {
       $kv = $line.Split('=', 2)
@@ -44,6 +44,7 @@ function Show-HostSetup {
     Write-Host ('  9  AI squad limit          ' + $s.UnitCap)
     Write-Host (' 10  Commander respawn       ' + $s.Respawn + ' s')
     Write-Host (' 11  Game Master for all     ' + $s.ShareGM)
+    Write-Host (' 12  Shared command          ' + $s.SharedCommand + '   (yes = several commanders per side)')
     $choice = (Read-Host 'Choice').Trim()
     if ($choice -eq '') { break }
     switch ($choice) {
@@ -65,6 +66,7 @@ function Show-HostSetup {
       '9' { $v = Read-Host 'AI squad limit (e.g. 8)'; if ($v -match '^\d+$') { $s.UnitCap = $v } }
       '10' { $v = Read-Host 'Commander respawn delay in seconds'; if ($v -match '^\d+$') { $s.Respawn = $v } }
       '11' { if ($s.ShareGM -eq 'yes') { $s.ShareGM = 'no' } else { $s.ShareGM = 'yes' } }
+      '12' { if ($s.SharedCommand -eq 'yes') { $s.SharedCommand = 'no' } else { $s.SharedCommand = 'yes' } }
       default { Write-Host 'Type a number from the list, or press Enter to start.' -ForegroundColor Yellow }
     }
   }
@@ -74,6 +76,7 @@ function Show-HostSetup {
   $extra = ' -acrStartRP ' + $s.StartRP + ' -acrIncome ' + $s.Income + ' -acrAI ' + $s.AI + ' -acrSkill ' + $skill +
            ' -acrReaction ' + $s.Reaction + ' -acrSoldierCap ' + $s.SoldierCap + ' -acrUnitCap ' + $s.UnitCap + ' -acrRespawnSeconds ' + $s.Respawn + ' -acrPlayers ' + $s.Players
   if ($s.ShareGM -eq 'yes') { $extra += ' -acrGameMasterAll 1' }
+  if ($s.SharedCommand -eq 'no') { $extra += ' -acrSharedCommand 0' } else { $extra += ' -acrSharedCommand 1' }
   return @{ Args = $extra; World = $s.World }
 }
 

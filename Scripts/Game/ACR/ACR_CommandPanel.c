@@ -15,6 +15,11 @@ enum ACR_EPanelAction
  TOGGLE_SUPPORTS,
  RIDE,
  TAKE_GUNNER,
+ HALT,
+ PING_LOOK,
+ PING_ATTACK,
+ PING_DEFEND,
+ PING_SUPPORT,
  REQUISITION_ENTRY = 100, // + entry index (below 200)
  SUPPORT_ENTRY = 200     // + entry index
 }
@@ -46,6 +51,8 @@ class ACR_CommandPanel : Managed
  protected Widget m_Content;
  protected TextWidget m_Status;
  protected TextWidget m_Economy;
+ protected TextWidget m_Roster;
+ protected Widget m_PickerRoot;
  protected Widget m_SwitchWidget;
  protected Widget m_LastButtonWidget;
  protected SCR_ButtonTextComponent m_CommandButton;
@@ -100,6 +107,8 @@ class ACR_CommandPanel : Managed
   AddText(m_Content, LAYOUT_HEADING, "AC: ACTUAL");
   m_Economy = AddText(m_Content, LAYOUT_TEXT, "");
   m_Status = AddText(m_Content, LAYOUT_TEXT, "");
+  m_Roster = AddText(m_Content, LAYOUT_TEXT, "");
+  if (m_Roster) m_Roster.SetVisible(false);
   m_CommandButton = AddButton(m_Content, "Take command", ACR_EPanelAction.TOGGLE_COMMAND);
   m_RequisitionButton = AddButton(m_Content, "Requisition", ACR_EPanelAction.TOGGLE_REQUISITION);
   m_RequisitionWidget = m_LastButtonWidget;
@@ -147,6 +156,7 @@ class ACR_CommandPanel : Managed
   Widget orders2 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   AddButton(orders2, "Get out", ACR_EPanelAction.GET_OUT, true);
   AddButton(orders2, "Unload", ACR_EPanelAction.UNLOAD, true);
+  AddButton(orders2, "Halt", ACR_EPanelAction.HALT, true);
   Widget orders3 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   m_RideButton = AddButton(orders3, "Ride", ACR_EPanelAction.RIDE, true);
   m_LZButton = AddButton(orders3, "Unload at LZ", ACR_EPanelAction.SET_LZ, true);
@@ -154,6 +164,48 @@ class ACR_CommandPanel : Managed
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
   CreateFeed(parent);
+  CreatePicker(parent);
+ }
+
+ // The ping picker: four buttons that open at the cursor (Alt+right-click).
+ protected void CreatePicker(Widget parent)
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  m_PickerRoot = ws.CreateWidget(WidgetType.OverlayWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, parent);
+  FrameSlot.SetAnchorMin(m_PickerRoot, 0, 0);
+  FrameSlot.SetAnchorMax(m_PickerRoot, 0, 0);
+  FrameSlot.SetSizeToContent(m_PickerRoot, true);
+  m_PickerRoot.SetZOrder(1001);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.90), 0, m_PickerRoot);
+  AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
+  SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_PickerRoot));
+  size.EnableWidthOverride(true);
+  size.SetWidthOverride(170);
+  AlignableSlot.SetPadding(size, 6, 6, 6, 6);
+  Widget column = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
+  AddButton(column, "1  Look here", ACR_EPanelAction.PING_LOOK);
+  AddButton(column, "2  Attack this", ACR_EPanelAction.PING_ATTACK);
+  AddButton(column, "3  Defend here", ACR_EPanelAction.PING_DEFEND);
+  AddButton(column, "4  Support here", ACR_EPanelAction.PING_SUPPORT);
+  m_PickerRoot.SetVisible(false);
+ }
+
+ void ShowPicker(bool show, float x, float y)
+ {
+  if (!m_PickerRoot) return;
+  if (show) FrameSlot.SetPos(m_PickerRoot, x + 12, y + 12);
+  m_PickerRoot.SetVisible(show);
+ }
+
+ bool PickerShown() { return m_PickerRoot && m_PickerRoot.IsVisible(); }
+
+ // Other commanders and what each last did (shared command, 2+ commanders).
+ void SetRoster(string text)
+ {
+  if (!m_Roster) return;
+  m_Roster.SetVisible(!text.IsEmpty());
+  if (!text.IsEmpty()) m_Roster.SetText(text);
  }
 
  // Intel feed: a small box at the top left, newest sighting first. Clicks go
@@ -181,7 +233,7 @@ class ACR_CommandPanel : Managed
   // box, so later lines ran off the bottom of the background.
   m_FeedText = AddText(column, LAYOUT_TEXT, "No contacts reported");
   m_FeedLines.Clear();
-  for (int i = 0; i < 6; i++)
+  for (int i = 0; i < ACR_Intel.FEED_LINES; i++)
   {
    TextWidget line = AddText(column, LAYOUT_TEXT, "");
    if (!line) continue;
@@ -246,7 +298,7 @@ class ACR_CommandPanel : Managed
  {
   while (widget)
   {
-   if (widget == m_Root || (m_FeedRoot && widget == m_FeedRoot)) return true;
+   if (widget == m_Root || (m_FeedRoot && widget == m_FeedRoot) || (m_PickerRoot && widget == m_PickerRoot)) return true;
    widget = widget.GetParent();
   }
   return false;
@@ -417,6 +469,8 @@ class ACR_CommandPanel : Managed
   m_Root = null;
   if (m_FeedRoot) m_FeedRoot.RemoveFromHierarchy();
   m_FeedRoot = null;
+  if (m_PickerRoot) m_PickerRoot.RemoveFromHierarchy();
+  m_PickerRoot = null;
   m_FeedText = null;
   m_FeedLines.Clear();
   m_Actions.Clear();

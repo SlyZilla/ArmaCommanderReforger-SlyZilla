@@ -22,7 +22,7 @@ class ACR_Intel : Managed
  static const float MEMORY_MS = 90000;
  static const float SENTRY_RANGE = 60;
  static const float PLAYER_RANGE = 300;
- static const int FEED_LINES = 6;
+ static const int FEED_LINES = 8;   // sightings, and in shared command orders, spending and pings
  static const float REPORT_AGAIN_MS = 120000; // same enemy group reported again only after this
  static const int KIND_INFANTRY = 0;
  static const int KIND_VEHICLE = 1;

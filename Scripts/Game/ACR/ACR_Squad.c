@@ -361,6 +361,10 @@ class ACR_Squad : Managed
  bool m_bForced;        // current order outranks combat (Fast)
  ResourceName m_sOrderPrefab;
  int m_iOrderSerial;     // bumped by every new order from a player or the AI commander (not by internal re-issues)
+ // Who gave the current order (shared command): a player id, or 0 for the AI
+ // commander and the squad's own decisions. Set by the manager after a player's order.
+ int m_iOrderedBy;
+ float m_fOrderedAt;
  float m_fOrderRadius = -1;
  float m_fContactLogged;
 
@@ -431,13 +435,21 @@ class ACR_Squad : Managed
   return waypoint;
  }
 
- // Drop every queued order and stand still (used while a gunner drives).
+ // Every new order: a fresh serial, and nobody (yet) to credit it to.
+ protected void NewOrder()
+ {
+  m_iOrderSerial++;
+  m_iOrderedBy = 0;
+  m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
+ }
+
+ // Drop every queued order and stand still (gunner drives, the Halt button).
  void Halt(string label)
  {
   if (!m_Group) return;
   ClearOrders();
   m_Order = label;
-  m_iOrderSerial++;
+  NewOrder();
   ClearPlans();
  }
 
@@ -453,7 +465,7 @@ class ACR_Squad : Managed
 
  bool MoveTo(vector destination)
  {
-  m_iOrderSerial++;
+  NewOrder();
   ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_MOVE, destination)) return false;
@@ -464,7 +476,7 @@ class ACR_Squad : Managed
 
  bool Defend(vector position)
  {
-  m_iOrderSerial++;
+  NewOrder();
   ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
@@ -476,7 +488,7 @@ class ACR_Squad : Managed
  // Clear an objective: move in and fight through it (search and destroy).
  bool Assault(vector position)
  {
-  m_iOrderSerial++;
+  NewOrder();
   ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SEARCH_DESTROY, position, 30)) return false;
@@ -488,7 +500,7 @@ class ACR_Squad : Managed
  // Put fire on an area from where the squad stands (support by fire).
  bool Suppress(vector position)
  {
-  m_iOrderSerial++;
+  NewOrder();
   ClearPlans();
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_SUPPRESS, position)) return false;
@@ -565,7 +577,7 @@ class ACR_Squad : Managed
 
  void Hunt(ACR_Squad target, IEntity body, vector position, string what)
  {
-  m_iOrderSerial++;
+  NewOrder();
   ClearPlans();
   m_bRegrouping = false;
   m_HuntSquad = target;
@@ -671,7 +683,8 @@ class ACR_Squad : Managed
   FollowRoute();
   Cohesion(now, contact);
   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
-  if (m_bForced && movingOrder && contact && !IsMounted() && !m_bRegrouping)
+  // (not after a Halt: m_Waypoint is gone then, and the old order must not come back)
+  if (m_bForced && movingOrder && contact && m_Waypoint && !IsMounted() && !m_bRegrouping)
   {
    string order = m_Order;
    ACR_EMoveMode mode = m_Mode;
@@ -740,7 +753,7 @@ class ACR_Squad : Managed
 
  protected void StartRoute(array<vector> legs, ResourceName prefab, float radius, string order, int kind)
  {
-  m_iOrderSerial++;
+  NewOrder();
   m_bRegrouping = false;
   ClearPlans();
   foreach (vector leg : legs) m_aRoute.Insert(leg);
@@ -1376,7 +1389,7 @@ class ACR_Squad : Managed
  // Board this vehicle (or, without one, the nearest free vehicle to the point).
  bool BoardVehicle(Vehicle vehicle, vector position)
  {
-  m_iOrderSerial++;
+  NewOrder();
   ClearPlans();
   m_bRegrouping = false;
   if (vehicle)
@@ -1393,7 +1406,7 @@ class ACR_Squad : Managed
 
  bool GetOut()
  {
-  m_iOrderSerial++;
+  NewOrder();
   ClearPlans();
   array<IEntity> vehicles = {};
   GetVehicles(vehicles);

@@ -5,7 +5,7 @@ class ACR_Mode : GenericEntity
 {
  [Attribute("1", UIWidgets.CheckBox, "Game Master for the host and server admins")]
  bool m_bHostGameMaster;
- [Attribute("0", UIWidgets.CheckBox, "Shared command: every player of a faction may command")]
+ [Attribute("1", UIWidgets.CheckBox, "Shared command: every player of a faction may command (host option -acrSharedCommand 0|1)")]
  bool m_bSharedCommand;
 
  [Attribute("70", UIWidgets.ComboBox, "Skill of all Arma Commander AI soldiers", "", ParamEnumArray.FromEnum(EAISkill))]

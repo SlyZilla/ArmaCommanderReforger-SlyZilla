@@ -1,80 +1,571 @@
-// Server -> owner snapshots for the command map. Sent once a second so markers
-// do not depend on distant soldiers being streamed to the client. Every action a
+// Server -> owner snapshots for the command map, once a second, so markers do
+// not depend on distant soldiers being streamed to the client. Every action a
 // client takes from these markers is re-validated by the server.
+//
+// Each side's picture is built once per second (ACR_FeedFrame), not once per
+// player. A section is only sent to a player when it changed since the last
+// one he got (positions of soldiers and squad leaders always are), plus a full
+// resend every FULL_EVERY_MS. Ages and countdowns go out as "seconds at send
+// time" and the client counts on from there, so they don't count as changes.
+class ACR_FeedFrame : Managed
+{
+ string m_sKey;
+ Faction m_Faction;
+ // roster
+ ref array<RplId> m_RosterIds = {};
+ ref array<vector> m_RosterPos = {};
+ ref array<int> m_RosterStates = {};
+ ref array<string> m_RosterLabels = {};
+ ref array<RplId> m_RosterGroups = {};
+ // group markers
+ ref array<RplId> m_Leaders = {};
+ ref array<vector> m_LeaderPos = {};
+ ref array<string> m_GroupNames = {};
+ ref array<int> m_Symbols = {};
+ ref array<int> m_LeaderStates = {};
+ ref array<int> m_Commandable = {};
+ ref array<RplId> m_GroupIds = {};
+ ref array<string> m_Details = {};
+ ref array<int> m_Status = {};       // per group: hp, ammo, fuel, stock, ordered by, order age (s)
+ string m_sStatusSig;
+ // orders
+ ref array<RplId> m_OrderGroups = {};
+ ref array<vector> m_OrderTargets = {};
+ ref array<int> m_OrderKinds = {};
+ ref array<int> m_OrderIssuers = {};
+ string m_sOrdersSig;
+ // bases, requisitions, supports, zones
+ ref array<vector> m_BasePos = {};
+ ref array<string> m_BaseNames = {};
+ ref array<string> m_BaseOwners = {};
+ ref array<string> m_BaseDetails = {};
+ ref array<float> m_BaseRadii = {};
+ ref array<int> m_BaseContested = {};
+ string m_sBasesSig;
+ ref array<string> m_ReqNames = {};
+ ref array<int> m_ReqCosts = {};
+ ref array<int> m_ReqRemaining = {};
+ string m_sReqSig;
+ ref array<string> m_SupNames = {};
+ ref array<int> m_SupCosts = {};
+ ref array<int> m_SupCooldowns = {};
+ string m_sSupSig;
+ ref array<vector> m_ZonePos = {};
+ ref array<float> m_ZoneRadii = {};
+ ref array<string> m_ZoneLabels = {};
+ string m_sZonesSig;
+ // intel and our empty vehicles
+ ref array<vector> m_ContactPos = {};
+ ref array<int> m_ContactKinds = {};
+ ref array<int> m_ContactCounts = {};
+ ref array<int> m_ContactAges = {};
+ ref array<string> m_Feed = {};
+ ref array<int> m_FeedAges = {};
+ string m_sIntelSig;
+ ref array<vector> m_VehiclePos = {};
+ ref array<string> m_VehicleNames = {};
+ ref array<int> m_VehicleAges = {};
+ string m_sVehiclesSig;
+ // shared command
+ ref array<int> m_CmdIds = {};
+ ref array<string> m_CmdTags = {};
+ ref array<string> m_CmdActions = {};
+ ref array<int> m_CmdActionAges = {};
+ ref array<RplId> m_SelGroups = {};
+ ref array<int> m_SelOwners = {};
+ string m_sCmdSig;
+ // pings
+ ref array<int> m_PingIds = {};
+ ref array<int> m_PingKinds = {};
+ ref array<vector> m_PingPos = {};
+ ref array<int> m_PingOwners = {};
+ ref array<string> m_PingTags = {};
+ ref array<int> m_PingAges = {};
+ ref array<string> m_PingAnswers = {};
+ string m_sPingsSig;
+ // estimated payload sizes (bytes), for the perf log
+ ref map<string, int> m_Bytes = new map<string, int>();
+}
+
 class ACR_MapFeed
 {
+ static const float FULL_EVERY_MS = 10000;
+ protected static ref map<int, ref map<string, string>> s_Sent = new map<int, ref map<string, string>>();
+ protected static ref map<int, float> s_LastFull = new map<int, float>();
+
  static void PublishAll(ACR_Manager manager)
  {
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
+  // Forget players who left.
+  array<int> gone = {};
+  foreach (int known, map<string, string> unused : s_Sent) if (!players.Contains(known)) gone.Insert(known);
+  foreach (int left : gone) { s_Sent.Remove(left); s_LastFull.Remove(left); }
+
+  map<string, ref ACR_FeedFrame> frames = new map<string, ref ACR_FeedFrame>();
+  float now = GetGame().GetWorld().GetWorldTime();
   foreach (int id : players)
   {
    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
    if (!pc || !pc.GetControlledEntity()) continue;
    Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
    if (!faction) continue;
-   PublishRoster(manager, pc, faction);
-   PublishGroups(manager, pc, faction);
    string key = faction.GetFactionKey();
-   pc.ACR_SendCommandStatus(manager.IsCommander(id), manager.CommandStatus(id), manager.m_SharedCommand, manager.m_Bases.GetRP(key), manager.m_Bases.GetIncome(key), manager.m_Bases.SecondsToIncome());
-   PublishBases(manager, pc, key);
-   PublishRequisitions(manager, pc, key);
-   PublishSupports(manager, pc, key);
-   PublishZones(manager, pc, key);
-   PublishOrders(manager, pc, faction);
-   PublishCapture(pc, key);
-   PublishIntel(manager, pc, key);
+   ACR_FeedFrame frame;
+   if (!frames.Find(key, frame))
+   {
+    frame = Build(manager, faction);
+    frames.Insert(key, frame);
+   }
+   bool full = now - s_LastFull.Get(id) >= FULL_EVERY_MS;
+   if (full) s_LastFull.Set(id, now);
+   SendFrame(manager, pc, id, frame, full);
   }
+  // The perf test has no players: build each side's frame anyway, to time it.
+  if (ACR_Perf.s_bOn && players.IsEmpty())
+   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
+   {
+    Faction perfFaction = GetGame().GetFactionManager().GetFactionByKey(settings.m_sFaction);
+    if (!perfFaction) continue;
+    ACR_FeedFrame dry = Build(manager, perfFaction);
+    foreach (string section, int bytes : dry.m_Bytes) ACR_Perf.s_iFeedBytes += bytes;
+   }
  }
 
- // Spotted enemies (hostile markers) and the sighting feed for this side.
- static void PublishIntel(ACR_Manager manager, SCR_PlayerController pc, string key)
+ // ---------------------------------------------------------------- sending
+ protected static bool Changed(int playerId, string section, string signature, bool full)
  {
-  ACR_Intel intel = manager.IntelFor(key);
+  map<string, string> sent;
+  if (!s_Sent.Find(playerId, sent))
+  {
+   sent = new map<string, string>();
+   s_Sent.Insert(playerId, sent);
+  }
+  string last;
+  if (!full && sent.Find(section, last) && last == signature)
+  {
+   ACR_Perf.s_iFeedSkipped++;
+   return false;
+  }
+  sent.Set(section, signature);
+  return true;
+ }
+
+ protected static void Count(ACR_FeedFrame frame, string section)
+ {
+  ACR_Perf.s_iFeedSends++;
+  ACR_Perf.s_iFeedBytes += frame.m_Bytes.Get(section);
+ }
+
+ protected static void SendFrame(ACR_Manager manager, SCR_PlayerController pc, int id, ACR_FeedFrame frame, bool full)
+ {
+  // Always: soldier and leader positions.
+  IEntity original = pc.GetMainEntity();
+  vector originalPos;
+  if (original) originalPos = original.GetOrigin();
+  pc.ACR_SendRoster(frame.m_RosterIds, frame.m_RosterPos, frame.m_RosterStates, frame.m_RosterLabels, frame.m_RosterGroups, originalPos);
+  Count(frame, "roster");
+  pc.ACR_SendGroupMarkers(frame.m_Leaders, frame.m_LeaderPos, frame.m_GroupNames, frame.m_Symbols, frame.m_LeaderStates, frame.m_Commandable, frame.m_GroupIds, frame.m_Details);
+  Count(frame, "groups");
+  if (Changed(id, "status", frame.m_sStatusSig, full)) { pc.ACR_SendGroupStatus(frame.m_GroupIds, frame.m_Status); Count(frame, "status"); }
+  // Per player: command status (the countdown is counted on by the client).
+  string key = frame.m_sKey;
+  bool commander = manager.IsCommander(id);
+  string text = manager.CommandStatus(id);
+  int rp = manager.m_Bases.GetRP(key);
+  int income = manager.m_Bases.GetIncome(key);
+  int seconds = manager.m_Bases.SecondsToIncome();
+  float nextIncome = GetGame().GetWorld().GetWorldTime() / 1000 + seconds;
+  string statusSig = string.Format("%1|%2|%3|%4|%5|%6", commander, text, manager.m_SharedCommand, rp, income, (int)nextIncome);
+  if (Changed(id, "command", statusSig, full)) pc.ACR_SendCommandStatus(commander, text, manager.m_SharedCommand, rp, income, seconds);
+  if (Changed(id, "bases", frame.m_sBasesSig, full)) { pc.ACR_SendBases(frame.m_BasePos, frame.m_BaseNames, frame.m_BaseOwners, frame.m_BaseDetails, frame.m_BaseRadii, frame.m_BaseContested); Count(frame, "bases"); }
+  if (Changed(id, "reqs", frame.m_sReqSig, full)) { pc.ACR_SendRequisitions(frame.m_ReqNames, frame.m_ReqCosts, frame.m_ReqRemaining); Count(frame, "reqs"); }
+  if (Changed(id, "sups", frame.m_sSupSig, full)) { pc.ACR_SendSupports(frame.m_SupNames, frame.m_SupCosts, frame.m_SupCooldowns); Count(frame, "sups"); }
+  if (Changed(id, "zones", frame.m_sZonesSig, full)) { pc.ACR_SendZones(frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels); Count(frame, "zones"); }
+  if (Changed(id, "orders", frame.m_sOrdersSig, full)) { pc.ACR_SendOrders(frame.m_OrderGroups, frame.m_OrderTargets, frame.m_OrderKinds, frame.m_OrderIssuers); Count(frame, "orders"); }
+  PublishCapture(pc, key);
+  if (Changed(id, "intel", frame.m_sIntelSig, full)) { pc.ACR_SendIntel(frame.m_ContactPos, frame.m_ContactKinds, frame.m_ContactCounts, frame.m_ContactAges, frame.m_Feed, frame.m_FeedAges); Count(frame, "intel"); }
+  if (Changed(id, "vehicles", frame.m_sVehiclesSig, full)) { pc.ACR_SendVehicles(frame.m_VehiclePos, frame.m_VehicleNames, frame.m_VehicleAges); Count(frame, "vehicles"); }
+  if (Changed(id, "cmd", frame.m_sCmdSig, full)) { pc.ACR_SendCommanders(frame.m_CmdIds, frame.m_CmdTags, frame.m_CmdActions, frame.m_CmdActionAges, frame.m_SelGroups, frame.m_SelOwners); Count(frame, "cmd"); }
+  if (Changed(id, "pings", frame.m_sPingsSig, full)) { pc.ACR_SendPings(frame.m_PingIds, frame.m_PingKinds, frame.m_PingPos, frame.m_PingOwners, frame.m_PingTags, frame.m_PingAges, frame.m_PingAnswers); Count(frame, "pings"); }
+ }
+
+ // ---------------------------------------------------------------- building
+ protected static string P(vector v)
+ {
+  int x = v[0];
+  int z = v[2];
+  return x.ToString() + "," + z.ToString() + ";";
+ }
+
+ static ACR_FeedFrame Build(ACR_Manager manager, Faction faction)
+ {
+  ACR_FeedFrame frame = new ACR_FeedFrame();
+  frame.m_Faction = faction;
+  frame.m_sKey = faction.GetFactionKey();
+  BuildRoster(manager, frame);
+  BuildGroups(manager, frame);
+  BuildOrders(manager, frame);
+  BuildBases(manager, frame);
+  BuildRequisitions(manager, frame);
+  BuildSupports(manager, frame);
+  BuildZones(manager, frame);
+  BuildIntel(manager, frame);
+  BuildCommanders(manager, frame);
+  BuildPings(manager, frame);
+  return frame;
+ }
+
+ // Every soldier of every friendly squad.
+ protected static void BuildRoster(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  array<AIAgent> agents = {};
+  int bytes;
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (squad.GetFaction() != frame.m_Faction) continue;
+   RplId groupId = SCR_EntityHelper.EntityToRplId(squad.m_Group);
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    ChimeraCharacter soldier = ChimeraCharacter.Cast(agent.GetControlledEntity());
+    if (!soldier || soldier.GetCharacterController().IsDead()) continue;
+    frame.m_RosterIds.Insert(SCR_EntityHelper.EntityToRplId(soldier));
+    frame.m_RosterPos.Insert(soldier.GetOrigin());
+    string label = string.Format("%1-%2", squad.GetName(), squad.NumberOf(soldier));
+    frame.m_RosterLabels.Insert(label);
+    frame.m_RosterGroups.Insert(groupId);
+    int state = 0;
+    if (ACR_Squad.FindController(soldier) != 0) state = 1;
+    frame.m_RosterStates.Insert(state);
+    bytes += 4 + 12 + 4 + label.Length() + 4 + 4;
+   }
+  }
+  frame.m_Bytes.Set("roster", bytes + 12);
+ }
+
+ // A named, role-symbol marker at the leader of every friendly group: our
+ // squads (commandable) and any other group such as player groups.
+ protected static void BuildGroups(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  Faction faction = frame.m_Faction;
+  array<SCR_AIGroup> groups = {};
+  foreach (ACR_Squad squad : manager.m_Squads)
+   if (squad.m_Group && squad.GetFaction() == faction) groups.Insert(squad.m_Group);
+  SCR_GroupsManagerComponent groupsManager = SCR_GroupsManagerComponent.GetInstance();
+  if (groupsManager)
+  {
+   array<SCR_AIGroup> playable = groupsManager.GetPlayableGroupsByFaction(faction);
+   if (playable)
+    foreach (SCR_AIGroup group : playable)
+     if (group && !groups.Contains(group)) groups.Insert(group);
+  }
+  int bytes;
+  string statusSig = "";
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (SCR_AIGroup group : groups)
+  {
+   if (!group || group.GetFaction() != faction) continue;
+   if (manager.FindSquadByCommandGroup(group)) continue;
+   ACR_Squad squad = manager.FindSquadByGroup(group);
+   IEntity leader = group.GetLeaderEntity();
+   if (squad) leader = squad.GetLeader();
+   else if (group.GetLeaderID() > 0) leader = GetGame().GetPlayerManager().GetPlayerControlledEntity(group.GetLeaderID());
+   ChimeraCharacter character = ChimeraCharacter.Cast(leader);
+   if (!character || character.GetCharacterController().IsDead()) continue;
+   RplId id = SCR_EntityHelper.EntityToRplId(leader);
+   if (frame.m_Leaders.Contains(id)) continue;
+   SCR_EditableGroupComponent editable = SCR_EditableGroupComponent.Cast(group.FindComponent(SCR_EditableGroupComponent));
+   SCR_EditableGroupUIInfo info;
+   if (editable) info = SCR_EditableGroupUIInfo.Cast(editable.GetInfo());
+   SCR_MilitarySymbol symbol;
+   if (info) symbol = info.GetMilitarySymbol();
+   string name;
+   if (squad) name = squad.GetName();
+   if (name.IsEmpty()) name = group.GetCustomName();
+   if (name.IsEmpty()) name = SCR_GroupHelperUI.GetTranslatedGroupName(group);
+   if (name.IsEmpty() && info) name = info.GetName();
+   if (name.IsEmpty()) name = "Friendly group";
+   int icons = EMilitarySymbolIcon.INFANTRY;
+   int dimension = EMilitarySymbolDimension.LAND;
+   int amplifier = EMilitarySymbolAmplifier.SQUAD;
+   if (symbol)
+   {
+    icons = symbol.GetIcons();
+    dimension = symbol.GetDimension();
+    amplifier = symbol.GetAmplifier();
+   }
+   // Vehicle crews show their vehicle's symbol, mounted or not; the label
+   // says when they are out of it.
+   IEntity crewVehicle;
+   if (squad) crewVehicle = squad.MarkVehicle();
+   if (crewVehicle)
+   {
+    int vehicleKind = ACR_Intel.VehicleKind(crewVehicle);
+    icons = ACR_Intel.IconOf(vehicleKind);
+    dimension = ACR_Intel.DimensionOf(vehicleKind);
+    if (squad.m_OwnVehicle == crewVehicle && !squad.InOwnVehicle()) name += " (dismounted)";
+   }
+   frame.m_Leaders.Insert(id);
+   frame.m_LeaderPos.Insert(leader.GetOrigin());
+   frame.m_GroupNames.Insert(name);
+   frame.m_Symbols.Insert(icons);
+   frame.m_Symbols.Insert(dimension);
+   frame.m_Symbols.Insert(amplifier);
+   int mode = 0;
+   if (squad) mode = squad.m_Mode;
+   if (squad && ACR_GunnerDrive.SquadGunner(squad)) mode |= 16; // + flag: has an AI-manned turret
+   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret)
+   int state = 0;
+   if (ACR_Squad.FindController(leader) > 0) state = 1;
+   frame.m_LeaderStates.Insert(state);
+   int canCommand = 0;
+   if (squad) canCommand = 1;
+   frame.m_Commandable.Insert(canCommand);
+   RplId groupId = SCR_EntityHelper.EntityToRplId(group);
+   frame.m_GroupIds.Insert(groupId);
+   string detail;
+   if (squad) detail = squad.Describe();
+   frame.m_Details.Insert(detail);
+   bytes += 4 + 12 + name.Length() + 4 + 16 + 4 + 4 + 4 + detail.Length() + 4;
+   // Status bars and who gave the order: 6 ints per group.
+   if (!squad)
+   {
+    for (int k = 0; k < 6; k++) frame.m_Status.Insert(-1);
+    statusSig += "-;";
+    continue;
+   }
+   int age = -1;
+   if (squad.m_fOrderedAt > 0) age = (now - squad.m_fOrderedAt) / 1000;
+   frame.m_Status.Insert(squad.m_iHealthPct);
+   frame.m_Status.Insert(squad.m_iAmmoPct);
+   frame.m_Status.Insert(squad.m_iFuelPct);
+   frame.m_Status.Insert(squad.m_iStockPct);
+   frame.m_Status.Insert(squad.m_iOrderedBy);
+   frame.m_Status.Insert(age);
+   int orderedAt = squad.m_fOrderedAt / 1000;
+   statusSig += string.Format("%1,%2,%3,%4,%5,%6;", squad.m_iHealthPct, squad.m_iAmmoPct, squad.m_iFuelPct, squad.m_iStockPct, squad.m_iOrderedBy, orderedAt);
+  }
+  frame.m_Bytes.Set("groups", bytes + 32);
+  frame.m_Bytes.Set("status", frame.m_GroupIds.Count() * 28 + 8);
+  // The status list is keyed by the group list, which can change on its own.
+  foreach (RplId g : frame.m_GroupIds) statusSig += g.AsString() + ";";
+  frame.m_sStatusSig = statusSig;
+ }
+
+ // Current destination of every friendly squad, then the rest of its plan.
+ protected static void BuildOrders(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  string sig = "";
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (squad.GetFaction() != frame.m_Faction) continue;
+   vector target;
+   int kind;
+   if (!squad.GetOrderTarget(target, kind)) continue;
+   RplId groupId = SCR_EntityHelper.EntityToRplId(squad.m_Group);
+   frame.m_OrderGroups.Insert(groupId);
+   frame.m_OrderTargets.Insert(target);
+   frame.m_OrderKinds.Insert(kind);
+   frame.m_OrderIssuers.Insert(squad.m_iOrderedBy);
+   sig += groupId.AsString() + ":" + P(target) + kind.ToString() + "," + squad.m_iOrderedBy.ToString() + ";";
+   array<vector> planned = {};
+   array<int> plannedKinds = {};
+   squad.GetPlannedPoints(planned, plannedKinds);
+   foreach (int p, vector point : planned)
+   {
+    frame.m_OrderGroups.Insert(groupId);
+    frame.m_OrderTargets.Insert(point);
+    frame.m_OrderKinds.Insert(plannedKinds[p]);
+    frame.m_OrderIssuers.Insert(squad.m_iOrderedBy);
+    sig += P(point) + plannedKinds[p].ToString() + ";";
+   }
+  }
+  frame.m_sOrdersSig = sig;
+  frame.m_Bytes.Set("orders", frame.m_OrderGroups.Count() * 24 + 16);
+ }
+
+ // Bases this faction can see (hidden enemy bases only once discovered).
+ protected static void BuildBases(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  string sig = "";
+  int bytes;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base.IsVisibleTo(frame.m_sKey)) continue;
+   string detail = manager.m_Bases.Describe(base);
+   frame.m_BasePos.Insert(base.GetOrigin());
+   frame.m_BaseNames.Insert(base.GetLabel());
+   frame.m_BaseOwners.Insert(base.m_sOwner);
+   frame.m_BaseDetails.Insert(detail);
+   frame.m_BaseRadii.Insert(base.m_fRadius);
+   int flag = 0;
+   if (base.m_bContested) flag = 1;
+   frame.m_BaseContested.Insert(flag);
+   sig += base.GetLabel() + "|" + base.m_sOwner + "|" + detail + "|" + flag.ToString() + ";";
+   bytes += 12 + base.GetLabel().Length() + base.m_sOwner.Length() + detail.Length() + 4 * 5;
+  }
+  frame.m_sBasesSig = sig;
+  frame.m_Bytes.Set("bases", bytes + 24);
+ }
+
+ protected static void BuildRequisitions(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  string sig = "";
+  int bytes;
+  foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(frame.m_sKey).m_aRequisitions)
+  {
+   frame.m_ReqNames.Insert(entry.m_sName);
+   frame.m_ReqCosts.Insert(entry.m_iCost);
+   frame.m_ReqRemaining.Insert(entry.m_iRemaining);
+   sig += entry.m_sName + "," + entry.m_iCost.ToString() + "," + entry.m_iRemaining.ToString() + ";";
+   bytes += entry.m_sName.Length() + 12;
+  }
+  frame.m_sReqSig = sig;
+  frame.m_Bytes.Set("reqs", bytes + 12);
+ }
+
+ protected static void BuildSupports(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  string sig = "";
+  int bytes;
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (ACR_SupportEntry entry : manager.m_Bases.GetFaction(frame.m_sKey).m_aSupports)
+  {
+   frame.m_SupNames.Insert(entry.m_sName);
+   frame.m_SupCosts.Insert(entry.m_iCost);
+   int left = Math.Ceil((entry.m_fReadyAt - now) / 1000);
+   if (left < 0) left = 0;
+   frame.m_SupCooldowns.Insert(left);
+   int readyAt = 0;
+   if (left > 0) readyAt = entry.m_fReadyAt / 1000;
+   sig += entry.m_sName + "," + entry.m_iCost.ToString() + "," + readyAt.ToString() + ";";
+   bytes += entry.m_sName.Length() + 12;
+  }
+  frame.m_sSupSig = sig;
+  frame.m_Bytes.Set("sups", bytes + 12);
+ }
+
+ protected static void BuildZones(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  string sig = "";
+  if (manager.m_Supports)
+  {
+   float now = GetGame().GetWorld().GetWorldTime();
+   foreach (ACR_SupportZone zone : manager.m_Supports.m_Zones)
+   {
+    if (zone.m_sFaction != frame.m_sKey) continue;
+    frame.m_ZonePos.Insert(zone.m_Pos);
+    frame.m_ZoneRadii.Insert(zone.m_fRadius);
+    int left = Math.Ceil((zone.m_fImpactAt - now) / 1000);
+    string label = zone.m_sName + " - ACTIVE";
+    if (left > 0) label = string.Format("%1 - %2 s", zone.m_sName, left);
+    frame.m_ZoneLabels.Insert(label);
+    sig += P(zone.m_Pos) + label + ";";
+   }
+  }
+  frame.m_sZonesSig = sig;
+  frame.m_Bytes.Set("zones", sig.Length() + frame.m_ZonePos.Count() * 16 + 12);
+ }
+
+ // Spotted enemies (hostile markers), the side's feed, our known empty vehicles.
+ protected static void BuildIntel(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  ACR_Intel intel = manager.IntelFor(frame.m_sKey);
   if (!intel) return;
   float now = GetGame().GetWorld().GetWorldTime();
-  array<vector> positions = {};
-  array<int> kinds = {};
-  array<int> counts = {};
-  array<int> ages = {};
+  string sig = "";
   foreach (ACR_Contact contact : intel.m_Contacts)
   {
-   positions.Insert(contact.m_Pos);
-   kinds.Insert(contact.m_iKind);
-   counts.Insert(contact.m_iCount);
+   frame.m_ContactPos.Insert(contact.m_Pos);
+   frame.m_ContactKinds.Insert(contact.m_iKind);
+   frame.m_ContactCounts.Insert(contact.m_iCount);
    int age = (now - contact.m_fSeen) / 1000;
-   ages.Insert(age);
+   frame.m_ContactAges.Insert(age);
+   int seen = contact.m_fSeen / 1000;
+   sig += P(contact.m_Pos) + contact.m_iKind.ToString() + "," + contact.m_iCount.ToString() + "," + seen.ToString() + ";";
   }
-  array<string> feed = {};
+  int feedBytes;
   foreach (int i, string line : intel.m_Feed)
   {
    int seconds = (now - intel.m_FeedTime[i]) / 1000;
    if (seconds > 600) break; // older than 10 min: not news any more
-   string when = seconds.ToString() + "s";
-   if (seconds >= 60)
-   {
-    int minutes = seconds / 60;
-    when = minutes.ToString() + "m";
-   }
-   feed.Insert("[" + when + "] " + line);
+   frame.m_Feed.Insert(line);
+   frame.m_FeedAges.Insert(seconds);
+   int at = intel.m_FeedTime[i] / 1000;
+   sig += line + at.ToString() + ";";
+   feedBytes += line.Length() + 8;
   }
-  pc.ACR_SendIntel(positions, kinds, counts, ages, feed);
-  // Our empty vehicles we know about (for Get in orders).
-  array<vector> vehiclePositions = {};
-  array<string> vehicleNames = {};
-  array<int> vehicleAges = {};
-  foreach (IEntity vehicle, float seen : intel.m_VehicleSeen)
+  frame.m_sIntelSig = sig;
+  frame.m_Bytes.Set("intel", frame.m_ContactPos.Count() * 24 + feedBytes + 24);
+  string vehicleSig = "";
+  int vehicleBytes;
+  foreach (IEntity vehicle, float seenAt : intel.m_VehicleSeen)
   {
    if (!vehicle) continue;
-   vehiclePositions.Insert(intel.m_VehicleAt.Get(vehicle));
+   vector pos = intel.m_VehicleAt.Get(vehicle);
+   frame.m_VehiclePos.Insert(pos);
    string vehicleName = ACR_Vehicles.NameOf(vehicle);
    foreach (ACR_Squad crew : manager.m_Squads)
     if (crew.m_OwnVehicle == vehicle) { vehicleName += ", crew: " + crew.GetName(); break; }
-   vehicleNames.Insert(vehicleName);
-   int vehicleAge = (now - seen) / 1000;
-   vehicleAges.Insert(vehicleAge);
+   frame.m_VehicleNames.Insert(vehicleName);
+   int vehicleAge = (now - seenAt) / 1000;
+   frame.m_VehicleAges.Insert(vehicleAge);
+   int seenSeconds = seenAt / 1000;
+   // Seen continuously: the age stays near 0, so only the spot matters.
+   if (vehicleAge <= 2) seenSeconds = 0;
+   vehicleSig += P(pos) + vehicleName + "," + seenSeconds.ToString() + ";";
+   vehicleBytes += 12 + vehicleName.Length() + 8;
   }
-  pc.ACR_SendVehicles(vehiclePositions, vehicleNames, vehicleAges);
+  frame.m_sVehiclesSig = vehicleSig;
+  frame.m_Bytes.Set("vehicles", vehicleBytes + 12);
+ }
+
+ // Shared command: the side's commanders, their tags, last actions and selections.
+ protected static void BuildCommanders(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  ACR_Command command = manager.Command();
+  command.TagsOf(frame.m_sKey, frame.m_CmdIds, frame.m_CmdTags);
+  float now = GetGame().GetWorld().GetWorldTime();
+  string sig = "";
+  foreach (int i, int id : frame.m_CmdIds)
+  {
+   string action = command.LastAction(id);
+   float at = command.LastActionAt(id);
+   int age = -1;
+   if (at > 0) age = (now - at) / 1000;
+   frame.m_CmdActions.Insert(action);
+   frame.m_CmdActionAges.Insert(age);
+   int atSeconds = at / 1000;
+   sig += id.ToString() + "," + frame.m_CmdTags[i] + "," + action + "," + atSeconds.ToString() + ";";
+  }
+  command.SelectionsOf(frame.m_sKey, frame.m_SelGroups, frame.m_SelOwners);
+  foreach (int s, RplId group : frame.m_SelGroups) sig += group.AsString() + ">" + frame.m_SelOwners[s].ToString() + ";";
+  frame.m_sCmdSig = sig;
+  frame.m_Bytes.Set("cmd", sig.Length() + 32);
+ }
+
+ protected static void BuildPings(ACR_Manager manager, ACR_FeedFrame frame)
+ {
+  array<ACR_Ping> pings = {};
+  manager.Pings().Of(frame.m_sKey, pings);
+  float now = GetGame().GetWorld().GetWorldTime();
+  string sig = manager.Pings().m_iSerial.ToString() + ";";
+  int bytes;
+  foreach (ACR_Ping ping : pings)
+  {
+   frame.m_PingIds.Insert(ping.m_iId);
+   frame.m_PingKinds.Insert(ping.m_iKind);
+   frame.m_PingPos.Insert(ping.m_Pos);
+   frame.m_PingOwners.Insert(ping.m_iOwner);
+   frame.m_PingTags.Insert(ping.m_sTag);
+   int age = (now - ping.m_fPlaced) / 1000;
+   frame.m_PingAges.Insert(age);
+   frame.m_PingAnswers.Insert(ping.m_sAnswer);
+   bytes += 4 + 4 + 12 + 4 + ping.m_sTag.Length() + 4 + 4 + ping.m_sAnswer.Length() + 4;
+  }
+  frame.m_sPingsSig = sig;
+  frame.m_Bytes.Set("pings", bytes + 28);
  }
 
  // Capture bar for a player standing in a base ring (empty label = hide).
@@ -128,248 +619,5 @@ class ACR_MapFeed
    }
   }
   pc.ACR_SendCapture(label, progress, tone);
- }
-
- // Every soldier of every friendly squad, plus the player's command unit.
- static void PublishRoster(ACR_Manager manager, SCR_PlayerController pc, Faction faction)
- {
-  array<RplId> ids = {};
-  array<vector> positions = {};
-  array<int> states = {};
-  array<string> labels = {};
-  array<RplId> groupIds = {};
-  array<AIAgent> agents = {};
-  foreach (ACR_Squad squad : manager.m_Squads)
-  {
-   if (squad.GetFaction() != faction) continue;
-   squad.GetAgents(agents);
-   foreach (AIAgent agent : agents)
-   {
-    ChimeraCharacter soldier = ChimeraCharacter.Cast(agent.GetControlledEntity());
-    if (!soldier || soldier.GetCharacterController().IsDead()) continue;
-    ids.Insert(SCR_EntityHelper.EntityToRplId(soldier));
-    positions.Insert(soldier.GetOrigin());
-    labels.Insert(string.Format("%1-%2", squad.GetName(), squad.NumberOf(soldier)));
-    groupIds.Insert(SCR_EntityHelper.EntityToRplId(squad.m_Group));
-    int state = 0;
-    if (ACR_Squad.FindController(soldier) != 0) state = 1;
-    states.Insert(state);
-   }
-  }
-  IEntity original = pc.GetMainEntity();
-  vector originalPos;
-  if (original) originalPos = original.GetOrigin();
-  pc.ACR_SendRoster(ids, positions, states, labels, groupIds, originalPos);
- }
-
- // A named, role-symbol marker at the leader of every friendly group: our
- // squads (commandable) and any other group such as player groups.
- static void PublishGroups(ACR_Manager manager, SCR_PlayerController pc, Faction faction)
- {
-  array<SCR_AIGroup> groups = {};
-  foreach (ACR_Squad squad : manager.m_Squads)
-   if (squad.m_Group && squad.GetFaction() == faction) groups.Insert(squad.m_Group);
-  SCR_GroupsManagerComponent groupsManager = SCR_GroupsManagerComponent.GetInstance();
-  if (groupsManager)
-  {
-   array<SCR_AIGroup> playable = groupsManager.GetPlayableGroupsByFaction(faction);
-   if (playable)
-    foreach (SCR_AIGroup group : playable)
-     if (group && !groups.Contains(group)) groups.Insert(group);
-  }
-  array<RplId> leaders = {};
-  array<vector> positions = {};
-  array<string> names = {};
-  array<int> symbols = {};
-  array<int> states = {};
-  array<int> commandable = {};
-  array<RplId> groupIds = {};
-  array<string> details = {};
-  foreach (SCR_AIGroup group : groups)
-  {
-   if (!group || group.GetFaction() != faction) continue;
-   if (manager.FindSquadByCommandGroup(group)) continue;
-   ACR_Squad squad = manager.FindSquadByGroup(group);
-   IEntity leader = group.GetLeaderEntity();
-   if (squad) leader = squad.GetLeader();
-   else if (group.GetLeaderID() > 0) leader = GetGame().GetPlayerManager().GetPlayerControlledEntity(group.GetLeaderID());
-   ChimeraCharacter character = ChimeraCharacter.Cast(leader);
-   if (!character || character.GetCharacterController().IsDead()) continue;
-   RplId id = SCR_EntityHelper.EntityToRplId(leader);
-   if (leaders.Contains(id)) continue;
-   SCR_EditableGroupComponent editable = SCR_EditableGroupComponent.Cast(group.FindComponent(SCR_EditableGroupComponent));
-   SCR_EditableGroupUIInfo info;
-   if (editable) info = SCR_EditableGroupUIInfo.Cast(editable.GetInfo());
-   SCR_MilitarySymbol symbol;
-   if (info) symbol = info.GetMilitarySymbol();
-   string name;
-   if (squad) name = squad.GetName();
-   if (name.IsEmpty()) name = group.GetCustomName();
-   if (name.IsEmpty()) name = SCR_GroupHelperUI.GetTranslatedGroupName(group);
-   if (name.IsEmpty() && info) name = info.GetName();
-   if (name.IsEmpty()) name = "Friendly group";
-   int icons = EMilitarySymbolIcon.INFANTRY;
-   int dimension = EMilitarySymbolDimension.LAND;
-   int amplifier = EMilitarySymbolAmplifier.SQUAD;
-   if (symbol)
-   {
-    icons = symbol.GetIcons();
-    dimension = symbol.GetDimension();
-    amplifier = symbol.GetAmplifier();
-   }
-   // Vehicle crews show their vehicle's symbol, mounted or not; the label
-   // says when they are out of it.
-   IEntity crewVehicle;
-   if (squad) crewVehicle = squad.MarkVehicle();
-   if (crewVehicle)
-   {
-    int vehicleKind = ACR_Intel.VehicleKind(crewVehicle);
-    icons = ACR_Intel.IconOf(vehicleKind);
-    dimension = ACR_Intel.DimensionOf(vehicleKind);
-    if (squad.m_OwnVehicle == crewVehicle && !squad.InOwnVehicle()) name += " (dismounted)";
-   }
-   leaders.Insert(id);
-   positions.Insert(leader.GetOrigin());
-   names.Insert(name);
-   symbols.Insert(icons);
-   symbols.Insert(dimension);
-   symbols.Insert(amplifier);
-   int mode = 0;
-   if (squad) mode = squad.m_Mode;
-   if (squad && ACR_GunnerDrive.SquadGunner(squad)) mode |= 16; // + flag: has an AI-manned turret
-   symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret)
-   int state = 0;
-   if (ACR_Squad.FindController(leader) > 0) state = 1;
-   states.Insert(state);
-   int canCommand = 0;
-   if (squad) canCommand = 1;
-   commandable.Insert(canCommand);
-   groupIds.Insert(SCR_EntityHelper.EntityToRplId(group));
-   string detail;
-   if (squad) detail = squad.Describe();
-   details.Insert(detail);
-
-  }
-  pc.ACR_SendGroupMarkers(leaders, positions, names, symbols, states, commandable, groupIds, details);
-  // Status bars: 4 ints per group (health %, ammo % or -1, fuel % or -1, service stock % or -1).
-  array<int> status = {};
-  foreach (RplId statusGroup : groupIds)
-  {
-   ACR_Squad known = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(statusGroup)));
-   if (!known)
-   {
-    status.Insert(-1);
-    status.Insert(-1);
-    status.Insert(-1);
-    status.Insert(-1);
-    continue;
-   }
-   status.Insert(known.m_iHealthPct);
-   status.Insert(known.m_iAmmoPct);
-   status.Insert(known.m_iFuelPct);
-   status.Insert(known.m_iStockPct);
-  }
-  pc.ACR_SendGroupStatus(groupIds, status);
- }
- // Current destination of every friendly squad, for the order lines on the map.
- static void PublishOrders(ACR_Manager manager, SCR_PlayerController pc, Faction faction)
- {
-  array<RplId> groupIds = {};
-  array<vector> targets = {};
-  array<int> kinds = {};
-  foreach (ACR_Squad squad : manager.m_Squads)
-  {
-   if (squad.GetFaction() != faction) continue;
-   vector target;
-   int kind;
-   if (!squad.GetOrderTarget(target, kind)) continue;
-   RplId groupId = SCR_EntityHelper.EntityToRplId(squad.m_Group);
-   groupIds.Insert(groupId);
-   targets.Insert(target);
-   kinds.Insert(kind);
-   // Then the rest of the plan (route legs, queued waypoints) as a chain.
-   array<vector> planned = {};
-   array<int> plannedKinds = {};
-   squad.GetPlannedPoints(planned, plannedKinds);
-   foreach (int p, vector point : planned)
-   {
-    groupIds.Insert(groupId);
-    targets.Insert(point);
-    kinds.Insert(plannedKinds[p]);
-   }
-  }
-  pc.ACR_SendOrders(groupIds, targets, kinds);
- }
- // Bases this faction can see (hidden enemy bases only once discovered).
- static void PublishBases(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
- {
-  array<vector> positions = {};
-  array<string> names = {};
-  array<string> owners = {};
-  array<string> details = {};
-  array<float> radii = {};
-  array<int> contested = {};
-  foreach (ACR_Base base : ACR_Base.s_All)
-  {
-   if (!base.IsVisibleTo(factionKey)) continue;
-   positions.Insert(base.GetOrigin());
-   names.Insert(base.GetLabel());
-   owners.Insert(base.m_sOwner);
-   details.Insert(manager.m_Bases.Describe(base));
-   radii.Insert(base.m_fRadius);
-   int flag = 0;
-   if (base.m_bContested) flag = 1;
-   contested.Insert(flag);
-  }
-  pc.ACR_SendBases(positions, names, owners, details, radii, contested);
- }
- static void PublishZones(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
- {
-  array<vector> positions = {};
-  array<float> radii = {};
-  array<string> labels = {};
-  if (manager.m_Supports)
-  {
-   float now = GetGame().GetWorld().GetWorldTime();
-   foreach (ACR_SupportZone zone : manager.m_Supports.m_Zones)
-   {
-    if (zone.m_sFaction != factionKey) continue;
-    positions.Insert(zone.m_Pos);
-    radii.Insert(zone.m_fRadius);
-    int left = Math.Ceil((zone.m_fImpactAt - now) / 1000);
-    if (left > 0) labels.Insert(string.Format("%1 - %2 s", zone.m_sName, left));
-    else labels.Insert(zone.m_sName + " - ACTIVE");
-   }
-  }
-  pc.ACR_SendZones(positions, radii, labels);
- }
- static void PublishSupports(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
- {
-  array<string> names = {};
-  array<int> costs = {};
-  array<int> cooldowns = {};
-  float now = GetGame().GetWorld().GetWorldTime();
-  foreach (ACR_SupportEntry entry : manager.m_Bases.GetFaction(factionKey).m_aSupports)
-  {
-   names.Insert(entry.m_sName);
-   costs.Insert(entry.m_iCost);
-   int left = Math.Ceil((entry.m_fReadyAt - now) / 1000);
-   if (left < 0) left = 0;
-   cooldowns.Insert(left);
-  }
-  pc.ACR_SendSupports(names, costs, cooldowns);
- }
- static void PublishRequisitions(ACR_Manager manager, SCR_PlayerController pc, string factionKey)
- {
-  array<string> names = {};
-  array<int> costs = {};
-  array<int> remaining = {};
-  foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(factionKey).m_aRequisitions)
-  {
-   names.Insert(entry.m_sName);
-   costs.Insert(entry.m_iCost);
-   remaining.Insert(entry.m_iRemaining);
-  }
-  pc.ACR_SendRequisitions(names, costs, remaining);
  }
 }

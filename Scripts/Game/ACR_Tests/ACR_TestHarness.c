@@ -35,6 +35,8 @@ class ACR_TestHarness : Managed
  static const int MODE_DRIVE = 28;
  static const int MODE_ROADS = 29;
  static const int MODE_SPAWNSPOT = 30;
+ static const int MODE_TAGS = 31;
+ static const int MODE_SHARED = 32;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -84,6 +86,8 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrDriveTest", flag)) mode = MODE_DRIVE;
   if (System.GetCLIParam("acrRoadsTest", flag)) mode = MODE_ROADS;
   if (System.GetCLIParam("acrSpawnSpotTest", flag)) mode = MODE_SPAWNSPOT;
+  if (System.GetCLIParam("acrTagsTest", flag)) mode = MODE_TAGS;
+  if (System.GetCLIParam("acrSharedTest", flag)) mode = MODE_SHARED;
   if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag) || System.GetCLIParam("acrDriveFixedTest", flag) || System.GetCLIParam("acrDriveAttachedTest", flag)) mode = MODE_DRIVE;
   if (!mode) return null;
   ACR_TestHarness harness = new ACR_TestHarness();
@@ -162,6 +166,8 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_SUPPLIES) { TestSupplies(); return; }
   if (m_Mode == MODE_DRIVE) { TestDrive(); return; }
   if (m_Mode == MODE_SPAWNSPOT) { TestSpawnSpot(); return; }
+  if (m_Mode == MODE_TAGS) { ACR_TestShared.TestTags(this, m_Ticks); return; }
+  if (m_Mode == MODE_SHARED) { ACR_TestShared.TestShared(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADS) { TestRoads(); return; }
   if (m_Mode == MODE_STALLED)
   {

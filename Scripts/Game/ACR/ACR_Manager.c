@@ -22,7 +22,8 @@ enum ACR_ERequest
  QUEUE_MOVE,       // Shift + right-click: move there after the current order
  QUEUE_DEFEND,     // ... defend there after the current order
  ORDER_HUNT,       // pursue the spotted enemy group at point until it's destroyed or lost
- TAKE_GUNNER       // possess the gunner of the squad's armed vehicle (targetId = group)
+ TAKE_GUNNER,      // possess the gunner of the squad's armed vehicle (targetId = group)
+ ORDER_HALT        // drop every order and stand still
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -59,6 +60,20 @@ class ACR_Manager : Managed
  protected int m_iStatusTick;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
+ protected ref ACR_Command m_Command;   // shared command: tags, last actions, selections
+ protected ref ACR_Pings m_Pings;
+
+ ACR_Command Command()
+ {
+  if (!m_Command) m_Command = new ACR_Command(this);
+  return m_Command;
+ }
+
+ ACR_Pings Pings()
+ {
+  if (!m_Pings) m_Pings = new ACR_Pings(this);
+  return m_Pings;
+ }
 
  // local input state
  protected IEntity m_LastLocalBody;
@@ -106,7 +121,32 @@ class ACR_Manager : Managed
   if (!faction) return "You have no faction";
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can call supports";
   if (!m_Supports) m_Supports = new ACR_Supports(this);
-  return m_Supports.Call(faction.GetFactionKey(), index, target);
+  string key = faction.GetFactionKey();
+  int before = m_Bases.GetRP(key);
+  string result = m_Supports.Call(key, index, target);
+  int spent = before - m_Bases.GetRP(key);
+  if (spent > 0)
+  {
+   string support = m_Bases.GetFaction(key).m_aSupports[index].m_sName;
+   string tag = Command().TagOf(pc.GetPlayerId());
+   ACR_Intel intel = IntelFor(key);
+   string place = "";
+   if (intel) place = " " + intel.Place(target);
+   Command().Feed(key, string.Format("%1 called %2%3 (-%4 RP)", tag, support, place, spent));
+   Command().Note(pc.GetPlayerId(), support + place);
+   Pings().OnSupportCalled(key, target, tag, support);
+  }
+  return result;
+ }
+
+ // RP a player spent, in the side's feed ("Popp requisitioned Rifle squad 2 (-150 RP)").
+ protected void LogSpend(SCR_PlayerController pc, string key, int before, string what)
+ {
+  int spent = before - m_Bases.GetRP(key);
+  if (spent <= 0) return;
+  string tag = Command().TagOf(pc.GetPlayerId());
+  Command().Feed(key, string.Format("%1 %2 (-%3 RP)", tag, what, spent));
+  Command().Note(pc.GetPlayerId(), what);
  }
 
  static IEntity SpawnPrefab(ResourceName prefab, vector point)
@@ -123,7 +163,7 @@ class ACR_Manager : Managed
  // Chosen in the host launcher's setup menu and passed on the server's command
  // line; they override the scenario's own settings for this session.
  //  -acrStartRP N  -acrIncome X  -acrAI both|none|<faction>  -acrSkill N
- //  -acrReaction X  -acrSoldierCap N  -acrUnitCap N  (-acrGameMasterAll, -acrRespawnSeconds)
+ //  -acrReaction X  -acrSoldierCap N  -acrUnitCap N  -acrSharedCommand 0|1  (-acrGameMasterAll, -acrRespawnSeconds)
  protected void ApplyHostOptions()
  {
   m_bHostOptionsApplied = true;
@@ -131,6 +171,7 @@ class ACR_Manager : Managed
   if (System.GetCLIParam("acrSkill", value) && value.ToInt() > 0) m_iAISkill = value.ToInt();
   if (System.GetCLIParam("acrReaction", value) && value.ToFloat() > 0) m_fAIPerception = value.ToFloat();
   if (System.GetCLIParam("acrSoldierCap", value) && value.ToInt() > 0) m_iSoldierCap = value.ToInt();
+  if (System.GetCLIParam("acrSharedCommand", value)) m_SharedCommand = value.ToInt() != 0;
   string ai;
   bool setAI = System.GetCLIParam("acrAI", ai);
   ai.ToLower();
@@ -144,8 +185,8 @@ class ACR_Manager : Managed
    if (setCap && unitCap.ToInt() > 0) settings.m_iAIUnitCap = unitCap.ToInt();
   }
   ACR_PlayerSide.Key();
-  PrintFormat("[ACR] Host options: skill %1, reaction %2, soldier cap %3, AI %4, unit cap %5, start RP %6, income x%7",
-   m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption());
+  PrintFormat("[ACR] Host options: skill %1, reaction %2, soldier cap %3, AI %4, unit cap %5, start RP %6, income x%7, shared command %8",
+   m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption(), m_SharedCommand);
  }
 
  static int StartRPOption()
@@ -193,6 +234,7 @@ class ACR_Manager : Managed
   m_Cleanup.Tick();
   if (!m_Launchers) m_Launchers = new ACR_Launchers(this);
   m_Launchers.Tick();
+  Pings().Tick();
   t = ACR_Perf.Lap("cleanup", t);
   if (!m_bHostOptionsApplied) ApplyHostOptions();
   m_iStatusTick++;
@@ -503,6 +545,7 @@ class ACR_Manager : Managed
    array<int> factionCommanders = GetCommanders(playerFaction);
    if (!factionCommanders.IsEmpty()) continue;
    factionCommanders.Insert(id);
+   Command().OnTook(id, playerFaction.GetFactionKey(), true);
    Notify(id, "You are in command");
    PrintFormat("[ACR] Commander: %1 takes command of %2", GetGame().GetPlayerManager().GetPlayerName(id), playerFaction.GetFactionKey());
   }
@@ -510,12 +553,21 @@ class ACR_Manager : Managed
 
  string CommandStatus(int playerId)
  {
-  array<int> list = GetCommanders(SCR_FactionManager.SGetPlayerFaction(playerId));
+  Faction faction = SCR_FactionManager.SGetPlayerFaction(playerId);
+  array<int> list = GetCommanders(faction);
   if (!list || list.IsEmpty()) return "Command: AI";
   if (m_SharedCommand)
   {
-   if (list.Contains(playerId)) return string.Format("Shared command (%1 commanders)", list.Count());
-   return "Shared command";
+   array<int> ids = {};
+   array<string> tags = {};
+   Command().TagsOf(faction.GetFactionKey(), ids, tags);
+   string names = "";
+   foreach (string tag : tags)
+   {
+    if (!names.IsEmpty()) names += ", ";
+    names += tag;
+   }
+   return "Shared command: " + names;
   }
   if (list.Contains(playerId)) return "You are in command";
   return string.Format("Command: %1", GetGame().GetPlayerManager().GetPlayerName(list[0]));
@@ -531,6 +583,7 @@ class ACR_Manager : Managed
    return string.Format("%1 is in command", GetGame().GetPlayerManager().GetPlayerName(list[0]));
   m_LeftCommand.RemoveItem(id);
   list.Insert(id);
+  Command().OnTook(id, SCR_FactionManager.SGetPlayerFaction(id).GetFactionKey(), false);
   return "You are in command";
  }
 
@@ -539,7 +592,9 @@ class ACR_Manager : Managed
   int id = pc.GetPlayerId();
   array<int> list = GetCommanders(SCR_FactionManager.SGetPlayerFaction(id));
   if (!list || !list.Contains(id)) return "You are not in command";
+  string tag = Command().TagOf(id);
   list.RemoveItem(id);
+  Command().OnLeft(id, SCR_FactionManager.SGetPlayerFaction(id).GetFactionKey(), tag);
   if (!m_LeftCommand.Contains(id)) m_LeftCommand.Insert(id);
   EnsureCommanders();
   return "You left command";
@@ -660,7 +715,60 @@ class ACR_Manager : Managed
   return string.Format("%1 has no free soldier to take over", squad.GetName());
  }
 
+ // A player's order, credited to him (shared command: who ordered what).
  string Order(SCR_PlayerController pc, int command, RplId groupId, vector point)
+ {
+  ACR_Squad squad = FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
+  if (!squad) squad = GetSelectedSquad(pc);
+  int serial = -1;
+  int previous;
+  float previousAt;
+  if (squad)
+  {
+   serial = squad.m_iOrderSerial;
+   previous = squad.m_iOrderedBy;
+   previousAt = squad.m_fOrderedAt;
+  }
+  string result = GiveOrder(pc, command, groupId, point);
+  if (!squad || !m_Squads.Contains(squad) || !squad.GetFaction()) return result;
+  bool queued = (command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND) && !result.Contains("full");
+  bool ride = command == ACR_ERequest.ORDER_RIDE && result.Contains("on its way");
+  if (squad.m_iOrderSerial == serial && !queued && !ride) return result;
+  if (!IsCommander(pc.GetPlayerId())) return result;
+  int id = pc.GetPlayerId();
+  float now = GetGame().GetWorld().GetWorldTime();
+  squad.m_iOrderedBy = id;
+  squad.m_fOrderedAt = now;
+  string key = squad.GetFaction().GetFactionKey();
+  string what = OrderWords(command);
+  string place = "";
+  ACR_Intel intel = IntelFor(key);
+  if (intel && command != ACR_ERequest.ORDER_HALT && command != ACR_ERequest.ORDER_GET_OUT) place = " " + intel.Place(point);
+  Command().Note(id, string.Format("%1 %2%3", squad.GetName(), what, place));
+  // Someone else's fresh order replaced: tell the side (the client asked first).
+  if (previous != 0 && previous != id && now - previousAt < ACR_Command.RECENT_MS)
+   Command().Feed(key, string.Format("%1 re-tasked %2 (was %3's order)", Command().TagOf(id), squad.GetName(), Command().TagOf(previous)));
+  return result;
+ }
+
+ static string OrderWords(int command)
+ {
+  switch (command)
+  {
+   case ACR_ERequest.ORDER_DEFEND: return "defending";
+   case ACR_ERequest.QUEUE_DEFEND: return "then defending";
+   case ACR_ERequest.QUEUE_MOVE: return "then moving";
+   case ACR_ERequest.ORDER_GET_IN: return "getting in";
+   case ACR_ERequest.ORDER_GET_OUT: return "getting out";
+   case ACR_ERequest.ORDER_RIDE: return "riding";
+   case ACR_ERequest.ORDER_HUNT: return "hunting";
+   case ACR_ERequest.ORDER_SET_LZ: return "unloading";
+   case ACR_ERequest.ORDER_HALT: return "halted";
+  }
+  return "moving";
+ }
+
+ protected string GiveOrder(SCR_PlayerController pc, int command, RplId groupId, vector point)
  {
   ACR_Squad squad = FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
   if (!squad) squad = GetSelectedSquad(pc);
@@ -707,6 +815,9 @@ class ACR_Manager : Managed
     return Ride(squad, point);
    case ACR_ERequest.ORDER_HUNT:
     return Hunt(squad, point);
+   case ACR_ERequest.ORDER_HALT:
+    squad.Halt("Halted");
+    return name + ": halted";
    case ACR_ERequest.QUEUE_MOVE:
     if (squad.Queue(point, false)) return name + ": waypoint added";
     return name + ": waypoint list is full";
@@ -910,7 +1021,15 @@ class ACR_Manager : Managed
   if (!faction) return "You have no faction";
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can requisition units";
   string key = faction.GetFactionKey();
-  return PurchaseAt(key, entryIndex, FindSpawnBase(key, baseLabel), spot, hasSpot);
+  int before = m_Bases.GetRP(key);
+  ACR_Base spawnBase = FindSpawnBase(key, baseLabel);
+  string result = PurchaseAt(key, entryIndex, spawnBase, spot, hasSpot);
+  if (m_Bases.GetRP(key) < before && spawnBase)
+  {
+   string unit = m_Bases.GetFaction(key).m_aRequisitions[entryIndex].m_sName;
+   LogSpend(pc, key, before, "requisitioned " + unit + " at " + spawnBase.m_sName);
+  }
+  return result;
  }
 
  // Shared by the player commander and the AI commander.
@@ -1003,6 +1122,7 @@ class ACR_Manager : Managed
   if (!base) return "No friendly base can send reinforcements";
   int cost = missing.Count() * REINFORCE_COST_PER_SOLDIER;
   if (!m_Bases.Spend(key, cost)) return string.Format("Not enough RP (%1 needed)", cost);
+  LogSpend(pc, key, m_Bases.GetRP(key) + cost, "reinforced " + squad.GetName());
   foreach (ResourceName prefab : missing)
   {
    IEntity soldier = SpawnPrefab(prefab, SpawnPoint(base, 4, 12, 0.8));
@@ -1137,6 +1257,7 @@ class ACR_Manager : Managed
   }
   m_LastDriveVehicle = driveVehicle;
   pc.ACR_UpdateGunnerDrive(driveVehicle, driveThrottle, driveSteer);
+  pc.ACR_UpdateWorldPing(mapOpen);
   if (!m_HintShown)
   {
    m_HintShown = true;
