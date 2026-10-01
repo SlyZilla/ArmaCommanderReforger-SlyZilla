@@ -12,9 +12,17 @@ try:
     sha = subprocess.run(['git', '-C', str(root), 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True).stdout.strip()
 except Exception:
     sha = 'local'
-version = sys.argv[1] if len(sys.argv) > 1 else 'v' + datetime.date.today().strftime('%Y.%m.%d') + '-' + sha
+# --local: a test build for Jacob that must not self-update (the updater would replace it
+# with the latest published release). It goes to dist/ACActual-Arland-local.zip.
+local = '--local' in sys.argv
+args = [a for a in sys.argv[1:] if a != '--local']
+version = args[0] if args else 'v' + datetime.date.today().strftime('%Y.%m.%d') + '-' + sha
 source_file = root / 'tools/package/update-source.txt'
 update_source = source_file.read_text().strip() if source_file.exists() else ''
+if local:
+    version += '-local'
+    update_source = ''
+    out = root / 'dist' / 'ACActual-Arland-local.zip'
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
     z.writestr(f'{top}/ArmaCommanderReforger/VERSION.txt', version + '\n')
     if update_source:
@@ -31,4 +39,5 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
             if p.is_file():
                 z.write(p, f'{top}/ArmaCommanderReforger/{p.relative_to(root).as_posix()}')
 print(out, out.stat().st_size, version)
-(root / 'dist' / 'VERSION.txt').write_text(version + '\n')
+if not local:
+    (root / 'dist' / 'VERSION.txt').write_text(version + '\n')
