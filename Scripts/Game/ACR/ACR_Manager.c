@@ -1346,6 +1346,29 @@ class ACR_Manager : Managed
    input.ResetAction("CharacterRight");
    ACR_MapHandoff.ClearCharacterInput(localBody);
   }
+  // Narrow view after leaving the map in a possessed soldier: the map gadget's "focus"
+  // (which narrows the field of view) stayed on when possession changed outside our
+  // own hand-off (the game drops possession itself when build mode opens). Once the
+  // map is shut, nothing that legitimately focuses can be in use without a gadget in hand.
+  if (!mapOpen && (m_WasMapOpen || localBody != m_LastLocalBody) && pc.GetGadgetFocus())
+  {
+   ChimeraCharacter focusBody = ChimeraCharacter.Cast(localBody);
+   bool gadgetInHand = focusBody && focusBody.GetCharacterController() && focusBody.GetCharacterController().IsGadgetInHands();
+   bool mapInHand = false;
+   if (gadgetInHand)
+   {
+    SCR_GadgetManagerComponent gadgets = SCR_GadgetManagerComponent.GetGadgetManager(focusBody);
+    IEntity mapItem;
+    if (gadgets) mapItem = gadgets.GetGadgetByType(EGadgetType.MAP);
+    mapInHand = mapItem && focusBody.GetCharacterController().GetAttachedGadgetAtLeftHandSlot() == mapItem;
+   }
+   if (!gadgetInHand || mapInHand)
+   {
+    if (mapInHand) ACR_MapHandoff.Release(pc, localBody);
+    pc.SetGadgetFocus(false);
+    Print("[ACR] Map focus cleared after the map closed");
+   }
+  }
   if (localBody != m_LastLocalBody)
   {
    SCR_PlayerControllerCommandingComponent commanding = SCR_PlayerControllerCommandingComponent.GetLocalPlayerControllerCommandingComponent();
