@@ -25,8 +25,8 @@ HOW TO START
    Arma Reforger\); it remembers the answer. If anything fails, send
    ArmaCommanderReforger\launcher-log.txt to the person who sent you this.
 
-PLAYING TOGETHER (EXPERIMENTAL - FIRST EVER MULTIPLAYER TEST)
--------------------------------------------------------------
+PLAYING TOGETHER (EXPERIMENTAL)
+-------------------------------
 One person hosts on their PC and plays; the others join. Everyone needs this
 same folder (send them the same zip) and the same, up-to-date Reforger.
 
@@ -38,7 +38,8 @@ HOST (one person):
    - First a HOST SETUP list appears: players' side (any, or everyone on
      US / USSR with the AI commanding the other), starting RP, income,
      which sides get an AI commander, AI skill and reaction speed, soldier and squad
-     limits, respawn delay, Game Master for everyone. Type a number to
+     limits, respawn delay, Game Master for everyone, shared command.
+     Type a number to
      change one, Enter to start. Your choices are remembered.
    - A server window opens (leave it open) and Windows may ask about the
      firewall: tick BOTH Private and Public and click Allow.
@@ -62,10 +63,13 @@ CONNECTING OVER THE INTERNET - pick ONE:
  On the same home network, just use the host's 192.168.x.x address.
 
 WHO DOES WHAT:
-- Everyone plays US. The first player in is the commander (map orders,
-  buying). The others can take over any US soldier (F7), drive gun trucks,
-  and fight. The commander can hand over with "Leave command" in the map
-  panel; the next player can then press "Take command".
+- Everyone plays US. The first player in is a commander (map orders,
+  buying, supports). With shared command (on by default, option 12 in the
+  host setup) anyone else can press "Take command" in the map panel too:
+  every commander can order every squad and all share one RP pool. Players
+  not in command take over US soldiers (F7), drive gun trucks, fight and
+  ping. "Leave command" hands it back. With shared command off there is
+  one commander at a time.
 - The host (first player connected) gets Game Master (Y). Option 11 in the
   host setup gives it to everyone who joins.
 
@@ -140,13 +144,15 @@ ON THE COMMAND MAP
     Reinforce              refill missing soldiers (3 RP each). They appear
                            at your nearest base and then have to reach
                            the squad.
+    Halt                   drop all orders and stand still
     Switch to squad        jump into that squad's leader
+    Take over gunner       jump into the gun of the squad's vehicle
 - RIGHT-CLICK on the map moves the selected squad there. A line shows each
   squad's current order.
 - To toggle Defend or Get in off again, click the same button a second time.
 - BUYING UNITS: click "Requisition" at the top of the panel, click a unit in
-  the list, then left-click one of YOUR base markers on the map. The unit
-  deploys there. Right-click cancels. Vehicles come with crews. The list shows
+  the list, then left-click inside the ring of one of YOUR bases. The unit
+  deploys at that spot (a click just outside is pulled to the ring's edge). Right-click cancels. Vehicles come with crews. The list shows
   the price and stock, and your RP is shown in the panel.
 - SUPPORTS: click "Supports" in the panel, click one (price and cooldown are
   listed), then RIGHT-CLICK the target on the map. Everyone on your side gets
@@ -160,6 +166,17 @@ ON THE COMMAND MAP
          base and CAN be shot down.
   A red ring with a countdown marks each incoming support on the map.
   Keep your own troops out of it!
+- PINGS (everyone, not just commanders): Alt+click the map for "Look
+  here", or Alt+right-click for a picker (Look / Attack / Defend / Support,
+  or press 1-4). Pings show on your side's map and on screen, up to 3 per
+  player (Look lasts 15 s, the others 60 s). Alt+click your own ping to
+  clear it. A commander can click a Support ping to aim a support at it.
+  To ping from the 3D view, bind "Ping" under Controls > AC: Actual (tap:
+  look, hold: pick).
+- SHARED COMMAND on the map: other commanders' orders are drawn dashed
+  with their short name, the panel shows who ordered a squad and warns
+  before you override a fresh order, and lists the commanders and RP spent.
+- Several markers on top of each other: click again to cycle through them.
 - Base rings: blue = yours, red = enemy, yellow = neutral.
 - Two small bars under each of your squads: health (green, amber, red) and
   ammo (blue, red when low). The panel shows the numbers, plus low fuel.
@@ -220,8 +237,8 @@ TIPS
 
 KNOWN LIMITS (alpha)
 --------------------
-- Multiplayer has never been tested before this package. Expect bugs;
-  logs and a short note of what happened are gold.
+- Multiplayer, and shared command in particular, has had little testing.
+  Expect bugs; logs and a short note of what happened are gold.
 - No victory condition: play until one side is clearly beaten.
 - Game logs are in Documents\My Games\ArmaReforger\logs if something breaks.
   Sending the newest console.log helps a lot.
