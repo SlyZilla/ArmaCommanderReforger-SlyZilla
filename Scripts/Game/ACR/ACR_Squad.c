@@ -41,6 +41,30 @@ enum ACR_EMoveMode
 // command group, because a player-held agent inside the AI group stops the rest
 // of the formation from following waypoints. The logical roster (GetAgents)
 // always includes that detached leader.
+// A squad's order, saved to be put back later (native command set-aside,
+// regroup, resume after a dismount, land/road routes).
+class ACR_OrderSnapshot : Managed
+{
+ ResourceName m_sPrefab;
+ vector m_Target;
+ float m_fRadius = -1;
+ string m_sLabel;
+ ACR_EOrderState m_eState;
+ int m_iKind;
+
+ static ACR_OrderSnapshot Make(ResourceName prefab, vector target, float radius, string label, ACR_EOrderState state, int kind)
+ {
+  ACR_OrderSnapshot snapshot = new ACR_OrderSnapshot();
+  snapshot.m_sPrefab = prefab;
+  snapshot.m_Target = target;
+  snapshot.m_fRadius = radius;
+  snapshot.m_sLabel = label;
+  snapshot.m_eState = state;
+  snapshot.m_iKind = kind;
+  return snapshot;
+ }
+}
+
 class ACR_Squad : Managed
 {
  SCR_AIGroup m_Group;
@@ -229,13 +253,7 @@ class ACR_Squad : Managed
   return body && !body.GetCharacterController().IsDead() && body == GetLeader();
  }
 
- protected bool m_bOrderSetAside;
- protected ResourceName m_sAsidePrefab;
- protected vector m_AsideTarget;
- protected float m_fAsideRadius;
- protected string m_sAsideOrder;
- protected ACR_EOrderState m_eAsideState;
- protected int m_iAsideKind;
+ protected ref ACR_OrderSnapshot m_Aside; // map order set aside while a player commands the squad
 
  void Release()
  {
@@ -256,19 +274,17 @@ class ACR_Squad : Managed
   }
   if (previous) previous.SetCanDeleteIfNoPlayer(m_PreviousDeleteIfEmpty);
   // Back to the map order it had before, unless the player left it busy with one of his own.
-  if (m_bOrderSetAside && m_Group)
+  if (m_Aside && m_Group)
   {
    array<AIWaypoint> current = {};
    m_Group.GetWaypoints(current);
    if (current.IsEmpty())
    {
-    IssueWaypoint(m_sAsidePrefab, m_AsideTarget, m_fAsideRadius);
-    SetOrder(m_sAsideOrder, m_eAsideState);
-    m_OrderKind = m_iAsideKind;
+    RestoreOrder(m_Aside);
     PrintFormat("[ACR] %1: resumes its map order (%2)", m_Name, m_Order);
    }
   }
-  m_bOrderSetAside = false;
+  m_Aside = null;
   PrintFormat("[ACR] %1: native command released player=%2", m_Name, m_Commander);
   m_Commander = 0;
   m_PreviousGroup = -1;
@@ -355,13 +371,8 @@ class ACR_Squad : Managed
   m_Commander = leaderPlayer;
   // Set our standing map order aside, or the squad keeps doing it and the
   // player's command-wheel orders queue up behind it. It resumes when he leaves.
-  m_bOrderSetAside = m_Waypoint != null && !m_sOrderPrefab.IsEmpty();
-  m_sAsidePrefab = m_sOrderPrefab;
-  m_AsideTarget = m_MoveTarget;
-  m_fAsideRadius = m_fOrderRadius;
-  m_sAsideOrder = m_Order;
-  m_eAsideState = OrderState();
-  m_iAsideKind = m_OrderKind;
+  m_Aside = null;
+  if (m_Waypoint != null && !m_sOrderPrefab.IsEmpty()) m_Aside = SnapshotOrder();
   Halt("Following you");
   PrintFormat("[ACR] %1: native command granted player=%2 group=%3 linked=%4", m_Name, leaderPlayer, component.GetGroupID(), m_CommandGroup.GetSlave() == m_Group);
  }
@@ -398,6 +409,24 @@ class ACR_Squad : Managed
   m_Order = label;
   m_eOrderState = state;
   m_sStateLabel = label;
+ }
+
+ // The current order, to put back later with RestoreOrder.
+ ACR_OrderSnapshot SnapshotOrder()
+ {
+  return ACR_OrderSnapshot.Make(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, m_Order, OrderState(), m_OrderKind);
+ }
+
+ // Issue a saved order again (at its own target, or at another point, e.g. a route leg).
+ void RestoreOrder(ACR_OrderSnapshot snapshot)
+ {
+  RestoreOrderAt(snapshot, snapshot.m_sPrefab, snapshot.m_Target, snapshot.m_fRadius);
+ }
+ protected void RestoreOrderAt(ACR_OrderSnapshot snapshot, ResourceName prefab, vector target, float radius)
+ {
+  IssueWaypoint(prefab, target, radius);
+  SetOrder(snapshot.m_sLabel, snapshot.m_eState);
+  m_OrderKind = snapshot.m_iKind;
  }
 
  // What the squad is doing. NONE when the label was written directly by code
@@ -782,11 +811,7 @@ class ACR_Squad : Managed
  // An order whose straight line crosses open water is walked leg by leg along a
  // land route instead (see ACR_Terrain), so squads go round a bay, not across it.
  protected ref array<vector> m_aRoute = {};
- protected ResourceName m_sRoutePrefab;
- protected float m_fRouteRadius;
- protected string m_sRouteOrder;
- protected ACR_EOrderState m_eRouteState;
- protected int m_iRouteKind;
+ protected ref ACR_OrderSnapshot m_Route; // the order at the end of the route (target unused)
 
  bool RouteTo(vector destination, ResourceName prefab, float radius, string order, int kind)
  {
@@ -826,11 +851,7 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   ClearPlans();
   foreach (vector leg : legs) m_aRoute.Insert(leg);
-  m_sRoutePrefab = prefab;
-  m_fRouteRadius = radius;
-  m_sRouteOrder = order;
-  m_eRouteState = StateOfLabel(order);
-  m_iRouteKind = kind;
+  m_Route = ACR_OrderSnapshot.Make(prefab, vector.Zero, radius, order, StateOfLabel(order), kind);
   NextLeg();
  }
 
@@ -838,10 +859,8 @@ class ACR_Squad : Managed
  {
   vector leg = m_aRoute[0];
   m_aRoute.RemoveOrdered(0);
-  if (m_aRoute.IsEmpty()) IssueWaypoint(m_sRoutePrefab, leg, m_fRouteRadius);
-  else IssueWaypoint(WP_MOVE, leg, 25);
-  SetOrder(m_sRouteOrder, m_eRouteState);
-  m_OrderKind = m_iRouteKind;
+  if (m_aRoute.IsEmpty()) RestoreOrderAt(m_Route, m_Route.m_sPrefab, leg, m_Route.m_fRadius);
+  else RestoreOrderAt(m_Route, WP_MOVE, leg, 25);
  }
 
  // ---- queued orders (Shift + right-click on the map)
@@ -877,10 +896,12 @@ class ACR_Squad : Managed
  // Every point still ahead of the squad, in order: route legs, then queued orders.
  void GetPlannedPoints(notnull array<vector> points, notnull array<int> kinds)
  {
+  int routeKind;
+  if (m_Route) routeKind = m_Route.m_iKind;
   foreach (vector leg : m_aRoute)
   {
    points.Insert(leg);
-   kinds.Insert(m_iRouteKind);
+   kinds.Insert(routeKind);
   }
   foreach (int i, vector queued : m_aQueuePos)
   {
@@ -939,12 +960,7 @@ class ACR_Squad : Managed
  protected bool m_bRegrouping;
  protected float m_fRegroupSince;
  protected float m_fNextRegroup;
- protected ResourceName m_sRegroupPrefab;
- protected vector m_RegroupTarget;
- protected float m_fRegroupRadius;
- protected string m_sRegroupOrder;
- protected ACR_EOrderState m_eRegroupState;
- protected int m_iRegroupKind;
+ protected ref ACR_OrderSnapshot m_Regroup; // the order resumed once regrouped
 
  // Middle of the living members on foot (where a strung-out squad meets up).
  bool Centroid(out vector center)
@@ -991,9 +1007,7 @@ class ACR_Squad : Managed
    m_bRegrouping = false;
    m_fNextRegroup = now + REGROUP_COOLDOWN_MS;
    if (!closed) m_fNextRegroup = now + REGROUP_FAILED_COOLDOWN_MS;
-   IssueWaypoint(m_sRegroupPrefab, m_RegroupTarget, m_fRegroupRadius);
-   SetOrder(m_sRegroupOrder, m_eRegroupState);
-   m_OrderKind = m_iRegroupKind;
+   RestoreOrder(m_Regroup);
    PrintFormat("[ACR] TACTICS %1: regrouped (%2 s), moving on", m_Name, (int)((now - m_fRegroupSince) / 1000));
    return;
   }
@@ -1008,12 +1022,7 @@ class ACR_Squad : Managed
   if (alive < 3) return;
   int behind = Stragglers(STRAGGLER_DISTANCE);
   if (behind * 3 < alive) return;
-  m_sRegroupPrefab = m_sOrderPrefab;
-  m_RegroupTarget = m_MoveTarget;
-  m_fRegroupRadius = m_fOrderRadius;
-  m_sRegroupOrder = m_Order;
-  m_eRegroupState = OrderState();
-  m_iRegroupKind = m_OrderKind;
+  m_Regroup = SnapshotOrder();
   ClearOrders();
   // Everyone heads for the middle of the squad: the front waits and walks
   // back a little, the stragglers catch up, instead of the leader standing
@@ -1238,6 +1247,7 @@ class ACR_Squad : Managed
   // Fresh order, so the driver plans a new route from here.
   if (m_Group && !m_sOrderPrefab.IsEmpty())
   {
+   // Label and state stay as they are (rides write their own label).
    int kind = m_OrderKind;
    IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius);
    m_OrderKind = kind;
@@ -1285,19 +1295,9 @@ class ACR_Squad : Managed
  void ContinueAfterDismount(ResourceName prefab, vector target, float radius, string order, int kind)
  {
   m_bResumeOnFoot = !prefab.IsEmpty();
-  m_sResumePrefab = prefab;
-  m_ResumeTarget = target;
-  m_fResumeRadius = radius;
-  m_sResumeOrder = order;
-  m_eResumeState = StateOfLabel(order);
-  m_iResumeKind = kind;
+  m_Resume = ACR_OrderSnapshot.Make(prefab, target, radius, order, StateOfLabel(order), kind);
  }
- protected ResourceName m_sResumePrefab;
- protected vector m_ResumeTarget;
- protected float m_fResumeRadius;
- protected string m_sResumeOrder;
- protected ACR_EOrderState m_eResumeState;
- protected int m_iResumeKind;
+ protected ref ACR_OrderSnapshot m_Resume; // carried on on foot after a dismount
 
  // ---------------------------------------------------------------- transport
  vector m_LZ;
@@ -1421,9 +1421,7 @@ class ACR_Squad : Managed
   if (m_bResumeOnFoot)
   {
    m_bResumeOnFoot = false;
-   IssueWaypoint(m_sResumePrefab, m_ResumeTarget, m_fResumeRadius);
-   SetOrder(m_sResumeOrder, m_eResumeState);
-   m_OrderKind = m_iResumeKind;
+   RestoreOrder(m_Resume);
    return;
   }
   IssueWaypoint(WP_DEFEND, anchor.GetOrigin(), 20);
@@ -1692,7 +1690,7 @@ class ACR_Squad : Managed
  void Dispose()
  {
   m_bUnsticking = false;
-  m_bOrderSetAside = false; // being removed: nothing to resume
+  m_Aside = null; // being removed: nothing to resume
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);

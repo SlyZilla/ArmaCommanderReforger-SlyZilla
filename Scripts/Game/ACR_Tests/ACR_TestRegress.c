@@ -208,6 +208,17 @@ class ACR_TestRegress
     Check("reinforce restocks ammo inside a deploy base", restocked >= 1 && after > before, string.Format("magazines %1 -> %2, restocked %3", before, after, restocked));
    }
   }
+  // One saved-order type (refactor 2 Oct): a snapshot puts the same order back.
+  if (tick == 42)
+  {
+   bravo.Defend(harness.Ground("1450 0 2890"));
+   ACR_OrderSnapshot saved = bravo.SnapshotOrder();
+   bravo.Halt("Halted");
+   bool halted = bravo.OrderState() == ACR_EOrderState.HOLD;
+   bravo.RestoreOrder(saved);
+   bool back = bravo.m_Order == saved.m_sLabel && bravo.OrderState() == ACR_EOrderState.DEFEND && bravo.m_OrderKind == ACR_EOrderKind.DEFEND && bravo.m_sOrderPrefab == ACR_Squad.WP_DEFEND && vector.Distance(bravo.m_MoveTarget, saved.m_Target) < 0.1;
+   Check("a saved order comes back unchanged", halted && back, string.Format("label '%1' state %2 kind %3", bravo.m_Order, typename.EnumToString(ACR_EOrderState, bravo.OrderState()), bravo.m_OrderKind));
+  }
   if (tick == 50)
   {
    bool kept = s_Defender && s_Defender.m_iAITask == ACR_EAITask.DEFEND;
