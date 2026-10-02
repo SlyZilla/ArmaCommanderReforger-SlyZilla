@@ -311,11 +311,6 @@ class ACR_Logistics : Managed
  }
 
  protected ref array<IEntity> m_Found = {};
- protected bool CollectVehicle(IEntity entity)
- {
-  if (Vehicle.Cast(entity) && !m_Found.Contains(entity)) m_Found.Insert(entity);
-  return true;
- }
 
  // All service vehicles in the world (found through the squads' crews and
  // the vehicles already known, plus a scan near every base now and then).
@@ -337,8 +332,21 @@ class ACR_Logistics : Managed
    IEntity crewed = ACR_Transport.CrewedVehicle(squad);
    if (crewed && !m_Found.Contains(crewed)) m_Found.Insert(crewed);
   }
-  foreach (ACR_Base base : ACR_Base.s_All)
-   GetGame().GetWorld().QueryEntitiesBySphere(base.GetOrigin(), base.m_fRadius + 150, CollectVehicle);
+  // Near a base: from the vehicle registry (a sphere query per base cost 13-26 ms
+  // every 10 s, structural review 1 Oct).
+  array<IEntity> registered = {};
+  ACR_Vehicles.All(registered);
+  foreach (IEntity candidate : registered)
+  {
+   if (m_Found.Contains(candidate) || ServiceOf(candidate) == 0) continue;
+   vector at = candidate.GetOrigin();
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (vector.Distance(at, base.GetOrigin()) > base.m_fRadius + 150) continue;
+    m_Found.Insert(candidate);
+    break;
+   }
+  }
   foreach (IEntity vehicle : m_Found)
    if (ServiceOf(vehicle) != 0 && !m_ServiceVehicles.Contains(vehicle) && Health(vehicle) > 0) m_ServiceVehicles.Insert(vehicle);
  }
