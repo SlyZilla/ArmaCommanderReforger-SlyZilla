@@ -9,8 +9,8 @@ enum ACR_EOrderKind
 }
 
 // What a squad is doing, for the logic (m_Order is only the label shown on the
-// map). NONE: a label someone else wrote directly (rides, gunner drive) or one
-// that carries no state of its own.
+// map). NONE: a label that carries no state of its own (or one written
+// directly to m_Order, which nothing does any more).
 enum ACR_EOrderState
 {
  NONE,
@@ -22,7 +22,12 @@ enum ACR_EOrderState
  GET_IN,
  GET_OUT,
  HUNT,
- REGROUP
+ REGROUP,
+ RIDE,       // waiting for, boarding or riding a transport (ACR_Rides)
+ RETURN,     // a transport going home after a ride
+ DISMOUNT,   // everyone getting out now
+ COMMANDED,  // a player commands it through the game's own command menu
+ DRIVEN      // its vehicle is driven by a player in the gunner seat
 }
 
 enum ACR_EMoveMode
@@ -373,7 +378,7 @@ class ACR_Squad : Managed
   // player's command-wheel orders queue up behind it. It resumes when he leaves.
   m_Aside = null;
   if (m_Waypoint != null && !m_sOrderPrefab.IsEmpty()) m_Aside = SnapshotOrder();
-  Halt("Following you");
+  Halt("Following you", ACR_EOrderState.COMMANDED);
   PrintFormat("[ACR] %1: native command granted player=%2 group=%3 linked=%4", m_Name, leaderPlayer, component.GetGroupID(), m_CommandGroup.GetSlave() == m_Group);
  }
 
@@ -429,9 +434,8 @@ class ACR_Squad : Managed
   m_OrderKind = snapshot.m_iKind;
  }
 
- // What the squad is doing. NONE when the label was written directly by code
- // that doesn't set a state (ACR_Rides, ACR_GunnerDrive: still awaiting their
- // live check before they move over to SetOrder).
+ // What the squad is doing. NONE when m_Order no longer matches the label the
+ // state was set with (every order goes through SetOrder/Halt now).
  ACR_EOrderState OrderState()
  {
   if (m_Order != m_sStateLabel) return ACR_EOrderState.NONE;
@@ -543,11 +547,11 @@ class ACR_Squad : Managed
  }
 
  // Drop every queued order and stand still (gunner drives, the Halt button).
- void Halt(string label)
+ void Halt(string label, ACR_EOrderState state = ACR_EOrderState.HOLD)
  {
   if (!m_Group) return;
   ClearOrders();
-  SetOrder(label, ACR_EOrderState.HOLD);
+  SetOrder(label, state);
   NewOrder();
   ClearPlans();
  }
@@ -1331,7 +1335,7 @@ class ACR_Squad : Managed
    dropped++;
   }
   m_bHasLZ = false;
-  Halt("Dismounting");
+  Halt("Dismounting", ACR_EOrderState.DISMOUNT);
   m_iDismountSweeps = 0;
   // One follow-up per squad: a second dismount (bail-out during a ride, F6 twice)
   // used to leave two queued, and the later one replaced the resumed order with

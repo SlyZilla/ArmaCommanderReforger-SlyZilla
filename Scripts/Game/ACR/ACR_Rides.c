@@ -98,8 +98,9 @@ class ACR_Rides : Managed
   ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
   if (!driver || !ACR_Respawn.IsAlive(driver) || ACR_Squad.FindController(driver) != 0) return false;
   if (m_Manager.IsGunnerDriven(vehicle)) return false;
-  string order = squad.m_Order;
-  if (order == "Holding" || order == "Holding position" || order == "Defending" || order == "Returning") return true;
+  // Idle, holding or defending somewhere, or heading home from an earlier ride.
+  ACR_EOrderState state = squad.OrderState();
+  if (state == ACR_EOrderState.HOLD || state == ACR_EOrderState.DEFEND || state == ACR_EOrderState.RETURN) return true;
   return squad.m_Group != null && squad.m_Group.GetCurrentWaypoint() == null;
  }
 
@@ -209,11 +210,11 @@ class ACR_Rides : Managed
   ride.m_sFinalOrder = finalOrder;
   ride.m_iFinalKind = finalKind;
   ride.m_fDriveBudgetMs = (trip / 4 + 150) * 1000; // generous: 4 m/s average plus slack
-  if (pickup == from) rider.Halt("Waiting for ride");
+  if (pickup == from) rider.Halt("Waiting for ride", ACR_EOrderState.RIDE);
   else
   {
    rider.MoveTo(pickup);
-   rider.m_Order = "Waiting for ride";
+   rider.SetOrder("Waiting for ride", ACR_EOrderState.RIDE);
   }
   taxi.SetMode(ACR_EMoveMode.FAST);
   taxi.RouteTo(pickup, ACR_Squad.WP_MOVE, -1, "Picking up " + rider.GetName(), 0);
@@ -324,13 +325,13 @@ class ACR_Rides : Managed
   if (ride.m_Rider.m_iOrderSerial != ride.m_iRiderSerial || ride.m_Taxi.m_iOrderSerial != ride.m_iTaxiSerial)
   {
    // (the transport crew bailing out also lands here, with the riders already told to get out)
-   bool riderReordered = ride.m_Rider.m_iOrderSerial != ride.m_iRiderSerial && ride.m_Rider.m_Order != "Dismounting";
+   bool riderReordered = ride.m_Rider.m_iOrderSerial != ride.m_iRiderSerial && ride.m_Rider.OrderState() != ACR_EOrderState.DISMOUNT;
    if (riderReordered) Log(ride, "cancelled: the riders got a new order");
    else Log(ride, "cancelled: the transport crew was given other orders or bailed out");
    if (ride.m_Taxi.m_iOrderSerial == ride.m_iTaxiSerial) SendHome(ride);
    // Riders thrown out on the way (the transport got stuck or hit) still go on to their objective.
    ACR_Squad rider = ride.m_Rider;
-   if (ride.m_State == ACR_ERideState.TO_DROP && rider.m_Order == "Dismounting")
+   if (ride.m_State == ACR_ERideState.TO_DROP && rider.OrderState() == ACR_EOrderState.DISMOUNT)
     rider.ContinueAfterDismount(ride.m_sFinalPrefab, ride.m_Final, ride.m_fFinalRadius, ride.m_sFinalOrder, ride.m_iFinalKind);
    // Riders given a new order while aboard: out first, then carry it out on foot.
    else if (aboard > 0 && riderReordered && rider.m_sOrderPrefab != ACR_Squad.WP_GET_OUT)
@@ -351,7 +352,7 @@ class ACR_Rides : Managed
     {
      ride.m_Taxi.Halt("Loading " + ride.m_Rider.GetName());
      ride.m_Rider.MoveTo(ride.m_Vehicle.GetOrigin());
-     ride.m_Rider.m_Order = "Boarding";
+     ride.m_Rider.SetOrder("Boarding", ACR_EOrderState.RIDE);
      ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
      ride.m_iTaxiSerial = ride.m_Taxi.m_iOrderSerial;
      SetState(ride, ACR_ERideState.BOARDING);
@@ -378,10 +379,9 @@ class ACR_Rides : Managed
     {
      if (leftBehind > 0) Log(ride, string.Format("leaving without %1 rider(s) more than %2 m away", leftBehind, STRAGGLER_DISTANCE));
      else if (mostly) Log(ride, string.Format("leaving with %1/%2 aboard", aboard, alive));
-     ride.m_Rider.Halt("Riding");
+     ride.m_Rider.Halt("Riding", ACR_EOrderState.RIDE);
      ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
      ride.m_Taxi.RouteTo(ride.m_Drop, ACR_Squad.WP_MOVE, -1, "Driving " + ride.m_Rider.GetName(), 0);
-     ride.m_Rider.m_Order = "Riding";
      ride.m_iTaxiSerial = ride.m_Taxi.m_iOrderSerial;
      SetState(ride, ACR_ERideState.TO_DROP);
      Log(ride, "aboard, on the way");
@@ -472,7 +472,7 @@ class ACR_Rides : Managed
    return;
   }
   taxi.MoveTo(ACR_Manager.Ground(home.GetOrigin()));
-  taxi.m_Order = "Returning";
+  taxi.SetOrder("Returning", ACR_EOrderState.RETURN);
  }
 
  static bool MostlyAboard(int aboard, int alive)

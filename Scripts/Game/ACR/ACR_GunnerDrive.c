@@ -118,7 +118,7 @@ class ACR_GunnerDrive
 
  void Begin()
  {
-  m_Squad.Halt("Driven by gunner");
+  m_Squad.Halt("Driven by gunner", ACR_EOrderState.DRIVEN);
   AIControlComponent ai = AIControlComponent.Cast(m_Driver.FindComponent(AIControlComponent));
   if (s_bParkDriverAI && ai && ai.IsAIActivated())
   {
@@ -378,6 +378,6 @@ class ACR_GunnerDrive
    AIControlComponent ai = AIControlComponent.Cast(m_Driver.FindComponent(AIControlComponent));
    if (ai && !ai.IsAIActivated()) ai.ActivateAI();
   }
-  if (m_Squad && m_Squad.m_Order == "Driven by gunner") m_Squad.m_Order = "Holding";
+  if (m_Squad && m_Squad.OrderState() == ACR_EOrderState.DRIVEN) m_Squad.SetOrder("Holding", ACR_EOrderState.HOLD);
  }
 }
