@@ -60,4 +60,4 @@ Logs: automated tests write to `.local-game/logs/<date>/console.log`; normal pla
 Every AI group that is not a player group and has soldiers is registered as a squad. It
 belongs to its faction, and only players of that faction can possess or command it.
 
-Docs and past validation evidence are in `docs/`.
+Mission makers: see [MISSION-MAKING.md](MISSION-MAKING.md). Docs and past validation evidence are in `docs/`.

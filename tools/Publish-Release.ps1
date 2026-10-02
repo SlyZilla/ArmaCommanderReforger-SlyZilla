@@ -55,6 +55,7 @@ function Sync-RepoFile($localPath, $repoPath) {
 }
 Sync-RepoFile (Join-Path $root 'tools\package\REPO-README.md') 'README.md'
 Sync-RepoFile (Join-Path $root 'LICENSE.md') 'LICENSE.md'
+Sync-RepoFile (Join-Path $root 'MISSION-MAKING.md') 'MISSION-MAKING.md'
 Sync-RepoFile (Join-Path $root 'tools\package\github\ISSUE_TEMPLATE\bug_report.md') '.github/ISSUE_TEMPLATE/bug_report.md'
 Sync-RepoFile (Join-Path $root 'tools\package\github\ISSUE_TEMPLATE\config.yml') '.github/ISSUE_TEMPLATE/config.yml'
 & $gh repo edit $repo --description "Arma Commander Actual (AC: Actual): unofficial, vibecoded fan port of Arma Commander to Arma Reforger. Downloads under Releases." 2>&1 | Out-Null

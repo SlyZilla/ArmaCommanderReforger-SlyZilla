@@ -56,6 +56,10 @@ Expect rough edges; bug reports with logs help a lot.
 
 Playtesters: **PoppiPoppins** and **Hexxyz**.
 
+## Making scenarios
+
+Want AC: Actual on another map or in your own scenario? See [MISSION-MAKING.md](MISSION-MAKING.md).
+
 ## Credits and license
 
 Based on **Arma Commander** for Arma 3 by **Martin Hájek**
