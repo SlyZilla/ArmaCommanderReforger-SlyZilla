@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{BBB0B10500000001}Configs/BBB/BBB_Bios.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}
