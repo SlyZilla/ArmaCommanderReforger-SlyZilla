@@ -262,7 +262,10 @@ class ACR_Manager : Managed
     if (statusDue) squad.UpdateStatus(m_Logistics);
     continue;
    }
-   PrintFormat("[ACR] Squad removed: %1", squad.GetName());
+   // Where its vehicle is and whether it still stands, so a lost crew can be traced (2 Oct live).
+   string vehicleNote = "no vehicle";
+   if (squad.m_OwnVehicle) vehicleNote = string.Format("vehicle at %1, health %2", squad.m_OwnVehicle.GetOrigin(), ACR_Logistics.Health(squad.m_OwnVehicle));
+   PrintFormat("[ACR] Squad removed: %1 (%2)", squad.GetName(), vehicleNote);
    squad.Dispose();
    m_Squads.RemoveOrdered(i);
   }
