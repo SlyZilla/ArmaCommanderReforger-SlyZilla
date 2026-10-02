@@ -90,18 +90,49 @@ class ACR_Rides : Managed
  // manned gun, AI-driven, not busy with anything but holding or heading home.
  bool IsFreeTransport(ACR_Squad squad, string faction)
  {
-  if (FactionOf(squad) != faction || squad.HasPlayer() || RideOf(squad)) return false;
+  return WhyNotTaxi(squad, faction).IsEmpty();
+ }
+
+ // "" = can serve as a taxi; otherwise why not (told to the player when a ride is refused).
+ string WhyNotTaxi(ACR_Squad squad, string faction)
+ {
+  if (FactionOf(squad) != faction) return "other side";
+  if (squad.HasPlayer()) return "led by a player";
+  if (RideOf(squad)) return "already giving a ride";
   IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
-  if (!vehicle || squad.HasGunner(vehicle)) return false;
-  if (ACR_Logistics.ServiceOf(vehicle) != 0) return false; // ammo/repair/fuel trucks have their own job
-  if (!CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent))) return false; // ground vehicles only
+  if (!vehicle) return "no vehicle";
+  if (squad.HasGunner(vehicle)) return "has a manned gun";
+  if (ACR_Logistics.ServiceOf(vehicle) != 0) return "service vehicle"; // ammo/repair/fuel trucks have their own job
+  if (!CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent))) return "not a ground vehicle";
   ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
-  if (!driver || !ACR_Respawn.IsAlive(driver) || ACR_Squad.FindController(driver) != 0) return false;
-  if (m_Manager.IsGunnerDriven(vehicle)) return false;
+  if (!driver || !ACR_Respawn.IsAlive(driver)) return "no driver";
+  if (ACR_Squad.FindController(driver) != 0) return "a player is driving";
+  if (m_Manager.IsGunnerDriven(vehicle)) return "driven from the gun";
   // Idle, holding or defending somewhere, or heading home from an earlier ride.
   ACR_EOrderState state = squad.OrderState();
-  if (state == ACR_EOrderState.HOLD || state == ACR_EOrderState.DEFEND || state == ACR_EOrderState.RETURN) return true;
-  return squad.m_Group != null && squad.m_Group.GetCurrentWaypoint() == null;
+  if (state == ACR_EOrderState.HOLD || state == ACR_EOrderState.DEFEND || state == ACR_EOrderState.RETURN) return "";
+  if (squad.m_Group != null && squad.m_Group.GetCurrentWaypoint() == null) return "";
+  return "busy with an order";
+ }
+
+ // For a refused ride: the nearest of our crewed vehicles and why it can't come.
+ protected string NearestTaxiNote(ACR_Squad rider, string faction, vector pickup, float limit, int seatsNeeded)
+ {
+  ACR_Squad nearest;
+  float best = float.MAX;
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (squad == rider || FactionOf(squad) != faction) continue;
+   IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
+   if (!vehicle) continue;
+   float d = vector.DistanceXZ(vehicle.GetOrigin(), pickup);
+   if (d < best) { best = d; nearest = squad; }
+  }
+  if (!nearest) return " (we have no crewed vehicles)";
+  string why = WhyNotTaxi(nearest, faction);
+  if (why.IsEmpty() && best > limit) why = "too far";
+  if (why.IsEmpty()) why = string.Format("%1 free seats", FreeSeats(ACR_Transport.CrewedVehicle(nearest)));
+  return string.Format(" (nearest: %1, %2 m, %3)", nearest.GetName(), (int)best, why);
  }
 
  // Nearest free transport with room for everyone, within the fetch limits.
@@ -170,7 +201,8 @@ class ACR_Rides : Managed
   if (!taxi)
   {
    m_NoTransportAt.Set(faction, GetGame().GetWorld().GetWorldTime());
-   why = string.Format("no free transport with %1 seats within %2 m", seats, (int)Math.Min(MAX_PICKUP, trip * PICKUP_SHARE));
+   float limit = Math.Min(MAX_PICKUP, trip * PICKUP_SHARE);
+   why = string.Format("no free transport with %1 seats within %2 m", seats, (int)limit) + NearestTaxiNote(rider, faction, from, limit, seats);
    return null;
   }
   // Only worth it if driving beats walking. Where the roads (which the game's own

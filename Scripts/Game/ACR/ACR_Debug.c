@@ -34,7 +34,7 @@ class ACR_Debug : Managed
  {
   if (baseName.IsEmpty()) return null;
   foreach (ACR_Base base : ACR_Base.s_All)
-   if (base.m_sName == baseName) return base;
+   if (base.GetLabel() == baseName || base.m_sName == baseName) return base; // the map sends labels
   return null;
  }
 

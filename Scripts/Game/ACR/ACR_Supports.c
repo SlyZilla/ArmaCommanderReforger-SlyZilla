@@ -307,6 +307,10 @@ class ACR_HeliRun : ACR_SupportRun
  float m_fNextGunLog;
  float m_fNextEnemyScan;
  float m_fNextSideCheck;
+ int m_iStack;        // height band (0-2) so our helicopters don't share an altitude
+ static const float STACK_STEP = 30;        // m between height bands
+ static const float SEPARATION = 160;       // m: closer than this (and within 40 m height), steer apart
+ static const float OPPORTUNITY_RADIUS = 450; // m around the helicopter: gunners also engage enemies here
 
  bool SideCanFire(float bearing)
  {
@@ -465,6 +469,27 @@ class ACR_HeliRun : ACR_SupportRun
   PrintFormat("[ACR] SUPPORT gunship pattern: %1 (side guns %2 at %3 deg, nose/tail guns %4)", m_bPasses, bestCount, bestBearing, noseTail);
  }
 
+ // Steering away from our other helicopters nearby (2 Oct live: two orbiting near
+ // each other collided). Zero when none is close.
+ vector Separation(ACR_Supports supports)
+ {
+  vector push = vector.Zero;
+  array<ACR_HeliRun> others = {};
+  supports.Helicopters(others);
+  foreach (ACR_HeliRun other : others)
+  {
+   if (other == this || !other.m_Vehicle || other.m_bDestroyed) continue;
+   vector apart = m_Pos - other.m_Pos;
+   float height = Math.AbsFloat(apart[1]);
+   apart[1] = 0;
+   float d = apart.Length();
+   if (d >= SEPARATION || height > 40) continue;
+   if (d < 1) apart = Heading(m_fYaw + 90);
+   push = push + apart.Normalized() * ((1 - d / SEPARATION) * 2.5);
+  }
+  return push;
+ }
+
  override bool Frame(ACR_Supports supports, float dt, float now)
  {
   if (!m_Vehicle) return false;
@@ -554,6 +579,9 @@ class ACR_HeliRun : ACR_SupportRun
   }
   // Rocket run: once past the firing window, climb out.
   else if (vector.Dot(m_Target - m_Pos, m_Dir) < 250) altitude = ALT_EGRESS;
+  altitude += m_iStack * STACK_STEP;
+  vector away = Separation(supports);
+  if (away != vector.Zero) desired = (desired + away).Normalized();
 
   // Track: turn toward the desired heading at a helicopter-like rate, banking into it.
   float desiredYaw = Math.Atan2(desired[0], desired[2]) * Math.RAD2DEG;
@@ -576,7 +604,7 @@ class ACR_HeliRun : ACR_SupportRun
   // Vertical speed eases toward what the terrain asks for (it used to jump straight
   // to the limit, so the flight looked rigid over hills).
   float maxUp = 12;
-  if (altitude == ALT_EGRESS) maxUp = 16;
+  if (altitude >= ALT_EGRESS) maxUp = 16;
   float wantedClimb = Math.Clamp((wantedY - previous[1]) * 0.5, -10, maxUp);
   m_fClimb += (wantedClimb - m_fClimb) * Math.Min(1, dt * 1.2);
   m_Pos[1] = previous[1] + m_fClimb * dt;
@@ -666,6 +694,9 @@ class ACR_HeliRun : ACR_SupportRun
     m_fNextEnemyScan = now + 500;
     m_aEnemies.Clear();
     supports.FindEnemies(m_sFaction, m_Target, 320, m_aEnemies);
+    // Targets of opportunity around the helicopter itself: the gunner on the outside
+    // of the orbit faces away from the target and had nothing to shoot (2 Oct live).
+    supports.FindEnemies(m_sFaction, m_Pos, OPPORTUNITY_RADIUS, m_aEnemies);
    }
    foreach (ACR_HeliGun shooter : m_Guns) shooter.Update(m_Vehicle, heliVelocity, m_Target, m_aEnemies, now);
   }
@@ -767,6 +798,16 @@ class ACR_Supports : Managed
  ACR_Manager m_Manager;
  ref array<IEntity> m_Vehicles = {};
  protected ref array<ref ACR_SupportRun> m_Runs = {};
+
+ void Helicopters(array<ACR_HeliRun> result)
+ {
+  result.Clear();
+  foreach (ACR_SupportRun run : m_Runs)
+  {
+   ACR_HeliRun heli = ACR_HeliRun.Cast(run);
+   if (heli) result.Insert(heli);
+  }
+ }
 
  // Test hook: the running helicopter support of a side (null if none).
  ACR_HeliRun TestHeliRun(string faction)
@@ -999,6 +1040,12 @@ class ACR_Supports : Managed
      entry.m_fReadyAt = now;
      return "No helicopter available";
     }
+    // Each helicopter in the air gets its own height band.
+    array<ACR_HeliRun> flying = {};
+    Helicopters(flying);
+    array<int> taken = {};
+    foreach (ACR_HeliRun up : flying) if (up.m_Vehicle && !up.m_bDestroyed) taken.Insert(up.m_iStack);
+    while (taken.Contains(heli.m_iStack) && heli.m_iStack < 2) heli.m_iStack++;
     m_Runs.Insert(heli);
     delay = (int)(2200 / ACR_HeliRun.SPEED_RUN);
     break;

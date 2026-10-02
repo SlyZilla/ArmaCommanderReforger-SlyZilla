@@ -225,6 +225,7 @@ class ACR_Manager : Managed
  {
   int t = System.GetTickCount();
   ScanForSquads();
+  ResolveCrewNames();
   t = ACR_Perf.Lap("scan", t);
   EnsureCommanders();
   m_Bases.Tick(this);
@@ -299,6 +300,34 @@ class ACR_Manager : Managed
  // passenger groups waiting to board.
  ref map<IEntity, string> m_PendingCrewNames = new map<IEntity, string>();
  ref map<SCR_AIGroup, IEntity> m_PendingBoarding = new map<SCR_AIGroup, IEntity>();
+
+ // A vehicle crew can register before it is seated (2 Oct live: Truck 1 and Humvee 1
+ // showed as "Squad 1" and "Squad 2", the truck wasn't known as theirs): name it once seated.
+ protected void ResolveCrewNames()
+ {
+  if (m_PendingCrewNames.IsEmpty()) return;
+  array<IEntity> done = {};
+  foreach (IEntity vehicle, string crewName : m_PendingCrewNames)
+  {
+   if (!vehicle) { done.Insert(vehicle); continue; }
+   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+   if (!compartments) { done.Insert(vehicle); continue; }
+   array<BaseCompartmentSlot> seats = {};
+   compartments.GetCompartments(seats);
+   foreach (BaseCompartmentSlot seat : seats)
+   {
+    if (!seat.GetOccupant()) continue;
+    ACR_Squad crew = FindSquadBySoldier(seat.GetOccupant());
+    if (!crew) continue;
+    crew.Rename(crewName);
+    if (!crew.m_OwnVehicle) crew.m_OwnVehicle = vehicle;
+    PrintFormat("[ACR] Crew named once seated: %1", crewName);
+    done.Insert(vehicle);
+    break;
+   }
+  }
+  foreach (IEntity finished : done) m_PendingCrewNames.Remove(finished);
+ }
 
  ACR_Squad Register(SCR_AIGroup group)
  {

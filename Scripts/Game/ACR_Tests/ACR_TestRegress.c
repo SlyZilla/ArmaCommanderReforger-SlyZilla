@@ -233,13 +233,13 @@ class ACR_TestRegress
    foreach (ACR_SupportEntry sup2 : usData.m_aSupports) if (sup2.m_fReadyAt > GetGame().GetWorld().GetWorldTime()) ready = false;
    Check("debug: supports ready again", ready && !usData.m_aSupports.IsEmpty(), "");
    ACR_Base sovietBase;
-   foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sOwner == "USSR") { sovietBase = base; break; }
+   foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sOwner == "USSR" && (!sovietBase || base.m_bIncome)) sovietBase = base; // a label with [value] if possible
    if (sovietBase)
    {
-    dbg.Run(manager, ACR_EDebug.CAPTURE_OWN, "US", sovietBase.m_sName);
+    dbg.Run(manager, ACR_EDebug.CAPTURE_OWN, "US", sovietBase.GetLabel());
     bool ours = sovietBase.m_sOwner == "US";
-    dbg.Run(manager, ACR_EDebug.CAPTURE_ENEMY, "US", sovietBase.m_sName);
-    Check("debug: capture a base and hand it back", ours && sovietBase.m_sOwner == "USSR", sovietBase.m_sName);
+    dbg.Run(manager, ACR_EDebug.CAPTURE_ENEMY, "US", sovietBase.GetLabel());
+    Check("debug: capture a base by its map label and hand it back", ours && sovietBase.m_sOwner == "USSR", sovietBase.GetLabel());
    }
    dbg.Run(manager, ACR_EDebug.PAUSE_ENEMY, "USSR", "");
    bool paused = dbg.IsPaused("US") && dbg.Status(manager, "USSR").Contains("PAUSED");
@@ -259,6 +259,20 @@ class ACR_TestRegress
    manager.m_Debug.Run(manager, ACR_EDebug.REVEAL, "US", "");
    if (sovietSoldiers == 0) Print("[ACR] REGRESS info: reveal check skipped (no Soviet squads)");
    else Check("debug: reveal shows enemy soldiers", sovietsSeen > 0 && !manager.m_Debug.Reveals("US"), string.Format("%1 seen of about %2", sovietsSeen, sovietSoldiers));
+  }
+  // Vehicle crews carry their unit's name even when they register before they're seated
+  // (2 Oct live: Truck 1 and Humvee 1 showed as "Squad 1" and "Squad 2").
+  if (tick == 40)
+  {
+   manager.m_sSpawningFaction = "US";
+   manager.SpawnUnit("Regress Truck", "", "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", true, "", harness.Ground("1500 0 2950"), harness.Ground("1506 0 2956"));
+  }
+  if (tick == 48)
+  {
+   ACR_Squad crew;
+   foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetName() == "Regress Truck") crew = squad;
+   Check("vehicle crew keeps its unit name", crew != null && crew.m_OwnVehicle != null, string.Format("found %1", crew != null));
+   if (crew) Check("idle truck crew can give rides", manager.m_Rides && manager.m_Rides.WhyNotTaxi(crew, "US").IsEmpty(), manager.m_Rides.WhyNotTaxi(crew, "US"));
   }
   if (tick == 50)
   {
