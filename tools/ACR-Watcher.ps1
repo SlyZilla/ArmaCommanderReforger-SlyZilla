@@ -114,6 +114,7 @@ function Invoke-Push($id) {
     $out = Join-Path $env:TEMP 'acr-push-out.txt'
     $err = Join-Path $env:TEMP 'acr-push-err.txt'
     $proc = Start-Process -FilePath 'git' -ArgumentList 'push origin main' -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+    $null = $proc.Handle  # cache the handle, or ExitCode comes back empty and a good push reads as failed
     $outcome = 'completed'
     if (!$proc.WaitForExit(120000)) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; $outcome = 'timeout' }
     elseif ($proc.ExitCode -ne 0) { $outcome = 'failed' }
