@@ -9,6 +9,8 @@
 # Besides test presets it accepts one other request, 'publish': it runs
 # tools\Publish-Release.ps1 exactly like double-clicking Publish-Release.cmd
 # (uploads the already-built dist\ACActual-Arland.zip with your GitHub login).
+# And 'push': runs 'git push origin main' for this repo (backup of committed
+# work to the private GitHub repo, with your GitHub login). Nothing else.
 #
 # A request of the form 'srv:<preset>' runs the test on a hidden dedicated
 # server instead (no game window, no focus stolen, you can keep using the PC
@@ -105,6 +107,22 @@ function Invoke-Publish($id) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Publish finished: $outcome" -ForegroundColor Green
 }
 
+# Pushes committed work on main to the private GitHub repo (fixed command, no arguments taken).
+function Invoke-Push($id) {
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Pushing main to GitHub..." -ForegroundColor Cyan
+    $started = Get-Date
+    $out = Join-Path $env:TEMP 'acr-push-out.txt'
+    $err = Join-Path $env:TEMP 'acr-push-err.txt'
+    $proc = Start-Process -FilePath 'git' -ArgumentList 'push origin main' -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+    $outcome = 'completed'
+    if (!$proc.WaitForExit(120000)) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; $outcome = 'timeout' }
+    elseif ($proc.ExitCode -ne 0) { $outcome = 'failed' }
+    $result = @("status=$outcome", 'preset=push', "seconds=$([int]((Get-Date) - $started).TotalSeconds)", '---')
+    foreach ($f in @($out, $err)) { if (Test-Path -LiteralPath $f) { $result += Get-Content -LiteralPath $f | Select-Object -Last 15 } }
+    Write-Result $id $result
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Push finished: $outcome" -ForegroundColor Green
+}
+
 # Runs a test preset on a hidden dedicated server (own profile, port 2302).
 function Invoke-ServerTest($id, $preset, $config) {
     $time = Get-Date -Format 'HH:mm:ss'
@@ -191,6 +209,7 @@ function Invoke-Request($file) {
         }
     }
     if ($preset -eq 'publish') { Invoke-Publish $id; return }
+    if ($preset -eq 'push') { Invoke-Push $id; return }
     if (!$Presets.ContainsKey($preset)) {
         Write-Host "[$time] Refused unknown preset '$preset'" -ForegroundColor Yellow
         Write-Result $id @("status=refused", "reason=unknown preset '$preset'")
