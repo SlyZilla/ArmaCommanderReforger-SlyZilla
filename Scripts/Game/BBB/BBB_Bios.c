@@ -1,8 +1,10 @@
 // Extra Personal Belongings identities: bios, plus rare reference names, birthdays and
-// blood types, all mixed into the game's own bio pool. Everything is in
-// Configs/BBB/BBB_Bios.conf (one bio group, "BBB_Flavor"); this file appends that group
-// to the identity manager's character bios on every machine (same position everywhere,
-// so the replicated group/bio indexes match, also for players joining later).
+// blood types, all mixed into the game's own bio pool. Two bio groups:
+// Configs/BBB/BBB_Bios.conf ("BBB_Flavor", soldiers: military factions only) and
+// Configs/BBB/BBB_CivBios.conf ("BBB_Civilian", civilian factions only; the CIV faction must
+// be in the world's faction manager, as in Conflict/Game Master, not in AC: Actual's worlds).
+// This file appends both groups to the identity manager's character bios on every machine
+// (same position everywhere, so the replicated group/bio indexes match, also for JIP).
 //
 // Names, birthdays and blood types ride on bio entries through the game's own bio
 // overwrite (SCR_IdentityBioCharacterExtendedOverwrite): a picked entry sets the name,
@@ -19,7 +21,8 @@
 // types and jackpots are unique per session; recently used entries are held back.
 // Host options: -bbbBios 0 switches it all off, -bbbIdentityEggs 0 keeps the bios but
 // drops names, birthdays and blood types (a number above 1 multiplies their odds, for
-// testing). Entries that set a name/birthday/blood type log what the soldier ended up
+// testing), -bbbIdentityTest 1 spawns test civilians/soldiers and logs their identities.
+// Entries that set a name/birthday/blood type log what the soldier ended up
 // with: "[BBB] BIO <key> -> <name>, born <d/m>, blood <type>".
 
 [BaseContainerProps(), BaseContainerCustomDoubleCheckTitleField("m_bIsUnique", "m_sKey", "1", "UNIQUE - %1", "%1")]
@@ -154,7 +157,7 @@ class BBB_BioGroup : SCR_CharacterIdentityBioGroupConfig
   }
  }
 
- protected static string FactionKeyOf(IEntity entity)
+ static string FactionKeyOf(IEntity entity)
  {
   if (!entity) return string.Empty;
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(entity.FindComponent(FactionAffiliationComponent));
@@ -215,9 +218,9 @@ class BBB_BioGroup : SCR_CharacterIdentityBioGroupConfig
   BBB_Bio ours = BBB_Bio.Cast(bio);
   if (!ours) return;
   if (ours.GetTier().IsEmpty())
-   Print("[BBB] BIO " + ours.GetKey(), LogLevel.NORMAL);
+   Print("[BBB] BIO " + ours.GetKey() + " (" + factionKey + ")", LogLevel.NORMAL);
   else
-   GetGame().GetCallqueue().CallLater(LogIdentity, 1000, false, entity, ours.GetKey());
+   GetGame().GetCallqueue().CallLater(LogIdentity, 1000, false, entity, ours.GetKey() + " (" + factionKey + ")");
  }
 
  // What the soldier ended up with (names are set a frame after the bio).
@@ -273,9 +276,11 @@ class BBB_BioGroup : SCR_CharacterIdentityBioGroupConfig
 class BBB_Bios
 {
  static const ResourceName CONFIG = "{BBB0B10500000001}Configs/BBB/BBB_Bios.conf";
+ static const ResourceName CIV_CONFIG = "{BBB0B10500000002}Configs/BBB/BBB_CivBios.conf";
  // Our blood type codes start here (vanilla's are 0-7).
  static const int BLOOD_BASE = 7700;
  protected static ref array<ref SCR_UIInfo> s_aBloodInfos = {};
+ protected static ref array<string> s_aBloodLabels = {};
  protected static const string VANILLA_BLOOD = "O+|O-|A+|A-|B+|B-|AB+|AB-";
 
  static SCR_UIInfo BloodInfo(int code)
@@ -288,10 +293,8 @@ class BBB_Bios
  // Same order on every machine (conf order), so the codes match everywhere.
  protected static void AssignBloodCodes(BBB_BioGroup group, notnull array<ref SCR_IdentityBio> bios)
  {
-  s_aBloodInfos.Clear();
   array<string> stock = {};
   VANILLA_BLOOD.Split("|", stock, false);
-  array<string> labels = {};
   foreach (SCR_IdentityBio entry : bios)
   {
    BBB_Bio bio = BBB_Bio.Cast(entry);
@@ -300,12 +303,12 @@ class BBB_Bios
    int code = stock.Find(label);
    if (code < 0)
    {
-    code = labels.Find(label);
+    code = s_aBloodLabels.Find(label);
     if (code < 0)
     {
-     labels.Insert(label);
+     s_aBloodLabels.Insert(label);
      s_aBloodInfos.Insert(SCR_UIInfo.CreateInfo(label));
-     code = labels.Count() - 1;
+     code = s_aBloodLabels.Count() - 1;
     }
     code += BLOOD_BASE;
    }
@@ -331,10 +334,24 @@ class BBB_Bios
   {
    if (BBB_BioGroup.Cast(existing)) return;
   }
-  BBB_BioGroup group = BBB_BioGroup.Cast(SCR_BaseContainerTools.CreateInstanceFromPrefab(CONFIG, true));
+  s_aBloodInfos.Clear();
+  s_aBloodLabels.Clear();
+  bool on = true;
+  float eggs = 1;
+  string value;
+  if (System.GetCLIParam("bbbBios", value) && value == "0") on = false;
+  if (System.GetCLIParam("bbbIdentityEggs", value)) eggs = value.ToFloat();
+  AddGroup(holder, CONFIG, on, eggs);
+  AddGroup(holder, CIV_CONFIG, on, eggs);
+  if (System.IsCLIParam("bbbIdentityTest") && Replication.IsServer()) GetGame().GetCallqueue().CallLater(SelfTest, 8000);
+ }
+
+ protected static void AddGroup(SCR_IdentityBioTypeHolderConfig holder, ResourceName config, bool on, float eggs)
+ {
+  BBB_BioGroup group = BBB_BioGroup.Cast(SCR_BaseContainerTools.CreateInstanceFromPrefab(config, true));
   if (!group)
   {
-   Print("[BBB] BIOS failed to load " + CONFIG, LogLevel.ERROR);
+   Print("[BBB] BIOS failed to load " + config, LogLevel.ERROR);
    return;
   }
   holder.m_aIdentityBioGroups.Insert(group);
@@ -344,14 +361,60 @@ class BBB_Bios
    bios.Insert(group.GetIdentityBio(null, i));
   }
   AssignBloodCodes(group, bios);
-  bool on = true;
-  float eggs = 1;
-  string value;
-  if (System.GetCLIParam("bbbBios", value) && value == "0") on = false;
-  if (System.GetCLIParam("bbbIdentityEggs", value)) eggs = value.ToFloat();
   group.SetEnabled(on);
   group.PrepareWeights(eggs);
-  Print(string.Format("[BBB] BIOS %1 entries added as bio group %2 (weight %3, on %4, names/birthdays/blood %5, %6 extra blood types)", group.BioCount(), holder.m_aIdentityBioGroups.Count() - 1, group.GetWeight(), on, eggs, s_aBloodInfos.Count()), LogLevel.NORMAL);
+  Print(string.Format("[BBB] BIOS %1: %2 entries added as bio group %3 (weight %4, on %5, names/birthdays/blood %6, %7 extra blood types so far)", group.GetBioGroupID(), group.BioCount(), holder.m_aIdentityBioGroups.Count() - 1, group.GetWeight(), on, eggs, s_aBloodInfos.Count()), LogLevel.NORMAL);
+ }
+
+ // -bbbIdentityTest 1 (server): spawns civilians and US riflemen out of the way, logs what
+ // identity each got, then deletes them. Run it in a world with a CIV faction (Game Master).
+ protected static ref array<IEntity> s_aTestEntities = {};
+ protected static const ResourceName TEST_CIV = "{22E43956740A6794}Prefabs/Characters/Factions/CIV/GenericCivilians/Character_CIV_Randomized.et";
+ protected static const ResourceName TEST_US = "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et";
+
+ protected static void SelfTest()
+ {
+  vector origin = "100 0 100";
+  BaseGameMode mode = GetGame().GetGameMode();
+  if (mode) origin = mode.GetOrigin();
+  for (int i = 0; i < 40; i++)
+  {
+   int odd = i % 2;
+   ResourceName prefab = TEST_CIV;
+   if (odd == 1) prefab = TEST_US;
+   EntitySpawnParams params = new EntitySpawnParams();
+   params.TransformMode = ETransformMode.WORLD;
+   int column = i % 8;
+   int row = i / 8;
+   vector at = origin;
+   at[0] = at[0] + column * 3;
+   at[2] = at[2] + row * 3;
+   params.Transform[3] = BBB.Ground(at);
+   IEntity spawned = GetGame().SpawnEntityPrefab(Resource.Load(prefab), GetGame().GetWorld(), params);
+   if (spawned) s_aTestEntities.Insert(spawned);
+  }
+  GetGame().GetCallqueue().CallLater(SelfTestReport, 4000);
+ }
+
+ protected static void SelfTestReport()
+ {
+  SCR_IdentityManagerComponent manager = SCR_IdentityManagerComponent.GetInstance();
+  foreach (IEntity entity : s_aTestEntities)
+  {
+   if (!entity) continue;
+   string group = "none";
+   SCR_ExtendedCharacterIdentityComponent extended = SCR_ExtendedCharacterIdentityComponent.Cast(entity.FindComponent(SCR_ExtendedCharacterIdentityComponent));
+   if (extended)
+   {
+    BBB_Bio ours = BBB_Bio.Cast(extended.GetIdentityBio());
+    if (ours) group = ours.GetKey();
+    else if (extended.GetIdentityBio()) group = "vanilla";
+   }
+   BBB_BioGroup.LogIdentity(entity, "TEST " + BBB_BioGroup.FactionKeyOf(entity) + " " + group);
+   SCR_EntityHelper.DeleteEntityAndChildren(entity);
+  }
+  s_aTestEntities.Clear();
+  Print("[BBB] BIOS self-test done", LogLevel.NORMAL);
  }
 }
 
