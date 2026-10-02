@@ -16,6 +16,8 @@ class ACR_TestRegress
  }
 
  static ACR_Squad s_Defender;
+ static IEntity s_Layout;
+ static const ResourceName LAYOUT_BASE = "{BB1B3769EB8C290D}Prefabs/Compositions/Misc/FreeRoamBuilding/CompositionLayoutBase.et";
 
  static void Run(ACR_TestHarness harness, int tick)
  {
@@ -154,6 +156,27 @@ class ACR_TestRegress
    if (us) us.m_bAICommander = true;
    PrintFormat("[ACR] REGRESS info: Soviet defender %1, US AI on", s_Defender != null);
   }
+  // Construction silhouette is removed even when the player's main entity isn't known
+  // on this machine (a dedicated server has none, like a client possessing far away).
+  if (tick == 34)
+  {
+   SCR_CampaignBuildingManagerComponent building = SCR_CampaignBuildingManagerComponent.Cast(GetGame().GetGameMode().FindComponent(SCR_CampaignBuildingManagerComponent));
+   s_Layout = ACR_Manager.SpawnPrefab(LAYOUT_BASE, harness.Ground("1440 0 2880"));
+   SCR_CampaignBuildingLayoutComponent layout;
+   if (s_Layout) layout = SCR_CampaignBuildingLayoutComponent.Cast(s_Layout.FindComponent(SCR_CampaignBuildingLayoutComponent));
+   int prefabId = -1;
+   if (building && !building.GetCompositionResourceName(0).IsEmpty()) prefabId = 0;
+   if (layout && prefabId >= 0)
+   {
+    layout.SetPrefabId(prefabId);
+    layout.SpawnPreview();
+    bool shown = layout.HasBuildingPreview();
+    layout.DeletePreview();
+    Check("construction silhouette is removed without a known main entity", shown && !layout.HasBuildingPreview(), string.Format("shown %1", shown));
+   }
+   else PrintFormat("[ACR] REGRESS info: silhouette check skipped (layout %1, composition id %2)", layout != null, prefabId);
+  }
+  if (tick == 35 && s_Layout) SCR_EntityHelper.DeleteEntityAndChildren(s_Layout);
   if (tick == 50)
   {
    bool kept = s_Defender && s_Defender.m_iAITask == ACR_EAITask.DEFEND;
