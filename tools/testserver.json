@@ -1,0 +1,18 @@
+{
+    "bindAddress": "0.0.0.0",
+    "bindPort": 2302,
+    "publicAddress": "127.0.0.1",
+    "publicPort": 2302,
+    "a2s": { "address": "127.0.0.1", "port": 17778 },
+    "game": {
+        "name": "ACR hidden test server",
+        "password": "",
+        "passwordAdmin": "",
+        "scenarioId": "{mission}",
+        "maxPlayers": 4,
+        "visible": false,
+        "crossPlatform": false,
+        "gameProperties": { "battlEye": false },
+        "mods": [ { "modId": "AC230926A0010001", "name": "ArmaCommanderReforger" } ]
+    }
+}

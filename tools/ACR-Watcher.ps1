@@ -124,6 +124,16 @@ function Invoke-Push($id) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Push finished: $outcome" -ForegroundColor Green
 }
 
+# Scenario id for a world: Worlds/X.ent -> "{GUID}Missions/X.conf" from its .meta.
+function Get-TestMissionId($world) {
+    $name = [IO.Path]::GetFileNameWithoutExtension($world)
+    $meta = Join-Path $ProjectRoot ('Missions/' + $name + '.conf.meta')
+    if (!(Test-Path -LiteralPath $meta)) { return $null }
+    $m = Select-String -LiteralPath $meta -Pattern 'Name\s+"(\{[0-9A-F]{16}\}Missions/[^"]+)"' | Select-Object -First 1
+    if ($m) { return $m.Matches[0].Groups[1].Value }
+    return $null
+}
+
 # Runs a test preset on a hidden dedicated server (own profile, port 2302).
 function Invoke-ServerTest($id, $preset, $config) {
     $time = Get-Date -Format 'HH:mm:ss'
@@ -135,7 +145,24 @@ function Invoke-ServerTest($id, $preset, $config) {
     $world = 'Worlds/ACR_TestRange.ent'
     if ($config.World) { $world = $config.World }
     New-Item -ItemType Directory -Force $TestServerProfile | Out-Null
-    $serverArgs = '-server "' + $world + '" -addonsDir "' + $AddonsDir + '" -addons AC230926A0010001 -profile "' + $TestServerProfile + '" -bindPort 2302 -maxFPS 60 -noBackend ' + $config.Flags
+    # -bindPort is ignored in -server mode (it listens on 2001 and clashes with a hosted
+    # server). The start line and server config come from tools/testserver-args.txt and
+    # tools/testserver.json, re-read per request so they can change without a restart.
+    # Placeholders: {world} {mission} {profile} {addonsDir} {config}.
+    $mission = Get-TestMissionId $world
+    $argsFile = Join-Path $PSScriptRoot 'testserver-args.txt'
+    $template = '-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend'
+    if ($mission -and (Test-Path -LiteralPath $argsFile)) {
+        $line = Get-Content -LiteralPath $argsFile | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' } | Select-Object -First 1
+        if ($line) { $template = $line.Trim() }
+    }
+    $cfgPath = Join-Path $TestServerProfile 'testserver.json'
+    $cfgTemplate = Join-Path $PSScriptRoot 'testserver.json'
+    if ($template -match '\{config\}' -and (Test-Path -LiteralPath $cfgTemplate)) {
+        $json = (Get-Content -LiteralPath $cfgTemplate -Raw).Replace('{mission}', $mission)
+        Set-Content -LiteralPath $cfgPath -Value $json -Encoding ASCII
+    }
+    $serverArgs = $template.Replace('{world}', $world).Replace('{mission}', [string]$mission).Replace('{profile}', $TestServerProfile).Replace('{addonsDir}', $AddonsDir).Replace('{config}', $cfgPath) + ' ' + $config.Flags
     Write-Host "[$time] Running '$preset' on a hidden test server..." -ForegroundColor Cyan
     $started = Get-Date
     $proc = Start-Process -FilePath $server -ArgumentList $serverArgs -WorkingDirectory (Split-Path $server -Parent) -WindowStyle Hidden -PassThru
