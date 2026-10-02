@@ -1004,8 +1004,12 @@ modded class SCR_PlayerController
   int modeAndFlags = m_ACR_GroupSymbols[index * 4 + 3];
   m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, modeAndFlags & 15, m_ACR_CursorMode, hint);
   m_ACR_Panel.SetGunner(friendly && (modeAndFlags & 16) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
-  bool missing = m_ACR_GroupDetails[index].Contains("missing");
-  m_ACR_Panel.SetReinforce("Reinforce (3 RP per soldier)", missing);
+  // Also for a full squad low on ammo: inside a deploy base Reinforce restocks it
+  // (the server says so when it isn't in one).
+  string details = m_ACR_GroupDetails[index];
+  bool missing = details.Contains("missing");
+  bool lowAmmo = details.Contains("| ammo ") && !details.Contains("| ammo 100%");
+  m_ACR_Panel.SetReinforce("Reinforce (3 RP per soldier, ammo in base)", missing || lowAmmo);
  }
 
  void ACR_OnPanelAction(int action)

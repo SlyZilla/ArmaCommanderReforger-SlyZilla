@@ -1497,7 +1497,49 @@ class ACR_Squad : Managed
   if (!IssueWaypoint(WP_GET_OUT, vehicles[0].GetOrigin(), -1, true)) return false;
   SetOrder("Getting out", ACR_EOrderState.GET_OUT);
   m_OrderKind = ACR_EOrderKind.GET_OUT;
+  m_iGetOutChecks = 0;
+  m_iGetOutSerial = m_iOrderSerial;
+  GetGame().GetCallqueue().Remove(EnsureGetOut);
+  if (!s_bNoGetOutFallback) GetGame().GetCallqueue().CallLater(EnsureGetOut, 4000, false);
   return true;
+ }
+
+ // The game's Get out only asks each passenger to leave. Passengers in a vehicle
+ // another squad crews (a requisitioned Humvee's driver) stayed aboard (1 Oct MP),
+ // so whoever is still inside once the vehicle has stopped is taken out directly.
+ static bool s_bNoGetOutFallback; // tests: the game's waypoint alone
+ protected int m_iGetOutChecks;
+ protected int m_iGetOutSerial;
+ void EnsureGetOut()
+ {
+  if (!m_Group || m_iGetOutSerial != m_iOrderSerial || OrderState() != ACR_EOrderState.GET_OUT || !IsMounted()) return;
+  m_iGetOutChecks++;
+  array<IEntity> vehicles = {};
+  GetVehicles(vehicles);
+  ForgetVehicles(vehicles);
+  int stillIn, moved;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character || !character.IsInVehicle() || !ACR_Respawn.IsAlive(character)) continue;
+   CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+   if (!access) continue;
+   stillIn++;
+   IEntity vehicle = access.GetVehicleIn(character);
+   float speed;
+   Physics physics;
+   if (vehicle) physics = vehicle.GetPhysics();
+   if (physics) speed = physics.GetVelocity().Length();
+   if (speed > 1.5) continue; // the driver is someone else's: wait until it stops
+   if (access.IsGettingOut()) continue;
+   bool ok = access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   if (!ok && m_iGetOutChecks >= 3) ok = access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   if (ok) moved++;
+  }
+  PrintFormat("[ACR] GET OUT %1: check %2, %3 still aboard, %4 sent out", m_Name, m_iGetOutChecks, stillIn, moved);
+  if (m_iGetOutChecks < 10) GetGame().GetCallqueue().CallLater(EnsureGetOut, 3000, false);
  }
 
  // Vehicles any member currently sits in.
@@ -1654,6 +1696,7 @@ class ACR_Squad : Managed
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);
+  GetGame().GetCallqueue().Remove(EnsureGetOut);
   if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
   SCR_GroupsManagerComponent manager = SCR_GroupsManagerComponent.GetInstance();
   if (manager && m_CommandGroup) manager.DeleteAndUnregisterGroup(m_CommandGroup);
@@ -1666,5 +1709,6 @@ class ACR_Squad : Managed
   if (!GetGame()) return;
   GetGame().GetCallqueue().Remove(LinkSquad);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);
+  GetGame().GetCallqueue().Remove(EnsureGetOut);
  }
 }

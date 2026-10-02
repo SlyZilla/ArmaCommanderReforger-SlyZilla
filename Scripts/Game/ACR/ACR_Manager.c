@@ -871,11 +871,19 @@ class ACR_Manager : Managed
     if (squad.Defend(point)) return name + ": defending";
     break;
    case ACR_ERequest.ORDER_GET_IN:
-    if (squad.GetIn(point)) return name + ": getting in";
+   {
+    bool boarding = squad.GetIn(point);
+    PrintFormat("[ACR] GET IN player=%1 squad=%2 target=%3 -> %4", pc.GetPlayerId(), name, point, boarding);
+    if (boarding) return name + ": getting in";
     return name + ": no vehicle found";
+   }
    case ACR_ERequest.ORDER_GET_OUT:
-    if (squad.GetOut()) return name + ": getting out";
+   {
+    bool leaving = squad.GetOut();
+    PrintFormat("[ACR] GET OUT player=%1 squad=%2 -> %3", pc.GetPlayerId(), name, leaving);
+    if (leaving) return name + ": getting out";
     return name + " is not in a vehicle";
+   }
    case ACR_ERequest.ORDER_UNLOAD:
     return Unload(squad);
    case ACR_ERequest.ORDER_SET_LZ:
@@ -1235,11 +1243,21 @@ class ACR_Manager : Managed
   if (!IsCommander(pc.GetPlayerId())) return "Only the commander can reinforce squads";
   array<ResourceName> missing = {};
   squad.GetMissing(missing);
-  if (missing.IsEmpty()) return squad.GetName() + " is at full strength";
   IEntity anchor = squad.GetAnchor();
   vector near = vector.Zero;
   if (anchor) near = anchor.GetOrigin();
-  ACR_Base base = NearestSpawnBase(key, near);
+  // Inside a base that can deploy units, the squad also gets its ammo back.
+  ACR_Base depot = DeployBaseAt(key, near);
+  if (missing.IsEmpty())
+  {
+   if (!depot) return squad.GetName() + " is at full strength (ammo only inside a base that can deploy units)";
+   int restocked = RestockAmmo(squad, depot);
+   PrintFormat("[ACR] REINFORCE %1 ammo only at %2: %3 soldiers restocked", squad.GetName(), depot.m_sName, restocked);
+   if (!restocked) return squad.GetName() + " is at full strength and fully stocked";
+   return string.Format("%1: %2 soldiers restocked with ammo at %3", squad.GetName(), restocked, depot.m_sName);
+  }
+  ACR_Base base = depot;
+  if (!base) base = NearestSpawnBase(key, near);
   if (!base) return "No friendly base can send reinforcements";
   int cost = missing.Count() * REINFORCE_COST_PER_SOLDIER;
   if (!m_Bases.Spend(key, cost)) return string.Format("Not enough RP (%1 needed)", cost);
@@ -1249,8 +1267,55 @@ class ACR_Manager : Managed
    IEntity soldier = SpawnPrefab(prefab, SpawnPoint(base, 4, 12, 0.8));
    if (soldier) squad.m_Group.AddAIEntityToGroup(soldier);
   }
-  PrintFormat("[ACR] REINFORCE %1 +%2 from %3 for %4 RP", squad.GetName(), missing.Count(), base.m_sName, cost);
-  return string.Format("%1: %2 reinforcements from %3", squad.GetName(), missing.Count(), base.m_sName);
+  int resupplied;
+  if (depot) resupplied = RestockAmmo(squad, depot);
+  PrintFormat("[ACR] REINFORCE %1 +%2 from %3 for %4 RP, %5 restocked", squad.GetName(), missing.Count(), base.m_sName, cost, resupplied);
+  string result = string.Format("%1: %2 reinforcements from %3", squad.GetName(), missing.Count(), base.m_sName);
+  if (resupplied) result += string.Format(", %1 restocked with ammo", resupplied);
+  return result;
+ }
+
+ // A friendly, uncontested base that can deploy units, with the point inside its circle.
+ ACR_Base DeployBaseAt(string factionKey, vector position)
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != factionKey || !base.m_bAllowSpawn || base.m_bContested) continue;
+   if (vector.DistanceXZ(base.GetOrigin(), position) <= base.m_fRadius) return base;
+  }
+  return null;
+ }
+
+ // Magazines back up to each soldier's normal load and a new launcher for one who
+ // threw a spent one away, for members standing inside the base circle (free: the
+ // base's stores, not a truck's). Returns how many soldiers got something.
+ int RestockAmmo(ACR_Squad squad, ACR_Base base)
+ {
+  int served;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity soldier = agent.GetControlledEntity();
+   if (!soldier || !ACR_Respawn.IsAlive(soldier)) continue;
+   if (vector.DistanceXZ(soldier.GetOrigin(), base.GetOrigin()) > base.m_fRadius) continue;
+   bool got;
+   if (m_Launchers && m_Launchers.IsOwed(soldier) && m_Launchers.Rearm(soldier)) got = true;
+   int target = squad.MagazineTarget(soldier);
+   if (ACR_Logistics.SoldierMagazines(soldier) < target)
+   {
+    SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(soldier.FindComponent(SCR_InventoryStorageManagerComponent));
+    // Same count the ammo trucks hand out (the loaded magazine is the last one).
+    int magazines = Math.Max(2, target - 1);
+    if (inventory && inventory.IsResupplyMagazinesAvailable(magazines))
+    {
+     inventory.ResupplyMagazines(magazines);
+     got = true;
+    }
+   }
+   if (got) served++;
+  }
+  return served;
  }
 
  // ================================================================ gunner drives (server)

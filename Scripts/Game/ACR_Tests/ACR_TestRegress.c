@@ -177,6 +177,37 @@ class ACR_TestRegress
    else PrintFormat("[ACR] REGRESS info: silhouette check skipped (layout %1, composition id %2)", layout != null, prefabId);
   }
   if (tick == 35 && s_Layout) SCR_EntityHelper.DeleteEntityAndChildren(s_Layout);
+  // Reinforce restocks ammo only inside a friendly base that can deploy units.
+  if (tick == 36 || tick == 38)
+  {
+   ACR_Base depot;
+   foreach (ACR_Base base : ACR_Base.s_All)
+    if (base.m_sOwner == "US" && base.m_bAllowSpawn && !base.m_bContested) { depot = base; break; }
+   array<AIAgent> agents = {};
+   bravo.GetAgents(agents);
+   IEntity soldier;
+   if (!agents.IsEmpty()) soldier = agents[0].GetControlledEntity();
+   if (!depot || !soldier) PrintFormat("[ACR] REGRESS info: restock check skipped (base %1, soldier %2)", depot != null, soldier != null);
+   else if (tick == 36)
+   {
+    soldier.SetOrigin(ACR_Manager.Ground(depot.GetOrigin() + Vector(3, 0, 3)));
+    InventoryStorageManagerComponent inventory = InventoryStorageManagerComponent.Cast(soldier.FindComponent(InventoryStorageManagerComponent));
+    array<IEntity> magazines = {};
+    if (inventory) inventory.FindItemsWithComponents(magazines, {MagazineComponent});
+    foreach (IEntity magazine : magazines) inventory.TryDeleteItem(magazine);
+    PrintFormat("[ACR] REGRESS info: %1 magazines removed", magazines.Count());
+   }
+   else
+   {
+    soldier.SetOrigin(ACR_Manager.Ground(depot.GetOrigin() + Vector(3, 0, 3)));
+    float before = ACR_Logistics.SoldierMagazines(soldier);
+    Check("no deploy base outside a base circle", manager.DeployBaseAt("US", depot.GetOrigin() + Vector(depot.m_fRadius + 50, 0, 0)) == null, "");
+    Check("deploy base found inside its circle", manager.DeployBaseAt("US", soldier.GetOrigin()) == depot, depot.m_sName);
+    int restocked = manager.RestockAmmo(bravo, depot);
+    float after = ACR_Logistics.SoldierMagazines(soldier);
+    Check("reinforce restocks ammo inside a deploy base", restocked >= 1 && after > before, string.Format("magazines %1 -> %2, restocked %3", before, after, restocked));
+   }
+  }
   if (tick == 50)
   {
    bool kept = s_Defender && s_Defender.m_iAITask == ACR_EAITask.DEFEND;

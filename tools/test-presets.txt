@@ -37,3 +37,5 @@ tags|-acrTagsTest 1|90
 shared|-acrSharedTest 1|150
 maphandoff|-acrMapHandoffTest 1|100
 regress|-acrRegressTest 1|100
+getout|-acrGetOutTest 1|110
+getoutold|-acrGetOutOldTest 1|110
