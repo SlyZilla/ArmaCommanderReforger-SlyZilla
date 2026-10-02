@@ -37,15 +37,6 @@ enum ACR_EMoveMode
  SILENT
 }
 
-// One commandable AI squad. Server-side only.
-//
-// Native squad commands need a player-led playable group, so each squad owns a
-// hidden playable "command group" linked to it. When a player possesses the
-// squad's designated leader, they join that command group and gain the native
-// command menu. The possessed leader's AI agent temporarily moves into the
-// command group, because a player-held agent inside the AI group stops the rest
-// of the formation from following waypoints. The logical roster (GetAgents)
-// always includes that detached leader.
 // A squad's order, saved to be put back later (native command set-aside,
 // regroup, resume after a dismount, land/road routes).
 class ACR_OrderSnapshot : Managed
@@ -70,6 +61,15 @@ class ACR_OrderSnapshot : Managed
  }
 }
 
+// One commandable AI squad. Server-side only.
+//
+// Native squad commands need a player-led playable group, so each squad owns a
+// hidden playable "command group" linked to it. When a player possesses the
+// squad's designated leader, they join that command group and gain the native
+// command menu. The possessed leader's AI agent temporarily moves into the
+// command group, because a player-held agent inside the AI group stops the rest
+// of the formation from following waypoints. The logical roster (GetAgents)
+// always includes that detached leader.
 class ACR_Squad : Managed
 {
  SCR_AIGroup m_Group;
@@ -813,7 +813,7 @@ class ACR_Squad : Managed
 
  // ---------------------------------------------------------------- land routes
  // An order whose straight line crosses open water is walked leg by leg along a
- // land route instead (see ACR_Terrain), so squads go round a bay, not across it.
+ // land route instead (see BBB_Terrain), so squads go round a bay, not across it.
  protected ref array<vector> m_aRoute = {};
  protected ref ACR_OrderSnapshot m_Route; // the order at the end of the route (target unused)
 
@@ -822,14 +822,14 @@ class ACR_Squad : Managed
   // Vehicle crews: aim for the nearest road point, which AI drivers can reach.
   vector road;
   IEntity driven = ACR_Transport.CrewedVehicle(this);
-  if (driven && ACR_Terrain.RoadPointNear(destination, 250, road)) destination = road;
+  if (driven && BBB_Terrain.RoadPointNear(destination, 250, road)) destination = road;
   IEntity anchor = GetAnchor();
   array<vector> legs = {};
   // ...and on longer trips, along the roads in short hops.
   if (driven && anchor && vector.DistanceXZ(anchor.GetOrigin(), destination) > 400)
   {
    int nodes, millis;
-   if (ACR_Roads.Route(driven.GetOrigin(), destination, legs, nodes, millis) && legs.Count() > 1)
+   if (BBB_Roads.Route(driven.GetOrigin(), destination, legs, nodes, millis) && legs.Count() > 1)
    {
     PrintFormat("[ACR] ROAD %1: %2 hops over %3 road points (%4 ms)", m_Name, legs.Count(), nodes, millis);
     if (System.IsCLIParam("acrRideTest")) foreach (vector hop : legs) PrintFormat("[ACR] ROAD   hop %1", hop);
@@ -838,7 +838,7 @@ class ACR_Squad : Managed
    }
    legs.Clear();
   }
-  if (!anchor || IsMounted() || !ACR_Terrain.LandRoute(anchor.GetOrigin(), destination, legs))
+  if (!anchor || IsMounted() || !BBB_Terrain.LandRoute(anchor.GetOrigin(), destination, legs))
   {
    if (prefab == WP_DEFEND) return Defend(destination);
    if (prefab == WP_SEARCH_DESTROY) return Assault(destination);
@@ -1049,17 +1049,13 @@ class ACR_Squad : Managed
  static const float STALL_SECONDS_FIGHTING = 40; // armed and in contact: the gunner may be busy, give it longer
  static const float STALL_SECONDS_HELPLESS = 6;  // under fire with no gunner
  static const int UNSTICK_TRIES = 2;
- static const float UNSTICK_REVERSE_MS = 3500;    // reversing, then a short brake
- static const float UNSTICK_TOTAL_MS = 4300;
 
  protected IEntity m_StallVehicle;
  protected vector m_StallPos;
  protected float m_fStallSince;
  protected int m_iUnsticks;
  protected bool m_bUnsticking;
- protected float m_fUnstickStart;
- protected float m_fUnstickSteer;
- protected ChimeraCharacter m_UnstickDriver;
+ protected ref ACR_SquadUnstick m_UnstickListener; // told by BBB_Unstick when backing out is over
  protected bool m_bResumeOnFoot;
  int UnstickTries() { return m_iUnsticks; }
  bool IsUnsticking() { return m_bUnsticking; }
@@ -1180,78 +1176,24 @@ class ACR_Squad : Managed
  protected void BeginUnstick(IEntity vehicle, ChimeraCharacter driver)
  {
   m_bUnsticking = true;
-  m_UnstickDriver = driver;
-  m_fUnstickStart = GetGame().GetWorld().GetWorldTime();
-  m_fUnstickSteer = 0.8;
-  if (m_iUnsticks % 2 == 0) m_fUnstickSteer = -0.8;
-  AIControlComponent ai = AIControlComponent.Cast(driver.FindComponent(AIControlComponent));
-  if (ai && ai.IsAIActivated()) ai.DeactivateAI();
+  float steer = 0.8;
+  if (m_iUnsticks % 2 == 0) steer = -0.8;
+  if (!m_UnstickListener) m_UnstickListener = new ACR_SquadUnstick(this);
+  // BBB_Unstick parks the driver's AI and reverses (inputs applied every frame).
+  BBB_Unstick.Begin(vehicle, driver, steer, m_UnstickListener);
   PrintFormat("[ACR] DRIVE %1: stuck, backing up (try %2)", m_Name, m_iUnsticks);
-  // Applied every frame (like gunner drive): the controller drops inputs set less often.
-  ACR_Manager manager = ACR_Manager.GetInstance();
-  if (manager && !manager.m_Unsticking.Contains(this)) manager.m_Unsticking.Insert(this);
  }
 
- // Returns false when finished.
- bool UnstickFrame()
+ // Backing out is over (BBB_Unstick has given the driver his AI back).
+ void EndUnstick()
  {
-  if (!m_bUnsticking) return false;
-  float elapsed = GetGame().GetWorld().GetWorldTime() - m_fUnstickStart;
-  IEntity vehicle = m_StallVehicle;
-  bool alive = vehicle != null && m_UnstickDriver != null && ACR_Respawn.IsAlive(m_UnstickDriver) && ACR_Transport.VehicleOf(m_UnstickDriver) == vehicle;
-  CarControllerComponent car;
-  if (alive) car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
-  if (!car || !car.GetSimulation() || elapsed > UNSTICK_TOTAL_MS)
-  {
-   EndUnstick(car);
-   return false;
-  }
-  VehicleWheeledSimulation sim = car.GetSimulation();
-  Physics physics = vehicle.GetPhysics();
-  if (physics && !physics.IsActive()) physics.SetActive(ActiveState.ACTIVE);
-  if (!car.IsEngineOn()) car.ForceStartEngine();
-  car.SetPersistentHandBrake(false);
-  int neutral = sim.GearboxGearsCount() - sim.GearboxForwardGearsCount() - 1;
-  sim.SetClutch(1);
-  if (elapsed <= UNSTICK_REVERSE_MS)
-  {
-   if (sim.GetGear() >= neutral) sim.SetGear(neutral - 1);
-   sim.SetBreak(0, false);
-   sim.SetThrottle(0.7);
-   sim.SetSteering(m_fUnstickSteer);
-  }
-  else
-  {
-   sim.SetThrottle(0);
-   sim.SetSteering(0);
-   sim.SetBreak(1, false);
-  }
-  return true;
- }
-
- protected void EndUnstick(CarControllerComponent car)
- {
-  if (car && car.GetSimulation())
-  {
-   VehicleWheeledSimulation sim = car.GetSimulation();
-   sim.SetThrottle(0);
-   sim.SetSteering(0);
-   sim.SetBreak(0, false);
-   int neutral = sim.GearboxGearsCount() - sim.GearboxForwardGearsCount() - 1;
-   sim.SetGear(neutral + 1);
-  }
-  if (m_UnstickDriver && ACR_Respawn.IsAlive(m_UnstickDriver) && !FindController(m_UnstickDriver))
-  {
-   AIControlComponent ai = AIControlComponent.Cast(m_UnstickDriver.FindComponent(AIControlComponent));
-   if (ai && !ai.IsAIActivated()) ai.ActivateAI();
-  }
   m_bUnsticking = false;
   if (m_StallVehicle) m_StallPos = m_StallVehicle.GetOrigin();
   m_fStallSince = GetGame().GetWorld().GetWorldTime();
   // Fresh order, so the driver plans a new route from here.
   if (m_Group && !m_sOrderPrefab.IsEmpty())
   {
-   // Label and state stay as they are (rides write their own label).
+   // Label and state stay as they are.
    int kind = m_OrderKind;
    IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius);
    m_OrderKind = kind;
@@ -1694,6 +1636,7 @@ class ACR_Squad : Managed
  void Dispose()
  {
   m_bUnsticking = false;
+  if (m_UnstickListener) BBB_Unstick.Cancel(m_UnstickListener);
   m_Aside = null; // being removed: nothing to resume
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);

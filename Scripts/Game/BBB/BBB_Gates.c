@@ -1,32 +1,29 @@
-// Two small helpers for AI vehicles, ticked once a second on the server.
+// Two small helpers for AI vehicles, ticked once a second on the server (BBB.Tick).
 // Gates: the game's AI driver stops, gets out and opens a closed gate on its
 // route, which often wrecked rides (the transport counted as lost). AI-driven
 // vehicles now open gates just ahead of them, without stopping.
 // Truck beds: soldiers getting out of cargo seats sometimes end up standing on
 // the bed and never get down. One still up there after 4 s is set down on
 // the ground beside the vehicle.
-class ACR_Gates : Managed
+class BBB_Gates : Managed
 {
  static const float LOOK_AHEAD = 25;    // m in front of the vehicle: the AI driver stops
  static const float LOOK_RADIUS = 25;   // for a gate up to ~45 m ahead
  static const float GATE_MIN_WIDTH = 2.2; // smaller doors are house doors: left alone
  static const float BED_HEIGHT = 0.9;    // m above the ground
 
- protected ACR_Manager m_Manager;
  protected ref array<IEntity> m_Found = {};
  protected ref map<IEntity, int> m_OnBed = new map<IEntity, int>();
 
- void ACR_Gates(ACR_Manager manager)
- {
-  m_Manager = manager;
- }
-
  void Tick()
  {
-  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  array<SCR_AIGroup> groups = {};
+  BBB.s_Hooks.GetGroups(groups);
+  foreach (SCR_AIGroup group : groups)
   {
-   OpenGatesFor(squad);
-   GetOffBeds(squad);
+   if (!group) continue;
+   OpenGatesFor(group);
+   GetOffBeds(group);
   }
  }
 
@@ -38,17 +35,18 @@ class ACR_Gates : Managed
   return true;
  }
 
- protected void OpenGatesFor(ACR_Squad squad)
+ protected void OpenGatesFor(SCR_AIGroup group)
  {
-  if (!squad.m_Group) return;
-  IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
+  IEntity vehicle = BBB_Transport.CrewedVehicle(group);
   // The driver may already be out, walking to the gate: still open it, he gets back in.
-  if (!vehicle && squad.m_OwnVehicle && ACR_Logistics.Health(squad.m_OwnVehicle) > 0 && squad.GetAnchor() && vector.DistanceXZ(squad.m_OwnVehicle.GetOrigin(), squad.GetAnchor().GetOrigin()) < 80) vehicle = squad.m_OwnVehicle;
-  if (!vehicle || m_Manager.IsGunnerDriven(vehicle) || squad.HasPlayer()) return;
-  ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
-  if (driver && ACR_Squad.FindController(driver)) return;
+  IEntity own = BBB.s_Hooks.OwnVehicleOf(group);
+  IEntity anchor = BBB.s_Hooks.AnchorOf(group);
+  if (!vehicle && own && BBB.Health(own) > 0 && anchor && vector.DistanceXZ(own.GetOrigin(), anchor.GetOrigin()) < 80) vehicle = own;
+  if (!vehicle || BBB.s_Hooks.LeaveAlone(vehicle) || BBB.HasPlayer(group)) return;
+  ChimeraCharacter driver = BBB.DriverOf(vehicle);
+  if (driver && BBB.PlayerOf(driver)) return;
   array<AIWaypoint> waypoints = {};
-  squad.m_Group.GetWaypoints(waypoints);
+  group.GetWaypoints(waypoints);
   if (waypoints.IsEmpty()) return;
   vector ahead = vehicle.GetOrigin() + vehicle.GetTransformAxis(2) * LOOK_AHEAD;
   m_Found.Clear();
@@ -75,7 +73,7 @@ class ACR_Gates : Managed
    entity.GetBounds(mins, maxs);
    if (Math.Max(maxs[0] - mins[0], maxs[2] - mins[2]) < GATE_MIN_WIDTH) continue;
    door.SetControlValue(1, RplId.Invalid());
-   PrintFormat("[ACR] GATE opened ahead of %1 at %2", squad.GetName(), entity.GetOrigin());
+   PrintFormat("[ACR] GATE opened ahead of %1 at %2", BBB.s_Hooks.NameOf(group), entity.GetOrigin());
   }
  }
 
@@ -93,14 +91,14 @@ class ACR_Gates : Managed
   return false;
  }
 
- protected void GetOffBeds(ACR_Squad squad)
+ protected void GetOffBeds(SCR_AIGroup group)
  {
   array<AIAgent> agents = {};
-  squad.GetAgents(agents);
+  BBB.s_Hooks.GetMembers(group, agents);
   foreach (AIAgent agent : agents)
   {
    ChimeraCharacter soldier = ChimeraCharacter.Cast(agent.GetControlledEntity());
-   if (!soldier || !ACR_Respawn.IsAlive(soldier) || ACR_Transport.VehicleOf(soldier) || ACR_Squad.FindController(soldier)) { m_OnBed.Remove(soldier); continue; }
+   if (!soldier || !BBB.IsAlive(soldier) || BBB_Transport.VehicleOf(soldier) || BBB.PlayerOf(soldier)) { m_OnBed.Remove(soldier); continue; }
    vector at = soldier.GetOrigin();
    if (at[1] - GetGame().GetWorld().GetSurfaceY(at[0], at[2]) < BED_HEIGHT) { m_OnBed.Remove(soldier); continue; }
    m_BedVehicle = null;
@@ -122,7 +120,7 @@ class ACR_Gates : Managed
    soldier.GetWorldTransform(transform);
    transform[3] = ground;
    soldier.Teleport(transform);
-   PrintFormat("[ACR] %1: soldier stuck on a vehicle set down beside it", squad.GetName());
+   PrintFormat("[ACR] %1: soldier stuck on a vehicle set down beside it", BBB.s_Hooks.NameOf(group));
   }
  }
 }

@@ -320,14 +320,14 @@ class ACR_TestLogistics : Managed
     foreach (AIAgent agent : agents)
     {
      IEntity body = agent.GetControlledEntity();
-     if (body && ACR_Launchers.DisposableOf(body) && ACR_Squad.FindController(body) == 0) { m_LauncherMan = body; break; }
+     if (body && BBB_Launchers.DisposableOf(body) && ACR_Squad.FindController(body) == 0) { m_LauncherMan = body; break; }
     }
     if (m_LauncherMan) break;
    }
    if (!m_LauncherMan) { Print("[ACR] LAUNCHERTEST no soldier with a disposable launcher found"); return; }
-   IEntity tube = ACR_Launchers.DisposableOf(m_LauncherMan);
+   IEntity tube = BBB_Launchers.DisposableOf(m_LauncherMan);
    BaseWeaponComponent weapon = BaseWeaponComponent.Cast(tube.FindComponent(BaseWeaponComponent));
-   PrintFormat("[ACR] LAUNCHERTEST soldier has %1 with %2 round(s)", ACR_Vehicles.NameOf(tube), ACR_Launchers.Loaded(tube));
+   PrintFormat("[ACR] LAUNCHERTEST soldier has %1 with %2 round(s)", ACR_Vehicles.NameOf(tube), BBB_Launchers.Loaded(tube));
    if (weapon && weapon.GetCurrentMagazine()) weapon.GetCurrentMagazine().SetAmmoCount(0);
    if (weapon)
    {
@@ -336,18 +336,18 @@ class ACR_TestLogistics : Managed
     foreach (BaseMuzzleComponent muzzle : muzzles)
      for (int b = 0; b < muzzle.GetBarrelsCount(); b++) muzzle.ClearChamber(b);
    }
-   PrintFormat("[ACR] LAUNCHERTEST emptied: %1 round(s) left", ACR_Launchers.Loaded(tube));
+   PrintFormat("[ACR] LAUNCHERTEST emptied: %1 round(s) left", BBB_Launchers.Loaded(tube));
   }
   if (h.m_Ticks == 16 && m_LauncherMan)
   {
-   PrintFormat("[ACR] LAUNCHERTEST dropped %1 (want 1), still carries one: %2 (want 0), owed: %3", manager.m_Launchers.m_iDropped, ACR_Launchers.DisposableOf(m_LauncherMan) != null, manager.m_Launchers.IsOwed(m_LauncherMan));
+   PrintFormat("[ACR] LAUNCHERTEST dropped %1 (want 1), still carries one: %2 (want 0), owed: %3", BBB.s_Launchers.m_iDropped, BBB_Launchers.DisposableOf(m_LauncherMan) != null, manager.m_Launchers.IsOwed(m_LauncherMan));
    PrintFormat("[ACR] LAUNCHERTEST rearm: %1", manager.m_Launchers.Rearm(m_LauncherMan));
   }
   if (h.m_Ticks == 20 && m_LauncherMan)
   {
-   IEntity fresh = ACR_Launchers.DisposableOf(m_LauncherMan);
+   IEntity fresh = BBB_Launchers.DisposableOf(m_LauncherMan);
    int rounds = -1;
-   if (fresh) rounds = ACR_Launchers.Loaded(fresh);
+   if (fresh) rounds = BBB_Launchers.Loaded(fresh);
    PrintFormat("[ACR] LAUNCHERTEST after rearm: has launcher %1 (want 1), rounds %2 (want 1)", fresh != null, rounds);
   }
   if (h.m_Ticks == 22) Print("[ACR] TEST COMPLETE");

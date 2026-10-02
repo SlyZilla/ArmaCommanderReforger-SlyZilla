@@ -991,12 +991,12 @@ class ACR_AICommander : Managed
    float angle = turn * Math.DEG2RAD;
    vector rotated = Vector(dir[0] * Math.Cos(angle) - dir[2] * Math.Sin(angle), 0, dir[0] * Math.Sin(angle) + dir[2] * Math.Cos(angle));
    vector candidate;
-   if (!ACR_Terrain.DryApproach(target.GetOrigin(), rotated, ring, candidate)) continue;
+   if (!BBB_Terrain.DryApproach(target.GetOrigin(), rotated, ring, candidate)) continue;
    if (NearOtherEnemyBase(candidate, target)) continue;
    point = candidate;
    return true;
   }
-  return ACR_Terrain.DryApproach(target.GetOrigin(), dir, ring, point);
+  return BBB_Terrain.DryApproach(target.GetOrigin(), dir, ring, point);
  }
 
  protected bool NearOtherEnemyBase(vector point, ACR_Base except)

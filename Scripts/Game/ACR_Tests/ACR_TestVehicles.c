@@ -358,16 +358,16 @@ class ACR_TestVehicles : Managed
     vector to = h.Ground(string.Format("%1 0 %2", ends[e + 1][0], ends[e + 1][2]));
     array<vector> legs = {};
     int started = System.GetTickCount();
-    bool routed = ACR_Terrain.LandRoute(from, to, legs);
+    bool routed = BBB_Terrain.LandRoute(from, to, legs);
     int took = System.GetTickCount() - started;
     float worst;
     vector prev = from;
     foreach (vector leg : legs)
     {
-     worst = Math.Max(worst, ACR_Terrain.WaterAlong(prev, leg));
+     worst = Math.Max(worst, BBB_Terrain.WaterAlong(prev, leg));
      prev = leg;
     }
-    PrintFormat("[ACR] ROUTETEST %1 -> %2: straight water %3 m, routed=%4 legs=%5 worst leg water %6 m, %7 ms", from, to, (int)ACR_Terrain.WaterAlong(from, to), routed, legs.Count(), (int)worst, took);
+    PrintFormat("[ACR] ROUTETEST %1 -> %2: straight water %3 m, routed=%4 legs=%5 worst leg water %6 m, %7 ms", from, to, (int)BBB_Terrain.WaterAlong(from, to), routed, legs.Count(), (int)worst, took);
    }
    // South to 1290/2300 the roads go 2 km round for 550 m: refused, they'd walk.
    string why;
@@ -505,8 +505,8 @@ class ACR_TestVehicles : Managed
   {
    array<vector> legs = {};
    int nodes, millis;
-   bool ok = ACR_Roads.Route(ACR_Manager.Ground(a), ACR_Manager.Ground(to[i]), legs, nodes, millis);
-   PrintFormat("[ACR] ROADS trip %1: road=%2 length=%3 m direct=%4 m hops=%5 nodes=%6 (%7 ms)", i, ok, (int)ACR_Roads.s_fLastLength, (int)vector.DistanceXZ(a, to[i]), legs.Count(), nodes, millis);
+   bool ok = BBB_Roads.Route(ACR_Manager.Ground(a), ACR_Manager.Ground(to[i]), legs, nodes, millis);
+   PrintFormat("[ACR] ROADS trip %1: road=%2 length=%3 m direct=%4 m hops=%5 nodes=%6 (%7 ms)", i, ok, (int)BBB_Roads.s_fLastLength, (int)vector.DistanceXZ(a, to[i]), legs.Count(), nodes, millis);
   }
   Print("[ACR] TEST COMPLETE");
  }

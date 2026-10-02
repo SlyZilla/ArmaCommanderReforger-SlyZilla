@@ -56,7 +56,6 @@ class ACR_Manager : Managed
  ref ACR_Launchers m_Launchers;
  int m_iSoldierCap = 100;   // living AI soldiers per side (purchases stop above it)
  protected bool m_bHostOptionsApplied;
- ref array<ACR_Squad> m_Unsticking = {};   // vehicles being backed out of trouble (applied every frame)
  protected int m_iStatusTick;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
@@ -88,7 +87,12 @@ class ACR_Manager : Managed
   if (!s_Instance)
   {
    s_Instance = new ACR_Manager();
-   if (Replication.IsServer()) GetGame().GetCallqueue().CallLater(s_Instance.Tick, 1000, true);
+   if (Replication.IsServer())
+   {
+    GetGame().GetCallqueue().CallLater(s_Instance.Tick, 1000, true);
+    // Better Battle Buddies: gates, truck beds, spent launchers on its own tick.
+    BBB.Start(new ACR_BBBHooks(s_Instance));
+   }
    Print("[ACR] Manager started");
   }
   return s_Instance;
@@ -99,6 +103,7 @@ class ACR_Manager : Managed
   ACR_Hud.Clear();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
+  BBB.Stop();
   s_Instance = null;
  }
 
@@ -234,16 +239,12 @@ class ACR_Manager : Managed
   if (!m_Rides) m_Rides = new ACR_Rides(this);
   m_Rides.Tick();
   t = ACR_Perf.Lap("rides", t);
-  if (!m_Gates) m_Gates = new ACR_Gates(this);
-  m_Gates.Tick();
-  t = ACR_Perf.Lap("gates", t);
   if (!m_Logistics) m_Logistics = new ACR_Logistics(this);
   m_Logistics.Tick();
   t = ACR_Perf.Lap("logistics", t);
   if (!m_Cleanup) m_Cleanup = new ACR_Cleanup(this);
   m_Cleanup.Tick();
   if (!m_Launchers) m_Launchers = new ACR_Launchers(this);
-  m_Launchers.Tick();
   Pings().Tick();
   t = ACR_Perf.Lap("cleanup", t);
   if (!m_bHostOptionsApplied) ApplyHostOptions();
@@ -704,7 +705,6 @@ class ACR_Manager : Managed
 
  // ================================================================ gunner drives (server)
 
- protected ref ACR_Gates m_Gates;
  protected ref map<IEntity, ref ACR_GunnerDrive> m_Drives = new map<IEntity, ref ACR_GunnerDrive>();
 
  void GunnerDriveInput(SCR_PlayerController pc, IEntity vehicle, float throttle, float steer)
@@ -777,8 +777,7 @@ class ACR_Manager : Managed
   m_Supports.Frame(timeSlice);
   ACR_Perf.Lap("frames", t);
   CheckLandingZones();
-  for (int u = m_Unsticking.Count() - 1; u >= 0; u--)
-   if (!m_Unsticking[u] || !m_Unsticking[u].UnstickFrame()) m_Unsticking.RemoveOrdered(u);
+  BBB.Frame(); // backing stuck vehicles out (inputs every frame)
   if (m_Drives.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
   array<IEntity> ended = {};

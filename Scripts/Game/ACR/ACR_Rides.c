@@ -178,14 +178,14 @@ class ACR_Rides : Managed
   // 600 m hop: then they walk.
   array<vector> roadLegs = {};
   int roadNodes, roadMillis;
-  ACR_Roads.Route(from, destination, roadLegs, roadNodes, roadMillis);
-  if (ACR_Roads.s_bLastDetour)
+  BBB_Roads.Route(from, destination, roadLegs, roadNodes, roadMillis);
+  if (BBB_Roads.s_bLastDetour)
   {
-   float driveSeconds = fetch / 4 + 45 + ACR_Roads.s_fLastLength / 4; // trucks average about 4 m/s door to door
+   float driveSeconds = fetch / 4 + 45 + BBB_Roads.s_fLastLength / 4; // trucks average about 4 m/s door to door
    float walkSeconds = trip / 1.4;
    if (driveSeconds > walkSeconds * 0.8)
    {
-    why = string.Format("no quick road there (%1 m by road for %2 m): walking is faster", (int)ACR_Roads.s_fLastLength, (int)trip);
+    why = string.Format("no quick road there (%1 m by road for %2 m): walking is faster", (int)BBB_Roads.s_fLastLength, (int)trip);
     return null;
    }
   }
@@ -201,9 +201,9 @@ class ACR_Rides : Managed
   // Pick up and drop off on roads when there is one nearby: the game's AI
   // drivers often can't reach off-road spots and abandon the vehicle.
   vector road;
-  if (ACR_Terrain.RoadPointNear(ride.m_Drop, 350, road)) ride.m_Drop = road;
+  if (BBB_Terrain.RoadPointNear(ride.m_Drop, 350, road)) ride.m_Drop = road;
   vector pickup = from;
-  if (ACR_Terrain.RoadPointNear(from, 250, road)) pickup = road;
+  if (BBB_Terrain.RoadPointNear(from, 250, road)) pickup = road;
   ride.m_sFinalPrefab = finalPrefab;
   ride.m_Final = destination;
   ride.m_fFinalRadius = finalRadius;

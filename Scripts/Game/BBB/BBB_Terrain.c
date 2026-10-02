@@ -3,7 +3,7 @@
 // out we check the straight line for water; if it crosses more than a little,
 // a coarse land-only route (A* over 50 m cells) is found and the squad walks it
 // leg by leg. Also used to keep attack staging points on dry ground.
-class ACR_Terrain
+class BBB_Terrain
 {
  static const float SEA_LEVEL = 0.4;      // surface below this is sea (Arland/Everon sea level is 0)
  static const float WET_ALLOWED = 40;     // m of water on a straight leg that is still fine (streams, beaches)
@@ -33,7 +33,7 @@ class ACR_Terrain
    if (d < best) { best = d; point = p; }
   }
   if (best > maxDistance) return false;
-  point = ACR_Manager.Ground(point);
+  point = BBB.Ground(point);
   return true;
  }
 
@@ -75,7 +75,7 @@ class ACR_Terrain
     vector rotated = Vector(dir[0] * Math.Cos(angle) - dir[2] * Math.Sin(angle), 0, dir[0] * Math.Sin(angle) + dir[2] * Math.Cos(angle));
     vector candidate = target + rotated * ring * scale;
     if (IsWaterAt(candidate) || WaterAlong(candidate, target) > WET_ALLOWED / 2) continue;
-    point = ACR_Manager.Ground(candidate);
+    point = BBB.Ground(candidate);
     return true;
    }
   }
@@ -174,7 +174,7 @@ class ACR_Terrain
    {
     if (WaterAlong(chain[at], chain[j]) <= WET_ALLOWED / 2) { reach = j; break; }
    }
-   route.Insert(ACR_Manager.Ground(chain[reach]));
+   route.Insert(BBB.Ground(chain[reach]));
    at = reach;
   }
   return route.Count() > 1;
