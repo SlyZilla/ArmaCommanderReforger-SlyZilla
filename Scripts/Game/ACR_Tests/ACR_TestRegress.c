@@ -219,6 +219,47 @@ class ACR_TestRegress
    bool back = bravo.m_Order == saved.m_sLabel && bravo.OrderState() == ACR_EOrderState.DEFEND && bravo.m_OrderKind == ACR_EOrderKind.DEFEND && bravo.m_sOrderPrefab == ACR_Squad.WP_DEFEND && vector.Distance(bravo.m_MoveTarget, saved.m_Target) < 0.1;
    Check("a saved order comes back unchanged", halted && back, string.Format("label '%1' state %2 kind %3", bravo.m_Order, typename.EnumToString(ACR_EOrderState, bravo.OrderState()), bravo.m_OrderKind));
   }
+  // Debug menu actions (2 Oct).
+  if (tick == 44)
+  {
+   ACR_Debug dbg = manager.m_Debug;
+   ACR_FactionData usData = manager.m_Bases.GetFaction("US");
+   usData.m_iRP = 100;
+   dbg.Run(manager, ACR_EDebug.RP_OWN, "US", "");
+   Check("debug: +500 RP to own side", usData.m_iRP == 100 + ACR_Debug.RP_STEP, usData.m_iRP.ToString());
+   foreach (ACR_SupportEntry sup : usData.m_aSupports) sup.m_fReadyAt = GetGame().GetWorld().GetWorldTime() + 999000;
+   dbg.Run(manager, ACR_EDebug.RESET_SUPPORTS, "US", "");
+   bool ready = true;
+   foreach (ACR_SupportEntry sup2 : usData.m_aSupports) if (sup2.m_fReadyAt > GetGame().GetWorld().GetWorldTime()) ready = false;
+   Check("debug: supports ready again", ready && !usData.m_aSupports.IsEmpty(), "");
+   ACR_Base sovietBase;
+   foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sOwner == "USSR") { sovietBase = base; break; }
+   if (sovietBase)
+   {
+    dbg.Run(manager, ACR_EDebug.CAPTURE_OWN, "US", sovietBase.m_sName);
+    bool ours = sovietBase.m_sOwner == "US";
+    dbg.Run(manager, ACR_EDebug.CAPTURE_ENEMY, "US", sovietBase.m_sName);
+    Check("debug: capture a base and hand it back", ours && sovietBase.m_sOwner == "USSR", sovietBase.m_sName);
+   }
+   dbg.Run(manager, ACR_EDebug.PAUSE_ENEMY, "USSR", "");
+   bool paused = dbg.IsPaused("US") && dbg.Status(manager, "USSR").Contains("PAUSED");
+   dbg.Run(manager, ACR_EDebug.PAUSE_ENEMY, "USSR", "");
+   Check("debug: pause and resume the enemy AI", paused && !dbg.IsPaused("US"), dbg.Status(manager, "USSR"));
+   string attack = dbg.Run(manager, ACR_EDebug.ATTACK_NOW, "USSR", "");
+   if (attack.Contains("no free squads")) PrintFormat("[ACR] REGRESS info: forced attack skipped (%1)", attack);
+   else Check("debug: forced AI attack", attack.Contains("attacking"), attack);
+   dbg.Run(manager, ACR_EDebug.REVEAL, "US", "");
+  }
+  if (tick == 46)
+  {
+   int sovietsSeen;
+   foreach (IEntity seen, vector seenAt : manager.IntelFor("US").m_SeenAt) if (ACR_Intel.FactionKeyOf(seen) == "USSR") sovietsSeen++;
+   int sovietSoldiers;
+   foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == "USSR") sovietSoldiers += squad.Strength();
+   manager.m_Debug.Run(manager, ACR_EDebug.REVEAL, "US", "");
+   if (sovietSoldiers == 0) Print("[ACR] REGRESS info: reveal check skipped (no Soviet squads)");
+   else Check("debug: reveal shows enemy soldiers", sovietsSeen > 0 && !manager.m_Debug.Reveals("US"), string.Format("%1 seen of about %2", sovietsSeen, sovietSoldiers));
+  }
   if (tick == 50)
   {
    bool kept = s_Defender && s_Defender.m_iAITask == ACR_EAITask.DEFEND;

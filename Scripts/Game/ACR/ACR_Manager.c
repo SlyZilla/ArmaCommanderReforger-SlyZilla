@@ -35,6 +35,7 @@ class ACR_Manager : Managed
 
  ref array<ref ACR_Squad> m_Squads = {};
  ref ACR_BaseSystem m_Bases = new ACR_BaseSystem();
+ ref ACR_Debug m_Debug = new ACR_Debug(); // debug menu state (pause, reveal)
  protected ref map<string, ref ACR_AICommander> m_AICommanders = new map<string, ref ACR_AICommander>();
  protected ref map<string, ref ACR_Intel> m_Intel = new map<string, ref ACR_Intel>();
  string m_sSpawningFaction; // side paying for the unit being spawned
@@ -459,6 +460,7 @@ class ACR_Manager : Managed
     PrintFormat("[ACR] AI commander %1 held: players are still loading in", settings.m_sFaction);
    }
    if (!hold) m_AIHeld.RemoveItem(settings.m_sFaction);
+   if (m_Debug.IsPaused(settings.m_sFaction)) continue; // debug menu: frozen, squads keep their orders
    ai.Tick(noCommander && !hold);
   }
  }
@@ -546,6 +548,13 @@ class ACR_Manager : Managed
    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
    if (pc) pc.ACR_SendRadio(message);
   }
+ }
+
+ ACR_AICommander AICommanderFor(string factionKey)
+ {
+  ACR_AICommander ai;
+  m_AICommanders.Find(factionKey, ai);
+  return ai;
  }
 
  bool IsAIInCommand(string factionKey)

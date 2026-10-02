@@ -20,6 +20,8 @@ enum ACR_EPanelAction
  PING_ATTACK,
  PING_DEFEND,
  PING_SUPPORT,
+ DEBUG_TOGGLE = 50,
+ DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
  SUPPORT_ENTRY = 200     // + entry index
 }
@@ -81,6 +83,14 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_RideButton;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
+ protected Widget m_DebugRoot;
+ protected Widget m_DebugSection;
+ protected TextWidget m_DebugStatus;
+ protected SCR_ButtonTextComponent m_DebugToggle;
+ protected SCR_ButtonTextComponent m_DebugAttack;
+ protected SCR_ButtonTextComponent m_DebugCaptureOwn;
+ protected SCR_ButtonTextComponent m_DebugCaptureEnemy;
+ protected string m_sDebugShown = "-";
 
  void Create(Widget parent, SCR_PlayerController owner)
  {
@@ -165,6 +175,79 @@ class ACR_CommandPanel : Managed
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
   CreateFeed(parent);
   CreatePicker(parent);
+  CreateDebug(parent);
+ }
+
+ // Debug menu (host and admins): a small box at the bottom left, closed by default.
+ protected void CreateDebug(Widget parent)
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  m_DebugRoot = ws.CreateWidget(WidgetType.OverlayWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, parent);
+  FrameSlot.SetAnchorMin(m_DebugRoot, 0, 1);
+  FrameSlot.SetAnchorMax(m_DebugRoot, 0, 1);
+  FrameSlot.SetAlignment(m_DebugRoot, 0, 1);
+  FrameSlot.SetPos(m_DebugRoot, 110, -96);
+  FrameSlot.SetSizeToContent(m_DebugRoot, true);
+  m_DebugRoot.SetZOrder(1000);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.86), 0, m_DebugRoot);
+  AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
+  SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_DebugRoot));
+  size.EnableWidthOverride(true);
+  size.SetWidthOverride(320);
+  AlignableSlot.SetPadding(size, 8, 6, 8, 8);
+  Widget column = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
+  m_DebugToggle = AddButton(column, "Debug", ACR_EPanelAction.DEBUG_TOGGLE);
+  m_DebugSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, column);
+  m_DebugStatus = AddText(m_DebugSection, LAYOUT_TEXT, "");
+  Widget rp = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
+  AddButton(rp, "+500 RP us", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RP_OWN, true);
+  AddButton(rp, "+500 RP enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RP_ENEMY, true);
+  AddButton(m_DebugSection, "Pause / resume enemy AI", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.PAUSE_ENEMY);
+  m_DebugAttack = AddButton(m_DebugSection, "Enemy attacks now", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.ATTACK_NOW);
+  Widget capture = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
+  m_DebugCaptureOwn = AddButton(capture, "Base -> us", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.CAPTURE_OWN, true);
+  m_DebugCaptureEnemy = AddButton(capture, "Base -> enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.CAPTURE_ENEMY, true);
+  Widget misc = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
+  AddButton(misc, "Reveal enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.REVEAL, true);
+  AddButton(misc, "Reset supports", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RESET_SUPPORTS, true);
+  m_DebugSection.SetVisible(false);
+ }
+
+ // allowed = host/admin; baseName = the base selected on the map ("" none).
+ void SetDebug(bool allowed, bool open, string status, string baseName)
+ {
+  if (!m_DebugRoot) return;
+  string key = string.Format("%1|%2|%3|%4", allowed, open, status, baseName);
+  if (key == m_sDebugShown) return;
+  m_sDebugShown = key;
+  m_DebugRoot.SetVisible(allowed);
+  if (!allowed) return;
+  m_DebugSection.SetVisible(open);
+  if (m_DebugToggle)
+  {
+   if (open) m_DebugToggle.SetText("Debug  [close]");
+   else m_DebugToggle.SetText("Debug");
+  }
+  if (m_DebugStatus) m_DebugStatus.SetText(status);
+  bool hasBase = !baseName.IsEmpty();
+  if (m_DebugAttack)
+  {
+   if (hasBase) m_DebugAttack.SetText("Enemy attacks " + baseName + " now");
+   else m_DebugAttack.SetText("Enemy attacks now (select a base to aim)");
+  }
+  if (m_DebugCaptureOwn)
+  {
+   m_DebugCaptureOwn.SetEnabled(hasBase, false);
+   if (hasBase) m_DebugCaptureOwn.SetText(baseName + " -> us");
+   else m_DebugCaptureOwn.SetText("Base -> us");
+  }
+  if (m_DebugCaptureEnemy)
+  {
+   m_DebugCaptureEnemy.SetEnabled(hasBase, false);
+   if (hasBase) m_DebugCaptureEnemy.SetText(baseName + " -> enemy");
+   else m_DebugCaptureEnemy.SetText("Base -> enemy");
+  }
  }
 
  // The ping picker: four buttons that open at the cursor (Alt+right-click).
@@ -320,7 +403,7 @@ class ACR_CommandPanel : Managed
  {
   while (widget)
   {
-   if (widget == m_Root || (m_FeedRoot && widget == m_FeedRoot) || (m_PickerRoot && widget == m_PickerRoot)) return true;
+   if (widget == m_Root || (m_FeedRoot && widget == m_FeedRoot) || (m_PickerRoot && widget == m_PickerRoot) || (m_DebugRoot && widget == m_DebugRoot)) return true;
    widget = widget.GetParent();
   }
   return false;
@@ -493,6 +576,8 @@ class ACR_CommandPanel : Managed
   m_FeedRoot = null;
   if (m_PickerRoot) m_PickerRoot.RemoveFromHierarchy();
   m_PickerRoot = null;
+  if (m_DebugRoot) m_DebugRoot.RemoveFromHierarchy();
+  m_DebugRoot = null;
   m_FeedText = null;
   m_FeedLines.Clear();
   m_Actions.Clear();

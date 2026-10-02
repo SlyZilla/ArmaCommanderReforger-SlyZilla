@@ -168,6 +168,48 @@ modded class SCR_PlayerController
   SCR_HintManagerComponent.ShowCustomHint(message, "AC: Actual", 5, true);
  }
 
+ // ---------------------------------------------------------------- debug menu (host/admins)
+ protected bool m_ACR_DebugAllowed;
+ protected bool m_ACR_DebugOpen;
+ protected string m_ACR_DebugStatus;
+ void ACR_SendDebug(bool allowed, string status)
+ {
+  Rpc(ACR_DebugOwner, allowed, status);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_DebugOwner(bool allowed, string status)
+ {
+  m_ACR_DebugAllowed = allowed;
+  m_ACR_DebugStatus = status;
+ }
+ void ACR_RequestDebug(int action)
+ {
+  Rpc(ACR_DebugServer, action, m_ACR_SelectedBase);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_DebugServer(int action, string baseName)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastCommand < 300) return;
+  m_ACR_LastCommand = now;
+  if (!ACR_Manager.IsHostOrAdmin(GetPlayerId()))
+  {
+   Rpc(ACR_FeedbackOwner, "Debug menu: host and admins only");
+   return;
+  }
+  Faction faction = SCR_FactionManager.SGetPlayerFaction(GetPlayerId());
+  if (!faction)
+  {
+   Rpc(ACR_FeedbackOwner, "Debug menu: join a side first");
+   return;
+  }
+  string result = manager.m_Debug.Run(manager, action, faction.GetFactionKey(), baseName);
+  PrintFormat("[ACR] DEBUG player %1: %2", GetPlayerId(), result);
+  Rpc(ACR_FeedbackOwner, result);
+ }
+
  // ---------------------------------------------------------------- gunner drives
  protected IEntity m_ACR_DriveVehicle;
  protected float m_ACR_DriveThrottle;
@@ -930,6 +972,7 @@ modded class SCR_PlayerController
  protected void ACR_UpdatePanel()
  {
   if (!m_ACR_Panel) return;
+  m_ACR_Panel.SetDebug(m_ACR_DebugAllowed, m_ACR_DebugOpen, m_ACR_DebugStatus, m_ACR_SelectedBase);
   bool canTake = !m_ACR_IsCommander && (m_ACR_SharedCommand || m_ACR_CommandText == "Command: AI");
   m_ACR_Panel.SetCommand(m_ACR_CommandText, m_ACR_IsCommander, canTake);
   int incomeIn = Math.Max(0, m_ACR_IncomeSeconds - ACR_MapData.Since(m_ACR_IncomeAt));
@@ -1052,6 +1095,7 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.PING_ATTACK: ACR_PickPing(ACR_EPing.ATTACK); return;
    case ACR_EPanelAction.PING_DEFEND: ACR_PickPing(ACR_EPing.DEFEND); return;
    case ACR_EPanelAction.PING_SUPPORT: ACR_PickPing(ACR_EPing.SUPPORT); return;
+   case ACR_EPanelAction.DEBUG_TOGGLE: m_ACR_DebugOpen = !m_ACR_DebugOpen; return;
    case ACR_EPanelAction.TOGGLE_REQUISITION:
     m_ACR_RequisitionOpen = !m_ACR_RequisitionOpen;
     if (m_ACR_RequisitionOpen) m_ACR_SupportOpen = false;
@@ -1065,6 +1109,11 @@ modded class SCR_PlayerController
     m_ACR_PendingEntry = -1;
     m_ACR_PendingSupport = -1;
     return;
+  }
+  if (action >= ACR_EPanelAction.DEBUG_ACTION && action < ACR_EPanelAction.REQUISITION_ENTRY)
+  {
+   ACR_RequestDebug(action - ACR_EPanelAction.DEBUG_ACTION);
+   return;
   }
   if (action >= ACR_EPanelAction.SUPPORT_ENTRY)
   {

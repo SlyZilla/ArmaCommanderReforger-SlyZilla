@@ -226,6 +226,9 @@ class ACR_BaseSystem : Managed
   if (base.m_fScore >= 100 && !base.m_sCapturer.IsEmpty()) Capture(manager, base, base.m_sCapturer);
  }
 
+ // Debug menu: hand a base over at once.
+ void DebugCapture(ACR_Manager manager, ACR_Base base, string factionKey) { Capture(manager, base, factionKey); }
+
  protected void Capture(ACR_Manager manager, ACR_Base base, string factionKey)
  {
   string previous = base.m_sOwner;

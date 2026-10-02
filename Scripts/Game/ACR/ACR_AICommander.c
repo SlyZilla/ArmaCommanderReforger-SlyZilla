@@ -618,6 +618,13 @@ class ACR_AICommander : Managed
    PrintFormat("[ACR] AI %1: not strong enough for %2 (%3/%4)", m_sFaction, target.m_sName, strength, required);
    return; // Requisition() will add troops
   }
+  LaunchAttack(attack, from, strength, required, pressure);
+ }
+
+ // Sends the chosen squads off: staging points (pincers), base of fire, orders.
+ protected void LaunchAttack(ACR_AIAttack attack, vector from, int strength, float required, float pressure)
+ {
+  ACR_Base target = attack.m_Target;
   attack.m_iStartStrength = strength;
   // Staging: the main approach from the attackers' side; with several squads
   // they spread out and come in from different angles (pincers).
@@ -666,8 +673,45 @@ class ACR_AICommander : Managed
   m_fLastOffensive = GetGame().GetWorld().GetWorldTime();
   if (pressure < 1) PrintFormat("[ACR] AI %1: taking the initiative against %2 (accepting x%3 odds after a quiet spell)", m_sFaction, target.m_sName, pressure);
   string kind = "attacking";
-  if (counterDue) { kind = "COUNTERATTACKING"; m_CounterTarget = null; }
+  if (attack.m_bCounter) { kind = "COUNTERATTACKING"; m_CounterTarget = null; }
   PrintFormat("[ACR] AI %1: %2 %3 with %4 squad(s), strength %5/%6", m_sFaction, kind, target.m_sName, attack.m_Squads.Count(), strength, required);
+ }
+
+ // Debug menu: attack now with every free squad, ignoring odds, attack limits and
+ // cooldowns. target null = the nearest enemy-held base (an empty one if none).
+ string ForceAttack(ACR_Base target)
+ {
+  if (!m_bActive) return string.Format("%1 AI commander isn't in command (a player commands it, or it's held or off)", m_sFaction);
+  array<ACR_Squad> free = {};
+  MySquads(free, true);
+  if (free.IsEmpty()) return string.Format("%1 AI has no free squads to attack with", m_sFaction);
+  vector from = PositionOf(free[0]);
+  if (!target)
+  {
+   float best = float.MAX;
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (base.m_sOwner == m_sFaction) continue;
+    float d = vector.DistanceXZ(base.GetOrigin(), from);
+    if (base.m_sOwner.IsEmpty()) d += 1000000; // enemy bases first
+    if (d < best) { best = d; target = base; }
+   }
+  }
+  if (!target) return "No base to attack";
+  if (target.m_sOwner == m_sFaction) return string.Format("%1 already holds %2", m_sFaction, target.m_sName);
+  m_StalledUntil.Remove(target);
+  SortByDistance(free, target.GetOrigin());
+  ACR_AIAttack attack = new ACR_AIAttack();
+  attack.m_Target = target;
+  int strength;
+  foreach (ACR_Squad squad : free)
+  {
+   attack.m_Squads.Insert(squad);
+   strength += squad.Strength();
+  }
+  PrintFormat("[ACR] AI %1: forced attack (debug menu)", m_sFaction);
+  LaunchAttack(attack, from, strength, strength, 1);
+  return string.Format("%1 AI attacking %2 with %3 squad(s)", m_sFaction, target.m_sName, free.Count());
  }
 
  // The own spawn base furthest from the fighting.

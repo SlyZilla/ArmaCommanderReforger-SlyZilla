@@ -117,6 +117,8 @@ class ACR_Intel : Managed
     if (player && !playerSide.IsEmpty() && playerSide != m_sFaction && vector.DistanceXZ(player.GetOrigin(), base.GetOrigin()) < reach) Note(player, now, sentries);
    }
   }
+  // Debug menu: every enemy soldier counts as seen.
+  if (m_Manager.m_Debug && m_Manager.m_Debug.Reveals(m_sFaction)) RevealAll(players, now);
   // 3. Our players' eyes (every 2 s): enemies in range with a clear line of sight.
   if (m_iTicks % 2 == 0) PlayerSightings(players, now);
   else TrackVehicles(players, now);
@@ -138,6 +140,23 @@ class ACR_Intel : Managed
    array<string> old = {};
    foreach (string key, float when : m_Reported) if (now - when > REPORT_AGAIN_MS) old.Insert(key);
    foreach (string done : old) m_Reported.Remove(done);
+  }
+ }
+
+ protected void RevealAll(array<int> players, float now)
+ {
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == m_sFaction) continue;
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents) Note(agent.GetControlledEntity(), now, "Debug");
+  }
+  foreach (int id : players)
+  {
+   IEntity player = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
+   string side = FactionKeyOf(player);
+   if (player && !side.IsEmpty() && side != m_sFaction) Note(player, now, "Debug");
   }
  }
 
