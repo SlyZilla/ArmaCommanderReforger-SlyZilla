@@ -123,7 +123,7 @@ class ACR_TestRegress
     ChimeraCharacter driver = ACR_Squad.DriverOf(shovelTruck);
     shovel = driver && ACR_Manager.HasShovel(driver);
    }
-   Check("construction truck driver has a shovel", shovel, ACR_Manager.s_sLastShovel);
+   Check("construction truck driver has a shovel", shovel, ACR_Requisition.s_sLastShovel);
   }
   // 9. (1 Oct) Hosting with players on USSR: Arland has only a US player spawn point and
   //    the auto-spawn names US, so the game never finished loading.
