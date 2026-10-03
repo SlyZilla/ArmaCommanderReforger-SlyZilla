@@ -4,7 +4,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 out = root / 'dist' / 'ACActual-Arland.zip'
 out.parent.mkdir(exist_ok=True)
 top = 'ACActual-Arland'
-keep_dirs = ['Configs', 'Missions', 'Scripts', 'Worlds']
+keep_dirs = ['Configs', 'Missions', 'Prefabs', 'Scripts', 'Worlds']
 keep_files = ['LICENSE.md', 'addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'ACR-Update.ps1', 'ACR-Find.ps1', 'ACR-ZeroTier.ps1', 'ACR-HostSetup.ps1', 'Play-Test-Range.cmd', 'README.md', 'MISSION-MAKING.md']
 # The mission-maker guide must list every World Editor setting and host option.
 if subprocess.run([sys.executable, str(root / 'tools/check_mission_doc.py')]).returncode != 0:
