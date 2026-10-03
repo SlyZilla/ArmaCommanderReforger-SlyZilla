@@ -149,7 +149,7 @@ class ACR_BaseSystem : Managed
  {
   vector center = base.GetOrigin();
   map<string, int> inside = new map<string, int>();
-  bool enemyNear, enemyInRange;
+  bool enemyNear, enemyInRange, enemyApproaching;
   foreach (int i, IEntity body : m_Bodies)
   {
    if (!body) continue; // deleted this tick (e.g. a garrison packed up after a capture)
@@ -169,11 +169,19 @@ class ACR_BaseSystem : Managed
    if (!base.m_sOwner.IsEmpty() && key != base.m_sOwner)
    {
     if (distance <= SPAWN_RANGE) enemyNear = true;
+    if (distance <= SPAWN_RANGE + 300) enemyApproaching = true;
     if (distance <= DESPAWN_RANGE) enemyInRange = true;
    }
   }
   UpdateCapture(manager, base, inside);
+  if (enemyApproaching && !base.m_GarrisonGroup && base.m_iGarrisonLeft > 0) ACR_Garrison.Prepare(center, GarrisonArea(base));
   UpdateGarrison(manager, base, enemyNear, enemyInRange);
+ }
+
+ // Buildings this far from a base's centre are garrisoned by its own soldiers.
+ static float GarrisonArea(ACR_Base base)
+ {
+  return Math.Min(base.m_fRadius, 80);
  }
 
  // Strongest faction inside other than 'exclude'.
@@ -306,7 +314,15 @@ class ACR_BaseSystem : Managed
   }
   ACR_Squad.KeepSimulated(group);
   base.m_GarrisonGroup = group;
-  AIWaypoint defend = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(Resource.Load(ACR_Squad.WP_DEFEND), null, SpawnParams(center)));
+  // The base's buildings get posts at their windows; the soldiers start on them (the
+  // game's fast init) and the rest hold the base round its centre as before.
+  IEntity navAgent = ACR_Garrison.AnyAgent();
+  int posts = ACR_Garrison.AssignArea(group, navAgent, center, GarrisonArea(base), base.m_iGarrisonLeft);
+  ResourceName order = ACR_Squad.WP_DEFEND;
+  if (posts > 0) order = ACR_Squad.WP_GARRISON;
+  AIWaypoint defend = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(Resource.Load(order), null, SpawnParams(center)));
+  SCR_DefendWaypoint garrison = SCR_DefendWaypoint.Cast(defend);
+  if (garrison && posts > 0) garrison.SetFastInit(true);
   if (defend)
   {
    defend.SetCompletionRadius(base.m_fRadius);

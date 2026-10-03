@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A00100A0}Prefabs/ACR/ACR_GarrisonPost_Crouch.et"
+ Configurations {
+  ETResourceClass PC {
+  }
+  ETResourceClass HEADLESS : PC {
+  }
+ }
+}

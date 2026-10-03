@@ -23,7 +23,9 @@ enum ACR_ERequest
  QUEUE_DEFEND,     // ... defend there after the current order
  ORDER_HUNT,       // pursue the spotted enemy group at point until it's destroyed or lost
  TAKE_GUNNER,      // possess the gunner of the squad's armed vehicle (targetId = group)
- ORDER_HALT        // drop every order and stand still
+ ORDER_HALT,       // drop every order and stand still
+ ORDER_GARRISON,   // move into the building at point and hold its windows (ACR_Garrison)
+ QUEUE_GARRISON    // ... garrison there after the current order
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -279,6 +281,7 @@ class ACR_Manager : Managed
   t = ACR_Perf.Lap("scan", t);
   EnsureCommanders();
   m_Bases.Tick(this);
+  ACR_Garrison.Sweep();
   t = ACR_Perf.Lap("bases", t);
   GrantGameMaster();
   ACR_PlayerSide.Enforce();

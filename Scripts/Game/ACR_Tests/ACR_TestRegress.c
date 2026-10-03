@@ -101,6 +101,9 @@ class ACR_TestRegress
    ResourceName used;
    if (mapConfig) used = mapConfig.GetGadgetMapConfig();
    Check("map uses the dense-contour config", used.Contains("ACR_MapFullscreen") && Resource.Load(used).IsValid(), used);
+   // Garrison order (3 Oct): hand-made prefabs load; its label is a defend state.
+   Check("garrison waypoint and post prefabs load", Resource.Load(ACR_Squad.WP_GARRISON).IsValid() && Resource.Load(ACR_Garrison.POST_CROUCH).IsValid() && Resource.Load(ACR_Garrison.POST_STAND).IsValid());
+   Check("garrisoning counts as defending", ACR_Squad.StateOfLabel("Garrisoning") == ACR_EOrderState.DEFEND);
   }
   // 8. (1 Oct MP) A construction truck's crew gets the building shovel.
   if (tick == 28)

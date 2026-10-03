@@ -470,6 +470,7 @@ class ACR_Rides : Managed
    return;
   }
   if (ride.m_sFinalPrefab == ACR_Squad.WP_DEFEND) rider.Defend(ride.m_Final);
+  else if (ride.m_sFinalPrefab == ACR_Squad.WP_GARRISON) rider.Garrison(ride.m_Final);
   else if (ride.m_sFinalPrefab == ACR_Squad.WP_SEARCH_DESTROY) rider.Assault(ride.m_Final);
   else rider.MoveTo(ride.m_Final);
  }

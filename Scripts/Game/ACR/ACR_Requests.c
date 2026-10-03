@@ -118,7 +118,7 @@ class ACR_Requests : Managed
   }
   string result = GiveOrder(pc, command, groupId, point);
   if (!squad || !m_Manager.m_Squads.Contains(squad) || !squad.GetFaction()) return result;
-  bool queued = (command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND) && !result.Contains("full");
+  bool queued = (command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.QUEUE_GARRISON) && !result.Contains("full");
   bool ride = command == ACR_ERequest.ORDER_RIDE && result.Contains("on its way");
   if (squad.m_iOrderSerial == serial && !queued && !ride) return result;
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return result;
@@ -144,6 +144,8 @@ class ACR_Requests : Managed
   {
    case ACR_ERequest.ORDER_DEFEND: return "defending";
    case ACR_ERequest.QUEUE_DEFEND: return "then defending";
+   case ACR_ERequest.ORDER_GARRISON: return "garrisoning";
+   case ACR_ERequest.QUEUE_GARRISON: return "then garrisoning";
    case ACR_ERequest.QUEUE_MOVE: return "then moving";
    case ACR_ERequest.ORDER_GET_IN: return "getting in";
    case ACR_ERequest.ORDER_GET_OUT: return "getting out";
@@ -164,7 +166,7 @@ class ACR_Requests : Managed
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return "Only the commander can give map orders. Take command first.";
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return "That squad is not ready";
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT;
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON;
   // Reject nonsense coordinates from a client.
   if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !ACR_Manager.OnMap(point))) return "Order is too far away";
   // Map clicks made inside Game Master / build mode are not orders (the client checks too).
@@ -190,6 +192,10 @@ class ACR_Requests : Managed
    case ACR_ERequest.ORDER_DEFEND:
     if (squad.Defend(point)) return name + ": defending";
     break;
+   case ACR_ERequest.ORDER_GARRISON:
+    if (squad.Garrison(point)) return name + ": garrisoning";
+    if (ACR_Transport.CrewedVehicle(squad)) return name + ": vehicle crews can't garrison, defending there";
+    return name + ": no building with room there, defending";
    case ACR_ERequest.ORDER_GET_IN:
    {
     bool boarding = squad.GetIn(point);
@@ -220,6 +226,9 @@ class ACR_Requests : Managed
     return name + ": waypoint list is full";
    case ACR_ERequest.QUEUE_DEFEND:
     if (squad.Queue(point, true)) return name + ": will defend there after its current order";
+    return name + ": waypoint list is full";
+   case ACR_ERequest.QUEUE_GARRISON:
+    if (squad.Queue(point, false, true)) return name + ": will garrison there after its current order";
     return name + ": waypoint list is full";
    case ACR_ERequest.MODE_COMBAT:
     squad.SetMode(ACR_EMoveMode.COMBAT);

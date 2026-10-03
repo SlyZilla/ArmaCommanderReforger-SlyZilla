@@ -1029,6 +1029,7 @@ modded class SCR_PlayerController
   if (!friendly) hint = "Player group: not commandable";
   else if (!m_ACR_IsCommander) hint = "Take command to give orders";
   else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend there (click Defend again to cancel)";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.GARRISON) hint = "Right-click a building: they hold its windows and doors, filling the next buildings if needed (click Garrison again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in (click Get in again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.LZ) hint = "Right-click the landing zone: they jump out when their ride sets down there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) hint = "Right-click the destination: a free truck nearby picks them up and drops them there";
@@ -1081,6 +1082,10 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.DEFEND:
     if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
     else m_ACR_CursorMode = ACR_ECursorMode.DEFEND;
+    return;
+   case ACR_EPanelAction.GARRISON:
+    if (m_ACR_CursorMode == ACR_ECursorMode.GARRISON) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+    else m_ACR_CursorMode = ACR_ECursorMode.GARRISON;
     return;
    case ACR_EPanelAction.GET_IN:
     if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
@@ -1204,6 +1209,11 @@ modded class SCR_PlayerController
   {
    command = ACR_ERequest.ORDER_DEFEND;
    if (append) command = ACR_ERequest.QUEUE_DEFEND;
+  }
+  if (m_ACR_CursorMode == ACR_ECursorMode.GARRISON)
+  {
+   command = ACR_ERequest.ORDER_GARRISON;
+   if (append) command = ACR_ERequest.QUEUE_GARRISON;
   }
   if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) command = ACR_ERequest.ORDER_GET_IN;
   if (m_ACR_CursorMode == ACR_ECursorMode.LZ) command = ACR_ERequest.ORDER_SET_LZ;

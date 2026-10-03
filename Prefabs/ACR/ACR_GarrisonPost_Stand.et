@@ -1,0 +1,15 @@
+GenericEntity {
+ ID "5AC2309260A00A01"
+ components {
+  SCR_AISmartActionSentinelComponent "{5AC2309260A00A11}" {
+   AIBehaviorTree "{12B4838160EDE026}AI/BehaviorTrees/SmartActions/SA_CoverPost.bt"
+   Tags {
+    "ACRGarrison"
+   }
+   ActionOffset 0 0 0
+   m_vLookPosition 0 1.2 10
+   m_fLookDirectionRange 100
+   m_iCharacterStance STAND
+  }
+ }
+}

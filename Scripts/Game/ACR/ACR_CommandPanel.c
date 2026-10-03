@@ -20,6 +20,7 @@ enum ACR_EPanelAction
  PING_ATTACK,
  PING_DEFEND,
  PING_SUPPORT,
+ GARRISON,
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -32,7 +33,8 @@ enum ACR_ECursorMode
  DEFEND,
  GET_IN,
  LZ,
- RIDE
+ RIDE,
+ GARRISON
 }
 
 // Arma Commander side panel on the fullscreen map. Built from script out of the
@@ -67,6 +69,7 @@ class ACR_CommandPanel : Managed
  protected ref array<SCR_ButtonTextComponent> m_ModeButtons = {};
  protected TextWidget m_Hint;
  protected SCR_ButtonTextComponent m_DefendButton;
+ protected SCR_ButtonTextComponent m_GarrisonButton;
  protected SCR_ButtonTextComponent m_ReinforceButton;
  protected SCR_ButtonTextComponent m_RequisitionButton;
  protected Widget m_RequisitionWidget;
@@ -162,6 +165,7 @@ class ACR_CommandPanel : Managed
   AddText(m_OrderSection, LAYOUT_TEXT, "Orders");
   Widget orders1 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   m_DefendButton = AddButton(orders1, "Defend", ACR_EPanelAction.DEFEND, true);
+  m_GarrisonButton = AddButton(orders1, "Garrison", ACR_EPanelAction.GARRISON, true);
   m_GetInButton = AddButton(orders1, "Get in", ACR_EPanelAction.GET_IN, true);
   Widget orders2 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   AddButton(orders2, "Get out", ACR_EPanelAction.GET_OUT, true);
@@ -442,6 +446,11 @@ class ACR_CommandPanel : Managed
   {
    if (cursorMode == ACR_ECursorMode.DEFEND) m_DefendButton.SetText("[Defend]");
    else m_DefendButton.SetText("Defend");
+  }
+  if (m_GarrisonButton)
+  {
+   if (cursorMode == ACR_ECursorMode.GARRISON) m_GarrisonButton.SetText("[Garrison]");
+   else m_GarrisonButton.SetText("Garrison");
   }
   if (m_GetInButton)
   {

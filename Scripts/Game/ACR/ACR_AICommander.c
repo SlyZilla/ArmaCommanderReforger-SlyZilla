@@ -765,6 +765,15 @@ class ACR_AICommander : Managed
  static const float RIDE_DISTANCE = 900;
  protected void Travel(ACR_Squad squad, vector destination, bool defend, float dropShort)
  {
+  // Defending a base: infantry garrison its buildings (the one nearest the centre,
+  // spilling into its neighbours); vehicle crews, and bases without buildings, defend.
+  bool garrison;
+  vector building;
+  if (defend && !ACR_Transport.CrewedVehicle(squad) && ACR_Garrison.AnchorNear(destination, 80, building))
+  {
+   garrison = true;
+   destination = building;
+  }
   if (m_Manager.m_Rides && !squad.IsMounted() && vector.DistanceXZ(PositionOf(squad), destination) > RIDE_DISTANCE)
   {
    ResourceName prefab = ACR_Squad.WP_MOVE;
@@ -778,11 +787,17 @@ class ACR_AICommander : Managed
     order = "Defending";
     kind = 1;
    }
+   if (garrison)
+   {
+    prefab = ACR_Squad.WP_GARRISON;
+    order = "Garrisoning";
+   }
    string why;
    if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why)) return;
   }
   // On foot (or its own vehicle): round any water rather than across it.
-  if (defend) squad.RouteTo(destination, ACR_Squad.WP_DEFEND, 15, "Defending", 1);
+  if (garrison) squad.RouteTo(destination, ACR_Squad.WP_GARRISON, 15, "Garrisoning", 1);
+  else if (defend) squad.RouteTo(destination, ACR_Squad.WP_DEFEND, 15, "Defending", 1);
   else squad.RouteTo(destination, ACR_Squad.WP_MOVE, -1, "Moving", 0);
  }
 

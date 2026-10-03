@@ -49,6 +49,7 @@ class ACR_TestHarness : Managed
  static const int MODE_BATTERY = 37;
  static const int MODE_PADS = 38;
  static const int MODE_HELIPAD = 39;
+ static const int MODE_GARRISON = 40;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -97,6 +98,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrBatteryTest", flag)) mode = MODE_BATTERY;
   if (System.GetCLIParam("acrPadsTest", flag)) mode = MODE_PADS;
   if (System.GetCLIParam("acrHelipadTest", flag)) mode = MODE_HELIPAD;
+  if (System.GetCLIParam("acrGarrisonTest", flag)) mode = MODE_GARRISON;
   if (System.GetCLIParam("acrCrewTest", flag) || System.GetCLIParam("acrCrewOldTest", flag)) mode = MODE_CREW;
   if (System.GetCLIParam("acrGetOutTest", flag) || System.GetCLIParam("acrGetOutOldTest", flag)) mode = MODE_GETOUT;
   if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag) || System.GetCLIParam("acrDriveFixedTest", flag) || System.GetCLIParam("acrDriveAttachedTest", flag)) mode = MODE_DRIVE;
@@ -187,6 +189,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_BATTERY) { ACR_TestBattery.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADS) { m_Vehicles.TestRoads(); return; }
   if (m_Mode == MODE_STALLED)
   {

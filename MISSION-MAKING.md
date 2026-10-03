@@ -207,7 +207,7 @@ A base (control point). Its position is the centre of the capture circle.
 |---|---|---|
 | `m_sName` | `Base N` | Name on the map |
 | `m_sOwner` | empty | Starting owner faction key; empty = neutral |
-| `m_iGarrison` | 10 | AI soldiers guarding it. They exist only while enemies are within 400 m, and are used up as they die |
+| `m_iGarrison` | 10 | AI soldiers guarding it. They exist only while enemies are within 400 m, and are used up as they die. They start at the windows of the base's buildings within 80 m of its centre (the rest hold round the centre) |
 | `m_iValue` | 1 | RP it adds to its owner's income (shown on the map as `Name [value]`) |
 | `m_bIncome` | on | Produces income. Off = purely tactical point |
 | `m_bHidden` | off | Hidden from other sides until one of their units enters it |
@@ -278,6 +278,9 @@ and in singleplayer (Play-Arland), where the game is its own server.
   front-line bases 600 m-1.5 km apart play well.
 - **Garrisons wake at 400 m.** A base's garrison only exists while enemies are within 400 m, so garrison
   size costs nothing until a fight.
+- **Buildings make bases defensible.** Garrisons, and AI squads sent to defend a base, take the windows and
+  doorways of buildings within 80 m of the base centre (the Garrison order). Centre a base on or near a few
+  enterable houses and it will be held from them; a base in the open is held from cover round its centre.
 - **Use values to shape the fight.** High-value bases (2-3) become objectives; zero-value, no-income,
   no-spawn bases (lighthouses, crossroads) are tactical points.
 - **Hidden bases** are good for rear areas and surprise depots.

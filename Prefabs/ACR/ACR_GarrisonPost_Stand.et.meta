@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A00100A1}Prefabs/ACR/ACR_GarrisonPost_Stand.et"
+ Configurations {
+  ETResourceClass PC {
+  }
+  ETResourceClass HEADLESS : PC {
+  }
+ }
+}

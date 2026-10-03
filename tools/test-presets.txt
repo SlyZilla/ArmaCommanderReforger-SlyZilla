@@ -47,3 +47,5 @@ bbbsuppress|-acrBbbSuppressTest 1|1200
 battery|-acrBatteryTest 1|120
 pads|-acrPadsTest 1|90|Worlds/ACR_Arland.ent
 helipad|-acrHelipadTest 1|280
+garrison|-acrGarrisonTest 1|220
+bbbmedic|-acrBbbMedicTest 1|1800

@@ -435,6 +435,7 @@ class ACR_Squad : Managed
  static const ResourceName WP_GET_OUT = "{C40316EE26846CAB}Prefabs/AI/Waypoints/AIWaypoint_GetOut.et";
  static const ResourceName WP_SEARCH_DESTROY = "{B3E7B8DC2BAB8ACC}Prefabs/AI/Waypoints/AIWaypoint_SearchAndDestroy.et";
  static const ResourceName WP_SUPPRESS = "{ED8277F35B46B4AA}Prefabs/AI/Waypoints/AIWaypoint_Suppress.et";
+ static const ResourceName WP_GARRISON = "{AC230926A00100A2}Prefabs/ACR/ACR_Waypoint_Garrison.et"; // see ACR_Garrison
 
  vector m_MoveTarget;   // where the current order points
  bool m_bForced;        // current order outranks combat (Fast)
@@ -473,6 +474,12 @@ class ACR_Squad : Managed
  }
  protected void RestoreOrderAt(ACR_OrderSnapshot snapshot, ResourceName prefab, vector target, float radius)
  {
+  // A garrison put back (after a dismount, a set-aside...) needs its posts again.
+  if (prefab == WP_GARRISON && m_Group && !ACR_Garrison.HasPosts(m_Group))
+  {
+   vector center;
+   if (ACR_Garrison.Assign(m_Group, m_Group.GetLeaderAgent(), target, Math.Max(1, CountAlive()), center, radius, false) <= 0) prefab = WP_DEFEND;
+  }
   IssueWaypoint(prefab, target, radius);
   SetOrder(snapshot.m_sLabel, snapshot.m_eState);
   m_OrderKind = snapshot.m_iKind;
@@ -491,7 +498,7 @@ class ACR_Squad : Managed
  static ACR_EOrderState StateOfLabel(string label)
  {
   if (label == "Moving") return ACR_EOrderState.MOVE;
-  if (label == "Defending" || label == "Holding position") return ACR_EOrderState.DEFEND;
+  if (label == "Defending" || label == "Holding position" || label == "Garrisoning") return ACR_EOrderState.DEFEND;
   if (label == "Assaulting") return ACR_EOrderState.ASSAULT;
   if (label == "Suppressing") return ACR_EOrderState.SUPPRESS;
   if (label == "Getting in") return ACR_EOrderState.GET_IN;
@@ -588,6 +595,7 @@ class ACR_Squad : Managed
   m_fOrderRadius = completionRadius;
   if (scripted && m_bForced) scripted.SetPriorityLevel(SCR_AIActionBase.PRIORITY_LEVEL_PLAYER);
   if (completionRadius >= 0) waypoint.SetCompletionRadius(completionRadius);
+  if (prefab != WP_GARRISON) ACR_Garrison.Release(m_Group);
   array<AIWaypoint> previousOrders = {};
   m_Group.GetWaypoints(previousOrders);
   foreach (AIWaypoint previousOrder : previousOrders) m_Group.RemoveWaypoint(previousOrder);
@@ -600,6 +608,8 @@ class ACR_Squad : Managed
  // Every new order: a fresh serial, and nobody (yet) to credit it to.
  protected void NewOrder()
  {
+  m_bGarrisonPending = false;
+  m_iGarrisonTries = 0;
   m_iOrderSerial++;
   m_iOrderedBy = 0;
   m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
@@ -618,6 +628,7 @@ class ACR_Squad : Managed
  protected void ClearOrders()
  {
   if (!m_Group) return;
+  ACR_Garrison.Release(m_Group);
   array<AIWaypoint> previousOrders = {};
   m_Group.GetWaypoints(previousOrders);
   foreach (AIWaypoint previousOrder : previousOrders) m_Group.RemoveWaypoint(previousOrder);
@@ -643,6 +654,58 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
   SetOrder("Defending", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  return true;
+ }
+
+ // Move into the building at (or next to) the point and hold its windows and doorways,
+ // spilling into neighbours (ACR_Garrison). Vehicle crews and a point with no usable
+ // building get a plain Defend; returns false then too, so callers can say so.
+ bool Garrison(vector position)
+ {
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  return PlaceGarrison(position);
+ }
+
+ // The soldier navmesh streams in tiles (about a second): a building whose tile isn't
+ // loaded yet is surveyed again next second while the squad heads there; after a few
+ // tries it is surveyed without the navmesh check.
+ protected bool m_bGarrisonPending;
+ protected vector m_GarrisonPending;
+ protected int m_iGarrisonTries;
+
+ protected bool PlaceGarrison(vector position)
+ {
+  vector center;
+  float radius;
+  int placed;
+  if (m_Group && !ACR_Transport.CrewedVehicle(this))
+   placed = ACR_Garrison.Assign(m_Group, m_Group.GetLeaderAgent(), position, Math.Max(1, CountAlive()), center, radius, m_iGarrisonTries < 4);
+  if (placed < 0)
+  {
+   m_iGarrisonTries++;
+   if (!m_bGarrisonPending)
+   {
+    IssueWaypoint(WP_MOVE, position, 20);
+    SetOrder("Garrisoning", ACR_EOrderState.DEFEND);
+    m_OrderKind = ACR_EOrderKind.DEFEND;
+   }
+   m_bGarrisonPending = true;
+   m_GarrisonPending = position;
+   return true;
+  }
+  m_bGarrisonPending = false;
+  m_iGarrisonTries = 0;
+  if (placed == 0)
+  {
+   if (IssueWaypoint(WP_DEFEND, position, 15)) SetOrder("Defending", ACR_EOrderState.DEFEND);
+   m_OrderKind = ACR_EOrderKind.DEFEND;
+   return false;
+  }
+  if (!IssueWaypoint(WP_GARRISON, center, radius)) return false;
+  SetOrder("Garrisoning", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   return true;
  }
@@ -842,10 +905,11 @@ class ACR_Squad : Managed
   // with the command wheel. Re-issuing our last map order would wipe theirs.
   if (HasPlayer()) return;
   HuntTick(now);
+  if (m_bGarrisonPending && m_Order == "Garrisoning") PlaceGarrison(m_GarrisonPending);
   bool contact = KnownEnemies(350) > 0;
   FollowRoute();
   Cohesion(now, contact);
-  bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
+  bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
   // (not after a Halt: m_Waypoint is gone then, and the old order must not come back)
   if (m_bForced && movingOrder && contact && m_Waypoint && !IsMounted() && !m_bRegrouping)
   {
@@ -926,6 +990,7 @@ class ACR_Squad : Managed
   }
   if (!anchor || IsMounted() || !BBB_Terrain.LandRoute(anchor.GetOrigin(), destination, legs))
   {
+   if (prefab == WP_GARRISON) { Garrison(destination); return true; }
    if (prefab == WP_DEFEND) return Defend(destination);
    if (prefab == WP_SEARCH_DESTROY) return Assault(destination);
    return MoveTo(destination);
@@ -956,7 +1021,7 @@ class ACR_Squad : Managed
  // ---- queued orders (Shift + right-click on the map)
  static const int MAX_QUEUED = 8;
  protected ref array<vector> m_aQueuePos = {};
- protected ref array<int> m_aQueueKind = {};   // 0 move, 1 defend
+ protected ref array<int> m_aQueueKind = {};   // 0 move, 1 defend, 2 garrison
 
  void ClearPlans()
  {
@@ -966,12 +1031,13 @@ class ACR_Squad : Managed
  }
 
  // Add an order after the current one (or carry it out now if there's nothing to do).
- bool Queue(vector position, bool defend)
+ bool Queue(vector position, bool defend, bool garrison = false)
  {
   if (!m_Group) return false;
   bool busy = m_Group.GetCurrentWaypoint() != null || !m_aRoute.IsEmpty() || !m_aQueuePos.IsEmpty();
   if (!busy)
   {
+   if (garrison) { Garrison(position); return true; }
    if (defend) return Defend(position);
    return MoveTo(position);
   }
@@ -979,6 +1045,7 @@ class ACR_Squad : Managed
   m_aQueuePos.Insert(position);
   int kind = 0;
   if (defend) kind = 1;
+  if (garrison) kind = 2;
   m_aQueueKind.Insert(kind);
   return true;
  }
@@ -996,7 +1063,9 @@ class ACR_Squad : Managed
   foreach (int i, vector queued : m_aQueuePos)
   {
    points.Insert(queued);
-   kinds.Insert(m_aQueueKind[i]);
+   int queuedKind = m_aQueueKind[i];
+   if (queuedKind == 2) queuedKind = ACR_EOrderKind.DEFEND;
+   kinds.Insert(queuedKind);
   }
  }
 
@@ -1008,7 +1077,12 @@ class ACR_Squad : Managed
   int kind = m_aQueueKind[0];
   m_aQueuePos.RemoveOrdered(0);
   m_aQueueKind.RemoveOrdered(0);
-  if (kind == 1)
+  if (kind == 2)
+  {
+   PlaceGarrison(next);
+   kind = ACR_EOrderKind.DEFEND;
+  }
+  else if (kind == 1)
   {
    IssueWaypoint(WP_DEFEND, next, 15);
    SetOrder("Defending", ACR_EOrderState.DEFEND);
@@ -1102,7 +1176,7 @@ class ACR_Squad : Managed
    return;
   }
   if (contact || now < m_fNextRegroup || !m_Group || HasPlayer() || IsMounted()) return;
-  bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
+  bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
   if (!movingOrder) return;
   array<AIWaypoint> waypoints = {};
   m_Group.GetWaypoints(waypoints);
@@ -1222,7 +1296,7 @@ class ACR_Squad : Managed
   {
    array<AIWaypoint> waypoints = {};
    m_Group.GetWaypoints(waypoints);
-   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY;
+   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
    wantsToMove = !waypoints.IsEmpty() && movingOrder && vector.DistanceXZ(vehicle.GetOrigin(), m_MoveTarget) > 40;
   }
   if (!wantsToMove || vehicle != m_StallVehicle || vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5)
