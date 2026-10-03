@@ -165,6 +165,7 @@ them as armed ground vehicles. Exclude aircraft from hand lists if an AI command
 | `HELI_GUN_RUN` | Helicopter: rocket run | 30 | 180 |
 | `HELI_LOITER` | Helicopter: gunship (90 s) | 45 | 300 |
 | `HELI_DOOR_GUNS` | Helicopter: door gunners (120 s) | 20 | 150 |
+| `ARTILLERY_BATTERY` | Artillery: howitzer battery | 60 | 300 |
 
 The mortar types and `ILLUMINATION` are fired by a **mortar team**: every side's buy list gets a
 "Mortar team" entry (30 RP, 2 per match; M252 for western factions, 2B14 otherwise). The team
@@ -173,6 +174,10 @@ before moving. A call needs a set-up team that can reach the target (M252 about 
 about 2.3 km, at least 100 m); otherwise it is refused and nothing is spent. Packed up, two of
 the crew carry the baseplate and barrel on their backs. A team whose mortar is destroyed gets a new
 one with a Reinforce (10 RP).
+
+`ARTILLERY_BATTERY` is off-map: no range limit and no team needed, but it arrives 75-120 s after
+the call: three salvos of six heavy rounds, 10 s apart, scattered up to 120 m from the target, each
+heard coming in.
 
 ### ACR_Base
 
@@ -233,6 +238,7 @@ game's launch parameters. The AC: Actual launchers set them from their menu.
 | `-acrPlayers US` / `USSR` / `any` | Put every player on one side. The mode places a spawn point for that side at one of its bases |
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
+| `-acrThreat low` / `normal` / `high` | Threat level. Low: half the infantry stock, a third of the vehicles (at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: double stock, 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal changes nothing |
 | `-acrStartRP N` | Starting RP for every side (overrides `m_iStartingRP`) |
 | `-acrIncome X` | Income multiplier (default 1) |
 | `-acrSkill N` | AI skill (overrides `m_iAISkill`) |

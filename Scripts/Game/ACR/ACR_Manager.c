@@ -207,7 +207,23 @@ class ACR_Manager : Managed
    if (setAI) settings.m_bAICommander = ai == "both" || ai == key;
    if (setCap && unitCap.ToInt() > 0) settings.m_iAIUnitCap = unitCap.ToInt();
   }
+  // Threat level (Jacob, 2 Oct): low = a smaller, infantry war; high = all-out war.
+  int threat = ThreatOption();
+  if (threat != 1)
+  {
+   float scale = 0.6;
+   if (threat == 2) scale = 1.5;
+   if (threat == 0) m_iSoldierCap = (int)Math.Max(20, Math.Round(m_iSoldierCap * 0.75));
+   else m_iSoldierCap = (int)Math.Round(m_iSoldierCap * 1.5);
+   foreach (ACR_FactionSettings scaled : ACR_FactionSettings.s_All)
+   {
+    scaled.m_iAIUnitCap = (int)Math.Max(2, Math.Round(scaled.m_iAIUnitCap * scale));
+    if (threat == 0) scaled.m_iAIAttacks = 1;
+    else scaled.m_iAIAttacks = scaled.m_iAIAttacks + 1;
+   }
+  }
   ACR_PlayerSide.Key();
+  PrintFormat("[ACR] Threat level: %1", ThreatName(threat));
   PrintFormat("[ACR] Host options: skill %1, reaction %2, soldier cap %3, AI %4, unit cap %5, start RP %6, income x%7, shared command %8",
    m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption(), m_SharedCommand);
  }
@@ -217,6 +233,33 @@ class ACR_Manager : Managed
   string value;
   if (System.GetCLIParam("acrStartRP", value) && value.ToInt() > 0) return value.ToInt();
   return -1;
+ }
+
+ // -acrThreat low|normal|high: 0, 1 (default), 2.
+ static int ThreatOption()
+ {
+  string value;
+  if (!System.GetCLIParam("acrThreat", value)) return 1;
+  value.ToLower();
+  if (value == "low") return 0;
+  if (value == "high") return 2;
+  return 1;
+ }
+ static string ThreatName(int threat)
+ {
+  if (threat == 0) return "low";
+  if (threat == 2) return "high";
+  return "normal";
+ }
+ // Buy-list stock at this threat level: low halves infantry and cuts vehicles to a third,
+ // high doubles everything (at least one of each stays).
+ static int ThreatStock(int stock, bool vehicle)
+ {
+  int threat = ThreatOption();
+  if (threat == 2) return stock * 2;
+  if (threat == 0 && vehicle) return (int)Math.Max(1, Math.Round(stock / 3.0));
+  if (threat == 0) return (int)Math.Max(1, Math.Round(stock / 2.0));
+  return stock;
  }
 
  static float IncomeOption()

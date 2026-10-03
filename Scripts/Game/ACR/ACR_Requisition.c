@@ -251,7 +251,7 @@ class ACR_Requisition : Managed
    PrintFormat("[ACR] REINFORCE %1 ammo only at %2: %3 soldiers restocked, %4 vehicles rearmed/repaired for %5 RP", squad.GetName(), depot.m_sName, restocked, fixedUp, vehicleCost);
    if (!restocked && !fixedUp) return squad.GetName() + " is at full strength and fully stocked";
    string done = string.Format("%1 at %2:", squad.GetName(), depot.m_sName);
-   if (restocked) done += string.Format(" %1 soldiers restocked", restocked);
+   if (restocked) done += string.Format(" %1 soldiers healed and restocked", restocked);
    if (fixedUp) done += string.Format(" vehicle rearmed and repaired (%1 RP)", vehicleCost);
    return done;
   }
@@ -278,7 +278,7 @@ class ACR_Requisition : Managed
    m_Manager.Mortars().Rearmed(mortar);
    result += " with a new mortar";
   }
-  if (resupplied) result += string.Format(", %1 restocked with ammo", resupplied);
+  if (resupplied) result += string.Format(", %1 healed, restocked or rearmed", resupplied);
   return result;
  }
 
@@ -366,7 +366,7 @@ class ACR_Requisition : Managed
   return null;
  }
 
- // Magazines back up to each soldier's normal load and a new launcher for one who
+ // Wounds healed, magazines back up to each soldier's normal load and a new launcher for one who
  // threw a spent one away, for members standing inside the base circle (free: the
  // base's stores, not a truck's). Returns how many soldiers got something.
  int RestockAmmo(ACR_Squad squad, ACR_Base base)
@@ -380,6 +380,13 @@ class ACR_Requisition : Managed
    if (!soldier || !ACR_Respawn.IsAlive(soldier)) continue;
    if (vector.DistanceXZ(soldier.GetOrigin(), base.GetOrigin()) > base.m_fRadius) continue;
    bool got;
+   // ...and the wounded patched up (Jacob, 3 Oct: the crew wasn't healed).
+   SCR_CharacterDamageManagerComponent wounds = SCR_CharacterDamageManagerComponent.Cast(soldier.FindComponent(SCR_CharacterDamageManagerComponent));
+   if (wounds && (wounds.GetHealthScaled() < 0.99 || wounds.IsBleeding()))
+   {
+    wounds.FullHeal();
+    got = true;
+   }
    if (m_Manager.m_Launchers && m_Manager.m_Launchers.IsOwed(soldier) && m_Manager.m_Launchers.Rearm(soldier)) got = true;
    int target = squad.MagazineTarget(soldier);
    if (ACR_Logistics.SoldierMagazines(soldier) < target)

@@ -20,7 +20,8 @@ enum ACR_ESupportType
  BOMB_RUN,
  HELI_GUN_RUN,   // "rocket run" (the enum name stays: saved settings use it)
  HELI_LOITER,
- HELI_DOOR_GUNS  // transport helicopter, door gunners only, orbiting
+ HELI_DOOR_GUNS, // transport helicopter, door gunners only, orbiting
+ ARTILLERY_BATTERY // battalion howitzers: no range limit, three heavy salvos over a wide area
 }
 
 [BaseContainerProps(), SCR_BaseContainerCustomTitleField("m_sName")]
@@ -866,6 +867,21 @@ class ACR_Supports : Managed
  static const ResourceName MORTAR_SMOKE = "{2FDF3089DF6EC422}PrefabsEditable/EffectsModules/Mortar/Smoke/EffectModule_Zoned_MortarBarrage_Smoke_Medium.et";
  static const ResourceName FLARE = "{AA7F04F403FD2E00}PrefabsEditable/EffectsModules/Flares/EffectModule_Mortar_Flare_Illumination.et";
  static const ResourceName BOMB = "{72BEEF40AF179763}Prefabs/Weapons/Warheads/Explosions/Explosion_Tnt_Large.et";
+ // Howitzer battery (virtual: no guns on the map, no range limit).
+ static int BATTERY_DELAY_MIN = 75;
+ static int BATTERY_DELAY_MAX = 120;
+ static const int BATTERY_SALVOS = 3;
+ static const int BATTERY_ROUNDS = 6;
+ static const int BATTERY_SALVO_SECONDS = 10;
+ static const float BATTERY_RADIUS = 120;
+ static const float BATTERY_DROP_HEIGHT = 700;  // the shell falls from here (~3 s): its travel sound is the incoming whistle
+ static const int BATTERY_FALL_SECONDS = 3;
+ static int s_iBatteryImpacts;                  // tests
+ static ref array<vector> s_aBatteryImpacts = {};
+ protected ref array<IEntity> m_BatteryShells = {};
+ protected ref array<vector> m_BatteryLast = {};
+ protected ref array<vector> m_BatteryAim = {};
+ protected ref array<float> m_BatteryDeadline = {};
  static const ResourceName HELI_WEST = "{21E9A875C0A3C409}Prefabs/Vehicles/Helicopters/UH1H/UH1H_armed_gunship_HE.et";
  static const ResourceName HELI_EAST = "{3C6B3ED0C3AC30D5}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed_gunship_HE.et";
  static const ResourceName HELI_TRANSPORT_WEST = "{DDDD9B51F1234DF3}Prefabs/Vehicles/Helicopters/UH1H/UH1H_armed.et";
@@ -928,6 +944,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_GUN_RUN: return 40;
    case ACR_ESupportType.HELI_LOITER: return ACR_HeliRun.LOITER_RADIUS;
    case ACR_ESupportType.HELI_DOOR_GUNS: return ACR_HeliRun.LOITER_RADIUS;
+   case ACR_ESupportType.ARTILLERY_BATTERY: return BATTERY_RADIUS + 30;
   }
   return 50;
  }
@@ -940,6 +957,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_LOITER: return 100;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 130;
    case ACR_ESupportType.MORTAR_CREEPING: return 50;
+   case ACR_ESupportType.ARTILLERY_BATTERY: return BATTERY_SALVOS * BATTERY_SALVO_SECONDS + 10;
    case ACR_ESupportType.MORTAR_HE_LARGE: return 40;
    case ACR_ESupportType.MORTAR_HE_SMALL: return 25;
   }
@@ -962,6 +980,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_GUN_RUN: return "Helicopter: rocket run";
    case ACR_ESupportType.HELI_LOITER: return "Helicopter: gunship (90 s)";
    case ACR_ESupportType.HELI_DOOR_GUNS: return "Helicopter: door gunners (120 s)";
+   case ACR_ESupportType.ARTILLERY_BATTERY: return "Artillery: howitzer battery";
   }
   return "Support";
  }
@@ -979,6 +998,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_GUN_RUN: return 30;
    case ACR_ESupportType.HELI_LOITER: return 45;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 20;
+   case ACR_ESupportType.ARTILLERY_BATTERY: return 60;
   }
   return 20;
  }
@@ -996,6 +1016,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_GUN_RUN: return 180;
    case ACR_ESupportType.HELI_LOITER: return 300;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 150;
+   case ACR_ESupportType.ARTILLERY_BATTERY: return 300;
   }
   return 120;
  }
@@ -1011,6 +1032,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.MORTAR_CREEPING: return Math.RandomIntInclusive(60, 110);
    case ACR_ESupportType.MORTAR_SMOKE: return Math.RandomIntInclusive(40, 75);
    case ACR_ESupportType.ILLUMINATION: return Math.RandomIntInclusive(30, 60);
+   case ACR_ESupportType.ARTILLERY_BATTERY: return Math.RandomIntInclusive(BATTERY_DELAY_MIN, BATTERY_DELAY_MAX);
    case ACR_ESupportType.ROCKET_STRIKE: return 15;
    case ACR_ESupportType.BOMB_RUN: return 20;
   }
@@ -1020,7 +1042,7 @@ class ACR_Supports : Managed
  // Every support type, used when a faction's settings list none.
  static void BuildDefaults(array<ref ACR_SupportEntry> entries)
  {
-  for (int type = ACR_ESupportType.MORTAR_HE_SMALL; type <= ACR_ESupportType.HELI_DOOR_GUNS; type++)
+  for (int type = ACR_ESupportType.MORTAR_HE_SMALL; type <= ACR_ESupportType.ARTILLERY_BATTERY; type++)
   {
    ACR_SupportEntry entry = new ACR_SupportEntry();
    entry.m_eType = type;
@@ -1081,6 +1103,25 @@ class ACR_Supports : Managed
     strike.m_Pos[1] = target[1] + 170;
     strike.m_Rocket = RocketFor(factionKey);
     m_Runs.Insert(strike);
+    break;
+   }
+   case ACR_ESupportType.ARTILLERY_BATTERY:
+   {
+    // Three salvos of six over a wide area, each round a falling shell (its own incoming
+    // whistle on every machine) that lands with a heavy blast.
+    ResourceName shell = BatteryShellFor(factionKey);
+    for (int salvo = 0; salvo < BATTERY_SALVOS; salvo++)
+    {
+     for (int gun = 0; gun < BATTERY_ROUNDS; gun++)
+     {
+      float shellAngle = Math.RandomFloat(0, Math.PI2);
+      float shellSpread = BATTERY_RADIUS * Math.Sqrt(Math.RandomFloat(0, 1));
+      vector shellAt = target + Vector(Math.Cos(shellAngle) * shellSpread, 0, Math.Sin(shellAngle) * shellSpread);
+      int shellMs = (delay - BATTERY_FALL_SECONDS) * 1000 + salvo * BATTERY_SALVO_SECONDS * 1000 + gun * Math.RandomIntInclusive(150, 600);
+      if (shellMs < 0) shellMs = 0;
+      GetGame().GetCallqueue().CallLater(FireBatteryRound, shellMs, false, shell, shellAt);
+     }
+    }
     break;
    }
    case ACR_ESupportType.BOMB_RUN:
@@ -1234,11 +1275,56 @@ class ACR_Supports : Managed
  // server's does the damage, the clients' show and sound the flight and impact. (A
  // replicated rocket was deleted on clients when the server's hit first, often
  // before the client's copy reached the ground, so its blast never played there.)
- void FireProjectile(ResourceName prefab, vector from, vector to, vector parentVelocity = "0 0 0")
+ ResourceName BatteryShellFor(string factionKey)
+ {
+  if (IsWestern(factionKey)) return "{38BAE094333E31BF}Prefabs/Weapons/Ammo/Ammo_Shell_81mm_HE_M821.et";
+  return "{98EC9C526AFBA282}Prefabs/Weapons/Ammo/Ammo_Shell_82mm_HE_O832DU.et";
+ }
+
+ // One howitzer round: a shell dropped from high above the impact point (every machine flies
+ // its own, so everyone hears it come in); where the server's lands, a heavy blast follows.
+ void FireBatteryRound(ResourceName shell, vector impact)
+ {
+  impact[1] = GetGame().GetWorld().GetSurfaceY(impact[0], impact[2]);
+  vector from = impact + Vector(Math.RandomFloat(-25, 25), BATTERY_DROP_HEIGHT, Math.RandomFloat(-25, 25));
+  IEntity falling = FireProjectile(shell, from, impact);
+  m_BatteryShells.Insert(falling);
+  m_BatteryLast.Insert(from);
+  m_BatteryAim.Insert(impact);
+  m_BatteryDeadline.Insert(GetGame().GetWorld().GetWorldTime() + 20000);
+ }
+
+ protected void TrackBatteryShells(float now)
+ {
+  for (int i = m_BatteryShells.Count() - 1; i >= 0; i--)
+  {
+   IEntity falling = m_BatteryShells[i];
+   if (falling && now < m_BatteryDeadline[i])
+   {
+    m_BatteryLast[i] = falling.GetOrigin();
+    continue;
+   }
+   vector at = m_BatteryLast[i];
+   bool landed = !falling;
+   if (falling) { SCR_EntityHelper.DeleteEntityAndChildren(falling); at = m_BatteryAim[i]; }
+   PrintFormat("[ACR] SUPPORT battery round down after %1 s, %2 m from its aim point (shell landed itself: %3)", ((now - m_BatteryDeadline[i] + 20000) / 1000), (int)vector.DistanceXZ(at, m_BatteryAim[i]), landed);
+   // Landed (or never did): the blast where it came down.
+   if (vector.DistanceXZ(at, m_BatteryAim[i]) > 60) at = m_BatteryAim[i];
+   Explode(at);
+   s_iBatteryImpacts++;
+   s_aBatteryImpacts.Insert(at);
+   m_BatteryShells.RemoveOrdered(i);
+   m_BatteryLast.RemoveOrdered(i);
+   m_BatteryAim.RemoveOrdered(i);
+   m_BatteryDeadline.RemoveOrdered(i);
+  }
+ }
+
+ IEntity FireProjectile(ResourceName prefab, vector from, vector to, vector parentVelocity = "0 0 0")
  {
   vector dir = (to - from).Normalized();
   IEntity projectile = SpawnLocal(prefab, from, dir);
-  if (!projectile) return;
+  if (!projectile) return null;
   SCR_BaseGameMode gameMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
   if (gameMode) gameMode.ACR_BroadcastFire(prefab, from, dir, parentVelocity);
   ACR_PendingLaunch launch = new ACR_PendingLaunch();
@@ -1247,6 +1333,7 @@ class ACR_Supports : Managed
   launch.m_Velocity = parentVelocity;
   launch.m_iFrame = m_iFrame;
   m_Launches.Insert(launch);
+  return projectile;
  }
 
  // A non-replicated copy of prefab at pos, nose along dir (zero: upright).
@@ -1370,6 +1457,7 @@ class ACR_Supports : Managed
    run.Finish();
    m_Runs.Remove(r);
   }
+  TrackBatteryShells(now);
   for (int v = m_Vehicles.Count() - 1; v >= 0; v--) if (!m_Vehicles[v]) m_Vehicles.Remove(v);
   for (int z = m_Zones.Count() - 1; z >= 0; z--) if (now > m_Zones[z].m_fEndAt) m_Zones.Remove(z);
  }

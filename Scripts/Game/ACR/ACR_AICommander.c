@@ -473,6 +473,8 @@ class ACR_AICommander : Managed
    if (!attacker) continue;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, seenAt, "defensive fire at " + held.m_sName)) break;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, seenAt, "defensive fire at " + held.m_sName)) break;
+   // No mortar in reach: the howitzer battery (slow and dear, but it reaches anywhere).
+   if (CallSupport(ACR_ESupportType.ARTILLERY_BATTERY, seenAt, "battery fire at " + held.m_sName)) break;
   }
  }
 
@@ -978,7 +980,8 @@ class ACR_AICommander : Managed
     attack.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
     // Preparation: shell the objective, screen the approach with smoke.
     if (!CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, target.GetOrigin(), "preparation fire on " + target.m_sName))
-     CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, target.GetOrigin(), "preparation fire on " + target.m_sName);
+     if (!CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, target.GetOrigin(), "preparation fire on " + target.m_sName))
+      CallSupport(ACR_ESupportType.ARTILLERY_BATTERY, target.GetOrigin(), "battery preparation fire on " + target.m_sName);
     vector screen = attack.m_Staging + (target.GetOrigin() - attack.m_Staging) * 0.55;
     CallSupport(ACR_ESupportType.MORTAR_SMOKE, screen, "smoke screen for " + target.m_sName);
     if (attack.m_bCounter) CallSupport(ACR_ESupportType.HELI_LOITER, target.GetOrigin(), "gunship for the counterattack on " + target.m_sName);
@@ -1254,6 +1257,8 @@ class ACR_AICommander : Managed
     }
     // Keep infantry the backbone.
     if (!entry.m_sVehicle.IsEmpty()) weight *= 0.5;
+    // A low-threat war is mostly fought on foot.
+    if (!entry.m_sVehicle.IsEmpty() && ACR_Manager.ThreatOption() == 0) weight *= 0.4;
     options.Insert(i);
     weights.Insert(weight);
     total += weight;

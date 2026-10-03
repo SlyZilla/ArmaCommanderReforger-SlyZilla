@@ -128,7 +128,7 @@ class ACR_FactionCatalog
   }
   // Every side can buy mortar teams: the mortar supports need one set up within range.
   result.Insert(ACR_Mortars.MakeEntry());
-  foreach (ACR_RequisitionEntry entry : result) entry.m_iRemaining = entry.m_iStock;
+  foreach (ACR_RequisitionEntry entry : result) entry.m_iRemaining = ACR_Manager.ThreatStock(entry.m_iStock, !entry.m_sVehicle.IsEmpty());
   PrintFormat("[ACR] Requisition list for %1: %2 entries", factionKey, result.Count());
  }
 
