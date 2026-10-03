@@ -951,10 +951,13 @@ class ACR_Manager : Managed
   if (!mapOpen) driveVehicle = ACR_GunnerDrive.DrivableFrom(localBody, driveDriver);
   // Mid-session the seat is unhooked (on a hosting player's own machine too), so
   // DrivableFrom finds no driver: keep driving while still in that vehicle's turret.
-  if (!mapOpen && !driveVehicle && m_LastDriveVehicle && ACR_GunnerDrive.TurretVehicleOf(localBody) == m_LastDriveVehicle)
+  // Also while the map is open: the session stays (no keys, a keep-alive instead of the
+  // idle release), so closing the map gives the gunner the wheel back (live report 3 Oct:
+  // checking the map lost the driver for good).
+  if (!driveVehicle && m_LastDriveVehicle && ACR_GunnerDrive.TurretVehicleOf(localBody) == m_LastDriveVehicle)
    driveVehicle = m_LastDriveVehicle;
   float driveThrottle, driveSteer;
-  if (driveVehicle)
+  if (driveVehicle && !mapOpen)
   {
    input.ActivateContext("ACR_GunnerContext");
    driveThrottle = input.GetActionValue("ACR_DriveForward") - input.GetActionValue("ACR_DriveBack");
@@ -963,7 +966,7 @@ class ACR_Manager : Managed
     SCR_HintManagerComponent.ShowCustomHint("Gunner seat: W/S drive forward/back, A/D steer. The AI driver takes over again when you give the squad a map order.", "AC: Actual", 8, true);
   }
   m_LastDriveVehicle = driveVehicle;
-  pc.ACR_UpdateGunnerDrive(driveVehicle, driveThrottle, driveSteer);
+  pc.ACR_UpdateGunnerDrive(driveVehicle, driveThrottle, driveSteer, mapOpen);
   pc.ACR_UpdateWorldPing(mapOpen);
   if (!m_HintShown)
   {

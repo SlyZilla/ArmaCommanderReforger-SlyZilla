@@ -26,9 +26,18 @@ class ACR_Helipad : GenericEntity
  {
   if (!GetGame().InPlayMode()) return;
   s_All.Insert(this);
-  // Bases register in their own EOnInit: look the owner up a moment later.
-  if (m_bModel) GetGame().GetCallqueue().CallLater(PlaceModel, 200, false);
+  // Bases register in their own EOnInit: the model goes in on the first frame. (A call queued
+  // from EOnInit never ran: the world load drops it, so no pad was ever drawn; live 3 Oct.)
+  if (m_bModel) SetEventMask(EntityEvent.FRAME);
  }
+
+ override void EOnFrame(IEntity owner, float timeSlice)
+ {
+  ClearEventMask(EntityEvent.FRAME);
+  if (!m_Model) PlaceModel();
+ }
+
+ bool HasModel() { return m_Model != null; }
 
  void ~ACR_Helipad()
  {
@@ -51,6 +60,7 @@ class ACR_Helipad : GenericEntity
   at[1] = GetGame().GetWorld().GetSurfaceY(at[0], at[2]);
   parameters.Transform[3] = at;
   m_Model = GetGame().SpawnEntityPrefabLocal(resource, GetGame().GetWorld(), parameters);
+  PrintFormat("[ACR] HELIPAD model %1 at %2 (%3): %4", FilePath.StripPath(prefab), at, base != null, m_Model != null);
  }
 
  float Yaw()

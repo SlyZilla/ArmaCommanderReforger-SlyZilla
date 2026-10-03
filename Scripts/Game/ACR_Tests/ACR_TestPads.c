@@ -118,5 +118,8 @@ class ACR_TestPads
    ACR_TestRegress.Check("pads: " + heli.m_sName + " " + heli.m_sFaction + " parked upright and unhurt", Math.AbsFloat(angles[1]) < 8 && Math.AbsFloat(angles[2]) < 8 && health > 0.95 && off < 2 && heli.m_eState == ACR_EHeliState.READY, "");
   }
   ACR_TestRegress.Check("pads: four helicopters on the HQ pads", count == 4, string.Format("%1", count));
+  int models;
+  foreach (ACR_Helipad pad : ACR_Helipad.s_All) if (pad.HasModel()) models++;
+  ACR_TestRegress.Check("pads: every helipad has its model", models == ACR_Helipad.s_All.Count(), string.Format("%1 of %2", models, ACR_Helipad.s_All.Count()));
  }
 }

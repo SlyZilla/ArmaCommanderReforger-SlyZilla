@@ -217,7 +217,8 @@ modded class SCR_PlayerController
  protected float m_ACR_DriveSent;
 
  // Called every frame by the local manager; sends key changes plus a keep-alive while held.
- void ACR_UpdateGunnerDrive(IEntity vehicle, float throttle, float steer)
+ // keepAlive (map open): no keys, but a message every 5 s so the session isn't released as idle.
+ void ACR_UpdateGunnerDrive(IEntity vehicle, float throttle, float steer, bool keepAlive = false)
  {
   float now = GetGame().GetWorld().GetWorldTime();
   if (vehicle != m_ACR_DriveVehicle)
@@ -231,7 +232,8 @@ modded class SCR_PlayerController
   if (!vehicle) return;
   bool changed = throttle != m_ACR_DriveThrottle || steer != m_ACR_DriveSteer;
   bool held = throttle != 0 || steer != 0;
-  if (!changed && !(held && now - m_ACR_DriveSent > 250)) return;
+  bool due = (held && now - m_ACR_DriveSent > 250) || (keepAlive && now - m_ACR_DriveSent > 5000);
+  if (!changed && !due) return;
   m_ACR_DriveThrottle = throttle;
   m_ACR_DriveSteer = steer;
   m_ACR_DriveSent = now;

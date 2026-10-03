@@ -12,6 +12,14 @@ class ACR_TestCrew
   return null;
  }
 
+ static vector s_From;
+ static IEntity DriverOf(IEntity vehicle)
+ {
+  CarControllerComponent car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
+  if (!car || !car.GetPilotCompartmentSlot()) return null;
+  return car.GetPilotCompartmentSlot().GetOccupant();
+ }
+
  static int Seated(ACR_Squad squad)
  {
   int seated;
@@ -78,6 +86,29 @@ class ACR_TestCrew
    PrintFormat("[ACR] CREW service: %1 magazines, cost %2 RP, served %3, ammo now %4, health %5", magazines.Count(), cost, served, ammo, ACR_Logistics.Health(s_Lav));
    ACR_TestRegress.Check("crew: rearm + repair priced by what's missing", cost > 5, string.Format("%1 RP", cost));
    ACR_TestRegress.Check("crew: vehicle rearmed and repaired", served == 1 && ammo > 0.99 && ACR_Logistics.Health(s_Lav) > 0.98, string.Format("ammo %1 health %2", ammo, ACR_Logistics.Health(s_Lav)));
+   // As if a player had dropped control and left the driver's and the vehicle's AI parked.
+   ChimeraCharacter driver = ChimeraCharacter.Cast(DriverOf(s_Lav));
+   AIControlComponent driverAI;
+   if (driver) driverAI = AIControlComponent.Cast(driver.FindComponent(AIControlComponent));
+   if (driverAI && driverAI.IsAIActivated()) driverAI.DeactivateAI();
+   AIControlComponent vehicleAI = AIControlComponent.Cast(s_Lav.FindComponent(ChimeraAIVehicleControlComponent));
+   if (vehicleAI && vehicleAI.IsAIActivated()) vehicleAI.DeactivateAI();
+  }
+  if (tick == 52 && crew)
+  {
+   crew.WakeCrew("test");
+   ChimeraCharacter woken = ChimeraCharacter.Cast(DriverOf(s_Lav));
+   AIControlComponent woke;
+   if (woken) woke = AIControlComponent.Cast(woken.FindComponent(AIControlComponent));
+   AIControlComponent vehicleWoke = AIControlComponent.Cast(s_Lav.FindComponent(ChimeraAIVehicleControlComponent));
+   ACR_TestRegress.Check("crew: parked driver and vehicle AI back on after a player leaves", woke && woke.IsAIActivated() && (!vehicleWoke || vehicleWoke.IsAIActivated()), "");
+   s_From = s_Lav.GetOrigin();
+   crew.MoveTo(ACR_Manager.Ground(home + Vector(40, 0, 140)));
+  }
+  if (tick == 75 && crew)
+  {
+   float moved = vector.DistanceXZ(s_Lav.GetOrigin(), s_From);
+   ACR_TestRegress.Check("crew: the woken LAV takes the next order", moved > 20, string.Format("%1 m", moved));
    Print("[ACR] TEST COMPLETE");
   }
  }

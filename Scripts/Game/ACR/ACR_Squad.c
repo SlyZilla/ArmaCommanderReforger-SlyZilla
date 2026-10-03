@@ -332,8 +332,52 @@ class ACR_Squad : Managed
   agent.PreventMaxLOD();
  }
 
+ protected bool m_bHadPlayer;
+
+ // A player just left one of our soldiers (F8, F7 to someone else, death): make sure the
+ // crew's AI and the vehicle's own AI are back on. Live report 3 Oct: after dropping control
+ // the LAV sat still and ignored orders (no log of it; this logs what it finds).
+ protected void WatchPlayerLeft()
+ {
+  bool has = HasPlayer();
+  if (m_bHadPlayer && !has) GetGame().GetCallqueue().CallLater(WakeCrew, 2000, false, "player left");
+  m_bHadPlayer = has;
+ }
+
+ void WakeCrew(string why)
+ {
+  if (HasPlayer()) return;
+  IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (vehicle && manager && manager.IsGunnerDriven(vehicle)) return;
+  int woke;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || FindController(body) || !ACR_Respawn.IsAlive(body)) continue;
+   AIControlComponent control = AIControlComponent.Cast(body.FindComponent(AIControlComponent));
+   if (control && !control.IsAIActivated()) { control.ActivateAI(); woke++; }
+  }
+  bool vehicleAIWasOff, pilotDetached;
+  if (vehicle)
+  {
+   AIControlComponent vehicleAI = AIControlComponent.Cast(vehicle.FindComponent(ChimeraAIVehicleControlComponent));
+   if (vehicleAI && !vehicleAI.IsAIActivated()) { vehicleAI.ActivateAI(); vehicleAIWasOff = true; }
+   CarControllerComponent car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
+   pilotDetached = car && !car.GetPilotCompartmentSlot();
+  }
+  array<AIWaypoint> waypoints = {};
+  if (m_Group) m_Group.GetWaypoints(waypoints);
+  PrintFormat("[ACR] %1: %2: woke %3 crew AI, vehicle %4 (vehicle AI was off %5, pilot seat unhooked %6), waypoints %7, order '%8'", m_Name, why, woke, vehicle != null, vehicleAIWasOff, pilotDetached, waypoints.Count(), m_Order);
+  // Left "Following you" with nothing to do: plain Holding, so the panel and AI read it right.
+  if (OrderState() == ACR_EOrderState.COMMANDED && waypoints.IsEmpty()) SetOrder("Holding", ACR_EOrderState.HOLD);
+ }
+
  void Refresh()
  {
+  WatchPlayerLeft();
   KeepSimulated(m_Group);
   TrackStrength();
   if (!m_Group || !m_CommandGroup) return;
