@@ -127,6 +127,7 @@ class ACR_AICommander : Managed
   AssignAttacks();
   t = ACR_Perf.Lap("ai.plan", t);
   PostIdle();
+  PositionMortars();
   Recrew();
   t = ACR_Perf.Lap("ai.post", t);
   ManageLogistics();
@@ -147,6 +148,7 @@ class ACR_AICommander : Managed
   {
    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
    if (squad.HasPlayer() || !squad.GetAnchor()) continue; // players lead themselves
+   if (squad.m_bMortar) continue; // mortar teams: PositionMortars
    if (freeOnly && squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED) continue;
    if (freeOnly && !squad.IsCombatUnit()) continue; // lone drivers, unarmed crews: kept out of the fighting
    result.Insert(squad);
@@ -280,6 +282,7 @@ class ACR_AICommander : Managed
  protected bool CallSupport(ACR_ESupportType type, vector point, string why)
  {
   if (!SupportReady(type)) return false;
+  if (ACR_Mortars.IsMortarType(type) && !m_Manager.Mortars().CanFire(m_sFaction, type, point)) return false;
   if (FriendliesNear(point, ACR_Supports.ZoneRadius(type) + 40)) return false;
   string result = m_Manager.m_Supports.Call(m_sFaction, SupportIndex(type), point, true);
   PrintFormat("[ACR] AI %1 support (%2): %3", m_sFaction, why, result);
@@ -1084,6 +1087,76 @@ class ACR_AICommander : Managed
   return count;
  }
 
+ // ---------------------------------------------------------------- mortar teams
+ // One working team at a time, bought once troops aren't short. While no base that isn't
+ // ours is in reach it goes to the own base nearest the front (setting up by itself on
+ // arrival), so it follows the front as it moves.
+ static const float MORTAR_MOVE_MS = 120000;
+ static const float MORTAR_MIN_STANDOFF = 400; // don't set up closer than this to an enemy base
+ protected float m_fNextMortarMove;
+
+ protected bool BuyMortarTeam(ACR_Base spawn, ACR_FactionData data)
+ {
+  array<ACR_MortarTeam> teams = {};
+  m_Manager.Mortars().TeamsOf(m_sFaction, teams);
+  foreach (ACR_MortarTeam team : teams) if (!team.m_bLost) return false;
+  foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
+  {
+   if (!entry.m_bMortarTeam || entry.m_iRemaining <= 0) continue;
+   if (data.m_iRP < entry.m_iCost + SUPPORT_RESERVE) return false;
+   PrintFormat("[ACR] AI %1 requisition (mortar team): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, i, spawn));
+   return true;
+  }
+  return false;
+ }
+
+ // The own, safe base closest to the enemy (but not right on top of it).
+ protected ACR_Base MortarBase()
+ {
+  ACR_Base best;
+  float bestFront = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != m_sFaction || base.m_bContested || ThreatTo(base) > 0) continue;
+   float front = float.MAX;
+   foreach (ACR_Base other : ACR_Base.s_All)
+    if (other.m_sOwner != m_sFaction) front = Math.Min(front, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
+   if (front < MORTAR_MIN_STANDOFF || front >= bestFront) continue;
+   bestFront = front;
+   best = base;
+  }
+  return best;
+ }
+
+ protected void PositionMortars()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < m_fNextMortarMove) return;
+  array<ACR_MortarTeam> teams = {};
+  m_Manager.Mortars().TeamsOf(m_sFaction, teams);
+  foreach (ACR_MortarTeam team : teams)
+  {
+   ACR_Squad squad = team.m_Squad;
+   if (!squad || squad.HasPlayer() || team.m_bLost || team.m_bFiring) continue;
+   if (team.m_eState == ACR_EMortarState.PACKING || team.m_eState == ACR_EMortarState.DEPLOYING) continue;
+   vector here = PositionOf(squad);
+   if (team.m_eState == ACR_EMortarState.DEPLOYED) here = team.m_Spot;
+   else if (ACR_Mortars.IsMoving(squad, here)) continue; // on its way
+   // Stays while it can reach a base that isn't ours (with some margin).
+   float reach = ACR_Mortars.MaxRange(team.m_sTube) * 0.85;
+   bool inReach = false;
+   foreach (ACR_Base other : ACR_Base.s_All)
+    if (other.m_sOwner != m_sFaction && vector.DistanceXZ(here, other.GetOrigin()) < reach) inReach = true;
+   if (inReach) continue;
+   ACR_Base front = MortarBase();
+   if (!front || vector.DistanceXZ(here, front.GetOrigin()) < front.m_fRadius + 80) continue;
+   vector spot = ACR_Manager.Ground(front.GetOrigin() + Vector(Math.RandomFloat(-20, 20), 0, Math.RandomFloat(-20, 20)));
+   squad.MoveTo(spot);
+   m_fNextMortarMove = now + MORTAR_MOVE_MS;
+   PrintFormat("[ACR] AI %1 mortar: %2 moving to %3", m_sFaction, squad.GetName(), front.m_sName);
+  }
+ }
+
  // ---------------------------------------------------------------- 5. requisition
 
  protected void Requisition()
@@ -1154,7 +1227,11 @@ class ACR_AICommander : Managed
   // recon) are rare and never doubled up.
   // Keep a fire-support budget unless troops are needed more.
   int keep = 0;
-  if (!UrgentTroops(mine.Count(), cap)) keep = SupportBudget();
+  if (!UrgentTroops(mine.Count(), cap))
+  {
+   keep = SupportBudget();
+   if (BuyMortarTeam(spawn, data)) return;
+  }
   for (int n = 0; n < 2 && mine.Count() + n < cap; n++)
   {
    array<int> options = {};
@@ -1163,6 +1240,7 @@ class ACR_AICommander : Managed
    foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
    {
     if (entry.m_iRemaining <= 0 || entry.m_iCost > data.m_iRP - keep) continue;
+    if (entry.m_bMortarTeam) continue; // bought on its own (BuyMortarTeam)
     // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
     if (entry.m_bAircraft || entry.m_sVehicle.Contains("/Helicopters/") || entry.m_sVehicle.Contains("/Planes/")) continue;
     // Nor service vehicles (bought on need) or unarmed cars (nothing to fight with).

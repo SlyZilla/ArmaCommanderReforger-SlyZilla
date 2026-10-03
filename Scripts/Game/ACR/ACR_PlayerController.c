@@ -1527,11 +1527,17 @@ modded class SCR_PlayerController
   }
   foreach (int i, ACR_UnitMarker marker : m_ACR_ZoneMarkers)
   {
-   marker.m_Label = m_ACR_Data.m_ZoneLabels[i];
+   string label = m_ACR_Data.m_ZoneLabels[i];
+   // "~": a mortar team's range ring, labelled at the tube.
+   bool range = label.StartsWith("~");
+   if (range) label = label.Substring(1, label.Length() - 1);
+   marker.m_Label = label;
    vector pos = m_ACR_Data.m_ZonePositions[i];
    marker.SetWorldPos(pos[0], pos[2]);
    marker.RefreshStyle();
-   if (marker.GetRootWidget()) marker.ACR_SetColor(new Color(1, 0.2, 0.15, 1));
+   Color color = new Color(1, 0.2, 0.15, 1);
+   if (range) color = new Color(0.55, 0.8, 1, 1);
+   if (marker.GetRootWidget()) marker.ACR_SetColor(color);
   }
  }
 

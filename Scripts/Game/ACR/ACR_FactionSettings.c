@@ -21,6 +21,7 @@ class ACR_RequisitionEntry
  bool m_bAircraft;   // set automatically; the AI commander never buys these (its AI cannot fly)
  bool m_bTransport;  // set automatically: an unarmed truck, which the AI commander buys to ferry squads
  bool m_bArmed = true; // set automatically for vehicles: has a weapon (the AI doesn't buy unarmed cars to fight with)
+ bool m_bMortarTeam;  // the built-in mortar team (ACR_Mortars), added to every faction's list
 
  // runtime
  int m_iRemaining;
@@ -125,6 +126,8 @@ class ACR_FactionCatalog
    AddCatalog(factionKey, EEntityCatalogType.GROUP, used, exclude, result);
    AddCatalog(factionKey, EEntityCatalogType.VEHICLE, used, exclude, result);
   }
+  // Every side can buy mortar teams: the mortar supports need one set up within range.
+  result.Insert(ACR_Mortars.MakeEntry());
   foreach (ACR_RequisitionEntry entry : result) entry.m_iRemaining = entry.m_iStock;
   PrintFormat("[ACR] Requisition list for %1: %2 entries", factionKey, result.Count());
  }

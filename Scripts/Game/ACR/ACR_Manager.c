@@ -51,6 +51,13 @@ class ACR_Manager : Managed
  float m_fAIPerception = 1.6; // how fast AI spots and identifies targets (game default 1)
  ref ACR_Respawn m_Respawn;
  ref ACR_Supports m_Supports;
+ protected ref ACR_Mortars m_Mortars;
+
+ ACR_Mortars Mortars()
+ {
+  if (!m_Mortars) m_Mortars = new ACR_Mortars(this);
+  return m_Mortars;
+ }
  ref ACR_Rides m_Rides;
  ref ACR_Logistics m_Logistics;
  ref ACR_Cleanup m_Cleanup;
@@ -269,6 +276,7 @@ class ACR_Manager : Managed
    squad.Dispose();
    m_Squads.RemoveOrdered(i);
   }
+  Mortars().Tick();
   t = ACR_Perf.Lap("squads", t);
   if (ACR_Perf.s_bChecks) foreach (ACR_Squad checked : m_Squads) checked.CheckOrderState();
   ACR_MapFeed.PublishAll(this);

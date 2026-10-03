@@ -44,6 +44,7 @@ class ACR_TestHarness : Managed
  static const int MODE_SHARED = 32;
  static const int MODE_REGRESS = 33;
  static const int MODE_GETOUT = 34;
+ static const int MODE_MORTAR = 35;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -88,6 +89,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrTagsTest", flag)) mode = MODE_TAGS;
   if (System.GetCLIParam("acrSharedTest", flag)) mode = MODE_SHARED;
   if (System.GetCLIParam("acrRegressTest", flag)) mode = MODE_REGRESS;
+  if (System.GetCLIParam("acrMortarTest", flag)) mode = MODE_MORTAR;
   if (System.GetCLIParam("acrGetOutTest", flag) || System.GetCLIParam("acrGetOutOldTest", flag)) mode = MODE_GETOUT;
   if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag) || System.GetCLIParam("acrDriveFixedTest", flag) || System.GetCLIParam("acrDriveAttachedTest", flag)) mode = MODE_DRIVE;
   if (!mode) return null;
@@ -172,6 +174,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_SHARED) { ACR_TestShared.TestShared(this, m_Ticks); return; }
   if (m_Mode == MODE_REGRESS) { ACR_TestRegress.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GETOUT) { ACR_TestGetOut.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MORTAR) { ACR_TestMortar.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADS) { m_Vehicles.TestRoads(); return; }
   if (m_Mode == MODE_STALLED)
   {

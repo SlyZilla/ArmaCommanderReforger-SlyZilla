@@ -1,6 +1,7 @@
 // Off-map supports the commander buys with RP and calls on the map (server side).
-//  - Mortar barrages (HE, creeping, smoke) and illumination use the game's own
-//    Game Master effect modules: spawned at the target, they fire and clean up.
+//  - Mortar barrages (HE, creeping, smoke) and illumination are fired by a real mortar
+//    team (ACR_Mortars). The Game Master barrage modules below (spawned at the target,
+//    they fire and clean up) are kept for the coming howitzer battery.
 //  - Rocket strike and bomb run are "virtual aircraft": rockets launched from a
 //    moving point in the sky / large explosions along a line. No aircraft model
 //    is needed, so a modded jet can replace this later.
@@ -344,12 +345,25 @@ class ACR_HeliRun : ACR_SupportRun
   if (compartments) compartments.SpawnDefaultOccupants(seats);
   BaseVehicleControllerComponent controller = BaseVehicleControllerComponent.Cast(m_Vehicle.FindComponent(BaseVehicleControllerComponent));
   if (controller) controller.ForceStartEngine();
+  // Arrives at full rotor speed, not spooling up from a standstill (Jacob, 2 Oct).
+  Spool();
   m_fStarted = now;
   PrintFormat("[ACR] SUPPORT helicopter %1 inbound from %2", prefab, m_Pos);
   m_iRockets = 14;
   if (m_bLoiter) m_iRockets = 16;
   if (m_bDoorGuns) m_iRockets = 0;
   return true;
+ }
+
+ static const float SPOOL_MAX_SECONDS = 25;
+ protected bool m_bSpooled;
+ // Full throttle: the rotors run at flying speed (the script flies the airframe itself).
+ void Spool()
+ {
+  VehicleHelicopterSimulation rotors = VehicleHelicopterSimulation.Cast(m_Vehicle.FindComponent(VehicleHelicopterSimulation));
+  if (!rotors) return;
+  if (!rotors.EngineIsOn()) rotors.EngineStart();
+  rotors.SetThrottle(1);
  }
 
  // Terrain-following height: clear the ground (and sea) ahead.
@@ -505,6 +519,30 @@ class ACR_HeliRun : ACR_SupportRun
   }
   if (now - m_fStarted > 300000) return false;
   if (!m_bAnalyzed && now - m_fStarted > 500) AnalyzeGuns(supports);
+  Spool();
+  // The game spools the rotors up over ~20 s and has no way to set their speed, so the
+  // helicopter waits out of sight at its start point until they're at flying speed.
+  if (!m_bSpooled)
+  {
+   float rpm, target;
+   VehicleHelicopterSimulation rotors = VehicleHelicopterSimulation.Cast(m_Vehicle.FindComponent(VehicleHelicopterSimulation));
+   if (rotors && rotors.RotorCount() > 0)
+   {
+    rpm = rotors.RotorGetRPM(0);
+    target = rotors.RotorGetRPMTarget(0);
+   }
+   if (target <= 0 || rpm >= target * 0.9 || now - m_fStarted > SPOOL_MAX_SECONDS * 1000)
+   {
+    m_bSpooled = true;
+    PrintFormat("[ACR] SUPPORT helicopter spooled up after %1 s (rotor %2 of %3 rpm)", (int)((now - m_fStarted) / 1000), (int)rpm, (int)target);
+   }
+   else
+   {
+    Physics still = m_Vehicle.GetPhysics();
+    if (still) { still.SetVelocity(vector.Zero); still.SetAngularVelocity(vector.Zero); }
+    return true;
+   }
+  }
 
   vector flat = m_Target - m_Pos;
   flat[1] = 0;
@@ -861,7 +899,9 @@ class ACR_Supports : Managed
    case ACR_ESupportType.MORTAR_SMOKE: return 60;
    case ACR_ESupportType.HELI_LOITER: return 100;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 130;
-   case ACR_ESupportType.MORTAR_CREEPING: return 30;
+   case ACR_ESupportType.MORTAR_CREEPING: return 50;
+   case ACR_ESupportType.MORTAR_HE_LARGE: return 40;
+   case ACR_ESupportType.MORTAR_HE_SMALL: return 25;
   }
   return 15;
  }
@@ -981,6 +1021,8 @@ class ACR_Supports : Managed
   ACR_SupportEntry entry = data.m_aSupports[index];
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < entry.m_fReadyAt) return string.Format("%1 is not ready (%2 s)", entry.m_sName, Math.Ceil((entry.m_fReadyAt - now) / 1000));
+  // Mortar supports are fired by a real mortar team (ACR_Mortars): nothing is spent unless one can.
+  if (ACR_Mortars.IsMortarType(entry.m_eType)) return CallMortars(factionKey, entry, target, byAI);
   if (!m_Manager.m_Bases.Spend(factionKey, entry.m_iCost)) return string.Format("Not enough RP for %1 (%2 needed)", entry.m_sName, entry.m_iCost);
   entry.m_fReadyAt = now + entry.m_iCooldown * 1000;
   target[1] = GetGame().GetWorld().GetSurfaceY(target[0], target[2]);
@@ -990,17 +1032,6 @@ class ACR_Supports : Managed
   PrintFormat("[ACR] SUPPORT %1 %2 at %3 (delay %4 s)", factionKey, entry.m_sName, target, delay);
   switch (entry.m_eType)
   {
-   case ACR_ESupportType.MORTAR_HE_SMALL: ScheduleModule(MORTAR_SMALL, target, dir, delay); break;
-   case ACR_ESupportType.MORTAR_HE_LARGE: ScheduleModule(MORTAR_LARGE, target, dir, delay); break;
-   case ACR_ESupportType.MORTAR_CREEPING: ScheduleModule(MORTAR_CREEPING, target, dir, delay); break;
-   case ACR_ESupportType.MORTAR_SMOKE: ScheduleModule(MORTAR_SMOKE, target, dir, delay); break;
-   case ACR_ESupportType.ILLUMINATION:
-    for (int flare = 0; flare < 4; flare++)
-    {
-     vector spot = target + Vector(Math.RandomFloat(-60, 60), 0, Math.RandomFloat(-60, 60));
-     ScheduleModule(FLARE, spot, dir, delay + flare * 20);
-    }
-    break;
    case ACR_ESupportType.ROCKET_STRIKE:
    {
     ACR_RocketStrikeRun strike = new ACR_RocketStrikeRun();
@@ -1047,7 +1078,7 @@ class ACR_Supports : Managed
     foreach (ACR_HeliRun up : flying) if (up.m_Vehicle && !up.m_bDestroyed) taken.Insert(up.m_iStack);
     while (taken.Contains(heli.m_iStack) && heli.m_iStack < 2) heli.m_iStack++;
     m_Runs.Insert(heli);
-    delay = (int)(2200 / ACR_HeliRun.SPEED_RUN);
+    delay = (int)(2200 / ACR_HeliRun.SPEED_RUN + ACR_HeliRun.SPOOL_MAX_SECONDS * 0.9);
     break;
    }
   }
@@ -1056,6 +1087,27 @@ class ACR_Supports : Managed
   string eta = string.Format("%1 s", delay);
   if (delay >= 30) eta = string.Format("about %1 s", (int)Math.Round(delay / 15.0) * 15);
   string message = string.Format("%1 on %2, ETA %3.", entry.m_sName, where, eta);
+  if (!byAI) m_Manager.NotifyFaction(factionKey, message);
+  return message;
+ }
+
+ protected string CallMortars(string factionKey, ACR_SupportEntry entry, vector target, bool byAI)
+ {
+  if (m_Manager.m_Bases.GetRP(factionKey) < entry.m_iCost) return string.Format("Not enough RP for %1 (%2 needed)", entry.m_sName, entry.m_iCost);
+  target[1] = GetGame().GetWorld().GetSurfaceY(target[0], target[2]);
+  string team;
+  int eta;
+  if (!m_Manager.Mortars().Fire(factionKey, entry.m_eType, target, team, eta))
+  {
+   PrintFormat("[ACR] SUPPORT %1 %2 refused: %3", factionKey, entry.m_sName, team);
+   return team;
+  }
+  m_Manager.m_Bases.Spend(factionKey, entry.m_iCost);
+  float now = GetGame().GetWorld().GetWorldTime();
+  entry.m_fReadyAt = now + entry.m_iCooldown * 1000;
+  PrintFormat("[ACR] SUPPORT %1 %2 at %3 by %4 (ETA %5 s)", factionKey, entry.m_sName, target, team, eta);
+  AddZone(factionKey, target, ZoneRadius(entry.m_eType), entry.m_sName, eta, ZoneDuration(entry.m_eType));
+  string message = string.Format("%1 on %2: %3 firing, first rounds in about %4 s.", entry.m_sName, ACR_Manager.Grid(target), team, eta);
   if (!byAI) m_Manager.NotifyFaction(factionKey, message);
   return message;
  }

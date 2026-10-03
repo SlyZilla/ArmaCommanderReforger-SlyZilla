@@ -280,12 +280,19 @@ class ACR_OrderDisplay : Managed
  protected void DrawZones(SCR_MapEntity mapEntity, ACR_MapData data)
  {
   Color red = new Color(1, 0.15, 0.1, 0.95);
+  Color reach = new Color(0.55, 0.8, 1, 0.55);
   foreach (int i, vector pos : data.m_ZonePositions)
   {
    int cx, cy, ex, ey;
    mapEntity.WorldToScreen(pos[0], pos[2], cx, cy, true);
    mapEntity.WorldToScreen(pos[0] + data.m_ZoneRadii[i], pos[2], ex, ey, true);
    float radius = Math.Max(Math.AbsFloat(ex - cx), 6);
+   // A mortar team's range ("~" label): thin and pale.
+   if (i < data.m_ZoneLabels.Count() && data.m_ZoneLabels[i].StartsWith("~"))
+   {
+    Ring(cx, cy, radius, reach.PackToInt(), 2, 96);
+    continue;
+   }
    Ring(cx, cy, radius, red.PackToInt(), 3, 48);
   }
  }

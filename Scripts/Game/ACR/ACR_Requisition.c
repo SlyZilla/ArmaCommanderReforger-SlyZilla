@@ -113,7 +113,8 @@ class ACR_Requisition : Managed
    vehiclePos = SpawnPoint(base, 10, 25, 4);
    groupPos = SpawnPoint(base, 5, 15, 1.5);
   }
-  SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);
+  if (entry.m_bMortarTeam) m_Manager.Mortars().SpawnTeam(key, name, groupPos);
+  else SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);
   m_Manager.m_sSpawningFaction = "";
   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
   return string.Format("%1 deploying at %2", name, base.m_sName);

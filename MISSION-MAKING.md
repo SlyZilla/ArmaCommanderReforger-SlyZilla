@@ -166,6 +166,12 @@ them as armed ground vehicles. Exclude aircraft from hand lists if an AI command
 | `HELI_LOITER` | Helicopter: gunship (90 s) | 45 | 300 |
 | `HELI_DOOR_GUNS` | Helicopter: door gunners (120 s) | 20 | 150 |
 
+The mortar types and `ILLUMINATION` are fired by a **mortar team**: every side's buy list gets a
+"Mortar team" entry (30 RP, 2 per match; M252 for western factions, 2B14 otherwise). The team
+sets up by itself once it holds still (on level, clear ground near where it stops) and packs up
+before moving. A call needs a set-up team that can reach the target (M252 about 2.9 km, 2B14
+about 2.3 km, at least 100 m); otherwise it is refused and nothing is spent.
+
 ### ACR_Base
 
 A base (control point). Its position is the centre of the capture circle.

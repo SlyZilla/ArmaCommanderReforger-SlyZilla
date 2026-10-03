@@ -434,10 +434,14 @@ class ACR_MapFeed
   string sig = "";
   int bytes;
   float now = GetGame().GetWorld().GetWorldTime();
+  string mortars = manager.Mortars().StatusFor(frame.m_sKey);
   foreach (ACR_SupportEntry entry : manager.m_Bases.GetFaction(frame.m_sKey).m_aSupports)
   {
-   frame.m_SupNames.Insert(entry.m_sName);
+   // Mortar supports say whether a team can fire them.
+   if (ACR_Mortars.IsMortarType(entry.m_eType)) frame.m_SupNames.Insert(entry.m_sName + "  [" + mortars + "]");
+   else frame.m_SupNames.Insert(entry.m_sName);
    frame.m_SupCosts.Insert(entry.m_iCost);
+   if (ACR_Mortars.IsMortarType(entry.m_eType)) sig += mortars;
    int left = Math.Ceil((entry.m_fReadyAt - now) / 1000);
    if (left < 0) left = 0;
    frame.m_SupCooldowns.Insert(left);
@@ -468,6 +472,9 @@ class ACR_MapFeed
     sig += P(zone.m_Pos) + label + ";";
    }
   }
+  // Set-up mortar teams' reach ("~" label: drawn as a range ring, not a danger area).
+  manager.Mortars().Ranges(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
+  foreach (int r, vector rangePos : frame.m_ZonePos) sig += P(rangePos) + frame.m_ZoneLabels[r] + ";";
   frame.m_sZonesSig = sig;
   frame.m_Bytes.Set("zones", sig.Length() + frame.m_ZonePos.Count() * 16 + 12);
  }

@@ -477,6 +477,7 @@ class ACR_Squad : Managed
  int m_iAITask;          // ACR_EAITask
  IEntity m_OwnVehicle;   // the vehicle this squad came with (crews), even when dismounted
  ACR_Base m_AITarget;
+ bool m_bMortar;    // a mortar team (ACR_Mortars runs its set-up, packing and fire missions)
  int m_OrderKind;   // ACR_EOrderKind, for map symbology
 
  static string ModeName(ACR_EMoveMode mode)
@@ -522,6 +523,13 @@ class ACR_Squad : Managed
   params.Transform[3] = position;
   AIWaypoint waypoint = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(resource, null, params));
   if (!waypoint) return null;
+  return AdoptWaypoint(waypoint, prefab, position, completionRadius, forced);
+ }
+
+ // Replace every queued order with a waypoint the caller spawned (and configured) itself.
+ AIWaypoint AdoptWaypoint(AIWaypoint waypoint, ResourceName prefab, vector position, float completionRadius = -1, bool forced = false)
+ {
+  if (!m_Group || !waypoint) return null;
   SCR_AIWaypoint scripted = SCR_AIWaypoint.Cast(waypoint);
   m_bForced = forced || m_Mode == ACR_EMoveMode.FAST;
   m_MoveTarget = position;
@@ -1104,6 +1112,7 @@ class ACR_Squad : Managed
  // A lone driver or an unarmed truck crew is not sent to take or hold ground.
  bool IsCombatUnit()
  {
+  if (m_bMortar) return false; // fire support, kept out of the fighting (ACR_Mortars)
   IEntity vehicle = ACR_Transport.CrewedVehicle(this);
   if (vehicle) return HasGunner(vehicle);
   return CountAlive() >= 2;

@@ -39,3 +39,4 @@ maphandoff|-acrMapHandoffTest 1|100
 regress|-acrRegressTest 1|100
 getout|-acrGetOutTest 1|110
 getoutold|-acrGetOutOldTest 1|110
+mortar|-acrMortarTest 1|260

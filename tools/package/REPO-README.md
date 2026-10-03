@@ -10,7 +10,7 @@ Unzip it and open "READ ME FIRST.txt". The Host and Join launchers update themse
 - **Command from the map.** Select squads (click, Shift+click or Ctrl+drag), then give move, defend, assault, get in/out, ride and hunt orders, chaining up to 8 waypoints. Each squad shows health and ammo bars.
 - **Jump into any soldier** (F7), and back to your commander (F8).
 - **Requisition.** Bases you own earn RP. Spend it on infantry squads and crewed vehicles, deployed at any base you own.
-- **Supports.** Mortars (HE, creeping barrage, smoke), illumination flares, rocket and bomb runs, and helicopter gun runs or loiters that can be shot down.
+- **Supports.** Real mortar teams you buy and place (HE, creeping barrage, smoke, illumination; they set up when they stop and have a range limit), rocket and bomb runs, and helicopter gun runs or loiters that can be shot down.
 - **Bases.** Capture a base by clearing it and holding its ring. Garrisons appear when you get close, and some enemy bases stay hidden until you find them.
 - **An AI commander** for either side. It buys units, keeps a reserve, attacks from several directions with smoke and mortars, counterattacks and defends.
 - **Fog of war.** Only enemies your side has actually seen show on the map, and they fade after about 90 s. An intel feed and radio calls report sightings, and the enemy AI plays by the same rules.

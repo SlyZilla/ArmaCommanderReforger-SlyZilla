@@ -48,7 +48,8 @@ Logs: automated tests write to `.local-game/logs/<date>/console.log`; normal pla
 | `ACR/ACR_Squad.c` | One commandable squad: roster, designated leader, native command handoff, orders |
 | `ACR/ACR_CommandMenu.c` | Restricts the native command menu to possessed squad leaders and routes orders to their squad |
 | `ACR/ACR_GunnerDrive.c` | Gunner drives: server-side throttle/steer override while a player mans a turret with an AI driver |
-| `ACR/ACR_Supports.c` | Off-map supports: mortar/smoke/flare effect modules, virtual rocket strike and bomb run, script-flown gunship gun run / loiter |
+| `ACR/ACR_Supports.c` | Supports: virtual rocket strike and bomb run, script-flown gunship gun run / loiter; mortar calls go to ACR_Mortars |
+| `ACR/ACR_Mortars.c` | Mortar teams: set up / pack up, ground check, range, fire missions through the game's artillery AI |
 | `ACR/ACR_Respawn.c` | Command-unit respawn at the nearest owned base; possessed-soldier death handling |
 | `ACR/ACR_Transport.c` | Passenger squads, "vehicle is down" rule, queued LZ unloads |
 | `ACR/ACR_MapFeed.c` | Server-to-player map snapshots (soldiers, group leaders) |
