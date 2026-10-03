@@ -40,6 +40,8 @@ class ACR_MortarTeam : Managed
  ResourceName m_sShell;
  int m_iHeldAtStart;
  bool m_bNoSpotLogged;
+ ref map<IEntity, ResourceName> m_Backpacks = new map<IEntity, ResourceName>(); // carriers' own packs while they carry parts
+ bool m_bPartsChecked;
 
  IEntity Anchor()
  {
@@ -61,6 +63,7 @@ class ACR_Mortars : Managed
  static const float MISSION_TIMEOUT = 150;
  static const float MIN_RANGE = 100;
  static const int COST = 30;
+ static const int TUBE_COST = 10; // a new mortar with a Reinforce, after the old one was destroyed
  static const int STOCK = 2;
  static const string ENTRY_NAME = "Mortar team";
 
@@ -72,6 +75,12 @@ class ACR_Mortars : Managed
  static const ResourceName GROUP_FIA = "{242BC3C6BCE96EA5}Prefabs/Groups/INDFOR/Group_FIA_Base.et";
  static const ResourceName CREW_WEST = "{E75A35996E5C4505}Prefabs/Characters/Campaign/Final/BLUFOR/US_army/Regular/Campaign_US_Player_MortarCrew.et";
  static const ResourceName CREW_EAST = "{86E565387A634103}Prefabs/Characters/Campaign/Final/OPFOR/USSR_Army/Regular/Campaign_USSR_Player_MortarCrew.et";
+ // Packed up, two of the crew carry the baseplate and the barrel on their backs (Jacob, 2 Oct:
+ // easier to spot a mortar team in first person).
+ static const ResourceName BARREL_WEST = "{62B704DD79A3B5BE}Prefabs/Items/Equipment/Mortars/M252/Part_M252_Barrel.et";
+ static const ResourceName PLATE_WEST = "{0D540E16A6E53433}Prefabs/Items/Equipment/Mortars/M252/Part_M252_BasePlate.et";
+ static const ResourceName BARREL_EAST = "{F62E5FBCD723FF73}Prefabs/Items/Equipment/Mortars/2B14/Part_2B14_Barrel.et";
+ static const ResourceName PLATE_EAST = "{4323046B2CC94818}Prefabs/Items/Equipment/Mortars/2B14/Part_2B14_BasePlate.et";
  static const ResourceName AMMO_FIA = "{48F96834C3289E04}Prefabs/Characters/Factions/INDFOR/FIA/Character_FIA_Ammo.et";
  static const ResourceName RIFLE_FIA = "{84B40583F4D1B7A3}Prefabs/Characters/Factions/INDFOR/FIA/Character_FIA_Rifleman.et";
 
@@ -171,6 +180,12 @@ class ACR_Mortars : Managed
      team.m_iSerial = team.m_Squad.m_iOrderSerial;
     }
    }
+   // Packed teams carry the parts (also new members after a Reinforce).
+   if (team.m_Squad && team.m_eState != ACR_EMortarState.DEPLOYED && !team.m_bLost && !team.m_bPartsChecked)
+   {
+    CarryParts(team, true);
+    team.m_bPartsChecked = true;
+   }
    bool gone = !team.m_Group || (team.m_Squad && (!m_Manager.m_Squads.Contains(team.m_Squad) || team.m_Squad.CountAlive() == 0));
    if (gone)
    {
@@ -220,7 +235,8 @@ class ACR_Mortars : Managed
    team.m_bFiring = false;
    team.m_Tube = null;
    team.m_eState = ACR_EMortarState.PACKED;
-   Tell(team, team.m_sName + "'s mortar was destroyed", true);
+   squad.SetOrder("Mortar destroyed", ACR_EOrderState.HOLD);
+   Tell(team, team.m_sName + "'s mortar was destroyed (Reinforce brings a new one)", true);
   }
   if (squad.HasPlayer())
   {
@@ -282,6 +298,7 @@ class ACR_Mortars : Managed
     }
     team.m_eState = ACR_EMortarState.DEPLOYED;
     team.m_sStatus = "ready";
+    CarryParts(team, false);
     squad.SetOrder("Mortar ready", ACR_EOrderState.HOLD);
     Tell(team, string.Format("%1 set up at %2, reaches %3 km", team.m_sName, ACR_Manager.Grid(team.m_Spot), Km(MaxRange(team.m_sTube))));
     return;
@@ -358,6 +375,7 @@ class ACR_Mortars : Managed
   team.m_eState = ACR_EMortarState.PACKED;
   team.m_fStillSince = 0;
   team.m_sStatus = "packed up";
+  team.m_bPartsChecked = false;
   if (team.m_Resume)
   {
    squad.RestoreOrder(team.m_Resume);
@@ -367,6 +385,58 @@ class ACR_Mortars : Managed
   team.m_Resume = null;
   team.m_iSerial = squad.m_iOrderSerial;
   PrintFormat("[ACR] MORTAR %1 packed up (%2)", team.m_sName, squad.m_Order);
+ }
+
+ // carry: the first two living crewmen swap their packs for the baseplate and the barrel;
+ // otherwise the parts go and their own packs come back (empty: shells are handed out per mission).
+ protected void CarryParts(ACR_MortarTeam team, bool carry)
+ {
+  bool west = team.m_sTube == TUBE_WEST;
+  array<ResourceName> parts = {PLATE_EAST, BARREL_EAST};
+  if (west) parts = {PLATE_WEST, BARREL_WEST};
+  array<AIAgent> agents = {};
+  team.m_Squad.GetAgents(agents);
+  int next;
+  foreach (AIAgent agent : agents)
+  {
+   if (next >= parts.Count()) break;
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body) || ACR_Squad.FindController(body)) continue;
+   SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(body.FindComponent(SCR_InventoryStorageManagerComponent));
+   EquipedLoadoutStorageComponent loadout = EquipedLoadoutStorageComponent.Cast(body.FindComponent(EquipedLoadoutStorageComponent));
+   if (!inventory || !loadout) continue;
+   IEntity back = loadout.GetClothFromArea(LoadoutBackpackArea);
+   ResourceName backName;
+   if (back && back.GetPrefabData()) backName = back.GetPrefabData().GetPrefabName();
+   bool carrying = backName.Contains("/Mortars/");
+   if (carry)
+   {
+    next++;
+    if (carrying) continue;
+    team.m_Backpacks.Set(body, backName);
+    if (back) inventory.TryDeleteItem(back);
+    bool worn = inventory.TrySpawnPrefabToStorage(parts[next - 1], inventory.GetCharacterStorage());
+    PrintFormat("[ACR] MORTAR %1: crewman carries %2 (%3)", team.m_sName, FilePath.StripPath(parts[next - 1]), worn);
+   }
+   else
+   {
+    if (!carrying) continue;
+    next++;
+    inventory.TryDeleteItem(back);
+    ResourceName own;
+    if (team.m_Backpacks.Find(body, own) && !own.IsEmpty()) inventory.TrySpawnPrefabToStorage(own, inventory.GetCharacterStorage());
+   }
+  }
+ }
+
+ // What a crewman wears on his back (tests).
+ static string BackOf(IEntity body)
+ {
+  EquipedLoadoutStorageComponent loadout = EquipedLoadoutStorageComponent.Cast(body.FindComponent(EquipedLoadoutStorageComponent));
+  if (!loadout) return "";
+  IEntity back = loadout.GetClothFromArea(LoadoutBackpackArea);
+  if (!back || !back.GetPrefabData()) return "";
+  return FilePath.StripPath(back.GetPrefabData().GetPrefabName());
  }
 
  static bool TubeDestroyed(IEntity tube)
@@ -407,10 +477,42 @@ class ACR_Mortars : Managed
   float low, high, mean;
   Level(free, low, high, mean);
   if (high - low > Math.Tan(MAX_SLOPE_DEG * Math.DEG2RAD) * PLATE_RADIUS * 2) return false;
+  // On open ground, not on or under an object (a hangar's sloping roof sits on level terrain).
+  if (OnObject(free)) return false;
   spot = free;
   // Between the lowest point and the average: no gap under the downhill edge.
   spot[1] = (low + mean) * 0.5;
   return true;
+ }
+
+ // Anything solid (not people) over the ground at the plate's centre or edge.
+ static bool OnObject(vector at)
+ {
+  float ground = GetGame().GetWorld().GetSurfaceY(at[0], at[2]);
+  for (int s = 0; s < 5; s++)
+  {
+   vector point = Vector(at[0], ground, at[2]);
+   if (s > 0)
+   {
+    float angle = s * Math.PI_HALF;
+    point = point + Vector(Math.Cos(angle) * PLATE_RADIUS, 0, Math.Sin(angle) * PLATE_RADIUS);
+    point[1] = GetGame().GetWorld().GetSurfaceY(point[0], point[2]);
+   }
+   TraceParam trace = new TraceParam();
+   trace.Start = point + Vector(0, 8, 0);
+   trace.End = point - Vector(0, 0.3, 0);
+   trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+   float fraction = GetGame().GetWorld().TraceMove(trace, NotPeople);
+   if (fraction >= 1) continue;
+   float hitY = trace.Start[1] + (trace.End[1] - trace.Start[1]) * fraction;
+   if (hitY > point[1] + 0.3) return true;
+  }
+  return false;
+ }
+
+ static bool NotPeople(notnull IEntity entity)
+ {
+  return !ChimeraCharacter.Cast(entity);
  }
 
  static void Level(vector at, out float low, out float high, out float mean)
@@ -793,9 +895,14 @@ class ACR_Mortars : Managed
   }
  }
 
- // Debug "reset supports": every team ready to fire again.
- void Reset()
+ // Reinforce brought a new mortar: the team sets up again once it holds still.
+ void Rearmed(ACR_MortarTeam team)
  {
-  foreach (ACR_MortarTeam team : m_Teams) EndMission(team, "reset");
+  team.m_bLost = false;
+  team.m_bPartsChecked = false;
+  team.m_eState = ACR_EMortarState.PACKED;
+  team.m_fStillSince = 0;
+  team.m_sStatus = "packed up";
+  Tell(team, team.m_sName + " has a new mortar");
  }
 }

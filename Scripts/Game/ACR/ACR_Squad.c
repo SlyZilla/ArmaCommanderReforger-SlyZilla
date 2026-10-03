@@ -513,10 +513,17 @@ class ACR_Squad : Managed
  }
 
  // Replace every queued order (ours or native) with a single waypoint.
+ static bool s_bGameDefend; // test (srv:crewold): crews get the game's Defend waypoint as before
  AIWaypoint IssueWaypoint(ResourceName prefab, vector position, float completionRadius = -1, bool forced = false)
  {
   if (!m_Group) return null;
-  Resource resource = Resource.Load(prefab);
+  // Vehicle crews never get the game's Defend waypoint: it orders everyone in a turret out,
+  // when it starts and again when it is replaced by the next order (LAV crew bailing out for
+  // no reason, 2 Oct live). A plain move there holds the vehicle just the same; the order
+  // keeps WP_DEFEND as its kind (m_sOrderPrefab) and its "Defending" label.
+  ResourceName spawned = prefab;
+  if (prefab == WP_DEFEND && !s_bGameDefend && ACR_Transport.CrewedVehicle(this)) spawned = WP_MOVE;
+  Resource resource = Resource.Load(spawned);
   if (!resource.IsValid()) return null;
   EntitySpawnParams params = new EntitySpawnParams();
   params.TransformMode = ETransformMode.WORLD;
@@ -772,6 +779,7 @@ class ACR_Squad : Managed
  //  - soldiers get the mission's AI skill.
  void Tactics(int skill, float now)
  {
+  WatchCrew();
   if (!m_Group || m_Commander != 0) return;
   array<AIAgent> agents = {};
   GetAgents(agents);
@@ -817,6 +825,32 @@ class ACR_Squad : Managed
    }
   }
   DriveWatch(now, contact);
+ }
+
+ // Crewmen leaving a driver or gunner seat when no order of ours asked for it are logged
+ // (2 Oct live: a LAV crew got out twice "for no reason"; not reproduced on the server).
+ protected ref map<IEntity, int> m_CrewSeats = new map<IEntity, int>();
+ protected void WatchCrew()
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body) continue;
+   IEntity vehicle = ACR_Transport.VehicleOf(body);
+   int seat = -1;
+   if (vehicle) seat = ACR_Transport.SeatOf(body);
+   int before;
+   bool known = m_CrewSeats.Find(body, before);
+   m_CrewSeats.Set(body, seat);
+   if (!known || before < 0 || before == ECompartmentType.CARGO || seat >= 0) continue;
+   ACR_EOrderState state = OrderState();
+   if (state == ACR_EOrderState.GET_OUT || state == ACR_EOrderState.DISMOUNT) continue;
+   string where = "";
+   if (m_OwnVehicle) where = string.Format(", vehicle health %1, driver %2", ACR_Logistics.Health(m_OwnVehicle), DriverOf(m_OwnVehicle) != null);
+   PrintFormat("[ACR] CREW LEFT %1: %2 got out of the %3 seat on his own (order '%4', alive %5, enemies near %6, player %7%8)", m_Name, NumberOf(body), typename.EnumToString(ECompartmentType, before), m_Order, ACR_Respawn.IsAlive(body), KnownEnemies(350), FindController(body), where);
+  }
  }
 
  // ---------------------------------------------------------------- land routes

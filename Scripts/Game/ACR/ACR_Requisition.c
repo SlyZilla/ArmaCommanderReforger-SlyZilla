@@ -220,18 +220,47 @@ class ACR_Requisition : Managed
   if (anchor) near = anchor.GetOrigin();
   // Inside a base that can deploy units, the squad also gets its ammo back.
   ACR_Base depot = DeployBaseAt(key, near);
+  // A mortar team whose mortar was destroyed gets a new one with its reinforcements.
+  ACR_MortarTeam mortar = m_Manager.Mortars().TeamOf(squad);
+  bool newTube = mortar && mortar.m_bLost;
+  if (missing.IsEmpty() && newTube)
+  {
+   if (!m_Manager.m_Bases.Spend(key, ACR_Mortars.TUBE_COST)) return string.Format("Not enough RP for a new mortar (%1 needed)", ACR_Mortars.TUBE_COST);
+   m_Manager.LogSpend(pc, key, m_Manager.m_Bases.GetRP(key) + ACR_Mortars.TUBE_COST, "a new mortar for " + squad.GetName());
+   m_Manager.Mortars().Rearmed(mortar);
+   return squad.GetName() + ": a new mortar is on its way, they set up again once they stop";
+  }
+  // Its vehicles inside the base are rearmed and repaired, priced by what's missing (Jacob, 2 Oct).
+  array<IEntity> serviced = {};
+  int vehicleCost;
+  if (depot)
+  {
+   SquadVehiclesIn(squad, depot, serviced);
+   foreach (IEntity vehicle : serviced) vehicleCost += ServiceCost(vehicle);
+  }
   if (missing.IsEmpty())
   {
    if (!depot) return squad.GetName() + " is at full strength (ammo only inside a base that can deploy units)";
+   if (vehicleCost > 0)
+   {
+    if (!m_Manager.m_Bases.Spend(key, vehicleCost)) return string.Format("Not enough RP to rearm and repair %1 (%2 needed)", squad.GetName(), vehicleCost);
+    m_Manager.LogSpend(pc, key, m_Manager.m_Bases.GetRP(key) + vehicleCost, "rearmed and repaired " + squad.GetName());
+   }
    int restocked = RestockAmmo(squad, depot);
-   PrintFormat("[ACR] REINFORCE %1 ammo only at %2: %3 soldiers restocked", squad.GetName(), depot.m_sName, restocked);
-   if (!restocked) return squad.GetName() + " is at full strength and fully stocked";
-   return string.Format("%1: %2 soldiers restocked with ammo at %3", squad.GetName(), restocked, depot.m_sName);
+   int fixedUp = ServiceVehicles(serviced);
+   PrintFormat("[ACR] REINFORCE %1 ammo only at %2: %3 soldiers restocked, %4 vehicles rearmed/repaired for %5 RP", squad.GetName(), depot.m_sName, restocked, fixedUp, vehicleCost);
+   if (!restocked && !fixedUp) return squad.GetName() + " is at full strength and fully stocked";
+   string done = string.Format("%1 at %2:", squad.GetName(), depot.m_sName);
+   if (restocked) done += string.Format(" %1 soldiers restocked", restocked);
+   if (fixedUp) done += string.Format(" vehicle rearmed and repaired (%1 RP)", vehicleCost);
+   return done;
   }
   ACR_Base base = depot;
   if (!base) base = NearestSpawnBase(key, near);
   if (!base) return "No friendly base can send reinforcements";
   int cost = missing.Count() * REINFORCE_COST_PER_SOLDIER;
+  if (newTube) cost += ACR_Mortars.TUBE_COST;
+  cost += vehicleCost;
   if (!m_Manager.m_Bases.Spend(key, cost)) return string.Format("Not enough RP (%1 needed)", cost);
   m_Manager.LogSpend(pc, key, m_Manager.m_Bases.GetRP(key) + cost, "reinforced " + squad.GetName());
   foreach (ResourceName prefab : missing)
@@ -241,10 +270,89 @@ class ACR_Requisition : Managed
   }
   int resupplied;
   if (depot) resupplied = RestockAmmo(squad, depot);
+  if (depot && ServiceVehicles(serviced) > 0) resupplied++;
   PrintFormat("[ACR] REINFORCE %1 +%2 from %3 for %4 RP, %5 restocked", squad.GetName(), missing.Count(), base.m_sName, cost, resupplied);
   string result = string.Format("%1: %2 reinforcements from %3", squad.GetName(), missing.Count(), base.m_sName);
+  if (newTube)
+  {
+   m_Manager.Mortars().Rearmed(mortar);
+   result += " with a new mortar";
+  }
   if (resupplied) result += string.Format(", %1 restocked with ammo", resupplied);
   return result;
+ }
+
+ static const float REPAIR_COST_FULL = 15; // RP to repair a vehicle from wrecked to whole
+
+ // The squad's vehicles (its own and any it crews) standing inside the base circle.
+ void SquadVehiclesIn(ACR_Squad squad, ACR_Base base, notnull array<IEntity> result)
+ {
+  result.Clear();
+  array<IEntity> found = {};
+  squad.GetVehicles(found);
+  if (squad.m_OwnVehicle && !found.Contains(squad.m_OwnVehicle)) found.Insert(squad.m_OwnVehicle);
+  foreach (IEntity vehicle : found)
+  {
+   if (!vehicle || !Vehicle.Cast(vehicle) || ACR_Logistics.Health(vehicle) <= 0) continue;
+   if (vector.DistanceXZ(vehicle.GetOrigin(), base.GetOrigin()) <= base.m_fRadius) result.Insert(vehicle);
+  }
+ }
+
+ // RP to rearm and repair a vehicle: each gun's missing share of a load times what that ammo
+ // is worth (missiles and rockets dearest, then cannon, then machine guns), plus the damage.
+ static int ServiceCost(IEntity vehicle)
+ {
+  float cost;
+  array<BaseMagazineComponent> magazines = {};
+  ACR_Logistics.TurretMagazines(vehicle, magazines);
+  foreach (BaseMagazineComponent magazine : magazines)
+  {
+   int max = magazine.GetMaxAmmoCount();
+   if (max <= 0) continue;
+   float empty = 1 - magazine.GetAmmoCount() / (float)max;
+   cost += empty * AmmoWorth(magazine);
+  }
+  float health = ACR_Logistics.Health(vehicle);
+  if (health < 0.99) cost += (1 - health) * REPAIR_COST_FULL;
+  return Math.Ceil(cost);
+ }
+
+ static float AmmoWorth(BaseMagazineComponent magazine)
+ {
+  string name = "";
+  IEntity item = magazine.GetOwner();
+  if (item && item.GetPrefabData()) name = item.GetPrefabData().GetPrefabName();
+  name.ToLower();
+  if (name.Contains("atgm") || name.Contains("rocket") || name.Contains("missile") || name.Contains("9m1") || name.Contains("tow") || name.Contains("spg")) return 10;
+  if (name.Contains("x137") || name.Contains("x165") || name.Contains("23x") || name.Contains("30x") || name.Contains("25x") || name.Contains("73mm") || name.Contains("cannon")) return 6;
+  return 2;
+ }
+
+ // Full guns and full health. Returns how many vehicles needed something.
+ int ServiceVehicles(array<IEntity> vehicles)
+ {
+  int served;
+  foreach (IEntity vehicle : vehicles)
+  {
+   bool needed;
+   array<BaseMagazineComponent> magazines = {};
+   ACR_Logistics.TurretMagazines(vehicle, magazines);
+   foreach (BaseMagazineComponent magazine : magazines)
+   {
+    if (magazine.GetAmmoCount() >= magazine.GetMaxAmmoCount()) continue;
+    magazine.SetAmmoCount(magazine.GetMaxAmmoCount());
+    needed = true;
+   }
+   SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(vehicle.FindComponent(SCR_DamageManagerComponent));
+   if (damage && !damage.IsDestroyed() && damage.GetHealthScaled() < 0.99)
+   {
+    damage.HealHitZones(damage.GetMaxHealth() * 10);
+    damage.SetHealthScaled(1);
+    needed = true;
+   }
+   if (needed) served++;
+  }
+  return served;
  }
 
  // A friendly, uncontested base that can deploy units, with the point inside its circle.

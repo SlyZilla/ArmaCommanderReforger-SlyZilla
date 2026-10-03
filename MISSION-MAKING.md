@@ -170,7 +170,9 @@ The mortar types and `ILLUMINATION` are fired by a **mortar team**: every side's
 "Mortar team" entry (30 RP, 2 per match; M252 for western factions, 2B14 otherwise). The team
 sets up by itself once it holds still (on level, clear ground near where it stops) and packs up
 before moving. A call needs a set-up team that can reach the target (M252 about 2.9 km, 2B14
-about 2.3 km, at least 100 m); otherwise it is refused and nothing is spent.
+about 2.3 km, at least 100 m); otherwise it is refused and nothing is spent. Packed up, two of
+the crew carry the baseplate and barrel on their backs. A team whose mortar is destroyed gets a new
+one with a Reinforce (10 RP).
 
 ### ACR_Base
 

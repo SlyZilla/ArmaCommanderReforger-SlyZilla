@@ -125,7 +125,6 @@ class ACR_Debug : Managed
     count++;
    }
   }
-  manager.Mortars().Reset();
   return string.Format("Debug: %1 support(s) ready again (both sides)", count);
  }
 }

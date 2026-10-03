@@ -325,7 +325,10 @@ class ACR_HeliRun : ACR_SupportRun
  {
   float startDistance = 2200;
   if (m_bLoiter) startDistance = 1500;
-  m_Pos = m_Target - m_Dir * startDistance;
+  m_Pos = SafeStart(m_Target - m_Dir * startDistance);
+  vector toward = m_Target - m_Pos;
+  toward[1] = 0;
+  if (toward.Length() > 1) m_Dir = toward.Normalized();
   m_Pos[1] = SafeAltitude(m_Pos, m_Dir, ALT_TRANSIT);
   m_fYaw = Math.Atan2(m_Dir[0], m_Dir[2]) * Math.RAD2DEG;
   m_fBodyYaw = m_fYaw;
@@ -348,7 +351,7 @@ class ACR_HeliRun : ACR_SupportRun
   // Arrives at full rotor speed, not spooling up from a standstill (Jacob, 2 Oct).
   Spool();
   m_fStarted = now;
-  PrintFormat("[ACR] SUPPORT helicopter %1 inbound from %2", prefab, m_Pos);
+  PrintFormat("[ACR] SUPPORT helicopter %1 inbound from %2 (%3 m out, clear of bases that aren't ours: %4)", prefab, m_Pos, (int)vector.DistanceXZ(m_Pos, m_Target), ClearOfEnemies(m_Pos));
   m_iRockets = 14;
   if (m_bLoiter) m_iRockets = 16;
   if (m_bDoorGuns) m_iRockets = 0;
@@ -356,6 +359,43 @@ class ACR_HeliRun : ACR_SupportRun
  }
 
  static const float SPOOL_MAX_SECONDS = 25;
+ static const float ENEMY_CLEARANCE = 1200; // spool-up spot this far from bases that aren't ours (Jacob, 2 Oct)
+ vector m_Start;
+
+ // It sits ~20 s at its start point while the rotors spool up: not near anything that isn't
+ // ours. Turn the start round the target until it is clear, else start at our nearest base.
+ vector SafeStart(vector start)
+ {
+  vector away = start - m_Target;
+  away[1] = 0;
+  float distance = away.Length();
+  if (distance < 1) return start;
+  float yaw = Math.Atan2(away[0], away[2]);
+  array<float> turns = {0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5};
+  foreach (float turn : turns)
+  {
+   vector candidate = m_Target + Vector(Math.Sin(yaw + turn) * distance, 0, Math.Cos(yaw + turn) * distance);
+   if (ACR_Manager.OnMap(candidate) && ClearOfEnemies(candidate)) { m_Start = candidate; return candidate; }
+  }
+  ACR_Base home;
+  float best = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != m_sFaction) continue;
+   float d = vector.DistanceXZ(base.GetOrigin(), m_Target);
+   if (d > 200 && d < best) { best = d; home = base; }
+  }
+  if (home) start = home.GetOrigin();
+  m_Start = start;
+  return start;
+ }
+
+ bool ClearOfEnemies(vector point)
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_sOwner != m_sFaction && vector.DistanceXZ(base.GetOrigin(), point) < ENEMY_CLEARANCE) return false;
+  return true;
+ }
  protected bool m_bSpooled;
  // Full throttle: the rotors run at flying speed (the script flies the airframe itself).
  void Spool()
@@ -1078,7 +1118,7 @@ class ACR_Supports : Managed
     foreach (ACR_HeliRun up : flying) if (up.m_Vehicle && !up.m_bDestroyed) taken.Insert(up.m_iStack);
     while (taken.Contains(heli.m_iStack) && heli.m_iStack < 2) heli.m_iStack++;
     m_Runs.Insert(heli);
-    delay = (int)(2200 / ACR_HeliRun.SPEED_RUN + ACR_HeliRun.SPOOL_MAX_SECONDS * 0.9);
+    delay = (int)(vector.DistanceXZ(heli.m_Start, target) / ACR_HeliRun.SPEED_RUN + ACR_HeliRun.SPOOL_MAX_SECONDS * 0.9);
     break;
    }
   }

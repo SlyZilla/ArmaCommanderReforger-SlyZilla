@@ -5,6 +5,7 @@ class ACR_TestMortar
 {
  static ACR_MortarTeam s_Team;
  static ACR_MortarTeam s_East;
+ static IEntity s_Truck;
  static int s_iPhase;
  static int s_iSince;
  static vector s_Moved;
@@ -82,6 +83,28 @@ class ACR_TestMortar
    manager.m_Bases.GetFaction("US").m_iRP = 900;
    PrintFormat("[ACR] MORTAR call with no team: %1", Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 600))));
   }
+  if (tick == 3) s_Truck = ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", ACR_Manager.Ground(home + Vector(60, 0, -40)));
+  if (tick == 6 && s_Truck)
+  {
+   vector spot;
+   bool onTruck = ACR_Mortars.CheckSpot(s_Truck.GetOrigin(), spot);
+   ACR_TestRegress.Check("mortar: no setting up on top of an object", !onTruck, string.Format("accepted at %1", spot));
+   SCR_EntityHelper.DeleteEntityAndChildren(s_Truck);
+  }
+  if (tick == 9 && s_Team && s_Team.m_Squad)
+  {
+   int carriers;
+   array<AIAgent> crew = {};
+   s_Team.m_Squad.GetAgents(crew);
+   string backs = "";
+   foreach (AIAgent man : crew)
+   {
+    string back = ACR_Mortars.BackOf(man.GetControlledEntity());
+    backs += back + " ";
+    if (back.Contains("Part_")) carriers++;
+   }
+   ACR_TestRegress.Check("mortar: packed, two crewmen carry the baseplate and barrel", carriers == 2, backs);
+  }
   if (tick == 5)
   {
    manager.Mortars().SpawnTeam("US", "Mortar team 1", ACR_Manager.Ground(home + Vector(25, 0, -10)));
@@ -92,12 +115,23 @@ class ACR_TestMortar
    s_iPhase = 1;
    s_iSince = tick;
   }
-  if (tick > 5 && tick % 3 == 0 && s_iPhase < 6) PrintFormat("[ACR] MORTAR t%1 phase %2 %3", tick, s_iPhase, State());
+  if (tick > 5 && tick % 3 == 0 && s_iPhase != 6 && s_iPhase != 7) PrintFormat("[ACR] MORTAR t%1 phase %2 %3", tick, s_iPhase, State());
   int waited = tick - s_iSince;
   // 1: sets up by itself, then a refusal out of range and a mission in range
   if (s_iPhase == 1 && s_Team && (s_Team.m_eState == ACR_EMortarState.DEPLOYED || waited > 30))
   {
    ACR_TestRegress.Check("mortar: sets up by itself", s_Team.m_eState == ACR_EMortarState.DEPLOYED && s_Team.m_Tube != null, State());
+   string backsUp = "";
+   bool partsGone = true;
+   array<AIAgent> setUp = {};
+   s_Team.m_Squad.GetAgents(setUp);
+   foreach (AIAgent member : setUp)
+   {
+    string worn = ACR_Mortars.BackOf(member.GetControlledEntity());
+    backsUp += worn + " ";
+    if (worn.Contains("Part_")) partsGone = false;
+   }
+   ACR_TestRegress.Check("mortar: set up, the parts are off their backs", partsGone, backsUp);
    int east = -1;
    if (s_East && s_East.m_Squad) east = s_East.m_Squad.CountAlive();
    ACR_TestRegress.Check("mortar: Soviet team is just its 3 crew", east == 3, string.Format("%1 soldiers", east));
@@ -137,6 +171,21 @@ class ACR_TestMortar
   if (s_iPhase == 5 && s_Team && (ACR_Mortars.s_iLastFired >= 0 || waited > 70))
   {
    ACR_TestRegress.Check("mortar: creeping barrage fired (9 rounds)", ACR_Mortars.s_iLastFired == 9, string.Format("fired %1, %2", ACR_Mortars.s_iLastFired, State()));
+   // The mortar is destroyed: a Reinforce brings a new one and they set up again.
+   if (s_Team.m_Tube) SCR_EntityHelper.DeleteEntityAndChildren(s_Team.m_Tube);
+   s_iPhase = 51;
+   s_iSince = tick;
+  }
+  if (s_iPhase == 51 && waited == 2)
+  {
+   ACR_TestRegress.Check("mortar: a destroyed mortar is noticed", s_Team.m_bLost, State());
+   manager.Mortars().Rearmed(s_Team);
+   s_iPhase = 52;
+   s_iSince = tick;
+  }
+  if (s_iPhase == 52 && (s_Team.m_eState == ACR_EMortarState.DEPLOYED || waited > 30))
+  {
+   ACR_TestRegress.Check("mortar: sets up again with the new mortar", s_Team.m_eState == ACR_EMortarState.DEPLOYED && !s_Team.m_bLost, State());
    array<AIAgent> agents = {};
    s_Team.m_Squad.GetAgents(agents);
    foreach (AIAgent agent : agents) h.Kill(agent.GetControlledEntity());

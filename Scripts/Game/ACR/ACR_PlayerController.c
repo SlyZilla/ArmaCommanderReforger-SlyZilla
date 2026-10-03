@@ -994,6 +994,11 @@ modded class SCR_PlayerController
    m_ACR_Panel.SetBase(m_ACR_SupNames[m_ACR_PendingSupport], "Right-click the target on the map. Click the entry again to cancel.");
    return;
   }
+  if (!m_ACR_SupportResult.IsEmpty() && System.GetTickCount() - m_ACR_SupportResultAt < 10000)
+  {
+   m_ACR_Panel.SetBase("Support call", m_ACR_SupportResult);
+   return;
+  }
   if (m_ACR_PendingEntry >= 0 && m_ACR_PendingEntry < m_ACR_ReqNames.Count())
   {
    m_ACR_Panel.SetBase(m_ACR_ReqNames[m_ACR_PendingEntry], "Click one of your bases to deploy. Right-click to cancel.");
@@ -1655,7 +1660,18 @@ modded class SCR_PlayerController
   float now = GetGame().GetWorld().GetWorldTime();
   if (now - m_ACR_LastCommand < 300) return;
   m_ACR_LastCommand = now;
-  Rpc(ACR_FeedbackOwner, manager.CallSupport(this, index, target));
+  Rpc(ACR_SupportResultOwner, manager.CallSupport(this, index, target));
+ }
+ // The answer to a support call, also kept in the panel for a while (a refusal such as
+ // "out of range" was only a hint, easy to miss on the map).
+ protected string m_ACR_SupportResult;
+ protected int m_ACR_SupportResultAt;
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_SupportResultOwner(string message)
+ {
+  m_ACR_SupportResult = message;
+  m_ACR_SupportResultAt = System.GetTickCount();
+  ACR_FeedbackOwner(message);
  }
  // Test hook: call a support without the UI.
  void ACR_TestSupport(int index, vector target)
