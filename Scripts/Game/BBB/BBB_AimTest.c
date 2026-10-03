@@ -79,6 +79,11 @@ class BBB_AimTest : Managed
  static const float RIFLE_S = 90;
  static const float AT_S = 60;
  static const int REPEATS = 3;
+ // Suppression-only run (-bbbSuppressTest 1, preset "bbbsuppress" = -acrBbbSuppressTest 1,
+ // ~16 min): fix 3 alone at SUPPRESS_TRY, rifles at 100 m only, SUPPRESS_REPEATS pairs.
+ static const float SUPPRESS_TRY = 1.3;
+ static const int SUPPRESS_REPEATS = 5;
+ static bool s_bSuppressOnly;
  static const float EYE_M = 0.8;
  static const int OBSERVER_KEY = 22101;
 
@@ -101,7 +106,8 @@ class BBB_AimTest : Managed
  static void MaybeStart()
  {
   if (s_Test || !Replication.IsServer()) return;
-  if (!System.IsCLIParam("bbbAimTest") && !System.IsCLIParam("acrBbbAimTest")) return;
+  s_bSuppressOnly = System.IsCLIParam("bbbSuppressTest") || System.IsCLIParam("acrBbbSuppressTest");
+  if (!s_bSuppressOnly && !System.IsCLIParam("bbbAimTest") && !System.IsCLIParam("acrBbbAimTest")) return;
   s_Test = new BBB_AimTest();
   GetGame().GetCallqueue().CallLater(s_Test.Begin, 10000);
  }
@@ -125,6 +131,13 @@ class BBB_AimTest : Managed
   BBB_Aim.Read();
   // The test compares the proposed values with vanilla aim.
   BBB_Aim.UseTuning();
+  if (s_bSuppressOnly)
+  {
+   BBB_Aim.s_fLauncher = 0;
+   BBB_Aim.s_fLongRange = 0;
+   BBB_Aim.s_fSuppressed = SUPPRESS_TRY;
+   PrintFormat("[BBB] AIMTEST suppression only: x%1 when fully suppressed", SUPPRESS_TRY);
+  }
   float far215 = BBB_Aim.FarFactor(215);
   float far600 = BBB_Aim.FarFactor(600);
   float far2000 = BBB_Aim.FarFactor(2000);
@@ -379,7 +392,15 @@ class BBB_AimTest : Managed
  {
   array<float> rifle = {100, 300, 500};
   array<float> antitank = {150, 300};
-  for (int r = 0; r < REPEATS; r++)
+  int repeats = REPEATS;
+  if (s_bSuppressOnly)
+  {
+   rifle.Clear();
+   rifle.Insert(100);
+   antitank.Clear();
+   repeats = SUPPRESS_REPEATS;
+  }
+  for (int r = 0; r < repeats; r++)
   {
    foreach (float d : rifle)
    {

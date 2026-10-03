@@ -8,16 +8,17 @@
 //     later"); aim error can now grow with the shooter's threat level.
 //  4. Long range: vanilla aim error stops growing at 215 m; it can now keep growing.
 //  5. One accuracy setting for hosts (vanilla has a TODO for it).
-// Fixes 2 and 5 are on by default (2 is a plain bug fix, 5 does nothing at 1). Fixes 1, 3
-// and 4 change how deadly fights are, so they stay at vanilla values until a firefight test
-// backs the numbers (BBB rule: off until tested); -bbbAimTuning 1 turns all three on with
-// the proposed values.
+// Fixes 2, 3 and 5 are on by default (2 is a plain bug fix, 5 does nothing at 1). Fix 3 runs
+// at x1.3: the firefight test (3 Oct) showed x2.5 far too strong (tuned side downed 2 vs 16)
+// and x1.3 a moderate effect (11 vs 17 downed, 111 vs 87 shots per enemy down). Fixes 1 and
+// 4 stay at vanilla values until a test backs them (BBB rule: off until tested);
+// -bbbAimTuning 1 turns them on with the proposed values.
 // Host options (server command line):
 //  -bbbAimFixes 0          everything here off (vanilla)
-//  -bbbAimTuning 1         fixes 1, 3 and 4 on: launcher 1, suppressed 2.5, long range 3
+//  -bbbAimTuning 1         fixes 1 and 4 on too: launcher 1, long range 3
 //  -bbbAimScale <x>        overall AI aim error, 1 = vanilla (fix 5)
 //  -bbbLauncherAim <x>     launcher aim error factor (fix 1; 0 = vanilla, 1 = like a rifle)
-//  -bbbSuppressedAim <x>   aim error when fully suppressed (fix 3; 1 = vanilla)
+//  -bbbSuppressedAim <x>   aim error when fully suppressed (fix 3; default 1.3; 1 = vanilla)
 //  -bbbLongRangeAim <x>    aim error factor at 600 m (fix 4; 0 = vanilla, which holds 1.4)
 //  -bbbBinocsUnderFire 1   vanilla binoculars (fix 2 off)
 class BBB_Aim
@@ -26,11 +27,11 @@ class BBB_Aim
  static bool s_bOn = true;
  static float s_fScale = 1;
  static float s_fLauncher = 0;
- static float s_fSuppressed = 1;
+ static float s_fSuppressed = 1.3;
  static float s_fLongRange = 0;
  // The proposed values for fixes 1, 3 and 4 (-bbbAimTuning 1, and the range test).
  static const float TUNED_LAUNCHER = 1;
- static const float TUNED_SUPPRESSED = 2.5;
+ static const float TUNED_SUPPRESSED = 1.3;
  static const float TUNED_LONG_RANGE = 3;
  static bool s_bBinoculars = true;
  // Test only: soldiers that keep vanilla aim (the A/B lanes of BBB_AimTest).
