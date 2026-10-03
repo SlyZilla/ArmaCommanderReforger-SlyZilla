@@ -22,6 +22,7 @@ class ACR_RequisitionEntry
  bool m_bTransport;  // set automatically: an unarmed truck, which the AI commander buys to ferry squads
  bool m_bArmed = true; // set automatically for vehicles: has a weapon (the AI doesn't buy unarmed cars to fight with)
  bool m_bMortarTeam;  // the built-in mortar team (ACR_Mortars), added to every faction's list
+ int m_iSupportHeli;  // support helicopter for a helipad (ACR_HeliStation): 1 gunship, 2 door gunners
 
  // runtime
  int m_iRemaining;
@@ -128,8 +129,14 @@ class ACR_FactionCatalog
   }
   // Every side can buy mortar teams: the mortar supports need one set up within range.
   result.Insert(ACR_Mortars.MakeEntry());
+  // Worlds with helipads: support helicopters are bought for a pad (a lost one is bought again).
+  if (ACR_HeliStation.InUse())
+  {
+   result.Insert(ACR_HeliStation.MakeEntry(true));
+   result.Insert(ACR_HeliStation.MakeEntry(false));
+  }
   foreach (ACR_RequisitionEntry entry : result) entry.m_iRemaining = ACR_Manager.ThreatStock(entry.m_iStock, !entry.m_sVehicle.IsEmpty());
-  PrintFormat("[ACR] Requisition list for %1: %2 entries", factionKey, result.Count());
+  PrintFormat("[ACR] Requisition list for %1: %2 entries (%3 helipads in the world)", factionKey, result.Count(), ACR_Helipad.s_All.Count());
  }
 
  protected static SCR_EntityCatalog GetCatalog(string factionKey, EEntityCatalogType type)

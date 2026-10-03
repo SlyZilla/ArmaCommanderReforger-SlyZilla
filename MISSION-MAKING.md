@@ -179,6 +179,26 @@ one with a Reinforce (10 RP).
 the call: three salvos of six heavy rounds, 10 s apart, scattered up to 120 m from the target, each
 heard coming in.
 
+The helicopter types depend on **helipads** (see `ACR_Helipad` below). In a world with at least one
+helipad, every side's buy list gets "Support gunship" (80 RP) and "Support helicopter (door
+gunners)" (50 RP), 4 each per match. One is bought at a base with a free pad and waits there with its
+crew. A call flies it from the pad (rotors spool up about 20 s, then it lifts off); afterwards it
+flies back, lands and is serviced for 60 s (rearmed, repaired, dead crew replaced). It must be
+bought again once destroyed. A call with none ready on a pad of a base the side still holds is
+refused and costs nothing; the support list shows `[1 ready]`, `[servicing]` or `[none: buy one]`.
+The gunship flies the rocket run and gunship supports, the transport the door gunners. The AI
+commander keeps one gunship when it has a free pad. In a world with **no** helipad, helicopter
+supports fly in from off the map as before (no purchase).
+
+### ACR_Helipad
+
+A helipad for support helicopters, placed inside a base circle (within its radius + 60 m). The
+base's owner owns the pad. Leave room for a Mi-8: level ground and about 11 m clear all round.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `m_bModel` | on | Places a helipad model (US or USSR style, from the base's starting owner). Off when the world already has a helipad at this spot |
+
 ### ACR_Base
 
 A base (control point). Its position is the centre of the capture circle.
@@ -271,7 +291,7 @@ game's launch parameters. The AC: Actual launchers set them from their menu.
   loadout yet. AI-only factions (e.g. FIA) may work but are untested.
 - **Arland only** so far. Everon support (bases, spawns, routing over 13 km) is the next milestone.
 - **No victory conditions**, by design: the match runs until the host ends it.
-- **The AI commander can't fly**: aircraft are for players only.
+- **The AI commander can't fly**: aircraft are for players only (support helicopters are script-flown).
 - Settings may still change between alpha builds. This page is updated with them.
 
 ## Testing your scenario

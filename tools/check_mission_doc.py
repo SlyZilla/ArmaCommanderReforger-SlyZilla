@@ -9,6 +9,7 @@ classes = {
     'ACR_Mode.c': ['ACR_Mode', 'ACR_StartingUnit'],
     'ACR_FactionSettings.c': ['ACR_RequisitionEntry', 'ACR_FactionSettings'],
     'ACR_Base.c': ['ACR_Base'],
+    'ACR_Helipads.c': ['ACR_Helipad'],
     'ACR_Supports.c': ['ACR_SupportEntry'],
 }
 missing = []

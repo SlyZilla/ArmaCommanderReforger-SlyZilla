@@ -438,10 +438,16 @@ class ACR_MapFeed
   foreach (ACR_SupportEntry entry : manager.m_Bases.GetFaction(frame.m_sKey).m_aSupports)
   {
    // Mortar supports say whether a team can fire them.
+   // Helicopter supports (worlds with helipads) say whether a stationed helicopter is ready.
+   string heli = "";
+   if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.InUse() && manager.m_Supports)
+    heli = manager.m_Supports.Station().StatusFor(frame.m_sKey, ACR_HeliStation.NeedsGunship(entry.m_eType));
    if (ACR_Mortars.IsMortarType(entry.m_eType)) frame.m_SupNames.Insert(entry.m_sName + "  [" + mortars + "]");
+   else if (!heli.IsEmpty()) frame.m_SupNames.Insert(entry.m_sName + "  [" + heli + "]");
    else frame.m_SupNames.Insert(entry.m_sName);
    frame.m_SupCosts.Insert(entry.m_iCost);
    if (ACR_Mortars.IsMortarType(entry.m_eType)) sig += mortars;
+   sig += heli;
    int left = Math.Ceil((entry.m_fReadyAt - now) / 1000);
    if (left < 0) left = 0;
    frame.m_SupCooldowns.Insert(left);

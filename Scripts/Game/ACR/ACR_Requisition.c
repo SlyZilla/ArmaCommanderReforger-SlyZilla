@@ -93,6 +93,12 @@ class ACR_Requisition : Managed
   if (!base.m_bAllowSpawn) return base.m_sName + " can't deploy units";
   if (base.m_bContested) return base.m_sName + " is under attack";
   if (m_Manager.m_Cleanup && m_Manager.m_Cleanup.SoldiersOf(key) >= m_Manager.m_iSoldierCap) return string.Format("Too many soldiers in the field (limit %1)", m_Manager.m_iSoldierCap);
+  if (!m_Manager.m_Supports) m_Manager.m_Supports = new ACR_Supports(m_Manager);
+  if (entry.m_iSupportHeli > 0)
+  {
+   string padProblem = m_Manager.m_Supports.Station().CantBuy(key, base);
+   if (!padProblem.IsEmpty()) return padProblem;
+  }
   if (!m_Manager.m_Bases.Spend(key, entry.m_iCost)) return string.Format("Not enough RP (%1 needed)", entry.m_iCost);
   entry.m_iRemaining--;
   entry.m_iBought++;
@@ -112,6 +118,19 @@ class ACR_Requisition : Managed
   {
    vehiclePos = SpawnPoint(base, 10, 25, 4);
    groupPos = SpawnPoint(base, 5, 15, 1.5);
+  }
+  if (entry.m_iSupportHeli > 0)
+  {
+   m_Manager.m_sSpawningFaction = "";
+   if (!m_Manager.m_Supports.Station().Station(key, entry.m_iSupportHeli == 1, base, name))
+   {
+    m_Manager.m_Bases.GetFaction(key).m_iRP += entry.m_iCost;
+    entry.m_iRemaining++;
+    entry.m_iBought--;
+    return name + " could not be placed on a helipad";
+   }
+   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
+   return string.Format("%1 waiting on the helipad at %2", name, base.m_sName);
   }
   if (entry.m_bMortarTeam) m_Manager.Mortars().SpawnTeam(key, name, groupPos);
   else SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);

@@ -225,3 +225,15 @@ ACR_StartingUnit ACR_Start_6 {
  m_sName "Soviet 2nd Squad"
  m_sGroup "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et"
 }
+ACR_Helipad ACR_Helipad_Airfield_1 {
+ coords 1256 38 2817
+}
+ACR_Helipad ACR_Helipad_Airfield_2 {
+ coords 1226 38 2823
+}
+ACR_Helipad ACR_Helipad_Heide_1 {
+ coords 3178 11 2803
+}
+ACR_Helipad ACR_Helipad_Heide_2 {
+ coords 3136 11 2824
+}

@@ -277,6 +277,13 @@ class ACR_HeliRun : ACR_SupportRun
 
  IEntity m_Vehicle;
  string m_sFaction;
+ ACR_StationedHeli m_Home;  // flies from and back to this helipad (null = off-map helicopter, deleted after)
+ static const float LIFT_HEIGHT = 30;   // m: straight up off the pad before heading out
+ static const float LIFT_RATE = 4;      // m/s
+ protected bool m_bLifting;
+ bool m_bReturning;
+ bool m_bLanded;
+ protected float m_fSpeed;
  bool m_bLoiter;
  bool m_bDoorGuns;   // transport version: no rockets
  static const float DOOR_SIDE_SWAP_MS = 30000;
@@ -357,6 +364,153 @@ class ACR_HeliRun : ACR_SupportRun
   if (m_bLoiter) m_iRockets = 16;
   if (m_bDoorGuns) m_iRockets = 0;
   return true;
+ }
+
+ // Takes off from its helipad (the helicopter and crew are already there).
+ bool StartFromPad(ACR_Supports supports, ACR_StationedHeli home, float now)
+ {
+  if (!home || !home.m_Vehicle) return false;
+  m_Home = home;
+  m_Vehicle = home.m_Vehicle;
+  m_Pos = m_Vehicle.GetOrigin();
+  m_Start = m_Pos;
+  vector toward = m_Target - m_Pos;
+  toward[1] = 0;
+  if (toward.Length() > 1) m_Dir = toward.Normalized();
+  m_fYaw = m_Vehicle.GetYawPitchRoll()[0];
+  m_fBodyYaw = m_fYaw;
+  m_bLifting = true;
+  Physics physics = m_Vehicle.GetPhysics();
+  if (physics) { physics.EnableGravity(false); physics.SetVelocity(vector.Zero); }
+  supports.Station().ReplaceCrew(m_Vehicle, m_sFaction);
+  BaseVehicleControllerComponent controller = BaseVehicleControllerComponent.Cast(m_Vehicle.FindComponent(BaseVehicleControllerComponent));
+  if (controller) controller.ForceStartEngine();
+  Spool();
+  m_fStarted = now;
+  m_iRockets = 14;
+  if (m_bLoiter) m_iRockets = 16;
+  if (m_bDoorGuns) m_iRockets = 0;
+  PrintFormat("[ACR] SUPPORT %1 taking off from its helipad at %2, %3 m from the target", home.m_sName, m_Pos, (int)vector.DistanceXZ(m_Pos, m_Target));
+  return true;
+ }
+
+ // Straight up off the pad, the nose swinging round toward the target.
+ protected bool Lift(float dt)
+ {
+  float ground = GetGame().GetWorld().GetSurfaceY(m_Pos[0], m_Pos[2]);
+  float rise = LIFT_RATE;
+  if (m_Pos[1] - ground < 3) rise = LIFT_RATE * 0.5;
+  m_Pos[1] = m_Pos[1] + rise * dt;
+  float wantYaw = Math.Atan2(m_Dir[0], m_Dir[2]) * Math.RAD2DEG;
+  m_fYaw = Wrap(m_fYaw + Math.Clamp(Wrap(wantYaw - m_fYaw), -15 * dt, 15 * dt));
+  m_fBodyYaw = m_fYaw;
+  Place(Vector(0, rise, 0), 0, 0);
+  if (m_Pos[1] - ground >= LIFT_HEIGHT)
+  {
+   m_bLifting = false;
+   m_fClimb = rise;
+   m_fSpeed = 0;
+   PrintFormat("[ACR] SUPPORT %1 off the pad (%2 m up), heading out", m_Home.m_sName, (int)(m_Pos[1] - ground));
+  }
+  return true;
+ }
+
+ protected void Place(vector velocity, float pitch, float roll)
+ {
+  vector transform[4];
+  Math3D.AnglesToMatrix(Vector(m_fBodyYaw, pitch, roll), transform);
+  transform[3] = m_Pos;
+  m_Vehicle.SetTransform(transform);
+  Physics physics = m_Vehicle.GetPhysics();
+  if (physics)
+  {
+   physics.SetVelocity(velocity);
+   physics.SetAngularVelocity(vector.Zero);
+  }
+ }
+
+ // Back to the pad: slows down on the way in, hovers over the pad and sets down.
+ protected bool FlyHome(ACR_Supports supports, float dt, float now)
+ {
+  foreach (ACR_HeliGun idle : m_Guns) idle.StopFire();
+  vector pad = m_Home.m_Pad.Spot();
+  vector flat = pad - m_Pos;
+  flat[1] = 0;
+  float d = flat.Length();
+  vector toPad = m_Dir;
+  if (d > 0.01) toPad = flat.Normalized();
+  float padYaw = Math.Atan2(toPad[0], toPad[2]) * Math.RAD2DEG;
+  float delta = Wrap(padYaw - m_fYaw);
+  if (d > 3) m_fYaw = Wrap(m_fYaw + Math.Clamp(delta, -24 * dt, 24 * dt));
+  m_fBodyYaw = Wrap(m_fBodyYaw + Math.Clamp(Wrap(m_fYaw - m_fBodyYaw), -40 * dt, 40 * dt));
+  // Slower near the pad, and while still turning toward it (no circling round it).
+  float facing = Math.Max(0.2, Math.Cos(Math.Min(Math.AbsFloat(delta), 90) * Math.DEG2RAD));
+  float wanted = Math.Clamp(d * 0.22, 0, SPEED_RUN) * facing;
+  float before = m_fSpeed;
+  m_fSpeed += (wanted - m_fSpeed) * Math.Min(1, dt * 0.8);
+  vector previous = m_Pos;
+  vector forward = Heading(m_fYaw);
+  vector move;
+  // The last stretch is flown straight at the pad whatever the nose does (a hover taxi).
+  if (d < 40) move = toPad * Math.Min(Math.Min(m_fSpeed, d * 0.5 + 0.3) * dt, d);
+  else move = forward * (m_fSpeed * dt);
+  m_Pos = m_Pos + move;
+  // Height: transit height far out, then a glide down to a hover over the pad, then down.
+  float ground = GetGame().GetWorld().GetSurfaceY(m_Pos[0], m_Pos[2]);
+  float wantedY;
+  if (d > 300) wantedY = SafeAltitude(m_Pos, forward, ALT_TRANSIT);
+  else wantedY = Math.Max(pad[1] + Math.Clamp((d - 8) * 0.35, 4, ALT_TRANSIT), ground + Math.Clamp((d - 8) * 0.3, 4, 20));
+  float rate = Math.Clamp((wantedY - m_Pos[1]) * 0.6, -6, 8);
+  if (d < 4)
+  {
+   wantedY = pad[1];
+   rate = -Math.Clamp((m_Pos[1] - pad[1]) * 0.4, 1.2, 4);
+  }
+  m_fClimb += (rate - m_fClimb) * Math.Min(1, dt * 1.5);
+  m_Pos[1] = previous[1] + m_fClimb * dt;
+  if (d >= 4 && m_Pos[1] < ground + 3) m_Pos[1] = ground + 3;
+  if (d > 300)
+  {
+   vector away = Separation(supports);
+   if (away != vector.Zero) m_Pos = m_Pos + away * (2 * dt);
+  }
+  float pitch = -Math.Clamp(m_fSpeed * 0.1, 0, 6);
+  if (m_fSpeed < before - 0.05 && m_fSpeed > 3) pitch = 5; // flaring
+  m_fRoll += (0 - m_fRoll) * Math.Min(1, dt * 2);
+  vector velocity = vector.Zero;
+  if (dt > 0) velocity = (m_Pos - previous) * (1 / dt);
+  Place(velocity, pitch, m_fRoll);
+  if (now >= m_fNextAltLog)
+  {
+   m_fNextAltLog = now + 5000;
+   PrintFormat("[ACR] SUPPORT %1 returning: %2 m from its pad, %3 m up, %4 m/s", m_Home.m_sName, (int)d, (int)(m_Pos[1] - ground), (int)m_fSpeed);
+  }
+  if (d < 4 && m_Pos[1] <= pad[1] + 0.35)
+  {
+   Touchdown(supports);
+   return false;
+  }
+  return true;
+ }
+
+ // On the pad: physics back on, engine off, servicing starts.
+ void Touchdown(ACR_Supports supports)
+ {
+  if (m_bLanded || !m_Vehicle || !m_Home) return;
+  m_bLanded = true;
+  vector pad = m_Home.m_Pad.Spot();
+  m_Pos = pad;
+  m_fBodyYaw = m_Vehicle.GetYawPitchRoll()[0];
+  Place(vector.Zero, 0, 0);
+  Physics physics = m_Vehicle.GetPhysics();
+  if (physics) physics.EnableGravity(true);
+  VehicleHelicopterSimulation rotors = VehicleHelicopterSimulation.Cast(m_Vehicle.FindComponent(VehicleHelicopterSimulation));
+  if (rotors)
+  {
+   rotors.SetThrottle(0);
+   rotors.EngineStop();
+  }
+  supports.Station().Landed(m_Home);
  }
 
  static const float SPOOL_MAX_SECONDS = 25;
@@ -556,10 +710,13 @@ class ACR_HeliRun : ACR_SupportRun
    if (wreck) wreck.EnableGravity(true);
    supports.m_Manager.NotifyFaction(m_sFaction, "Support helicopter is going down!");
    PrintFormat("[ACR] SUPPORT helicopter going down (destroyed=%1 movement damage=%2)", IsDestroyed(), movementDamage);
+   if (m_Home) supports.Station().Lost(m_Home);
    return false;
   }
-  if (now - m_fStarted > 300000) return false;
-  if (!m_bAnalyzed && now - m_fStarted > 500) AnalyzeGuns(supports);
+  float limit = 300000;
+  if (m_Home) limit = 600000; // there and back (Finish puts it on its pad if it ran out)
+  if (now - m_fStarted > limit) return false;
+  if (!m_bAnalyzed && !m_bLifting && now - m_fStarted > 500) AnalyzeGuns(supports);
   Spool();
   // The game spools the rotors up over ~20 s and has no way to set their speed, so the
   // helicopter waits out of sight at its start point until they're at flying speed.
@@ -584,6 +741,8 @@ class ACR_HeliRun : ACR_SupportRun
     return true;
    }
   }
+  if (m_bLifting) return Lift(dt);
+  if (m_bReturning) return FlyHome(supports, dt, now);
 
   vector flat = m_Target - m_Pos;
   flat[1] = 0;
@@ -610,6 +769,7 @@ class ACR_HeliRun : ACR_SupportRun
     m_iPhase = 2;
     m_ExitDir = -toTarget;
     supports.m_Manager.NotifyFaction(m_sFaction, StationName() + " leaving station.");
+    if (m_Home) { m_bReturning = true; m_fSpeed = SPEED_LOITER; }
    }
    if (m_iPhase == 0) desired = toTarget;
    else if (m_iPhase == 1)
@@ -675,6 +835,12 @@ class ACR_HeliRun : ACR_SupportRun
   float bodyDelta = Wrap(m_fYaw + bodyOffset - m_fBodyYaw);
   m_fBodyYaw = Wrap(m_fBodyYaw + Math.Clamp(bodyDelta, -40 * dt, 40 * dt));
 
+  // Off a helipad it picks up speed instead of jumping to it.
+  if (m_Home)
+  {
+   m_fSpeed += (speed - m_fSpeed) * Math.Min(1, dt * 0.4);
+   speed = Math.Max(m_fSpeed, 3);
+  }
   vector forward = Heading(m_fYaw);
   vector nose = Heading(m_fBodyYaw);
   vector previous = m_Pos;
@@ -812,6 +978,14 @@ class ACR_HeliRun : ACR_SupportRun
    physics.SetAngularVelocity(vector.Zero);
   }
 
+  // From a helipad: turn for home once clear of the target.
+  if (m_Home && !m_bLoiter && vector.Dot(m_Target - m_Pos, m_Dir) < -600)
+  {
+   m_bReturning = true;
+   m_fSpeed = speed;
+   PrintFormat("[ACR] SUPPORT %1 returning to its pad", m_Home.m_sName);
+  }
+  if (m_Home) return true;
   if (!m_bLoiter) return vector.Dot(m_Target - m_Pos, m_Dir) > -2000;
   if (m_iPhase == 2) return distance < 2000;
   return true;
@@ -826,6 +1000,17 @@ class ACR_HeliRun : ACR_SupportRun
  override void Finish()
  {
   if (!m_Vehicle || m_bDestroyed) return;
+  // A stationed helicopter is kept: if it never made it down (time ran out), it is put on its pad.
+  if (m_Home)
+  {
+   if (!m_bLanded)
+   {
+    PrintFormat("[ACR] SUPPORT %1 ran out of time on its way back: set down on its pad", m_Home.m_sName);
+    ACR_Manager manager = ACR_Manager.GetInstance();
+    if (manager && manager.m_Supports) Touchdown(manager.m_Supports);
+   }
+   return;
+  }
   array<IEntity> crew = {};
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   if (compartments)
@@ -891,6 +1076,13 @@ class ACR_Supports : Managed
 
  ACR_Manager m_Manager;
  ref array<IEntity> m_Vehicles = {};
+ protected ref ACR_HeliStation m_Station;
+ // Helipads and the helicopters stationed on them (ACR_Helipads.c).
+ ACR_HeliStation Station()
+ {
+  if (!m_Station) m_Station = new ACR_HeliStation(this);
+  return m_Station;
+ }
  protected ref array<ref ACR_SupportRun> m_Runs = {};
 
  void Helicopters(array<ACR_HeliRun> result)
@@ -1085,6 +1277,18 @@ class ACR_Supports : Managed
   if (now < entry.m_fReadyAt) return string.Format("%1 is not ready (%2 s)", entry.m_sName, Math.Ceil((entry.m_fReadyAt - now) / 1000));
   // Mortar supports are fired by a real mortar team (ACR_Mortars): nothing is spent unless one can.
   if (ACR_Mortars.IsMortarType(entry.m_eType)) return CallMortars(factionKey, entry, target, byAI);
+  // With helipads in the world, helicopter supports fly a helicopter bought for a pad.
+  ACR_StationedHeli home;
+  if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.InUse())
+  {
+   home = Station().ReadyFor(factionKey, ACR_HeliStation.NeedsGunship(entry.m_eType), target);
+   if (!home)
+   {
+    string why = Station().WhyNot(factionKey, ACR_HeliStation.NeedsGunship(entry.m_eType));
+    PrintFormat("[ACR] SUPPORT %1 %2 refused: %3", factionKey, entry.m_sName, why);
+    return why;
+   }
+  }
   if (!m_Manager.m_Bases.Spend(factionKey, entry.m_iCost)) return string.Format("Not enough RP for %1 (%2 needed)", entry.m_sName, entry.m_iCost);
   entry.m_fReadyAt = now + entry.m_iCooldown * 1000;
   target[1] = GetGame().GetWorld().GetSurfaceY(target[0], target[2]);
@@ -1145,7 +1349,10 @@ class ACR_Supports : Managed
     heli.m_Rocket = RocketFor(factionKey);
     ResourceName helicopter = HelicopterFor(factionKey);
     if (heli.m_bDoorGuns) helicopter = TransportHelicopterFor(factionKey);
-    if (!heli.Start(this, helicopter, now))
+    bool started;
+    if (home) started = heli.StartFromPad(this, home, now);
+    else started = heli.Start(this, helicopter, now);
+    if (!started)
     {
      // Nothing flew: give the RP and the cooldown back.
      data.m_iRP += entry.m_iCost;
@@ -1160,6 +1367,11 @@ class ACR_Supports : Managed
     while (taken.Contains(heli.m_iStack) && heli.m_iStack < 2) heli.m_iStack++;
     m_Runs.Insert(heli);
     delay = (int)(vector.DistanceXZ(heli.m_Start, target) / ACR_HeliRun.SPEED_RUN + ACR_HeliRun.SPOOL_MAX_SECONDS * 0.9);
+    if (home)
+    {
+     Station().Launched(home);
+     delay += (int)(ACR_HeliRun.LIFT_HEIGHT / ACR_HeliRun.LIFT_RATE) + 3;
+    }
     break;
    }
   }
@@ -1458,6 +1670,7 @@ class ACR_Supports : Managed
    m_Runs.Remove(r);
   }
   TrackBatteryShells(now);
+  if (m_Station) m_Station.Tick(now);
   for (int v = m_Vehicles.Count() - 1; v >= 0; v--) if (!m_Vehicles[v]) m_Vehicles.Remove(v);
   for (int z = m_Zones.Count() - 1; z >= 0; z--) if (now > m_Zones[z].m_fEndAt) m_Zones.Remove(z);
  }

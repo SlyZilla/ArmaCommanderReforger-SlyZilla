@@ -69,6 +69,8 @@ class ACR_Mode : GenericEntity
  protected void Second()
  {
   m_iSeconds++;
+  // -acrPadsTest: helipads on this scenario's map (ACR_TestPads).
+  if (System.IsCLIParam("acrPadsTest")) ACR_TestPads.Run(null, m_iSeconds);
   if (m_bSoak) { Soak(); return; }
   if (!m_bSummary || m_iSeconds % 30 != 0) return;
   ACR_Manager manager = ACR_Manager.GetInstance();
