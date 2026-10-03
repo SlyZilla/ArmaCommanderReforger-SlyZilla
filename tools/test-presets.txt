@@ -42,4 +42,5 @@ getoutold|-acrGetOutOldTest 1|110
 mortar|-acrMortarTest 1|260
 crew|-acrCrewTest 1|120
 crewold|-acrCrewOldTest 1|120
+bbbaim|-acrBbbAimTest 1|480
 battery|-acrBatteryTest 1|120
