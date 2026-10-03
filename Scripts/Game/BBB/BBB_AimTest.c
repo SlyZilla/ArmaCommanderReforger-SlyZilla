@@ -2,17 +2,17 @@
 // "bbbaim" passes -acrBbbAimTest 1, the only kind of flag it accepts). Run it on a world
 // without AC: Actual, which would take the test groups over: put
 // worlds/GameMaster/GM_Arland.ent in place of "{world}" in tools/testserver-args.txt for
-// the run, then put it back. About 8 minutes.
+// the run, then put it back. About 45 minutes (REPEATS 3).
 // Unit checks of the BBB_Aim maths first, then two-sided firefights on one lane found on
 // the map (clear at crouch height to 500 m), far from any player but with a temporary
 // observer at the lane:
 //  Rifles: US light fire team vs USSR light fire team (4 rifles each) at 100/300/500 m
-//          for 45 s, both firing at will; one side has BBB's aim, the other vanilla aim,
+//          for 90 s, both firing at will; one side has BBB's aim, the other vanilla aim,
 //          then the sides swap. Per aim type: shots fired and enemies downed (dead or
 //          unconscious).
 //  AT:     USSR AT team vs an M2 Humvee with a US gunner (vanilla aim) at 150/300 m for
-//          35 s, BBB then vanilla aim for the AT team. Rockets, rocket hits (vehicle health
-//          drops 0.2+ at once), seconds until the Humvee is destroyed.
+//          60 s, BBB then vanilla aim for the AT team. Rockets, rocket hits (vehicle health
+//          drops 0.05+ at once), seconds until the Humvee is destroyed.
 // Logs "[BBB] AIMTEST ..." lines and ends with "[ACR] TEST COMPLETE" (the launcher waits for it).
 // Learned building it (2 Oct): a lone shooter saw his target once, moved to cover and never
 // fired; deactivated or hold-fire targets were hardly engaged; OnProjectileShot never fired
@@ -76,9 +76,9 @@ class BBB_AimTest : Managed
  static const ResourceName GUN_TRUCK = "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et";
  static const ResourceName GROUP_US = "{EACD97CF4A702FAE}Prefabs/Groups/BLUFOR/Group_US_Base.et";
 
- static const float RIFLE_S = 45;
- static const float AT_S = 35;
- static const int LAST_ROUND = 9;
+ static const float RIFLE_S = 90;
+ static const float AT_S = 60;
+ static const int REPEATS = 3;
  static const float EYE_M = 0.8;
  static const int OBSERVER_KEY = 22101;
 
@@ -87,6 +87,9 @@ class BBB_AimTest : Managed
  ref array<vector> m_aSiteFrom = {};
  ref array<vector> m_aSiteDir = {};
  int m_iRound = -1;
+ ref array<bool> m_aRoundAT = {};
+ ref array<float> m_aRoundDistance = {};
+ ref array<bool> m_aRoundSwap = {};
  float m_fRoundEnd;
  float m_fNextRound;
  // Totals per "kind distance aim": shots, enemies downed (rifles) / hits, destroyed (AT).
@@ -365,23 +368,38 @@ class BBB_AimTest : Managed
    vector mid = m_aSiteFrom[0] + m_aSiteDir[0] * 250;
    observers.InsertObserverSP(OBSERVER_KEY, mid[0], mid[2], null);
   }
+  PlanRounds();
   m_fNextRound = Now() + 5;
   GetGame().GetCallqueue().CallLater(Tick, 500, true);
  }
 
- // Rounds 0-5: rifles at 100/300/500 m (US side BBB, then USSR side BBB);
- // 6-9: AT at 150/300 m (AT team BBB, then vanilla).
+ // Each repeat: rifles at 100/300/500 m (US side BBB, then USSR side BBB), then AT at
+ // 150/300 m (AT team BBB, then vanilla).
+ protected void PlanRounds()
+ {
+  array<float> rifle = {100, 300, 500};
+  array<float> antitank = {150, 300};
+  for (int r = 0; r < REPEATS; r++)
+  {
+   foreach (float d : rifle)
+   {
+    m_aRoundAT.Insert(false); m_aRoundDistance.Insert(d); m_aRoundSwap.Insert(false);
+    m_aRoundAT.Insert(false); m_aRoundDistance.Insert(d); m_aRoundSwap.Insert(true);
+   }
+   foreach (float e : antitank)
+   {
+    m_aRoundAT.Insert(true); m_aRoundDistance.Insert(e); m_aRoundSwap.Insert(false);
+    m_aRoundAT.Insert(true); m_aRoundDistance.Insert(e); m_aRoundSwap.Insert(true);
+   }
+  }
+ }
+
  protected bool StartRound(int round)
  {
-  if (round > LAST_ROUND) return false;
-  bool at = round >= 6;
-  bool swap = round % 2 == 1;
-  int step = round / 2;
-  float distance = 100;
-  if (step == 1) distance = 300;
-  else if (step == 2) distance = 500;
-  else if (step == 3) distance = 150;
-  else if (step == 4) distance = 300;
+  if (round >= m_aRoundAT.Count()) return false;
+  bool at = m_aRoundAT[round];
+  bool swap = m_aRoundSwap[round];
+  float distance = m_aRoundDistance[round];
   m_aLanes.Clear();
   BBB_AimLane lane = new BBB_AimLane();
   lane.m_bAT = at;
@@ -407,8 +425,8 @@ class BBB_AimTest : Managed
   float length = RIFLE_S;
   if (at) length = AT_S;
   m_fRoundEnd = Now() + length;
-  if (at) PrintFormat("[BBB] AIMTEST round %1: AT team (%2 aim) vs M2 Humvee at %3 m", round + 1, lane.m_A.Label(), distance);
-  else PrintFormat("[BBB] AIMTEST round %1: rifles at %2 m, US %3 aim vs USSR %4 aim", round + 1, distance, lane.m_A.Label(), lane.m_B.Label());
+  if (at) PrintFormat("[BBB] AIMTEST round %1/%2: AT team (%3 aim) vs M2 Humvee at %4 m", round + 1, m_aRoundAT.Count(), lane.m_A.Label(), distance);
+  else PrintFormat("[BBB] AIMTEST round %1/%2: rifles at %3 m, US %4 aim vs USSR %5 aim", round + 1, m_aRoundAT.Count(), distance, lane.m_A.Label(), lane.m_B.Label());
   return true;
  }
 
@@ -451,7 +469,7 @@ class BBB_AimTest : Managed
  {
   if (!lane.m_bAT || !lane.m_Vehicle || lane.m_fDestroyedAfter >= 0) return;
   float health = BBB.Health(lane.m_Vehicle);
-  if (lane.m_fHealth - health >= 0.2) lane.m_iHits++;
+  if (lane.m_fHealth - health >= 0.05) lane.m_iHits++;
   lane.m_fHealth = health;
   if (health <= 0) lane.m_fDestroyedAfter = now - lane.m_fStart;
  }
@@ -473,7 +491,7 @@ class BBB_AimTest : Managed
    {
     int destroyed = 0;
     if (lane.m_fDestroyedAfter >= 0) destroyed = 1;
-    PrintFormat("[BBB] AIMTEST AT %1 m %2: rockets %3, hits %4, destroyed after %5 s (AT team down %6 of %7)", distance, lane.m_A.Label(), lane.m_A.m_iShots, lane.m_iHits, lane.m_fDestroyedAfter, Downed(lane.m_A), lane.m_A.m_aMen.Count());
+    PrintFormat("[BBB] AIMTEST AT %1 m %2: rockets %3, hits %4, destroyed after %5 s, health left %6 (AT team down %7 of %8)", distance, lane.m_A.Label(), lane.m_A.m_iShots, lane.m_iHits, lane.m_fDestroyedAfter, BBB.Health(lane.m_Vehicle), Downed(lane.m_A), lane.m_A.m_aMen.Count());
     Count(string.Format("AT %1 m %2", distance, lane.m_A.Label()), lane.m_A.m_iShots, destroyed, lane.m_iHits);
    }
    else

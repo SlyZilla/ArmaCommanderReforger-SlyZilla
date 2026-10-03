@@ -42,7 +42,7 @@ getoutold|-acrGetOutOldTest 1|110
 mortar|-acrMortarTest 1|260
 crew|-acrCrewTest 1|120
 crewold|-acrCrewOldTest 1|120
-bbbaim|-acrBbbAimTest 1|480
+bbbaim|-acrBbbAimTest 1|3000
 battery|-acrBatteryTest 1|120
 pads|-acrPadsTest 1|90|Worlds/ACR_Arland.ent
 helipad|-acrHelipadTest 1|280
