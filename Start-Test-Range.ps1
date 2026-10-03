@@ -1,4 +1,4 @@
-param([switch]$HostMenu, [switch]$TestProfile, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
+param([switch]$HostMenu, [switch]$TestProfile, [switch]$NoSetup, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
 $ErrorActionPreference = 'Stop'
 # Everything this window shows also goes to launcher-log.txt (send it if something fails).
 try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force | Out-Null } catch {}
@@ -20,6 +20,14 @@ try {
   $GamePath = Find-SteamApp 'Arma Reforger' 'ArmaReforgerSteam.exe'
  }
  if (!$GamePath -or !(Test-Path -LiteralPath $GamePath)) { throw 'Arma Reforger was not found. Run this script with -GamePath pointing to ArmaReforgerSteam.exe.' }
+ # Scenario worlds (not the test range, not automated tests): the host options menu, as when
+ # hosting (Enter starts with the remembered settings). The game is its own server here.
+ if (!$TestProfile -and !$HostMenu -and !$NoSetup -and $World -notlike '*TestRange*') {
+  . (Join-Path $PSScriptRoot 'ACR-HostSetup.ps1')
+  $setup = Show-HostSetup -Solo
+  $World = $setup.World
+  $Extra = ($Extra + $setup.Args).Trim()
+ }
  $addonsPath = Split-Path $PSScriptRoot -Parent
  # Players get their normal profile (controls, graphics); automated tests use a separate one.
  $arguments = '-addonsDir "' + $addonsPath + '" -addons AC230926A0010001 -noSplash'

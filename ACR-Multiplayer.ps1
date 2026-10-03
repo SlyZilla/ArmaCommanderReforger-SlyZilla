@@ -15,76 +15,7 @@ try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force
 
 . (Join-Path $PSScriptRoot 'ACR-ZeroTier.ps1')
 
-# Host setup menu: session settings chosen before the server starts (remembered
-# in host-settings.txt). Returns the extra server arguments and the world.
-function Show-HostSetup {
-  $file = Join-Path $PSScriptRoot 'host-settings.txt'
-  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Players = 'any'; StartRP = '100'; Income = '1'; AI = 'both'; Skill = 'Veteran';
-                   Reaction = '1.6'; SoldierCap = '100'; UnitCap = '8'; Respawn = '15'; ShareGM = 'no'; SharedCommand = 'yes'; Threat = 'normal' }
-  if (Test-Path -LiteralPath $file) {
-    foreach ($line in Get-Content -LiteralPath $file) {
-      $kv = $line.Split('=', 2)
-      if ($kv.Count -eq 2 -and $s.Contains($kv[0].Trim())) { $s[$kv[0].Trim()] = $kv[1].Trim() }
-    }
-  }
-  $worlds = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Worlds') -Filter 'ACR_*.ent' -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -notlike '*TestRange*' } | ForEach-Object { 'Worlds/' + $_.Name })
-  if ($worlds.Count -eq 0) { $worlds = @('Worlds/ACR_Arland.ent') }
-  if ($worlds -notcontains $s.World) { $s.World = $worlds[0] }
-  $skills = [ordered]@{ Rookie = 20; Regular = 50; Veteran = 70; Expert = 80 }
-  while ($true) {
-    $mapName = [IO.Path]::GetFileNameWithoutExtension($s.World) -replace '^ACR_', ''
-    Write-Host ''
-    Write-Host '=== HOST SETUP ===  (type a number to change, Enter to start)' -ForegroundColor Cyan
-    Write-Host ('  1  Map / scenario          ' + $mapName)
-    Write-Host ('  2  Players'' side           ' + $s.Players + '   (any = each player picks; or US / USSR)')
-    Write-Host ('  3  AI commanders           ' + $s.AI + '   (both / none / one faction key, e.g. USSR)')
-    Write-Host ('  4  Starting RP             ' + $s.StartRP)
-    Write-Host ('  5  Income                  x' + $s.Income)
-    Write-Host ('  6  AI skill                ' + $s.Skill + '   (Rookie / Regular / Veteran / Expert)')
-    Write-Host ('  7  AI reaction speed       ' + $s.Reaction + '   (1 = game default, higher = faster spotting)')
-    Write-Host ('  8  Soldier limit per side  ' + $s.SoldierCap)
-    Write-Host ('  9  AI squad limit          ' + $s.UnitCap)
-    Write-Host (' 10  Commander respawn       ' + $s.Respawn + ' s')
-    Write-Host (' 11  Game Master for all     ' + $s.ShareGM)
-    Write-Host (' 12  Shared command          ' + $s.SharedCommand + '   (yes = several commanders per side)')
-    Write-Host (' 13  Threat level            ' + $s.Threat + '   (low = small infantry war, high = all-out war)')
-    $choice = (Read-Host 'Choice').Trim()
-    if ($choice -eq '') { break }
-    switch ($choice) {
-      '1' { if ($worlds.Count -gt 1) { $i = [array]::IndexOf($worlds, $s.World); $s.World = $worlds[($i + 1) % $worlds.Count] } else { Write-Host 'Only one map is available so far.' -ForegroundColor Yellow } }
-      '2' {
-        # any -> US -> USSR -> any. Picking a side gives the AI the other one.
-        $sides = @('any', 'US', 'USSR')
-        $i = [array]::IndexOf($sides, $s.Players)
-        $s.Players = $sides[($i + 1) % $sides.Count]
-        if ($s.Players -eq 'US') { $s.AI = 'USSR' } elseif ($s.Players -eq 'USSR') { $s.AI = 'US' } else { $s.AI = 'both' }
-        Write-Host ('AI commanders set to ' + $s.AI + ' (change with 3).') -ForegroundColor DarkGray
-      }
-      '3' { $v = Read-Host 'AI commanders: both, none, or the faction key that gets one (US, USSR, ...)'; if ($v.Trim()) { $s.AI = $v.Trim() } }
-      '4' { $v = Read-Host 'Starting RP (e.g. 100)'; if ($v -match '^\d+$') { $s.StartRP = $v } }
-      '5' { $v = Read-Host 'Income multiplier (e.g. 0.5, 1, 2)'; if ($v -match '^\d+(\.\d+)?$') { $s.Income = $v } }
-      '6' { $v = Read-Host 'AI skill: Rookie, Regular, Veteran or Expert'; foreach ($k in $skills.Keys) { if ($k -like ($v.Trim() + '*') -and $v.Trim()) { $s.Skill = $k } } }
-      '7' { $v = Read-Host 'AI reaction speed (0.5 - 3)'; if ($v -match '^\d+(\.\d+)?$') { $s.Reaction = $v } }
-      '8' { $v = Read-Host 'Soldier limit per side (e.g. 100)'; if ($v -match '^\d+$') { $s.SoldierCap = $v } }
-      '9' { $v = Read-Host 'AI squad limit (e.g. 8)'; if ($v -match '^\d+$') { $s.UnitCap = $v } }
-      '10' { $v = Read-Host 'Commander respawn delay in seconds'; if ($v -match '^\d+$') { $s.Respawn = $v } }
-      '11' { if ($s.ShareGM -eq 'yes') { $s.ShareGM = 'no' } else { $s.ShareGM = 'yes' } }
-      '12' { if ($s.SharedCommand -eq 'yes') { $s.SharedCommand = 'no' } else { $s.SharedCommand = 'yes' } }
-      '13' { $levels = @('low', 'normal', 'high'); $i = [array]::IndexOf($levels, $s.Threat); $s.Threat = $levels[($i + 1) % $levels.Count] }
-      default { Write-Host 'Type a number from the list, or press Enter to start.' -ForegroundColor Yellow }
-    }
-  }
-  $s.Keys | ForEach-Object { $_ + '=' + $s[$_] } | Set-Content -LiteralPath $file
-  $skill = $skills[$s.Skill]
-  if (!$skill) { $skill = 70 }
-  $extra = ' -acrStartRP ' + $s.StartRP + ' -acrIncome ' + $s.Income + ' -acrAI ' + $s.AI + ' -acrSkill ' + $skill +
-           ' -acrReaction ' + $s.Reaction + ' -acrSoldierCap ' + $s.SoldierCap + ' -acrUnitCap ' + $s.UnitCap + ' -acrRespawnSeconds ' + $s.Respawn + ' -acrPlayers ' + $s.Players
-  if ($s.ShareGM -eq 'yes') { $extra += ' -acrGameMasterAll 1' }
-  $extra += ' -acrThreat ' + $s.Threat
-  if ($s.SharedCommand -eq 'no') { $extra += ' -acrSharedCommand 0' } else { $extra += ' -acrSharedCommand 1' }
-  return @{ Args = $extra; World = $s.World }
-}
+. (Join-Path $PSScriptRoot 'ACR-HostSetup.ps1')
 
 try {
   if ($Mode -eq 'Leave') {

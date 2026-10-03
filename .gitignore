@@ -11,5 +11,6 @@ game-paths.txt
 launcher-log.txt
 last-host.txt
 host-settings.txt
+play-settings.txt
 .local-testserver/
 zerotier.txt

@@ -16,7 +16,9 @@ HOW TO START
    rename the "ArmaCommanderReforger" folder inside.
 2. Close Arma Reforger if it's running.
 3. Double-click  Play-Arland.cmd  (next to this guide).
-   The game starts straight into the scenario (singleplayer and offline).
+   A setup menu opens first (side, AI, RP, threat level...): press Enter
+   to start with the remembered settings. The game then starts straight into
+   the scenario (singleplayer and offline).
    The first load takes a while because the game compiles the mod's scripts.
    If Windows SmartScreen asks, choose "More info" > "Run anyway". It's a
    one-line script that starts the game with the mod loaded.

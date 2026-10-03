@@ -251,7 +251,8 @@ SCR_MissionHeader {
 ## Host options
 
 Hosts can override some settings at launch without touching the world. Add them to the server's or
-game's launch parameters. The AC: Actual launchers set them from their menu.
+game's launch parameters. The AC: Actual launchers set them from their setup menu, both when hosting
+and in singleplayer (Play-Arland), where the game is its own server.
 
 | Option | What it does |
 |---|---|
