@@ -12,6 +12,11 @@
 // Per healing type: heal behaviours started and completed, healers hit on their way
 // (BBB counts them on both sides), own men down at the end of the fight, own men dead at
 // the end of the round, wounded left untreated after the lull, enemies downed.
+// Road mode (-bbbMedicRoadTest 1, preset "bbbmedicroad", ~12 min), after Jacob's live case
+// (4 Oct: healers shot by one AI ~50 m down a road): the healing side (fire team + medic)
+// faces a 2-man sentry team at 50 m that can't be hurt (stands in for a shooter the team
+// can't get at; the first road run with normal sentries saw them shot within seconds and no
+// healer hit); only the healing side gets a planted casualty and is scored. Rounds: US heal BBB / vanilla, then USSR heal BBB / vanilla, repeated.
 // Logs "[BBB] MEDICTEST ..." lines, ends with "[ACR] TEST COMPLETE".
 class BBB_MedicSide : Managed
 {
@@ -35,6 +40,10 @@ class BBB_MedicTest : BBB_AimTest
  static const ResourceName MEDIC_US = "{C9E4FEAF5AAC8D8C}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Medic.et";
  static const ResourceName MEDIC_USSR = "{AB9726163EC1BD81}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_Medic.et";
  static const float DISTANCE_M = 100;
+ static const float ROAD_M = 50;
+ static const ResourceName SENTRY_US = "{3BF36BDEEB33AEC9}Prefabs/Groups/BLUFOR/Group_US_SentryTeam.et";
+ static const ResourceName SENTRY_USSR = "{CB58D90EA14430AD}Prefabs/Groups/OPFOR/Group_USSR_SentryTeam.et";
+ static bool s_bRoad;
  static const float WOUND_AT_S = 25;
  static const float FIGHT_S = 120;
  static const float LULL_S = 50;
@@ -66,7 +75,8 @@ class BBB_MedicTest : BBB_AimTest
  static void MaybeStartMedic()
  {
   if (s_MedicTest || !Replication.IsServer()) return;
-  if (!System.IsCLIParam("bbbMedicTest") && !System.IsCLIParam("acrBbbMedicTest")) return;
+  s_bRoad = System.IsCLIParam("bbbMedicRoadTest") || System.IsCLIParam("acrBbbMedicRoadTest");
+  if (!s_bRoad && !System.IsCLIParam("bbbMedicTest") && !System.IsCLIParam("acrBbbMedicTest")) return;
   s_MedicTest = new BBB_MedicTest();
   GetGame().GetCallqueue().CallLater(s_MedicTest.MedicBegin, 10000);
  }
@@ -111,8 +121,19 @@ class BBB_MedicTest : BBB_AimTest
   }
   // Each repeat: (US BBB, USSR vanilla) and swapped, keeping the US after the fight,
   // then the same keeping the USSR.
-  for (int r = 0; r < MEDIC_REPEATS; r++)
+  int repeats = MEDIC_REPEATS;
+  if (s_bRoad) repeats = 1;
+  for (int r = 0; r < repeats; r++)
   {
+   if (s_bRoad)
+   {
+    // m_aKeepA = the healers are US; m_aSwap = they heal the vanilla way.
+    m_aSwap.Insert(false); m_aKeepA.Insert(true);
+    m_aSwap.Insert(true); m_aKeepA.Insert(true);
+    m_aSwap.Insert(false); m_aKeepA.Insert(false);
+    m_aSwap.Insert(true); m_aKeepA.Insert(false);
+    continue;
+   }
    m_aSwap.Insert(false); m_aKeepA.Insert(true);
    m_aSwap.Insert(true); m_aKeepA.Insert(true);
    m_aSwap.Insert(false); m_aKeepA.Insert(false);
@@ -126,6 +147,7 @@ class BBB_MedicTest : BBB_AimTest
  {
   side.m_Group = SCR_AIGroup.Cast(Spawn(team, at, facing));
   if (side.m_Group) m_aRoundSpawned.Insert(side.m_Group);
+  if (medic.IsEmpty()) return side.m_Group;
   side.m_Medic = Spawn(medic, at - facing * 20, facing);
   if (side.m_Medic) m_aRoundSpawned.Insert(side.m_Medic);
   return side.m_Group;
@@ -139,8 +161,25 @@ class BBB_MedicTest : BBB_AimTest
   m_SideB.m_bVanilla = !m_aSwap[round];
   vector from = m_aSiteFrom[0];
   vector dir = m_aSiteDir[0];
-  SpawnTeam(TEAM_US, MEDIC_US, from, dir, m_SideA);
-  SpawnTeam(TEAM_USSR, MEDIC_USSR, from + dir * DISTANCE_M, dir * -1, m_SideB);
+  if (s_bRoad)
+  {
+   m_SideB.m_bVanilla = true;
+   if (m_aKeepA[round])
+   {
+    SpawnTeam(TEAM_US, MEDIC_US, from, dir, m_SideA);
+    SpawnTeam(SENTRY_USSR, "", from + dir * Distance(), dir * -1, m_SideB);
+   }
+   else
+   {
+    SpawnTeam(TEAM_USSR, MEDIC_USSR, from, dir, m_SideA);
+    SpawnTeam(SENTRY_US, "", from + dir * Distance(), dir * -1, m_SideB);
+   }
+  }
+  else
+  {
+   SpawnTeam(TEAM_US, MEDIC_US, from, dir, m_SideA);
+   SpawnTeam(TEAM_USSR, MEDIC_USSR, from + dir * DISTANCE_M, dir * -1, m_SideB);
+  }
   m_bActive = true;
   m_bHooked = false;
   m_bLull = false;
@@ -148,7 +187,13 @@ class BBB_MedicTest : BBB_AimTest
   m_fWoundAt = Now() + WOUND_AT_S;
   m_bWounded = false;
   m_fFightEnd = Now() + FIGHT_S;
-  PrintFormat("[BBB] MEDICTEST round %1/%2: US (%3 healing) vs USSR (%4 healing) at %5 m", round + 1, m_aSwap.Count(), m_SideA.Label(), m_SideB.Label(), DISTANCE_M);
+  if (s_bRoad)
+  {
+   string healers = "USSR";
+   if (m_aKeepA[round]) healers = "US";
+   PrintFormat("[BBB] MEDICTEST road round %1/%2: %3 fire team + medic (%4 healing) vs 2-man sentry team at %5 m", round + 1, m_aSwap.Count(), healers, m_SideA.Label(), Distance());
+  }
+  else PrintFormat("[BBB] MEDICTEST round %1/%2: US (%3 healing) vs USSR (%4 healing) at %5 m", round + 1, m_aSwap.Count(), m_SideA.Label(), m_SideB.Label(), DISTANCE_M);
  }
 
  protected void HookSide(BBB_MedicSide side)
@@ -174,9 +219,15 @@ class BBB_MedicTest : BBB_AimTest
 
  // One casualty per side, planted mid-fight: the man nearest the enemy (not the medic)
  // is knocked out and bleeds from the chest. Does a healer go out to him under fire?
+ protected float Distance()
+ {
+  if (s_bRoad) return ROAD_M;
+  return DISTANCE_M;
+ }
+
  protected void WoundOne(BBB_MedicSide side, BBB_MedicSide enemy)
  {
-  vector toward = m_aSiteFrom[0] + m_aSiteDir[0] * DISTANCE_M;
+  vector toward = m_aSiteFrom[0] + m_aSiteDir[0] * Distance();
   if (side == m_SideB) toward = m_aSiteFrom[0];
   IEntity pick = null;
   float best = 1000000;
@@ -199,6 +250,15 @@ class BBB_MedicTest : BBB_AimTest
  protected bool Treated(IEntity man)
  {
   return man && BBB.IsAlive(man) && !BBB_Medic.Bleeding(man);
+ }
+
+ protected void Unhurtable(BBB_MedicSide side)
+ {
+  foreach (IEntity man : side.m_aMen)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(man);
+   if (character && character.GetDamageManager()) character.GetDamageManager().EnableDamageHandling(false);
+  }
  }
 
  protected int SumFor(map<IEntity, int> counts, BBB_MedicSide side)
@@ -270,12 +330,13 @@ class BBB_MedicTest : BBB_AimTest
    m_bHooked = true;
    HookSide(m_SideA);
    HookSide(m_SideB);
+   if (s_bRoad) Unhurtable(m_SideB);
   }
   if (m_bHooked && !m_bWounded && now >= m_fWoundAt)
   {
    m_bWounded = true;
    WoundOne(m_SideA, m_SideB);
-   WoundOne(m_SideB, m_SideA);
+   if (!s_bRoad) WoundOne(m_SideB, m_SideA);
   }
   if (!m_bLull && now >= m_fFightEnd) EndFight();
   if (m_bLull && now >= m_fLullEnd) EndMedicRound();
@@ -289,14 +350,15 @@ class BBB_MedicTest : BBB_AimTest
   m_iDownB = DownCount(m_SideB);
   BBB_MedicSide gone = m_SideB;
   m_Kept = m_SideA;
-  if (!m_aKeepA[m_iMRound])
+  if (!s_bRoad && !m_aKeepA[m_iMRound])
   {
    gone = m_SideA;
    m_Kept = m_SideB;
   }
-  PrintFormat("[BBB] MEDICTEST fight over: US down %1 of %2, USSR down %3 of %4; %5 side removed, %6 side gets %7 s of quiet", m_iDownA, m_SideA.m_aMen.Count(), m_iDownB, m_SideB.m_aMen.Count(), gone.Label(), m_Kept.Label(), LULL_S);
-  // Record the removed side's numbers now (its men are deleted).
-  Record(gone, false);
+  PrintFormat("[BBB] MEDICTEST fight over: side A down %1 of %2, side B down %3 of %4; %5 side removed, %6 side gets %7 s of quiet", m_iDownA, m_SideA.m_aMen.Count(), m_iDownB, m_SideB.m_aMen.Count(), gone.Label(), m_Kept.Label(), LULL_S);
+  // Record the removed side's numbers now (its men are deleted). In road mode only the
+  // healing side is scored.
+  if (!s_bRoad) Record(gone, false);
   foreach (IEntity man : gone.m_aMen)
   {
    BBB_Medic.s_aVanilla.RemoveItem(man);

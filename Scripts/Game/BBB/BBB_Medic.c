@@ -58,8 +58,10 @@ class BBB_Medic
  // Casualty -> world time (ms) a heal for him was last held / he became a hot spot.
  static ref map<IEntity, float> s_mHeld = new map<IEntity, float>();
  static ref map<IEntity, float> s_mHot = new map<IEntity, float>();
- // Healer -> world time (ms) he was last let go to a casualty (i.e. on his way).
+ // Healer -> world time (ms) he was last let go to a casualty (on his way), and to whom.
  static ref map<IEntity, float> s_mGoing = new map<IEntity, float>();
+ static ref map<IEntity, IEntity> s_mGoingTo = new map<IEntity, IEntity>();
+ static bool s_bWatching;
 
  // Counters for the test (heal behaviour selected / completed, healers hit on the way).
  static int s_iStarted;
@@ -195,7 +197,6 @@ class BBB_Medic
   if (!casualty) return;
   s_iHealersHit++;
   Count(s_mHitBy, healer);
-  MarkGoing(healer, false);
   if (!on)
   {
    PrintFormat("[BBB] MEDIC healer %1 hit on his way to %2 (vanilla healing)", Name(healer), Name(casualty));
@@ -213,16 +214,44 @@ class BBB_Medic
   s_mHeld.Set(casualty, NowMs());
  }
 
- static void MarkGoing(IEntity healer, bool going)
+ static void MarkGoing(IEntity healer, IEntity casualty)
  {
   if (!healer) return;
-  if (!going)
+  // Already hit (bleeding or down): he isn't counted again while he limps on.
+  if (!casualty || !Fit(healer))
   {
    s_mGoing.Remove(healer);
+   s_mGoingTo.Remove(healer);
    return;
   }
-  Prune(s_mGoing);
   s_mGoing.Set(healer, NowMs());
+  s_mGoingTo.Set(healer, casualty);
+  if (!s_bWatching && Replication.IsServer())
+  {
+   s_bWatching = true;
+   GetGame().GetCallqueue().CallLater(WatchGoing, 500, true);
+  }
+ }
+
+ // Twice a second: a healer on his way who is down or bleeding was hit on his way.
+ static void WatchGoing()
+ {
+  float now = NowMs();
+  for (int i = s_mGoing.Count() - 1; i >= 0; i--)
+  {
+   IEntity healer = s_mGoing.GetKey(i);
+   if (!healer || now - s_mGoing.GetElement(i) > 4000)
+   {
+    s_mGoingTo.Remove(healer);
+    s_mGoing.RemoveElement(i);
+    continue;
+   }
+   if (Fit(healer)) continue;
+   IEntity casualty = s_mGoingTo.Get(healer);
+   s_mGoingTo.Remove(healer);
+   s_mGoing.RemoveElement(i);
+   if (casualty && vector.Distance(healer.GetOrigin(), casualty.GetOrigin()) > ARRIVED_M) HealerHit(casualty, healer, On(casualty));
+  }
  }
 
  // Was he let go to a casualty in the last few seconds (not holding back)?
@@ -295,7 +324,7 @@ modded class SCR_AIMedicHealBehavior
   if (!BBB_Medic.On(healer))
   {
    // Vanilla healing (off, or the test's vanilla side): on his way while this runs.
-   if (m_Utility.GetCurrentBehavior() == this) BBB_Medic.MarkGoing(healer, true);
+   if (m_Utility.GetCurrentBehavior() == this) BBB_Medic.MarkGoing(healer, casualty);
    return priority;
   }
   // A Game Master's explicit order isn't second-guessed.
@@ -318,10 +347,10 @@ modded class SCR_AIMedicHealBehavior
   }
   if (m_iBBBDecision == BBB_Medic.GO)
   {
-   if (m_Utility.GetCurrentBehavior() == this) BBB_Medic.MarkGoing(healer, true);
+   if (m_Utility.GetCurrentBehavior() == this) BBB_Medic.MarkGoing(healer, casualty);
    return priority;
   }
-  BBB_Medic.MarkGoing(healer, false);
+  BBB_Medic.MarkGoing(healer, null);
   BBB_Medic.MarkHeld(casualty);
   return 0;
  }
@@ -330,7 +359,9 @@ modded class SCR_AIMedicHealBehavior
  {
   super.OnActionSelected();
   BBB_Medic.s_iStarted++;
-  if (m_Utility) BBB_Medic.Count(BBB_Medic.s_mStartedBy, m_Utility.m_OwnerEntity);
+  if (!m_Utility) return;
+  BBB_Medic.Count(BBB_Medic.s_mStartedBy, m_Utility.m_OwnerEntity);
+  BBB_Medic.MarkGoing(m_Utility.m_OwnerEntity, m_EntityToHeal.m_Value);
  }
 
  override void OnActionCompleted()
@@ -339,21 +370,19 @@ modded class SCR_AIMedicHealBehavior
   BBB_Medic.s_iDone++;
   if (!m_Utility) return;
   BBB_Medic.Count(BBB_Medic.s_mDoneBy, m_Utility.m_OwnerEntity);
-  BBB_Medic.MarkGoing(m_Utility.m_OwnerEntity, false);
+  BBB_Medic.MarkGoing(m_Utility.m_OwnerEntity, null);
  }
 
  override void OnActionFailed()
  {
   super.OnActionFailed();
-  if (m_Utility) BBB_Medic.MarkGoing(m_Utility.m_OwnerEntity, false);
+  if (m_Utility) BBB_Medic.MarkGoing(m_Utility.m_OwnerEntity, null);
  }
 }
 
-// Fix 2 (watch the healer on his way) and the paused timeout while a heal is held.
+// The paused timeout while a heal is held (fix 2, the healer watch, is BBB_Medic.WatchGoing).
 modded class SCR_AIHealActivity
 {
- protected IEntity m_BBBMedic;
- protected bool m_bBBBMedicFit;
  protected float m_fBBBLastMs;
  protected float m_fBBBBornMs;
 
@@ -368,18 +397,6 @@ modded class SCR_AIHealActivity
    if (on && m_fBBBLastMs > 0 && BBB_Medic.HeldLately(casualty) && now - m_fBBBBornMs < BBB_Medic.MAX_HOLD_S * 1000)
     m_fTimeCreated_world += now - m_fBBBLastMs;
    m_fBBBLastMs = now;
-   IEntity medic = m_MedicEntity.m_Value;
-   if (medic != m_BBBMedic)
-   {
-    m_BBBMedic = medic;
-    m_bBBBMedicFit = medic && BBB_Medic.Fit(medic);
-   }
-   else if (medic && m_bBBBMedicFit && !BBB_Medic.Fit(medic))
-   {
-    m_bBBBMedicFit = false;
-    // Hit while on his way (not while holding back or kneeling next to the casualty).
-    if (BBB_Medic.Going(medic) && vector.Distance(medic.GetOrigin(), casualty.GetOrigin()) > BBB_Medic.ARRIVED_M) BBB_Medic.HealerHit(casualty, medic, on);
-   }
   }
   return super.CustomEvaluate();
  }
