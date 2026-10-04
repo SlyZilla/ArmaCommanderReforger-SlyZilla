@@ -44,6 +44,15 @@ class BBB_MedicTest : BBB_AimTest
  static const ResourceName SENTRY_US = "{3BF36BDEEB33AEC9}Prefabs/Groups/BLUFOR/Group_US_SentryTeam.et";
  static const ResourceName SENTRY_USSR = "{CB58D90EA14430AD}Prefabs/Groups/OPFOR/Group_USSR_SentryTeam.et";
  static bool s_bRoad;
+ // Drag mode (-bbbDragTest 1, preset "bbbdrag", needs ACE Core + Carrying loaded, ~18 min):
+ // road layout; rounds 1-2 "still enemy" (sentries can't be hurt and hold fire: does the
+ // drag itself work?), then fights with normal sentries, BBB_Drag on ("BBB") vs off
+ // ("vanilla"), US and USSR healers. BBB_Medic's holds stay off.
+ static bool s_bDrag;
+ ref array<bool> m_aStill = {};
+ bool m_bStill;
+ int m_iDragsAtStart;
+ int m_iArrivedAtStart;
  static const float WOUND_AT_S = 25;
  static const float FIGHT_S = 120;
  static const float LULL_S = 50;
@@ -75,7 +84,8 @@ class BBB_MedicTest : BBB_AimTest
  static void MaybeStartMedic()
  {
   if (s_MedicTest || !Replication.IsServer()) return;
-  s_bRoad = System.IsCLIParam("bbbMedicRoadTest") || System.IsCLIParam("acrBbbMedicRoadTest");
+  s_bDrag = System.IsCLIParam("bbbDragTest") || System.IsCLIParam("acrBbbDragTest");
+  s_bRoad = s_bDrag || System.IsCLIParam("bbbMedicRoadTest") || System.IsCLIParam("acrBbbMedicRoadTest");
   if (!s_bRoad && !System.IsCLIParam("bbbMedicTest") && !System.IsCLIParam("acrBbbMedicTest")) return;
   s_MedicTest = new BBB_MedicTest();
   GetGame().GetCallqueue().CallLater(s_MedicTest.MedicBegin, 10000);
@@ -106,6 +116,14 @@ class BBB_MedicTest : BBB_AimTest
  protected void MedicBegin()
  {
   MedicUnitChecks();
+  if (s_bDrag)
+  {
+   BBB_Medic.s_bOn = false;
+   BBB_Drag.Read();
+   MCheck("ace-carrying-loaded", BBB_Drag.AceLoaded(), "ACE_Carrying_HelperCompartment found by name");
+   vector turned = BBB_Drag.Turn(Vector(1, 0, 0), 90);
+   MCheck("turn-90", Math.AbsFloat(turned[2] - 1) < 0.01, turned.ToString());
+  }
   if (!FindSite())
   {
    Print("[BBB] MEDICTEST range part skipped");
@@ -123,6 +141,17 @@ class BBB_MedicTest : BBB_AimTest
   // then the same keeping the USSR.
   int repeats = MEDIC_REPEATS;
   if (s_bRoad) repeats = 1;
+  if (s_bDrag)
+  {
+   // m_aSwap = drag off; m_aKeepA = US healers; m_aStill = the enemy can't be hurt and holds fire.
+   m_aSwap.Insert(false); m_aKeepA.Insert(true); m_aStill.Insert(true);
+   m_aSwap.Insert(false); m_aKeepA.Insert(false); m_aStill.Insert(true);
+   m_aSwap.Insert(false); m_aKeepA.Insert(true); m_aStill.Insert(false);
+   m_aSwap.Insert(true); m_aKeepA.Insert(true); m_aStill.Insert(false);
+   m_aSwap.Insert(false); m_aKeepA.Insert(false); m_aStill.Insert(false);
+   m_aSwap.Insert(true); m_aKeepA.Insert(false); m_aStill.Insert(false);
+   repeats = 0;
+  }
   for (int r = 0; r < repeats; r++)
   {
    if (s_bRoad)
@@ -158,6 +187,10 @@ class BBB_MedicTest : BBB_AimTest
   m_SideA = new BBB_MedicSide();
   m_SideB = new BBB_MedicSide();
   m_SideA.m_bVanilla = m_aSwap[round];
+  m_bStill = s_bDrag && m_aStill[round];
+  if (s_bDrag) BBB_Drag.s_bOn = !m_aSwap[round];
+  m_iDragsAtStart = BBB_Drag.s_iStarted;
+  m_iArrivedAtStart = BBB_Drag.s_iArrived;
   m_SideB.m_bVanilla = !m_aSwap[round];
   vector from = m_aSiteFrom[0];
   vector dir = m_aSiteDir[0];
@@ -191,7 +224,9 @@ class BBB_MedicTest : BBB_AimTest
   {
    string healers = "USSR";
    if (m_aKeepA[round]) healers = "US";
-   PrintFormat("[BBB] MEDICTEST road round %1/%2: %3 fire team + medic (%4 healing) vs 2-man sentry team at %5 m", round + 1, m_aSwap.Count(), healers, m_SideA.Label(), Distance());
+   string extra = "";
+   if (s_bDrag) extra = string.Format(", drag on %1, still enemy %2", BBB_Drag.s_bOn, m_bStill);
+   PrintFormat("[BBB] MEDICTEST road round %1/%2: %3 fire team + medic (%4 healing) vs 2-man sentry team at %5 m%6", round + 1, m_aSwap.Count(), healers, m_SideA.Label(), Distance(), extra);
   }
   else PrintFormat("[BBB] MEDICTEST round %1/%2: US (%3 healing) vs USSR (%4 healing) at %5 m", round + 1, m_aSwap.Count(), m_SideA.Label(), m_SideB.Label(), DISTANCE_M);
  }
@@ -245,6 +280,15 @@ class BBB_MedicTest : BBB_AimTest
   damage.AddParticularBleeding("Chest");
   damage.ForceUnconsciousness(0);
   PrintFormat("[BBB] MEDICTEST %1 side: planted casualty %2, %3 m from the enemy start, unconscious %4", side.Label(), BBB_Medic.Name(pick), Math.Round(best), character.GetCharacterController().IsUnconscious());
+  GetGame().GetCallqueue().CallLater(ReportCasualty, 2000, false, pick);
+ }
+
+ protected void ReportCasualty(IEntity man)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(man);
+  if (!character) return;
+  SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(character.GetCharacterController());
+  PrintFormat("[BBB] MEDICTEST planted casualty 2 s later: life state %1, bleeding %2", typename.EnumToString(ECharacterLifeState, controller.GetLifeState()), BBB_Medic.Bleeding(man));
  }
 
  protected bool Treated(IEntity man)
@@ -330,7 +374,8 @@ class BBB_MedicTest : BBB_AimTest
    m_bHooked = true;
    HookSide(m_SideA);
    HookSide(m_SideB);
-   if (s_bRoad) Unhurtable(m_SideB);
+   if (s_bRoad && (!s_bDrag || m_bStill)) Unhurtable(m_SideB);
+   if (m_bStill && m_SideB.m_Group && m_SideB.m_Group.GetGroupUtilityComponent()) m_SideB.m_Group.GetGroupUtilityComponent().SetCombatMode(EAIGroupCombatMode.HOLD_FIRE);
   }
   if (m_bHooked && !m_bWounded && now >= m_fWoundAt)
   {
@@ -383,6 +428,15 @@ class BBB_MedicTest : BBB_AimTest
   int hit = SumFor(BBB_Medic.s_mHitBy, side);
   int dead = Dead(side);
   string label = side.Label();
+  if (m_bStill) label = label + " (still enemy)";
+  if (s_bDrag)
+  {
+   int drags = BBB_Drag.s_iStarted - m_iDragsAtStart;
+   int inCover = BBB_Drag.s_iArrived - m_iArrivedAtStart;
+   PrintFormat("[BBB] MEDICTEST %1: drags started %2, reached cover %3", label, drags, inCover);
+   Add(label, "drags started", drags);
+   Add(label, "drags reached cover", inCover);
+  }
   PrintFormat("[BBB] MEDICTEST %1 side (%2): heals started %3, done %4, healers hit on the way %5, own down at fight end %6, dead %7, enemies downed %8", label, kept, started, done, hit, ownDown, dead, enemyDown);
   if (!kept)
   {

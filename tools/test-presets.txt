@@ -53,3 +53,4 @@ bbbmedic|-acrBbbMedicTest 1|1800
 bbbmedicroad|-acrBbbMedicRoadTest 1|1800
 structures|-acrStructuresTest 1|160
 survey|-acrSurveyTest 1|90|Worlds/ACR_Arland.ent
+bbbdrag|-acrBbbDragTest 1|1500

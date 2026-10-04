@@ -321,6 +321,9 @@ modded class SCR_AIMedicHealBehavior
   IEntity healer = m_Utility.m_OwnerEntity;
   IEntity casualty = m_EntityToHeal.m_Value;
   if (!healer || !casualty) return priority;
+  // BBB_Drag: move the casualty into cover first (ACE Carrying, when loaded).
+  if (BBB_Drag.Busy(healer)) return 0;
+  if (BBB_Drag.Consider(m_Utility, healer, casualty, EvaluatePriorityLevel())) return 0;
   if (!BBB_Medic.On(healer))
   {
    // Vanilla healing (off, or the test's vanilla side): on his way while this runs.
