@@ -64,6 +64,14 @@ class ACR_TestHelipad
    foreach (ACR_Base b : ACR_Base.s_All) if (b != s_Base && b.m_sOwner == "US") other = b;
    if (other) ACR_TestRegress.Check("helipad: no buying at a base without a pad", station.CantBuy("US", other).Contains("no helipad"), station.CantBuy("US", other));
    ACR_TestRegress.Check("helipad: the pad belongs to its base", s_Pad && s_Pad.Base() == s_Base, "");
+   ACR_Base named;
+   foreach (ACR_Base nb : ACR_Base.s_All) if (nb != s_Base) named = nb;
+   if (named && s_Pad)
+   {
+    s_Pad.m_sBase = named.m_sName;
+    ACR_TestRegress.Check("helipad: a named base owns the pad", s_Pad.Base() == named, named.m_sName);
+    s_Pad.m_sBase = "";
+   }
    s_Heli = station.Station("US", true, s_Base, "Support gunship 1");
    ACR_TestRegress.Check("helipad: gunship stationed on the pad", s_Heli != null && s_Heli.m_Vehicle != null, "");
    ACR_TestRegress.Check("helipad: a second one finds the pad taken", station.CantBuy("US", s_Base).Contains("No free helipad"), station.CantBuy("US", s_Base));

@@ -192,11 +192,12 @@ supports fly in from off the map as before (no purchase).
 
 ### ACR_Helipad
 
-A helipad for support helicopters, placed inside a base circle (within its radius + 60 m). The
-base's owner owns the pad. Leave room for a Mi-8: level ground and about 11 m clear all round.
+A helipad for support helicopters. It belongs to the nearest base (any distance) or to the base
+named in `m_sBase`, and that base's owner owns the pad. Leave room for a Mi-8: level ground and about 11 m clear all round.
 
 | Setting | Default | What it does |
 |---|---|---|
+| `m_sBase` | empty | Name of the base this pad belongs to, as shown on the map. Empty = the nearest base |
 | `m_bModel` | on | Places a helipad model (US or USSR style, from the base's starting owner). Off when the world already has a helipad at this spot |
 
 ### ACR_Base

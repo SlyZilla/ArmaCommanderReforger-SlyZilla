@@ -12,6 +12,9 @@ class ACR_Helipad : GenericEntity
  [Attribute("1", UIWidgets.CheckBox, "Place a helipad model here (off when the world already has one at this spot)")]
  bool m_bModel;
 
+ [Attribute("", UIWidgets.EditBox, "Base this pad belongs to (its name on the map). Empty = the nearest base")]
+ string m_sBase;
+
  static const ResourceName MODEL_WEST = "{CF1FFB7BAA1A0769}Prefabs/Structures/Military/Camps/HelipadImprovised_01/HelipadImprovised_US_01.et";
  static const ResourceName MODEL_EAST = "{8CDB9C117669AF4A}Prefabs/Structures/Military/Camps/HelipadImprovised_01/HelipadImprovised_USSR_01.et";
  static ref array<ACR_Helipad> s_All = {};
@@ -73,18 +76,26 @@ class ACR_Helipad : GenericEntity
   return ACR_Manager.Ground(GetOrigin());
  }
 
- // The base this pad belongs to (its owner owns the pad).
+ // The base this pad belongs to (its owner owns the pad): the one named in m_sBase, else the
+ // nearest (any distance; Jacob 4 Oct: the old radius + 60 m rule was too tight to place pads).
  ACR_Base Base()
  {
   ACR_Base best;
   float bestDistance = float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
+   if (m_sBase != "" && (base.m_sName == m_sBase || base.GetLabel() == m_sBase)) return base;
    float d = vector.DistanceXZ(base.GetOrigin(), GetOrigin());
-   if (d <= base.m_fRadius + 60 && d < bestDistance) { bestDistance = d; best = base; }
+   if (d < bestDistance) { bestDistance = d; best = base; }
+  }
+  if (m_sBase != "" && !m_bWarned)
+  {
+   m_bWarned = true;
+   PrintFormat("[ACR] HELIPAD %1: no base named '%2', using the nearest (%3)", GetName(), m_sBase, best != null);
   }
   return best;
  }
+ protected bool m_bWarned;
 }
 
 enum ACR_EHeliState
