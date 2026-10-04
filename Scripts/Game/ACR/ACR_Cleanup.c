@@ -167,7 +167,7 @@ class ACR_Cleanup : Managed
  {
   int count;
   foreach (ACR_Squad squad : m_Manager.m_Squads)
-   if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == faction) count += squad.CountAlive();
+   if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == faction) count += squad.CountAlive() + squad.CountDormant();
   return count;
  }
 

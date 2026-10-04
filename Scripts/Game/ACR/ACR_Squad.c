@@ -1559,6 +1559,14 @@ class ACR_Squad : Managed
   return alive;
  }
 
+ // Soldiers the engine took away for its active-AI limit (group dormant); they still count
+ // toward the soldier cap so the AI doesn't keep buying empty squads.
+ int CountDormant()
+ {
+  if (!m_Group || !m_Group.IsDormant()) return 0;
+  return Math.Max(0, m_Group.GetDormantAliveCount());
+ }
+
  // Rough fighting value: soldiers, plus 5 per armed (manned gun) vehicle (Arma Commander's default vehicle value).
  int Strength()
  {

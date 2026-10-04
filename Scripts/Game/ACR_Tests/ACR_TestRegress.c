@@ -60,6 +60,9 @@ class ACR_TestRegress
    if (!manager.m_Supports) manager.m_Supports = new ACR_Supports(manager);
    Check("USSR gets the Mi-8", manager.m_Supports.HelicopterFor("USSR") == ACR_Supports.HELI_EAST, manager.m_Supports.HelicopterFor("USSR"));
    Check("door-gunner helicopters exist", Resource.Load(ACR_Supports.HELI_TRANSPORT_WEST).IsValid() && Resource.Load(ACR_Supports.HELI_TRANSPORT_EAST).IsValid(), "");
+   // Engine active-AI limit fits both sides' soldier caps (4 Oct: 3/4 of squads evicted at 128).
+   int aiLimit = GetGame().GetAIWorld().GetLimitOfActiveAIs();
+   Check("active AI limit fits both soldier caps", aiLimit >= 2 * manager.m_iSoldierCap, string.Format("limit %1, cap %2", aiLimit, manager.m_iSoldierCap));
    Check("US gets the UH-1H", manager.m_Supports.HelicopterFor("US") == ACR_Supports.HELI_WEST, manager.m_Supports.HelicopterFor("US"));
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
    string saved = soviets.m_sSupportHelicopter;

@@ -226,9 +226,37 @@ class ACR_Manager : Managed
    }
   }
   ACR_PlayerSide.Key();
+  RaiseActiveAILimit();
   PrintFormat("[ACR] Threat level: %1", ThreatName(threat));
   PrintFormat("[ACR] Host options: skill %1, reaction %2, soldier cap %3, AI %4, unit cap %5, start RP %6, income x%7, shared command %8",
    m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption(), m_SharedCommand);
+ }
+
+ // The engine's own active-AI limit (SCR_AIWorld.et "Active AI limit", 128 for the whole world)
+ // evicts groups above it: their soldiers are deleted and the empty group stays (live 4 Oct:
+ // 3/4 of the enemy markers had nobody in them at soldier cap 150). Make room for both sides'
+ // soldier caps plus garrisons, supports, mortar teams and players.
+ static const int AI_LIMIT_HEADROOM = 64;
+ void RaiseActiveAILimit()
+ {
+  AIWorld aiWorld = GetGame().GetAIWorld();
+  if (!aiWorld) return;
+  int wanted = 2 * m_iSoldierCap + AI_LIMIT_HEADROOM;
+  int was = aiWorld.GetLimitOfActiveAIs();
+  if (wanted > was) aiWorld.SetLimitOfActiveAIs(wanted);
+  PrintFormat("[ACR] Active AI limit %1 (was %2)", aiWorld.GetLimitOfActiveAIs(), was);
+ }
+
+ // Logs whenever the engine still evicts groups (soldiers deleted for the AI limit).
+ protected int m_iEvictionsLogged;
+ void WatchEvictions()
+ {
+  ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  if (!aiWorld) return;
+  int evicted = aiWorld.GetLastTickEvictions();
+  if (evicted <= 0 || m_iEvictionsLogged >= 20) return;
+  m_iEvictionsLogged++;
+  PrintFormat("[ACR] AI LIMIT: engine evicted %1 group(s); active %2 / limit %3", evicted, aiWorld.GetCurrentNumOfActiveAIs(), aiWorld.GetLimitOfActiveAIs());
  }
 
  static int StartRPOption()
@@ -306,6 +334,7 @@ class ACR_Manager : Managed
   Pings().Tick();
   t = ACR_Perf.Lap("cleanup", t);
   if (!m_bHostOptionsApplied) ApplyHostOptions();
+  WatchEvictions();
   m_iStatusTick++;
   bool statusDue = m_iStatusTick % 5 == 0;
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
