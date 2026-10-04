@@ -1,6 +1,10 @@
 // -acrPadsTest 1 (server, Arland, ~1 min): survey for helipads. Lists helipad objects already
 // in the world near each base and the level, open spots (room for a Mi-8) in and around them.
+// Every placed pad must have nothing standing within 12 m (2 m grid of downward traces; the
+// helipad models themselves ignored).
 // Then each side buys both support helicopters for its HQ's pads: they must sit upright and unhurt.
+// Then each side calls its door-gunner helicopter on Military Hill: it must lift off its pad
+// (above 25 m) unhurt, which catches pads hemmed in by roofs, wires or trees (~75 s in all).
 class ACR_TestPads
 {
  static ref array<IEntity> s_Found = {};
@@ -62,8 +66,11 @@ class ACR_TestPads
 
  static void Run(ACR_TestHarness h, int tick)
  {
+  if (tick == 6) CheckClear();
   if (tick == 8) BuyAll();
-  if (tick == 25) { CheckParked(); Print("[ACR] TEST COMPLETE"); }
+  if (tick == 25) { CheckParked(); CallBoth(); }
+  if (tick > 25 && tick < 65) WatchLift();
+  if (tick == 65) { CheckLift(); Print("[ACR] TEST COMPLETE"); }
   if (tick != 5) return;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
@@ -77,6 +84,42 @@ class ACR_TestPads
    if (base.m_sName == "Heide") count = 10;
    s_Spots.Clear();
    Survey(base, reach, count);
+  }
+ }
+
+ static bool NotPad(notnull IEntity e)
+ {
+  if (!e.GetPrefabData()) return true;
+  return !e.GetPrefabData().GetPrefabName().Contains("elipad");
+ }
+
+ static void CheckClear()
+ {
+  BaseWorld world = GetGame().GetWorld();
+  foreach (ACR_Helipad pad : ACR_Helipad.s_All)
+  {
+   vector c = pad.GetOrigin();
+   int blocked;
+   string what;
+   for (float dx = -12; dx <= 12; dx += 2)
+    for (float dz = -12; dz <= 12; dz += 2)
+    {
+     if (dx * dx + dz * dz > 144) continue;
+     float x = c[0] + dx, z = c[2] + dz;
+     float ty = world.GetSurfaceY(x, z);
+     TraceParam trace = new TraceParam();
+     trace.Start = Vector(x, ty + 40, z);
+     trace.End = Vector(x, ty - 0.5, z);
+     trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+     float fraction = world.TraceMove(trace, NotPad);
+     if (fraction >= 1 || 40 - 40.5 * fraction < 0.4) continue;
+     blocked++;
+     if (trace.TraceEnt && trace.TraceEnt.GetPrefabData() && what.Length() < 200) what += " " + FilePath.StripPath(trace.TraceEnt.GetPrefabData().GetPrefabName());
+    }
+   string baseName = "none";
+   if (pad.Base()) baseName = pad.Base().m_sName;
+   PrintFormat("[ACR] PADS pad at %1 yaw %2 base %3: %4 blocked cells%5", c, pad.Yaw(), baseName, blocked, what);
+   ACR_TestRegress.Check("pads: pad at " + c.ToString() + " (" + baseName + ") clear within 12 m", blocked == 0, what);
   }
  }
 
@@ -100,6 +143,49 @@ class ACR_TestPads
     if (pad) base = pad.Base();
     PrintFormat("[ACR] PADS %1 buys %2: %3", side, entry.m_sName, manager.PurchaseAt(side, i, base));
    }
+  }
+ }
+
+ static ref map<string, float> s_Lift = new map<string, float>();
+ static ref map<string, float> s_Health = new map<string, float>();
+
+ static void CallBoth()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  vector target;
+  foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sName == "Military Hill") target = base.GetOrigin();
+  array<string> sides = {"US", "USSR"};
+  foreach (string side : sides)
+  {
+   int index = -1;
+   foreach (int i, ACR_SupportEntry entry : manager.m_Bases.GetFaction(side).m_aSupports)
+    if (entry.m_eType == ACR_ESupportType.HELI_DOOR_GUNS) index = i;
+   manager.m_Bases.GetFaction(side).m_iRP = 1000;
+   string refused = manager.m_Supports.Call(side, index, ACR_Manager.Ground(target), true);
+   PrintFormat("[ACR] PADS %1 calls door gunners on Military Hill: %2", side, refused);
+   s_Lift.Set(side, 0);
+   s_Health.Set(side, 1);
+  }
+ }
+
+ static void WatchLift()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  foreach (ACR_StationedHeli heli : manager.m_Supports.Station().m_Helis)
+  {
+   if (!heli.m_sName.Contains("door") || !heli.m_Vehicle) continue;
+   float height = heli.m_Vehicle.GetOrigin()[1] - heli.m_Pad.Spot()[1];
+   s_Lift.Set(heli.m_sFaction, Math.Max(s_Lift.Get(heli.m_sFaction), height));
+   s_Health.Set(heli.m_sFaction, Math.Min(s_Health.Get(heli.m_sFaction), ACR_Logistics.Health(heli.m_Vehicle)));
+  }
+ }
+
+ static void CheckLift()
+ {
+  foreach (string side, float lift : s_Lift)
+  {
+   PrintFormat("[ACR] PADS %1 door gunners: rose %2 m over the pad, lowest health %3", side, lift, s_Health.Get(side));
+   ACR_TestRegress.Check("pads: " + side + " door gunners lift off the pad unhurt", lift > 25 && s_Health.Get(side) > 0.9, string.Format("%1 m, health %2", lift, s_Health.Get(side)));
   }
  }
 

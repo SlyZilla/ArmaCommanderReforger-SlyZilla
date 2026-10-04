@@ -36,7 +36,7 @@ SCR_LoadoutManager ACR_Loadouts : "{97EF4C1A41F63DDB}Prefabs/MP/Managers/Loadout
  coords 2400 0 2400
 }
 SCR_SpawnPoint ACR_PlayerSpawn : "{5A2220DD0C16958B}Prefabs/MP/Spawning/SpawnPoint_US.et" {
- coords 1225 38 2790
+ coords 1352 38 2945
 }
 SCR_AIWorld ACR_AIWorld : "{E0A05C76552E7F58}Prefabs/AI/SCR_AIWorld.et" {
  components {
@@ -74,7 +74,7 @@ ACR_Mode ACR_Mode {
  coords 2400 111 2400
 }
 ACR_FactionSettings ACR_Settings_US {
- coords 1236 38 2795
+ coords 1350 38 2955
  m_sFaction "US"
  m_iStartingRP 100
 }
@@ -84,7 +84,7 @@ ACR_FactionSettings ACR_Settings_USSR {
  m_iStartingRP 100
 }
 ACR_Base ACR_Base_0 {
- coords 1236 38 2795
+ coords 1350 38 2955
  m_sName "Airfield"
  m_sOwner "US"
  m_iGarrison 6
@@ -94,7 +94,7 @@ ACR_Base ACR_Base_0 {
  m_fRadius 80
 }
 ACR_Base ACR_Base_1 {
- coords 1445 37 2367
+ coords 1378 36 2385
  m_sName "Barracks"
  m_sOwner "US"
  m_iGarrison 4
@@ -104,13 +104,13 @@ ACR_Base ACR_Base_1 {
  m_fRadius 50
 }
 ACR_Base ACR_Base_2 {
- coords 2094 54 2940
+ coords 1998 52 3022
  m_sName "Farm"
  m_iGarrison 0
  m_iValue 1
  m_bIncome 1
  m_bHidden 0
- m_fRadius 40
+ m_fRadius 45
 }
 ACR_Base ACR_Base_3 {
  coords 2582 122 2343
@@ -191,27 +191,27 @@ ACR_Base ACR_Base_10 {
  m_fRadius 40
 }
 ACR_StartingUnit ACR_Start_0 {
- coords 1265 40 2780
+ coords 1345 38 2935
  m_sName "1st Squad"
  m_sGroup "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et"
 }
 ACR_StartingUnit ACR_Start_1 {
- coords 1275 40 2805
+ coords 1368 38 2938
  m_sName "2nd Squad"
  m_sGroup "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et"
 }
 ACR_StartingUnit ACR_Start_2 {
- coords 1255 40 2825
+ coords 1350 38 2925
  m_sName "Weapons Team"
  m_sGroup "{958039B857396B7B}Prefabs/Groups/BLUFOR/Group_US_MachineGunTeam.et"
 }
 ACR_StartingUnit ACR_Start_3 {
- coords 1300 40 2785
+ coords 1405 38 2933
  m_sName "Truck 1"
  m_sVehicle "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et"
 }
 ACR_StartingUnit ACR_Start_4 {
- coords 1300 40 2812
+ coords 1440 38 2945
  m_sName "Humvee 1"
  m_sVehicle "{4A71F755A4513227}Prefabs/Vehicles/Wheeled/M998/M1025.et"
 }
@@ -226,14 +226,22 @@ ACR_StartingUnit ACR_Start_6 {
  m_sGroup "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et"
 }
 ACR_Helipad ACR_Helipad_Airfield_1 {
- coords 1256 38 2817
+ coords 1430 38 2918
+ angles 0 165 0
+ m_sBase "Airfield"
 }
 ACR_Helipad ACR_Helipad_Airfield_2 {
- coords 1226 38 2823
+ coords 1461 38 2926
+ angles 0 165 0
+ m_sBase "Airfield"
 }
 ACR_Helipad ACR_Helipad_Heide_1 {
- coords 3178 11 2803
+ coords 3259 2.4 2871
+ angles 0 135 0
+ m_sBase "Heide"
 }
 ACR_Helipad ACR_Helipad_Heide_2 {
- coords 3136 11 2824
+ coords 3277 2 2889
+ angles 0 135 0
+ m_sBase "Heide"
 }
