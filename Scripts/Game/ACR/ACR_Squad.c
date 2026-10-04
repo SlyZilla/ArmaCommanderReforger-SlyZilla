@@ -610,6 +610,7 @@ class ACR_Squad : Managed
  {
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
+  m_iGarrisonReissues = 0;
   m_iOrderSerial++;
   m_iOrderedBy = 0;
   m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
@@ -675,6 +676,7 @@ class ACR_Squad : Managed
  protected bool m_bGarrisonPending;
  protected vector m_GarrisonPending;
  protected int m_iGarrisonTries;
+ protected int m_iGarrisonReissues;
 
  protected bool PlaceGarrison(vector position)
  {
@@ -906,6 +908,14 @@ class ACR_Squad : Managed
   if (HasPlayer()) return;
   HuntTick(now);
   if (m_bGarrisonPending && m_Order == "Garrisoning") PlaceGarrison(m_GarrisonPending);
+  else if (m_sOrderPrefab == WP_GARRISON && m_Order == "Garrisoning" && m_Group.GetCurrentWaypoint() == null && m_iGarrisonReissues < 2)
+  {
+   // The game completed the garrison waypoint (a failed group move does that): again.
+   m_iGarrisonReissues++;
+   PrintFormat("[ACR] GARRISON %1: the game dropped the order, issuing it again", m_Name);
+   if (!ACR_Garrison.HasPosts(m_Group)) PlaceGarrison(m_MoveTarget);
+   else IssueWaypoint(WP_GARRISON, m_MoveTarget, m_fOrderRadius);
+  }
   bool contact = KnownEnemies(350) > 0;
   FollowRoute();
   Cohesion(now, contact);

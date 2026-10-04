@@ -11,6 +11,15 @@ class ACR_TestGarrison
  static int s_iInsideUnderFire, s_iAliveUnderFire;
  static bool s_bContact;
  static SCR_AIGroup s_Enemy;
+ static SCR_AIGroup s_Group;  // the squad garrisoning
+ static bool s_bOffice;       // -acrGarrisonOfficeTest
+
+ static ResourceName RifleSquadOf(ACR_Manager manager, string key)
+ {
+  foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(key).m_aRequisitions)
+   if (entry.m_sVehicle.IsEmpty() && entry.m_sName.Contains("Rifle Squad")) return entry.m_sGroup;
+  return "";
+ }
 
  static bool Collect(IEntity e)
  {
@@ -75,8 +84,51 @@ class ACR_TestGarrison
    vector c2 = alpha.GetAnchor().GetOrigin();
    PrintFormat("[ACR] GARRISON TEST after 1 s: 150 m north loaded %1, requested %2", mesh2.IsTileLoaded(c2 + Vector(0, 0, 130)), mesh2.IsTileRequested(c2 + Vector(0, 0, 130)));
   }
-  if (tick == 5)
+  // -acrGarrisonOfficeTest: Jacob's 4 Oct case, a 9-man rifle squad and the two-storey
+  // office at Barracks (Office_E_01_tutorial, 1370/2350).
+  if (tick == 2 && s_bOffice)
   {
+   // no enemy base garrisons waking up near the office (Outpost is 170 m off)
+   foreach (ACR_Base quiet : ACR_Base.s_All) if (quiet.m_sOwner != "US") quiet.m_iGarrisonLeft = 0;
+  }
+  // ...and no Soviet squads about: this run measures moving in, not a firefight
+  if (tick == 4 && s_bOffice)
+  {
+   int removed;
+   foreach (ACR_Squad red : manager.m_Squads)
+   {
+    if (!red || !red.GetFaction() || red.GetFaction().GetFactionKey() == "US") continue;
+    array<AIAgent> reds = {};
+    red.GetAgents(reds);
+    foreach (AIAgent r : reds) if (r.GetControlledEntity()) { SCR_EntityHelper.DeleteEntityAndChildren(r.GetControlledEntity()); removed++; }
+   }
+   PrintFormat("[ACR] GARRISON TEST office: %1 Soviet soldiers removed", removed);
+  }
+  if (tick == 5 && s_bOffice)
+  {
+   array<IEntity> near = {};
+   ACR_Garrison.BuildingsWithin(Vector(1370, 0, 2350), 30, near);
+   if (!near.IsEmpty()) s_Building = near[0];
+   ResourceName rifles = RifleSquadOf(manager, "US");
+   if (s_Building && rifles != "")
+   {
+    vector spawnAt = ACR_Manager.Ground(s_Building.GetOrigin() + Vector(-30, 0, 30)); // from the garages, as in the live run
+    s_Group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(rifles, spawnAt));
+   }
+   PrintFormat("[ACR] GARRISON TEST office %1, rifle squad %2", ACR_Garrison.Describe(s_Building), s_Group != null);
+   ACR_TestRegress.Check("garrison: the office and a rifle squad", s_Building && s_Group);
+   if (s_Building)
+   {
+    ACR_Garrison.s_bDebugViews = true;
+    array<ref ACR_GarrisonSpot> officeSpots = ACR_Garrison.Survey(s_Building, h.m_Range.m_Group.GetLeaderAgent(), false);
+    ACR_Garrison.s_bDebugViews = false;
+    foreach (ACR_GarrisonSpot os : officeSpots) PrintFormat("[ACR] GARRISON TEST   spot %1 look %2 stand %3 inside %4", os.m_Pos, os.m_Look, os.m_bStand, os.m_bInterior);
+   }
+   if (!s_Building || !s_Group) Print("[ACR] TEST COMPLETE");
+  }
+  if (tick == 5 && !s_bOffice)
+  {
+   s_Group = h.m_Range.m_Group;
    vector from = alpha.GetAnchor().GetOrigin();
    s_iWanted = alpha.CountAlive();
    s_aBuildings.Clear();
@@ -135,12 +187,27 @@ class ACR_TestGarrison
    ACR_TestRegress.Check("garrison: one post per soldier", placed && posts.Count() == s_iWanted, string.Format("%1 posts, %2 soldiers", posts.Count(), s_iWanted));
    foreach (IEntity post : posts) PrintFormat("[ACR] GARRISON TEST   post %1 facing %2", post.GetOrigin(), post.GetTransformAxis(2));
   }
-  if (!s_Building) return;
+  if (!s_Building || !s_Group) return;
+  ACR_Squad sq = manager.FindSquadByGroup(s_Group);
+  if (!sq) return;
+  if (s_bOffice && tick == 12)
+  {
+   s_iWanted = sq.CountAlive();
+   bool placedOffice = sq.Garrison(s_Building.GetOrigin());
+   array<IEntity> officePosts = {};
+   ACR_Garrison.PostEntities(s_Group, officePosts);
+   PrintFormat("[ACR] GARRISON TEST office: %1 soldiers, order -> %2, %3 posts", s_iWanted, placedOffice, officePosts.Count());
+   ACR_TestRegress.Check("garrison: one post per soldier", officePosts.Count() == s_iWanted, string.Format("%1 posts, %2 soldiers", officePosts.Count(), s_iWanted));
+   foreach (IEntity op : officePosts)
+   {
+    PrintFormat("[ACR] GARRISON TEST   post %1 facing %2 (%3)", op.GetOrigin(), op.GetTransformAxis(2), op.GetPrefabData().GetPrefabName());
+   }
+  }
   // Under fire: a Soviet fire team 140 m out where the first post looks. Do they stay in?
   if (tick == 60)
   {
    array<IEntity> lookPosts = {};
-   ACR_Garrison.PostEntities(h.m_Range.m_Group, lookPosts);
+   ACR_Garrison.PostEntities(s_Group, lookPosts);
    // a spot 70-130 m out that a post can see
    vector enemyAt = ACR_Manager.Ground(s_Building.GetOrigin() + Vector(110, 0, 0));
    bool seen;
@@ -175,9 +242,9 @@ class ACR_TestGarrison
   if (tick > 5 && tick <= 125 && tick % 10 == 0)
   {
    array<IEntity> posts = {};
-   ACR_Garrison.PostEntities(h.m_Range.m_Group, posts);
+   ACR_Garrison.PostEntities(s_Group, posts);
    array<AIAgent> agents = {};
-   alpha.GetAgents(agents);
+   sq.GetAgents(agents);
    int onPost, inside, used;
    string postStates = "";
    foreach (IEntity post : posts)
@@ -191,15 +258,15 @@ class ACR_TestGarrison
      postStates += string.Format(" [y %1 free %2 user %3 short %4]", post.GetOrigin()[1], action.IsActionAccessible(), action.GetUser() != null, pathEnd);
     }
    }
-   SCR_AIGroupUtilityComponent gu = SCR_AIGroupUtilityComponent.Cast(h.m_Range.m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+   SCR_AIGroupUtilityComponent gu = SCR_AIGroupUtilityComponent.Cast(s_Group.FindComponent(SCR_AIGroupUtilityComponent));
    string activity = "none";
    if (gu && gu.GetCurrentAction()) activity = gu.GetCurrentAction().ClassName();
    array<AISmartActionComponent> allocated = {};
-   h.m_Range.m_Group.GetAllocatedSmartActions(allocated);
+   s_Group.GetAllocatedSmartActions(allocated);
    array<AIWaypoint> wps = {};
-   h.m_Range.m_Group.GetWaypoints(wps);
+   s_Group.GetWaypoints(wps);
    string current = "none";
-   AIWaypoint cw = h.m_Range.m_Group.GetCurrentWaypoint();
+   AIWaypoint cw = s_Group.GetCurrentWaypoint();
    if (cw && cw.GetPrefabData()) current = string.Format("%1 r %2 at %3", cw.GetPrefabData().GetPrefabName(), cw.GetCompletionRadius(), cw.GetOrigin());
    PrintFormat("[ACR] GARRISON TEST t=%1: group activity %2, %3 allocated, %4 waypoints, current %5, posts%6", tick, activity, allocated.Count(), wps.Count(), current, postStates);
    string where = "";
@@ -220,36 +287,36 @@ class ACR_TestGarrison
    if (tick == 120)
    {
     // holding = still at the building (inside the tightened waypoint radius + 3 m)
-    AIWaypoint held = h.m_Range.m_Group.GetCurrentWaypoint();
+    AIWaypoint held = s_Group.GetCurrentWaypoint();
     s_iInsideUnderFire = 0;
     foreach (AIAgent holder : agents)
     {
      if (held && holder.GetControlledEntity() && vector.DistanceXZ(holder.GetControlledEntity().GetOrigin(), held.GetOrigin()) < held.GetCompletionRadius() + 3) s_iInsideUnderFire++;
     }
-    s_iAliveUnderFire = alpha.CountAlive();
+    s_iAliveUnderFire = sq.CountAlive();
    }
-   if (tick > 60 && alpha.KnownEnemies(350) > 0) s_bContact = true;
+   if (tick > 60 && sq.KnownEnemies(350) > 0) s_bContact = true;
    float rounds;
    foreach (AIAgent counted : agents) if (counted.GetControlledEntity()) rounds += ACR_Logistics.SoldierMagazines(counted.GetControlledEntity());
-   PrintFormat("[ACR] GARRISON TEST t=%1: %2/%3 on a post, %4 inside the first building, %5 posts in use, order '%6', enemies known %7, magazines %8, post distances:%9", tick, onPost, agents.Count(), inside, used, alpha.m_Order, alpha.KnownEnemies(350), rounds, where);
+   PrintFormat("[ACR] GARRISON TEST t=%1: %2/%3 on a post, %4 inside the first building, %5 posts in use, order '%6', enemies known %7, magazines %8, post distances:%9", tick, onPost, agents.Count(), inside, used, sq.m_Order, sq.KnownEnemies(350), rounds, where);
   }
   if (tick == 126)
   {
    ACR_TestRegress.Check("garrison: soldiers reach their posts", s_iBestOnPost >= Math.Ceil(s_iWanted * 0.75), string.Format("best %1 of %2", s_iBestOnPost, s_iWanted));
-   ACR_TestRegress.Check("garrison: label stays Garrisoning", alpha.m_Order == "Garrisoning", alpha.m_Order);
+   ACR_TestRegress.Check("garrison: label stays Garrisoning", sq.m_Order == "Garrisoning", sq.m_Order);
    if (s_bContact) ACR_TestRegress.Check("garrison: they hold the building in a fight", s_iInsideUnderFire >= Math.Ceil(s_iAliveUnderFire * 0.75), string.Format("%1 of %2 alive still at the building", s_iInsideUnderFire, s_iAliveUnderFire));
    else Print("[ACR] GARRISON TEST no contact with the enemy fire team: hold check skipped");
-   alpha.MoveTo(ACR_Manager.Ground(alpha.m_Home));
-   ACR_TestRegress.Check("garrison: a new order releases the posts", !ACR_Garrison.HasPosts(h.m_Range.m_Group));
+   sq.MoveTo(ACR_Manager.Ground(sq.m_Home));
+   ACR_TestRegress.Check("garrison: a new order releases the posts", !ACR_Garrison.HasPosts(s_Group));
   }
   if (tick == 131)
   {
    ACR_TestRegress.Check("garrison: released posts are deleted", ACR_Garrison.PostCount() == 0, string.Format("%1 left", ACR_Garrison.PostCount()));
    PrintFormat("[ACR] GARRISON TEST %1 unreachable posts were dropped and replaced", ACR_Garrison.s_iDropped);
    // vanilla comparison: a plain Defend replaced by a move (script error check)
-   alpha.Defend(alpha.GetAnchor().GetOrigin());
+   sq.Defend(sq.GetAnchor().GetOrigin());
   }
-  if (tick == 146) alpha.MoveTo(ACR_Manager.Ground(alpha.m_Home));
+  if (tick == 146) sq.MoveTo(ACR_Manager.Ground(sq.m_Home));
   if (tick == 150) Print("[ACR] TEST COMPLETE");
  }
 }

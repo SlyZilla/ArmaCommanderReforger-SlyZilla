@@ -15,6 +15,7 @@ class ACR_GarrisonSpot : Managed
  vector m_Pos;    // floor point
  vector m_Look;   // horizontal unit vector out of the window
  bool m_bStand;   // the view is only clear standing (high sill)
+ bool m_bInterior; // no window: a place inside for soldiers the windows can't take
  float m_fScore;
 }
 
@@ -26,6 +27,7 @@ class ACR_Garrison
  static float SPILL_RADIUS = 40;      // neighbours taken when one building isn't enough
  static float PICK_RADIUS = 60;       // buildings looked at round the clicked point
  static const float SPACING = 2.2;    // between posts (any squad's)
+ static const float INTERIOR_SPACING = 3.0; // between places inside (no window)
  static const float GRID = 1.25;      // survey step
  static const float OPENING = 1.6;    // a post is this close to the outside
  static const float VIEW = 8;         // clear view out through the opening
@@ -144,8 +146,19 @@ class ACR_Garrison
   }
   if (posts.IsEmpty()) return 0;
   s_Posts.Set(group, posts);
-  center = first.GetOrigin();
-  center[1] = GetGame().GetWorld().GetSurfaceY(center[0], center[2]);
+  // The waypoint goes on a post (on the navmesh, ground floor, nearest the building's
+  // middle), not the building's origin: a group that can't walk to its waypoint gets
+  // it completed by the game and goes Idle (4 Oct live: the office at Barracks, half the
+  // squad in the hallway, the rest milling about outside).
+  vector middle = first.GetOrigin();
+  float ground = GetGame().GetWorld().GetSurfaceY(middle[0], middle[2]);
+  float best = float.MAX;
+  foreach (IEntity candidate : posts)
+  {
+   vector at = candidate.GetOrigin();
+   float cost = vector.DistanceXZ(at, middle) + 3 * Math.AbsFloat(at[1] - ground);
+   if (cost < best) { best = cost; center = at; }
+  }
   // Arrival radius; once the soldiers are going to their posts WatchPosts tightens it
   // (TightRadius): the game's combat moves stay inside a defend waypoint's radius and
   // head back in from outside it, so that keeps the garrison in its buildings in a fight.
@@ -180,7 +193,9 @@ class ACR_Garrison
    foreach (ACR_GarrisonSpot spot : spots)
    {
     if (chosen.Count() >= wanted) break;
-    if (TooClose(spot.m_Pos, taken) || IsBad(spot.m_Pos)) continue;
+    float spacing = SPACING;
+    if (spot.m_bInterior) spacing = INTERIOR_SPACING;
+    if (TooClose(spot.m_Pos, taken, spacing) || IsBad(spot.m_Pos)) continue;
     chosen.Insert(spot);
     taken.Insert(spot.m_Pos);
    }
@@ -235,6 +250,19 @@ class ACR_Garrison
   if (!utility) return;
   AIActionBase activity = utility.GetCurrentAction();
   if (!SCR_AIDefendActivity.Cast(activity) && !SCR_AIIdleActivity.Cast(activity)) return; // still on the way, or fighting
+  // In a fight soldiers leave their posts to shoot (the game's attack outranks them):
+  // that's no sign a post can't be reached, so nothing is counted then.
+  if (utility.m_Perception)
+  {
+   foreach (IEntity enemy : utility.m_Perception.m_aTargetEntities)
+   {
+    if (enemy && ACR_Respawn.IsAlive(enemy) && vector.DistanceXZ(enemy.GetOrigin(), waypoint.GetOrigin()) < 400)
+    {
+     foreach (IEntity calm : posts) { s_Stuck.Remove(calm); s_LastPos.Remove(calm); }
+     return;
+    }
+   }
+  }
   float tight;
   if (SCR_AIDefendActivity.Cast(activity) && s_Tight.Find(group, tight) && waypoint.GetCompletionRadius() > tight)
   {
@@ -352,11 +380,11 @@ class ACR_Garrison
   return true;
  }
 
- protected static bool TooClose(vector at, array<vector> taken)
+ protected static bool TooClose(vector at, array<vector> taken, float spacing = SPACING)
  {
   foreach (vector t : taken)
   {
-   if (vector.DistanceXZ(at, t) < SPACING && Math.AbsFloat(at[1] - t[1]) < 2) return true;
+   if (vector.DistanceXZ(at, t) < spacing && Math.AbsFloat(at[1] - t[1]) < 2) return true;
   }
   return false;
  }
@@ -607,7 +635,10 @@ class ACR_Garrison
    spots.RemoveOrdered(bestIndex);
   }
   if (cache) s_Survey.Set(building, sorted);
-  PrintFormat("[ACR] GARRISON survey %1: %2 spots of %3 floor points (%4 ms; no head room %5, no roof %6, off navmesh %7, not at a wall %8, no view %9)", Describe(building), sorted.Count(), candidates, System.GetTickCount() - started, s_iNoHead, s_iNoRoof, s_iNoMesh, s_iNoWall, s_iNoView);
+  int inside;
+  foreach (ACR_GarrisonSpot counted : sorted) if (counted.m_bInterior) inside++;
+  string why = string.Format("no head room %1, no roof %2, off navmesh %3, not at a wall %4, no view %5", s_iNoHead, s_iNoRoof, s_iNoMesh, s_iNoWall, s_iNoView);
+  PrintFormat("[ACR] GARRISON survey %1: %2 spots (%3 inside, no window) of %4 floor points (%5 ms; %6)", Describe(building), sorted.Count(), inside, candidates, System.GetTickCount() - started, why);
   return sorted;
  }
 
@@ -643,7 +674,7 @@ class ACR_Garrison
    if (!HitsBuilding(probe + Vector(0, 1.85, 0), probe + Vector(0, 8, 0))) outward.Insert(dir);
   }
   s_Building = null;
-  if (outward.IsEmpty()) { s_iNoWall++; return null; }
+  if (outward.IsEmpty()) { s_iNoWall++; return Interior(building, at); }
   for (int stance = 0; stance < 2; stance++)
   {
    float eye = 1.0;
@@ -670,7 +701,23 @@ class ACR_Garrison
    return spot;
   }
   s_iNoView++;
-  return null;
+  return Interior(building, at);
+ }
+
+ // Indoors on the navmesh but no view out: kept as a place inside the building for the
+ // soldiers the windows can't take (better than the game's sector cover round the
+ // waypoint, which put them outside or into walls: 4 Oct live, "a little dancy dance").
+ protected static ACR_GarrisonSpot Interior(IEntity building, vector at)
+ {
+  ACR_GarrisonSpot spot = new ACR_GarrisonSpot();
+  spot.m_Pos = at;
+  vector away = at - building.GetOrigin();
+  away[1] = 0;
+  if (away.Length() < 0.1) away = building.GetTransformAxis(2);
+  spot.m_Look = away.Normalized();
+  spot.m_bInterior = true;
+  spot.m_fScore = 0.1;
+  return spot;
  }
 
  protected static bool TraceDown(vector from, vector to, out float hitY)

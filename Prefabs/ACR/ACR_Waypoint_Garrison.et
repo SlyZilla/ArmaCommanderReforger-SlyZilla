@@ -18,5 +18,13 @@ SCR_DefendWaypoint : "{49CED34BBCD060F0}Prefabs/AI/Waypoints/AIWaypoint_Base.et"
     "ACRGarrison"
    }
   }
+  SCR_DefendWaypointPreset "{5AC2309260A00A14}" {
+   m_sName "Garrison (enemies inside the radius)"
+   m_bUseTurrets 0
+   m_fFractionOfSA 1
+   m_aTagsForSearch {
+    "ACRGarrison"
+   }
+  }
  }
 }
