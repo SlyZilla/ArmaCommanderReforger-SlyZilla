@@ -274,7 +274,7 @@ and in singleplayer (Play-Arland), where the game is its own server.
 | `-acrIncome X` | Income multiplier (default 1) |
 | `-acrSkill N` | AI skill (overrides `m_iAISkill`) |
 | `-acrReaction X` | AI spotting speed (overrides `m_fAIPerception`) |
-| `-acrSoldierCap N` | Living AI soldiers per side before purchases stop (default 100) |
+| `-acrSoldierCap N` | Living AI soldiers per side before purchases stop (default 100). The game's active-AI limit is raised to 2 x this + 64 so bought squads are never left empty |
 | `-acrSharedCommand 0` / `1` | Overrides `m_bSharedCommand` |
 | `-acrRespawnSeconds N` | Overrides `m_iRespawnSeconds` |
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
