@@ -50,3 +50,4 @@ helipad|-acrHelipadTest 1|280
 garrison|-acrGarrisonTest 1|220
 bbbmedic|-acrBbbMedicTest 1|1800
 bbbmedicroad|-acrBbbMedicRoadTest 1|1800
+structures|-acrStructuresTest 1|160

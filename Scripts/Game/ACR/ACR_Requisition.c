@@ -119,6 +119,16 @@ class ACR_Requisition : Managed
    vehiclePos = SpawnPoint(base, 10, 25, 4);
    groupPos = SpawnPoint(base, 5, 15, 1.5);
   }
+  // Bought helicopters appear on a free helipad of the base when it has one.
+  if (entry.m_bAircraft && entry.m_iSupportHeli == 0 && !entry.m_sVehicle.IsEmpty())
+  {
+   ACR_Helipad pad = m_Manager.m_Supports.Station().ClearPad(key, base);
+   if (pad)
+   {
+    vehiclePos = pad.Spot();
+    PrintFormat("[ACR] PURCHASE %1 on the helipad at %2", entry.m_sName, vehiclePos);
+   }
+  }
   if (entry.m_iSupportHeli > 0)
   {
    m_Manager.m_sSpawningFaction = "";

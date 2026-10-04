@@ -49,6 +49,46 @@ class ACR_Logistics : Managed
  protected ref map<IEntity, float> m_GameSupplies = new map<IEntity, float>(); // container value after our last write
  protected static ref map<ResourceName, int> s_ServiceCache = new map<ResourceName, int>();
 
+ // Service points: built structures (ACR_Structures: field hospital, vehicle maintenance, ammo
+ // and fuel storage). Free and unlimited, but slow: soldiers are served after POINT_DWELL_MS in
+ // range (then every POINT_SOLDIER_MS), vehicles one step every POINT_VEHICLE_MS.
+ static const float POINT_DWELL_MS = 20000;
+ static const float POINT_SOLDIER_MS = 30000;
+ static const float POINT_VEHICLE_MS = 10000;
+ protected ref map<IEntity, int> m_PointFlags = new map<IEntity, int>();
+ protected ref map<IEntity, string> m_PointFaction = new map<IEntity, string>();
+ protected ref map<IEntity, float> m_ArrivedAt = new map<IEntity, float>();   // soldier -> first seen at a point
+ protected ref map<IEntity, float> m_LastSeenAt = new map<IEntity, float>();
+ protected ref map<IEntity, ref map<IEntity, float>> m_VehicleServedAt = new map<IEntity, ref map<IEntity, float>>(); // point -> vehicle -> time
+
+ void AddPoint(IEntity point, int flags, string faction)
+ {
+  m_PointFlags.Set(point, flags);
+  m_PointFaction.Set(point, faction);
+ }
+
+ void RemovePoint(IEntity point)
+ {
+  m_PointFlags.Remove(point);
+  m_PointFaction.Remove(point);
+ }
+
+ // Drops points whose structure was deleted.
+ void PrunePoints()
+ {
+  for (int i = m_PointFlags.Count() - 1; i >= 0; i--)
+   if (!m_PointFlags.GetKey(i)) m_PointFlags.RemoveElement(i);
+  for (int j = m_PointFaction.Count() - 1; j >= 0; j--)
+   if (!m_PointFaction.GetKey(j)) m_PointFaction.RemoveElement(j);
+  for (int k = m_VehicleServedAt.Count() - 1; k >= 0; k--)
+   if (!m_VehicleServedAt.GetKey(k)) m_VehicleServedAt.RemoveElement(k);
+ }
+
+ bool IsPoint(IEntity station)
+ {
+  return station && m_PointFlags.Contains(station);
+ }
+
  void ACR_Logistics(ACR_Manager manager)
  {
   m_Manager = manager;
@@ -116,6 +156,7 @@ class ACR_Logistics : Managed
 
  float StockOf(IEntity vehicle)
  {
+  if (IsPoint(vehicle)) return 1000;
   int flags = ServiceOf(vehicle);
   if (flags == 0) return 0;
   float stock;
@@ -136,6 +177,7 @@ class ACR_Logistics : Managed
 
  bool Use(IEntity vehicle, float amount)
  {
+  if (IsPoint(vehicle)) return true;
   float stock = StockOf(vehicle);
   if (stock < amount) return false;
   m_Stock.Set(vehicle, stock - amount);
@@ -388,11 +430,72 @@ class ACR_Logistics : Managed
     if (vector.DistanceXZ(body.GetOrigin(), at) > SERVICE_RANGE) continue;
     ServeSoldier(station, flags, body, now);
     IEntity ridden = ACR_Transport.VehicleOf(body);
-    if (ridden) ServeVehicle(station, flags, ridden);
+    if (ridden) ServeVehicle(station, flags, ridden, now);
    }
   }
   if (gameSupplies)
    foreach (IEntity written : m_ServiceVehicles) WriteGameSupplies(written, ServiceOf(written));
+  TickPoints(now);
+ }
+
+ protected void TickPoints(float now)
+ {
+  for (int i = 0; i < m_PointFlags.Count(); i++)
+  {
+   IEntity point = m_PointFlags.GetKey(i);
+   if (!point) continue;
+   int flags = m_PointFlags.GetElement(i);
+   string faction = m_PointFaction.Get(point);
+   vector at = point.GetOrigin();
+   foreach (ACR_Squad squad : m_Manager.m_Squads)
+   {
+    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != faction) continue;
+    IEntity anchor = squad.GetAnchor();
+    if (!anchor || vector.DistanceXZ(anchor.GetOrigin(), at) > SERVICE_RANGE + 150) continue;
+    ServeSquad(point, flags, squad, now);
+   }
+   array<int> players = {};
+   GetGame().GetPlayerManager().GetPlayers(players);
+   foreach (int id : players)
+   {
+    IEntity body = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
+    Faction playerFaction = SCR_FactionManager.SGetPlayerFaction(id);
+    if (!body || !playerFaction || playerFaction.GetFactionKey() != faction || m_Manager.FindSquadBySoldier(body)) continue;
+    if (vector.DistanceXZ(body.GetOrigin(), at) > SERVICE_RANGE) continue;
+    ServeSoldier(point, flags, body, now);
+    IEntity ridden = ACR_Transport.VehicleOf(body);
+    if (ridden) ServeVehicle(point, flags, ridden, now);
+   }
+   // Parked vehicles of the side too (nobody aboard).
+   if ((flags & (ACR_EService.REPAIR | ACR_EService.FUEL | ACR_EService.AMMO)) != 0)
+   {
+    array<IEntity> vehicles = {};
+    ACR_Vehicles.All(vehicles);
+    foreach (IEntity parked : vehicles)
+    {
+     if (vector.DistanceXZ(parked.GetOrigin(), at) > SERVICE_RANGE || Health(parked) <= 0) continue;
+     if (ACR_Vehicles.FactionOf(parked) != faction) continue;
+     ServeVehicle(point, flags, parked, now);
+    }
+   }
+  }
+ }
+
+ // At a service point a soldier is only served after staying a while (and not too often).
+ protected bool PointReady(IEntity soldier, float now)
+ {
+  float seen;
+  float arrived;
+  if (!m_LastSeenAt.Find(soldier, seen) || now - seen > TICK_MS * 3 || !m_ArrivedAt.Find(soldier, arrived))
+  {
+   m_ArrivedAt.Set(soldier, now);
+   arrived = now;
+  }
+  m_LastSeenAt.Set(soldier, now);
+  if (now - arrived < POINT_DWELL_MS) return false;
+  float last;
+  if (m_SoldierServedAt.Find(soldier, last) && now - last < POINT_SOLDIER_MS) return false;
+  return true;
  }
 
  protected void ServeSquad(IEntity station, int flags, ACR_Squad squad, float now)
@@ -400,7 +503,7 @@ class ACR_Logistics : Managed
   array<IEntity> vehicles = {};
   squad.GetVehicles(vehicles);
   foreach (IEntity vehicle : vehicles)
-   if (vehicle != station && vector.DistanceXZ(vehicle.GetOrigin(), station.GetOrigin()) <= SERVICE_RANGE + 5) ServeVehicle(station, flags, vehicle);
+   if (vehicle != station && vector.DistanceXZ(vehicle.GetOrigin(), station.GetOrigin()) <= SERVICE_RANGE + 5) ServeVehicle(station, flags, vehicle, now);
   array<AIAgent> agents = {};
   squad.GetAgents(agents);
   foreach (AIAgent agent : agents)
@@ -416,7 +519,11 @@ class ACR_Logistics : Managed
  protected void ServeSoldier(IEntity station, int flags, IEntity soldier, float now, int magazineTarget = 6)
  {
   float last;
-  if (m_SoldierServedAt.Find(soldier, last) && now - last < SOLDIER_COOLDOWN_MS) return;
+  if (IsPoint(station))
+  {
+   if (!PointReady(soldier, now)) return;
+  }
+  else if (m_SoldierServedAt.Find(soldier, last) && now - last < SOLDIER_COOLDOWN_MS) return;
   bool served;
   // A new disposable launcher for one who threw his spent one away.
   if ((flags & ACR_EService.AMMO) != 0 && m_Manager.m_Launchers && m_Manager.m_Launchers.IsOwed(soldier) && StockOf(station) >= ACR_Launchers.REARM_COST)
@@ -449,8 +556,20 @@ class ACR_Logistics : Managed
   if (served) m_SoldierServedAt.Set(soldier, now);
  }
 
- protected void ServeVehicle(IEntity station, int flags, IEntity vehicle)
+ protected void ServeVehicle(IEntity station, int flags, IEntity vehicle, float now = 0)
  {
+  if (IsPoint(station))
+  {
+   map<IEntity, float> served = m_VehicleServedAt.Get(station);
+   if (!served)
+   {
+    served = new map<IEntity, float>();
+    m_VehicleServedAt.Set(station, served);
+   }
+   float last;
+   if (served.Find(vehicle, last) && now - last < POINT_VEHICLE_MS) return;
+   served.Set(vehicle, now);
+  }
   if ((flags & ACR_EService.AMMO) != 0)
   {
    array<BaseMagazineComponent> magazines = {};
@@ -498,6 +617,11 @@ class ACR_Logistics : Managed
  void Stations(string faction, int service, notnull array<IEntity> result)
  {
   result.Clear();
+  for (int i = 0; i < m_PointFlags.Count(); i++)
+  {
+   IEntity point = m_PointFlags.GetKey(i);
+   if (point && (m_PointFlags.GetElement(i) & service) != 0 && m_PointFaction.Get(point) == faction) result.Insert(point);
+  }
   foreach (IEntity station : m_ServiceVehicles)
   {
    if ((ServiceOf(station) & service) == 0 || FactionOfVehicle(station) != faction) continue;

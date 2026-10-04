@@ -15,6 +15,11 @@ class ACR_Helipad : GenericEntity
  [Attribute("", UIWidgets.EditBox, "Base this pad belongs to (its name on the map). Empty = the nearest base")]
  string m_sBase;
 
+ // Built pads (ACR_Structures): owned by the builder's side, not a base; m_bGone once the
+ // helipad structure is dismantled or destroyed.
+ string m_sFaction;
+ bool m_bGone;
+
  static const ResourceName MODEL_WEST = "{CF1FFB7BAA1A0769}Prefabs/Structures/Military/Camps/HelipadImprovised_01/HelipadImprovised_US_01.et";
  static const ResourceName MODEL_EAST = "{8CDB9C117669AF4A}Prefabs/Structures/Military/Camps/HelipadImprovised_01/HelipadImprovised_USSR_01.et";
  static ref array<ACR_Helipad> s_All = {};
@@ -76,19 +81,34 @@ class ACR_Helipad : GenericEntity
   return ACR_Manager.Ground(GetOrigin());
  }
 
- // The base this pad belongs to (its owner owns the pad): the one named in m_sBase, else the
- // nearest (any distance; Jacob 4 Oct: the old radius + 60 m rule was too tight to place pads).
+ // The side that owns the pad: a built pad's builder, else its base's owner ("" = nobody).
+ string Faction()
+ {
+  if (m_bGone) return "";
+  if (!m_sFaction.IsEmpty()) return m_sFaction;
+  ACR_Base base = Base();
+  if (!base) return "";
+  return base.m_sOwner;
+ }
+
+ // The base this pad belongs to (helicopters for it are bought there): the one named in
+ // m_sBase, else the nearest (any distance; Jacob 4 Oct: the old radius + 60 m rule was too
+ // tight to place pads). A built pad belongs to its side's nearest base.
  ACR_Base Base()
  {
   ACR_Base best;
   float bestDistance = float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (m_sBase != "" && (base.m_sName == m_sBase || base.GetLabel() == m_sBase)) return base;
+   if (!m_sFaction.IsEmpty())
+   {
+    if (base.m_sOwner != m_sFaction) continue;
+   }
+   else if (m_sBase != "" && (base.m_sName == m_sBase || base.GetLabel() == m_sBase)) return base;
    float d = vector.DistanceXZ(base.GetOrigin(), GetOrigin());
    if (d < bestDistance) { bestDistance = d; best = base; }
   }
-  if (m_sBase != "" && !m_bWarned)
+  if (m_sFaction.IsEmpty() && m_sBase != "" && !m_bWarned)
   {
    m_bWarned = true;
    PrintFormat("[ACR] HELIPAD %1: no base named '%2', using the nearest (%3)", GetName(), m_sBase, best != null);
@@ -173,10 +193,25 @@ class ACR_HeliStation : Managed
  {
   foreach (ACR_Helipad pad : ACR_Helipad.s_All)
   {
-   ACR_Base home = pad.Base();
-   if (!home || home.m_sOwner != factionKey) continue;
-   if (base && home != base) continue;
+   if (pad.Faction() != factionKey) continue;
+   if (base && pad.Base() != base) continue;
    if (!PadTaken(pad)) return pad;
+  }
+  return null;
+ }
+
+ // A free pad at this base with nothing parked on it (bought helicopters land there).
+ ACR_Helipad ClearPad(string factionKey, ACR_Base base)
+ {
+  array<IEntity> vehicles = {};
+  ACR_Vehicles.All(vehicles);
+  foreach (ACR_Helipad pad : ACR_Helipad.s_All)
+  {
+   if (pad.Faction() != factionKey || pad.Base() != base || PadTaken(pad)) continue;
+   bool blocked;
+   foreach (IEntity vehicle : vehicles)
+    if (vector.DistanceXZ(vehicle.GetOrigin(), pad.GetOrigin()) < 10) { blocked = true; break; }
+   if (!blocked) return pad;
   }
   return null;
  }
@@ -184,7 +219,7 @@ class ACR_HeliStation : Managed
  int PadsAt(ACR_Base base)
  {
   int count;
-  foreach (ACR_Helipad pad : ACR_Helipad.s_All) if (pad.Base() == base) count++;
+  foreach (ACR_Helipad pad : ACR_Helipad.s_All) if (!pad.m_bGone && pad.Base() == base) count++;
   return count;
  }
 
@@ -231,8 +266,7 @@ class ACR_HeliStation : Managed
  bool Usable(ACR_StationedHeli heli)
  {
   if (!heli.m_Vehicle || heli.m_eState != ACR_EHeliState.READY) return false;
-  ACR_Base home = heli.m_Pad.Base();
-  return home && home.m_sOwner == heli.m_sFaction;
+  return heli.m_Pad && heli.m_Pad.Faction() == heli.m_sFaction;
  }
 
  // The ready helicopter of the right kind nearest the target.

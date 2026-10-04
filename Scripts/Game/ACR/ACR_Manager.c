@@ -62,6 +62,7 @@ class ACR_Manager : Managed
  }
  ref ACR_Rides m_Rides;
  ref ACR_Logistics m_Logistics;
+ ref ACR_Structures m_Structures;
  ref ACR_Cleanup m_Cleanup;
  ref ACR_Launchers m_Launchers;
  int m_iSoldierCap = 100;   // living AI soldiers per side (purchases stop above it)
@@ -294,6 +295,8 @@ class ACR_Manager : Managed
   if (!m_Rides) m_Rides = new ACR_Rides(this);
   m_Rides.Tick();
   t = ACR_Perf.Lap("rides", t);
+  if (!m_Structures) m_Structures = new ACR_Structures(this);
+  m_Structures.Tick();
   if (!m_Logistics) m_Logistics = new ACR_Logistics(this);
   m_Logistics.Tick();
   t = ACR_Perf.Lap("logistics", t);

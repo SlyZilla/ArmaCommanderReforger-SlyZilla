@@ -30,6 +30,18 @@ class ACR_Base : GenericEntity
  int m_iGarrisonLeft;               // soldiers still in reserve (virtual while not deployed)
  SCR_AIGroup m_GarrisonGroup;       // spawned only while enemies are near
  ref array<string> m_aDetectedBy = {};
+ bool m_bBuilt;                     // a forward base made by a built HQ (ACR_Structures)
+ bool m_bRetired;                   // its HQ is gone: no longer a base
+
+ // A built forward base whose HQ is gone: off the map and out of every base list.
+ void Retire()
+ {
+  if (m_bRetired) return;
+  m_bRetired = true;
+  if (s_All) s_All.RemoveItem(this);
+  if (m_GarrisonGroup) SCR_EntityHelper.DeleteEntityAndChildren(m_GarrisonGroup);
+  PrintFormat("[ACR] BASE %1 retired (its HQ is gone)", m_sName);
+ }
 
  void ACR_Base(IEntitySource src, IEntity parent)
  {

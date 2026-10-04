@@ -72,6 +72,15 @@ Add these to the game mode entity (the Arland world shows working values):
   `{AC230926A0010098}Configs/Map/ACR_MapFullscreen.conf` gives the command map finer contour lines.
 - **`SCR_CampaignBuildingManagerComponent`** (optional): lets construction trucks build. Without it,
   construction trucks are just trucks.
+  Some structures players build this way do something in AC: Actual (anywhere on the map, owned by the
+  builder's side, until dismantled or destroyed):
+  - **Field Hospital**: soldiers of its side within 25 m are healed after about 20 s there.
+  - **Vehicle Maintenance**, **Fuel Storage**: vehicles within 25 m are slowly repaired / refuelled.
+  - **Ammo Storage**: soldiers within 25 m get magazines and launchers back; vehicle guns are refilled.
+  - **Helipad**: a pad for support helicopters and where bought helicopters appear, for the side's nearest base.
+  - **Headquarters / Player Hub**: away from existing bases it becomes a forward base ("FOB 1"...) where
+    units can be bought and reinforcements deploy; hidden from the enemy until found, no income.
+  AI squads that need ammo, repairs, fuel or healing also head for these.
 
 ### AI world and navmesh
 
