@@ -32,6 +32,7 @@ class ACR_Perf
  static void EndTick()
  {
   if (!s_bOn) return;
+  BBB_Perf.s_bOn = true; // Better Battle Buddies' own stages, reported below
   s_iTicks++;
   if (s_iTicks % 30 != 0) return;
   string line = "";
@@ -48,6 +49,7 @@ class ACR_Perf
    foreach (ACR_Squad squad : manager.m_Squads) soldiers += squad.CountAlive();
   }
   PrintFormat("[ACR] PERF t=%1 squads=%2 soldiers=%3 | ms avg/max per tick:%4", s_iTicks, squads, soldiers, line);
+  PrintFormat("[ACR] PERF bbb:%1", BBB_Perf.Take());
   PrintFormat("[ACR] PERF feed: %1 bytes/s, %2 RPCs/s sent, %3 RPCs/s skipped as unchanged", s_iFeedBytes / 30, s_iFeedSends / 30.0, s_iFeedSkipped / 30.0);
   s_Total.Clear();
   s_Max.Clear();

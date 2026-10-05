@@ -54,6 +54,9 @@ bbbmedicroad|-acrBbbMedicRoadTest 1|1800
 structures|-acrStructuresTest 1|160
 survey|-acrSurveyTest 1|90|Worlds/ACR_Arland.ent
 bbbdrag|-acrBbbDragTest 1|1500
+bbbgunner|-acrBbbGunnerTest 1|2100
+bbbarmour|-acrBbbArmourTest 1|900
+bbbvanilla|-acrBbbVanillaTest 1|300
 places|-acrPlacesTest 1|120|Worlds/ACR_Everon.ent
 everonsurvey|-acrEveronSurveyTest 1|150|Worlds/ACR_Everon.ent
 everon|-acrScenarioTest 1|240|Worlds/ACR_Everon.ent

@@ -42,10 +42,13 @@ class BBB
   if (hooks) s_Hooks = hooks;
   if (s_bStarted || !Replication.IsServer()) return;
   s_bStarted = true;
+  BBB_Perf.Read();
   s_Gates = new BBB_Gates();
   s_Launchers = new BBB_Launchers();
   GetGame().GetCallqueue().CallLater(Tick, 1000, true);
  }
+
+ static bool IsStarted() { return s_bStarted; }
 
  static void Stop()
  {
@@ -59,12 +62,24 @@ class BBB
 
  static void Tick()
  {
+  int t = System.GetTickCount();
   if (s_Gates) s_Gates.Tick();
+  t = BBB_Perf.Lap("tick.gates", t);
   if (s_Launchers) s_Launchers.Tick();
+  t = BBB_Perf.Lap("tick.launchers", t);
+  BBB_Perf.OnTick();
  }
 
+ // Every frame, once (a host and BBB's own frame source may both call it).
+ protected static int s_iLastFrame = -1;
+ static int s_iFrames; // frames run (tests read it)
  static void Frame()
  {
+  int frame = GetGame().GetWorld().GetFrameNumber();
+  if (frame == s_iLastFrame) return;
+  s_iLastFrame = frame;
+  s_iFrames++;
+  BBB_Perf.OnFrame();
   BBB_Unstick.FrameAll();
  }
 
