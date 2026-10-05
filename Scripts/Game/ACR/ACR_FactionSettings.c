@@ -22,6 +22,7 @@ class ACR_RequisitionEntry
  bool m_bTransport;  // set automatically: an unarmed truck, which the AI commander buys to ferry squads
  bool m_bArmed = true; // set automatically for vehicles: has a weapon (the AI doesn't buy unarmed cars to fight with)
  bool m_bMortarTeam;  // the built-in mortar team (ACR_Mortars), added to every faction's list
+ bool m_bObserverTeam; // the built-in forward observer team (ACR_FireMissions)
  bool m_bRare;        // set automatically: aircraft, armour, mortar team, support helicopters keep a fixed stock
  int m_iSupportHeli;  // support helicopter for a helipad (ACR_HeliStation): 1 gunship, 2 door gunners
 
@@ -142,6 +143,8 @@ class ACR_FactionCatalog
   }
   // Every side can buy mortar teams: the mortar supports need one set up within range.
   result.Insert(ACR_Mortars.MakeEntry());
+  // ... and forward observer teams, who call those mortars on what they see.
+  result.Insert(ACR_FireMissions.MakeEntry());
   // Worlds with helipads: support helicopters are bought for a pad (a lost one is bought again).
   if (ACR_HeliStation.UsesPads(factionKey))
   {
@@ -151,7 +154,7 @@ class ACR_FactionCatalog
   bool stepped = ACR_Pricing.Stepped(settings);
   foreach (ACR_RequisitionEntry entry : result)
   {
-   if (entry.m_bMortarTeam || entry.m_iSupportHeli > 0 || entry.m_bAircraft) entry.m_bRare = true;
+   if (entry.m_bMortarTeam || entry.m_bObserverTeam || entry.m_iSupportHeli > 0 || entry.m_bAircraft) entry.m_bRare = true;
    ACR_Pricing.Setup(entry, stepped);
   }
   PrintFormat("[ACR] Requisition list for %1: %2 entries (%3 helipads in the world), pricing %4", factionKey, result.Count(), ACR_Helipad.s_All.Count(), ACR_Pricing.Name(stepped));

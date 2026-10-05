@@ -535,6 +535,7 @@ class ACR_Squad : Managed
  IEntity m_OwnVehicle;   // the vehicle this squad came with (crews), even when dismounted
  ACR_Base m_AITarget;
  bool m_bMortar;    // a mortar team (ACR_Mortars runs its set-up, packing and fire missions)
+ bool m_bFireAtWill; // observers call fire missions / mortar teams fire on their own (ACR_FireMissions)
  int m_OrderKind;   // ACR_EOrderKind, for map symbology
 
  static string ModeName(ACR_EMoveMode mode)
@@ -1758,6 +1759,7 @@ class ACR_Squad : Managed
   if (m_Group && !m_Group.GetCurrentWaypoint() && FinishesOnArrival(OrderState())) order = "Holding";
   string text = string.Format("%1 alive | %2 | %3", alive, ModeName(m_Mode), order);
   text += " | HP " + m_iHealthPct.ToString() + "%";
+  if (m_bFireAtWill) text += " | fire at will";
   if (m_iAmmoPct >= 0) text += " | ammo " + m_iAmmoPct.ToString() + "%";
   if (m_iFuelPct >= 0 && m_iFuelPct < 30) text += " | fuel " + m_iFuelPct.ToString() + "%";
   if (m_iStockPct >= 0) text += " | " + m_sServiceName + " stock " + m_iStockPct.ToString() + "%";

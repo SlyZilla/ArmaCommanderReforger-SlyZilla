@@ -25,7 +25,8 @@ enum ACR_ERequest
  TAKE_GUNNER,      // possess the gunner of the squad's armed vehicle (targetId = group)
  ORDER_HALT,       // drop every order and stand still
  ORDER_GARRISON,   // move into the building at point and hold its windows (ACR_Garrison)
- QUEUE_GARRISON    // ... garrison there after the current order
+ QUEUE_GARRISON,   // ... garrison there after the current order
+ ORDER_FIRE_AT_WILL // toggle: observers call mortar fire on what they see, mortar teams fire on their own
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -54,6 +55,12 @@ class ACR_Manager : Managed
  ref ACR_Respawn m_Respawn;
  ref ACR_Supports m_Supports;
  protected ref ACR_Mortars m_Mortars;
+ protected ref ACR_FireMissions m_FireMissions;
+ ACR_FireMissions FireMissions()
+ {
+  if (!m_FireMissions) m_FireMissions = new ACR_FireMissions(this);
+  return m_FireMissions;
+ }
 
  ACR_Mortars Mortars()
  {
@@ -367,6 +374,7 @@ class ACR_Manager : Managed
    m_Squads.RemoveOrdered(i);
   }
   Mortars().Tick();
+  FireMissions().Tick();
   t = ACR_Perf.Lap("squads", t);
   if (ACR_Perf.s_bChecks) foreach (ACR_Squad checked : m_Squads) checked.CheckOrderState();
   ACR_MapFeed.PublishAll(this);
@@ -452,6 +460,8 @@ class ACR_Manager : Managed
    m_PendingBoarding.Remove(group);
    if (ride) squad.GetIn(ride.GetOrigin());
   }
+  // Bought forward observer teams start with fire at will (calling fire is their job).
+  if (ACR_FireMissions.s_ObserverGroups.Contains(group)) squad.m_bFireAtWill = true;
   PrintFormat("[ACR] Squad registered: %1 faction=%2 soldiers=%3", squad.GetName(), group.GetFaction().GetFactionKey(), group.GetAgentsCount());
   return squad;
  }

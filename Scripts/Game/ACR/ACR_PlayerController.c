@@ -1103,6 +1103,7 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.UNLOAD: ACR_RequestSelected(ACR_ERequest.ORDER_UNLOAD); return;
    case ACR_EPanelAction.REINFORCE: ACR_RequestSelected(ACR_ERequest.REINFORCE); return;
    case ACR_EPanelAction.HALT: ACR_RequestSelected(ACR_ERequest.ORDER_HALT); return;
+   case ACR_EPanelAction.FIRE_AT_WILL: ACR_RequestSelected(ACR_ERequest.ORDER_FIRE_AT_WILL); return;
    case ACR_EPanelAction.PING_LOOK: ACR_PickPing(ACR_EPing.LOOK); return;
    case ACR_EPanelAction.PING_ATTACK: ACR_PickPing(ACR_EPing.ATTACK); return;
    case ACR_EPanelAction.PING_DEFEND: ACR_PickPing(ACR_EPing.DEFEND); return;

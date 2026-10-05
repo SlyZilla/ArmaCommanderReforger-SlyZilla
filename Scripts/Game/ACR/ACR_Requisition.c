@@ -146,6 +146,7 @@ class ACR_Requisition : Managed
    return string.Format("%1 waiting on the helipad at %2", name, base.m_sName);
   }
   if (entry.m_bMortarTeam) m_Manager.Mortars().SpawnTeam(key, name, groupPos);
+  else if (entry.m_bObserverTeam) m_Manager.FireMissions().SpawnTeam(key, name, groupPos);
   else SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);
   m_Manager.m_sSpawningFaction = "";
   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left, next %5 RP)", name, base.m_sName, paid, entry.m_iRemaining, entry.m_iCost);

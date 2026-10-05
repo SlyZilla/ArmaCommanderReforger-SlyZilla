@@ -96,7 +96,8 @@ class ACR_AICommander : Managed
  static const float ABORT_RATIO = 0.35;    // an attack below 35% of its strength is called off
  static const int SUPPORT_RESERVE = 15;    // RP the AI keeps back when calling supports
  static const int SUPPORT_BUDGET_MAX = 60;  // most RP it holds back from buying for supports
- static const int MAX_GRABS = 3;           // empty bases it goes for at the same time
+ static const int MAX_GRABS = 3;           // empty bases it goes for at the same time (at least)
+ static const int MAX_GRABS_BIG = 8;       // ... at most, on maps with many empty bases
 
  void ACR_AICommander(ACR_Manager manager, string factionKey)
  {
@@ -521,7 +522,12 @@ class ACR_AICommander : Managed
    if (running.m_bGrab) grabs++;
    else attacks++;
   }
-  while (grabs < MAX_GRABS && !free.IsEmpty())
+  // Big maps (Everon soak 5 Oct: 3 grabs at once left each side with 7 of 56 bases after
+  // 18 min): one grab per 6 empty bases in sight, 3 to 8.
+  int unclaimed;
+  foreach (ACR_Base open : ACR_Base.s_All) if (open.m_sOwner.IsEmpty() && Visible(open)) unclaimed++;
+  int maxGrabs = Math.Clamp(unclaimed / 6, MAX_GRABS, MAX_GRABS_BIG);
+  while (grabs < maxGrabs && !free.IsEmpty())
   {
    ACR_Base empty;
    ACR_Squad runner;

@@ -48,6 +48,8 @@ class ACR_Mode : GenericEntity
    // -acrPerfTest: the soak battle for 3 minutes with tick timings in the log.
    m_bPerf = System.GetCLIParam("acrPerfTest", flag);
    if (m_bPerf) { m_bSoak = true; ACR_Perf.s_bOn = true; }
+   // -acrEveronSoakTest: the 20-minute soak with tick timings (Everon at scale).
+   if (System.IsCLIParam("acrEveronSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; }
    if (m_bSoak || m_bSummary) ACR_Perf.s_bChecks = true;
    GetGame().GetCallqueue().CallLater(Second, 1000, true);
   }

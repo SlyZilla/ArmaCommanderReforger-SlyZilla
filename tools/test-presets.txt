@@ -72,3 +72,5 @@ padslevie|-acrPadsLevieTest 1|130|Worlds/ACR_Everon.ent
 padsmontignac|-acrPadsMontignacTest 1|130|Worlds/ACR_Everon.ent
 padsphilippe|-acrPadsPhilippeTest 1|130|Worlds/ACR_Everon.ent
 motorized|-acrMotorizedTest 1|230
+everonsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Everon.ent
+fire|-acrFireTest 1|240

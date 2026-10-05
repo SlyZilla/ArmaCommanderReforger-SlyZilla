@@ -193,6 +193,13 @@ about 2.3 km, at least 100 m); otherwise it is refused and nothing is spent. Pac
 the crew carry the baseplate and barrel on their backs. A team whose mortar is destroyed gets a new
 one with a Reinforce (10 RP).
 
+Every buy list also gets a "Forward observer team" (12 RP, 2 per match: spotter + radio operator).
+Squads with a radio operator and these teams can be set to **Fire at will** from the panel (the teams
+start with it on; AI commanders' observers and mortar teams always): observers then call the side's
+small HE mortar mission on enemies they see (150 m+, no friendly within 120 m, normal RP and
+cooldown, at most once per 45 s per side), and mortar teams fire two free, scattered rounds every 30 s
+at spotted enemies in reach.
+
 `ARTILLERY_BATTERY` is off-map: no range limit and no team needed, but it arrives 75-120 s after
 the call: three salvos of six heavy rounds, 10 s apart, scattered up to 120 m from the target, each
 heard coming in.

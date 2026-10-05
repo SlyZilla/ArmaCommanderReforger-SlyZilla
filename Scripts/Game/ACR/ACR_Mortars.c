@@ -733,11 +733,19 @@ class ACR_Mortars : Managed
   return 4;
  }
 
- protected void StartMission(ACR_MortarTeam team, ACR_ESupportType type, vector target)
+ // Fire at will (ACR_FireMissions): a few HE rounds of its own, no RP.
+ void StartFreeFire(ACR_MortarTeam team, vector target, int rounds)
+ {
+  StartMission(team, ACR_ESupportType.MORTAR_HE_SMALL, target, rounds);
+  team.m_sMission = "FIRE_AT_WILL";
+ }
+
+ protected void StartMission(ACR_MortarTeam team, ACR_ESupportType type, vector target, int roundsOverride = 0)
  {
   ACR_Squad squad = team.m_Squad;
   SCR_EAIArtilleryAmmoType ammo = AmmoFor(type);
   int rounds = RoundsFor(type);
+  if (roundsOverride > 0) rounds = roundsOverride;
   array<vector> aims = {target};
   // A creeping barrage walks away from the tube in three steps of 40 m.
   if (type == ACR_ESupportType.MORTAR_CREEPING)

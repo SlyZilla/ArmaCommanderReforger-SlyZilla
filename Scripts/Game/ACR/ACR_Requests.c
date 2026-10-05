@@ -175,7 +175,7 @@ class ACR_Requests : Managed
   m_Manager.m_LastSquad.Set(pc.GetPlayerId(), squad);
   string name = squad.GetName();
   // Helicopter crews only hold or get out (AI can't fly; any move makes them get out and walk).
-  bool crewSafe = command == ACR_ERequest.ORDER_HALT || command == ACR_ERequest.ORDER_GET_OUT || command == ACR_ERequest.ORDER_UNLOAD || command == ACR_ERequest.MODE_COMBAT || command == ACR_ERequest.MODE_FAST || command == ACR_ERequest.MODE_SILENT;
+  bool crewSafe = command == ACR_ERequest.ORDER_FIRE_AT_WILL || command == ACR_ERequest.ORDER_HALT || command == ACR_ERequest.ORDER_GET_OUT || command == ACR_ERequest.ORDER_UNLOAD || command == ACR_ERequest.MODE_COMBAT || command == ACR_ERequest.MODE_FAST || command == ACR_ERequest.MODE_SILENT;
   if (!crewSafe && squad.Aircraft()) return name + ": AI can't fly helicopters. Take the pilot's seat to fly it, or order Get out";
   switch (command)
   {
@@ -239,6 +239,16 @@ class ACR_Requests : Managed
    case ACR_ERequest.MODE_FAST:
     squad.SetMode(ACR_EMoveMode.FAST);
     return name + ": fast";
+   case ACR_ERequest.ORDER_FIRE_AT_WILL:
+   {
+    bool mortar = m_Manager.Mortars().TeamOf(squad) != null;
+    if (!mortar && !ACR_FireMissions.IsObserver(squad)) return name + ": needs a radio operator or a mortar to fire at will";
+    squad.m_bFireAtWill = !squad.m_bFireAtWill;
+    PrintFormat("[ACR] FIRE player=%1 %2 fire at will %3", pc.GetPlayerId(), name, squad.m_bFireAtWill);
+    if (!squad.m_bFireAtWill) return name + ": fire at will off";
+    if (mortar) return name + ": fire at will on (fires a few rounds of its own at spotted enemies in reach, no RP)";
+    return name + ": fire at will on (calls mortar fire on enemies it sees; usual RP and cooldown)";
+   }
    case ACR_ERequest.MODE_SILENT:
     squad.SetMode(ACR_EMoveMode.SILENT);
     return name + ": silent";

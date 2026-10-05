@@ -21,6 +21,7 @@ enum ACR_EPanelAction
  PING_DEFEND,
  PING_SUPPORT,
  GARRISON,
+ FIRE_AT_WILL,
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -174,6 +175,7 @@ class ACR_CommandPanel : Managed
   Widget orders3 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   m_RideButton = AddButton(orders3, "Ride", ACR_EPanelAction.RIDE, true);
   m_LZButton = AddButton(orders3, "Unload at LZ", ACR_EPanelAction.SET_LZ, true);
+  AddButton(orders3, "Fire at will", ACR_EPanelAction.FIRE_AT_WILL, true);
   m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
