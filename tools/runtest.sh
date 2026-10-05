@@ -9,4 +9,4 @@ echo $2 > $1.request
 for i in $(seq 1 $3); do sleep 5; [ -f $1.result.txt ] && break; done
 head -6 $1.result.txt 2>/dev/null
 grep "(E)" $1.result.txt 2>/dev/null | grep -v "SCR_SpawnLogic\|SCR_MapUIElementContainer\|SCR_PlayerArsenalLoadout\|ScenarioFramework\|SpinningWidget\|SCR_ScenarioUICommon\|Can't compile" | head -20
-bash ../tools/verdict.sh $1
+case "$2" in publish|push) ;; *) bash ../tools/verdict.sh $1;; esac
