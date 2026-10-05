@@ -1554,7 +1554,14 @@ class ACR_Squad : Managed
     ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
     if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent()) continue;
     CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
-    if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
+    // Still aboard on the second sweep (6 s): the animated exit was accepted but never
+    // happened (5 Oct: LAV passengers stayed in after a drop-off): teleport out.
+    if (m_iDismountSweeps >= 2)
+    {
+     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+     PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, placed out", m_Name, character);
+    }
+    else if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
      access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
    }
    GetGame().GetCallqueue().CallLater(HoldAfterDismount, 3000, false);

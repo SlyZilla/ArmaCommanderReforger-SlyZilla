@@ -666,10 +666,15 @@ class ACR_AICommander : Managed
    }
   }
   attack.m_fStageDeadline = GetGame().GetWorld().GetWorldTime() + STAGING_TIMEOUT * 1000;
+  // Motorized assault: an armed carrier (APC) in the attack takes an infantry squad to the
+  // staging point and stays there with it as base of fire.
+  array<ACR_Squad> carried = {};
+  if (!empty && m_Manager.m_Rides) PairCarriers(attack, carried);
   foreach (ACR_Squad squad : attack.m_Squads)
   {
    squad.m_iAITask = ACR_EAITask.ATTACK;
    squad.m_AITarget = target;
+   if (carried.Contains(squad)) continue; // the ride has its orders
    squad.SetMode(ACR_EMoveMode.FAST);
    // Nobody to fight at an empty base: go straight in.
    if (empty) Travel(squad, target.GetOrigin(), false, 100);
@@ -682,6 +687,44 @@ class ACR_AICommander : Managed
   string kind = "attacking";
   if (attack.m_bCounter) { kind = "COUNTERATTACKING"; m_CounterTarget = null; }
   PrintFormat("[ACR] AI %1: %2 %3 with %4 squad(s), strength %5/%6", m_sFaction, kind, target.m_sName, attack.m_Squads.Count(), strength, required);
+ }
+
+ // Each armed carrier with room (gun manned, 4+ free seats) picks the nearest infantry squad of the
+ // attack that fits and is within 400 m, and rides it to that squad's staging point (5 Oct;
+ // Jacob: APCs for motorized assaults). The carrier then forms up there instead of its own point.
+ static float CARRIER_PICKUP = 400;
+ static int s_iCarrierTries; // tests
+ protected void PairCarriers(ACR_AIAttack attack, array<ACR_Squad> carried)
+ {
+  foreach (int c, ACR_Squad carrier : attack.m_Squads)
+  {
+   IEntity vehicle = ACR_Transport.CrewedVehicle(carrier);
+   if (!vehicle || carried.Contains(carrier) || !carrier.HasGunner(vehicle)) continue;
+   int seats = ACR_Rides.FreeSeats(vehicle);
+   if (seats < 4) continue;
+   ACR_Squad best;
+   float bestDistance = CARRIER_PICKUP;
+   foreach (ACR_Squad rider : attack.m_Squads)
+   {
+    if (rider == carrier || carried.Contains(rider) || rider.IsMounted() || ACR_Transport.CrewedVehicle(rider)) continue;
+    if (rider.CountAlive() > seats) continue;
+    float d = vector.DistanceXZ(PositionOf(rider), vehicle.GetOrigin());
+    if (d < bestDistance) { bestDistance = d; best = rider; }
+   }
+   if (!best) continue;
+   vector stage = attack.StagingOf(best);
+   s_iCarrierTries++;
+   string why;
+   if (!m_Manager.m_Rides.RequestCarrier(best, carrier, stage, ACR_Squad.WP_MOVE, -1, "Moving", 0, why))
+   {
+    PrintFormat("[ACR] AI %1: %2 can't carry %3 (%4)", m_sFaction, carrier.GetName(), best.GetName(), why);
+    continue;
+   }
+   if (c < attack.m_aStaging.Count()) attack.m_aStaging[c] = stage;
+   carried.Insert(best);
+   carried.Insert(carrier);
+   PrintFormat("[ACR] AI %1: %2 carries %3 to the staging point for %4", m_sFaction, carrier.GetName(), best.GetName(), attack.m_Target.m_sName);
+  }
  }
 
  // Debug menu: attack now with every free squad, ignoring odds, attack limits and

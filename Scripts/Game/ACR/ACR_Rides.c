@@ -30,6 +30,8 @@ class ACR_Ride
  int m_iRiderSerial;
  int m_iTaxiSerial;
  float m_fTaxiLostSince = -1;   // crew briefly out (seat swaps, a stumble): only give up after a while
+ float m_fStoppedSince = -1;    // escort: when the carrier came to a standstill near the drop-off
+ bool m_bEscort;                // an armed carrier (AI motorized assault): stays at the drop-off instead of going home
 }
 
 class ACR_Rides : Managed
@@ -49,6 +51,8 @@ class ACR_Rides : Managed
  static const float MOSTLY_ABOARD_SHARE = 0.75;
  static const float STUCK_BOARDING_MS = 20000; // then place the stragglers within 40 m straight in
  static const float MOSTLY_ABOARD_WAIT_MS = 30000;
+ static const float ESCORT_DROP_NEAR = 250;    // m: an assault carrier stopped this close drops its riders
+ static const float ESCORT_STOPPED_MS = 15000;
 
  protected ACR_Manager m_Manager;
  ref array<ref ACR_Ride> m_Rides = {};
@@ -221,7 +225,47 @@ class ACR_Rides : Managed
     return null;
    }
   }
+  return StartRide(rider, taxi, from, trip, fetch, destination, dropShort, finalPrefab, finalRadius, finalOrder, finalKind, false);
+ }
+
+ // AI motorized assault (5 Oct; Jacob: APCs carrying infantry into attacks): a ride in a given
+ // armed carrier (gunner aboard, so never a taxi otherwise) that stays at the drop-off with
+ // the riders instead of driving home. null when it can't carry them.
+ ACR_Ride RequestCarrier(ACR_Squad rider, ACR_Squad carrier, vector destination, ResourceName finalPrefab, float finalRadius, string finalOrder, int finalKind, out string why)
+ {
+  why = "";
+  IEntity anchor = rider.GetAnchor();
+  IEntity vehicle = ACR_Transport.CrewedVehicle(carrier);
+  string faction = FactionOf(rider);
+  if (!anchor || !vehicle || faction.IsEmpty() || FactionOf(carrier) != faction) { why = "not ready"; return null; }
+  if (rider.IsMounted() || RideOf(rider) || RideOf(carrier)) { why = "busy"; return null; }
+  if (FreeSeats(vehicle) < rider.CountAlive()) { why = string.Format("%1 seats for %2 men", FreeSeats(vehicle), rider.CountAlive()); return null; }
+  if (!CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent))) { why = "not a ground vehicle"; return null; }
+  ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
+  if (!driver || !ACR_Respawn.IsAlive(driver) || ACR_Squad.FindController(driver) != 0 || m_Manager.IsGunnerDriven(vehicle)) { why = "no AI driver"; return null; }
+  vector from = anchor.GetOrigin();
+  float trip = vector.DistanceXZ(from, destination);
+  if (trip < MIN_TRIP) { why = "too close"; return null; }
+  float fetch = vector.DistanceXZ(vehicle.GetOrigin(), from);
+  if (fetch > MAX_PICKUP) { why = "carrier too far"; return null; }
+  // Same rule as other rides: not when the roads go so far round that walking is faster.
+  array<vector> roadLegs = {};
+  int roadNodes, roadMillis;
+  BBB_Roads.Route(from, destination, roadLegs, roadNodes, roadMillis);
+  if (BBB_Roads.s_bLastDetour)
+  {
+   float driveSeconds = fetch / 4 + 45 + BBB_Roads.s_fLastLength / 4;
+   if (driveSeconds > trip / 1.4 * 0.8) { why = string.Format("no quick road (%1 m by road for %2 m)", (int)BBB_Roads.s_fLastLength, (int)trip); return null; }
+  }
+  CancelFor(rider);
+  return StartRide(rider, carrier, from, trip, fetch, destination, 0, finalPrefab, finalRadius, finalOrder, finalKind, true);
+ }
+
+ protected ACR_Ride StartRide(ACR_Squad rider, ACR_Squad taxi, vector from, float trip, float fetch, vector destination, float dropShort, ResourceName finalPrefab, float finalRadius, string finalOrder, int finalKind, bool escort)
+ {
+  string faction = FactionOf(rider);
   ACR_Ride ride = new ACR_Ride();
+  ride.m_bEscort = escort;
   ride.m_Rider = rider;
   ride.m_Taxi = taxi;
   ride.m_Vehicle = Vehicle.Cast(ACR_Transport.CrewedVehicle(taxi));
@@ -233,7 +277,10 @@ class ACR_Rides : Managed
   // Pick up and drop off on roads when there is one nearby: the game's AI
   // drivers often can't reach off-road spots and abandon the vehicle.
   vector road;
-  if (BBB_Terrain.RoadPointNear(ride.m_Drop, 350, road)) ride.m_Drop = road;
+  // (An assault carrier only within 120 m: its drop-off is the staging point short of the enemy.)
+  float roadReach = 350;
+  if (escort) roadReach = 120;
+  if (BBB_Terrain.RoadPointNear(ride.m_Drop, roadReach, road)) ride.m_Drop = road;
   vector pickup = from;
   if (BBB_Terrain.RoadPointNear(from, 250, road)) pickup = road;
   ride.m_sFinalPrefab = finalPrefab;
@@ -437,7 +484,19 @@ class ACR_Rides : Managed
      Finish(ride, false);
      return false;
     }
-    bool arrived = vector.DistanceXZ(ride.m_Vehicle.GetOrigin(), ride.m_Drop) < DROP_REACHED;
+    float toDrop = vector.DistanceXZ(ride.m_Vehicle.GetOrigin(), ride.m_Drop);
+    bool arrived = toDrop < DROP_REACHED;
+    // An assault carrier that has come to a standstill near its drop-off (stuck on a fence or
+    // a bend) lets its riders out there: close enough to form up.
+    if (ride.m_bEscort && !arrived && toDrop < ESCORT_DROP_NEAR)
+    {
+     if (ride.m_Vehicle.GetPhysics() && ride.m_Vehicle.GetPhysics().GetVelocity().Length() < 0.5)
+     {
+      if (ride.m_fStoppedSince < 0) ride.m_fStoppedSince = now;
+      else if (now - ride.m_fStoppedSince > ESCORT_STOPPED_MS) { arrived = true; Log(ride, string.Format("carrier stopped %1 m short, dropping here", (int)toDrop)); }
+     }
+     else ride.m_fStoppedSince = -1;
+    }
     if (arrived || inState > ride.m_fDriveBudgetMs)
     {
      if (arrived) Log(ride, "dropped off");
@@ -490,6 +549,12 @@ class ACR_Rides : Managed
  {
   ACR_Squad taxi = ride.m_Taxi;
   if (!taxi || !ride.m_Vehicle || !m_Manager.m_Squads.Contains(taxi)) return;
+  // An assault carrier stays with its riders; the AI commander gives it its next order.
+  if (ride.m_bEscort)
+  {
+   taxi.Halt("Holding");
+   return;
+  }
   vector here = ride.m_Vehicle.GetOrigin();
   ACR_Base home;
   float best = float.MAX;

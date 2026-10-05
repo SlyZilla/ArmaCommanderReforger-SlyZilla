@@ -57,6 +57,7 @@ bbbdrag|-acrBbbDragTest 1|1500
 bbbgunner|-acrBbbGunnerTest 1|2100
 bbbarmour|-acrBbbArmourTest 1|900
 bbbvanilla|-acrBbbVanillaTest 1|300
+bbbgrenadier|-acrBbbGrenadierTest 1|1500
 places|-acrPlacesTest 1|120|Worlds/ACR_Everon.ent
 everonsurvey|-acrEveronSurveyTest 1|150|Worlds/ACR_Everon.ent
 everon|-acrScenarioTest 1|240|Worlds/ACR_Everon.ent
@@ -69,3 +70,4 @@ everonpads|-acrEveronPadsTest 1|120|Worlds/ACR_Everon.ent
 padslevie|-acrPadsLevieTest 1|130|Worlds/ACR_Everon.ent
 padsmontignac|-acrPadsMontignacTest 1|130|Worlds/ACR_Everon.ent
 padsphilippe|-acrPadsPhilippeTest 1|130|Worlds/ACR_Everon.ent
+motorized|-acrMotorizedTest 1|230

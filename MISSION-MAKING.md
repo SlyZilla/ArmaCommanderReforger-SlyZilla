@@ -258,7 +258,8 @@ Optional smaller layouts of a big map: half of it, or a small flashpoint of abou
 hotspot. The host picks the size (`-acrSize`, setup menu item 14) and either one layout by name
 (`-acrLayout`) or a random one of that size. Without either, the whole world plays as placed. Place one
 entity per layout anywhere (its position doesn't matter). Everon has North half, South half and the
-Saint-Philippe, Montignac and Levie flashpoints.
+Saint-Philippe, Montignac and Levie flashpoints, with two helipads at every layout HQ. Give each HQ you name a
+pad or two (`ACR_Helipad` with `m_sBase`) so both sides keep their support helicopters.
 
 | Setting | Default | What it does |
 |---|---|---|
