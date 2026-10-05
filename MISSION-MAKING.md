@@ -252,6 +252,28 @@ The side comes from the prefab's faction.
 Any other AI group placed in the world (or spawned later, e.g. by Game Master) is picked up as a
 commandable squad of its faction automatically. Starting units just give it a name and a vehicle.
 
+### ACR_Skirmish
+
+Optional smaller layouts of a big map: half of it, or a small flashpoint of about five bases round one
+hotspot. The host picks the size (`-acrSize`, setup menu item 14) and either one layout by name
+(`-acrLayout`) or a random one of that size. Without either, the whole world plays as placed. Place one
+entity per layout anywhere (its position doesn't matter). Everon has North half, South half and the
+Saint-Philippe, Montignac and Levie flashpoints.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `m_sName` | | Layout name (the setup menu lists it; `-acrLayout` matches it ignoring spaces, `_` and `-`) |
+| `m_eSize` | `FLASHPOINT` | `HALF` or `FLASHPOINT` |
+| `m_sBases` | | Bases in play, by their `m_sName`, separated by commas. The HQs are added automatically |
+| `m_sHQs` | | One HQ per side as `faction=base`, separated by semicolons, e.g. `US=Airbase; USSR=Power Plant` |
+
+When the match starts with a layout, every base not in it is removed (off the map and out of play), the
+HQs become their sides' owned bases (with at least the garrison of the side's HQ as placed) and other
+bases that started owned turn neutral. Each side's starting units and player spawn point move to its new
+HQ when it changed (a starting unit belongs to the side whose placed HQ is nearest; units appear at clear
+spots in the new HQ's circle). Helipads of removed bases are out of play; a side whose layout leaves it no
+helipad gets the off-map support helicopters instead of buying them for pads.
+
 ## Mission header
 
 `Missions/<YourScenario>.conf` makes the scenario show up in the game's scenario list:
@@ -279,6 +301,8 @@ and in singleplayer (Play-ACA), where the game is its own server.
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; fixed stock: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (fixed stock: double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
+| `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Worlds without one play in full |
+| `-acrLayout <name>` | Play this `ACR_Skirmish` layout (spaces may be written as `_`); overrides `-acrSize` |
 | `-acrPricing stepped` / `stock` | Overrides every side's `m_ePricing` (stepped prices or fixed stock) |
 | `-acrStartRP N` | Starting RP for every side (overrides `m_iStartingRP`) |
 | `-acrIncome X` | Income multiplier (default 1) |

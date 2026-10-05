@@ -57,3 +57,6 @@ bbbdrag|-acrBbbDragTest 1|1500
 places|-acrPlacesTest 1|120|Worlds/ACR_Everon.ent
 everonsurvey|-acrEveronSurveyTest 1|150|Worlds/ACR_Everon.ent
 everon|-acrScenarioTest 1|240|Worlds/ACR_Everon.ent
+skirmish|-acrSkirmishTest 1|120|Worlds/ACR_Everon.ent
+skirmishsouth|-acrSkirmishSouthTest 1|120|Worlds/ACR_Everon.ent
+skirmishplay|-acrSkirmishPlayTest 1|240|Worlds/ACR_Everon.ent

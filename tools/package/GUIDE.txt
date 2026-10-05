@@ -126,6 +126,10 @@ Saint-Pierre harbor on the south-east coast, about 11 km away. Every town
 and village is a neutral base; military sites and industry give more RP,
 and a few lesser landmarks are hidden bases. Both sides start with two
 rifle squads, a weapons team, a truck and a car.
+Everon is big, so the setup menu (option 14) also offers smaller games:
+the North or South half of the island, or a small flashpoint of about six
+bases round one hotspot (Saint-Philippe, Montignac or Levie), with each
+side's HQ close by. Pick one by name or let it roll at random.
 
 - To capture a base, get soldiers inside its ring and clear the enemies out.
   More soldiers capture it faster. Garrisoned bases have defenders that appear
@@ -177,7 +181,10 @@ ON THE COMMAND MAP
 - BUYING UNITS: click "Requisition" at the top of the panel, click a unit in
   the list, then left-click inside the ring of one of YOUR bases. The unit
   deploys at that spot (a click just outside is pulled to the ring's edge). Right-click cancels. Vehicles come with crews. The list shows
-  the price and stock, and your RP is shown in the panel.
+  the price, and your RP is shown in the panel. Infantry, cars and trucks
+  never run out, but every one your side buys makes the next one dearer
+  (+15% of the first price each time; +25% at low threat, +8% at high).
+  Rare units (helicopters, armour, mortar teams) show how many are left.
 - SUPPORTS: click "Supports" in the panel, click one (price and cooldown are
   listed), then RIGHT-CLICK the target on the map. Everyone on your side gets
   a message with the grid and arrival time. Available:

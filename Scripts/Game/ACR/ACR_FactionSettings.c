@@ -143,7 +143,7 @@ class ACR_FactionCatalog
   // Every side can buy mortar teams: the mortar supports need one set up within range.
   result.Insert(ACR_Mortars.MakeEntry());
   // Worlds with helipads: support helicopters are bought for a pad (a lost one is bought again).
-  if (ACR_HeliStation.InUse())
+  if (ACR_HeliStation.UsesPads(factionKey))
   {
    result.Insert(ACR_HeliStation.MakeEntry(true));
    result.Insert(ACR_HeliStation.MakeEntry(false));

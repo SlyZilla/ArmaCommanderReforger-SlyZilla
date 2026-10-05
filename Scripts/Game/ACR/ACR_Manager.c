@@ -112,6 +112,7 @@ class ACR_Manager : Managed
  static void Stop()
  {
   ACR_Hud.Clear();
+  ACR_Skirmish.Reset();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();

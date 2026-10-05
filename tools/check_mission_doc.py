@@ -10,6 +10,7 @@ classes = {
     'ACR_FactionSettings.c': ['ACR_RequisitionEntry', 'ACR_FactionSettings'],
     'ACR_Base.c': ['ACR_Base'],
     'ACR_Helipads.c': ['ACR_Helipad'],
+    'ACR_Skirmish.c': ['ACR_Skirmish'],
     'ACR_Supports.c': ['ACR_SupportEntry'],
 }
 missing = []

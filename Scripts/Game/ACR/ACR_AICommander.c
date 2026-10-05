@@ -284,7 +284,7 @@ class ACR_AICommander : Managed
  {
   if (!SupportReady(type)) return false;
   if (ACR_Mortars.IsMortarType(type) && !m_Manager.Mortars().CanFire(m_sFaction, type, point)) return false;
-  if (ACR_HeliStation.IsHeliType(type) && ACR_HeliStation.InUse() && (!m_Manager.m_Supports || !m_Manager.m_Supports.Station().ReadyFor(m_sFaction, ACR_HeliStation.NeedsGunship(type), point))) return false;
+  if (ACR_HeliStation.IsHeliType(type) && ACR_HeliStation.UsesPads(m_sFaction) && (!m_Manager.m_Supports || !m_Manager.m_Supports.Station().ReadyFor(m_sFaction, ACR_HeliStation.NeedsGunship(type), point))) return false;
   if (FriendliesNear(point, ACR_Supports.ZoneRadius(type) + 40)) return false;
   string result = m_Manager.m_Supports.Call(m_sFaction, SupportIndex(type), point, true);
   PrintFormat("[ACR] AI %1 support (%2): %3", m_sFaction, why, result);
@@ -1133,7 +1133,7 @@ class ACR_AICommander : Managed
  // One support gunship on a helipad (worlds with pads), bought again when lost.
  protected bool BuyHelicopter(ACR_FactionData data)
  {
-  if (!ACR_HeliStation.InUse() || !m_Manager.m_Supports) return false;
+  if (!ACR_HeliStation.UsesPads(m_sFaction) || !m_Manager.m_Supports) return false;
   ACR_HeliStation station = m_Manager.m_Supports.Station();
   if (station.CountOf(m_sFaction, true) > 0) return false;
   ACR_Helipad pad = station.FreePad(m_sFaction, null);

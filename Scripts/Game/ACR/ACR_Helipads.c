@@ -47,6 +47,14 @@ class ACR_Helipad : GenericEntity
 
  bool HasModel() { return m_Model != null; }
 
+ // Out of play (its base isn't in the skirmish layout): no side owns it, model removed here.
+ void Drop()
+ {
+  m_bGone = true;
+  if (m_Model) SCR_EntityHelper.DeleteEntityAndChildren(m_Model);
+  PrintFormat("[ACR] HELIPAD %1 out of play", GetName());
+ }
+
  void ~ACR_Helipad()
  {
   if (s_All) s_All.RemoveItem(this);
@@ -159,6 +167,13 @@ class ACR_HeliStation : Managed
  void ACR_HeliStation(ACR_Supports supports) { m_Supports = supports; }
 
  static bool InUse() { return !ACR_Helipad.s_All.IsEmpty(); }
+
+ // This side's helicopter supports fly from helipads (bought for a pad): any pad in the world,
+ // unless a skirmish layout left the side without one (then the off-map helicopters).
+ static bool UsesPads(string factionKey)
+ {
+  return InUse() && ACR_Skirmish.SideHasPads(factionKey);
+ }
 
  static bool IsHeliType(ACR_ESupportType type)
  {

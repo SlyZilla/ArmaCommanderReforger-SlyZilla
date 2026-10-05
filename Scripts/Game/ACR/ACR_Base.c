@@ -34,13 +34,14 @@ class ACR_Base : GenericEntity
  bool m_bRetired;                   // its HQ is gone: no longer a base
 
  // A built forward base whose HQ is gone: off the map and out of every base list.
- void Retire()
+ // Also used for bases left out of a skirmish layout (ACR_Skirmish).
+ void Retire(string why = "its HQ is gone")
  {
   if (m_bRetired) return;
   m_bRetired = true;
   if (s_All) s_All.RemoveItem(this);
   if (m_GarrisonGroup) SCR_EntityHelper.DeleteEntityAndChildren(m_GarrisonGroup);
-  PrintFormat("[ACR] BASE %1 retired (its HQ is gone)", m_sName);
+  PrintFormat("[ACR] BASE %1 retired (%2)", m_sName, why);
  }
 
  void ACR_Base(IEntitySource src, IEntity parent)

@@ -1315,7 +1315,7 @@ class ACR_Supports : Managed
   if (ACR_Mortars.IsMortarType(entry.m_eType)) return CallMortars(factionKey, entry, target, byAI);
   // With helipads in the world, helicopter supports fly a helicopter bought for a pad.
   ACR_StationedHeli home;
-  if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.InUse())
+  if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.UsesPads(factionKey))
   {
    home = Station().ReadyFor(factionKey, ACR_HeliStation.NeedsGunship(entry.m_eType), target);
    if (!home)

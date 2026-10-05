@@ -42,7 +42,8 @@ class ACR_Mode : GenericEntity
   {
    GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 2000, false);
    string flag;
-   m_bSummary = System.GetCLIParam("acrScenarioTest", flag);
+   // -acrSkirmishPlayTest: the scenario summary on the Montignac flashpoint (AI vs AI).
+   m_bSummary = System.GetCLIParam("acrScenarioTest", flag) || System.IsCLIParam("acrSkirmishPlayTest");
    m_bSoak = System.GetCLIParam("acrSoakTest", flag);
    // -acrPerfTest: the soak battle for 3 minutes with tick timings in the log.
    m_bPerf = System.GetCLIParam("acrPerfTest", flag);
@@ -60,8 +61,17 @@ class ACR_Mode : GenericEntity
   foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All)
   {
    vector pos = unit.GetOrigin();
-   manager.SpawnUnit(unit.m_sName, unit.m_sGroup, unit.m_sVehicle, unit.m_bCrewed, unit.m_sPassengers, ACR_Manager.Ground(pos), ACR_Manager.Ground(pos + Vector(6, 0, 6)));
-   PrintFormat("[ACR] Starting unit: %1", unit.m_sName);
+   vector vehiclePos = ACR_Manager.Ground(pos);
+   vector groupPos = ACR_Manager.Ground(pos + Vector(6, 0, 6));
+   // A skirmish layout moved this side's HQ: start at the new one.
+   if (unit.m_MovedTo)
+   {
+    vehiclePos = manager.ClearSpotNear(unit.m_MovedTo, 10, 30, 4);
+    if (unit.m_sVehicle.IsEmpty()) groupPos = manager.ClearSpotNear(unit.m_MovedTo, 5, 20, 1.5);
+    else groupPos = ACR_Manager.Ground(vehiclePos + Vector(6, 0, 6));
+   }
+   manager.SpawnUnit(unit.m_sName, unit.m_sGroup, unit.m_sVehicle, unit.m_bCrewed, unit.m_sPassengers, vehiclePos, groupPos);
+   PrintFormat("[ACR] Starting unit: %1 at %2", unit.m_sName, groupPos);
   }
  }
 
@@ -76,6 +86,8 @@ class ACR_Mode : GenericEntity
   // -acrPlacesTest: named map locations, for laying out a new map (ACR_TestPlaces).
   if (System.IsCLIParam("acrPlacesTest")) ACR_TestPlaces.Run(m_iSeconds);
   if (System.IsCLIParam("acrEveronSurveyTest")) ACR_TestPlaces.SurveyEveron(m_iSeconds);
+  // -acrSkirmishTest / -acrSkirmishSouthTest: skirmish layouts on Everon (ACR_TestSkirmish).
+  if (System.IsCLIParam("acrSkirmishTest") || System.IsCLIParam("acrSkirmishSouthTest")) ACR_TestSkirmish.Run(m_iSeconds);
   if (m_bSoak) { Soak(); return; }
   if (!m_bSummary || m_iSeconds % 30 != 0) return;
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -136,6 +148,8 @@ class ACR_Mode : GenericEntity
 
  override void EOnFrame(IEntity owner, float timeSlice)
  {
+  // Skirmish size: the chosen layout is set up before anything else runs (ACR_Skirmish).
+  if (s_Instance == this && Replication.IsServer()) ACR_Skirmish.ApplyOnce();
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (s_Instance == this && manager)
   {
@@ -176,6 +190,7 @@ class ACR_StartingUnit : GenericEntity
  ResourceName m_sPassengers;
 
  static ref array<ACR_StartingUnit> s_All = {};
+ ACR_Base m_MovedTo; // runtime: a skirmish layout put this side's HQ at another base
 
  void ACR_StartingUnit(IEntitySource src, IEntity parent)
  {

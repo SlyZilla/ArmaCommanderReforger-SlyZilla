@@ -440,7 +440,7 @@ class ACR_MapFeed
    // Mortar supports say whether a team can fire them.
    // Helicopter supports (worlds with helipads) say whether a stationed helicopter is ready.
    string heli = "";
-   if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.InUse() && manager.m_Supports)
+   if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.UsesPads(frame.m_sKey) && manager.m_Supports)
     heli = manager.m_Supports.Station().StatusFor(frame.m_sKey, ACR_HeliStation.NeedsGunship(entry.m_eType));
    if (ACR_Mortars.IsMortarType(entry.m_eType)) frame.m_SupNames.Insert(entry.m_sName + "  [" + mortars + "]");
    else if (!heli.IsEmpty()) frame.m_SupNames.Insert(entry.m_sName + "  [" + heli + "]");
