@@ -371,6 +371,12 @@ class ACR_Squad : Managed
   array<AIWaypoint> waypoints = {};
   if (m_Group) m_Group.GetWaypoints(waypoints);
   PrintFormat("[ACR] %1: %2: woke %3 crew AI, vehicle %4 (vehicle AI was off %5, pilot seat unhooked %6), waypoints %7, order '%8'", m_Name, why, woke, vehicle != null, vehicleAIWasOff, pilotDetached, waypoints.Count(), m_Order);
+  // A helicopter crew must not keep a waypoint once the player is out of it (they'd get out).
+  if (Aircraft())
+  {
+   if (!waypoints.IsEmpty() || OrderState() != ACR_EOrderState.HOLD) Halt("Holding");
+   return;
+  }
   // Left "Following you" with nothing to do: plain Holding, so the panel and AI read it right.
   if (OrderState() == ACR_EOrderState.COMMANDED && waypoints.IsEmpty()) SetOrder("Holding", ACR_EOrderState.HOLD);
  }
@@ -568,6 +574,11 @@ class ACR_Squad : Managed
  AIWaypoint IssueWaypoint(ResourceName prefab, vector position, float completionRadius = -1, bool forced = false)
  {
   if (!m_Group) return null;
+  if (prefab != WP_GET_OUT && Aircraft())
+  {
+   PrintFormat("[ACR] %1: no waypoint for a helicopter crew (AI can't fly; they would get out)", m_Name);
+   return null;
+  }
   // Vehicle crews never get the game's Defend waypoint: it orders everyone in a turret out,
   // when it starts and again when it is replaced by the next order (LAV crew bailing out for
   // no reason, 2 Oct live). A plain move there holds the vehicle just the same; the order
@@ -1268,6 +1279,22 @@ class ACR_Squad : Managed
   array<BaseCompartmentSlot> turrets = {};
   compartments.GetCompartmentsOfType(turrets, ECompartmentType.TURRET);
   return !turrets.IsEmpty();
+ }
+
+ // The helicopter this squad crews (pilot/gunner seats), if any. AI can't fly in Reforger:
+ // any waypoint makes a helicopter crew get out and walk (4 Oct MP: a player flying a
+ // Game Master helicopter gave it a map move, the co-pilot bailed; after he left the seat the
+ // pilot bailed too, walking to that move). Such a crew only ever holds or gets out.
+ IEntity Aircraft()
+ {
+  IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  if (!vehicle)
+  {
+   IEntity leader = GetLeader();
+   if (leader && ACR_Transport.SeatOf(leader) != ECompartmentType.CARGO) vehicle = ACR_Transport.VehicleOf(leader);
+  }
+  if (vehicle && vehicle.FindComponent(VehicleHelicopterSimulation)) return vehicle;
+  return null;
  }
 
  // Can fight: infantry of two or more, or a vehicle crew with a manned gun.

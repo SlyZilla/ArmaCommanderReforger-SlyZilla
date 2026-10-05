@@ -2,6 +2,7 @@
 // the 1 Oct review. Each check prints "[ACR] REGRESS PASS|FAIL <name>".
 class ACR_TestRegress
 {
+ static ref ACR_Squad s_Heli;
  static void Check(string name, bool ok, string detail = "")
  {
   string verdict = "FAIL";
@@ -272,6 +273,17 @@ class ACR_TestRegress
   {
    manager.m_sSpawningFaction = "US";
    manager.SpawnUnit("Regress Truck", "", "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", true, "", harness.Ground("1500 0 2950"), harness.Ground("1506 0 2956"));
+   // A crewed helicopter outside the helipads (Game Master / bought): AI can't fly it, so its
+   // crew must never get a move (4 Oct MP: both pilots bailed out and walked).
+   manager.SpawnUnit("Regress Heli", "", ACR_Supports.HELI_TRANSPORT_WEST, true, "", harness.Ground("1490 0 2870"), harness.Ground("1496 0 2876"));
+  }
+  if (tick == 44)
+  {
+   s_Heli = null;
+   foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetName() == "Regress Heli") s_Heli = squad;
+   bool moved;
+   if (s_Heli) moved = s_Heli.MoveTo(harness.Ground("1600 0 2700"));
+   Check("helicopter crew is known as one and refuses a move", s_Heli != null && s_Heli.Aircraft() != null && !moved, string.Format("found %1, moved %2", s_Heli != null, moved));
   }
   if (tick == 48)
   {
@@ -303,6 +315,18 @@ class ACR_TestRegress
   {
    bool kept = s_Defender && s_Defender.m_iAITask == ACR_EAITask.DEFEND;
    Check("AI commander leaves the other side's defenders alone", kept, "");
+   int seated, crewmen;
+   if (s_Heli)
+   {
+    array<AIAgent> agents = {};
+    s_Heli.GetAgents(agents);
+    foreach (AIAgent agent : agents)
+    {
+     crewmen++;
+     if (ACR_Transport.VehicleOf(agent.GetControlledEntity())) seated++;
+    }
+   }
+   Check("helicopter crew stays seated after a refused move", crewmen > 0 && seated == crewmen, string.Format("%1 of %2 seated", seated, crewmen));
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Print("[ACR] TEST COMPLETE");
   }

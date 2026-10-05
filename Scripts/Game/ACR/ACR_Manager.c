@@ -340,6 +340,17 @@ class ACR_Manager : Managed
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
+   // A support helicopter's crew can register in the second before it is seated and
+   // remembered (4 Oct MP: the AI commander posted a fresh gunship crew to Quarry and they
+   // bailed out of it): drop it as a squad as soon as it is known for a support crew.
+   if (m_Supports && squad.m_Group && m_Supports.IsSupportGroup(squad.m_Group))
+   {
+    PrintFormat("[ACR] Squad dropped: %1 is a support helicopter crew", squad.GetName());
+    squad.Halt("Holding");
+    squad.Dispose();
+    m_Squads.RemoveOrdered(i);
+    continue;
+   }
    if (squad.IsAlive())
    {
     squad.Refresh();

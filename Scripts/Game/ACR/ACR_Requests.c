@@ -174,6 +174,9 @@ class ACR_Requests : Managed
   if (usesPoint) point = ACR_Manager.Ground(point);
   m_Manager.m_LastSquad.Set(pc.GetPlayerId(), squad);
   string name = squad.GetName();
+  // Helicopter crews only hold or get out (AI can't fly; any move makes them get out and walk).
+  bool crewSafe = command == ACR_ERequest.ORDER_HALT || command == ACR_ERequest.ORDER_GET_OUT || command == ACR_ERequest.ORDER_UNLOAD || command == ACR_ERequest.MODE_COMBAT || command == ACR_ERequest.MODE_FAST || command == ACR_ERequest.MODE_SILENT;
+  if (!crewSafe && squad.Aircraft()) return name + ": AI can't fly helicopters. Take the pilot's seat to fly it, or order Get out";
   switch (command)
   {
    case ACR_ERequest.ADVANCE:
