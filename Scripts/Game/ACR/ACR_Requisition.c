@@ -235,6 +235,19 @@ class ACR_Requisition : Managed
   return false;
  }
 
+ static int REINFORCE_CLEAR_RADIUS = 300; // no Reinforce with enemy troops this close (tests may change it)
+
+ // Refusal text when enemy troops are too close to the squad to reinforce it ("" = clear).
+ string InContact(ACR_Squad squad)
+ {
+  IEntity anchor = squad.GetAnchor();
+  if (!anchor || !squad.GetFaction()) return "";
+  if (!m_Manager.m_Supports) m_Manager.m_Supports = new ACR_Supports(m_Manager);
+  if (!m_Manager.m_Supports.FindEnemyNear(squad.GetFaction().GetFactionKey(), anchor.GetOrigin(), REINFORCE_CLEAR_RADIUS)) return "";
+  PrintFormat("[ACR] REINFORCE %1 refused: enemy within %2 m", squad.GetName(), REINFORCE_CLEAR_RADIUS);
+  return string.Format("Can't reinforce %1: enemy troops within %2 m. Pull back or clear the area first", squad.GetName(), REINFORCE_CLEAR_RADIUS);
+ }
+
  string Reinforce(SCR_PlayerController pc, RplId groupId)
  {
   ACR_Squad squad = m_Manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
@@ -247,6 +260,9 @@ class ACR_Requisition : Managed
   IEntity anchor = squad.GetAnchor();
   vector near = vector.Zero;
   if (anchor) near = anchor.GetOrigin();
+  // No reinforcing in contact (Jacob, 4 Oct): nothing while enemy troops are within 300 m.
+  string contact = InContact(squad);
+  if (contact != "") return contact;
   // Inside a base that can deploy units, the squad also gets its ammo back.
   ACR_Base depot = DeployBaseAt(key, near);
   // A mortar team whose mortar was destroyed gets a new one with its reinforcements.

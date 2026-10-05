@@ -361,11 +361,15 @@ class ACR_HeliStation : Managed
   ReplaceCrew(heli.m_Vehicle, heli.m_sFaction);
  }
 
- // Empty pilot and gun seats get a new crewman (the dead are thrown out first).
+ // Empty pilot and gun seats get a new crewman (the dead are thrown out first, the wounded
+ // patched up). Crewmen who got out (a helicopter shot up on its pad: the crew bails) are
+ // replaced too: 4 Oct live, a repaired helicopter came back short of crew, and the crew on
+ // foot was taken for a squad.
  void ReplaceCrew(IEntity vehicle, string factionKey)
  {
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   if (!compartments) return;
+  m_Supports.RememberCrew(vehicle);
   array<BaseCompartmentSlot> slots = {};
   compartments.GetCompartments(slots);
   AIGroup crewGroup;
@@ -378,10 +382,36 @@ class ACR_HeliStation : Managed
     SCR_EntityHelper.DeleteEntityAndChildren(occupant);
     continue;
    }
+   SCR_CharacterDamageManagerComponent wounds = SCR_CharacterDamageManagerComponent.Cast(occupant.FindComponent(SCR_CharacterDamageManagerComponent));
+   if (wounds && (wounds.GetHealthScaled() < 0.99 || wounds.IsBleeding())) wounds.FullHeal();
    AIControlComponent seated = AIControlComponent.Cast(occupant.FindComponent(AIControlComponent));
    if (!crewGroup && seated && seated.GetControlAIAgent()) crewGroup = seated.GetControlAIAgent().GetParentGroup();
   }
+  int stragglers;
+  SCR_AIGroup known = m_Supports.CrewOf(vehicle);
+  if (known)
+  {
+   array<AIAgent> agents = {};
+   known.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity man = agent.GetControlledEntity();
+    if (!man || Aboard(man, vehicle)) continue;
+    SCR_EntityHelper.DeleteEntityAndChildren(man);
+    stragglers++;
+   }
+   if (!crewGroup && stragglers < agents.Count()) crewGroup = known;
+  }
+  if (stragglers > 0) PrintFormat("[ACR] HELIPAD %1 crewmen who got out replaced", stragglers);
   GetGame().GetCallqueue().CallLater(SeatCrew, 300, false, vehicle, factionKey, crewGroup);
+ }
+
+ static bool Aboard(IEntity man, IEntity vehicle)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(man);
+  if (!character || !character.GetCompartmentAccessComponent()) return false;
+  BaseCompartmentSlot slot = character.GetCompartmentAccessComponent().GetCompartment();
+  return slot && slot.GetVehicle() == vehicle;
  }
 
  protected void SeatCrew(IEntity vehicle, string factionKey, AIGroup crewGroup)
@@ -401,6 +431,7 @@ class ACR_HeliStation : Managed
    if (man) seated++;
   }
   if (seated > 0) PrintFormat("[ACR] HELIPAD %1 new crewmen seated", seated);
+  m_Supports.RememberCrew(vehicle);
  }
 
  // Every second (server): losses, end of servicing, damage while parked.

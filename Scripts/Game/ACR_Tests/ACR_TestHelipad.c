@@ -12,6 +12,36 @@ class ACR_TestHelipad
  static int s_iReadyAt = -1;
  static int s_iRP;
  static float s_fTopHeight;
+ static IEntity s_Ejected;
+ static int s_iRecrewAt = -1;
+
+ static int CrewSeats(IEntity vehicle)
+ {
+  int count;
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return 0;
+  array<BaseCompartmentSlot> slots = {};
+  compartments.GetCompartments(slots);
+  foreach (BaseCompartmentSlot slot : slots)
+   if (slot.GetType() == ECompartmentType.PILOT || slot.GetType() == ECompartmentType.TURRET) count++;
+  return count;
+ }
+
+ // Crew seated in the pilot and gun seats, alive.
+ static int CrewAboard(IEntity vehicle)
+ {
+  int count;
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return 0;
+  array<BaseCompartmentSlot> slots = {};
+  compartments.GetCompartments(slots);
+  foreach (BaseCompartmentSlot slot : slots)
+  {
+   if (slot.GetType() != ECompartmentType.PILOT && slot.GetType() != ECompartmentType.TURRET) continue;
+   if (slot.GetOccupant() && ACR_Respawn.IsAlive(slot.GetOccupant())) count++;
+  }
+  return count;
+ }
 
  static int Aboard(IEntity vehicle)
  {
@@ -121,10 +151,52 @@ class ACR_TestHelipad
    int ourSquads;
    foreach (ACR_Squad squad : manager.m_Squads) if (squad.MarkVehicle() == s_Heli.m_Vehicle) ourSquads++;
    ACR_TestRegress.Check("helipad: the crew stays aboard and is never a squad", Aboard(s_Heli.m_Vehicle) >= 2 && ourSquads == 0, string.Format("aboard %1, squads %2", Aboard(s_Heli.m_Vehicle), ourSquads));
+   // 4 Oct live: a helicopter shot up on its pad; its crew got out, was taken for a squad (the AI
+   // commander ordered it about) and the repaired helicopter came back short of crew.
+   // One crewman gets out, another dies.
+   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(s_Heli.m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+   array<BaseCompartmentSlot> slots = {};
+   if (compartments) compartments.GetCompartments(slots);
+   IEntity victim;
+   foreach (BaseCompartmentSlot slot : slots)
+   {
+    IEntity man = slot.GetOccupant();
+    if (!man) continue;
+    if (!s_Ejected) { s_Ejected = man; continue; }
+    if (!victim) victim = man;
+   }
+   ChimeraCharacter ejected = ChimeraCharacter.Cast(s_Ejected);
+   if (ejected && ejected.GetCompartmentAccessComponent()) ejected.GetCompartmentAccessComponent().GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   if (victim) h.Kill(victim);
+   PrintFormat("[ACR] HELIPADTEST crewman out: %1, crewman killed: %2 (crew seats %3)", s_Ejected != null, victim != null, CrewSeats(s_Heli.m_Vehicle));
+  }
+  if (s_iReadyAt > 0 && tick == s_iReadyAt + 9)
+  {
+   bool gotOut = s_Ejected && !ACR_HeliStation.Aboard(s_Ejected, s_Heli.m_Vehicle);
+   bool isSquad = s_Ejected && manager.FindSquadBySoldier(s_Ejected) != null;
+   ACR_TestRegress.Check("helipad: a crewman who got out is never a squad", gotOut && !isSquad, string.Format("out %1, squad %2", gotOut, isSquad));
+   // Shot up on the pad -> servicing (the real path: Tick services it when the time is up).
+   s_Heli.m_eState = ACR_EHeliState.SERVICING;
+   s_Heli.m_fReadyAt = GetGame().GetWorld().GetWorldTime() + 2000;
+   s_iRecrewAt = tick;
+  }
+  if (s_iRecrewAt > 0 && tick == s_iRecrewAt + 5)
+  {
+   int seats = CrewSeats(s_Heli.m_Vehicle);
+   int crew = CrewAboard(s_Heli.m_Vehicle);
+   ACR_TestRegress.Check("helipad: serviced on the pad = fully crewed again", s_Heli.m_eState == ACR_EHeliState.READY && seats > 0 && crew == seats && (!s_Ejected || ACR_HeliStation.Aboard(s_Ejected, s_Heli.m_Vehicle)), string.Format("state %1, crew %2 of %3, straggler left %4", s_Heli.m_eState, crew, seats, s_Ejected != null));
+   int crewSquads;
+   foreach (ACR_Squad any : manager.m_Squads)
+   {
+    array<AIAgent> agents = {};
+    any.GetAgents(agents);
+    foreach (AIAgent agent : agents) if (agent.GetControlledEntity() && ACR_HeliStation.Aboard(agent.GetControlledEntity(), s_Heli.m_Vehicle)) crewSquads++;
+   }
+   ACR_TestRegress.Check("helipad: the new crew is never a squad", crewSquads == 0, string.Format("%1", crewSquads));
    SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(s_Heli.m_Vehicle.FindComponent(SCR_DamageManagerComponent));
    if (damage) damage.Kill(Instigator.CreateInstigator(null));
   }
-  if (s_iReadyAt > 0 && tick == s_iReadyAt + 7)
+  if (s_iRecrewAt > 0 && tick == s_iRecrewAt + 8)
   {
    ACR_TestRegress.Check("helipad: destroyed = gone, buy a new one", station.CountOf("US", true) == 0 && station.StatusFor("US", true).Contains("buy"), station.StatusFor("US", true));
    Print("[ACR] TEST COMPLETE");

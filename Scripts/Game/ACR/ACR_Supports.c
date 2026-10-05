@@ -1252,8 +1252,44 @@ class ACR_Supports : Managed
   return factionKey == "US" || factionKey.Contains("US") || factionKey == "NATO" || factionKey == "BLUFOR";
  }
 
+ // Groups that have crewed a support vehicle. A crew that bails out (a helicopter shot up on
+ // its pad) is no longer seated, and must still never be taken for a squad (4 Oct live: the AI
+ // commander ordered a support helicopter's crew about).
+ ref array<SCR_AIGroup> m_CrewGroups = {};
+ ref map<IEntity, SCR_AIGroup> m_CrewOf = new map<IEntity, SCR_AIGroup>();
+
+ void RememberCrew(IEntity vehicle)
+ {
+  if (!vehicle) return;
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return;
+  array<BaseCompartmentSlot> slots = {};
+  compartments.GetCompartments(slots);
+  foreach (BaseCompartmentSlot slot : slots)
+  {
+   IEntity occupant = slot.GetOccupant();
+   if (!occupant || !ACR_Respawn.IsAlive(occupant)) continue;
+   AIControlComponent control = AIControlComponent.Cast(occupant.FindComponent(AIControlComponent));
+   if (!control || !control.GetControlAIAgent()) continue;
+   SCR_AIGroup group = SCR_AIGroup.Cast(control.GetControlAIAgent().GetParentGroup());
+   if (!group) continue;
+   m_CrewOf.Set(vehicle, group);
+   if (m_CrewGroups.Contains(group)) continue;
+   m_CrewGroups.Insert(group);
+   PrintFormat("[ACR] SUPPORT crew group remembered for %1", vehicle.GetPrefabData().GetPrefabName());
+  }
+ }
+
+ SCR_AIGroup CrewOf(IEntity vehicle)
+ {
+  SCR_AIGroup group;
+  m_CrewOf.Find(vehicle, group);
+  return group;
+ }
+
  bool IsSupportGroup(SCR_AIGroup group)
  {
+  if (m_CrewGroups.Contains(group)) return true;
   if (m_Vehicles.IsEmpty()) return false;
   array<AIAgent> agents = {};
   group.GetAgents(agents);
@@ -1650,6 +1686,8 @@ class ACR_Supports : Managed
  }
 
  // Every server frame.
+ protected float m_fNextCrewCheck;
+
  void Frame(float dt)
  {
   m_iFrame++;
@@ -1671,7 +1709,16 @@ class ACR_Supports : Managed
   }
   TrackBatteryShells(now);
   if (m_Station) m_Station.Tick(now);
-  for (int v = m_Vehicles.Count() - 1; v >= 0; v--) if (!m_Vehicles[v]) m_Vehicles.Remove(v);
+  for (int v = m_Vehicles.Count() - 1; v >= 0; v--)
+  {
+   if (!m_Vehicles[v]) m_Vehicles.Remove(v);
+   else if (now >= m_fNextCrewCheck) RememberCrew(m_Vehicles[v]);
+  }
+  if (now >= m_fNextCrewCheck)
+  {
+   m_fNextCrewCheck = now + 1000;
+   for (int g = m_CrewGroups.Count() - 1; g >= 0; g--) if (!m_CrewGroups[g]) m_CrewGroups.Remove(g);
+  }
   for (int z = m_Zones.Count() - 1; z >= 0; z--) if (now > m_Zones[z].m_fEndAt) m_Zones.Remove(z);
  }
 }

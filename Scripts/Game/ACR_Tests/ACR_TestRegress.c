@@ -280,6 +280,25 @@ class ACR_TestRegress
    Check("vehicle crew keeps its unit name", crew != null && crew.m_OwnVehicle != null, string.Format("found %1", crew != null));
    if (crew) Check("idle truck crew can give rides", manager.m_Rides && manager.m_Rides.WhyNotTaxi(crew, "US").IsEmpty(), manager.m_Rides.WhyNotTaxi(crew, "US"));
   }
+  // No Reinforce with enemy troops close by (Jacob, 4 Oct; 300 m in play). The radius is moved
+  // either side of the nearest enemy, so nobody has to be teleported into a fight.
+  if (tick == 49 && bravo && bravo.GetAnchor())
+  {
+   if (!manager.m_Supports) manager.m_Supports = new ACR_Supports(manager);
+   IEntity nearest = manager.m_Supports.FindEnemyNear("US", bravo.GetAnchor().GetOrigin(), 100000);
+   if (!nearest) Print("[ACR] REGRESS info: reinforce contact check skipped (no enemy soldier)");
+   else
+   {
+    int gap = (int)vector.DistanceXZ(nearest.GetOrigin(), bravo.GetAnchor().GetOrigin());
+    int keep = ACR_Requisition.REINFORCE_CLEAR_RADIUS;
+    ACR_Requisition.REINFORCE_CLEAR_RADIUS = gap + 20;
+    string refused = manager.m_Requisition.InContact(bravo);
+    ACR_Requisition.REINFORCE_CLEAR_RADIUS = Math.Max(1, gap - 20);
+    string allowed = manager.m_Requisition.InContact(bravo);
+    ACR_Requisition.REINFORCE_CLEAR_RADIUS = keep;
+    Check("reinforce refused with enemy troops close, explained", refused.Contains("enemy troops within") && allowed == "", string.Format("nearest %1 m: '%2' / '%3'", gap, refused, allowed));
+   }
+  }
   if (tick == 50)
   {
    bool kept = s_Defender && s_Defender.m_iAITask == ACR_EAITask.DEFEND;
