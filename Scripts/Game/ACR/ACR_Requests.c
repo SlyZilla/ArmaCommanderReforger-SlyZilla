@@ -1,5 +1,15 @@
 // Player requests to the server: possession, orders, rides, landing zones, unloading
 // (split out of ACR_Manager, 2 Oct; the manager forwards its old entry points).
+// What became of a player's order (R03, 5 Oct review): accepted or refused, plus the
+// text for the player. Callers decide on m_bAccepted, never on the wording.
+class ACR_OrderOutcome : Managed
+{
+ bool m_bAccepted;
+ string m_sMessage;
+ ACR_OrderOutcome Accept(string message) { m_bAccepted = true; m_sMessage = message; return this; }
+ ACR_OrderOutcome Refuse(string message) { m_bAccepted = false; m_sMessage = message; return this; }
+}
+
 class ACR_Requests : Managed
 {
  protected ACR_Manager m_Manager;
@@ -102,27 +112,60 @@ class ACR_Requests : Managed
   return string.Format("%1 has no free soldier to take over", squad.GetName());
  }
 
- // A player's order, credited to him (shared command: who ordered what).
+ // The squad an order is for, resolved once (R04, 5 Oct review). A request that names a
+ // group which no longer resolves (removed, not a squad any more) is refused: it never
+ // falls through to another squad. Only a request without a group (the test hotkeys)
+ // uses the player's current/last/first squad.
+ ACR_Squad ResolveOrderSquad(SCR_PlayerController pc, RplId groupId, out string why)
+ {
+  if (groupId.IsValid())
+  {
+   ACR_Squad squad = m_Manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
+   if (!squad || !m_Manager.m_Squads.Contains(squad))
+   {
+    why = "That squad is gone (select it again)";
+    return null;
+   }
+   return squad;
+  }
+  ACR_Squad fallback;
+  if (pc) fallback = m_Manager.GetSelectedSquad(pc);
+  if (!fallback) why = "No squad selected";
+  return fallback;
+ }
+
+ // A player's order, credited to him (shared command: who ordered what). Credit, the
+ // command note and the re-tasked feed line follow only an ACCEPTED order that changed
+ // the squad (new order serial, a queued waypoint or a ride); refusals and no-ops
+ // (modes, LZs) never touch them (R03, 5 Oct review). Acceptance comes from
+ // ACR_OrderOutcome, never from the message text.
  string Order(SCR_PlayerController pc, int command, RplId groupId, vector point)
  {
-  ACR_Squad squad = m_Manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
-  if (!squad) squad = m_Manager.GetSelectedSquad(pc);
-  int serial = -1;
-  int previous;
-  float previousAt;
-  if (squad)
+  string why;
+  ACR_Squad squad = ResolveOrderSquad(pc, groupId, why);
+  if (!squad)
   {
-   serial = squad.m_iOrderSerial;
-   previous = squad.m_iOrderedBy;
-   previousAt = squad.m_fOrderedAt;
+   PrintFormat("[ACR] ORDER refused player=%1 command=%2: %3", pc.GetPlayerId(), command, why);
+   return why;
   }
-  string result = GiveOrder(pc, command, groupId, point);
-  if (!squad || !m_Manager.m_Squads.Contains(squad) || !squad.GetFaction()) return result;
-  bool queued = (command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.QUEUE_GARRISON) && !result.Contains("full");
-  bool ride = command == ACR_ERequest.ORDER_RIDE && result.Contains("on its way");
-  if (squad.m_iOrderSerial == serial && !queued && !ride) return result;
-  if (!m_Manager.IsCommander(pc.GetPlayerId())) return result;
-  int id = pc.GetPlayerId();
+  int serial = squad.m_iOrderSerial;
+  int previous = squad.m_iOrderedBy;
+  float previousAt = squad.m_fOrderedAt;
+  ACR_OrderOutcome outcome = GiveOrderTo(pc, command, squad, point);
+  s_LastOutcome = outcome;
+  Credit(pc.GetPlayerId(), squad, command, point, outcome, serial, previous, previousAt);
+  return outcome.m_sMessage;
+ }
+
+ // Shared-command bookkeeping for one order (split out so srv:regress can check it
+ // without a connected player). Returns true when the order was credited.
+ bool Credit(int id, ACR_Squad squad, int command, vector point, ACR_OrderOutcome outcome, int serial, int previous, float previousAt)
+ {
+  if (!outcome || !outcome.m_bAccepted || !squad) return false;
+  if (!m_Manager.m_Squads.Contains(squad) || !squad.GetFaction()) return false;
+  bool queued = command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.QUEUE_GARRISON;
+  bool ride = command == ACR_ERequest.ORDER_RIDE;
+  if (squad.m_iOrderSerial == serial && !queued && !ride) return false;
   float now = GetGame().GetWorld().GetWorldTime();
   squad.m_iOrderedBy = id;
   squad.m_fOrderedAt = now;
@@ -135,8 +178,11 @@ class ACR_Requests : Managed
   // Someone else's fresh order replaced: tell the side (the client asked first).
   if (previous != 0 && previous != id && now - previousAt < ACR_Command.RECENT_MS)
    m_Manager.Command().Feed(key, string.Format("%1 re-tasked %2 (was %3's order)", m_Manager.Command().TagOf(id), squad.GetName(), m_Manager.Command().TagOf(previous)));
-  return result;
+  return true;
  }
+
+ // The last order's outcome (tests read it).
+ static ref ACR_OrderOutcome s_LastOutcome;
 
  static string OrderWords(int command)
  {
@@ -157,119 +203,150 @@ class ACR_Requests : Managed
   return "moving";
  }
 
+ // Legacy wrapper: the message only.
  string GiveOrder(SCR_PlayerController pc, int command, RplId groupId, vector point)
  {
-  ACR_Squad squad = m_Manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
-  if (!squad) squad = m_Manager.GetSelectedSquad(pc);
-  if (!squad) return "No squad selected";
-  if (squad.GetFaction() != SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId())) return "That squad belongs to another faction";
-  if (!m_Manager.IsCommander(pc.GetPlayerId())) return "Only the commander can give map orders. Take command first.";
+  string why;
+  ACR_Squad squad = ResolveOrderSquad(pc, groupId, why);
+  if (!squad) return why;
+  return GiveOrderTo(pc, command, squad, point).m_sMessage;
+ }
+
+ // Validates and carries out one order on exactly this squad. The outcome says whether
+ // it was accepted; the message is only for the player.
+ ACR_OrderOutcome GiveOrderTo(SCR_PlayerController pc, int command, ACR_Squad squad, vector point)
+ {
+  ACR_OrderOutcome outcome = new ACR_OrderOutcome();
+  if (!squad) return outcome.Refuse("No squad selected");
+  if (squad.GetFaction() != SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId())) return outcome.Refuse("That squad belongs to another faction");
+  if (!m_Manager.IsCommander(pc.GetPlayerId())) return outcome.Refuse("Only the commander can give map orders. Take command first.");
   IEntity anchor = squad.GetAnchor();
-  if (!anchor) return "That squad is not ready";
+  if (!anchor) return outcome.Refuse("That squad is not ready");
   bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON;
   // Reject nonsense coordinates from a client.
-  if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !ACR_Manager.OnMap(point))) return "Order is too far away";
+  if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !ACR_Manager.OnMap(point))) return outcome.Refuse("Order is too far away");
   // Map clicks made inside Game Master / build mode are not orders (the client checks too).
-  if (usesPoint && ACR_Manager.EditorOpenFor(pc.GetPlayerId())) return "Close the editor to give map orders";
+  if (usesPoint && ACR_Manager.EditorOpenFor(pc.GetPlayerId())) return outcome.Refuse("Close the editor to give map orders");
   if (usesPoint) point = ACR_Manager.Ground(point);
-  m_Manager.m_LastSquad.Set(pc.GetPlayerId(), squad);
   string name = squad.GetName();
   // Helicopter crews only hold or get out (AI can't fly; any move makes them get out and walk).
   bool crewSafe = command == ACR_ERequest.ORDER_FIRE_AT_WILL || command == ACR_ERequest.ORDER_HALT || command == ACR_ERequest.ORDER_GET_OUT || command == ACR_ERequest.ORDER_UNLOAD || command == ACR_ERequest.MODE_COMBAT || command == ACR_ERequest.MODE_FAST || command == ACR_ERequest.MODE_SILENT;
-  if (!crewSafe && squad.Aircraft()) return name + ": AI can't fly helicopters. Take the pilot's seat to fly it, or order Get out";
+  if (!crewSafe && squad.Aircraft()) return outcome.Refuse(name + ": AI can't fly helicopters. Take the pilot's seat to fly it, or order Get out");
+  m_Manager.m_LastSquad.Set(pc.GetPlayerId(), squad);
+  int serial = squad.m_iOrderSerial;
   switch (command)
   {
    case ACR_ERequest.ADVANCE:
-    if (squad.MoveTo(ACR_Manager.Ground(squad.m_Home + Vector(35, 0, 0)))) return name + ": moving";
+    if (squad.MoveTo(ACR_Manager.Ground(squad.m_Home + Vector(35, 0, 0)))) return outcome.Accept(name + ": moving");
     break;
    case ACR_ERequest.RALLY:
-    if (squad.MoveTo(ACR_Manager.Ground(squad.m_Home))) return name + ": rallying";
+    if (squad.MoveTo(ACR_Manager.Ground(squad.m_Home))) return outcome.Accept(name + ": rallying");
     break;
    case ACR_ERequest.MOVE_TO:
     if (squad.MoveTo(point))
     {
      PrintFormat("[ACR] MOVE player=%1 squad=%2 target=%3", pc.GetPlayerId(), name, point);
-     return name + ": moving";
+     return outcome.Accept(name + ": moving");
     }
     break;
    case ACR_ERequest.ORDER_DEFEND:
-    if (squad.Defend(point)) return name + ": defending";
+    if (squad.Defend(point)) return outcome.Accept(name + ": defending");
     break;
    case ACR_ERequest.ORDER_GARRISON:
-    if (squad.Garrison(point)) return name + ": garrisoning";
-    if (ACR_Transport.CrewedVehicle(squad)) return name + ": vehicle crews can't garrison, defending there";
-    return name + ": no building with room there, defending";
+    if (squad.Garrison(point)) return outcome.Accept(name + ": garrisoning");
+    // Garrison falls back to a Defend there by itself.
+    if (ACR_Transport.CrewedVehicle(squad)) return outcome.Accept(name + ": vehicle crews can't garrison, defending there");
+    return outcome.Accept(name + ": no building with room there, defending");
    case ACR_ERequest.ORDER_GET_IN:
    {
     bool boarding = squad.GetIn(point);
     PrintFormat("[ACR] GET IN player=%1 squad=%2 target=%3 -> %4", pc.GetPlayerId(), name, point, boarding);
-    if (boarding) return name + ": getting in";
-    return name + ": no vehicle found";
+    if (boarding) return outcome.Accept(name + ": getting in");
+    return outcome.Refuse(name + ": no vehicle found");
    }
    case ACR_ERequest.ORDER_GET_OUT:
    {
     bool leaving = squad.GetOut();
     PrintFormat("[ACR] GET OUT player=%1 squad=%2 -> %3", pc.GetPlayerId(), name, leaving);
-    if (leaving) return name + ": getting out";
-    return name + " is not in a vehicle";
+    if (leaving) return outcome.Accept(name + ": getting out");
+    return outcome.Refuse(name + " is not in a vehicle");
    }
    case ACR_ERequest.ORDER_UNLOAD:
-    return Unload(squad);
+   {
+    string unloaded = Unload(squad);
+    outcome.m_bAccepted = squad.m_iOrderSerial != serial;
+    outcome.m_sMessage = unloaded;
+    return outcome;
+   }
    case ACR_ERequest.ORDER_SET_LZ:
-    return SetLZ(squad, point);
+    return outcome.Accept(SetLZ(squad, point));
    case ACR_ERequest.ORDER_RIDE:
-    return Ride(squad, point);
+   {
+    bool going;
+    string ridden = Ride(squad, point, going);
+    outcome.m_bAccepted = going;
+    outcome.m_sMessage = ridden;
+    return outcome;
+   }
    case ACR_ERequest.ORDER_HUNT:
-    return m_Manager.Hunt(squad, point);
+   {
+    string hunted = m_Manager.Hunt(squad, point);
+    outcome.m_bAccepted = squad.m_iOrderSerial != serial;
+    outcome.m_sMessage = hunted;
+    return outcome;
+   }
    case ACR_ERequest.ORDER_HALT:
     squad.Halt("Halted");
-    return name + ": halted";
+    return outcome.Accept(name + ": halted");
    case ACR_ERequest.QUEUE_MOVE:
-    if (squad.Queue(point, false)) return name + ": waypoint added";
-    return name + ": waypoint list is full";
+    if (squad.Queue(point, false)) return outcome.Accept(name + ": waypoint added");
+    return outcome.Refuse(name + ": waypoint list is full");
    case ACR_ERequest.QUEUE_DEFEND:
-    if (squad.Queue(point, true)) return name + ": will defend there after its current order";
-    return name + ": waypoint list is full";
+    if (squad.Queue(point, true)) return outcome.Accept(name + ": will defend there after its current order");
+    return outcome.Refuse(name + ": waypoint list is full");
    case ACR_ERequest.QUEUE_GARRISON:
-    if (squad.Queue(point, false, true)) return name + ": will garrison there after its current order";
-    return name + ": waypoint list is full";
+    if (squad.Queue(point, false, true)) return outcome.Accept(name + ": will garrison there after its current order");
+    return outcome.Refuse(name + ": waypoint list is full");
    case ACR_ERequest.MODE_COMBAT:
     squad.SetMode(ACR_EMoveMode.COMBAT);
-    return name + ": combat";
+    return outcome.Accept(name + ": combat");
    case ACR_ERequest.MODE_FAST:
     squad.SetMode(ACR_EMoveMode.FAST);
-    return name + ": fast";
+    return outcome.Accept(name + ": fast");
    case ACR_ERequest.ORDER_FIRE_AT_WILL:
    {
     bool mortar = m_Manager.Mortars().TeamOf(squad) != null;
-    if (!mortar && !ACR_FireMissions.IsObserver(squad)) return name + ": needs a radio operator or a mortar to fire at will";
+    if (!mortar && !ACR_FireMissions.IsObserver(squad)) return outcome.Refuse(name + ": needs a radio operator or a mortar to fire at will");
     squad.m_bFireAtWill = !squad.m_bFireAtWill;
     PrintFormat("[ACR] FIRE player=%1 %2 fire at will %3", pc.GetPlayerId(), name, squad.m_bFireAtWill);
-    if (!squad.m_bFireAtWill) return name + ": fire at will off";
-    if (mortar) return name + ": fire at will on (fires a few rounds of its own at spotted enemies in reach, no RP)";
-    return name + ": fire at will on (calls mortar fire on enemies it sees; usual RP and cooldown)";
+    if (!squad.m_bFireAtWill) return outcome.Accept(name + ": fire at will off");
+    if (mortar) return outcome.Accept(name + ": fire at will on (fires a few rounds of its own at spotted enemies in reach, no RP)");
+    return outcome.Accept(name + ": fire at will on (calls mortar fire on enemies it sees; usual RP and cooldown)");
    }
    case ACR_ERequest.MODE_SILENT:
     squad.SetMode(ACR_EMoveMode.SILENT);
-    return name + ": silent";
+    return outcome.Accept(name + ": silent");
    default:
-    return "Unknown command";
+    return outcome.Refuse("Unknown command");
   }
-  return name + ": could not create that order";
+  return outcome.Refuse(name + ": could not create that order");
  }
 
  // A free transport nearby (never fetched from far away) picks the squad up,
  // drops it at the point and it takes positions there (walking the rest if the ride fails).
- string Ride(ACR_Squad squad, vector point)
+ // going: a ride was arranged, or the squad walks instead (it moves either way).
+ string Ride(ACR_Squad squad, vector point, out bool going)
  {
+  going = false;
   if (!m_Manager.m_Rides) m_Manager.m_Rides = new ACR_Rides(m_Manager);
   string why;
   if (!m_Manager.m_Rides.Request(squad, point, 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why))
   {
    // Walking beats the road there: just go.
-   if (why.Contains("walking is faster") && squad.MoveTo(point)) return squad.GetName() + ": " + why + ", on foot";
+   if (why.Contains("walking is faster") && squad.MoveTo(point)) { going = true; return squad.GetName() + ": " + why + ", on foot"; }
    return squad.GetName() + ": no ride, " + why;
   }
+  going = true;
   ACR_Ride ride = m_Manager.m_Rides.RideOf(squad);
   string taxi = "a transport";
   if (ride) taxi = ride.m_Taxi.GetName();

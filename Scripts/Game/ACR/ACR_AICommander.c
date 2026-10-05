@@ -206,14 +206,29 @@ class ACR_AICommander : Managed
    else if (Visible(base)) others.Insert(base);
   }
   if (others.IsEmpty()) { result.Copy(mine); return; }
-  float best = float.MAX;
+  array<float> nearest = {};
   foreach (ACR_Base base : mine)
   {
-   float nearest = float.MAX;
-   foreach (ACR_Base other : others) nearest = Math.Min(nearest, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
-   if (nearest < best - 1) { best = nearest; result.Clear(); }
-   if (nearest <= best + 150) result.Insert(base);
+   float gap = float.MAX;
+   foreach (ACR_Base other : others) gap = Math.Min(gap, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
+   nearest.Insert(gap);
   }
+  array<int> picked = {};
+  FrontlinePick(nearest, picked);
+  foreach (int i : picked) result.Insert(mine[i]);
+ }
+
+ static const float FRONTLINE_SLACK = 150; // m: bases this much farther than the closest still count
+
+ // The indexes of every base within FRONTLINE_SLACK of the smallest gap. Two passes, so
+ // the answer doesn't depend on the order the bases come in (R07, 5 Oct review: the old
+ // single pass dropped bases seen before a closer one).
+ static void FrontlinePick(notnull array<float> nearest, notnull array<int> result)
+ {
+  result.Clear();
+  float best = float.MAX;
+  foreach (float gap : nearest) best = Math.Min(best, gap);
+  foreach (int i, float gap : nearest) if (gap <= best + FRONTLINE_SLACK) result.Insert(i);
  }
 
  // ---------------------------------------------------------------- supports

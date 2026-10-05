@@ -454,6 +454,15 @@ modded class SCR_PlayerController
   m_ACR_GroupSymbols.Copy(symbols);
   m_ACR_LeaderStates.Copy(states);
   m_ACR_Data.m_Commandable.Copy(commandable);
+  // Squads that are gone drop out of the selection, so no order is sent for them
+  // (the server refuses an order for a group it can't find; R04, 5 Oct review).
+  for (int i = m_ACR_Data.m_Selected.Count() - 1; i >= 0; i--)
+   if (!groupIds.Contains(m_ACR_Data.m_Selected[i])) m_ACR_Data.m_Selected.RemoveOrdered(i);
+  if (m_ACR_SelectedGroup.IsValid() && !groupIds.Contains(m_ACR_SelectedGroup))
+  {
+   m_ACR_SelectedGroup = RplId.Invalid();
+   if (!m_ACR_Data.m_Selected.IsEmpty()) m_ACR_SelectedGroup = m_ACR_Data.m_Selected[0];
+  }
  }
 
  void ACR_SendGroupStatus(array<RplId> groupIds, array<int> status)

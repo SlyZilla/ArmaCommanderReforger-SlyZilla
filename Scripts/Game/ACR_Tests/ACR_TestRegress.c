@@ -65,9 +65,13 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 40;
+ static const int EXPECTED = 43;
 
  static ACR_Squad s_Defender;
+ static SCR_AIGroup s_Stale;
+ static ref ACR_Squad s_StaleSquad;
+ static RplId s_StaleId;
+ static const ResourceName STALE_GROUP = "{3BF36BDEEB33AEC9}Prefabs/Groups/BLUFOR/Group_US_SentryTeam.et";
  static IEntity s_Layout;
  static const ResourceName LAYOUT_BASE = "{BB1B3769EB8C290D}Prefabs/Compositions/Misc/FreeRoamBuilding/CompositionLayoutBase.et";
 
@@ -85,6 +89,72 @@ class ACR_TestRegress
   ACR_Squad bravo = manager.FindSquadByGroup(harness.m_Range.m_Bravo);
   if (!bravo) return;
   IEntity truck = harness.m_Range.m_Truck;
+
+  // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
+  if (tick == 4)
+  {
+   array<int> picked = {};
+   array<string> sets = {};
+   array<ref array<float>> orders = {{1000, 1100, 900}, {900, 1000, 1100}, {1100, 900, 1000}};
+   foreach (array<float> gaps : orders)
+   {
+    ACR_AICommander.FrontlinePick(gaps, picked);
+    array<float> got = {};
+    foreach (int i : picked) got.Insert(gaps[i]);
+    got.Sort();
+    string text = "";
+    foreach (float g : got) text += ((int)g).ToString() + " ";
+    sets.Insert(text);
+   }
+   ACR_AICommander.FrontlinePick({900, 1050, 1050.5}, picked);
+   int edge = picked.Count();
+   Check("frontline bases the same whatever the order", sets[0] == "900 1000 " && sets[1] == sets[0] && sets[2] == sets[0] && edge == 2, string.Format("'%1' '%2' '%3', boundary %4", sets[0], sets[1], sets[2], edge));
+  }
+  // R04: a group that will be removed before an order for it arrives.
+  if (tick == 3) s_Stale = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1300 0 2700")));
+  // R03 (5 Oct review): a refused order leaves credit alone, whatever its wording.
+  if (tick == 3)
+  {
+   ACR_Requests requests = manager.m_Requests;
+   int before = bravo.m_iOrderedBy;
+   float beforeAt = bravo.m_fOrderedAt;
+   int serial = bravo.m_iOrderSerial;
+   ACR_OrderOutcome refused = new ACR_OrderOutcome();
+   refused.Refuse("That squad belongs to another faction");
+   bool creditedRefusal = requests.Credit(4242, bravo, ACR_ERequest.QUEUE_MOVE, harness.Ground("1400 0 2832"), refused, serial, before, beforeAt);
+   bool untouched = bravo.m_iOrderedBy == before && bravo.m_fOrderedAt == beforeAt;
+   ACR_OrderOutcome accepted = new ACR_OrderOutcome();
+   accepted.Accept("anything at all");
+   bool creditedQueue = requests.Credit(4242, bravo, ACR_ERequest.QUEUE_MOVE, harness.Ground("1400 0 2832"), accepted, serial, before, beforeAt);
+   bool credited = bravo.m_iOrderedBy == 4242;
+   bool creditedNoop = requests.Credit(4243, bravo, ACR_ERequest.MODE_FAST, vector.Zero, accepted, serial, 4242, bravo.m_fOrderedAt);
+   bravo.m_iOrderedBy = before;
+   bravo.m_fOrderedAt = beforeAt;
+   Check("refused queued order credits nobody; accepted one credits once", !creditedRefusal && untouched && creditedQueue && credited && !creditedNoop, string.Format("refused %1 untouched %2 queued %3 credited %4 noop %5", creditedRefusal, untouched, creditedQueue, credited, creditedNoop));
+  }
+  if (tick == 7)
+  {
+   s_StaleSquad = manager.FindSquadByGroup(s_Stale);
+   s_StaleId = SCR_EntityHelper.EntityToRplId(s_Stale);
+   if (s_Stale)
+   {
+    array<AIAgent> agents = {};
+    s_Stale.GetAgents(agents);
+    foreach (AIAgent agent : agents) if (agent.GetControlledEntity()) SCR_EntityHelper.DeleteEntityAndChildren(agent.GetControlledEntity());
+    SCR_EntityHelper.DeleteEntityAndChildren(s_Stale);
+   }
+  }
+  if (tick == 9)
+  {
+   string why;
+   ACR_Squad resolved = manager.m_Requests.ResolveOrderSquad(null, s_StaleId, why);
+   string whyTruck;
+   ACR_Squad notSquad;
+   if (truck) notSquad = manager.m_Requests.ResolveOrderSquad(null, SCR_EntityHelper.EntityToRplId(truck), whyTruck);
+   string whyLive;
+   ACR_Squad live = manager.m_Requests.ResolveOrderSquad(null, SCR_EntityHelper.EntityToRplId(harness.m_Range.m_Bravo), whyLive);
+   Check("order for a removed squad is refused, never sent to another", s_StaleSquad != null && s_StaleId.IsValid() && resolved == null && why.Contains("gone") && truck && notSquad == null && live == bravo, string.Format("was a squad %1, resolved %2 '%3', truck %4, live %5", s_StaleSquad != null, resolved != null, why, notSquad != null, live == bravo));
+  }
 
   // 1. Two dismount hand-overs in a row: the resumed order must stand.
   if (tick == 5 && truck)
