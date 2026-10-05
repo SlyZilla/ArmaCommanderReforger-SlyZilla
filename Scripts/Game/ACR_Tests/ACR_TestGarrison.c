@@ -124,7 +124,7 @@ class ACR_TestGarrison
     ACR_Garrison.s_bDebugViews = false;
     foreach (ACR_GarrisonSpot os : officeSpots) PrintFormat("[ACR] GARRISON TEST   spot %1 look %2 stand %3 inside %4", os.m_Pos, os.m_Look, os.m_bStand, os.m_bInterior);
    }
-   if (!s_Building || !s_Group) Print("[ACR] TEST COMPLETE");
+   if (!s_Building || !s_Group) ACR_TestRegress.Abort("garrison", "no building or group");
   }
   if (tick == 5 && !s_bOffice)
   {
@@ -163,10 +163,10 @@ class ACR_TestGarrison
    {
     foreach (ACR_GarrisonSpot sp : ACR_Garrison.Survey(s_Building, null)) PrintFormat("[ACR] GARRISON TEST   spot %1 look %2 stand %3 score %4", sp.m_Pos, sp.m_Look, sp.m_bStand, sp.m_fScore);
    }
-   if (!s_Building) { PrintFormat("[ACR] GARRISON TEST no building among %1", sorted.Count()); ACR_TestRegress.Check("garrison: a building with room for the squad", false); Print("[ACR] TEST COMPLETE"); return; }
+   if (!s_Building) { PrintFormat("[ACR] GARRISON TEST no building among %1", sorted.Count()); ACR_TestRegress.Check("garrison: a building with room for the squad", false); ACR_TestRegress.Complete("garrison"); return; }
    PrintFormat("[ACR] GARRISON TEST %1 soldiers, %2 buildings in 300 m, surveyed %3, chose %4 (%5 m away)", s_iWanted, sorted.Count(), surveyed, ACR_Garrison.Describe(s_Building), vector.DistanceXZ(from, s_Building.GetOrigin()));
    ACR_TestRegress.Check("garrison: a building with room for the squad", s_Building != null);
-   if (!s_Building) { Print("[ACR] TEST COMPLETE"); return; }
+   if (!s_Building) { ACR_TestRegress.Abort("garrison", "no building"); return; }
    // the walk there is ordinary movement: start the squad 30 m off to keep the test short
    vector off = s_Building.GetOrigin() + (from - s_Building.GetOrigin()).Normalized() * 30;
    array<AIAgent> movers = {};
@@ -317,6 +317,6 @@ class ACR_TestGarrison
    sq.Defend(sq.GetAnchor().GetOrigin());
   }
   if (tick == 146) sq.MoveTo(ACR_Manager.Ground(sq.m_Home));
-  if (tick == 150) Print("[ACR] TEST COMPLETE");
+  if (tick == 150) ACR_TestRegress.Complete("garrison");
  }
 }

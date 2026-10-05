@@ -42,7 +42,7 @@ class ACR_TestBattery
    PrintFormat("[ACR] BATTERY %1 impacts, mean %2 m, farthest %3 m from the target", count, mean, worst);
    ACR_TestRegress.Check("battery: 18 rounds landed", count == 18, string.Format("%1", count));
    ACR_TestRegress.Check("battery: spread wide but inside its radius", worst <= ACR_Supports.BATTERY_RADIUS + 10 && mean > 30, string.Format("mean %1 farthest %2", mean, worst));
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("battery");
   }
  }
 }

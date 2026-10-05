@@ -70,7 +70,7 @@ class ACR_TestPads
   if (tick == 8) BuyAll();
   if (tick == 25) { CheckParked(); CallBoth(); }
   if (tick > 25 && tick < 65) WatchLift();
-  if (tick == 65) { CheckLift(); Print("[ACR] TEST COMPLETE"); }
+  if (tick == 65) { CheckLift(); ACR_TestRegress.Complete("pads"); }
   if (tick != 5) return;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
@@ -150,7 +150,7 @@ class ACR_TestPads
    }
    if (found.IsEmpty()) PrintFormat("[ACR] PADSPOT %1 | none within %2 m", name, base.m_fRadius + 150);
   }
-  Print("[ACR] TEST COMPLETE");
+  Print("[ACR] TEST COMPLETE"); // survey only: no checks, no verdict
  }
 
  static void CheckClear()

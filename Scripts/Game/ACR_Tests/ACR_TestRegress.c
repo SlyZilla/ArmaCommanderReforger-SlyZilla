@@ -1,14 +1,61 @@
 // -acrRegressTest 1 (server-capable): regression checks for bugs fixed after
 // the 1 Oct review. Each check prints "[ACR] REGRESS PASS|FAIL <name>".
+// Every test that uses Check ends with Complete(): one "[ACR] VERDICT" line (passed,
+// failed, skipped, missing against the expected count, invariant errors) before the
+// legacy "TEST COMPLETE" marker. TEST COMPLETE alone only means the run ended;
+// tools/verdict.sh reads the VERDICT line (R11, 5 Oct review).
 class ACR_TestRegress
 {
  static ref ACR_Squad s_Heli;
  static int s_iReportLost;
+ static int s_iPassed, s_iFailed, s_iSkipped;
+ static bool s_bCompleted;
  static void Check(string name, bool ok, string detail = "")
  {
   string verdict = "FAIL";
-  if (ok) verdict = "PASS";
+  if (ok) { verdict = "PASS"; s_iPassed++; }
+  else s_iFailed++;
   PrintFormat("[ACR] REGRESS %1 %2 %3", verdict, name, detail);
+ }
+
+ // An optional check that could not run here (e.g. no Soviet squads to reveal), with
+ // the reason; it counts towards the expected total. A required check never calls
+ // this: when it doesn't run it shows as missing and the run fails.
+ static void Skip(string name, string reason)
+ {
+  s_iSkipped++;
+  PrintFormat("[ACR] REGRESS SKIP %1 (%2)", name, reason);
+ }
+
+ // End of a test run: prints the verdict once, then the legacy completion marker.
+ // expected = the number of checks a full run makes (-1: not declared yet, the
+ // verdict then says so). Passing needs no failures, no missing or skipped checks,
+ // at least one check, and no order-state invariant errors.
+ static void Complete(string test = "test", int expected = -1)
+ {
+  if (s_bCompleted) return;
+  s_bCompleted = true;
+  int ran = s_iPassed + s_iFailed;
+  int missing = 0;
+  if (expected >= 0) missing = Math.Max(0, expected - ran - s_iSkipped);
+  string role = "server";
+  if (GetGame().GetPlayerController()) role = "client";
+  string result = "PASS";
+  if (s_iFailed > 0 || missing > 0 || ACR_Perf.s_iInvariantErrors > 0 || ran == 0) result = "FAIL";
+  else if (expected < 0) result = "PASS-UNDECLARED";
+  string expectedText = "?";
+  if (expected >= 0) expectedText = expected.ToString();
+  PrintFormat("[ACR] VERDICT %1 test=%2 role=%3 passed=%4 failed=%5 skipped=%6 missing=%7 expected=%8 invariant=%9", result, test, role, s_iPassed, s_iFailed, s_iSkipped, missing, expectedText, ACR_Perf.s_iInvariantErrors);
+  Print("[ACR] TEST COMPLETE");
+ }
+
+ // A run that cannot be valid (wrong world, missing prerequisite): always a failure.
+ static void Abort(string test, string reason)
+ {
+  if (s_bCompleted) return;
+  s_bCompleted = true;
+  PrintFormat("[ACR] VERDICT FAIL test=%1 aborted=%2", test, reason);
+  Print("[ACR] TEST COMPLETE");
  }
 
  static string Verdict(bool ok)
@@ -16,6 +63,9 @@ class ACR_TestRegress
   if (ok) return "PASS";
   return "FAIL";
  }
+
+ // Checks a full run makes (Skip counts as made). Raise it with every new check.
+ static const int EXPECTED = 40;
 
  static ACR_Squad s_Defender;
  static IEntity s_Layout;
@@ -256,7 +306,7 @@ class ACR_TestRegress
    dbg.Run(manager, ACR_EDebug.PAUSE_ENEMY, "USSR", "");
    Check("debug: pause and resume the enemy AI", paused && !dbg.IsPaused("US"), dbg.Status(manager, "USSR"));
    string attack = dbg.Run(manager, ACR_EDebug.ATTACK_NOW, "USSR", "");
-   if (attack.Contains("no free squads")) PrintFormat("[ACR] REGRESS info: forced attack skipped (%1)", attack);
+   if (attack.Contains("no free squads")) Skip("debug: forced AI attack", attack);
    else Check("debug: forced AI attack", attack.Contains("attacking"), attack);
    dbg.Run(manager, ACR_EDebug.REVEAL, "US", "");
   }
@@ -267,7 +317,7 @@ class ACR_TestRegress
    int sovietSoldiers;
    foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == "USSR") sovietSoldiers += squad.Strength();
    manager.m_Debug.Run(manager, ACR_EDebug.REVEAL, "US", "");
-   if (sovietSoldiers == 0) Print("[ACR] REGRESS info: reveal check skipped (no Soviet squads)");
+   if (sovietSoldiers == 0) Skip("debug: reveal shows enemy soldiers", "no Soviet squads");
    else Check("debug: reveal shows enemy soldiers", sovietsSeen > 0 && !manager.m_Debug.Reveals("US"), string.Format("%1 seen of about %2", sovietsSeen, sovietSoldiers));
   }
   // Vehicle crews carry their unit's name even when they register before they're seated
@@ -397,7 +447,7 @@ class ACR_TestRegress
    }
    Check("helicopter crew stays seated after a refused move", crewmen > 0 && seated == crewmen, string.Format("%1 of %2 seated", seated, crewmen));
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
-   Print("[ACR] TEST COMPLETE");
+   Complete("regress", EXPECTED);
   }
  }
 }

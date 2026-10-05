@@ -66,7 +66,7 @@ class ACR_TestBlast
    }
    if (!System.IsCLIParam("acrBlastOldTest"))
     ACR_TestRegress.Check("blast: soldiers within 12 m in the open are killed or downed", deadNear >= total - 2, string.Format("%1 of %2", deadNear, total));
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("blast");
   }
  }
 }

@@ -125,7 +125,7 @@ class ACR_TestSkirmish
    int up;
    foreach (ACR_HeliRun run : flying) if (run.m_Vehicle && run.m_sFaction == moved) up++;
    ACR_TestRegress.Check("skirmish: the off-map gunship is flying", up > 0, string.Format("%1 helicopters", up));
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("skirmish");
   }
  }
 }

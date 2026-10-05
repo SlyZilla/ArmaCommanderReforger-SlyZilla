@@ -109,7 +109,7 @@ class ACR_TestCrew
   {
    float moved = vector.DistanceXZ(s_Lav.GetOrigin(), s_From);
    ACR_TestRegress.Check("crew: the woken LAV takes the next order", moved > 20, string.Format("%1 m", moved));
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("crew");
   }
  }
 }

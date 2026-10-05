@@ -78,7 +78,7 @@ class ACR_TestFire
   if (tick == 170)
   {
    ACR_TestRegress.Check("fire: a mortar team with fire at will fires on its own, for no RP", ACR_FireMissions.s_iFreeFires > 0 && us.m_iRP >= s_iRP, string.Format("%1 free fires, RP %2 -> %3", ACR_FireMissions.s_iFreeFires, s_iRP, us.m_iRP));
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("fire");
   }
  }
 }

@@ -26,7 +26,7 @@ class ACR_TestRange : ACR_Mode
   }
   Print("[ACR] Range initialized");
   // A scenario test that landed on the range (wrong world): end at once.
-  if (System.IsCLIParam("acrScenarioTest")) Print("[ACR] TEST COMPLETE (wrong world: restart the test launcher)");
+  if (System.IsCLIParam("acrScenarioTest")) ACR_TestRegress.Abort("scenario", "wrong world: restart the test launcher");
  }
 
  void Setup()

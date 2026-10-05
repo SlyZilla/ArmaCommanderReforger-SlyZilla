@@ -196,7 +196,7 @@ class ACR_TestMortar
   {
    string dead = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 600)));
    ACR_TestRegress.Check("mortar: no calls once the team is dead", dead.Contains("no mortar team"), dead);
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("mortar");
    s_iPhase = 7;
   }
  }

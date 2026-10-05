@@ -187,7 +187,7 @@ class ACR_TestStructures
    ACR_TestRegress.Check("structures: no medical point once the hospital is gone", medical.IsEmpty(), string.Format("%1", medical.Count()));
    ACR_Helipad last = ACR_Helipad.s_All[ACR_Helipad.s_All.Count() - 1];
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("structures");
   }
  }
 

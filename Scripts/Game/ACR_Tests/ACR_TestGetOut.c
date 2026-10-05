@@ -76,7 +76,7 @@ class ACR_TestGetOut
   {
    int left = Aboard(alpha);
    ACR_TestRegress.Check("passengers in another squad's vehicle get out on Get out", left == 0, string.Format("still aboard %1", left));
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("getout");
   }
  }
 }

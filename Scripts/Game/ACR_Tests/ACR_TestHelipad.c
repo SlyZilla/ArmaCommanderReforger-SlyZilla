@@ -199,12 +199,12 @@ class ACR_TestHelipad
   if (s_iRecrewAt > 0 && tick == s_iRecrewAt + 8)
   {
    ACR_TestRegress.Check("helipad: destroyed = gone, buy a new one", station.CountOf("US", true) == 0 && station.StatusFor("US", true).Contains("buy"), station.StatusFor("US", true));
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Complete("helipad");
   }
   if (tick == s_iCalledAt + 210)
   {
    PrintFormat("[ACR] HELIPADTEST timed out (landed at %1, ready at %2)", s_iLandedAt, s_iReadyAt);
-   Print("[ACR] TEST COMPLETE");
+   ACR_TestRegress.Abort("helipad", "timed out");
   }
  }
 }
