@@ -73,6 +73,9 @@ PerceptionManager ACR_Perception : "{028DAEAD63E056BE}Prefabs/World/Game/Percept
 RadioManagerEntity ACR_Radio : "{B8E09FAB91C4ECCD}Prefabs/Systems/Radio/RadioManager.et" {
  coords 6400 111 6400
 }
+ScriptedChatEntity ACR_Chat : "{536D80EB494DDC43}Prefabs/MP/Campaign/CampaignMPChatEntity.et" {
+ coords 6400 111 6400
+}
 ACR_Mode ACR_Mode {
  coords 6400 111 6400
 }

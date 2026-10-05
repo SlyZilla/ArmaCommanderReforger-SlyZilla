@@ -105,6 +105,9 @@ PerceptionManager ACR_Perception : "{028DAEAD63E056BE}Prefabs/World/Game/Percept
 RadioManagerEntity ACR_Radio : "{B8E09FAB91C4ECCD}Prefabs/Systems/Radio/RadioManager.et" {
  coords 1320 38 2832
 }
+ScriptedChatEntity ACR_Chat : "{536D80EB494DDC43}Prefabs/MP/Campaign/CampaignMPChatEntity.et" {
+ coords 1320 38 2832
+}
 ACR_FactionSettings ACR_Settings_US {
  coords 1320 38 2832
  m_sFaction "US"
