@@ -73,6 +73,8 @@ class ACR_Mode : GenericEntity
   if (System.IsCLIParam("acrPadsTest")) ACR_TestPads.Run(null, m_iSeconds);
   // -acrSurveyTest: object/terrain dump for placing bases and pads (ACR_TestSurvey).
   if (System.IsCLIParam("acrSurveyTest")) ACR_TestSurvey.Run(null, m_iSeconds);
+  // -acrPlacesTest: named map locations, for laying out a new map (ACR_TestPlaces).
+  if (System.IsCLIParam("acrPlacesTest")) ACR_TestPlaces.Run(m_iSeconds);
   if (m_bSoak) { Soak(); return; }
   if (!m_bSummary || m_iSeconds % 30 != 0) return;
   ACR_Manager manager = ACR_Manager.GetInstance();
