@@ -1502,13 +1502,16 @@ class ACR_Supports : Managed
   PrintFormat("[ACR] SUPPORT module %1 spawned=%2", prefab, module != null);
  }
 
+ void ExplodeAt(vector impact) { Explode(impact); } // tests
+
  protected void Explode(vector impact)
  {
   impact[1] = GetGame().GetWorld().GetSurfaceY(impact[0], impact[2]) + 0.3;
   // Local on the server (damage only): the prefab replicates, and the replicated copy
   // died before it could show anything on clients. Each client makes its own (below).
   IEntity bomb = SpawnLocal(BOMB, impact, vector.Zero);
-  PrintFormat("[ACR] SUPPORT bomb at %1 spawned=%2", impact, bomb != null);
+  int struck = BlastDamage(impact);
+  PrintFormat("[ACR] SUPPORT bomb at %1 spawned=%2, blast struck %3", impact, bomb != null, struck);
   // Every client spawns its own explosion and plays the blast sound itself: the
   // explosion's own sound is cut off when the entity removes itself (1 Oct MP: the
   // bombs were seen but not heard).
@@ -1585,6 +1588,91 @@ class ACR_Supports : Managed
  }
 
  // A non-replicated copy of prefab at pos, nose along dir (zero: upright).
+ // Heavy blasts (bomb run, howitzer battery) wrecked buildings but rarely killed (Jacob, 4 Oct):
+ // the TNT prefab's own damage reaches only a few metres. On top of it, soldiers in the open
+ // with a clear line to the blast take explosive damage that falls off with distance: lethal
+ // inside BLAST_KILL, wounding (bleeding limbs and body) out to BLAST_WOUND. Cover between them
+ // and the blast (a wall, a building, a rise) cuts it to BLAST_COVER; lying down halves it.
+ // s_bBlastOff turns it off (the old behaviour; test comparison).
+ static float BLAST_KILL = 12;
+ static float BLAST_WOUND = 32;
+ static float BLAST_COVER = 0.25;
+ static bool s_bBlastOff;
+ static const float BLAST_DAMAGE = 120; // per hit zone at the kill radius (tuned with srv:blast)
+ static ref array<IEntity> s_BlastFound = {};
+
+ static bool CollectBlast(IEntity e)
+ {
+  if (ChimeraCharacter.Cast(e)) s_BlastFound.Insert(e);
+  return true;
+ }
+
+ int BlastDamage(vector impact)
+ {
+  if (s_bBlastOff || System.IsCLIParam("acrBlastOldTest")) return 0;
+  s_BlastFound.Clear();
+  vector reach = Vector(BLAST_WOUND, BLAST_WOUND, BLAST_WOUND);
+  GetGame().GetWorld().QueryEntitiesByAABB(impact - reach, impact + reach, CollectBlast);
+  int struck;
+  foreach (IEntity e : s_BlastFound)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(e);
+   if (!character || !character.GetCharacterController()) continue;
+   if (character.GetCharacterController().GetLifeState() == ECharacterLifeState.DEAD) continue;
+   float distance = vector.Distance(character.GetOrigin(), impact);
+   if (distance > BLAST_WOUND) continue;
+   SCR_CharacterDamageManagerComponent damage = SCR_CharacterDamageManagerComponent.Cast(character.GetDamageManager());
+   if (!damage) continue;
+   // Inside the kill radius full damage, falling off to nothing at the wound radius.
+   float share = 1;
+   if (distance > BLAST_KILL) share = 1 - (distance - BLAST_KILL) / (BLAST_WOUND - BLAST_KILL);
+   share = share * share;
+   if (!ClearLine(impact + Vector(0, 0.5, 0), character.GetOrigin() + Vector(0, 0.9, 0), character)) share *= BLAST_COVER;
+   if (character.GetCharacterController().GetStance() == ECharacterStance.PRONE) share *= 0.5;
+   if (share < 0.02) continue;
+   vector hit[3];
+   hit[0] = character.GetOrigin() + Vector(0, 1, 0);
+   hit[1] = (character.GetOrigin() - impact).Normalized();
+   hit[2] = -hit[1];
+   // Body and limbs nearest the blast: two to four zones depending on how close.
+   int zones = 2;
+   if (share > 0.4) zones = 3;
+   if (share > 0.8) zones = 4;
+   array<HitZone> all = {};
+   damage.GetAllHitZones(all);
+   array<HitZone> body = {};
+   foreach (HitZone candidate : all) if (SCR_CharacterHitZone.Cast(candidate)) body.Insert(candidate);
+   if (body.IsEmpty()) continue;
+   for (int z = 0; z < zones; z++)
+   {
+    HitZone zone = body.GetRandomElement();
+    SCR_DamageContext context = new SCR_DamageContext(EDamageType.EXPLOSIVE, BLAST_DAMAGE * share, hit, character, zone, Instigator.CreateInstigator(null), null, -1, -1);
+    damage.HandleDamage(context);
+   }
+   struck++;
+  }
+  return struck;
+ }
+
+ protected static IEntity s_BlastTarget;
+ static bool BlastFilter(notnull IEntity e)
+ {
+  if (e == s_BlastTarget || ChimeraCharacter.Cast(e)) return false;
+  return true;
+ }
+
+ // Nothing solid between the blast and the soldier (other people don't shield).
+ static bool ClearLine(vector from, vector to, IEntity target)
+ {
+  s_BlastTarget = target;
+  TraceParam trace = new TraceParam();
+  trace.Start = from;
+  trace.End = to;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  float hit = GetGame().GetWorld().TraceMove(trace, BlastFilter);
+  return hit >= 0.99;
+ }
+
  static IEntity SpawnLocal(ResourceName prefab, vector pos, vector dir)
  {
   Resource resource = Resource.Load(prefab);

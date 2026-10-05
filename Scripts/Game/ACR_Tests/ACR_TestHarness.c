@@ -51,6 +51,7 @@ class ACR_TestHarness : Managed
  static const int MODE_HELIPAD = 39;
  static const int MODE_GARRISON = 40;
  static const int MODE_STRUCTURES = 41;
+ static const int MODE_BLAST = 42;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -97,6 +98,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRegressTest", flag)) mode = MODE_REGRESS;
   if (System.GetCLIParam("acrMortarTest", flag)) mode = MODE_MORTAR;
   if (System.GetCLIParam("acrBatteryTest", flag)) mode = MODE_BATTERY;
+  if (System.GetCLIParam("acrBlastTest", flag) || System.GetCLIParam("acrBlastOldTest", flag)) mode = MODE_BLAST;
   if (System.GetCLIParam("acrPadsTest", flag)) mode = MODE_PADS;
   if (System.GetCLIParam("acrHelipadTest", flag)) mode = MODE_HELIPAD;
   if (System.GetCLIParam("acrGarrisonTest", flag)) mode = MODE_GARRISON;
@@ -190,6 +192,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_MORTAR) { ACR_TestMortar.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_CREW) { ACR_TestCrew.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BATTERY) { ACR_TestBattery.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_BLAST) { ACR_TestBlast.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }
