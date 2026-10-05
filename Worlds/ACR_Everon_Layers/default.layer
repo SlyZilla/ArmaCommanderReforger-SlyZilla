@@ -652,11 +652,6 @@ ACR_Helipad ACR_Helipad_Airbase_2 {
  angles 0 90 0
  m_sBase "Airbase"
 }
-ACR_Helipad ACR_Helipad_Airbase_3 {
- coords 4873 28.6 11795
- angles 0 90 0
- m_sBase "Airbase"
-}
 ACR_Helipad ACR_Helipad_Harbor_1 {
  coords 10164 2.5 1507
  angles 0 130 0
