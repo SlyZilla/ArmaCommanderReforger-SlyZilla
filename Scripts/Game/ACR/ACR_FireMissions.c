@@ -63,10 +63,11 @@ class ACR_FireMissions : Managed
   if (!spawned.m_aUnitPrefabSlots) spawned.m_aUnitPrefabSlots = {};
   spawned.m_aUnitPrefabSlots.Copy(men);
   spawned.SetCustomName(name, 0);
-  foreach (int i, ResourceName prefab : men)
+  // Both men or nothing (R01, 5 Oct review).
+  if (!ACR_Requisition.FillGroup(spawned, men, pos))
   {
-   IEntity man = ACR_Manager.SpawnPrefab(prefab, pos + Vector(1.5 * i, 0, 1));
-   if (man) spawned.AddAIEntityToGroup(man);
+   PrintFormat("[ACR] FIRE observer team %1 (%2) failed to spawn its men: removed", name, factionKey);
+   return false;
   }
   s_ObserverGroups.Insert(spawned);
   PrintFormat("[ACR] FIRE observer team %1 (%2) spawned at %3, %4 men", name, factionKey, pos, spawned.GetAgentsCount());

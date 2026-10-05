@@ -92,7 +92,7 @@ class ACR_Requisition : Managed
   if (!base || base.m_sOwner != key) return "Deploy at one of your own bases";
   if (!base.m_bAllowSpawn) return base.m_sName + " can't deploy units";
   if (base.m_bContested) return base.m_sName + " is under attack";
-  if (m_Manager.m_Cleanup && m_Manager.m_Cleanup.SoldiersOf(key) >= m_Manager.m_iSoldierCap) return string.Format("Too many soldiers in the field (limit %1)", m_Manager.m_iSoldierCap);
+  if (OverSoldierCap(key)) return string.Format("Too many soldiers in the field (limit %1)", m_Manager.m_iSoldierCap);
   if (!m_Manager.m_Supports) m_Manager.m_Supports = new ACR_Supports(m_Manager);
   if (entry.m_iSupportHeli > 0)
   {
@@ -100,13 +100,22 @@ class ACR_Requisition : Managed
    if (!padProblem.IsEmpty()) return padProblem;
   }
   if (!m_Manager.m_Bases.Spend(key, entry.m_iCost)) return string.Format("Not enough RP (%1 needed)", entry.m_iCost);
+  // The purchase is a transaction from here on (R01, 5 Oct review): RP, stock and the
+  // price step are taken now and given back by Refund() if the unit never turns up.
+  ACR_PendingPurchase purchase = new ACR_PendingPurchase();
+  purchase.m_sFaction = key;
+  purchase.m_Entry = entry;
+  purchase.m_iPaid = entry.m_iCost;
   entry.m_iRemaining--;
   entry.m_iBought++;
-  int paid = entry.m_iCost;
+  entry.m_iNamed++;
   ACR_Pricing.Reprice(entry);
-  string name = string.Format("%1 %2", entry.m_sName, entry.m_iBought);
+  // Names count every purchase ever made (a refunded one isn't reused, so two units
+  // never share a name when a pending purchase fails after a later one).
+  string name = string.Format("%1 %2", entry.m_sName, entry.m_iNamed);
+  purchase.m_sName = name;
+  int paid = purchase.m_iPaid;
 
-  m_Manager.m_sSpawningFaction = key;
   vector vehiclePos, groupPos;
   if (hasSpot)
   {
@@ -133,61 +142,222 @@ class ACR_Requisition : Managed
   }
   if (entry.m_iSupportHeli > 0)
   {
-   m_Manager.m_sSpawningFaction = "";
    if (!m_Manager.m_Supports.Station().Station(key, entry.m_iSupportHeli == 1, base, name))
    {
-    m_Manager.m_Bases.GetFaction(key).m_iRP += paid;
-    entry.m_iRemaining++;
-    entry.m_iBought--;
-    ACR_Pricing.Reprice(entry);
+    Refund(purchase, "no helipad");
     return name + " could not be placed on a helipad";
    }
    PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left, next %5 RP)", name, base.m_sName, paid, entry.m_iRemaining, entry.m_iCost);
    return string.Format("%1 waiting on the helipad at %2", name, base.m_sName);
   }
-  if (entry.m_bMortarTeam) m_Manager.Mortars().SpawnTeam(key, name, groupPos);
-  else if (entry.m_bObserverTeam) m_Manager.FireMissions().SpawnTeam(key, name, groupPos);
-  else SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);
-  m_Manager.m_sSpawningFaction = "";
+  bool spawned;
+  if (entry.m_bMortarTeam) spawned = m_Manager.Mortars().SpawnTeam(key, name, groupPos);
+  else if (entry.m_bObserverTeam) spawned = m_Manager.FireMissions().SpawnTeam(key, name, groupPos);
+  else spawned = SpawnParts(purchase, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);
+  if (!spawned)
+  {
+   if (purchase.m_sError.IsEmpty()) purchase.m_sError = "its crew did not spawn";
+   Rollback(purchase);
+   Refund(purchase, purchase.m_sError);
+   return string.Format("%1 could not be deployed (%2); %3 RP refunded", name, purchase.m_sError, paid);
+  }
+  // Delayed crews/members: watched until the unit is usable, refunded after a timeout.
+  if (purchase.NeedsWatch())
+  {
+   purchase.m_fDeadline = GetGame().GetWorld().GetWorldTime() + s_fPendingTimeoutMs;
+   m_aPending.Insert(purchase);
+  }
   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left, next %5 RP)", name, base.m_sName, paid, entry.m_iRemaining, entry.m_iCost);
   return string.Format("%1 deploying at %2", name, base.m_sName);
  }
 
- // Spawns a named unit: an infantry group, a vehicle (optionally crewed; the
- // crew squad takes the name), and/or passengers that board the vehicle.
- void SpawnUnit(string name, ResourceName group, ResourceName vehicleprefab, bool crewed, ResourceName passengers, vector vehiclePos, vector groupPos)
+ // ---------------------------------------------------------------- purchase transactions
+
+ static float s_fPendingTimeoutMs = 30000; // a bought unit with nobody in it after this is refunded (tests shorten it)
+ static bool s_bTestNoCrew; // tests: crewed vehicles get no crew (a crew that never turns up)
+ ref array<ref ACR_PendingPurchase> m_aPending = {};
+ // Tests: the next N soldier/vehicle/group spawns in buying and reinforcing fail.
+ static int s_iTestFailSpawns;
+ static int s_iTestPassSpawns; // ...after letting this many through
+
+ static IEntity SpawnForPurchase(ResourceName prefab, vector pos)
  {
+  if (s_iTestFailSpawns > 0)
+  {
+   if (s_iTestPassSpawns > 0) s_iTestPassSpawns--;
+   else { s_iTestFailSpawns--; return null; }
+  }
+  return ACR_Manager.SpawnPrefab(prefab, pos);
+ }
+
+ // Spawns each prefab into the group; false (and everything it made removed) unless
+ // every one of them joined.
+ static bool FillGroup(SCR_AIGroup group, notnull array<ResourceName> men, vector pos)
+ {
+  array<IEntity> made = {};
+  bool all = true;
+  foreach (int i, ResourceName prefab : men)
+  {
+   IEntity man = SpawnForPurchase(prefab, pos + Vector(1.5 * i, 0, 1));
+   if (!man) { all = false; break; }
+   made.Insert(man);
+   if (!group.AddAIEntityToGroup(man)) { all = false; break; }
+  }
+  if (all) return true;
+  foreach (IEntity man : made) if (man) SCR_EntityHelper.DeleteEntityAndChildren(man);
+  SCR_EntityHelper.DeleteEntityAndChildren(group);
+  return false;
+ }
+
+ // Spawns a named unit: an infantry group, a vehicle (optionally crewed; the crew squad
+ // takes the name), and/or passengers that board the vehicle. Every part the catalog
+ // entry names must appear, or the purchase fails (all or nothing); what was made is
+ // recorded on the purchase so a failure removes only its own entities.
+ bool SpawnParts(ACR_PendingPurchase purchase, ResourceName group, ResourceName vehicleprefab, bool crewed, ResourceName passengers, vector vehiclePos, vector groupPos)
+ {
+  string faction = purchase.m_sFaction;
+  string name = purchase.m_sName;
   IEntity vehicle;
   if (!vehicleprefab.IsEmpty())
   {
-   vehicle = ACR_Manager.SpawnPrefab(vehicleprefab, vehiclePos);
-   if (vehicle && m_Manager.m_Cleanup) m_Manager.m_Cleanup.Watch(vehicle);
-   if (vehicle) ACR_Vehicles.SetOwner(vehicle, m_Manager.m_sSpawningFaction);
-   if (vehicle && crewed)
+   vehicle = SpawnForPurchase(vehicleprefab, vehiclePos);
+   if (!vehicle) { purchase.m_sError = "vehicle did not spawn"; return false; }
+   purchase.m_Vehicle = vehicle;
+   if (m_Manager.m_Cleanup) m_Manager.m_Cleanup.Watch(vehicle);
+   ACR_Vehicles.SetOwner(vehicle, faction);
+   if (crewed)
    {
+    purchase.m_bCrewed = true;
     m_Manager.m_PendingCrewNames.Set(vehicle, name);
     SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+    if (!compartments) { purchase.m_sError = "vehicle has no seats for a crew"; return false; }
     array<ECompartmentType> seats = {ECompartmentType.PILOT, ECompartmentType.TURRET};
-    if (compartments) compartments.SpawnDefaultOccupants(seats);
+    if (!s_bTestNoCrew) compartments.SpawnDefaultOccupants(seats);
     // A construction truck's crew gets the building shovel (the default crew has none).
     if ((ACR_Logistics.ServiceOfName(vehicleprefab) & ACR_EService.CONSTRUCTION) != 0)
-     GetGame().GetCallqueue().CallLater(GiveShovels, 1500, false, vehicle, m_Manager.m_sSpawningFaction);
+     GetGame().GetCallqueue().CallLater(GiveShovels, 1500, false, vehicle, faction);
    }
   }
   if (!group.IsEmpty())
   {
-   SCR_AIGroup spawned = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(group, groupPos));
-   if (spawned) spawned.SetCustomName(name, 0);
+   SCR_AIGroup spawned = SCR_AIGroup.Cast(SpawnForPurchase(group, groupPos));
+   if (!spawned) { purchase.m_sError = "group did not spawn"; return false; }
+   purchase.m_Group = spawned;
+   spawned.SetCustomName(name, 0);
   }
   if (!passengers.IsEmpty())
   {
-   SCR_AIGroup riders = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(passengers, groupPos));
-   if (riders)
+   SCR_AIGroup riders = SCR_AIGroup.Cast(SpawnForPurchase(passengers, groupPos));
+   if (!riders) { purchase.m_sError = "passengers did not spawn"; return false; }
+   purchase.m_Riders = riders;
+   riders.SetCustomName(name + " infantry", 0);
+   if (vehicle) m_Manager.m_PendingBoarding.Set(riders, vehicle);
+  }
+  return true;
+ }
+
+ // Units that aren't bought (starting units, tests): same spawning, no transaction.
+ // The side is m_Manager.m_sSpawningFaction, as before.
+ bool SpawnUnit(string name, ResourceName group, ResourceName vehicleprefab, bool crewed, ResourceName passengers, vector vehiclePos, vector groupPos)
+ {
+  ACR_PendingPurchase unit = new ACR_PendingPurchase();
+  unit.m_sName = name;
+  unit.m_sFaction = m_Manager.m_sSpawningFaction;
+  bool ok = SpawnParts(unit, group, vehicleprefab, crewed, passengers, vehiclePos, groupPos);
+  if (!ok) PrintFormat("[ACR] SPAWN %1 incomplete: %2", name, unit.m_sError);
+  return ok;
+ }
+
+ // Removes what this purchase made (and only that): crews and members with their groups,
+ // the vehicle unless a player sits in it, and its pending crew-name/boarding entries.
+ void Rollback(ACR_PendingPurchase purchase)
+ {
+  if (purchase.m_Vehicle)
+  {
+   m_Manager.m_PendingCrewNames.Remove(purchase.m_Vehicle);
+   array<IEntity> crew = {};
+   ACR_PendingPurchase.Occupants(purchase.m_Vehicle, crew);
+   bool player;
+   foreach (IEntity man : crew) if (EntityUtils.IsPlayer(man)) player = true;
+   if (!player)
    {
-    riders.SetCustomName(name + " infantry", 0);
-    if (vehicle) m_Manager.m_PendingBoarding.Set(riders, vehicle);
+    foreach (IEntity man : crew) SCR_EntityHelper.DeleteEntityAndChildren(man);
+    SCR_EntityHelper.DeleteEntityAndChildren(purchase.m_Vehicle);
    }
   }
+  RemoveGroup(purchase.m_Group);
+  if (purchase.m_Riders) m_Manager.m_PendingBoarding.Remove(purchase.m_Riders);
+  RemoveGroup(purchase.m_Riders);
+ }
+
+ protected static void RemoveGroup(SCR_AIGroup group)
+ {
+  if (!group) return;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity man = agent.GetControlledEntity();
+   if (man && !EntityUtils.IsPlayer(man)) SCR_EntityHelper.DeleteEntityAndChildren(man);
+  }
+  SCR_EntityHelper.DeleteEntityAndChildren(group);
+ }
+
+ // Gives back exactly what this purchase took: its own RP, one unit of stock and one
+ // price step (later purchases keep theirs; names are never reused).
+ void Refund(ACR_PendingPurchase purchase, string why)
+ {
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(purchase.m_sFaction);
+  if (data) data.m_iRP += purchase.m_iPaid;
+  ACR_RequisitionEntry entry = purchase.m_Entry;
+  if (entry)
+  {
+   entry.m_iRemaining++;
+   entry.m_iBought = Math.Max(0, entry.m_iBought - 1);
+   ACR_Pricing.Reprice(entry);
+  }
+  purchase.m_bRefunded = true;
+  PrintFormat("[ACR] PURCHASE %1 failed (%2): %3 RP refunded, next %4 RP", purchase.m_sName, why, purchase.m_iPaid, entry.m_iCost);
+ }
+
+ // Every tick: bought units waiting for their crew/members. Ready = every part has
+ // somebody in it; after s_fPendingTimeoutMs without that the purchase is undone.
+ void TickPending()
+ {
+  if (m_aPending.IsEmpty()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  for (int i = m_aPending.Count() - 1; i >= 0; i--)
+  {
+   ACR_PendingPurchase purchase = m_aPending[i];
+   if (purchase.Ready())
+   {
+    PrintFormat("[ACR] PURCHASE %1 ready", purchase.m_sName);
+    m_aPending.RemoveOrdered(i);
+    continue;
+   }
+   if (now < purchase.m_fDeadline) continue;
+   m_aPending.RemoveOrdered(i);
+   Rollback(purchase);
+   Refund(purchase, "nobody turned up in time");
+   if (m_Manager.Command()) m_Manager.Command().Feed(purchase.m_sFaction, string.Format("%1 failed to deploy; %2 RP refunded", purchase.m_sName, purchase.m_iPaid));
+  }
+ }
+
+ // Soldiers of pending purchases not yet counted by the squad registry.
+ int PendingSoldiers(string faction)
+ {
+  int count;
+  foreach (ACR_PendingPurchase purchase : m_aPending)
+   if (purchase.m_sFaction == faction) count += purchase.Unregistered(m_Manager);
+  return count;
+ }
+
+ // The soldier limit is a soft threshold (Jacob, 5 Oct): nothing more is bought or
+ // reinforced once a side has this many in the field, counting units still spawning.
+ bool OverSoldierCap(string faction)
+ {
+  if (!m_Manager.m_Cleanup) return false;
+  return m_Manager.m_Cleanup.SoldiersOf(faction) + PendingSoldiers(faction) >= m_Manager.m_iSoldierCap;
  }
 
  static const ResourceName SHOVEL_WEST = "{6E35D94130954509}Prefabs/Items/Equipment/Accessories/ETool_ALICE/ETool_ALICE_FreeRoamBuilding_Gadget.et";
@@ -255,10 +425,16 @@ class ACR_Requisition : Managed
  string Reinforce(SCR_PlayerController pc, RplId groupId)
  {
   ACR_Squad squad = m_Manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(groupId)));
-  if (!squad || !squad.m_Group) return "Select a friendly squad first";
-  string key = squad.GetFaction().GetFactionKey();
+  if (!squad || !squad.m_Group || !squad.GetFaction()) return "Select a friendly squad first";
   if (SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId()) != squad.GetFaction()) return "That squad belongs to another faction";
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return "Only the commander can reinforce squads";
+  return ReinforceSquad(pc, squad);
+ }
+
+ // The reinforcement itself, once the player may order it (pc may be null in tests).
+ string ReinforceSquad(SCR_PlayerController pc, ACR_Squad squad)
+ {
+  string key = squad.GetFaction().GetFactionKey();
   array<ResourceName> missing = {};
   squad.GetMissing(missing);
   IEntity anchor = squad.GetAnchor();
@@ -307,21 +483,33 @@ class ACR_Requisition : Managed
   ACR_Base base = depot;
   if (!base) base = NearestSpawnBase(key, near);
   if (!base) return "No friendly base can send reinforcements";
-  int cost = missing.Count() * REINFORCE_COST_PER_SOLDIER;
-  if (newTube) cost += ACR_Mortars.TUBE_COST;
-  cost += vehicleCost;
-  if (!m_Manager.m_Bases.Spend(key, cost)) return string.Format("Not enough RP (%1 needed)", cost);
-  m_Manager.LogSpend(pc, key, m_Manager.m_Bases.GetRP(key) + cost, "reinforced " + squad.GetName());
+  // The soldier limit counts reinforcements too (soft threshold, as for buying).
+  if (OverSoldierCap(key)) return string.Format("Too many soldiers in the field (limit %1)", m_Manager.m_iSoldierCap);
+  int extras = vehicleCost;
+  if (newTube) extras += ACR_Mortars.TUBE_COST;
+  int most = missing.Count() * REINFORCE_COST_PER_SOLDIER + extras;
+  if (m_Manager.m_Bases.GetRP(key) < most) return string.Format("Not enough RP (%1 needed)", most);
+  // Paid per soldier who actually joined (Jacob, 5 Oct; R01 review): spawn first, then
+  // charge. Vehicle service and a new mortar are charged on their own.
+  int delivered;
   foreach (ResourceName prefab : missing)
   {
-   IEntity soldier = ACR_Manager.SpawnPrefab(prefab, SpawnPoint(base, 4, 12, 0.8));
-   if (soldier) squad.m_Group.AddAIEntityToGroup(soldier);
+   IEntity soldier = SpawnForPurchase(prefab, SpawnPoint(base, 4, 12, 0.8));
+   if (!soldier) continue;
+   if (!squad.m_Group.AddAIEntityToGroup(soldier)) { SCR_EntityHelper.DeleteEntityAndChildren(soldier); continue; }
+   delivered++;
   }
+  int failed = missing.Count() - delivered;
+  int cost = delivered * REINFORCE_COST_PER_SOLDIER + extras;
+  int rpBefore = m_Manager.m_Bases.GetRP(key);
+  if (cost > 0 && m_Manager.m_Bases.Spend(key, cost)) m_Manager.LogSpend(pc, key, rpBefore, "reinforced " + squad.GetName());
+  if (failed > 0) PrintFormat("[ACR] REINFORCE %1: %2 of %3 replacements could not be spawned (not charged)", squad.GetName(), failed, missing.Count());
   int resupplied;
   if (depot) resupplied = RestockAmmo(squad, depot);
   if (depot && ServiceVehicles(serviced) > 0) resupplied++;
-  PrintFormat("[ACR] REINFORCE %1 +%2 from %3 for %4 RP, %5 restocked", squad.GetName(), missing.Count(), base.m_sName, cost, resupplied);
-  string result = string.Format("%1: %2 reinforcements from %3", squad.GetName(), missing.Count(), base.m_sName);
+  PrintFormat("[ACR] REINFORCE %1 +%2 of %3 from %4 for %5 RP, %6 restocked", squad.GetName(), delivered, missing.Count(), base.m_sName, cost, resupplied);
+  string result = string.Format("%1: %2 reinforcements from %3", squad.GetName(), delivered, base.m_sName);
+  if (failed > 0) result = string.Format("%1: %2 of %3 reinforcements from %4 (%5 couldn't be sent, not charged)", squad.GetName(), delivered, missing.Count(), base.m_sName, failed);
   if (newTube)
   {
    m_Manager.Mortars().Rearmed(mortar);

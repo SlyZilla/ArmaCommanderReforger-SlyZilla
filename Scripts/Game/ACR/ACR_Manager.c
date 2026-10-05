@@ -179,6 +179,7 @@ class ACR_Manager : Managed
  {
   int spent = before - m_Bases.GetRP(key);
   if (spent <= 0) return;
+  if (!pc) { Command().Feed(key, string.Format("%1 (-%2 RP)", what, spent)); return; }
   string tag = Command().TagOf(pc.GetPlayerId());
   Command().Feed(key, string.Format("%1 %2 (-%3 RP)", tag, what, spent));
   Command().Note(pc.GetPlayerId(), what);
@@ -316,6 +317,7 @@ class ACR_Manager : Managed
   int t = System.GetTickCount();
   ScanForSquads();
   ResolveCrewNames();
+  m_Requisition.TickPending();
   t = ACR_Perf.Lap("scan", t);
   EnsureCommanders();
   m_Bases.Tick(this);

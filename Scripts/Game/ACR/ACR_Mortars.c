@@ -134,10 +134,12 @@ class ACR_Mortars : Managed
   if (!spawned.m_aUnitPrefabSlots) spawned.m_aUnitPrefabSlots = {};
   spawned.m_aUnitPrefabSlots.Copy(crew);
   spawned.SetCustomName(name, 0);
-  foreach (int i, ResourceName prefab : crew)
+  // All of the crew or nothing (R01, 5 Oct review): a team short of men is taken back
+  // and the purchase refunded by the caller.
+  if (!ACR_Requisition.FillGroup(spawned, crew, pos))
   {
-   IEntity man = ACR_Manager.SpawnPrefab(prefab, pos + Vector(1.5 * i, 0, 1));
-   if (man) spawned.AddAIEntityToGroup(man);
+   PrintFormat("[ACR] MORTAR team %1 (%2) failed to spawn its crew: removed", name, factionKey);
+   return false;
   }
   ACR_MortarTeam team = new ACR_MortarTeam();
   team.m_Group = spawned;

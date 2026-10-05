@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 43;
+ static const int EXPECTED = 49;
 
  static ACR_Squad s_Defender;
  static SCR_AIGroup s_Stale;
@@ -154,6 +154,21 @@ class ACR_TestRegress
    string whyLive;
    ACR_Squad live = manager.m_Requests.ResolveOrderSquad(null, SCR_EntityHelper.EntityToRplId(harness.m_Range.m_Bravo), whyLive);
    Check("order for a removed squad is refused, never sent to another", s_StaleSquad != null && s_StaleId.IsValid() && resolved == null && why.Contains("gone") && truck && notSquad == null && live == bravo, string.Format("was a squad %1, resolved %2 '%3', truck %4, live %5", s_StaleSquad != null, resolved != null, why, notSquad != null, live == bravo));
+  }
+
+  // R01/R05 (5 Oct review): buying and reinforcing are transactions. Failures are
+  // injected with ACR_Requisition.s_iTestFailSpawns (the next N spawns return nothing),
+  // s_bTestNoCrew (a crew that never turns up) and a short pending timeout.
+  if (tick == 11) BuyTransactions(manager, harness);
+  if (tick == 21) ReinforcePart(manager);
+  if (tick == 19) PendingResults(manager);
+  if (tick == 13 && s_sCarrier != "")
+  {
+   int after = VehiclesNear(s_CarrierAt, 6);
+   // Control: the good truck bought the same way is found by the same query.
+   int control = 0;
+   if (s_Depot) control = VehiclesNear(ACR_Manager.Ground(s_Depot.GetOrigin() + Vector(18, 0, 18)), 6);
+   Check("purchase: vehicle with failed passengers is removed and refunded", s_bCarrierOk && after == s_iCarrierBefore && control >= 1, string.Format("%1, vehicles there now %2, control truck found %3", s_sCarrier, after, control));
   }
 
   // 1. Two dismount hand-overs in a row: the resumed order must stand.
@@ -519,5 +534,179 @@ class ACR_TestRegress
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
+ }
+
+ // ---------------------------------------------------------------- R01/R05 helpers
+ static ACR_Base s_Depot;
+ static int s_iTruckEntry = -1;
+ static int s_iTruckBought, s_iTruckNamed, s_iRPAfterBuys, s_iTruckPaid;
+ static string s_sGoodTruck, s_sNoCrewTruck;
+ static IEntity s_NoCrewVehicle;
+ static SCR_AIGroup s_ReinforceGroup;
+ static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
+
+ static ref array<IEntity> s_Found = {};
+ static bool CollectVehicle(IEntity e)
+ {
+  if (Vehicle.Cast(e)) s_Found.Insert(e);
+  return true;
+ }
+ // Vehicles in the world near a point (a world query, not our registry).
+ static int VehiclesNear(vector at, float radius)
+ {
+  s_Found.Clear();
+  GetGame().GetWorld().QueryEntitiesBySphere(at, radius, CollectVehicle);
+  return s_Found.Count();
+ }
+ static bool s_bCarrierOk;
+ static string s_sCarrier;
+ static vector s_CarrierAt;
+ static int s_iCarrierBefore;
+
+ static void BuyTransactions(ACR_Manager manager, ACR_TestHarness harness)
+ {
+  ACR_Requisition req = manager.m_Requisition;
+  ACR_FactionData usData = manager.m_Bases.GetFaction("US");
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_sOwner == "US" && base.m_bAllowSpawn && !base.m_bContested) { s_Depot = base; break; }
+  if (!s_Depot) { Print("[ACR] REGRESS info: no US deploy base for the purchase checks"); return; }
+  vector centre = s_Depot.GetOrigin();
+  int infantry = -1, mortar = -1;
+  foreach (int i, ACR_RequisitionEntry e : usData.m_aRequisitions)
+  {
+   if (infantry < 0 && e.m_sVehicle.IsEmpty() && !e.m_sGroup.IsEmpty() && !e.m_bMortarTeam && !e.m_bObserverTeam && e.m_bStepped) infantry = i;
+   if (mortar < 0 && e.m_bMortarTeam && e.m_iRemaining > 0) mortar = i;
+   if (s_iTruckEntry < 0 && e.m_bTransport && e.m_bCrewed && e.m_sPassengers.IsEmpty() && e.m_sGroup.IsEmpty() && e.m_iSupportHeli == 0) s_iTruckEntry = i;
+  }
+  // a) infantry that never spawns: nothing charged, no stock or price step taken.
+  if (infantry >= 0)
+  {
+   ACR_RequisitionEntry unit = usData.m_aRequisitions[infantry];
+   usData.m_iRP = 1000;
+   int left = unit.m_iRemaining, bought = unit.m_iBought, cost = unit.m_iCost;
+   ACR_Requisition.s_iTestFailSpawns = 1;
+   string said = req.PurchaseAt("US", infantry, s_Depot);
+   ACR_Requisition.s_iTestFailSpawns = 0;
+   Check("purchase: a unit that fails to spawn costs nothing", usData.m_iRP == 1000 && unit.m_iRemaining == left && unit.m_iBought == bought && unit.m_iCost == cost && said.Contains("could not be deployed"), string.Format("rp %1, left %2/%3, bought %4/%5, cost %6/%7 | %8", usData.m_iRP, unit.m_iRemaining, left, unit.m_iBought, bought, unit.m_iCost, cost, said));
+  }
+  // b) a vehicle whose passengers fail: the vehicle it made is taken back too.
+  if (infantry >= 0)
+  {
+   ACR_RequisitionEntry carrier = new ACR_RequisitionEntry();
+   carrier.Set("Regress Carrier", "", "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", 10, 3);
+   carrier.m_sPassengers = usData.m_aRequisitions[infantry].m_sGroup;
+   carrier.m_iRemaining = 3;
+   carrier.m_iBaseCost = 10;
+   int index = usData.m_aRequisitions.Insert(carrier);
+   usData.m_iRP = 1000;
+   vector at = ACR_Manager.Ground(centre + Vector(-12, 0, 12));
+   int before = VehiclesNear(at, 6);
+   ACR_Requisition.s_iTestPassSpawns = 1; // the truck
+   ACR_Requisition.s_iTestFailSpawns = 1; // its passengers
+   string said = req.PurchaseAt("US", index, s_Depot, at, true);
+   ACR_Requisition.s_iTestFailSpawns = 0;
+   ACR_Requisition.s_iTestPassSpawns = 0;
+   usData.m_aRequisitions.RemoveOrdered(index);
+   bool crewNamed = false;
+   foreach (IEntity v, string crewName : manager.m_PendingCrewNames) if (crewName.Contains("Regress Carrier")) crewNamed = true;
+   s_bCarrierOk = usData.m_iRP == 1000 && carrier.m_iRemaining == 3 && !crewNamed && said.Contains("passengers");
+   s_sCarrier = string.Format("rp %1, left %2, crew name pending %3, vehicles before %4 | %5", usData.m_iRP, carrier.m_iRemaining, crewNamed, before, said);
+   s_CarrierAt = at;
+   s_iCarrierBefore = before;
+  }
+  // c) a mortar team short of a crewman: all or nothing.
+  if (mortar >= 0)
+  {
+   ACR_RequisitionEntry tube = usData.m_aRequisitions[mortar];
+   usData.m_iRP = 1000;
+   int left = tube.m_iRemaining;
+   int teams = manager.Mortars().m_Teams.Count();
+   ACR_Requisition.s_iTestPassSpawns = 1;
+   ACR_Requisition.s_iTestFailSpawns = 1;
+   string said = req.PurchaseAt("US", mortar, s_Depot, ACR_Manager.Ground(centre + Vector(14, 0, -14)), true);
+   ACR_Requisition.s_iTestFailSpawns = 0;
+   ACR_Requisition.s_iTestPassSpawns = 0;
+   Check("purchase: mortar team short of crew is refunded, no team left", usData.m_iRP == 1000 && tube.m_iRemaining == left && manager.Mortars().m_Teams.Count() == teams, string.Format("rp %1, left %2/%3, teams %4/%5 | %6", usData.m_iRP, tube.m_iRemaining, left, manager.Mortars().m_Teams.Count(), teams, said));
+  }
+  // d+e) two trucks from one pool: one gets its (delayed) crew, the other's never comes.
+  if (s_iTruckEntry >= 0)
+  {
+   ACR_RequisitionEntry truck = usData.m_aRequisitions[s_iTruckEntry];
+   usData.m_iRP = 1000;
+   s_iTruckBought = truck.m_iBought;
+   s_iTruckNamed = truck.m_iNamed;
+   s_sGoodTruck = string.Format("%1 %2", truck.m_sName, truck.m_iNamed + 1);
+   req.PurchaseAt("US", s_iTruckEntry, s_Depot, ACR_Manager.Ground(centre + Vector(18, 0, 18)), true);
+   ACR_Requisition.s_bTestNoCrew = true;
+   ACR_Requisition.s_fPendingTimeoutMs = 4000;
+   s_sNoCrewTruck = string.Format("%1 %2", truck.m_sName, truck.m_iNamed + 1);
+   s_iTruckPaid = truck.m_iCost;
+   req.PurchaseAt("US", s_iTruckEntry, s_Depot, ACR_Manager.Ground(centre + Vector(-18, 0, -18)), true);
+   ACR_Requisition.s_bTestNoCrew = false;
+   s_iRPAfterBuys = usData.m_iRP;
+   foreach (ACR_PendingPurchase p : req.m_aPending) if (p.m_sName == s_sNoCrewTruck) s_NoCrewVehicle = p.m_Vehicle;
+   PrintFormat("[ACR] REGRESS info: bought %1 and %2 (no crew), pending %3, rp %4", s_sGoodTruck, s_sNoCrewTruck, req.m_aPending.Count(), usData.m_iRP);
+  }
+  // A fire team to reinforce, at the deploy base.
+  s_ReinforceGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(FIRE_TEAM, ACR_Manager.Ground(centre + Vector(6, 0, -6))));
+ }
+
+ static void ReinforcePart(ACR_Manager manager)
+ {
+  ACR_Squad squad = manager.FindSquadByGroup(s_ReinforceGroup);
+  if (!squad || !s_Depot) { Print("[ACR] REGRESS info: no fire team to reinforce"); return; }
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  int removed;
+  for (int i = 1; i < agents.Count(); i++)
+  {
+   if (agents[i].GetControlledEntity()) { SCR_EntityHelper.DeleteEntityAndChildren(agents[i].GetControlledEntity()); removed++; }
+  }
+  GetGame().GetCallqueue().CallLater(ReinforceNow, 1500, false, squad, removed);
+ }
+
+ static void ReinforceNow(ACR_Squad squad, int removed)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  ACR_Requisition req = manager.m_Requisition;
+  ACR_FactionData usData = manager.m_Bases.GetFaction("US");
+  array<ResourceName> missing = {};
+  squad.GetMissing(missing);
+  int radius = ACR_Requisition.REINFORCE_CLEAR_RADIUS;
+  ACR_Requisition.REINFORCE_CLEAR_RADIUS = 0;
+  // Soft limit: at the limit, neither buying nor reinforcing adds soldiers.
+  int cap = manager.m_iSoldierCap;
+  manager.m_iSoldierCap = manager.m_Cleanup.SoldiersOf("US");
+  string capReinforce = req.ReinforceSquad(null, squad);
+  string capBuy = "no truck entry";
+  if (s_iTruckEntry >= 0) capBuy = req.PurchaseAt("US", s_iTruckEntry, s_Depot);
+  manager.m_iSoldierCap = cap;
+  Check("soldier limit stops buying and reinforcing", capReinforce.Contains("Too many soldiers") && capBuy.Contains("Too many soldiers"), capReinforce + " | " + capBuy);
+  usData.m_iRP = 1000;
+  int alive = squad.CountAlive();
+  ACR_Requisition.s_iTestFailSpawns = 2;
+  string said = req.ReinforceSquad(null, squad);
+  ACR_Requisition.s_iTestFailSpawns = 0;
+  ACR_Requisition.REINFORCE_CLEAR_RADIUS = radius;
+  int delivered = missing.Count() - 2;
+  int paid = 1000 - usData.m_iRP;
+  Check("reinforce charges only for soldiers who arrived", missing.Count() >= 3 && paid == delivered * ACR_Requisition.REINFORCE_COST_PER_SOLDIER && squad.CountAlive() == alive + delivered && said.Contains(string.Format("%1 of %2", delivered, missing.Count())), string.Format("missing %1, paid %2, alive %3 -> %4 | %5", missing.Count(), paid, alive, squad.CountAlive(), said));
+ }
+
+ static void PendingResults(ACR_Manager manager)
+ {
+  ACR_Requisition req = manager.m_Requisition;
+  ACR_Requisition.s_fPendingTimeoutMs = 30000;
+  if (s_iTruckEntry < 0) return;
+  ACR_FactionData usData = manager.m_Bases.GetFaction("US");
+  ACR_RequisitionEntry truck = usData.m_aRequisitions[s_iTruckEntry];
+  ACR_Squad crew;
+  foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetName() == s_sGoodTruck) crew = squad;
+  bool stillPending;
+  foreach (ACR_PendingPurchase p : req.m_aPending) if (p.m_sName == s_sGoodTruck || p.m_sName == s_sNoCrewTruck) stillPending = true;
+  bool crewNamePending = manager.m_PendingCrewNames.Contains(s_NoCrewVehicle);
+  // RP: the delivered truck stays paid, only the failed one's price comes back.
+  int refunded = usData.m_iRP - s_iRPAfterBuys;
+  Check("pending purchase: delayed crew completes once; a crew that never comes is refunded", refunded == s_iTruckPaid && crew != null && !stillPending && s_NoCrewVehicle == null && !crewNamePending && truck.m_iBought == s_iTruckBought + 1 && truck.m_iNamed == s_iTruckNamed + 2 && truck.m_iCost == ACR_Pricing.PriceAfter(truck.m_iBaseCost, truck.m_iBought), string.Format("refunded %1 of %2 RP, crew %3, pending %4, no-crew truck left %5, bought %6 (was %7), named +%8, cost %9", refunded, s_iTruckPaid, crew != null, stillPending, s_NoCrewVehicle != null, truck.m_iBought, s_iTruckBought, truck.m_iNamed - s_iTruckNamed, truck.m_iCost));
  }
 }

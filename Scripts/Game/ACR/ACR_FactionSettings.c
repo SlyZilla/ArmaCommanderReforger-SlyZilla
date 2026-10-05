@@ -29,6 +29,7 @@ class ACR_RequisitionEntry
  // runtime
  int m_iRemaining;
  int m_iBought;
+ int m_iNamed;        // purchases ever made, for unit names (refunds don't reuse a number)
  int m_iBaseCost;     // the price before any purchase (m_iCost is the current price)
  bool m_bStepped;     // stepped pricing: unlimited, the price climbs with each purchase (ACR_Pricing)
 
