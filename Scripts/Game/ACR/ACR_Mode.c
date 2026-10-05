@@ -75,6 +75,7 @@ class ACR_Mode : GenericEntity
   if (System.IsCLIParam("acrSurveyTest")) ACR_TestSurvey.Run(null, m_iSeconds);
   // -acrPlacesTest: named map locations, for laying out a new map (ACR_TestPlaces).
   if (System.IsCLIParam("acrPlacesTest")) ACR_TestPlaces.Run(m_iSeconds);
+  if (System.IsCLIParam("acrEveronSurveyTest")) ACR_TestPlaces.SurveyEveron(m_iSeconds);
   if (m_bSoak) { Soak(); return; }
   if (!m_bSummary || m_iSeconds % 30 != 0) return;
   ACR_Manager manager = ACR_Manager.GetInstance();

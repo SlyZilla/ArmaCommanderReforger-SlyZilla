@@ -1,0 +1,669 @@
+SCR_BaseGameMode ACR_GameMode : "{1B76F75A3175E85C}Prefabs/MP/Modes/Plain/GameMode_Plain.et" {
+ components {
+  SCR_CampaignBuildingManagerComponent "{5C6878C4C62529D2}" {
+   m_sFreeRoamBuildingClientTrigger "{5E191CEAF4B95816}Prefabs/MP/FreeRoamBuildingClientTrigger.et"
+   m_BudgetType CAMPAIGN
+   m_iCompositionRefundPercentage 100
+   m_iXpRewardTreshold 5
+   m_iInitialRewardInterval 5
+   m_fRewardCurveIncrement 0.2
+   m_OutlineManager SCR_CampaignBuildingCompositionOutlineManager "{5D7A73031D9A11E1}" : "{96A8B496A076F1C0}scripts/Game/Building/CampaignBuildingCompositionOutline.conf" {
+    m_aCompositionLayouts {
+     SCR_CampaignBuildingCompositionOutline "{65A6BAECE8BB1339}" {
+      m_sEditableEntity "{6676FBB212B337D6}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_USSR_01.et"
+      m_sCompositionLayout "{F28A8D6AC99AD4E8}Prefabs/Compositions/Misc/FreeRoamBuilding/Layouts/FRB_VehicleMaintenance_M_01.et"
+     }
+    }
+   }
+   m_sPrefabsToBuildResource "{D2527D9AA5B4A33E}Configs/Editor/PlaceableEntities/Compositions/Compositions_FreeRoamBuilding.conf"
+   m_sPrefabToHoldSupplyOnRefund "{4BBE0A784C01900E}Prefabs/Props/Military/SupplyBox/SupplyCrate/SupplyCrate_01/SupplyCrate_01_FreeRoamBuilding.et"
+  }
+  SCR_MapConfigComponent "{5C669498E250A34B}" {
+   m_sGadgetMapConfigPath "{AC230926A0010098}Configs/Map/ACR_MapFullscreen.conf"
+  }
+  SCR_RespawnSystemComponent "{56B2B4793051E7C9}" {
+   m_SpawnLogic SCR_AutoSpawnLogic "{5D36888CC966608A}" {
+    m_sForcedFaction "US"
+   }
+  }
+ }
+ coords 6400 0 6400
+}
+SCR_FactionManager ACR_Factions : "{589540B35EBA8CDC}Prefabs/MP/Managers/Factions/FactionManager_USxUSSR.et" {
+ coords 6400 0 6400
+}
+SCR_LoadoutManager ACR_Loadouts : "{97EF4C1A41F63DDB}Prefabs/MP/Managers/Loadouts/LoadoutManager_USxUSSR.et" {
+ coords 6400 0 6400
+}
+SCR_SpawnPoint ACR_PlayerSpawn : "{5A2220DD0C16958B}Prefabs/MP/Spawning/SpawnPoint_US.et" {
+ coords 4951 28.4 11903
+}
+SCR_SpawnPoint ACR_PlayerSpawn_USSR : "{4FEA25583D0975F7}Prefabs/MP/Spawning/SpawnPoint_USSR.et" {
+ coords 10027 2.1 1534
+}
+SCR_AIWorld ACR_AIWorld : "{E0A05C76552E7F58}Prefabs/AI/SCR_AIWorld.et" {
+ components {
+  NavmeshWorldComponent "{5584F30E67F617AD}" {
+   NavmeshSettings NavmeshWorld "{50FC63BEBE3973C5}" {
+    NavmeshFilesConfig BaseNavmeshFilesConfig "{AC230926A0010021}" {
+     NavmeshFile "{AD5F99CD7C59D5E0}worlds/GameMaster/Navmeshes/GM_Eden.nmn"
+    }
+   }
+  }
+  NavmeshWorldComponent "{5584F30EEFEE1223}" {
+   NavmeshSettings ChimeraNavmeshWorld "{50FC63BEBE3973C5}" {
+    NavmeshFilesConfig BaseNavmeshFilesConfig "{60CA9BE5536BF701}" {
+     NavmeshFile "{C35ECF3276824654}worlds/GameMaster/Navmeshes/GM_Eden_vehicles.nmn"
+    }
+   }
+  }
+  NavmeshWorldComponent "{5C8C9B750D124A63}" {
+   NavmeshSettings NavmeshWorld "{5C8C9B750B60C6E2}" {
+    NavmeshFilesConfig BaseNavmeshFilesConfig "{5C90BD0EC793647D}" {
+     NavmeshFile "{5E19E60F26327356}worlds/MP/Navmeshes/LowResEden.nmn"
+    }
+   }
+  }
+ }
+ coords 6400 0 6400
+}
+PerceptionManager ACR_Perception : "{028DAEAD63E056BE}Prefabs/World/Game/PerceptionManager.et" {
+ coords 6400 111 6400
+}
+RadioManagerEntity ACR_Radio : "{B8E09FAB91C4ECCD}Prefabs/Systems/Radio/RadioManager.et" {
+ coords 6400 111 6400
+}
+ACR_Mode ACR_Mode {
+ coords 6400 111 6400
+}
+ACR_FactionSettings ACR_Settings_US {
+ coords 4950 28.2 11918
+ m_sFaction "US"
+ m_iStartingRP 100
+}
+ACR_FactionSettings ACR_Settings_USSR {
+ coords 10021 2.5 1551
+ m_sFaction "USSR"
+ m_iStartingRP 100
+}
+ACR_Base ACR_Base_0 {
+ coords 4950 28.2 11918
+ m_sName "Airbase"
+ m_sOwner "US"
+ m_iGarrison 6
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 70
+}
+ACR_Base ACR_Base_1 {
+ coords 10021 2.5 1551
+ m_sName "Harbor"
+ m_sOwner "USSR"
+ m_iGarrison 6
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 70
+}
+ACR_Base ACR_Base_2 {
+ coords 4502 13.4 10771
+ m_sName "Saint-Philippe"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 90
+}
+ACR_Base ACR_Base_3 {
+ coords 9689 13.5 1558
+ m_sName "Saint-Pierre"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 75
+}
+ACR_Base ACR_Base_4 {
+ coords 4773 164.3 7094
+ m_sName "Montignac"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 75
+}
+ACR_Base ACR_Base_5 {
+ coords 5135 14.1 4011
+ m_sName "Morton"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 75
+}
+ACR_Base ACR_Base_6 {
+ coords 1279 37.5 5940
+ m_sName "Lamentin"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 75
+}
+ACR_Base ACR_Base_7 {
+ coords 2615 92.0 5378
+ m_sName "Le Moule"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_8 {
+ coords 2838 86.4 6339
+ m_sName "Villeneuve"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_9 {
+ coords 4120 35.2 7796
+ m_sName "Gravette"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_10 {
+ coords 4520 14.1 9467
+ m_sName "Meaux"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_11 {
+ coords 4927 36.1 9092
+ m_sName "Tyrone"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_12 {
+ coords 5250 63.4 5337
+ m_sName "Figari"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_13 {
+ coords 5486 96.0 6087
+ m_sName "Provins"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_14 {
+ coords 5766 215.1 7035
+ m_sName "Entre-Deux"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_15 {
+ coords 7086 118.3 6012
+ m_sName "Chotain"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_16 {
+ coords 7205 136.7 2324
+ m_sName "Regina"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_17 {
+ coords 7464 137.2 4738
+ m_sName "Levie"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_18 {
+ coords 7558 82.6 5540
+ m_sName "Laruns"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_19 {
+ coords 8826 94.7 2745
+ m_sName "Durras"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_20 {
+ coords 9243 59.7 2077
+ m_sName "Vernon"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_21 {
+ coords 10918 24.9 11706
+ m_sName "Erquy"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_22 {
+ coords 2223 17.3 7569
+ m_sName "Redon"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_23 {
+ coords 2520 13.6 4289
+ m_sName "Kervel"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_24 {
+ coords 3540 111.1 5061
+ m_sName "Richemont"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_25 {
+ coords 3883 102.7 6286
+ m_sName "Lacourt"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_26 {
+ coords 4839 113.0 8094
+ m_sName "Gorey"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_27 {
+ coords 5333 36.1 11372
+ m_sName "Les Creux"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_28 {
+ coords 5390 17.6 10008
+ m_sName "Etoupe"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_29 {
+ coords 6367 6.7 9664
+ m_sName "Kermovan"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_30 {
+ coords 6579 151.6 7103
+ m_sName "Benac"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_31 {
+ coords 6588 5.8 3113
+ m_sName "Camurac"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_32 {
+ coords 6736 89.2 5650
+ m_sName "La Valette"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_33 {
+ coords 7938 12.8 1469
+ m_sName "Le Bosc"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_34 {
+ coords 9354 5.3 5072
+ m_sName "Perelle"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_35 {
+ coords 11684 8.6 2234
+ m_sName "Lancre"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 45
+}
+ACR_Base ACR_Base_36 {
+ coords 7447 7.9 6704
+ m_sName "Chotain Base"
+ m_iGarrison 0
+ m_iValue 3
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_37 {
+ coords 3901 15.3 8450
+ m_sName "Gravette Base"
+ m_iGarrison 0
+ m_iValue 3
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_38 {
+ coords 7631 13.1 8141
+ m_sName "Firing Range"
+ m_iGarrison 0
+ m_iValue 3
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_39 {
+ coords 5354 43.4 10542
+ m_sName "Gallows Base"
+ m_iGarrison 0
+ m_iValue 3
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_40 {
+ coords 7505 165.8 4283
+ m_sName "Levie Base"
+ m_iGarrison 0
+ m_iValue 3
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 60
+}
+ACR_Base ACR_Base_41 {
+ coords 4536 16.9 10561
+ m_sName "Saint-Philippe Factory"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_42 {
+ coords 4397 1.5 11098
+ m_sName "Saint-Philippe Harbor"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_43 {
+ coords 5043 28.0 10867
+ m_sName "North Industrial"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_44 {
+ coords 4537 155.7 6844
+ m_sName "Montignac Industrial"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_45 {
+ coords 6463 162.2 6497
+ m_sName "Central Industrial"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_46 {
+ coords 5834 4.6 9786
+ m_sName "Power Plant"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_47 {
+ coords 8839 220.0 4014
+ m_sName "Quarry"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_48 {
+ coords 3069 116.6 5195
+ m_sName "Le Moule Sawmill"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_49 {
+ coords 7272 139.1 2541
+ m_sName "Regina Sawmill"
+ m_iGarrison 0
+ m_iValue 2
+ m_bIncome 1
+ m_bHidden 0
+ m_fRadius 50
+}
+ACR_Base ACR_Base_50 {
+ coords 9922 295.8 2584
+ m_sName "Cheval-Gin Lodge"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 1
+ m_fRadius 40
+}
+ACR_Base ACR_Base_51 {
+ coords 7073 95.0 8391
+ m_sName "Andre's Beacon"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 1
+ m_fRadius 40
+}
+ACR_Base ACR_Base_52 {
+ coords 7890 144.5 1838
+ m_sName "Martin's Watch"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 1
+ m_fRadius 40
+}
+ACR_Base ACR_Base_53 {
+ coords 3792 157.7 4180
+ m_sName "Wolfstone"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 1
+ m_fRadius 40
+}
+ACR_Base ACR_Base_54 {
+ coords 5081 140.4 7731
+ m_sName "Raccoon Rock"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 1
+ m_fRadius 40
+}
+ACR_Base ACR_Base_55 {
+ coords 5330 52.4 10903
+ m_sName "Landfill"
+ m_iGarrison 0
+ m_iValue 1
+ m_bIncome 1
+ m_bHidden 1
+ m_fRadius 40
+}
+ACR_StartingUnit ACR_Start_0 {
+ coords 4939 28.2 11927
+ m_sName "1st Squad"
+ m_sGroup "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et"
+}
+ACR_StartingUnit ACR_Start_1 {
+ coords 4954 28.2 11933
+ m_sName "2nd Squad"
+ m_sGroup "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et"
+}
+ACR_StartingUnit ACR_Start_2 {
+ coords 4948 28.3 11951
+ m_sName "Weapons Team"
+ m_sGroup "{958039B857396B7B}Prefabs/Groups/BLUFOR/Group_US_MachineGunTeam.et"
+}
+ACR_StartingUnit ACR_Start_3 {
+ coords 4906 28.6 11912
+ m_sName "Truck 1"
+ m_sVehicle "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et"
+}
+ACR_StartingUnit ACR_Start_4 {
+ coords 4954 28.3 11879
+ m_sName "Humvee 1"
+ m_sVehicle "{4A71F755A4513227}Prefabs/Vehicles/Wheeled/M998/M1025.et"
+}
+ACR_StartingUnit ACR_Start_5 {
+ coords 10033 2.6 1573
+ m_sName "Soviet 1st Squad"
+ m_sGroup "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et"
+}
+ACR_StartingUnit ACR_Start_6 {
+ coords 10015 2.4 1579
+ m_sName "Soviet 2nd Squad"
+ m_sGroup "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et"
+}
+ACR_StartingUnit ACR_Start_7 {
+ coords 10048 2.5 1573
+ m_sName "Soviet Weapons Team"
+ m_sGroup "{A2F75E45C66B1C0A}Prefabs/Groups/OPFOR/Group_USSR_MachineGunTeam.et"
+}
+ACR_StartingUnit ACR_Start_8 {
+ coords 9994 2.0 1534
+ m_sName "Ural 1"
+ m_sVehicle "{16C1F16C9B053801}Prefabs/Vehicles/Wheeled/Ural4320/Ural4320_transport.et"
+}
+ACR_StartingUnit ACR_Start_9 {
+ coords 9979 2.1 1537
+ m_sName "UAZ 1"
+ m_sVehicle "{259EE7B78C51B624}Prefabs/Vehicles/Wheeled/UAZ469/UAZ469.et"
+}
+ACR_Helipad ACR_Helipad_Airbase_1 {
+ coords 4873 28.6 11865
+ angles 0 90 0
+ m_sBase "Airbase"
+}
+ACR_Helipad ACR_Helipad_Airbase_2 {
+ coords 4873 28.6 11830
+ angles 0 90 0
+ m_sBase "Airbase"
+}
+ACR_Helipad ACR_Helipad_Airbase_3 {
+ coords 4873 28.6 11795
+ angles 0 90 0
+ m_sBase "Airbase"
+}
+ACR_Helipad ACR_Helipad_Harbor_1 {
+ coords 10164 2.5 1507
+ angles 0 130 0
+ m_sBase "Harbor"
+}
+ACR_Helipad ACR_Helipad_Harbor_2 {
+ coords 10171 2.5 1476
+ angles 0 130 0
+ m_sBase "Harbor"
+}

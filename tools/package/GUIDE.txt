@@ -17,7 +17,8 @@ HOW TO START
 2. Close Arma Reforger if it's running.
 3. Double-click  Play-Arland.cmd  (next to this guide).
    A setup menu opens first (side, AI, RP, threat level...): press Enter
-   to start with the remembered settings. The game then starts straight into
+   to start with the remembered settings (option 1 switches the map:
+   Arland or Everon). The game then starts straight into
    the scenario (singleplayer and offline).
    The first load takes a while because the game compiles the mod's scripts.
    If Windows SmartScreen asks, choose "More info" > "Run anyway". It's a
@@ -118,6 +119,13 @@ Bases (distances are from your spawn at the Airfield):
   Heide Lighthouse .. Soviet control point, 2.3 km east, on the coast
   Arlberg Harbor .... Soviet and HIDDEN until your troops get near it.
                       It's 2.5 km south-east, on the coast past Arlberg.
+
+EVERON (new, first pass): the US HQ is the military site at the north-east
+corner of the Airbase (north of Saint-Philippe); the Soviet HQ is the
+Saint-Pierre harbor on the south-east coast, about 11 km away. Every town
+and village is a neutral base; military sites and industry give more RP,
+and a few lesser landmarks are hidden bases. Both sides start with two
+rifle squads, a weapons team, a truck and a car.
 
 - To capture a base, get soldiers inside its ring and clear the enemies out.
   More soldiers capture it faster. Garrisoned bases have defenders that appear

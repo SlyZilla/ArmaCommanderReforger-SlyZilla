@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A00100B0}Worlds/ACR_Everon.ent"
+ Configurations {
+  ENTResourceClass PC {
+  }
+  ENTResourceClass HEADLESS : PC {
+  }
+ }
+}

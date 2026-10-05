@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A00100B1}Missions/ACR_Everon.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}
