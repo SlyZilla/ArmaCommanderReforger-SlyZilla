@@ -32,6 +32,9 @@ class BBB_Armour
  static int s_iHeld;
  static ref array<IEntity> s_aVanilla = {}; // test only: soldiers who keep vanilla picks
  static bool s_bDiag;                       // test only: log what the shooter was doing
+ static IEntity s_Watch;                    // test only: every hit on this vehicle, by type and source
+ static ref map<string, int> s_mWatchHits = new map<string, int>();
+ static ref map<string, float> s_mWatchDamage = new map<string, float>();
  static ref map<string, int> s_mDiag = new map<string, int>();
 
  static void Read()
@@ -65,6 +68,10 @@ class BBB_Armour
  static string Round(string key)
  {
   if (key == "") return key;
+  // A HEAT/HEDP round's spall and penetrator are its own child projectiles: they belong to
+  // the round the soldier fired (their hits are that round getting through).
+  key.Replace("_spall.et", ".et");
+  key.Replace("_penetrator.et", ".et");
   string name = Short(key);
   array<string> parts = {};
   name.Split("_", parts, true);
@@ -119,6 +126,17 @@ class BBB_Armour
    s_Stats.Set(key, stat);
   }
   return stat;
+ }
+
+ // Test only: tally every hit on the watched vehicle ("type source" -> hits, effective damage).
+ static void Watch(IEntity vehicle, notnull BaseDamageContext context)
+ {
+  if (!s_Watch || vehicle != s_Watch) return;
+  string key = typename.EnumToString(EDamageType, context.damageType) + " " + Short(PrefabKey(context.damageSource));
+  float effective = 0;
+  if (context.struckHitZone) effective = context.struckHitZone.ComputeEffectiveDamage(context, false);
+  s_mWatchHits.Set(key, s_mWatchHits.Get(key) + 1);
+  s_mWatchDamage.Set(key, s_mWatchDamage.Get(key) + effective);
  }
 
  // A kinetic hit on a vehicle part (vehicle damage managers).
@@ -243,7 +261,11 @@ modded class SCR_DamageManagerComponent
  override bool HijackDamageHandling(notnull BaseDamageContext damageContext)
  {
   bool hijacked = super.HijackDamageHandling(damageContext);
-  if (!hijacked && Vehicle.Cast(GetOwner())) BBB_Armour.OnVehicleHit(GetOwner(), damageContext);
+  if (!hijacked && Vehicle.Cast(GetOwner()))
+  {
+   if (BBB_Armour.s_Watch) BBB_Armour.Watch(GetOwner(), damageContext);
+   BBB_Armour.OnVehicleHit(GetOwner(), damageContext);
+  }
   return hijacked;
  }
 }
@@ -276,6 +298,8 @@ modded class SCR_AICombatComponent
  static const float BBB_LOW_OFFSET = 10;
 
  BaseMagazineComponent BBBSelectedMagazine() { return m_SelectedMagazineComp; }
+ BaseWeaponComponent BBBSelectedWeapon() { return m_SelectedWeaponComp; }
+ int BBBSelectedMuzzle() { return m_iSelectedMuzzle; }
 
  override void EvaluateWeaponAndTarget(out bool outWeaponEvent, out bool outSelectedTargetChanged,
   out BaseTarget outPrevTarget, out BaseTarget outCurrentTarget,

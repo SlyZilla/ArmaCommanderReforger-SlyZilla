@@ -58,6 +58,7 @@ bbbgunner|-acrBbbGunnerTest 1|2100
 bbbarmour|-acrBbbArmourTest 1|900
 bbbvanilla|-acrBbbVanillaTest 1|300
 bbbgrenadier|-acrBbbGrenadierTest 1|1500
+bbbglnear|-acrBbbGrenadierNearTest 1|600
 places|-acrPlacesTest 1|120|Worlds/ACR_Everon.ent
 everonsurvey|-acrEveronSurveyTest 1|150|Worlds/ACR_Everon.ent
 everon|-acrScenarioTest 1|240|Worlds/ACR_Everon.ent
