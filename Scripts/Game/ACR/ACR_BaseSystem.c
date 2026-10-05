@@ -63,6 +63,7 @@ class ACR_BaseSystem : Managed
   ACR_FactionData data = GetFaction(factionKey);
   if (data.m_iRP < amount) return false;
   data.m_iRP -= amount;
+  ACR_Report.OnSpend(factionKey, amount);
   return true;
  }
 
@@ -105,7 +106,9 @@ class ACR_BaseSystem : Managed
    string key = faction.GetFactionKey();
    int added = Math.Round(GetIncome(key) * ACR_Manager.IncomeOption());
    ACR_FactionData data = GetFaction(key);
+   int before = data.m_iRP;
    data.m_iRP = Math.Min(data.m_iRP + added, POINTS_CAP);
+   ACR_Report.OnIncome(key, data.m_iRP - before);
   }
   PrintFormat("[ACR] Income paid");
  }
@@ -249,6 +252,7 @@ class ACR_BaseSystem : Managed
   base.m_iGarrisonLeft = Math.Ceil(base.m_iGarrison * 0.5);
   if (!base.m_aDetectedBy.Contains(factionKey)) base.m_aDetectedBy.Insert(factionKey);
   PrintFormat("[ACR] Base captured: %1 by %2 (was %3)", base.m_sName, factionKey, previous);
+  ACR_Report.OnCapture(base.m_sName, factionKey, previous);
   manager.NotifyFaction(factionKey, string.Format("%1 captured", base.m_sName));
   if (!previous.IsEmpty()) manager.NotifyFaction(previous, string.Format("%1 lost", base.m_sName));
  }

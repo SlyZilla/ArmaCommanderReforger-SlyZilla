@@ -197,6 +197,10 @@ ON THE COMMAND MAP
          base and CAN be shot down.
   A red ring with a countdown marks each incoming support on the map.
   Keep your own troops out of it!
+- REPORT (panel button, everyone): your side's running after-action report:
+  soldiers and vehicles lost, enemy killed, bases won and lost, RP earned and
+  spent, and the last big moments (bases taken or lost, squads wiped out,
+  vehicles lost). Kills by bombs and the howitzer battery aren't credited.
 - FIRE AT WILL (panel button): for a squad with a radio operator, or a
   "Forward observer team" from Requisition (12 RP, these start with it on),
   it calls your mortars on enemies it sees, at least 150 m away and never

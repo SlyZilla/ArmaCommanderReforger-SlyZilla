@@ -3,6 +3,7 @@
 class ACR_TestRegress
 {
  static ref ACR_Squad s_Heli;
+ static int s_iReportLost;
  static void Check(string name, bool ok, string detail = "")
  {
   string verdict = "FAIL";
@@ -293,6 +294,32 @@ class ACR_TestRegress
    foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetName() == "Regress Truck") crew = squad;
    Check("vehicle crew keeps its unit name", crew != null && crew.m_OwnVehicle != null, string.Format("found %1", crew != null));
    if (crew) Check("idle truck crew can give rides", manager.m_Rides && manager.m_Rides.WhyNotTaxi(crew, "US").IsEmpty(), manager.m_Rides.WhyNotTaxi(crew, "US"));
+  }
+  // After-action report (5 Oct): kills/losses, bases, RP tallied per side.
+  if (tick == 45)
+  {
+   ACR_SideStats ussr = ACR_Report.Of("USSR");
+   s_iReportLost = ussr.m_iLost;
+   IEntity victim;
+   foreach (ACR_Squad squad : manager.m_Squads)
+   {
+    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != "USSR") continue;
+    array<AIAgent> agents = {};
+    squad.GetAgents(agents);
+    if (!agents.IsEmpty()) { victim = agents[0].GetControlledEntity(); break; }
+   }
+   if (victim) harness.Kill(victim);
+   else Print("[ACR] REGRESS info: report kill skipped (no Soviet soldier)");
+  }
+  if (tick == 47)
+  {
+   ACR_SideStats us = ACR_Report.Of("US");
+   ACR_SideStats ussr2 = ACR_Report.Of("USSR");
+   string text = ACR_Report.Text("US");
+   Check("report: bases won and lost tallied", us.m_iBasesWon >= 1 && ussr2.m_iBasesLost >= 1, string.Format("US won %1, USSR lost %2", us.m_iBasesWon, ussr2.m_iBasesLost));
+   Check("report: a dead soldier counts as lost", ussr2.m_iLost > s_iReportLost, string.Format("%1 -> %2", s_iReportLost, ussr2.m_iLost));
+   Check("report: RP spent tallied and panel text built", us.m_iRPSpent > 0 && text.Contains("Bases won"), string.Format("spent %1 | %2", us.m_iRPSpent, text.Length()));
+   ACR_Report.LogAll();
   }
   // Stepped pricing (5 Oct, Jacob's threat = price climb): ordinary units unlimited, each
   // purchase raises that unit's price by the threat step; rare units keep a fixed stock.

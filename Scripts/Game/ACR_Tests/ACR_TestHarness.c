@@ -213,6 +213,7 @@ class ACR_TestHarness : Managed
     ACR_AICommander.ASSAULT_TIMEOUT = 25;
     ACR_AICommander.ASSAULT_HARD_TIMEOUT = 50;
     ACR_AICommander.GRAB_TIMEOUT = 30;
+    ACR_AICommander.s_bGrabByDistance = false;
     ACR_AICommander.STAGING_TIMEOUT = 20;
    }
    m_Battle.TestTactics();

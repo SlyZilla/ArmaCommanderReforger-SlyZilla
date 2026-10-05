@@ -182,6 +182,8 @@ class ACR_MapFeed
   string debugText;
   if (debugAllowed) debugText = manager.m_Debug.Status(manager, key);
   if (Changed(id, "debug", string.Format("%1|%2", debugAllowed, debugText), full)) pc.ACR_SendDebug(debugAllowed, debugText);
+  string report = ACR_Report.Text(key);
+  if (Changed(id, "report", report, full)) pc.ACR_SendReport(report);
   if (Changed(id, "bases", frame.m_sBasesSig, full)) { pc.ACR_SendBases(frame.m_BasePos, frame.m_BaseNames, frame.m_BaseOwners, frame.m_BaseDetails, frame.m_BaseRadii, frame.m_BaseContested); Count(frame, "bases"); }
   if (Changed(id, "reqs", frame.m_sReqSig, full)) { pc.ACR_SendRequisitions(frame.m_ReqNames, frame.m_ReqCosts, frame.m_ReqRemaining); Count(frame, "reqs"); }
   if (Changed(id, "sups", frame.m_sSupSig, full)) { pc.ACR_SendSupports(frame.m_SupNames, frame.m_SupCosts, frame.m_SupCooldowns); Count(frame, "sups"); }

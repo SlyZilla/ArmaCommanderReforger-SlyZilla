@@ -120,6 +120,7 @@ class ACR_Manager : Managed
  {
   ACR_Hud.Clear();
   ACR_Skirmish.Reset();
+  ACR_Report.Reset();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
@@ -344,6 +345,7 @@ class ACR_Manager : Managed
   if (!m_bHostOptionsApplied) ApplyHostOptions();
   WatchEvictions();
   m_iStatusTick++;
+  if (m_iStatusTick % 300 == 0) ACR_Report.LogAll();
   bool statusDue = m_iStatusTick % 5 == 0;
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
@@ -370,6 +372,7 @@ class ACR_Manager : Managed
    string vehicleNote = "no vehicle";
    if (squad.m_OwnVehicle) vehicleNote = string.Format("vehicle at %1, health %2", squad.m_OwnVehicle.GetOrigin(), ACR_Logistics.Health(squad.m_OwnVehicle));
    PrintFormat("[ACR] Squad removed: %1 (%2)", squad.GetName(), vehicleNote);
+   if (squad.GetFaction()) ACR_Report.Event(squad.GetFaction().GetFactionKey(), squad.GetName() + " wiped out");
    squad.Dispose();
    m_Squads.RemoveOrdered(i);
   }

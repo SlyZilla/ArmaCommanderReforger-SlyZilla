@@ -22,6 +22,7 @@ class ACR_AIAttack
  bool m_bGrab;                       // quick grab of an empty base (doesn't count against the attack limit)
  float m_fAssaultStart;              // world time the assault (or grab) began
  float m_fNextPush;                  // next time idle attackers are sent in again
+ float m_fGrabSeconds;               // a grab's own time limit: the trip there plus slack (big maps)
 
  vector StagingOf(ACR_Squad squad)
  {
@@ -59,6 +60,7 @@ class ACR_AICommander : Managed
  // buys it more time. Grabs of empty bases get less.
  static float ASSAULT_TIMEOUT = 1200;         // s, nobody of ours inside the ring
  static float ASSAULT_HARD_TIMEOUT = 1800;    // s, even with a foothold
+ static bool s_bGrabByDistance = true;          // off in tests that shorten GRAB_TIMEOUT
  static float GRAB_TIMEOUT = 480;             // s  (the test harness shortens these)
  static const float STALLED_COOLDOWN = 300;   // s before the same base is tried again
  static const float PUSH_INTERVAL = 120;      // s between re-issuing assault orders
@@ -552,6 +554,9 @@ class ACR_AICommander : Managed
    grab.m_Squads.Insert(runner);
    grab.m_aStaging.Insert(empty.GetOrigin());
    grab.m_iStartStrength = runner.Strength();
+   // Everon soak 5 Oct: most grabs of bases 2-3 km away timed out on the way at 480 s.
+   // Allow the walk (or drive) there at about 1.2 m/s, plus 3 minutes.
+   grab.m_fGrabSeconds = vector.DistanceXZ(PositionOf(runner), empty.GetOrigin()) / 1.2 + 180;
    runner.m_iAITask = ACR_EAITask.ATTACK;
    runner.m_AITarget = empty;
    runner.SetMode(ACR_EMoveMode.FAST);
@@ -876,7 +881,8 @@ class ACR_AICommander : Managed
  {
   if (!attack.m_bAssaulting || attack.m_fAssaultStart <= 0) return false;
   float seconds = (GetGame().GetWorld().GetWorldTime() - attack.m_fAssaultStart) / 1000;
-  if (attack.m_bGrab) return seconds > GRAB_TIMEOUT;
+  if (attack.m_bGrab && !s_bGrabByDistance) return seconds > GRAB_TIMEOUT;
+  if (attack.m_bGrab) return seconds > Math.Max(GRAB_TIMEOUT, attack.m_fGrabSeconds);
   if (seconds > ASSAULT_HARD_TIMEOUT) return true;
   if (seconds <= ASSAULT_TIMEOUT) return false;
   foreach (ACR_Squad squad : attack.m_Squads)

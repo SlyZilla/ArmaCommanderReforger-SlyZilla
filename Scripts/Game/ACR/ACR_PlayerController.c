@@ -986,6 +986,7 @@ modded class SCR_PlayerController
   array<int> cooldowns = {};
   ACR_Cooldowns(cooldowns);
   m_ACR_Panel.SetSupports(m_ACR_IsCommander, m_ACR_SupportOpen, m_ACR_SupNames, m_ACR_SupCosts, cooldowns, m_ACR_RP, m_ACR_PendingSupport);
+  m_ACR_Panel.SetReport(m_ACR_ReportOpen, m_ACR_ReportText);
   if (m_ACR_HasSupportTarget && m_ACR_SupportOpen)
   {
    m_ACR_Panel.SetBase("Support for " + m_ACR_SupportTargetFor, "Pick a support above: it fires on the ping. Click Supports to cancel.");
@@ -1115,6 +1116,7 @@ modded class SCR_PlayerController
     m_ACR_PendingEntry = -1;
     m_ACR_PendingSupport = -1;
     return;
+   case ACR_EPanelAction.TOGGLE_REPORT: m_ACR_ReportOpen = !m_ACR_ReportOpen; return;
    case ACR_EPanelAction.TOGGLE_SUPPORTS:
     m_ACR_SupportOpen = !m_ACR_SupportOpen;
     m_ACR_HasSupportTarget = false;
@@ -1645,6 +1647,19 @@ modded class SCR_PlayerController
  protected ref array<int> m_ACR_SupCooldowns = {};
  protected bool m_ACR_SupportOpen;
  protected int m_ACR_PendingSupport = -1;
+
+ // ---------------------------------------------------------------- after-action report
+ protected bool m_ACR_ReportOpen;
+ protected string m_ACR_ReportText = "No report yet";
+ void ACR_SendReport(string text)
+ {
+  Rpc(ACR_ReportOwner, text);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_ReportOwner(string text)
+ {
+  m_ACR_ReportText = text;
+ }
 
  void ACR_SendSupports(array<string> names, array<int> costs, array<int> cooldowns)
  {

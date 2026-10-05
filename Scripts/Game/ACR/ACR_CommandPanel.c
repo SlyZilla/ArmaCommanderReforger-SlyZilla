@@ -22,6 +22,7 @@ enum ACR_EPanelAction
  PING_SUPPORT,
  GARRISON,
  FIRE_AT_WILL,
+ TOGGLE_REPORT,
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -78,6 +79,8 @@ class ACR_CommandPanel : Managed
  protected Widget m_RequisitionBox;
  protected ref array<SCR_ButtonTextComponent> m_EntryButtons = {};
  protected SCR_ButtonTextComponent m_SupportButton;
+ protected SCR_ButtonTextComponent m_ReportButton;
+ protected TextWidget m_ReportText;
  protected Widget m_SupportWidget;
  protected Widget m_SupportSection;
  protected Widget m_SupportBox;
@@ -145,6 +148,11 @@ class ACR_CommandPanel : Managed
   m_SupportBox = supportBox;
   Widget supportScroll = ws.CreateWidget(WidgetType.ScrollLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.CLIPCHILDREN, Color.FromInt(Color.WHITE), 0, supportBox);
   m_SupportSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, supportScroll);
+
+  // After-action report (ACR_Report): everyone on the side can open it.
+  m_ReportButton = AddButton(m_Content, "Report", ACR_EPanelAction.TOGGLE_REPORT);
+  m_ReportText = AddText(m_Content, LAYOUT_TEXT, "");
+  if (m_ReportText) { m_ReportText.SetVisible(false); AlignableSlot.SetPadding(m_ReportText, 0, 4, 0, 4); }
 
   m_GroupSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
@@ -474,6 +482,18 @@ class ACR_CommandPanel : Managed
 
  // Buy list: one button per entry, rebuilt when the entry count changes.
  // selected = entry armed for deployment (-1 none), open = list expanded.
+ void SetReport(bool open, string text)
+ {
+  if (m_ReportButton)
+  {
+   if (open) m_ReportButton.SetText("Report  [close]");
+   else m_ReportButton.SetText("Report");
+  }
+  if (!m_ReportText) return;
+  m_ReportText.SetVisible(open);
+  if (open) m_ReportText.SetText(text);
+ }
+
  void SetRequisitions(bool visible, bool open, array<string> names, array<int> costs, array<int> remaining, int rp, int selected)
  {
   if (!m_RequisitionSection) return;
