@@ -34,6 +34,17 @@ class ACR_PendingPurchase : Managed
   return true;
  }
 
+ // A player who has taken the bought vehicle makes it impossible to roll that part
+ // back safely. The caller keeps the charge if the rest of the purchase fails.
+ bool HasPlayerOccupant()
+ {
+  if (!m_Vehicle) return false;
+  array<IEntity> occupants = {};
+  Occupants(m_Vehicle, occupants);
+  foreach (IEntity occupant : occupants) if (EntityUtils.IsPlayer(occupant)) return true;
+  return false;
+ }
+
  // Its soldiers the squad registry doesn't count yet (for the soldier limit).
  int Unregistered(ACR_Manager manager)
  {

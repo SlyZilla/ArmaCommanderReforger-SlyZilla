@@ -157,7 +157,8 @@ class ACR_Requisition : Managed
   if (!spawned)
   {
    if (purchase.m_sError.IsEmpty()) purchase.m_sError = "its crew did not spawn";
-   Rollback(purchase);
+   bool retained = Rollback(purchase);
+   if (retained) return string.Format("%1 could not be fully deployed (%2); its vehicle was retained, so %3 RP was not refunded", name, purchase.m_sError, paid);
    Refund(purchase, purchase.m_sError);
    return string.Format("%1 could not be deployed (%2); %3 RP refunded", name, purchase.m_sError, paid);
   }
@@ -270,8 +271,9 @@ class ACR_Requisition : Managed
 
  // Removes what this purchase made (and only that): crews and members with their groups,
  // the vehicle unless a player sits in it, and its pending crew-name/boarding entries.
- void Rollback(ACR_PendingPurchase purchase)
+ bool Rollback(ACR_PendingPurchase purchase)
  {
+  bool retainedForPlayer = purchase.HasPlayerOccupant();
   if (purchase.m_Vehicle)
   {
    m_Manager.m_PendingCrewNames.Remove(purchase.m_Vehicle);
@@ -288,6 +290,7 @@ class ACR_Requisition : Managed
   RemoveGroup(purchase.m_Group);
   if (purchase.m_Riders) m_Manager.m_PendingBoarding.Remove(purchase.m_Riders);
   RemoveGroup(purchase.m_Riders);
+  return retainedForPlayer;
  }
 
  protected static void RemoveGroup(SCR_AIGroup group)
@@ -337,7 +340,13 @@ class ACR_Requisition : Managed
    }
    if (now < purchase.m_fDeadline) continue;
    m_aPending.RemoveOrdered(i);
-   Rollback(purchase);
+   bool retained = Rollback(purchase);
+   if (retained)
+   {
+    PrintFormat("[ACR] PURCHASE %1 failed to fully deploy; vehicle retained for player, no refund", purchase.m_sName);
+    if (m_Manager.Command()) m_Manager.Command().Feed(purchase.m_sFaction, string.Format("%1 did not fully deploy; its vehicle was retained, so no RP was refunded", purchase.m_sName));
+    continue;
+   }
    Refund(purchase, "nobody turned up in time");
    if (m_Manager.Command()) m_Manager.Command().Feed(purchase.m_sFaction, string.Format("%1 failed to deploy; %2 RP refunded", purchase.m_sName, purchase.m_iPaid));
   }

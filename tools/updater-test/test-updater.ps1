@@ -83,6 +83,31 @@ Check 'interrupted update is restored on next launch' ($half -and $restored -and
 # 10. Development copy (.git) never updates
 $r = Run-Case 'devcopy' 'good.zip' -Git
 Check 'development copy is never updated' ($r.Returned -eq $false -and $r.Unchanged) "returned $($r.Returned)"
-# Locked file / permission failure: make Scripts read-only-ish by injecting a failing copy path
+# 11. Failed interrupted-update recovery stops before checking/installing a new release
+$pkg = New-Run 'recovery-fails'
+$addon = Join-Path $pkg 'ArmaCommanderReforger'
+$state = Join-Path $pkg '.acr-update-state'
+$backup = Join-Path $pkg '.acr-update-backup'
+Set-Content -LiteralPath $state -Value 'installing v-old' -Encoding ASCII
+New-Item -ItemType Directory -Force $backup | Out-Null
+Set-Content -LiteralPath (Join-Path $backup '.complete') -Value 'ok' -Encoding ASCII
+Set-Content -LiteralPath (Join-Path $backup 'recovery-sentinel.txt') -Value 'keep' -Encoding ASCII
+$backupBefore = Hash-Tree $backup
+. (Join-Path $addon 'ACR-Update.ps1')
+$script:releaseQueried = $false
+$script:recoveryFailed = $false
+$script:rel = [pscustomobject]@{ tag_name = 'v-new'; assets = @(@{ name = 'ACActual-Arland.zip'; browser_download_url = 'good'; size = 0 }) }
+$script:zipSource = Join-Path $here 'good.zip'
+function Get-ACRRelease([string]$repo) { $script:releaseQueried = $true; return $script:rel }
+function Save-ACRAsset([string]$url, [string]$path) { Copy-Item $script:zipSource $path }
+function Remove-ACRItems([string]$root, $items) { $script:recoveryFailed = $true; throw 'fixture: recovery cannot remove the partial install' }
+$env:ACR_UPDATE_TEST_FAIL = ''
+$stopped = Update-FromGitHub
+$backupAfter = Hash-Tree $backup
+$version = (Get-Content -LiteralPath (Join-Path $addon 'VERSION.txt') -Raw).Trim()
+$kept = (Test-Path -LiteralPath $state) -and (Test-Path -LiteralPath $backup) -and ($backupAfter -eq $backupBefore)
+Check 'failed recovery stops update and keeps backup' ($stopped -eq $false -and $script:recoveryFailed -and !$script:releaseQueried -and $kept -and $version -eq 'v-old') "returned $stopped recovery failed $($script:recoveryFailed) release queried $($script:releaseQueried) backup kept $kept version $version"
+
 $failed = @($results | Where-Object { !$_ }).Count
 Write-Host ("UPDATER SUMMARY passed=" + ($results.Count - $failed) + " failed=$failed")
+if ($failed -gt 0) { exit 1 }

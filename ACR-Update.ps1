@@ -96,7 +96,9 @@ function Install-ACRPackage([string]$top, [string]$packageRoot, [string]$tag) {
   $items = Get-ACRVersionedItems $packageRoot
   $state = Join-Path $packageRoot '.acr-update-state'
   $backup = Join-Path $packageRoot '.acr-update-backup'
-  if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction Stop }
+  if ((Test-Path -LiteralPath $state) -or (Test-Path -LiteralPath $backup)) {
+    throw 'an earlier update still needs recovery; refusing to replace its backup'
+  }
   Set-Content -LiteralPath $state -Value ('installing ' + $tag) -Encoding ASCII
   New-Item -ItemType Directory -Force $backup | Out-Null
   Copy-ACRItems $packageRoot $backup $items
@@ -149,7 +151,11 @@ function Save-ACRAsset([string]$url, [string]$path) {
 function Update-FromGitHub {
   if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git')) { return $false }
   $packageRoot = Split-Path $PSScriptRoot -Parent
-  try { Restore-ACRInterrupted $packageRoot | Out-Null } catch { Write-Host ('Could not clean up the last update: ' + $_.Exception.Message) -ForegroundColor Yellow }
+  try { Restore-ACRInterrupted $packageRoot | Out-Null }
+  catch {
+    Write-Host ('Could not restore the last update: ' + $_.Exception.Message + '. Update stopped; the backup was kept for another recovery attempt.') -ForegroundColor Yellow
+    return $false
+  }
   $sourceFile = Join-Path $PSScriptRoot 'update-source.txt'
   if (!(Test-Path -LiteralPath $sourceFile)) { return $false }
   $repo = (Get-Content -LiteralPath $sourceFile -Raw).Trim()

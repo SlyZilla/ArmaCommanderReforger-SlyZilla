@@ -165,7 +165,8 @@ class ACR_Requests : Managed
   if (!m_Manager.m_Squads.Contains(squad) || !squad.GetFaction()) return false;
   bool queued = command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.QUEUE_GARRISON;
   bool ride = command == ACR_ERequest.ORDER_RIDE;
-  if (squad.m_iOrderSerial == serial && !queued && !ride) return false;
+  bool unload = command == ACR_ERequest.ORDER_UNLOAD;
+  if (squad.m_iOrderSerial == serial && !queued && !ride && !unload) return false;
   float now = GetGame().GetWorld().GetWorldTime();
   squad.m_iOrderedBy = id;
   squad.m_fOrderedAt = now;
@@ -173,7 +174,7 @@ class ACR_Requests : Managed
   string what = OrderWords(command);
   string place = "";
   ACR_Intel intel = m_Manager.IntelFor(key);
-  if (intel && command != ACR_ERequest.ORDER_HALT && command != ACR_ERequest.ORDER_GET_OUT) place = " " + intel.Place(point);
+  if (intel && command != ACR_ERequest.ORDER_HALT && command != ACR_ERequest.ORDER_GET_OUT && command != ACR_ERequest.ORDER_UNLOAD) place = " " + intel.Place(point);
   m_Manager.Command().Note(id, string.Format("%1 %2%3", squad.GetName(), what, place));
   // Someone else's fresh order replaced: tell the side (the client asked first).
   if (previous != 0 && previous != id && now - previousAt < ACR_Command.RECENT_MS)
@@ -196,6 +197,7 @@ class ACR_Requests : Managed
    case ACR_ERequest.ORDER_GET_IN: return "getting in";
    case ACR_ERequest.ORDER_GET_OUT: return "getting out";
    case ACR_ERequest.ORDER_RIDE: return "riding";
+   case ACR_ERequest.ORDER_UNLOAD: return "unloading";
    case ACR_ERequest.ORDER_HUNT: return "hunting";
    case ACR_ERequest.ORDER_SET_LZ: return "unloading";
    case ACR_ERequest.ORDER_HALT: return "halted";
@@ -273,8 +275,9 @@ class ACR_Requests : Managed
    }
    case ACR_ERequest.ORDER_UNLOAD:
    {
-    string unloaded = Unload(squad);
-    outcome.m_bAccepted = squad.m_iOrderSerial != serial;
+    bool accepted;
+    string unloaded = Unload(squad, accepted);
+    outcome.m_bAccepted = accepted;
     outcome.m_sMessage = unloaded;
     return outcome;
    }
@@ -430,8 +433,9 @@ class ACR_Requests : Managed
  }
 
  // Every other squad riding in this squad's vehicles dismounts.
- string Unload(ACR_Squad transport)
+ string Unload(ACR_Squad transport, out bool accepted)
  {
+  accepted = false;
   array<IEntity> vehicles = {};
   transport.GetVehicles(vehicles);
   if (vehicles.IsEmpty()) return transport.GetName() + " is not in a vehicle";
@@ -449,6 +453,7 @@ class ACR_Requests : Managed
    }
   }
   if (!unloaded) return transport.GetName() + " has no passengers";
+  accepted = true;
   return string.Format("%1: unloading %2 squad(s)", transport.GetName(), unloaded);
  }
 
