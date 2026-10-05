@@ -100,7 +100,7 @@ IF IT DOESN'T CONNECT:
 
 THE SITUATION
 -------------
-You spawn at the US Airfield on the west side of Arland. Your forces nearby
+ARLAND: you spawn at the US Airfield on the west side of Arland. Your forces nearby
 are 1st Squad, 2nd Squad, a Weapons Team, a crewed truck (Truck 1) and a
 crewed Humvee (Humvee 1). The Soviets hold the east side with their own AI
 commander, which buys units, defends, and attacks your bases.

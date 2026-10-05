@@ -19,7 +19,7 @@ Unzip it and open "READ ME FIRST.txt". The Host and Join launchers update themse
 - **Multiplayer.** Host and Join launchers that update themselves. The host picks the players' side, RP, income, AI skill and limits. Several players can command the same side together, with tagged orders, map and 3D pings, and one shared RP pool.
 - **Game Master** for the host, to unstick vehicles and fix things.
 
-Current map: Arland. Everon is next.
+Maps: Arland and Everon (Everon is a first pass, being tuned). Pick the map in the setup menu that opens when you start Play-ACA or Host-ACA.
 
 ## Help test it
 

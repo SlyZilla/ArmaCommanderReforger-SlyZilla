@@ -4,7 +4,7 @@ How to run **Arma Commander Actual** on a new map or build a new scenario in Arm
 This guide is kept in step with the code: every World Editor setting and host option the mode reads
 is listed here, and a check in the release build fails if one is missing.
 
-> AC: Actual is an early alpha. Arland is the only map tested so far (Everon is next). Expect to
+> AC: Actual is an early alpha. Arland is the most tested map; Everon is a first pass. Expect to
 > report bugs, and send logs: every mode line in the log starts with `[ACR]`.
 
 ## Contents
@@ -86,7 +86,8 @@ Add these to the game mode entity (the Arland world shows working values):
 
 On the `SCR_AIWorld` entity, point the `NavmeshWorldComponent`s at the terrain's navmesh files: one for
 soldiers (`NavmeshWorld`), one for vehicles (`ChimeraNavmeshWorld`), and the low-res one if the map
-has it. Arland uses the Game Master navmeshes (`worlds/GameMaster/Navmeshes/GM_Arland*.nmn`); look for
+has it. Arland and Everon use the Game Master navmeshes (`worlds/GameMaster/Navmeshes/GM_Arland*.nmn`,
+`GM_Eden*.nmn`); look for
 the matching files of your terrain in the vanilla data, or generate your own in Workbench for a custom map.
 AC: Actual's road routing and land checks read the terrain directly and need no setup.
 
@@ -303,7 +304,8 @@ and in singleplayer (Play-ACA), where the game is its own server.
 - **Two sides, US and USSR**, are what has been tested. Other faction keys work in the settings, but
   player command units use **US and USSR officer loadouts only**, so a third playable faction has no
   loadout yet. AI-only factions (e.g. FIA) may work but are untested.
-- **Arland only** so far. Everon support (bases, spawns, routing over 13 km) is the next milestone.
+- **Arland and Everon.** Everon (`Worlds/ACR_Everon.ent`) is a first pass: travel, rides and the AI
+  commander over 13 km are still being tuned.
 - **No victory conditions**, by design: the match runs until the host ends it.
 - **The AI commander can't fly**: aircraft are for players only (support helicopters are script-flown).
 - Settings may still change between alpha builds. This page is updated with them.
