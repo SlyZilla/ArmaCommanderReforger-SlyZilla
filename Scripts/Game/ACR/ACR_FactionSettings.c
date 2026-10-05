@@ -22,11 +22,14 @@ class ACR_RequisitionEntry
  bool m_bTransport;  // set automatically: an unarmed truck, which the AI commander buys to ferry squads
  bool m_bArmed = true; // set automatically for vehicles: has a weapon (the AI doesn't buy unarmed cars to fight with)
  bool m_bMortarTeam;  // the built-in mortar team (ACR_Mortars), added to every faction's list
+ bool m_bRare;        // set automatically: aircraft, armour, mortar team, support helicopters keep a fixed stock
  int m_iSupportHeli;  // support helicopter for a helipad (ACR_HeliStation): 1 gunship, 2 door gunners
 
  // runtime
  int m_iRemaining;
  int m_iBought;
+ int m_iBaseCost;     // the price before any purchase (m_iCost is the current price)
+ bool m_bStepped;     // stepped pricing: unlimited, the price climbs with each purchase (ACR_Pricing)
 
  void Set(string name, ResourceName group, ResourceName vehicle, int cost, int stock)
  {
@@ -37,6 +40,13 @@ class ACR_RequisitionEntry
   m_iCost = cost;
   m_iStock = stock;
  }
+}
+
+// How a faction's buy list limits purchases (ACR_Pricing).
+enum ACR_EPricing
+{
+ STEPPED,     // ordinary units unlimited, price climbs a step per purchase; rare units fixed stock
+ FIXED_STOCK  // every unit has a stock per match (scaled by threat level); prices never change
 }
 
 // Per-faction Arma Commander setup, placed in World Editor: starting RP, what
@@ -54,6 +64,8 @@ class ACR_FactionSettings : GenericEntity
  int m_iAIUnitCap;
  [Attribute("1", UIWidgets.EditBox, "AI commander: how many base attacks it runs at once")]
  int m_iAIAttacks;
+ [Attribute("0", UIWidgets.ComboBox, "Stepped prices: infantry, cars and trucks can be bought without limit but each purchase raises that unit's price (threat level sets the step); aircraft, armour, mortar teams and support helicopters keep their stock. Fixed stock: every unit has a stock per match, scaled by threat level, at a fixed price.", "", ParamEnumArray.FromEnum(ACR_EPricing))]
+ ACR_EPricing m_ePricing;
  [Attribute("1", UIWidgets.CheckBox, "Add every group and vehicle from the faction's Game Master catalog with automatic prices. Entries below override or add to it.")]
  bool m_bAutoFill;
  [Attribute(desc: "Hand-picked units. With auto fill on, an entry using the same prefab replaces the automatic one.")]
@@ -114,6 +126,7 @@ class ACR_FactionCatalog
     copy.Set(manual.m_sName, manual.m_sGroup, manual.m_sVehicle, manual.m_iCost, manual.m_iStock);
     copy.m_bCrewed = manual.m_bCrewed;
     copy.m_sPassengers = manual.m_sPassengers;
+    ApplyCatalogFlags(factionKey, copy);
     if (copy.m_sName.IsEmpty()) copy.m_sName = "Unit";
     result.Insert(copy);
     if (!manual.m_sGroup.IsEmpty()) used.Insert(manual.m_sGroup);
@@ -135,8 +148,38 @@ class ACR_FactionCatalog
    result.Insert(ACR_HeliStation.MakeEntry(true));
    result.Insert(ACR_HeliStation.MakeEntry(false));
   }
-  foreach (ACR_RequisitionEntry entry : result) entry.m_iRemaining = ACR_Manager.ThreatStock(entry.m_iStock, !entry.m_sVehicle.IsEmpty());
-  PrintFormat("[ACR] Requisition list for %1: %2 entries (%3 helipads in the world)", factionKey, result.Count(), ACR_Helipad.s_All.Count());
+  bool stepped = ACR_Pricing.Stepped(settings);
+  foreach (ACR_RequisitionEntry entry : result)
+  {
+   if (entry.m_bMortarTeam || entry.m_iSupportHeli > 0 || entry.m_bAircraft) entry.m_bRare = true;
+   ACR_Pricing.Setup(entry, stepped);
+  }
+  PrintFormat("[ACR] Requisition list for %1: %2 entries (%3 helipads in the world), pricing %4", factionKey, result.Count(), ACR_Helipad.s_All.Count(), ACR_Pricing.Name(stepped));
+ }
+
+ // Hand-added entries get the same automatic flags as catalog ones (aircraft, armed,
+ // transport, rare) from the faction's catalog entry for their vehicle, when it has one.
+ protected static void ApplyCatalogFlags(string factionKey, ACR_RequisitionEntry item)
+ {
+  if (item.m_sVehicle.IsEmpty()) return;
+  SCR_EntityCatalog catalog = GetCatalog(factionKey, EEntityCatalogType.VEHICLE);
+  if (!catalog) return;
+  array<SCR_EntityCatalogEntry> entries = {};
+  catalog.GetEntityList(entries);
+  foreach (SCR_EntityCatalogEntry entry : entries)
+  {
+   if (entry.GetPrefab() != item.m_sVehicle) continue;
+   SetVehicleFlags(entry, item);
+   return;
+  }
+ }
+
+ protected static void SetVehicleFlags(SCR_EntityCatalogEntry entry, ACR_RequisitionEntry item)
+ {
+  item.m_bAircraft = entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_HELICOPTER) || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_AIRPLANE);
+  item.m_bArmed = entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED);
+  item.m_bTransport = entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_TRUCK) && !entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED) && !item.m_bAircraft;
+  item.m_bRare = item.m_bAircraft || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_APC) || entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMOR);
  }
 
  protected static SCR_EntityCatalog GetCatalog(string factionKey, EEntityCatalogType type)
@@ -174,9 +217,7 @@ class ACR_FactionCatalog
    {
     int cost = VehicleCost(entry);
     item.Set(name, "", prefab, cost, StockFor(cost, 90, 4));
-    item.m_bAircraft = entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_HELICOPTER) || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_AIRPLANE);
-    item.m_bArmed = entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED);
-    item.m_bTransport = entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_TRUCK) && !entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED) && !item.m_bAircraft;
+    SetVehicleFlags(entry, item);
    }
    used.Insert(prefab);
    result.Insert(item);
@@ -253,5 +294,72 @@ class ACR_FactionCatalog
    else if (entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_MACHINEGUNNER) || entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_ANTITANK) || entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_GRENADIER))
     result.Insert(entry.GetPrefab());
   }
+ }
+}
+
+// Buy-list pricing (Jacob, 4 Oct: Everon pays more RP than either side can spend before
+// first contact). Stepped (default): ordinary units have no stock limit, but each side's
+// price for a unit climbs a step with every purchase of it and never comes back down; the
+// threat level sets the step (low +25%, normal +15%, high +8% of the base price). Rare units
+// (aircraft, armour, mortar teams, support helicopters) keep a fixed stock that threat
+// doesn't touch. Fixed stock: the old system, stock per match scaled by threat level.
+class ACR_Pricing
+{
+ static const int UNLIMITED = 9999;
+
+ // -acrPricing stepped|stock overrides the faction settings' Pricing attribute.
+ static bool Stepped(ACR_FactionSettings settings)
+ {
+  string value;
+  if (System.GetCLIParam("acrPricing", value))
+  {
+   value.ToLower();
+   if (value == "stock") return false;
+   if (value == "stepped") return true;
+  }
+  if (settings) return settings.m_ePricing == ACR_EPricing.STEPPED;
+  return true;
+ }
+
+ static string Name(bool stepped)
+ {
+  if (stepped) return string.Format("stepped, +%1 percent of base per purchase", Math.Round(Step() * 100));
+  return "fixed stock";
+ }
+
+ // Price step per purchase as a share of the base price: a low-threat war gets dear fastest.
+ static float Step()
+ {
+  int threat = ACR_Manager.ThreatOption();
+  if (threat == 0) return 0.25;
+  if (threat == 2) return 0.08;
+  return 0.15;
+ }
+
+ static void Setup(ACR_RequisitionEntry entry, bool stepped)
+ {
+  entry.m_iBaseCost = entry.m_iCost;
+  entry.m_bStepped = stepped && !entry.m_bRare;
+  if (entry.m_bStepped) entry.m_iRemaining = UNLIMITED;
+  else if (stepped) entry.m_iRemaining = entry.m_iStock;
+  else entry.m_iRemaining = ACR_Manager.ThreatStock(entry.m_iStock, !entry.m_sVehicle.IsEmpty());
+ }
+
+ static int PriceAfter(int baseCost, int bought)
+ {
+  float climb = Step() * baseCost * bought;
+  return baseCost + (int)Math.Round(climb);
+ }
+
+ // After a purchase (or a refund): the current price from the number bought.
+ static void Reprice(ACR_RequisitionEntry entry)
+ {
+  if (!entry.m_bStepped) return;
+  entry.m_iCost = PriceAfter(entry.m_iBaseCost, entry.m_iBought);
+ }
+
+ static bool Unlimited(int remaining)
+ {
+  return remaining >= UNLIMITED / 2;
  }
 }

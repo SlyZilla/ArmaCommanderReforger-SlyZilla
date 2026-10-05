@@ -294,6 +294,46 @@ class ACR_TestRegress
    Check("vehicle crew keeps its unit name", crew != null && crew.m_OwnVehicle != null, string.Format("found %1", crew != null));
    if (crew) Check("idle truck crew can give rides", manager.m_Rides && manager.m_Rides.WhyNotTaxi(crew, "US").IsEmpty(), manager.m_Rides.WhyNotTaxi(crew, "US"));
   }
+  // Stepped pricing (5 Oct, Jacob's threat = price climb): ordinary units unlimited, each
+  // purchase raises that unit's price by the threat step; rare units keep a fixed stock.
+  if (tick == 47)
+  {
+   ACR_FactionData usData = manager.m_Bases.GetFaction("US");
+   ACR_Base depot;
+   foreach (ACR_Base base : ACR_Base.s_All)
+    if (base.m_sOwner == "US" && base.m_bAllowSpawn && !base.m_bContested) { depot = base; break; }
+   int pick = -1;
+   int rare = -1;
+   foreach (int i, ACR_RequisitionEntry entry : usData.m_aRequisitions)
+   {
+    if (pick < 0 && entry.m_sVehicle.IsEmpty() && !entry.m_sGroup.IsEmpty() && !entry.m_bMortarTeam) pick = i;
+    if (rare < 0 && entry.m_bMortarTeam) rare = i;
+   }
+   if (pick < 0 || !depot) PrintFormat("[ACR] REGRESS info: pricing check skipped (entry %1, base %2)", pick, depot != null);
+   else
+   {
+    ACR_RequisitionEntry unit = usData.m_aRequisitions[pick];
+    int basePrice = unit.m_iBaseCost;
+    int boughtBefore = unit.m_iBought;
+    int firstPrice = unit.m_iCost;
+    usData.m_iRP = 1000;
+    string first = manager.m_Requisition.PurchaseAt("US", pick, depot);
+    int afterFirst = usData.m_iRP;
+    int secondPrice = unit.m_iCost;
+    string second = manager.m_Requisition.PurchaseAt("US", pick, depot);
+    int paidFirst = 1000 - afterFirst;
+    int paidSecond = afterFirst - usData.m_iRP;
+    bool climbs = paidFirst == firstPrice && paidSecond == secondPrice && secondPrice == ACR_Pricing.PriceAfter(basePrice, boughtBefore + 1) && secondPrice > firstPrice && unit.m_iCost == ACR_Pricing.PriceAfter(basePrice, boughtBefore + 2);
+    Check("stepped pricing: each purchase raises the unit's price", unit.m_bStepped && climbs && ACR_Pricing.Unlimited(unit.m_iRemaining), string.Format("%1: paid %2 then %3, now %4 (base %5) | '%6' / '%7'", unit.m_sName, paidFirst, paidSecond, unit.m_iCost, basePrice, first, second));
+    Check("stepped pricing: normal threat step is 15 percent", ACR_Pricing.PriceAfter(100, 1) == 115 && ACR_Pricing.PriceAfter(20, 3) == 29, string.Format("%1 %2", ACR_Pricing.PriceAfter(100, 1), ACR_Pricing.PriceAfter(20, 3)));
+    if (rare >= 0)
+    {
+     ACR_RequisitionEntry mortar = usData.m_aRequisitions[rare];
+     Check("stepped pricing: rare units keep a fixed stock and price", mortar.m_bRare && !mortar.m_bStepped && mortar.m_iRemaining + mortar.m_iBought == mortar.m_iStock && mortar.m_iCost == mortar.m_iBaseCost, string.Format("%1 stock %2 left %3", mortar.m_sName, mortar.m_iStock, mortar.m_iRemaining));
+    }
+    usData.m_iRP = 100;
+   }
+  }
   // No Reinforce with enemy troops close by (Jacob, 4 Oct; 300 m in play). The radius is moved
   // either side of the nearest enemy, so nobody has to be teleported into a fight.
   if (tick == 49 && bravo && bravo.GetAnchor())

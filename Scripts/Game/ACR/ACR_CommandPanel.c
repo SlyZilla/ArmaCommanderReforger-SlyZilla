@@ -502,6 +502,7 @@ class ACR_CommandPanel : Managed
   {
    if (!button) continue;
    string label = string.Format("%1   %2 RP   (%3 left)", names[i], costs[i], remaining[i]);
+   if (ACR_Pricing.Unlimited(remaining[i])) label = string.Format("%1   %2 RP", names[i], costs[i]);
    if (i == selected) label = "[" + label + "]";
    button.SetText(label);
    button.SetEnabled(remaining[i] > 0 && costs[i] <= rp, false);

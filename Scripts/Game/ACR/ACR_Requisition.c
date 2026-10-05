@@ -102,6 +102,8 @@ class ACR_Requisition : Managed
   if (!m_Manager.m_Bases.Spend(key, entry.m_iCost)) return string.Format("Not enough RP (%1 needed)", entry.m_iCost);
   entry.m_iRemaining--;
   entry.m_iBought++;
+  int paid = entry.m_iCost;
+  ACR_Pricing.Reprice(entry);
   string name = string.Format("%1 %2", entry.m_sName, entry.m_iBought);
 
   m_Manager.m_sSpawningFaction = key;
@@ -134,18 +136,19 @@ class ACR_Requisition : Managed
    m_Manager.m_sSpawningFaction = "";
    if (!m_Manager.m_Supports.Station().Station(key, entry.m_iSupportHeli == 1, base, name))
    {
-    m_Manager.m_Bases.GetFaction(key).m_iRP += entry.m_iCost;
+    m_Manager.m_Bases.GetFaction(key).m_iRP += paid;
     entry.m_iRemaining++;
     entry.m_iBought--;
+    ACR_Pricing.Reprice(entry);
     return name + " could not be placed on a helipad";
    }
-   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
+   PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left, next %5 RP)", name, base.m_sName, paid, entry.m_iRemaining, entry.m_iCost);
    return string.Format("%1 waiting on the helipad at %2", name, base.m_sName);
   }
   if (entry.m_bMortarTeam) m_Manager.Mortars().SpawnTeam(key, name, groupPos);
   else SpawnUnit(name, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);
   m_Manager.m_sSpawningFaction = "";
-  PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left)", name, base.m_sName, entry.m_iCost, entry.m_iRemaining);
+  PrintFormat("[ACR] PURCHASE %1 at %2 for %3 RP (%4 left, next %5 RP)", name, base.m_sName, paid, entry.m_iRemaining, entry.m_iCost);
   return string.Format("%1 deploying at %2", name, base.m_sName);
  }
 

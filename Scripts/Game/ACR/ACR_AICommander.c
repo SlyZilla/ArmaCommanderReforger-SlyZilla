@@ -1287,7 +1287,9 @@ class ACR_AICommander : Managed
     // Nor service vehicles (bought on need) or unarmed cars (nothing to fight with).
     if (IsServiceVehicle(entry)) continue;
     if (!entry.m_sVehicle.IsEmpty() && !entry.m_bArmed) continue;
+    // Weigh by the base price: a unit whose stepped price has climbed isn't worth more.
     float weight = entry.m_iCost;
+    if (entry.m_iBaseCost > 0) weight = entry.m_iBaseCost;
     if (IsSpecialistTeam(entry))
     {
      if (OwnsLike(entry)) continue;

@@ -120,6 +120,7 @@ Without one, a side gets 50 RP, the automatic buy list and all supports, but **n
 | `m_bAICommander` | on | An AI commander leads this side whenever no player is in command |
 | `m_iAIUnitCap` | 8 | Most squads the AI commander keeps in the field |
 | `m_iAIAttacks` | 1 | Base attacks the AI commander runs at once |
+| `m_ePricing` | `STEPPED` | How the buy list limits purchases (see Pricing below): `STEPPED` or `FIXED_STOCK` |
 | `m_bAutoFill` | on | Fill the buy list from the faction's Game Master catalog with automatic prices |
 | `m_aRequisitions` | empty | Hand-picked buy list entries (see below). With auto fill on, an entry with the same prefab replaces the automatic one |
 | `m_aExclude` | empty | Group or vehicle prefabs to leave out of the automatic list |
@@ -137,6 +138,13 @@ Guards, static weapons and planes are left out. Prices: infantry 3 RP per soldie
 12 (car), 15 (truck), 45 (APC) or 60 (helicopter), +10 armed, +15 armoured, +6 crew. Cheaper units have more
 stock. The AI commander never buys aircraft (it can't fly them) and buys unarmed trucks only to ferry squads.
 
+**Pricing (`m_ePricing`).** `STEPPED` (default): infantry, cars and trucks can be bought without limit, but
+each purchase raises that unit's price for that side, for good: +15% of the base price per purchase at normal
+threat, +25% at low, +8% at high. Rare units (aircraft, APCs and armour, mortar teams, support helicopters)
+keep their `m_iStock` at a fixed price, untouched by threat. `FIXED_STOCK`: the older system, every unit has
+its `m_iStock` per match (scaled by threat level) at a fixed price. The host can override it with
+`-acrPricing`.
+
 #### Requisition entry (`m_aRequisitions`)
 
 Add with the **+** button; pick prefabs with the browser.
@@ -149,10 +157,10 @@ Add with the **+** button; pick prefabs with the browser.
 | `m_bCrewed` | on | Spawn the vehicle with its driver and gunners |
 | `m_sPassengers` | | Group that rides in the vehicle (optional) |
 | `m_iCost` | 20 | Cost in RP |
-| `m_iStock` | 2 | How many can be bought per match |
+| `m_iStock` | 2 | How many can be bought per match (fixed-stock pricing, and rare units under stepped pricing) |
 
-Hand-added vehicles don't yet get the automatic aircraft/transport/armed flags, so the AI commander treats
-them as armed ground vehicles. Exclude aircraft from hand lists if an AI commander plays that side.
+Hand-added vehicles get the automatic aircraft/transport/armed/rare flags from the faction's Game Master
+catalog when their prefab is in it; vehicles outside the catalog count as armed, ordinary ground vehicles.
 
 #### Support entry (`m_aSupports`)
 
@@ -270,7 +278,8 @@ and in singleplayer (Play-ACA), where the game is its own server.
 | `-acrPlayers US` / `USSR` / `any` | Put every player on one side. The mode places a spawn point for that side at one of its bases |
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
-| `-acrThreat low` / `normal` / `high` | Threat level. Low: half the infantry stock, a third of the vehicles (at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: double stock, 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal changes nothing |
+| `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; fixed stock: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (fixed stock: double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
+| `-acrPricing stepped` / `stock` | Overrides every side's `m_ePricing` (stepped prices or fixed stock) |
 | `-acrStartRP N` | Starting RP for every side (overrides `m_iStartingRP`) |
 | `-acrIncome X` | Income multiplier (default 1) |
 | `-acrSkill N` | AI skill (overrides `m_iAISkill`) |
