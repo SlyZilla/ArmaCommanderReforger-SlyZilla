@@ -72,7 +72,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host "Publishing $version to $repo ..."
-$notes = "Download ACActual-Arland.zip below, unzip it, and read 'READ ME FIRST.txt'.`nAlready have it? Just start Host-Arland or Join-Arland; they update themselves.`nFound a bug? [Report it here](https://github.com/$repo/issues/new/choose); the README lists what most needs multiplayer testing."
+$notes = "Download ACActual-Arland.zip below, unzip it, and read 'READ ME FIRST.txt'.`nAlready have it? Just start Host-ACA or Join-ACA; they update themselves.`nFound a bug? [Report it here](https://github.com/$repo/issues/new/choose); the README lists what most needs multiplayer testing."
 & $gh release create $version $zip --repo $repo --title $version --notes $notes --latest
 if ($LASTEXITCODE -ne 0) { Fail "Release upload failed (see above)." }
 

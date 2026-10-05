@@ -1,3 +1,3 @@
 @echo off
-rem AC: Actual - Arland scenario (singleplayer)
+rem AC: Actual (singleplayer; pick the map in the setup menu)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-Test-Range.ps1" -World "Worlds/ACR_Arland.ent"

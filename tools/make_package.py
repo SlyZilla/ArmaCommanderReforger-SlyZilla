@@ -31,9 +31,9 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
     if update_source:
         z.writestr(f'{top}/ArmaCommanderReforger/update-source.txt', update_source + '\n')
     z.writestr(f'{top}/READ ME FIRST.txt', crlf(root / 'tools/package/GUIDE.txt'))
-    for name in ['Play-Arland.cmd', 'Host-Arland.cmd', 'Join-Arland.cmd', 'Leave-ZeroTier.cmd']:
+    for name in ['Play-ACA.cmd', 'Host-ACA.cmd', 'Join-ACA.cmd', 'Leave-ZeroTier.cmd']:
         z.writestr(f'{top}/{name}', crlf(root / 'tools/package' / name))
-    for name in ['Host-Arland-online.cmd', 'Join-Arland-online.cmd']:
+    for name in ['Host-ACA-online.cmd', 'Join-ACA-online.cmd']:
         z.writestr(f'{top}/If joining fails/{name}', crlf(root / 'tools/package/alt' / name))
     for f in keep_files:
         z.write(root / f, f'{top}/ArmaCommanderReforger/{f}')

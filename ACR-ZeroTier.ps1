@@ -71,7 +71,7 @@ function Show-ZtExplanation {
   Write-Host '   Windows treats it as a "Public" network, so file sharing stays off.'
   Write-Host ''
   Write-Host 'HOW TO UNDO IT:' -ForegroundColor Cyan
-  Write-Host ' - Leave the network: double-click Leave-ZeroTier.cmd (next to Join-Arland.cmd).'
+  Write-Host ' - Leave the network: double-click Leave-ZeroTier.cmd (next to Join-ACA.cmd).'
   Write-Host ' - Remove ZeroTier completely: Windows Settings > Apps > ZeroTier One > Uninstall.'
   Write-Host ''
   Write-Host 'Choose N if you are in the same house as the host, or already have another way'

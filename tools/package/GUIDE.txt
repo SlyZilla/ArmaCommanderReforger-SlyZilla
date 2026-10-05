@@ -1,4 +1,4 @@
-AC: ACTUAL (Arma Commander Actual) - Arland scenario
+AC: ACTUAL (Arma Commander Actual) - Arland and Everon
 ===================================================
 An early, unofficial fan remake of the Arma 3 "Arma Commander" mode: you're the US commander.
 You order squads around on the map, jump into any of your soldiers, buy
@@ -15,7 +15,7 @@ HOW TO START
 1. Unzip anywhere, e.g. your Desktop. Keep the files together, and don't
    rename the "ArmaCommanderReforger" folder inside.
 2. Close Arma Reforger if it's running.
-3. Double-click  Play-Arland.cmd  (next to this guide).
+3. Double-click  Play-ACA.cmd  (next to this guide).
    A setup menu opens first (side, AI, RP, threat level...): press Enter
    to start with the remembered settings (option 1 switches the map:
    Arland or Everon). The game then starts straight into
@@ -37,7 +37,7 @@ HOST (one person):
 1. Install the free "Arma Reforger Server" tool once: in Steam, go to
    Library, switch the filter to include Tools, find "Arma Reforger Server",
    click Install.
-2. Double-click  Host-Arland.cmd
+2. Double-click  Host-ACA.cmd
    - First a HOST SETUP list appears: players' side (any, or everyone on
      US / USSR with the AI commanding the other), starting RP, income,
      which sides get an AI commander, AI skill and reaction speed, soldier and squad
@@ -54,18 +54,18 @@ HOST (one person):
 4. When done: quit the game, then close the server window.
 
 JOINING (everyone else):
-1. Double-click  Join-Arland.cmd
+1. Double-click  Join-ACA.cmd
    - The first time, it explains ZeroTier and asks whether to set it up
      (see "Connecting" below). Say Y and paste the network ID the host
      sent you.
    - Then type the host's address: numbers like 10.147.17.5 (the host
-     reads it off their Host-Arland window). Next time just press Enter
+     reads it off their Host-ACA window). Next time just press Enter
      to reuse it.
 
 CONNECTING OVER THE INTERNET - pick ONE:
  a) Easiest: ZeroTier, set up by the launcher. ZeroTier is a free app that
     puts your PCs on one small private network, as if you were on the same
-    home Wi-Fi. Host-Arland.cmd and Join-Arland.cmd explain exactly what it
+    home Wi-Fi. Host-ACA.cmd and Join-ACA.cmd explain exactly what it
     does and ask first; if you say yes they download it from zerotier.com,
     check its signature, install it and join the host's network (Windows
     asks for administrator permission once). No account needed for
@@ -92,7 +92,7 @@ WHO DOES WHAT:
 
 IF IT DOESN'T CONNECT:
 - Both players close everything and try the files in the "If joining fails"
-  folder instead (Host-Arland-online / Join-Arland-online).
+  folder instead (Host-ACA-online / Join-ACA-online).
 - Check the address, that the server window is still open, and the firewall
   question from step 2.
 - Logs: host server log in ArmaCommanderReforger\.local-server\logs, game

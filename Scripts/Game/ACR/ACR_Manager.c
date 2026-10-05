@@ -516,7 +516,7 @@ class ACR_Manager : Managed
   if (!core) return;
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
-  bool everyone = System.IsCLIParam("acrGameMasterAll"); // host chose to share it (Host-Arland asks)
+  bool everyone = System.IsCLIParam("acrGameMasterAll"); // host chose to share it (Host-ACA asks)
   foreach (int id : players)
   {
    if (!everyone && !IsHostOrAdmin(id)) continue;
