@@ -93,29 +93,74 @@ class ACR_TestPads
   return !e.GetPrefabData().GetPrefabName().Contains("elipad");
  }
 
- static void CheckClear()
+ // 2 m grid of downward traces within 12 m: cells where anything but a helipad stands
+ // 0.4 m or more over the ground (buildings, walls, trees, wires).
+ static int BlockedCells(vector c, out string what)
  {
   BaseWorld world = GetGame().GetWorld();
+  int blocked;
+  what = "";
+  for (float dx = -12; dx <= 12; dx += 2)
+   for (float dz = -12; dz <= 12; dz += 2)
+   {
+    if (dx * dx + dz * dz > 144) continue;
+    float x = c[0] + dx, z = c[2] + dz;
+    float ty = world.GetSurfaceY(x, z);
+    TraceParam trace = new TraceParam();
+    trace.Start = Vector(x, ty + 40, z);
+    trace.End = Vector(x, ty - 0.5, z);
+    trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+    float fraction = world.TraceMove(trace, NotPad);
+    if (fraction >= 1 || 40 - 40.5 * fraction < 0.4) continue;
+    blocked++;
+    if (trace.TraceEnt && trace.TraceEnt.GetPrefabData() && what.Length() < 200) what += " " + FilePath.StripPath(trace.TraceEnt.GetPrefabData().GetPrefabName());
+   }
+  return blocked;
+ }
+
+ // Everon skirmish HQs without pads (5 Oct): open, level spots clear of everything within 12 m,
+ // nearest the centre first, 30 m apart (-acrEveronPadsTest, from ACR_Mode).
+ static void SurveyEveron(int tick)
+ {
+  if (tick != 5) return;
+  array<string> names = {"Chotain Base", "Power Plant", "Gravette Base", "Central Industrial", "Regina Sawmill"};
+  foreach (string name : names)
+  {
+   ACR_Base base = ACR_Skirmish.FindBase(name);
+   if (!base) { PrintFormat("[ACR] PADS %1: no such base", name); continue; }
+   vector c = base.GetOrigin();
+   array<vector> found = {};
+   for (float d = 0; d <= base.m_fRadius + 150 && found.Count() < 6; d += 5)
+   {
+    int steps = Math.Max(1, (int)(d / 5) * 6);
+    for (int s = 0; s < steps && found.Count() < 6; s++)
+    {
+     float ang = s * Math.PI2 / steps;
+     vector p = ACR_Manager.Ground(c + Vector(Math.Cos(ang) * d, 0, Math.Sin(ang) * d));
+     bool near;
+     foreach (vector q : found) if (vector.DistanceXZ(q, p) < 30) near = true;
+     if (near) continue;
+     float spread;
+     if (!PadSpot(p, spread)) continue;
+     string what;
+     if (BlockedCells(p, what) > 0) continue;
+     found.Insert(p);
+     PrintFormat("[ACR] PADSPOT %1 | %2 %3 %4 | %5 m from centre, spread %6", name, (int)p[0], p[1], (int)p[2], (int)d, spread);
+    }
+   }
+   if (found.IsEmpty()) PrintFormat("[ACR] PADSPOT %1 | none within %2 m", name, base.m_fRadius + 150);
+  }
+  Print("[ACR] TEST COMPLETE");
+ }
+
+ static void CheckClear()
+ {
   foreach (ACR_Helipad pad : ACR_Helipad.s_All)
   {
+   if (pad.m_bGone) continue;
    vector c = pad.GetOrigin();
-   int blocked;
    string what;
-   for (float dx = -12; dx <= 12; dx += 2)
-    for (float dz = -12; dz <= 12; dz += 2)
-    {
-     if (dx * dx + dz * dz > 144) continue;
-     float x = c[0] + dx, z = c[2] + dz;
-     float ty = world.GetSurfaceY(x, z);
-     TraceParam trace = new TraceParam();
-     trace.Start = Vector(x, ty + 40, z);
-     trace.End = Vector(x, ty - 0.5, z);
-     trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
-     float fraction = world.TraceMove(trace, NotPad);
-     if (fraction >= 1 || 40 - 40.5 * fraction < 0.4) continue;
-     blocked++;
-     if (trace.TraceEnt && trace.TraceEnt.GetPrefabData() && what.Length() < 200) what += " " + FilePath.StripPath(trace.TraceEnt.GetPrefabData().GetPrefabName());
-    }
+   int blocked = BlockedCells(c, what);
    string baseName = "none";
    if (pad.Base()) baseName = pad.Base().m_sName;
    PrintFormat("[ACR] PADS pad at %1 yaw %2 base %3: %4 blocked cells%5", c, pad.Yaw(), baseName, blocked, what);
@@ -154,6 +199,13 @@ class ACR_TestPads
   ACR_Manager manager = ACR_Manager.GetInstance();
   vector target;
   foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sName == "Military Hill") target = base.GetOrigin();
+  // Skirmish runs (Everon): halfway between the two HQs.
+  if (target == vector.Zero)
+  {
+   int hqCount;
+   foreach (ACR_Base hq : ACR_Base.s_All) if (hq.m_sOwner != "") { target = target + hq.GetOrigin(); hqCount++; }
+   if (hqCount > 0) target = target * (1.0 / hqCount);
+  }
   array<string> sides = {"US", "USSR"};
   foreach (string side : sides)
   {
@@ -204,8 +256,13 @@ class ACR_TestPads
    ACR_TestRegress.Check("pads: " + heli.m_sName + " " + heli.m_sFaction + " parked upright and unhurt", Math.AbsFloat(angles[1]) < 8 && Math.AbsFloat(angles[2]) < 8 && health > 0.95 && off < 2 && heli.m_eState == ACR_EHeliState.READY, "");
   }
   ACR_TestRegress.Check("pads: four helicopters on the HQ pads", count == 4, string.Format("%1", count));
-  int models;
-  foreach (ACR_Helipad pad : ACR_Helipad.s_All) if (pad.HasModel()) models++;
-  ACR_TestRegress.Check("pads: every helipad has its model", models == ACR_Helipad.s_All.Count(), string.Format("%1 of %2", models, ACR_Helipad.s_All.Count()));
+  int models, inPlay;
+  foreach (ACR_Helipad pad : ACR_Helipad.s_All)
+  {
+   if (pad.m_bGone) continue;
+   inPlay++;
+   if (pad.HasModel()) models++;
+  }
+  ACR_TestRegress.Check("pads: every helipad in play has its model", models == inPlay, string.Format("%1 of %2", models, inPlay));
  }
 }

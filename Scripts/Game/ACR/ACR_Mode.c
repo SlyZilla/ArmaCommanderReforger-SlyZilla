@@ -80,12 +80,13 @@ class ACR_Mode : GenericEntity
  {
   m_iSeconds++;
   // -acrPadsTest: helipads on this scenario's map (ACR_TestPads).
-  if (System.IsCLIParam("acrPadsTest")) ACR_TestPads.Run(null, m_iSeconds);
+  if (System.IsCLIParam("acrPadsTest") || System.IsCLIParam("acrPadsLevieTest") || System.IsCLIParam("acrPadsMontignacTest") || System.IsCLIParam("acrPadsPhilippeTest")) ACR_TestPads.Run(null, m_iSeconds);
   // -acrSurveyTest: object/terrain dump for placing bases and pads (ACR_TestSurvey).
   if (System.IsCLIParam("acrSurveyTest")) ACR_TestSurvey.Run(null, m_iSeconds);
   // -acrPlacesTest: named map locations, for laying out a new map (ACR_TestPlaces).
   if (System.IsCLIParam("acrPlacesTest")) ACR_TestPlaces.Run(m_iSeconds);
   if (System.IsCLIParam("acrEveronSurveyTest")) ACR_TestPlaces.SurveyEveron(m_iSeconds);
+  if (System.IsCLIParam("acrEveronPadsTest")) ACR_TestPads.SurveyEveron(m_iSeconds);
   // -acrSkirmishTest / -acrSkirmishSouthTest: skirmish layouts on Everon (ACR_TestSkirmish).
   if (System.IsCLIParam("acrSkirmishTest") || System.IsCLIParam("acrSkirmishSouthTest")) ACR_TestSkirmish.Run(m_iSeconds);
   if (m_bSoak) { Soak(); return; }

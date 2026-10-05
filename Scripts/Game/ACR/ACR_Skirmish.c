@@ -96,7 +96,7 @@ class ACR_Skirmish : GenericEntity
  {
   string wanted;
   System.GetCLIParam("acrLayout", wanted);
-  if (System.IsCLIParam("acrSkirmishTest") || System.IsCLIParam("acrSkirmishSouthTest") || System.IsCLIParam("acrSkirmishPlayTest")) wanted = ACR_TestSkirmish.Layout();
+  if (ACR_TestSkirmish.Wanted()) wanted = ACR_TestSkirmish.Layout();
   wanted = Simple(wanted);
   if (wanted != "" && wanted != "random")
   {
@@ -223,16 +223,22 @@ class ACR_Skirmish : GenericEntity
    if (pad.m_sBase != "" && !FindBase(pad.m_sBase)) pad.Drop();
    else if (pad.m_sBase == "" && !inPlay.Contains(pad.Base())) pad.Drop();
   }
-  s_PadSides.Clear();
-  foreach (ACR_Helipad pad2 : ACR_Helipad.s_All)
-  {
-   string padSide = pad2.Faction();
-   if (padSide != "" && !s_PadSides.Contains(padSide)) s_PadSides.Insert(padSide);
-  }
+  RecountPads();
   s_Active = this;
   string hqText = "";
   foreach (string side3, ACR_Base hq4 : hqs) hqText += string.Format(" %1=%2", side3, hq4.m_sName);
   PrintFormat("[ACR] SKIRMISH %1 (%2): %3 bases in play, %4 retired; HQs%5; helipad sides %6", m_sName, SizeName(m_eSize), ACR_Base.s_All.Count(), retired, hqText, s_PadSides.Count());
+ }
+
+ // Which sides have a helipad in play (set once the layout is applied; tests call it again).
+ static void RecountPads()
+ {
+  s_PadSides.Clear();
+  foreach (ACR_Helipad pad : ACR_Helipad.s_All)
+  {
+   string padSide = pad.Faction();
+   if (padSide != "" && !s_PadSides.Contains(padSide)) s_PadSides.Insert(padSide);
+  }
  }
 
  // A side's HQ as placed: its owned base nearest to its spawn point (else its first owned base).

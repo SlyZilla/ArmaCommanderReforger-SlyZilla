@@ -665,6 +665,46 @@ ACR_Helipad ACR_Helipad_Harbor_2 {
  angles 0 130 0
  m_sBase "Harbor"
 }
+ACR_Helipad ACR_Helipad_ChotainBase_1 {
+ coords 7541 2.58 6693
+ m_sBase "Chotain Base"
+}
+ACR_Helipad ACR_Helipad_ChotainBase_2 {
+ coords 7515 2.62 6673
+ m_sBase "Chotain Base"
+}
+ACR_Helipad ACR_Helipad_PowerPlant_1 {
+ coords 5918 4.64 9796
+ m_sBase "Power Plant"
+}
+ACR_Helipad ACR_Helipad_PowerPlant_2 {
+ coords 5834 4.87 9836
+ m_sBase "Power Plant"
+}
+ACR_Helipad ACR_Helipad_GravetteBase_1 {
+ coords 3923 14.81 8488
+ m_sBase "Gravette Base"
+}
+ACR_Helipad ACR_Helipad_GravetteBase_2 {
+ coords 3931 15.85 8450
+ m_sBase "Gravette Base"
+}
+ACR_Helipad ACR_Helipad_CentralIndustrial_1 {
+ coords 6488 161.16 6431
+ m_sBase "Central Industrial"
+}
+ACR_Helipad ACR_Helipad_CentralIndustrial_2 {
+ coords 6506 161.84 6486
+ m_sBase "Central Industrial"
+}
+ACR_Helipad ACR_Helipad_ReginaSawmill_1 {
+ coords 7234 139.14 2476
+ m_sBase "Regina Sawmill"
+}
+ACR_Helipad ACR_Helipad_ReginaSawmill_2 {
+ coords 7241 138.40 2445
+ m_sBase "Regina Sawmill"
+}
 ACR_Skirmish ACR_Skirmish_North {
  coords 5400 40 9300
  m_sName "North half"
