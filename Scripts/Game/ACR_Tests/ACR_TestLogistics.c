@@ -257,7 +257,7 @@ class ACR_TestLogistics : Managed
  // ---------------------------------------------------------------- -acrCleanupTest
  // Bravo is killed and the range truck destroyed. Cleanup times are shortened.
  // While the player stands next to them nothing may go; once he's moved away
- // the bodies, their weapons and the wreck must be removed.
+ // the bodies and wreck are removed. Unattributed loose gear is preserved.
  IEntity m_CleanupTruck;
  int m_iBravoBodies;
 

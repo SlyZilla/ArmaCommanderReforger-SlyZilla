@@ -1,8 +1,7 @@
 // Housekeeping for long sessions (server). Every body and every destroyed
 // vehicle is noted when it dies; after a while, and only when no player is
-// close enough to notice, it is removed together with the weapons lying next
-// to it. If the count piles up (a big battle), the oldest go first. Also keeps
-// the number of AI soldiers per side under a cap.
+// close enough to notice, the body or wreck is removed. Nearby loose equipment
+// is left alone because its ownership can't be proven. Also caps AI soldiers.
 class ACR_Cleanup : Managed
 {
  float m_fBodySeconds = 240;                  // bodies stay at least this long
@@ -130,11 +129,9 @@ class ACR_Cleanup : Managed
    // Litter someone picked up again is theirs now.
    if (litter && entity.GetParent()) { list.RemoveOrdered(i); times.RemoveOrdered(i); i--; continue; }
    if (Watched(entity.GetOrigin(), privacy, players)) continue;
-   vector at = entity.GetOrigin();
    SCR_EntityHelper.DeleteEntityAndChildren(entity);
    if (bodies)
    {
-    RemoveDroppedWeapons(at);
     m_iRemovedBodies++;
    }
    else if (!litter) m_iRemovedWrecks++;
@@ -143,21 +140,6 @@ class ACR_Cleanup : Managed
    i--;
    excess--;
   }
- }
-
- protected ref array<IEntity> m_Dropped = {};
- protected bool CollectDropped(IEntity entity)
- {
-  if (entity.GetParent()) return true;
-  if (entity.FindComponent(BaseWeaponComponent) || entity.FindComponent(BaseMagazineComponent)) m_Dropped.Insert(entity);
-  return true;
- }
-
- protected void RemoveDroppedWeapons(vector at)
- {
-  m_Dropped.Clear();
-  GetGame().GetWorld().QueryEntitiesBySphere(at, 3, CollectDropped);
-  foreach (IEntity item : m_Dropped) SCR_EntityHelper.DeleteEntityAndChildren(item);
  }
 
  // ---------------------------------------------------------------- AI cap
