@@ -320,7 +320,7 @@ and in singleplayer (Play-ACA), where the game is its own server.
 | `-acrSharedCommand 0` / `1` | Overrides `m_bSharedCommand` |
 | `-acrRespawnSeconds N` | Overrides `m_iRespawnSeconds` |
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
-| `-acrFirstPlayerHost` | On dedicated servers, let the first connected player act as a trusted host when no server admin is configured. Off by default; authority does not transfer after that player disconnects |
+| `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default; configured admins remain trusted, and authority does not transfer after the first player disconnects |
 
 ## Designing a good map
 
