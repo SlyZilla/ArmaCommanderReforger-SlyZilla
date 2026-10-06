@@ -49,6 +49,12 @@ class ACR_Manager : Managed
  bool m_SharedCommand;
  // Game Master for the host and server admins: debugging and fixing stuck units.
  bool m_bHostGameMaster = true;
+ // On a dedicated server, trust the first connection only when the host opted in.
+ bool m_bFirstPlayerHost;
+ protected int m_iFirstPlayerHost = -1;
+ protected bool m_bFirstPlayerHostSelected;
+ protected bool m_bFirstPlayerHostDisconnected;
+ protected ref array<int> m_aGameMasterGranted = {};
  int m_iRespawnSeconds = 15;
  int m_iAISkill = 70; // EAISkill.VETERAN
  float m_fAIPerception = 1.6; // how fast AI spots and identifies targets (game default 1)
@@ -199,7 +205,7 @@ class ACR_Manager : Managed
  // Chosen in the host launcher's setup menu and passed on the server's command
  // line; they override the scenario's own settings for this session.
  //  -acrStartRP N  -acrIncome X  -acrAI both|none|<faction>  -acrSkill N
- //  -acrReaction X  -acrSoldierCap N  -acrUnitCap N  -acrSharedCommand 0|1  (-acrGameMasterAll, -acrRespawnSeconds)
+ //  -acrReaction X  -acrSoldierCap N  -acrUnitCap N  -acrSharedCommand 0|1  (-acrGameMasterAll, -acrFirstPlayerHost, -acrRespawnSeconds)
  protected void ApplyHostOptions()
  {
   m_bHostOptionsApplied = true;
@@ -208,6 +214,7 @@ class ACR_Manager : Managed
   if (System.GetCLIParam("acrReaction", value) && value.ToFloat() > 0) m_fAIPerception = value.ToFloat();
   if (System.GetCLIParam("acrSoldierCap", value) && value.ToInt() > 0) m_iSoldierCap = value.ToInt();
   if (System.GetCLIParam("acrSharedCommand", value)) m_SharedCommand = value.ToInt() != 0;
+  m_bFirstPlayerHost = System.IsCLIParam("acrFirstPlayerHost");
   string ai;
   bool setAI = System.GetCLIParam("acrAI", ai);
   ai.ToLower();
@@ -521,29 +528,71 @@ class ACR_Manager : Managed
 
  // ================================================================ Game Master (server)
 
+ static bool TrustedFirstPlayerHost(int playerId, int firstPlayerId, bool enabled, bool disconnected)
+ {
+  return enabled && !disconnected && firstPlayerId >= 0 && playerId == firstPlayerId;
+ }
+
  static bool IsHostOrAdmin(int playerId)
  {
   if (SCR_Global.IsAdmin(playerId)) return true;
   // Listen server / offline: the server's own player is the host.
   PlayerController local = GetGame().GetPlayerController();
   if (local) return local.GetPlayerId() == playerId;
-  // Dedicated server run from someone's PC (no admin configured): the first
-  // player still connected counts as the host.
-  array<int> players = {};
-  GetGame().GetPlayerManager().GetPlayers(players);
-  int first = int.MAX;
-  foreach (int id : players) if (id < first) first = id;
-  return playerId == first;
+  // A dedicated server has no implicit host. The explicitly enabled fallback
+  // trusts only the first connection and never transfers after a disconnect.
+  ACR_Manager manager = s_Instance;
+  if (!manager) return false;
+  return TrustedFirstPlayerHost(playerId, manager.m_iFirstPlayerHost, manager.m_bFirstPlayerHost, manager.m_bFirstPlayerHostDisconnected);
+ }
+
+ void PlayerConnected(int playerId)
+ {
+  // The first connection can arrive before the first regular host-option tick.
+  if (!m_bFirstPlayerHost && System.IsCLIParam("acrFirstPlayerHost")) m_bFirstPlayerHost = true;
+  if (!m_bFirstPlayerHost || m_bFirstPlayerHostSelected) return;
+  m_iFirstPlayerHost = playerId;
+  m_bFirstPlayerHostSelected = true;
+  PrintFormat("[ACR] First-player host set to player %1", playerId);
+ }
+
+ void PlayerDisconnected(int playerId)
+ {
+  if (m_bFirstPlayerHostSelected && playerId == m_iFirstPlayerHost)
+  {
+   m_bFirstPlayerHostDisconnected = true;
+   m_iFirstPlayerHost = -1;
+   PrintFormat("[ACR] First-player host player %1 disconnected; authority will not transfer", playerId);
+  }
+  RevokeGameMaster(playerId);
+ }
+
+ protected void RevokeGameMaster(int playerId)
+ {
+  if (!m_aGameMasterGranted.Contains(playerId)) return;
+  m_aGameMasterGranted.RemoveItem(playerId);
+  SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
+  if (!core) return;
+  SCR_EditorManagerEntity editor = core.GetEditorManager(playerId);
+  if (!editor) return;
+  if (editor.IsOpened()) editor.Close();
+  editor.RemoveEditorModes(EEditorModeAccess.BASE, EEditorMode.EDIT);
+  PrintFormat("[ACR] Game Master revoked from player %1", playerId);
  }
 
  protected void GrantGameMaster()
  {
-  if (!m_bHostGameMaster) return;
   SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
   if (!core) return;
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
   bool everyone = System.IsCLIParam("acrGameMasterAll"); // host chose to share it (Host-ACA asks)
+  for (int i = m_aGameMasterGranted.Count() - 1; i >= 0; i--)
+  {
+   int grantedId = m_aGameMasterGranted[i];
+   if (!m_bHostGameMaster || (!everyone && !IsHostOrAdmin(grantedId)) || !players.Contains(grantedId)) RevokeGameMaster(grantedId);
+  }
+  if (!m_bHostGameMaster) return;
   foreach (int id : players)
   {
    if (!everyone && !IsHostOrAdmin(id)) continue;
@@ -555,6 +604,7 @@ class ACR_Manager : Managed
     continue;
    }
    editor.AddEditorModes(EEditorModeAccess.BASE, EEditorMode.EDIT);
+   if (!m_aGameMasterGranted.Contains(id)) m_aGameMasterGranted.Insert(id);
    PrintFormat("[ACR] Game Master granted to player %1", id);
    Notify(id, "Game Master available: press Y");
   }

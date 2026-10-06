@@ -30,6 +30,13 @@ class ACR_Intel : Managed
  static const int KIND_ARMOUR = 3;
  static const int KIND_AIR = 4;
 
+ // Intentional gameplay abstraction (Jacob, 5 Oct): ownership of a base lets
+ // its side report intruders without a living sentry or a line-of-sight check.
+ static bool InsideBaseProximityReport(float distance, float baseRadius)
+ {
+  return distance < baseRadius + SENTRY_RANGE;
+ }
+
  string m_sFaction;
  protected ACR_Manager m_Manager;
  ref map<IEntity, vector> m_SeenAt = new map<IEntity, vector>();
@@ -97,7 +104,6 @@ class ACR_Intel : Managed
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (base.m_sOwner != m_sFaction) continue;
-   float reach = base.m_fRadius + SENTRY_RANGE;
    string sentries = base.m_sName + " sentries";
    foreach (ACR_Squad intruders : m_Manager.m_Squads)
    {
@@ -107,14 +113,14 @@ class ACR_Intel : Managed
     foreach (AIAgent agent : agents)
     {
      IEntity body = agent.GetControlledEntity();
-     if (body && vector.DistanceXZ(body.GetOrigin(), base.GetOrigin()) < reach) Note(body, now, sentries);
+     if (body && InsideBaseProximityReport(vector.DistanceXZ(body.GetOrigin(), base.GetOrigin()), base.m_fRadius)) Note(body, now, sentries);
     }
    }
    foreach (int id : players)
    {
     IEntity player = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
     string playerSide = FactionKeyOf(player);
-    if (player && !playerSide.IsEmpty() && playerSide != m_sFaction && vector.DistanceXZ(player.GetOrigin(), base.GetOrigin()) < reach) Note(player, now, sentries);
+    if (player && !playerSide.IsEmpty() && playerSide != m_sFaction && InsideBaseProximityReport(vector.DistanceXZ(player.GetOrigin(), base.GetOrigin()), base.m_fRadius)) Note(player, now, sentries);
    }
   }
   // Debug menu: every enemy soldier counts as seen.

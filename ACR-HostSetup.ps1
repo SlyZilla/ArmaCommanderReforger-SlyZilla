@@ -7,7 +7,7 @@ function Show-HostSetup([switch]$Solo) {
   if ($Solo) { $name = 'play-settings.txt' }
   $file = Join-Path $PSScriptRoot $name
   $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Players = 'any'; StartRP = '100'; Income = '1'; AI = 'both'; Skill = 'Veteran';
-                   Reaction = '1.6'; SoldierCap = '100'; UnitCap = '8'; Respawn = '15'; ShareGM = 'no'; SharedCommand = 'yes'; Threat = 'normal'; Skirmish = 'full' }
+                   Reaction = '1.6'; SoldierCap = '100'; UnitCap = '8'; Respawn = '15'; ShareGM = 'no'; FirstPlayerHost = 'no'; SharedCommand = 'yes'; Threat = 'normal'; Skirmish = 'full' }
   if (Test-Path -LiteralPath $file) {
     foreach ($line in Get-Content -LiteralPath $file) {
       $kv = $line.Split('=', 2)
@@ -63,6 +63,7 @@ function Show-HostSetup([switch]$Solo) {
     $skirmishes = Get-SkirmishChoices $s.World
     if ($skirmishes -notcontains $s.Skirmish) { $s.Skirmish = 'full' }
     if ($skirmishes.Count -gt 1) { Write-Host (' 14  Skirmish size           ' + $s.Skirmish + '   (full map, half of it, or a small flashpoint)') }
+    if (!$Solo) { Write-Host (' 15  First player is host    ' + $s.FirstPlayerHost + '   (trusted fallback on dedicated servers; no transfer after disconnect)') }
     $choice = (Read-Host 'Choice').Trim()
     if ($choice -eq '') { break }
     switch ($choice) {
@@ -87,6 +88,7 @@ function Show-HostSetup([switch]$Solo) {
       '12' { if ($Solo) { Write-Host 'Not used in singleplayer.' -ForegroundColor Yellow } elseif ($s.SharedCommand -eq 'yes') { $s.SharedCommand = 'no' } else { $s.SharedCommand = 'yes' } }
       '13' { $levels = @('low', 'normal', 'high'); $i = [array]::IndexOf($levels, $s.Threat); $s.Threat = $levels[($i + 1) % $levels.Count] }
       '14' { if ($skirmishes.Count -gt 1) { $i = [array]::IndexOf($skirmishes, $s.Skirmish); $s.Skirmish = $skirmishes[($i + 1) % $skirmishes.Count] } else { Write-Host 'This map has only the full size.' -ForegroundColor Yellow } }
+      '15' { if ($Solo) { Write-Host 'Not used in singleplayer.' -ForegroundColor Yellow } elseif ($s.FirstPlayerHost -eq 'yes') { $s.FirstPlayerHost = 'no' } else { $s.FirstPlayerHost = 'yes' } }
       default { Write-Host 'Type a number from the list, or press Enter to start.' -ForegroundColor Yellow }
     }
   }
@@ -96,6 +98,7 @@ function Show-HostSetup([switch]$Solo) {
   $extra = ' -acrStartRP ' + $s.StartRP + ' -acrIncome ' + $s.Income + ' -acrAI ' + $s.AI + ' -acrSkill ' + $skill +
            ' -acrReaction ' + $s.Reaction + ' -acrSoldierCap ' + $s.SoldierCap + ' -acrUnitCap ' + $s.UnitCap + ' -acrRespawnSeconds ' + $s.Respawn + ' -acrPlayers ' + $s.Players
   if ($s.ShareGM -eq 'yes') { $extra += ' -acrGameMasterAll 1' }
+  if ($s.FirstPlayerHost -eq 'yes') { $extra += ' -acrFirstPlayerHost 1' }
   $extra += ' -acrThreat ' + $s.Threat
   # Skirmish: -acrSize half|flashpoint, plus -acrLayout <name> (spaces as _) for a chosen one.
   if ($s.Skirmish -ne 'full' -and (Get-SkirmishChoices $s.World) -contains $s.Skirmish) {

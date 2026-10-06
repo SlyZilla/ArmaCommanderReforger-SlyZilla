@@ -1814,6 +1814,20 @@ class ACR_Supports : Managed
 // The game mode entity is replicated, so it carries the "launch this projectile" broadcast.
 modded class SCR_BaseGameMode
 {
+ protected override void OnPlayerConnected(int playerId)
+ {
+  super.OnPlayerConnected(playerId);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager && Replication.IsServer()) manager.PlayerConnected(playerId);
+ }
+
+ protected override void OnPlayerDisconnected(int playerId, KickCauseCode cause, int timeout)
+ {
+  super.OnPlayerDisconnected(playerId, cause, timeout);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager && Replication.IsServer()) manager.PlayerDisconnected(playerId);
+ }
+
  // Every death and destroyed vehicle goes to the cleanup list.
  protected override void OnControllableDestroyed(IEntity entity, IEntity killerEntity, notnull Instigator instigator)
  {

@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 49;
+ static const int EXPECTED = 51;
 
  static ACR_Squad s_Defender;
  static SCR_AIGroup s_Stale;
@@ -109,6 +109,9 @@ class ACR_TestRegress
    ACR_AICommander.FrontlinePick({900, 1050, 1050.5}, picked);
    int edge = picked.Count();
    Check("frontline bases the same whatever the order", sets[0] == "900 1000 " && sets[1] == sets[0] && sets[2] == sets[0] && edge == 2, string.Format("'%1' '%2' '%3', boundary %4", sets[0], sets[1], sets[2], edge));
+   Check("first-player host is opt-in, fixed to the first connection, and ends on disconnect", ACR_Manager.TrustedFirstPlayerHost(7, 7, true, false) && !ACR_Manager.TrustedFirstPlayerHost(8, 7, true, false) && !ACR_Manager.TrustedFirstPlayerHost(7, 7, false, false) && !ACR_Manager.TrustedFirstPlayerHost(7, 7, true, true), "denied by default, no transfer or reconnect reuse");
+   float radius = 100;
+   Check("base-proximity intel reports without observation through radius + 60 m", ACR_Intel.InsideBaseProximityReport(radius, radius) && ACR_Intel.InsideBaseProximityReport(radius + 59, radius) && !ACR_Intel.InsideBaseProximityReport(radius + 60, radius), "automatic reporting is intentional; line of sight is not required");
   }
   // R04: a group that will be removed before an order for it arrives.
   if (tick == 3) s_Stale = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1300 0 2700")));
