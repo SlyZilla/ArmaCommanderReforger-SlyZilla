@@ -12,7 +12,6 @@ class ACR_Contact : Managed
  float m_fSeen;        // world time of the newest sighting
  string m_sKey;        // squad or player, for the feed
  string m_sSpotter;
- bool m_bByPlayer;     // seen by a player (not radioed: they saw it themselves)
  ACR_Squad m_Squad;    // the enemy squad (or null)
  IEntity m_Body;       // ...or one soldier of a group we don't manage
 }
@@ -48,7 +47,6 @@ class ACR_Intel : Managed
  ref map<IEntity, vector> m_SeenAt = new map<IEntity, vector>();
  ref map<IEntity, float> m_SeenTime = new map<IEntity, float>();
  protected ref map<IEntity, string> m_SeenBy = new map<IEntity, string>();
- protected ref map<IEntity, bool> m_SeenByPlayer = new map<IEntity, bool>();
  protected ref array<string> m_Radio = {};
  protected float m_fNextRadio;
  static const float RADIO_GAP_MS = 15000;   // at most one radio report per side this often
@@ -78,13 +76,12 @@ class ACR_Intel : Managed
   return affiliation.GetAffiliatedFaction().GetFactionKey();
  }
 
- protected void Note(IEntity enemy, float now, string spotter, bool byPlayer = false)
+ protected void Note(IEntity enemy, float now, string spotter)
  {
   if (!enemy || !ACR_Respawn.IsAlive(enemy)) return;
   m_SeenAt.Set(enemy, enemy.GetOrigin());
   m_SeenTime.Set(enemy, now);
   m_SeenBy.Set(enemy, spotter);
-  m_SeenByPlayer.Set(enemy, byPlayer);
  }
 
  protected void NoteAt(IEntity enemy, float now, string spotter, vector position)
@@ -95,7 +92,6 @@ class ACR_Intel : Managed
   m_SeenAt.Set(enemy, position);
   m_SeenTime.Set(enemy, now);
   m_SeenBy.Set(enemy, spotter);
-  m_SeenByPlayer.Set(enemy, false);
  }
 
  // Called every second by the manager.
@@ -167,7 +163,6 @@ class ACR_Intel : Managed
    m_SeenTime.Remove(gone);
    m_SeenAt.Remove(gone);
    m_SeenBy.Remove(gone);
-   m_SeenByPlayer.Remove(gone);
   }
   BuildContacts(now);
   Report(now);
@@ -230,7 +225,7 @@ class ACR_Intel : Managed
    {
     if (vector.Distance(eye.GetOrigin(), enemy.GetOrigin()) > PLAYER_RANGE) continue;
     if (!LineOfSight(eye, enemy)) continue;
-    Note(enemy, now, names[e], true);
+    Note(enemy, now, names[e]);
     break;
    }
   }
@@ -359,7 +354,6 @@ class ACR_Intel : Managed
      contact.m_fSeen = when;
      contact.m_Pos = m_SeenAt.Get(body);
      contact.m_sSpotter = m_SeenBy.Get(body);
-     contact.m_bByPlayer = m_SeenByPlayer.Get(body);
     }
    }
    if (contact) m_Contacts.Insert(contact);
@@ -390,7 +384,6 @@ class ACR_Intel : Managed
     other.m_fSeen = when;
     other.m_Pos = m_SeenAt.Get(body);
     other.m_sSpotter = m_SeenBy.Get(body);
-    other.m_bByPlayer = m_SeenByPlayer.Get(body);
    }
   }
  }
@@ -508,7 +501,7 @@ class ACR_Intel : Managed
    string spotter = contact.m_sSpotter;
    if (spotter.IsEmpty()) spotter = "Contact";
    AddFeed(now, string.Format("%1: %2 %3", spotter, Describe(contact.m_iKind, contact.m_iCount), Place(contact.m_Pos)));
-   if (!contact.m_bByPlayer) QueueRadio(string.Format("%1: contact, %2, %3.", spotter, Describe(contact.m_iKind, contact.m_iCount), Relative(contact.m_Pos)));
+   QueueRadio(string.Format("%1: contact, %2, %3.", spotter, Describe(contact.m_iKind, contact.m_iCount), Relative(contact.m_Pos)));
   }
  }
 
