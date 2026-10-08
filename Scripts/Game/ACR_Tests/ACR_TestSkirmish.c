@@ -96,18 +96,25 @@ class ACR_TestSkirmish
    foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPointsForFaction(moved))
     if (point && movedBase && vector.DistanceXZ(point.GetOrigin(), movedBase.GetOrigin()) < 60) pointMoved = true;
    ACR_TestRegress.Check("skirmish: player spawn point moved to the new HQ", pointMoved, moved);
-   // Every Everon layout HQ has two pads (5 Oct); the rest are out of play.
+   // Flashpoint HQs have two pads; the South HQ now has two at Lamentin. Retired bases are dropped.
    int gone, live;
    foreach (ACR_Helipad pad : ACR_Helipad.s_All) { if (pad.m_bGone) gone++; else live++; }
    bool padsMatch = live == 4 && gone == ACR_Helipad.s_All.Count() - 4;
-   if (South()) padsMatch = live >= 2 && ACR_HeliStation.UsesPads(kept) && !ACR_HeliStation.UsesPads(moved);
-   ACR_TestRegress.Check("skirmish: only sides with an in-play HQ pad use pad helicopters", padsMatch, string.Format("%1 gone, %2 in play", gone, live));
+   int lamentinPads;
+   if (South())
+   {
+    foreach (ACR_Helipad pad2 : ACR_Helipad.s_All)
+    {
+     if (!pad2 || pad2.m_bGone || !pad2.Base() || pad2.Base().m_sName != "Lamentin") continue;
+     lamentinPads++;
+    }
+    padsMatch = live >= 4 && ACR_HeliStation.UsesPads(kept) && ACR_HeliStation.UsesPads(moved) && lamentinPads == 2;
+   }
+   ACR_TestRegress.Check("skirmish: HQ pad access and Lamentin's two pads", padsMatch, string.Format("%1 gone, %2 in play; Lamentin pads %3", gone, live, lamentinPads));
    int movedHelis, keptHelis;
    foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(moved).m_aRequisitions) if (entry.m_iSupportHeli > 0) movedHelis++;
    foreach (ACR_RequisitionEntry entry2 : manager.m_Bases.GetFaction(kept).m_aRequisitions) if (entry2.m_iSupportHeli > 0) keptHelis++;
-   bool heliAccess = ACR_HeliStation.UsesPads(kept) && keptHelis == 2;
-   if (South()) heliAccess = heliAccess && !ACR_HeliStation.UsesPads(moved) && movedHelis == 0;
-   else heliAccess = heliAccess && ACR_HeliStation.UsesPads(moved) && movedHelis == 2;
+   bool heliAccess = ACR_HeliStation.UsesPads(kept) && ACR_HeliStation.UsesPads(moved) && movedHelis == 2 && keptHelis == 2;
    ACR_TestRegress.Check("skirmish: support helicopter access follows each side's pads", heliAccess, string.Format("%1 / %2", movedHelis, keptHelis));
    // A layout that leaves a side without a pad: that side calls the off-map gunship.
    foreach (ACR_Helipad drop : ACR_Helipad.s_All) if (drop.Faction() == moved) drop.Drop();

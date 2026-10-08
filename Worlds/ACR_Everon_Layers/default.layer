@@ -665,6 +665,16 @@ ACR_Helipad ACR_Helipad_Harbor_2 {
  angles 0 130 0
  m_sBase "Harbor"
 }
+ACR_Helipad ACR_Helipad_Lamentin_1 {
+ coords 1189 31.3062 6179
+ angles 0 90 0
+ m_sBase "Lamentin"
+}
+ACR_Helipad ACR_Helipad_Lamentin_2 {
+ coords 1234 29.8375 6124
+ angles 0 90 0
+ m_sBase "Lamentin"
+}
 ACR_Helipad ACR_Helipad_ChotainBase_1 {
  coords 7541 2.58 6693
  m_sBase "Chotain Base"

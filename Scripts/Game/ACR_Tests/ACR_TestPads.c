@@ -89,6 +89,7 @@ class ACR_TestPads
 
  static bool NotPad(notnull IEntity e)
  {
+  if (ACR_Helipad.Cast(e)) return false;
   if (!e.GetPrefabData()) return true;
   return !e.GetPrefabData().GetPrefabName().Contains("elipad");
  }
@@ -113,24 +114,31 @@ class ACR_TestPads
     float fraction = world.TraceMove(trace, NotPad);
     if (fraction >= 1 || 40 - 40.5 * fraction < 0.4) continue;
     blocked++;
-    if (trace.TraceEnt && trace.TraceEnt.GetPrefabData() && what.Length() < 200) what += " " + FilePath.StripPath(trace.TraceEnt.GetPrefabData().GetPrefabName());
+    if (what.Length() < 200)
+    {
+     string hit = "terrain";
+     if (trace.TraceEnt && trace.TraceEnt.GetPrefabData()) hit = FilePath.StripPath(trace.TraceEnt.GetPrefabData().GetPrefabName());
+     what += string.Format(" dx=%1 dz=%2 frac=%3 %4", dx, dz, fraction, hit);
+    }
    }
   return blocked;
  }
 
- // Everon skirmish HQs without pads (5 Oct): open, level spots clear of everything within 12 m,
- // nearest the centre first, 30 m apart (-acrEveronPadsTest, from ACR_Mode).
+ // Everon skirmish HQs without pads (5 Oct) and the Lamentin South HQ: open, level spots clear of everything within 12 m,
+ // nearest the centre first, 30 m apart and up to 200 m outside the base radius
+ // (-acrEveronPadsTest, from ACR_Mode).
  static void SurveyEveron(int tick)
  {
   if (tick != 5) return;
-  array<string> names = {"Chotain Base", "Power Plant", "Gravette Base", "Central Industrial", "Regina Sawmill"};
+  array<string> names = {"Lamentin", "Chotain Base", "Power Plant", "Gravette Base", "Central Industrial", "Regina Sawmill"};
   foreach (string name : names)
   {
    ACR_Base base = ACR_Skirmish.FindBase(name);
    if (!base) { PrintFormat("[ACR] PADS %1: no such base", name); continue; }
    vector c = base.GetOrigin();
    array<vector> found = {};
-   for (float d = 0; d <= base.m_fRadius + 150 && found.Count() < 6; d += 5)
+   float surveyReach = base.m_fRadius + 200;
+   for (float d = 0; d <= surveyReach && found.Count() < 6; d += 5)
    {
     int steps = Math.Max(1, (int)(d / 5) * 6);
     for (int s = 0; s < steps && found.Count() < 6; s++)
@@ -150,6 +158,18 @@ class ACR_TestPads
    }
    if (found.IsEmpty()) PrintFormat("[ACR] PADSPOT %1 | none within %2 m", name, base.m_fRadius + 150);
   }
+  int lamentinPads, clearPads;
+  string blockedBy;
+  foreach (ACR_Helipad pad : ACR_Helipad.s_All)
+  {
+   if (pad.m_bGone || pad.m_sBase != "Lamentin") continue;
+   lamentinPads++;
+   string obstacles;
+   int blocked = BlockedCells(pad.GetOrigin(), obstacles);
+   if (blocked == 0) clearPads++;
+   else blockedBy += string.Format(" %1:%2", pad.GetOrigin(), obstacles);
+  }
+  ACR_TestRegress.Check("pads: two Lamentin pads are clear within 12 m", lamentinPads == 2 && clearPads == 2, string.Format("%1 pads, %2 clear%3", lamentinPads, clearPads, blockedBy));
   Print("[ACR] TEST COMPLETE"); // survey only: no checks, no verdict
  }
 
