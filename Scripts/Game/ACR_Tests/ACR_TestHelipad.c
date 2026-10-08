@@ -105,6 +105,14 @@ class ACR_TestHelipad
    s_Heli = station.Station("US", true, s_Base, "Support gunship 1");
    ACR_TestRegress.Check("helipad: gunship stationed on the pad", s_Heli != null && s_Heli.m_Vehicle != null, "");
    ACR_TestRegress.Check("helipad: a second one finds the pad taken", station.CantBuy("US", s_Base).Contains("No free helipad"), station.CantBuy("US", s_Base));
+   if (s_Heli)
+   {
+    ACR_Helipad home = s_Heli.m_Pad;
+    s_Heli.m_Pad = null;
+    bool parkedVehicleBlocksPad = station.FreePad("US", s_Base) == null;
+    s_Heli.m_Pad = home;
+    ACR_TestRegress.Check("helipad: parked aircraft blocks a support helicopter spawn", parkedVehicleBlocksPad, "");
+   }
    s_Target = ACR_Manager.Ground(alpha.m_Home + Vector(-200, 0, 700));
    s_iRP = manager.m_Bases.GetRP("US");
    string refused = manager.m_Supports.Call("US", h.SupportIndex(manager, ACR_ESupportType.HELI_DOOR_GUNS), s_Target, true);

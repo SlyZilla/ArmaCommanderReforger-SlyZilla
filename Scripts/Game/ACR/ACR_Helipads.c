@@ -206,13 +206,7 @@ class ACR_HeliStation : Managed
  // A free pad at this base (owned by the side), or null.
  ACR_Helipad FreePad(string factionKey, ACR_Base base)
  {
-  foreach (ACR_Helipad pad : ACR_Helipad.s_All)
-  {
-   if (pad.Faction() != factionKey) continue;
-   if (base && pad.Base() != base) continue;
-   if (!PadTaken(pad)) return pad;
-  }
-  return null;
+  return ClearPad(factionKey, base);
  }
 
  // A free pad at this base with nothing parked on it (bought helicopters land there).
@@ -222,7 +216,7 @@ class ACR_HeliStation : Managed
   ACR_Vehicles.All(vehicles);
   foreach (ACR_Helipad pad : ACR_Helipad.s_All)
   {
-   if (pad.Faction() != factionKey || pad.Base() != base || PadTaken(pad)) continue;
+   if (pad.Faction() != factionKey || (base && pad.Base() != base) || PadTaken(pad)) continue;
    bool blocked;
    foreach (IEntity vehicle : vehicles)
     if (vector.DistanceXZ(vehicle.GetOrigin(), pad.GetOrigin()) < 10) { blocked = true; break; }
