@@ -717,7 +717,7 @@ ACR_Skirmish ACR_Skirmish_South {
  m_sName "South half"
  m_eSize 0
  m_sBases "Saint-Pierre, Morton, Lamentin, Le Moule, Villeneuve, Figari, Provins, Chotain, Regina, Levie, Laruns, Durras, Vernon, Kervel, Richemont, Lacourt, Camurac, La Valette, Le Bosc, Perelle, Lancre, Levie Base, Central Industrial, Quarry, Le Moule Sawmill, Regina Sawmill, Cheval-Gin Lodge, Martin's Watch, Wolfstone"
- m_sHQs "US=Chotain Base; USSR=Harbor"
+ m_sHQs "US=Lamentin; USSR=Harbor"
 }
 ACR_Skirmish ACR_Skirmish_SaintPhilippe {
  coords 4900 30 10800

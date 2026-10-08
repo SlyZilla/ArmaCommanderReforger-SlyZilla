@@ -2,7 +2,7 @@
 // the world must name real bases and an HQ per side. The test plays the Saint-Philippe
 // flashpoint (US keeps the Airbase and its pads, USSR moves to the Power Plant, which has no
 // pad); -acrSkirmishSouthTest 1 plays the South half (USSR keeps the Harbor, US moves to
-// Chotain Base). Checks: bases in play, HQ owners, everything else neutral, starting units and
+// Lamentin). Checks: bases in play, HQ owners, everything else neutral, starting units and
 // spawn points at the new HQ, helipads out of play, and that the side without a pad has no
 // support helicopters to buy and gets the off-map helicopter support instead.
 class ACR_TestSkirmish
@@ -62,7 +62,7 @@ class ACR_TestSkirmish
   string movedHQ = "Power Plant";
   string keptHQ = "Airbase";
   int expected = 8;
-  if (South()) { moved = "US"; kept = "USSR"; movedHQ = "Chotain Base"; keptHQ = "Harbor"; expected = 31; }
+  if (South()) { moved = "US"; kept = "USSR"; movedHQ = "Lamentin"; keptHQ = "Harbor"; expected = 30; }
   if (tick == 12)
   {
    ACR_TestRegress.Check("skirmish: every layout names real bases and two HQs", s_iLayouts >= 5 && s_sProblems == "", string.Format("%1 layouts | %2", s_iLayouts, s_sProblems));
@@ -99,11 +99,16 @@ class ACR_TestSkirmish
    // Every Everon layout HQ has two pads (5 Oct); the rest are out of play.
    int gone, live;
    foreach (ACR_Helipad pad : ACR_Helipad.s_All) { if (pad.m_bGone) gone++; else live++; }
-   ACR_TestRegress.Check("skirmish: only the HQs' helipads in play", live == 4 && gone == ACR_Helipad.s_All.Count() - 4, string.Format("%1 gone, %2 in play", gone, live));
+   bool padsMatch = live == 4 && gone == ACR_Helipad.s_All.Count() - 4;
+   if (South()) padsMatch = live >= 2 && ACR_HeliStation.UsesPads(kept) && !ACR_HeliStation.UsesPads(moved);
+   ACR_TestRegress.Check("skirmish: only sides with an in-play HQ pad use pad helicopters", padsMatch, string.Format("%1 gone, %2 in play", gone, live));
    int movedHelis, keptHelis;
    foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(moved).m_aRequisitions) if (entry.m_iSupportHeli > 0) movedHelis++;
    foreach (ACR_RequisitionEntry entry2 : manager.m_Bases.GetFaction(kept).m_aRequisitions) if (entry2.m_iSupportHeli > 0) keptHelis++;
-   ACR_TestRegress.Check("skirmish: both sides can buy support helicopters", ACR_HeliStation.UsesPads(kept) && ACR_HeliStation.UsesPads(moved) && movedHelis == 2 && keptHelis == 2, string.Format("%1 / %2", movedHelis, keptHelis));
+   bool heliAccess = ACR_HeliStation.UsesPads(kept) && keptHelis == 2;
+   if (South()) heliAccess = heliAccess && !ACR_HeliStation.UsesPads(moved) && movedHelis == 0;
+   else heliAccess = heliAccess && ACR_HeliStation.UsesPads(moved) && movedHelis == 2;
+   ACR_TestRegress.Check("skirmish: support helicopter access follows each side's pads", heliAccess, string.Format("%1 / %2", movedHelis, keptHelis));
    // A layout that leaves a side without a pad: that side calls the off-map gunship.
    foreach (ACR_Helipad drop : ACR_Helipad.s_All) if (drop.Faction() == moved) drop.Drop();
    ACR_Skirmish.RecountPads();
