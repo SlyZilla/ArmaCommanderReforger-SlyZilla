@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 51;
+ static const int EXPECTED = 52;
 
  static ACR_Squad s_Defender;
  static SCR_AIGroup s_Stale;
@@ -112,6 +112,7 @@ class ACR_TestRegress
    Check("first-player host is opt-in, fixed to the first connection, and ends on disconnect", ACR_Manager.TrustedFirstPlayerHost(7, 7, true, false) && !ACR_Manager.TrustedFirstPlayerHost(8, 7, true, false) && !ACR_Manager.TrustedFirstPlayerHost(7, 7, false, false) && !ACR_Manager.TrustedFirstPlayerHost(7, 7, true, true), "denied by default, no transfer or reconnect reuse");
    float radius = 100;
    Check("base-proximity intel reports without observation through radius + 60 m", ACR_Intel.InsideBaseProximityReport(radius, radius) && ACR_Intel.InsideBaseProximityReport(radius + 59, radius) && !ACR_Intel.InsideBaseProximityReport(radius + 60, radius), "automatic reporting is intentional; line of sight is not required");
+   Check("AI intel only refreshes targets detected in the last 10 s", ACR_Intel.RecentDetection(10) && !ACR_Intel.RecentDetection(10.1), "old targets stay at their last detected position");
   }
   // R04: a group that will be removed before an order for it arrives.
   if (tick == 3) s_Stale = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1300 0 2700")));

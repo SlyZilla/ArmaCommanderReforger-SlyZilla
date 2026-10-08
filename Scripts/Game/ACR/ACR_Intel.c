@@ -22,6 +22,7 @@ class ACR_Intel : Managed
  static const float MEMORY_MS = 90000;
  static const float SENTRY_RANGE = 60;
  static const float PLAYER_RANGE = 300;
+ static const float PERCEPTION_MAX_AGE_S = 10;
  static const int FEED_LINES = 8;   // sightings, and in shared command orders, spending and pings
  static const float REPORT_AGAIN_MS = 120000; // same enemy group reported again only after this
  static const int KIND_INFANTRY = 0;
@@ -35,6 +36,11 @@ class ACR_Intel : Managed
  static bool InsideBaseProximityReport(float distance, float baseRadius)
  {
   return distance < baseRadius + SENTRY_RANGE;
+ }
+
+ static bool RecentDetection(float secondsSinceDetected)
+ {
+  return secondsSinceDetected <= PERCEPTION_MAX_AGE_S;
  }
 
  string m_sFaction;
@@ -81,6 +87,17 @@ class ACR_Intel : Managed
   m_SeenByPlayer.Set(enemy, byPlayer);
  }
 
+ protected void NoteAt(IEntity enemy, float now, string spotter, vector position)
+ {
+  if (!enemy || !ACR_Respawn.IsAlive(enemy)) return;
+  float seen;
+  if (m_SeenTime.Find(enemy, seen) && seen > now) return;
+  m_SeenAt.Set(enemy, position);
+  m_SeenTime.Set(enemy, now);
+  m_SeenBy.Set(enemy, spotter);
+  m_SeenByPlayer.Set(enemy, false);
+ }
+
  // Called every second by the manager.
  void Tick()
  {
@@ -90,12 +107,25 @@ class ACR_Intel : Managed
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction || !squad.m_Group) continue;
-   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(squad.m_Group.FindComponent(SCR_AIGroupUtilityComponent));
-   if (!utility || !utility.m_Perception) continue;
-   foreach (IEntity seen : utility.m_Perception.m_aTargetEntities)
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
    {
-    string key = FactionKeyOf(seen);
-    if (!key.IsEmpty() && key != m_sFaction) Note(seen, now, squad.GetName());
+    IEntity observer = agent.GetControlledEntity();
+    if (!observer) continue;
+    AIControlComponent control = AIControlComponent.Cast(observer.FindComponent(AIControlComponent));
+    if (!control || !control.GetAIAgent()) continue;
+    SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(control.GetAIAgent().FindComponent(SCR_AIUtilityComponent));
+    if (!utility || !utility.m_PerceptionComponent) continue;
+    array<BaseTarget> targets = {};
+    utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.DETECTED);
+    foreach (BaseTarget target : targets)
+    {
+     if (!target || !RecentDetection(target.GetTimeSinceDetected())) continue;
+     IEntity seen = target.GetTargetEntity();
+     string key = FactionKeyOf(seen);
+     if (!key.IsEmpty() && key != m_sFaction) NoteAt(seen, now - target.GetTimeSinceDetected() * 1000, squad.GetName(), target.GetLastDetectedPosition());
+    }
    }
   }
   // 2. Sentries: anyone inside (or right at) one of our bases.
