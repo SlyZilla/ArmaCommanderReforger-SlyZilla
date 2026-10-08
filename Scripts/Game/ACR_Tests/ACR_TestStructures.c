@@ -12,8 +12,9 @@ class ACR_TestStructures
  static const ResourceName HELIPAD = "{D3DDB76548C16BDB}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_Helipad_L_Conflict_US_01.et";
  static const ResourceName HQ = "{16AF2FE47A6C297B}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Headquarters_S_Conflict_US_01.et";
  static const ResourceName HUMVEE = "{4A71F755A4513227}Prefabs/Vehicles/Wheeled/M998/M1025.et";
+ static const ResourceName CONSTRUCTION = "{2D74C39A650A3030}Prefabs/Vehicles/Wheeled/M923A1/M923A1_engineer.et";
 
- static IEntity s_Hospital, s_Repair, s_Fuel, s_Ammo, s_Helipad, s_HQ, s_Humvee;
+ static IEntity s_Hospital, s_Repair, s_Fuel, s_Ammo, s_Helipad, s_HQ, s_Humvee, s_Construction;
  static IEntity s_Wounded;
  static ACR_Base s_Base;
  static vector s_Yard;
@@ -102,6 +103,8 @@ class ACR_TestStructures
    s_Yard = ACR_Manager.Ground(home + Vector(-120, 0, 40));
    s_Repair = Place(REPAIR, s_Yard + Vector(14, 0, 0));
    s_Fuel = Place(FUEL, s_Yard + Vector(-12, 0, 0));
+   s_Construction = Place(CONSTRUCTION, s_Yard + Vector(35, 0, 0));
+   if (s_Construction) ACR_Vehicles.SetOwner(s_Construction, "US");
    // (No ammo storage: its vanilla resupply action logs a script error on a dedicated server,
    // which ends the run; it is registered the same way as fuel storage.)
    s_Humvee = Place(HUMVEE, s_Yard);
@@ -135,6 +138,13 @@ class ACR_TestStructures
    ACR_TestRegress.Check("structures: field hospital is a medical point", stations.Contains(s_Hospital), string.Format("%1 medical stations", stations.Count()));
    manager.m_Logistics.Stations("US", ACR_EService.FUEL, stations);
    ACR_TestRegress.Check("structures: fuel storage is a fuel point", stations.Contains(s_Fuel), string.Format("%1 fuel stations", stations.Count()));
+   SCR_CampaignBuildingCompositionComponent hospital = SCR_CampaignBuildingCompositionComponent.Cast(s_Hospital.FindComponent(SCR_CampaignBuildingCompositionComponent));
+   float constructionStock = manager.m_Logistics.StockOf(s_Construction);
+   if (hospital) hospital.ACR_SetProviderForTest(s_Construction);
+   if (hospital) hospital.ACR_OnCompositionSpawned(true);
+   if (hospital) hospital.ACR_OnCompositionSpawned(true);
+   float afterConstructionStock = manager.m_Logistics.StockOf(s_Construction);
+   ACR_TestRegress.Check("structures: completed build charges its truck once", hospital && afterConstructionStock < constructionStock && Math.AbsFloat((constructionStock - afterConstructionStock) - 10) < 0.01, string.Format("stock %1 -> %2 loads", constructionStock, afterConstructionStock));
    ACR_TestRegress.Check("structures: an ammo storage counts as ammo", ACR_Structures.ServiceOf(ACR_Structures.KindOfName(AMMO)) == ACR_EService.AMMO, "");
    ACR_Base fob = BaseNamed("FOB");
    ACR_TestRegress.Check("structures: headquarters away from bases = a forward base", fob && fob.m_sOwner == "US" && fob.m_bAllowSpawn, "");

@@ -24,11 +24,30 @@ enum ACR_EStructure
 
 modded class SCR_CampaignBuildingCompositionComponent
 {
- override void OnPostInit(IEntity owner)
- {
-  super.OnPostInit(owner);
-  if (GetGame().InPlayMode() && ACR_Structures.KindOf(owner) != ACR_EStructure.NONE) ACR_Structures.s_Registered.Insert(this);
- }
+	protected bool m_bACRBuildCharged;
+
+	override void OnPostInit(IEntity owner)
+	{
+		super.OnPostInit(owner);
+		if (GetGame().InPlayMode() && Replication.IsServer()) GetOnCompositionSpawned().Insert(ACR_OnCompositionSpawned);
+		if (GetGame().InPlayMode() && ACR_Structures.KindOf(owner) != ACR_EStructure.NONE) ACR_Structures.s_Registered.Insert(this);
+	}
+
+	void ACR_OnCompositionSpawned(bool spawned)
+	{
+		if (!spawned || m_bACRBuildCharged || !Replication.IsServer()) return;
+		if (ACR_Structures.ChargeBuild(this, GetProviderEntity())) m_bACRBuildCharged = true;
+	}
+
+	int ACR_CompositionCost()
+	{
+		return GetCompositionCost();
+	}
+
+	void ACR_SetProviderForTest(IEntity provider)
+	{
+		SetProviderEntity(provider);
+	}
 }
 
 class ACR_Structure : Managed
@@ -89,6 +108,37 @@ class ACR_Structures : Managed
    case ACR_EStructure.HQ: return "headquarters";
   }
   return "structure";
+ }
+
+ // ACR's worlds use the plain game mode, which does not deduct construction supplies.
+ // Charge the vanilla editable budget once the composition reports that it was built.
+ static bool ChargeBuild(SCR_CampaignBuildingCompositionComponent composition, IEntity provider)
+ {
+  if (!composition || !provider) return false;
+  IEntity truck = provider;
+  for (int i = 0; truck && i < 8; i++)
+  {
+   if ((ACR_Logistics.ServiceOf(truck) & ACR_EService.CONSTRUCTION) != 0) break;
+   truck = truck.GetParent();
+  }
+  if (!truck || (ACR_Logistics.ServiceOf(truck) & ACR_EService.CONSTRUCTION) == 0) return false;
+
+  IEntity owner = composition.GetOwner();
+  if (!owner || !owner.GetPrefabData()) return false;
+  int supplyCost = composition.ACR_CompositionCost();
+  if (supplyCost <= 0) return false;
+
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return false;
+  if (!manager.m_Logistics) manager.m_Logistics = new ACR_Logistics(manager);
+  float loads = supplyCost / ACR_Logistics.SUPPLIES_PER_LOAD_CONSTRUCTION;
+  if (!manager.m_Logistics.Use(truck, loads))
+  {
+   PrintFormat("[ACR] BUILD %1 needs %2 supplies; construction truck has %3", FilePath.StripPath(owner.GetPrefabData().GetPrefabName()), supplyCost, manager.m_Logistics.StockOf(truck) * ACR_Logistics.SUPPLIES_PER_LOAD_CONSTRUCTION);
+   return false;
+  }
+  PrintFormat("[ACR] BUILD %1 charged %2 supplies (%3 loads)", FilePath.StripPath(owner.GetPrefabData().GetPrefabName()), supplyCost, loads);
+  return true;
  }
 
  // Logistics service flags of a kind (0 = not a service point).
