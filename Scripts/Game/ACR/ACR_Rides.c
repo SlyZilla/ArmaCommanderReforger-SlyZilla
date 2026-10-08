@@ -569,7 +569,9 @@ class ACR_Rides : Managed
    taxi.Halt("Holding");
    return;
   }
-  taxi.MoveTo(ACR_Manager.Ground(home.GetOrigin()));
+  // To a road point by the base, along the roads: the base centre is often somewhere the
+  // game's driver can't reach, and he got out there and left the truck (7 Oct live).
+  taxi.RouteTo(ACR_Manager.Ground(home.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Returning", ACR_EOrderKind.MOVE);
   taxi.SetOrder("Returning", ACR_EOrderState.RETURN);
  }
 

@@ -1162,6 +1162,8 @@ class ACR_AICommander : Managed
    if (vector.DistanceXZ(PositionOf(squad), vehicle.GetOrigin()) > 400 || squad.KnownEnemies(120) > 0) continue;
    float next;
    if (m_NextRecrew.Find(squad, next) && now < next) continue;
+   // Not back into a vehicle that just got stuck (the crew bailed, got back in, got stuck again).
+   if (now - squad.m_fStuckAt < 600000) continue;
    m_NextRecrew.Set(squad, now + 90000);
    if (squad.GetIn(vehicle.GetOrigin())) PrintFormat("[ACR] AI %1: %2 gets back into its vehicle", m_sFaction, squad.GetName());
   }

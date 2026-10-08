@@ -509,6 +509,7 @@ class ACR_Squad : Managed
   if (label == "Suppressing") return ACR_EOrderState.SUPPRESS;
   if (label == "Getting in") return ACR_EOrderState.GET_IN;
   if (label == "Getting out") return ACR_EOrderState.GET_OUT;
+  if (label == "Returning") return ACR_EOrderState.RETURN;
   return ACR_EOrderState.NONE;
  }
 
@@ -989,10 +990,12 @@ class ACR_Squad : Managed
  protected ref array<vector> m_aRoute = {};
  protected ref ACR_OrderSnapshot m_Route; // the order at the end of the route (target unused)
 
- bool RouteTo(vector destination, ResourceName prefab, float radius, string order, int kind)
+ // exactEnd (player orders): road hops on the way, but the last leg is the clicked point.
+ bool RouteTo(vector destination, ResourceName prefab, float radius, string order, int kind, bool exactEnd = false)
  {
   // Vehicle crews: aim for the nearest road point, which AI drivers can reach.
   vector road;
+  vector clicked = destination;
   IEntity driven = ACR_Transport.CrewedVehicle(this);
   if (driven && BBB_Terrain.RoadPointNear(destination, 250, road)) destination = road;
   IEntity anchor = GetAnchor();
@@ -1004,12 +1007,14 @@ class ACR_Squad : Managed
    if (BBB_Roads.Route(driven.GetOrigin(), destination, legs, nodes, millis) && legs.Count() > 1)
    {
     PrintFormat("[ACR] ROAD %1: %2 hops over %3 road points (%4 ms)", m_Name, legs.Count(), nodes, millis);
+    if (exactEnd && vector.DistanceXZ(legs[legs.Count() - 1], clicked) > 15) legs.Insert(clicked);
     if (System.IsCLIParam("acrRideTest")) foreach (vector hop : legs) PrintFormat("[ACR] ROAD   hop %1", hop);
     StartRoute(legs, prefab, radius, order, kind);
     return true;
    }
    legs.Clear();
   }
+  if (exactEnd) destination = clicked;
   if (!anchor || IsMounted() || !BBB_Terrain.LandRoute(anchor.GetOrigin(), destination, legs))
   {
    if (prefab == WP_GARRISON) { Garrison(destination); return true; }
@@ -1225,21 +1230,28 @@ class ACR_Squad : Managed
  // The game's AI drivers get stuck on obstacles (and sit there honking), or stop
  // dead under fire. A driven vehicle with somewhere to go that hasn't moved for a
  // while is backed up and turned (scripted, like "gunner drives") and sent on its
- // way again; after two tries, or at once when it is under fire with no working
- // gun, the crew bails out and carries on (or takes cover) on foot.
+ // way again; after two tries it is re-routed once over the roads from where it
+ // stands. Still stuck: the crew stays aboard and holds ("Stuck, holding") and any
+ // AI passengers carry on on foot (7 Oct live: drivers walked away from vehicles that
+ // only needed another way round, and the AI re-crewed them into the same spot).
+ // Only an unarmed vehicle stopped under fire is abandoned.
  static const float STALL_SECONDS = 15;
  static const float STALL_SECONDS_FIGHTING = 40; // armed and in contact: the gunner may be busy, give it longer
  static const float STALL_SECONDS_HELPLESS = 6;  // under fire with no gunner
  static const int UNSTICK_TRIES = 2;
+ static const int REROUTE_TRIES = 1;
 
  protected IEntity m_StallVehicle;
  protected vector m_StallPos;
  protected float m_fStallSince;
  protected int m_iUnsticks;
+ protected int m_iReroutes;
+ float m_fStuckAt = -1000000; // world time the squad last gave up on a stuck vehicle (AI re-crewing waits)
  protected bool m_bUnsticking;
  protected ref ACR_SquadUnstick m_UnstickListener; // told by BBB_Unstick when backing out is over
  protected bool m_bResumeOnFoot;
  int UnstickTries() { return m_iUnsticks; }
+ int Reroutes() { return m_iReroutes; }
  bool IsUnsticking() { return m_bUnsticking; }
 
  static ChimeraCharacter DriverOf(IEntity vehicle)
@@ -1344,7 +1356,7 @@ class ACR_Squad : Managed
   }
   if (!wantsToMove || vehicle != m_StallVehicle || vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5)
   {
-   if (vehicle != m_StallVehicle || !wantsToMove) m_iUnsticks = 0;
+   if (vehicle != m_StallVehicle || !wantsToMove) { m_iUnsticks = 0; m_iReroutes = 0; }
    m_StallVehicle = vehicle;
    if (vehicle) m_StallPos = vehicle.GetOrigin();
    m_fStallSince = now;
@@ -1367,14 +1379,84 @@ class ACR_Squad : Managed
     // Hold where it is and fight from there instead of walking away from the vehicle.
     Halt("Stuck, holding");
     m_iUnsticks = 0;
+    m_iReroutes = 0;
+    m_fStuckAt = now;
     PrintFormat("[ACR] DRIVE %1: stuck, holding position (armed vehicle)", m_Name);
     return;
    }
-   Bail(vehicle, "stuck", !underFire);
+   if (m_iReroutes < REROUTE_TRIES && Reroute(vehicle))
+   {
+    m_iReroutes++;
+    m_iUnsticks = 0;
+    m_StallPos = vehicle.GetOrigin();
+    m_fStallSince = now;
+    return;
+   }
+   StuckHold(vehicle, now);
    return;
   }
   m_iUnsticks++;
   BeginUnstick(vehicle, driver);
+ }
+
+ // A fresh road route from where the vehicle stands to where it was going, carried
+ // out as route legs of the current order (no new serial: rides stay on).
+ protected bool Reroute(IEntity vehicle)
+ {
+  vector here = vehicle.GetOrigin();
+  vector goal = m_MoveTarget;
+  if (!m_aRoute.IsEmpty()) goal = m_aRoute[m_aRoute.Count() - 1];
+  ResourceName prefab = m_sOrderPrefab;
+  float radius = m_fOrderRadius;
+  if (m_Route && !m_aRoute.IsEmpty()) { prefab = m_Route.m_sPrefab; radius = m_Route.m_fRadius; }
+  if (prefab.IsEmpty()) return false;
+  array<vector> legs = {};
+  int nodes, millis;
+  if (!BBB_Roads.Route(here, goal, legs, nodes, millis) || legs.IsEmpty())
+  {
+   legs.Clear();
+   vector road;
+   if (!BBB_Terrain.RoadPointNear(here, 300, road))
+   {
+    PrintFormat("[ACR] DRIVE %1: stuck, no road within 300 m to re-route by", m_Name);
+    return false;
+   }
+   legs.Insert(road);
+  }
+  // Don't hand back the spot it is stuck at as the first hop.
+  if (legs.Count() > 1 && vector.DistanceXZ(legs[0], here) < 20) legs.RemoveOrdered(0);
+  if (vector.DistanceXZ(legs[legs.Count() - 1], goal) > 15) legs.Insert(goal);
+  if (legs.Count() < 2 && vector.DistanceXZ(legs[0], here) < 20)
+  {
+   PrintFormat("[ACR] DRIVE %1: stuck, re-route leads back here", m_Name);
+   return false;
+  }
+  ACR_OrderSnapshot order = ACR_OrderSnapshot.Make(prefab, vector.Zero, radius, m_Order, OrderState(), m_OrderKind);
+  m_aRoute.Clear();
+  foreach (vector leg : legs) m_aRoute.Insert(leg);
+  m_Route = order;
+  NextLeg();
+  PrintFormat("[ACR] DRIVE %1: stuck, re-routed over the roads (%2 hops)", m_Name, legs.Count());
+  return true;
+ }
+
+ // Given up on driving: the crew stays with the vehicle and holds; AI passengers get
+ // out and carry on (a ride sends its riders on to the objective on foot).
+ protected void StuckHold(IEntity vehicle, float now)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager)
+  {
+   array<ACR_Squad> riders = {};
+   ACR_Transport.PassengerSquads(manager, vehicle, riders);
+   foreach (ACR_Squad rider : riders) if (rider != this && !rider.HasPlayer()) rider.DismountNow();
+  }
+  Halt("Stuck, holding");
+  m_StallVehicle = null;
+  m_iUnsticks = 0;
+  m_iReroutes = 0;
+  m_fStuckAt = now;
+  PrintFormat("[ACR] DRIVE %1: stuck, crew stays aboard and holds", m_Name);
  }
 
  protected void BeginUnstick(IEntity vehicle, ChimeraCharacter driver)

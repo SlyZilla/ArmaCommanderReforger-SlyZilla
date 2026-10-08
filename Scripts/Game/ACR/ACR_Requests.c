@@ -245,7 +245,12 @@ class ACR_Requests : Managed
     if (squad.MoveTo(ACR_Manager.Ground(squad.m_Home))) return outcome.Accept(name + ": rallying");
     break;
    case ACR_ERequest.MOVE_TO:
-    if (squad.MoveTo(point))
+    // Vehicle crews drive long moves along the roads (to the clicked point at the end):
+    // across country the game's driver got stuck and the crew walked (7 Oct live).
+    bool moved;
+    if (ACR_Transport.CrewedVehicle(squad) && squad.IsMounted()) moved = squad.RouteTo(point, ACR_Squad.WP_MOVE, -1, "Moving", ACR_EOrderKind.MOVE, true);
+    else moved = squad.MoveTo(point);
+    if (moved)
     {
      PrintFormat("[ACR] MOVE player=%1 squad=%2 target=%3", pc.GetPlayerId(), name, point);
      return outcome.Accept(name + ": moving");

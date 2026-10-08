@@ -13,7 +13,7 @@ gunship|-acrGunshipTest 1|180
 heli|-acrHeliTest 1|180
 tactics|-acrTacticsTest 1|200
 transport|-acrTransportTest 1|130
-stall|-acrStallTest 1|150
+stall|-acrStallTest 1|220
 ride|-acrRideTest 1|200
 logistics|-acrLogisticsTest 1|130
 queue|-acrQueueTest 1|140

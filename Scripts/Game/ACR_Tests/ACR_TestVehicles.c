@@ -202,6 +202,10 @@ class ACR_TestVehicles : Managed
  // made too heavy to move, enemies close: the crew bails at once and takes cover.
  ACR_Squad m_StuckSquad;
  ACR_Squad m_LoneSquad;
+ ACR_Squad m_SoftSquad;     // unarmed truck, frozen: backs up twice, is re-routed, then holds with its crew aboard
+ IEntity m_SoftVehicle;
+ vector m_SoftStart;
+ bool m_bSoftRerouted;
  IEntity m_StuckVehicle;
  IEntity m_LoneVehicle;
  bool m_bWasUnsticking;
@@ -239,6 +243,22 @@ class ACR_TestVehicles : Managed
   return string.Format("alive=%1 aboard=%2 order='%3' tries=%4 unsticking=%5 vehicleMoved=%6m squadFromVehicle=%7m combat=%8", alive, aboard, squad.m_Order, squad.UnstickTries(), squad.IsUnsticking(), (int)moved, (int)walked, squad.IsCombatUnit());
  }
 
+ bool AllAboard(ACR_Squad squad, IEntity vehicle)
+ {
+  if (!squad || !vehicle) return false;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  int alive, aboard;
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!ACR_Respawn.IsAlive(body)) continue;
+   alive++;
+   if (ACR_Transport.VehicleOf(body) == vehicle) aboard++;
+  }
+  return alive > 0 && aboard == alive;
+ }
+
  void TestStall()
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -247,12 +267,16 @@ class ACR_TestVehicles : Managed
   {
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
    if (soviets) soviets.m_bAICommander = false;
+   // On the test server nobody holds US command: keep its AI from re-tasking the trucks.
+   ACR_FactionSettings us = ACR_FactionSettings.Find("US");
+   if (us) us.m_bAICommander = false;
   }
   ResourceName gunTruck = "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et";
   if (h.m_Ticks == 5)
   {
    manager.SpawnUnit("Stuck Truck", "", gunTruck, true, "", h.Ground("1390 0 2795"), h.Ground("1395 0 2790"));
    manager.SpawnUnit("Lone Truck", "", gunTruck, true, "", h.Ground("1300 0 2530"), h.Ground("1305 0 2535"));
+   manager.SpawnUnit("Soft Truck", "", "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", true, "", h.Ground("1375 0 2775"), h.Ground("1380 0 2780"));
   }
   if (h.m_Ticks == 14)
   {
@@ -273,12 +297,35 @@ class ACR_TestVehicles : Managed
    if (!team.IsEmpty()) ACR_Manager.SpawnPrefab(team, h.Ground("1300 0 2400"));
    m_StuckSquad.MoveTo(h.Ground("1700 0 2800"));
    m_LoneSquad.MoveTo(h.Ground("1300 0 2250"));
+   m_SoftSquad = h.NamedSquad(manager, "Soft Truck");
+   if (m_SoftSquad) m_SoftVehicle = ACR_Transport.CrewedVehicle(m_SoftSquad);
+   if (m_SoftVehicle)
+   {
+    m_SoftStart = m_SoftVehicle.GetOrigin();
+    // No fuel as well: frozen drivers let a truck roll on a slope, which reads as moving.
+    SCR_FuelManagerComponent softTank = SCR_FuelManagerComponent.Cast(m_SoftVehicle.FindComponent(SCR_FuelManagerComponent));
+    if (softTank) softTank.SetTotalFuelPercentage(0);
+    m_SoftSquad.MoveTo(h.Ground("1700 0 2850"));
+    Freeze(m_SoftVehicle);
+   }
    m_StallStart = m_StuckVehicle.GetOrigin();
    m_LoneStart = m_LoneVehicle.GetOrigin();
    Freeze(m_StuckVehicle);
    PrintFormat("[ACR] STALL start: enemy team=%1", team);
   }
-  if (h.m_Ticks == 110) Print("[ACR] TEST COMPLETE");
+  if (h.m_Ticks == 170)
+  {
+   ACR_TestRegress.Check("stall: unarmed truck re-routed over the roads before giving up", m_bSoftRerouted);
+   bool softHeld = m_SoftSquad && m_SoftSquad.m_Order == "Stuck, holding";
+   ACR_TestRegress.Check("stall: unarmed stuck truck holds", softHeld, StallState(m_SoftSquad, m_SoftVehicle, m_SoftStart));
+   bool softAboard = AllAboard(m_SoftSquad, m_SoftVehicle);
+   ACR_TestRegress.Check("stall: its crew stays aboard (no bail when not under fire)", softAboard);
+   ACR_TestRegress.Check("stall: stuck time recorded (AI won't re-crew it at once)", m_SoftSquad && m_SoftSquad.m_fStuckAt > 0);
+   bool armedHeld = m_StuckSquad.m_Order == "Stuck, holding" && AllAboard(m_StuckSquad, m_StuckVehicle);
+   ACR_TestRegress.Check("stall: armed stuck truck holds with its crew", armedHeld, StallState(m_StuckSquad, m_StuckVehicle, m_StallStart));
+   ACR_TestRegress.Complete("stall", 5);
+  }
+  if (h.m_Ticks == 172) Print("[ACR] TEST COMPLETE");
   if (!m_StuckSquad || h.m_Ticks <= 14) return;
   bool unsticking = m_StuckSquad.IsUnsticking();
   if (unsticking && !m_bWasUnsticking)
@@ -292,6 +339,12 @@ class ACR_TestVehicles : Managed
    Freeze(m_StuckVehicle); // still "stuck"
   }
   m_bWasUnsticking = unsticking;
+  if (m_SoftSquad && m_SoftVehicle)
+  {
+   if (m_SoftSquad.Reroutes() > 0 && !m_bSoftRerouted) { m_bSoftRerouted = true; PrintFormat("[ACR] STALL soft truck re-routed at t=%1", h.m_Ticks); }
+   if (!m_SoftSquad.IsUnsticking()) Freeze(m_SoftVehicle); // stays stuck, whatever route it is given
+   if (h.m_Ticks % 5 == 0) PrintFormat("[ACR] STALL t=%1 soft: %2", h.m_Ticks, StallState(m_SoftSquad, m_SoftVehicle, m_SoftStart));
+  }
   if (h.m_Ticks % 5 == 0)
   {
    PrintFormat("[ACR] STALL t=%1 stuck: %2", h.m_Ticks, StallState(m_StuckSquad, m_StuckVehicle, m_StallStart));
