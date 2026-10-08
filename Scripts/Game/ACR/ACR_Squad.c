@@ -1298,6 +1298,11 @@ class ACR_Squad : Managed
   return null;
  }
 
+ static bool NativeCommandAllowed(bool aircraftCrew)
+ {
+  return !aircraftCrew;
+ }
+
  // Can fight: infantry of two or more, or a vehicle crew with a manned gun.
  // A lone driver or an unarmed truck crew is not sent to take or hold ground.
  bool IsCombatUnit()

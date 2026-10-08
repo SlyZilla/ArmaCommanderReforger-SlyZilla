@@ -20,6 +20,11 @@ modded class SCR_CommandingManagerComponent
     Print("[ACR] Native command rejected: player is not controlling a squad leader");
     return;
    }
+   if (!ACR_Squad.NativeCommandAllowed(squad.Aircraft() != null))
+   {
+    PrintFormat("[ACR] Native command rejected: %1 is an aircraft crew", squad.GetName());
+    return;
+   }
    groupRplID = SCR_EntityHelper.EntityToRplId(squad.m_Group);
    PrintFormat("[ACR] Native command executed: %1 -> %2", FindCommandNameFromIndex(commandIndex), squad.GetName());
   }
@@ -44,7 +49,10 @@ modded class SCR_PlayerControllerCommandingComponent
   if (!ACR_HasCommandAuthority())
   {
    ACR_CloseCommandMenu();
-   SCR_HintManagerComponent.ShowCustomHint("Possess a squad leader to issue squad commands", "Squad command", 3, true);
+   SCR_PlayerController pc = SCR_PlayerController.Cast(GetOwner());
+   string hint = "Possess a squad leader to issue squad commands";
+   if (pc && pc.ACR_IsAircraftCrew()) hint = "Aircraft crews can't use the command wheel. Use Get out on the map or take the pilot's seat.";
+   SCR_HintManagerComponent.ShowCustomHint(hint, "Squad command", 3, true);
    return;
   }
   super.OpenCommandingMenu();

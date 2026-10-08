@@ -478,8 +478,16 @@ modded class SCR_PlayerController
  }
 
  // Client-side hint for the command menu; the server re-checks on execution.
+ bool ACR_IsAircraftCrew()
+ {
+  IEntity body = GetControlledEntity();
+  IEntity vehicle = ACR_Transport.VehicleOf(body);
+  return vehicle && vehicle.FindComponent(VehicleHelicopterSimulation) && ACR_Transport.SeatOf(body) != ECompartmentType.CARGO;
+ }
+
  bool ACR_CanCommandSquad()
  {
+  if (!ACR_Squad.NativeCommandAllowed(ACR_IsAircraftCrew())) return false;
   int index = m_ACR_Data.m_LeaderIds.Find(SCR_EntityHelper.EntityToRplId(GetControlledEntity()));
   return index >= 0 && index < m_ACR_Data.m_Commandable.Count() && m_ACR_Data.m_Commandable[index] == 1;
  }
