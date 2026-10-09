@@ -88,12 +88,12 @@ function Show-HostSetup([switch]$Solo) {
       Write-Host (' 12  Game Master for all     ' + $s.ShareGM)
       Write-Host (' 13  Shared command          ' + $s.SharedCommand + '   (yes = several commanders per side)')
     }
-    Write-Host (' 17  ACE All in One           ' + $s.ACE + ' (optional, independent of factions)')
     Write-Host (' 14  Threat level            ' + $s.Threat + '   (low = small infantry war, high = all-out war)')
     $skirmishes = Get-SkirmishChoices $s.World
     if ($skirmishes -notcontains $s.Skirmish) { $s.Skirmish = 'full' }
     if ($skirmishes.Count -gt 1) { Write-Host (' 15  Skirmish size           ' + $s.Skirmish + '   (full map, half of it, or a small flashpoint)') }
     if (!$Solo) { Write-Host (' 16  First player is host    ' + $s.FirstPlayerHost + '   (trusted fallback on dedicated servers; no transfer after disconnect)') }
+    Write-Host (' 17  ACE All in One          ' + $s.ACE + ' (optional, independent of factions)')
     $choice = (Read-Host 'Choice').Trim()
     if ($choice -eq '') { break }
     switch ($choice) {
