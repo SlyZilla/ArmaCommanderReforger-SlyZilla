@@ -48,10 +48,16 @@ function Sync-RepoFile($localPath, $repoPath) {
   $remote = "$remote".Trim()
   if ($remote -eq $local) { return }
   Write-Host "Updating $repoPath on GitHub ..."
-  $b64 = [Convert]::ToBase64String($bytes)
-  if ($remote) { & $gh api -X PUT "repos/$repo/contents/$repoPath" -f message="Update $repoPath" -f content="$b64" -f sha="$remote" | Out-Null }
-  else { & $gh api -X PUT "repos/$repo/contents/$repoPath" -f message="Add $repoPath" -f content="$b64" | Out-Null }
-  if ($LASTEXITCODE -ne 0) { Fail "Could not update $repoPath on $repo." }
+  # The body goes through a file: a large file's base64 passed with -f overran Windows'
+  # 32K command-line limit ("The filename or extension is too long", 9 Oct).
+  $body = @{ message = "Update $repoPath"; content = [Convert]::ToBase64String($bytes) }
+  if ($remote) { $body.sha = $remote } else { $body.message = "Add $repoPath" }
+  $bodyFile = [IO.Path]::GetTempFileName()
+  [IO.File]::WriteAllText($bodyFile, ($body | ConvertTo-Json -Compress))
+  try { & $gh api -X PUT "repos/$repo/contents/$repoPath" --input $bodyFile | Out-Null; $ok = $LASTEXITCODE -eq 0 }
+  catch { $ok = $false }
+  finally { Remove-Item $bodyFile -ErrorAction SilentlyContinue }
+  if (-not $ok) { Fail "Could not update $repoPath on $repo." }
 }
 Sync-RepoFile (Join-Path $root 'tools\package\REPO-README.md') 'README.md'
 Sync-RepoFile (Join-Path $root 'LICENSE.md') 'LICENSE.md'
