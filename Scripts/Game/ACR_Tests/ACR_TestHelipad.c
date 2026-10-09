@@ -15,6 +15,15 @@ class ACR_TestHelipad
  static IEntity s_Ejected;
  static int s_iRecrewAt = -1;
 
+ static string Side()
+ {
+  string west = ACR_FactionSelection.West();
+  string east = ACR_FactionSelection.East();
+  if (west == "RHS_AFRF") return west;
+  if (east == "RHS_AFRF") return east;
+  return west;
+ }
+
  static int CrewSeats(IEntity vehicle)
  {
   int count;
@@ -61,9 +70,9 @@ class ACR_TestHelipad
   ACR_Squad alpha = manager.FindSquadByGroup(h.m_Range.m_Group);
   if (tick == 1)
   {
-   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find(ACR_FactionSelection.East());
    if (soviets) soviets.m_bAICommander = false;
-   ACR_FactionSettings us = ACR_FactionSettings.Find("US");
+   ACR_FactionSettings us = ACR_FactionSettings.Find(Side());
    if (us) us.m_bAICommander = false;
    ACR_HeliStation.SERVICE_SECONDS = 15;
   }
@@ -76,7 +85,7 @@ class ACR_TestHelipad
    float best = float.MAX;
    foreach (ACR_Base base : ACR_Base.s_All)
    {
-    if (base.m_sOwner != "US") continue;
+    if (base.m_sOwner != Side()) continue;
     float d = vector.DistanceXZ(base.GetOrigin(), alpha.m_Home);
     if (d < best) { best = d; s_Base = base; }
    }
@@ -89,10 +98,10 @@ class ACR_TestHelipad
   }
   if (tick == 5)
   {
-   manager.m_Bases.GetFaction("US").m_iRP = 500;
+   manager.m_Bases.GetFaction(Side()).m_iRP = 500;
    ACR_Base other;
-   foreach (ACR_Base b : ACR_Base.s_All) if (b != s_Base && b.m_sOwner == "US") other = b;
-   if (other) ACR_TestRegress.Check("helipad: no buying at a base without a pad", station.CantBuy("US", other).Contains("no helipad"), station.CantBuy("US", other));
+   foreach (ACR_Base b : ACR_Base.s_All) if (b != s_Base && b.m_sOwner == Side()) other = b;
+   if (other) ACR_TestRegress.Check("helipad: no buying at a base without a pad", station.CantBuy(Side(), other).Contains("no helipad"), station.CantBuy(Side(), other));
    ACR_TestRegress.Check("helipad: the pad belongs to its base", s_Pad && s_Pad.Base() == s_Base, "");
    ACR_Base named;
    foreach (ACR_Base nb : ACR_Base.s_All) if (nb != s_Base) named = nb;
@@ -102,31 +111,31 @@ class ACR_TestHelipad
     ACR_TestRegress.Check("helipad: a named base owns the pad", s_Pad.Base() == named, named.m_sName);
     s_Pad.m_sBase = "";
    }
-   s_Heli = station.Station("US", true, s_Base, "Support gunship 1");
+   s_Heli = station.Station(Side(), true, s_Base, "Support gunship 1");
    ACR_TestRegress.Check("helipad: gunship stationed on the pad", s_Heli != null && s_Heli.m_Vehicle != null, "");
-   ACR_TestRegress.Check("helipad: a second one finds the pad taken", station.CantBuy("US", s_Base).Contains("No free helipad"), station.CantBuy("US", s_Base));
+   ACR_TestRegress.Check("helipad: a second one finds the pad taken", station.CantBuy(Side(), s_Base).Contains("No free helipad"), station.CantBuy(Side(), s_Base));
    if (s_Heli)
    {
     ACR_Helipad home = s_Heli.m_Pad;
     s_Heli.m_Pad = null;
-    bool parkedVehicleBlocksPad = station.FreePad("US", s_Base) == null;
+    bool parkedVehicleBlocksPad = station.FreePad(Side(), s_Base) == null;
     s_Heli.m_Pad = home;
     ACR_TestRegress.Check("helipad: parked aircraft blocks a support helicopter spawn", parkedVehicleBlocksPad, "");
    }
    s_Target = ACR_Manager.Ground(alpha.m_Home + Vector(-200, 0, 700));
-   s_iRP = manager.m_Bases.GetRP("US");
-   string refused = manager.m_Supports.Call("US", h.SupportIndex(manager, ACR_ESupportType.HELI_DOOR_GUNS), s_Target, true);
+   s_iRP = manager.m_Bases.GetRP(Side());
+   string refused = manager.m_Supports.Call(Side(), h.SupportIndex(manager, ACR_ESupportType.HELI_DOOR_GUNS), s_Target, true);
    PrintFormat("[ACR] HELIPADTEST door gunners without one: %1", refused);
-   ACR_TestRegress.Check("helipad: no door-gunner helicopter = refused, nothing spent", refused.Contains("buy one") && manager.m_Bases.GetRP("US") == s_iRP, refused);
+   ACR_TestRegress.Check("helipad: no door-gunner helicopter = refused, nothing spent", refused.Contains("buy one") && manager.m_Bases.GetRP(Side()) == s_iRP, refused);
   }
   if (!s_Heli) return;
   if (tick == 10)
   {
-   PrintFormat("[ACR] HELIPADTEST parked: %1 m above the pad, status %2", s_Heli.m_Vehicle.GetOrigin()[1] - s_Pad.Spot()[1], station.StatusFor("US", true));
-   string called = manager.m_Supports.Call("US", h.SupportIndex(manager, ACR_ESupportType.HELI_GUN_RUN), s_Target, true);
+   PrintFormat("[ACR] HELIPADTEST parked: %1 m above the pad, status %2", s_Heli.m_Vehicle.GetOrigin()[1] - s_Pad.Spot()[1], station.StatusFor(Side(), true));
+   string called = manager.m_Supports.Call(Side(), h.SupportIndex(manager, ACR_ESupportType.HELI_GUN_RUN), s_Target, true);
    PrintFormat("[ACR] HELIPADTEST rocket run: %1", called);
    s_iCalledAt = tick;
-   ACR_TestRegress.Check("helipad: the call flies the stationed gunship", s_Heli.m_eState == ACR_EHeliState.FLYING && manager.m_Bases.GetRP("US") < s_iRP, called);
+   ACR_TestRegress.Check("helipad: the call flies the stationed gunship", s_Heli.m_eState == ACR_EHeliState.FLYING && manager.m_Bases.GetRP(Side()) < s_iRP, called);
   }
   if (s_iCalledAt < 0) return;
   if (s_Heli.m_Vehicle)
@@ -146,7 +155,7 @@ class ACR_TestHelipad
    float off = vector.DistanceXZ(s_Heli.m_Vehicle.GetOrigin(), s_Pad.GetOrigin());
    float height = s_Heli.m_Vehicle.GetOrigin()[1] - s_Pad.Spot()[1];
    ACR_TestRegress.Check("helipad: landed on its pad and stays there", off < 3 && Math.AbsFloat(height) < 1.5, string.Format("%1 m off, %2 m up", off, height));
-   string busy = manager.m_Supports.Call("US", h.SupportIndex(manager, ACR_ESupportType.HELI_LOITER), s_Target, true);
+   string busy = manager.m_Supports.Call(Side(), h.SupportIndex(manager, ACR_ESupportType.HELI_LOITER), s_Target, true);
    ACR_TestRegress.Check("helipad: no call while it is being serviced", busy.Contains("serviced"), busy);
   }
   if (s_iReadyAt < 0 && s_iLandedAt > 0 && s_Heli.m_eState == ACR_EHeliState.READY)
@@ -206,7 +215,7 @@ class ACR_TestHelipad
   }
   if (s_iRecrewAt > 0 && tick == s_iRecrewAt + 8)
   {
-   ACR_TestRegress.Check("helipad: destroyed = gone, buy a new one", station.CountOf("US", true) == 0 && station.StatusFor("US", true).Contains("buy"), station.StatusFor("US", true));
+   ACR_TestRegress.Check("helipad: destroyed = gone, buy a new one", station.CountOf(Side(), true) == 0 && station.StatusFor(Side(), true).Contains("buy"), station.StatusFor(Side(), true));
    ACR_TestRegress.Complete("helipad");
   }
   if (tick == s_iCalledAt + 210)

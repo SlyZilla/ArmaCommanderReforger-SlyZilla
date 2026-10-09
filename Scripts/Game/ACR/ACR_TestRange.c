@@ -38,7 +38,9 @@ class ACR_TestRange : ACR_Mode
   bool tactics = System.GetCLIParam("acrTacticsTest", flag) || System.GetCLIParam("acrStalledTest", flag);
   if (tactics) m_Rally = ACR_Manager.Ground("1300 0 2530");
   m_Target = ACR_Manager.Ground("1370 0 2832");
-  m_Group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab("{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et", m_Rally));
+  string west = ACR_FactionSelection.West();
+  ResourceName westGroup = ACR_FactionCatalog.ResolvePrefab(west, "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et", EEntityCatalogType.GROUP);
+  m_Group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(westGroup, m_Rally));
   // The manager registers it automatically once its soldiers exist.
   if (m_Group) m_Group.SetCustomName("Alpha 1", 0);
   PrintFormat("[ACR] Squad spawn: %1 at %2", m_Group, m_Rally);
@@ -46,9 +48,11 @@ class ACR_TestRange : ACR_Mode
   vector bravoPos = "1335 0 2862";
   if (assault) bravoPos = "1290 0 2295";
   if (tactics) bravoPos = "1250 0 2510";
-  m_Bravo = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab("{FCF7F5DC4F83955C}Prefabs/Groups/BLUFOR/Group_US_LightFireTeam.et", ACR_Manager.Ground(bravoPos)));
+  ResourceName bravoGroup = ACR_FactionCatalog.ResolvePrefab(west, "{FCF7F5DC4F83955C}Prefabs/Groups/BLUFOR/Group_US_LightFireTeam.et", EEntityCatalogType.GROUP);
+  m_Bravo = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(bravoGroup, ACR_Manager.Ground(bravoPos)));
   if (m_Bravo) m_Bravo.SetCustomName("Bravo 1", 0);
-  m_Truck = ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", ACR_Manager.Ground("1360 0 2852"));
+  ResourceName truck = ACR_FactionCatalog.ResolvePrefab(west, "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", EEntityCatalogType.VEHICLE);
+  m_Truck = ACR_Manager.SpawnPrefab(truck, ACR_Manager.Ground("1360 0 2852"));
   PrintFormat("[ACR] Bravo spawn: %1 truck: %2", m_Bravo, m_Truck);
  }
 

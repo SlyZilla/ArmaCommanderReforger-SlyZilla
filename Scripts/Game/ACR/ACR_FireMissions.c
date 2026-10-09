@@ -56,6 +56,8 @@ class ACR_FireMissions : Managed
   array<ResourceName> men = {FO_EAST, RTO_EAST};
   if (ACR_Supports.IsWestern(factionKey)) { group = ACR_Mortars.GROUP_WEST; men = {FO_WEST, RTO_WEST}; }
   else if (factionKey.Contains("FIA")) { group = ACR_Mortars.GROUP_FIA; men = {ACR_Mortars.RIFLE_FIA, RTO_FIA}; }
+  group = ACR_FactionCatalog.ResolvePrefab(factionKey, group, EEntityCatalogType.GROUP);
+  for (int i = 0; i < men.Count(); i++) men[i] = ACR_FactionCatalog.ResolvePrefab(factionKey, men[i], EEntityCatalogType.CHARACTER);
   SCR_AIGroup.IgnoreSpawning(true);
   SCR_AIGroup spawned = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(group, pos));
   SCR_AIGroup.IgnoreSpawning(false);

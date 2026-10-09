@@ -12,16 +12,16 @@ class ACR_TestMortar
 
  static int Index(ACR_Manager manager, ACR_ESupportType type)
  {
-  foreach (int i, ACR_SupportEntry entry : manager.m_Bases.GetFaction("US").m_aSupports)
+  foreach (int i, ACR_SupportEntry entry : manager.m_Bases.GetFaction(ACR_FactionSelection.West()).m_aSupports)
    if (entry.m_eType == type) return i;
   return -1;
  }
 
  static string Call(ACR_Manager manager, ACR_ESupportType type, vector target)
  {
-  ACR_SupportEntry entry = manager.m_Bases.GetFaction("US").m_aSupports[Index(manager, type)];
+  ACR_SupportEntry entry = manager.m_Bases.GetFaction(ACR_FactionSelection.West()).m_aSupports[Index(manager, type)];
   entry.m_fReadyAt = 0;
-  return manager.m_Supports.Call("US", Index(manager, type), target);
+  return manager.m_Supports.Call(ACR_FactionSelection.West(), Index(manager, type), target);
  }
 
  static string State()
@@ -63,9 +63,9 @@ class ACR_TestMortar
   ACR_Squad alpha = manager.FindSquadByGroup(h.m_Range.m_Group);
   if (tick == 1)
   {
-   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find(ACR_FactionSelection.East());
    if (soviets) soviets.m_bAICommander = false;
-   ACR_FactionSettings us = ACR_FactionSettings.Find("US");
+   ACR_FactionSettings us = ACR_FactionSettings.Find(ACR_FactionSelection.West());
    if (us) us.m_bAICommander = false;
    ACR_Mortars.DEPLOY_SECONDS = 10;
    ACR_Mortars.PACK_SECONDS = 6;
@@ -76,11 +76,11 @@ class ACR_TestMortar
   {
    PrintFormat("[ACR] MORTAR reach: M252 %1 m, 2B14 %2 m", ACR_Mortars.MaxRange(ACR_Mortars.TUBE_WEST), ACR_Mortars.MaxRange(ACR_Mortars.TUBE_EAST));
    bool listed;
-   foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction("USSR").m_aRequisitions) if (entry.m_bMortarTeam) listed = true;
+   foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(ACR_FactionSelection.East()).m_aRequisitions) if (entry.m_bMortarTeam) listed = true;
    ACR_TestRegress.Check("mortar: team in the requisition list", listed, "");
    GroundCheck(home);
    if (!manager.m_Supports) manager.m_Supports = new ACR_Supports(manager);
-   manager.m_Bases.GetFaction("US").m_iRP = 900;
+   manager.m_Bases.GetFaction(ACR_FactionSelection.West()).m_iRP = 900;
    PrintFormat("[ACR] MORTAR call with no team: %1", Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 600))));
   }
   if (tick == 3) s_Truck = ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", ACR_Manager.Ground(home + Vector(60, 0, -40)));
@@ -107,10 +107,10 @@ class ACR_TestMortar
   }
   if (tick == 5)
   {
-   manager.Mortars().SpawnTeam("US", "Mortar team 1", ACR_Manager.Ground(home + Vector(25, 0, -10)));
+   manager.Mortars().SpawnTeam(ACR_FactionSelection.West(), "Mortar team 1", ACR_Manager.Ground(home + Vector(25, 0, -10)));
    s_Team = manager.Mortars().m_Teams[manager.Mortars().m_Teams.Count() - 1];
    // A Soviet team far off: its base group must not bring its own six riflemen.
-   manager.Mortars().SpawnTeam("USSR", "Mortar team 1", ACR_Manager.Ground(home + Vector(-900, 0, 300)));
+   manager.Mortars().SpawnTeam(ACR_FactionSelection.East(), "Mortar team 1", ACR_Manager.Ground(home + Vector(-900, 0, 300)));
    s_East = manager.Mortars().m_Teams[manager.Mortars().m_Teams.Count() - 1];
    s_iPhase = 1;
    s_iSince = tick;

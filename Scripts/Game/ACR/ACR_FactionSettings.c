@@ -51,6 +51,15 @@ enum ACR_EPricing
  FIXED_STOCK  // every unit has a stock per match (scaled by threat level); prices never change
 }
 
+[BaseContainerProps(), SCR_BaseContainerCustomTitleField("m_sFrom")]
+class ACR_PrefabMapping
+{
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Vanilla prefab to replace", "et")]
+ ResourceName m_sFrom;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Faction-specific prefab", "et")]
+ ResourceName m_sTo;
+}
+
 // Per-faction Arma Commander setup, placed in World Editor: starting RP, what
 // the commander can buy, and which soldiers garrison bases.
 class ACR_FactionSettingsClass : GenericEntityClass {}
@@ -76,6 +85,8 @@ class ACR_FactionSettings : GenericEntity
  ref array<ResourceName> m_aExclude;
  [Attribute(desc: "Soldiers used for base garrisons. Empty = the faction's riflemen, gunners and AT soldiers from its catalog.", params: "et")]
  ref array<ResourceName> m_aGarrisonSoldiers;
+ [Attribute(desc: "Optional exact prefab replacements used for starting units and built-in support teams.")]
+ ref array<ref ACR_PrefabMapping> m_aPrefabMappings;
 
  [Attribute("1", UIWidgets.CheckBox, "The commander can call off-map supports (artillery, air, helicopters)")]
  bool m_bSupports;
@@ -115,6 +126,41 @@ class ACR_FactionSettings : GenericEntity
 // Builds the runtime buy list and garrison pool for a faction.
 class ACR_FactionCatalog
 {
+ // Resolve explicit mission-maker mappings first. Otherwise find a faction catalog
+ // prefab with the same role/name suffix, which covers RHS group variants.
+ static ResourceName ResolvePrefab(string factionKey, ResourceName source, EEntityCatalogType type)
+ {
+  if (source.IsEmpty()) return source;
+  ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  if (settings && settings.m_aPrefabMappings)
+   foreach (ACR_PrefabMapping mapping : settings.m_aPrefabMappings)
+    if (mapping && mapping.m_sFrom == source && !mapping.m_sTo.IsEmpty()) return mapping.m_sTo;
+  string sourceLeaf = FilePath.StripExtension(FilePath.StripPath(source));
+  string wanted = sourceLeaf;
+  if (wanted.StartsWith("Group_USSR_")) wanted.Replace("Group_USSR_", "");
+  else if (wanted.StartsWith("Group_US_")) wanted.Replace("Group_US_", "");
+  SCR_EntityCatalog catalog = GetCatalog(factionKey, type);
+  if (!catalog) return source;
+  array<SCR_EntityCatalogEntry> entries = {};
+  catalog.GetEntityList(entries);
+  ResourceName suffixMatch;
+  foreach (SCR_EntityCatalogEntry entry : entries)
+  {
+   if (!entry.IsEnabled()) continue;
+   ResourceName candidate = entry.GetPrefab();
+   string leaf = FilePath.StripExtension(FilePath.StripPath(candidate));
+   if (leaf == sourceLeaf) return candidate;
+   if (wanted.Length() > 3 && leaf.Contains(wanted))
+   {
+    if (leaf.EndsWith(wanted)) return candidate;
+    if (suffixMatch.IsEmpty()) suffixMatch = candidate;
+   }
+  }
+  if (!suffixMatch.IsEmpty()) return suffixMatch;
+  PrintFormat("[ACR] FACTION fallback faction=%1 entry=%2 source prefab unchanged", factionKey, source);
+  return source;
+ }
+
  static void BuildRequisitions(string factionKey, ACR_FactionSettings settings, array<ref ACR_RequisitionEntry> result)
  {
   result.Clear();

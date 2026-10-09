@@ -109,6 +109,104 @@ class ACR_PlayerSide
  }
 }
 
+// Selects the two playable sides before the skirmish layout is applied. The world
+// is authored with US/USSR owners; these map to the selected factions at runtime.
+class ACR_FactionSelection
+{
+ protected static bool s_bApplied;
+ protected static bool s_bWorldMapped;
+ protected static bool s_bUAChecked;
+ protected static bool s_bUAAvailable;
+ protected static string s_sWest = "US";
+ protected static string s_sEast = "USSR";
+
+ // This unique flag prefab is shipped by Ukraine Armed Forces RHS and does not
+ // exist in vanilla or RHS Status Quo. Its presence detects the US -> UA override.
+ protected static const ResourceName UA_PROBE = "{E50B55ED23B3EB27}Prefabs/Props/Fabric/Flags/Flag_UA_FA.et";
+
+ static bool UkraineModLoaded()
+ {
+  if (!s_bUAChecked)
+  {
+   s_bUAChecked = true;
+   Resource probe = Resource.Load(UA_PROBE);
+   s_bUAAvailable = probe && probe.IsValid();
+  }
+  return s_bUAAvailable;
+ }
+
+ static string West() { Apply(); return s_sWest; }
+ static string East() { Apply(); return s_sEast; }
+ static bool IsSelected(string key) { Apply(); return key == s_sWest || key == s_sEast; }
+ static string DisplayName(string key)
+ {
+  Apply();
+  if (key == "RHS_AFRF") return "RHS Russia";
+  if (key == "RHS_USAF") return "RHS US";
+  if (key == "US" && UkraineModLoaded())
+  {
+   return "UA";
+  }
+  return key;
+ }
+
+ static bool HasFaction(string key)
+ {
+  return GetGame().GetFactionManager().GetFactionByKey(key) != null;
+ }
+
+ static void Apply()
+ {
+  if (!Replication.IsServer()) return;
+  FactionManager manager = GetGame().GetFactionManager();
+  if (!manager) return;
+  string pair = "vanilla";
+  if (!s_bApplied)
+  {
+   s_bApplied = true;
+   System.GetCLIParam("acrFactions", pair);
+   pair.ToLower();
+   if (pair == "ru_us") { s_sWest = "RHS_USAF"; s_sEast = "RHS_AFRF"; }
+   else if (pair == "ru_ua") { s_sWest = "US"; s_sEast = "RHS_AFRF"; }
+   else if (pair == "us_ua") { s_sWest = "RHS_USAF"; s_sEast = "US"; }
+   if ((pair == "ru_ua" || pair == "us_ua") && !UkraineModLoaded())
+   {
+    PrintFormat("[ACR] Faction pair %1 unavailable: Ukraine Armed Forces RHS not loaded", pair);
+    s_sWest = "US";
+    s_sEast = "USSR";
+   }
+   // Optional mods can be absent: keep the original playable sides in that case.
+   if (!HasFaction(s_sWest) || !HasFaction(s_sEast))
+   {
+    PrintFormat("[ACR] Faction pair %1 unavailable; using vanilla US / USSR", pair);
+    s_sWest = "US";
+    s_sEast = "USSR";
+   }
+   array<Faction> all = {};
+   manager.GetFactionsList(all);
+   foreach (Faction baseFaction : all)
+   {
+    SCR_Faction faction = SCR_Faction.Cast(baseFaction);
+    if (faction) faction.SetIsPlayable(faction.GetFactionKey() == s_sWest || faction.GetFactionKey() == s_sEast);
+   }
+   PrintFormat("[ACR] Playable faction pair: %1 / %2", s_sWest, s_sEast);
+  }
+  if (s_bWorldMapped || ACR_Base.s_All.IsEmpty()) return;
+  s_bWorldMapped = true;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner == "US") base.m_sOwner = s_sWest;
+   else if (base.m_sOwner == "USSR") base.m_sOwner = s_sEast;
+  }
+  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
+  {
+   if (!point) continue;
+   if (point.GetFactionKey() == "US") point.SetFactionKey(s_sWest);
+   else if (point.GetFactionKey() == "USSR") point.SetFactionKey(s_sEast);
+  }
+ }
+}
+
 modded class SCR_PlayerFactionAffiliationComponent
 {
  // For the test harness.

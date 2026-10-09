@@ -125,6 +125,7 @@ Without one, a side gets 50 RP, the automatic buy list and all supports, but **n
 | `m_aRequisitions` | empty | Hand-picked buy list entries (see below). With auto fill on, an entry with the same prefab replaces the automatic one |
 | `m_aExclude` | empty | Group or vehicle prefabs to leave out of the automatic list |
 | `m_aGarrisonSoldiers` | empty | Soldier prefabs for base garrisons. Empty = the faction's riflemen (twice as likely), machine gunners, grenadiers and AT soldiers |
+| `m_aPrefabMappings` | empty | Exact prefab replacements for buy-list units, starting units, mortar and observer teams, support helicopters/rockets, battery shells and helipad models. Starting units also try catalog name/role matching. Missing matches keep the original prefab and log a fallback |
 | `m_bSupports` | on | The commander can call off-map supports |
 | `m_aSupports` | empty | Supports on offer (see below). Empty = all of them at default prices |
 | `m_sSupportHelicopter` | empty | Gunship for helicopter supports. Empty = UH-1H for western factions, Mi-8 otherwise |
@@ -132,6 +133,20 @@ Without one, a side gets 50 RP, the automatic buy list and all supports, but **n
 | `m_sSupportRocket` | empty | Rocket for rocket strikes and gunships. Empty = Hydra 70 / S-5 |
 
 "Western" means a faction key containing `US` (but not `USSR`), `NATO` or `BLUFOR`.
+
+#### Factions and mods
+
+The launcher offers vanilla US vs USSR, RHS US vs RHS AFRF, vanilla-key UA vs RHS AFRF,
+and RHS US vs vanilla-key UA. RHS Status Quo and its two content packs are loaded only for
+pairs that use RHS; Ukraine Armed Forces RHS is loaded only for pairs containing UA. That
+mod replaces the vanilla `US` faction for the session. ACE All in One is an independent
+optional setting. Joiners must use the same pair and ACE choice as the host. Without the
+optional faction mods, the server keeps vanilla US vs USSR.
+
+Mission makers can edit `m_aPrefabMappings` on each faction settings entity. Each entry maps
+one exact source prefab to a faction-specific prefab. The resolver also tries to match catalog
+entries by unit role/name for starting units. Any unmatched prefab falls back to its original
+resource and writes a `[ACR] FACTION fallback` line in the server log.
 
 **Automatic buy list.** Every enabled group and vehicle in the faction's Game Master catalog, once per name.
 Guards, static weapons and planes are left out. Prices: infantry 3 RP per soldier (at least 6); vehicles
@@ -306,6 +321,7 @@ and in singleplayer (Play-ACA), where the game is its own server.
 | Option | What it does |
 |---|---|
 | `-acrPlayers US` / `USSR` / `any` | Put every player on one side. The mode places a spawn point for that side at one of its bases |
+| `-acrFactions vanilla` / `ru_us` / `ru_ua` / `us_ua` | Select the playable faction pair (the launcher sets this from its Factions menu) |
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; fixed stock: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (fixed stock: double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |

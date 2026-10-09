@@ -29,7 +29,21 @@ SCR_BaseGameMode ACR_GameMode : "{1B76F75A3175E85C}Prefabs/MP/Modes/Plain/GameMo
  }
  coords 2400 0 2400
 }
-SCR_FactionManager ACR_Factions : "{589540B35EBA8CDC}Prefabs/MP/Managers/Factions/FactionManager_USxUSSR.et" {
+SCR_FactionManager ACR_Factions : "{A242612865F2A48E}Prefabs/MP/Managers/Factions/FactionManager_Base.et" {
+ ID "AC230926A0010200"
+ Factions {
+  SCR_Faction "{56B2B46E999BF3BF}" : "{5EB46557DF2AA24F}Configs/Factions/US.conf" {
+   m_sFactionBackground "{F8AC305446D5D480}UI/Textures/DeployMenu/Loadout-BG/Loadout_US_BG.imageset"
+  }
+  SCR_Faction "{56B2B46E9AF80999}" : "{09727032415AC39B}Configs/Factions/USSR.conf" {
+   m_sFactionBackground "{21533F2089005056}UI/Textures/DeployMenu/Loadout-BG/Loadout_BG_USSR.imageset"
+  }
+  SCR_Faction "{AC230926A00102A1}" : "{F33C7BF22CBF3A8A}Configs/Factions/RHS_US_USMC.conf" {
+  }
+  SCR_Faction "{AC230926A00102A2}" : "{627A8CDE681D223D}Configs/Factions/RHS_RF_MSV.conf" {
+  }
+ }
+ m_bCanChangeFactionsPlayable 1
  coords 2400 0 2400
 }
 SCR_LoadoutManager ACR_Loadouts : "{97EF4C1A41F63DDB}Prefabs/MP/Managers/Loadouts/LoadoutManager_USxUSSR.et" {
@@ -85,6 +99,50 @@ ACR_FactionSettings ACR_Settings_USSR {
  coords 3163 11 2778
  m_sFaction "USSR"
  m_iStartingRP 100
+}
+ACR_FactionSettings ACR_Settings_RHS_USAF {
+ coords 2400 11 2400
+ m_sFaction "RHS_USAF"
+ m_aPrefabMappings {
+  ACR_PrefabMapping "AC230926A0010301" {
+   m_sFrom "{EACD97CF4A702FAE}Prefabs/Groups/BLUFOR/Group_US_Base.et"
+   m_sTo "{F831DFB4A9B46152}Prefabs/Groups/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Group_USAF_USMC_MEF_RifleSquad.et"
+  }
+  ACR_PrefabMapping "AC230926A0010302" {
+   m_sFrom "{1CA3D30464EE4674}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Spotter.et"
+   m_sTo "{B74E289F7EDF5D62}Prefabs/Characters/Factions/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Character_RHS_USAF_USMC_Spotter.et"
+  }
+  ACR_PrefabMapping "AC230926A0010303" {
+   m_sFrom "{3726077BE60962FF}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_RTO.et"
+   m_sTo "{9A38B3DFD014403C}Prefabs/Characters/Factions/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Character_RHS_USAF_USMC_RTO.et"
+  }
+ }
+}
+ACR_FactionSettings ACR_Settings_RHS_AFRF {
+ coords 2400 11 2400
+ m_sFaction "RHS_AFRF"
+ m_aPrefabMappings {
+  ACR_PrefabMapping "AC230926A0010304" {
+   m_sFrom "{8DE0C0830FE0C33D}Prefabs/Groups/OPFOR/Group_USSR_Base.et"
+   m_sTo "{256AEA338E84EC28}Prefabs/Groups/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Group_RHS_RF_MSV_VKPO_S_RifleSquad.et"
+  }
+  ACR_PrefabMapping "AC230926A0010305" {
+   m_sFrom "{0DC67B4DFFD7A361}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_Scout_RTO.et"
+   m_sTo "{690C5407460D6271}Prefabs/Characters/Factions/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Character_RHS_RF_MSV_VKPO_S_Spotter.et"
+  }
+  ACR_PrefabMapping "AC230926A0010306" {
+   m_sFrom "{612F43A4D5AE765F}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_RTO.et"
+   m_sTo "{A7193FBD2F2C1EEC}Prefabs/Characters/Factions/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Character_RHS_RF_MSV_VKPO_S_RTO.et"
+  }
+  ACR_PrefabMapping "AC230926A0010307" {
+   m_sFrom "{3C6B3ED0C3AC30D5}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed_gunship_HE.et"
+   m_sTo "{80C975F8482DEE97}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed_black.et"
+  }
+  ACR_PrefabMapping "AC230926A0010308" {
+   m_sFrom "{7BD282AF716ED639}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed.et"
+   m_sTo "{4A465E25A866520E}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MTT-A_Black.et"
+  }
+ }
 }
 ACR_Base ACR_Base_0 {
  coords 1350 38 2955

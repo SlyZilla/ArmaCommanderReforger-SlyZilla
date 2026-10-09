@@ -125,6 +125,11 @@ class ACR_Mortars : Managed
    group = GROUP_FIA;
    crew = {AMMO_FIA, RIFLE_FIA, RIFLE_FIA};
   }
+  // Exact mission-maker mappings can replace every piece of the mortar set. The
+  // vanilla values above remain the fallback when a faction has no mapping.
+  group = ACR_FactionCatalog.ResolvePrefab(factionKey, group, EEntityCatalogType.GROUP);
+  for (int i = 0; i < crew.Count(); i++) crew[i] = ACR_FactionCatalog.ResolvePrefab(factionKey, crew[i], EEntityCatalogType.CHARACTER);
+  tube = ACR_FactionCatalog.ResolvePrefab(factionKey, tube, EEntityCatalogType.VEHICLE);
   // The faction base groups come with their own members (USSR: six riflemen), which the
   // game's spawn queue keeps topping up to: the crew become the group's member slots instead.
   SCR_AIGroup.IgnoreSpawning(true);
@@ -302,7 +307,7 @@ class ACR_Mortars : Managed
     team.m_sStatus = "ready";
     CarryParts(team, false);
     squad.SetOrder("Mortar ready", ACR_EOrderState.HOLD);
-    Tell(team, string.Format("%1 set up at %2, reaches %3 km", team.m_sName, ACR_Manager.Grid(team.m_Spot), Km(MaxRange(team.m_sTube))));
+    Tell(team, string.Format("%1 set up at %2, reaches %3 km", team.m_sName, ACR_Manager.Grid(team.m_Spot), Km(MaxRange(team.m_sTube, team.m_sFaction))));
     return;
    }
    case ACR_EMortarState.DEPLOYED:
@@ -393,9 +398,10 @@ class ACR_Mortars : Managed
  // otherwise the parts go and their own packs come back (empty: shells are handed out per mission).
  protected void CarryParts(ACR_MortarTeam team, bool carry)
  {
-  bool west = team.m_sTube == TUBE_WEST;
+  bool west = ACR_Supports.IsWestern(team.m_sFaction);
   array<ResourceName> parts = {PLATE_EAST, BARREL_EAST};
   if (west) parts = {PLATE_WEST, BARREL_WEST};
+  for (int p = 0; p < parts.Count(); p++) parts[p] = ACR_FactionCatalog.ResolvePrefab(team.m_sFaction, parts[p], EEntityCatalogType.VEHICLE);
   array<AIAgent> agents = {};
   team.m_Squad.GetAgents(agents);
   int next;
@@ -611,25 +617,29 @@ class ACR_Mortars : Managed
   return false;
  }
 
- static ResourceName HeShell(ResourceName tube)
+ static ResourceName HeShell(ResourceName tube, string factionKey = "")
  {
-  if (tube == TUBE_WEST) return "{38BAE094333E31BF}Prefabs/Weapons/Ammo/Ammo_Shell_81mm_HE_M821.et";
-  return "{98EC9C526AFBA282}Prefabs/Weapons/Ammo/Ammo_Shell_82mm_HE_O832DU.et";
+  ResourceName shell = "{98EC9C526AFBA282}Prefabs/Weapons/Ammo/Ammo_Shell_82mm_HE_O832DU.et";
+  if ((!factionKey.IsEmpty() && ACR_Supports.IsWestern(factionKey)) || (factionKey.IsEmpty() && tube == TUBE_WEST))
+   shell = "{38BAE094333E31BF}Prefabs/Weapons/Ammo/Ammo_Shell_81mm_HE_M821.et";
+  if (!factionKey.IsEmpty()) shell = ACR_FactionCatalog.ResolvePrefab(factionKey, shell, EEntityCatalogType.VEHICLE);
+  return shell;
  }
 
  // Furthest HE reach on level ground (cached per tube).
- static float MaxRange(ResourceName tube)
+ static float MaxRange(ResourceName tube, string factionKey = "")
  {
+  ResourceName shell = HeShell(tube, factionKey);
   float cached;
-  if (s_MaxRange.Find(tube, cached)) return cached;
+  if (s_MaxRange.Find(shell, cached)) return cached;
   float best;
   float flight;
   for (float d = 200; d <= 8000; d += 50)
   {
-   if (CanReach(vector.Zero, HeShell(tube), Vector(0, 0, d), flight)) best = d;
+   if (CanReach(vector.Zero, shell, Vector(0, 0, d), flight)) best = d;
    else if (best > 0) break;
   }
-  s_MaxRange.Set(tube, best);
+  s_MaxRange.Set(shell, best);
   PrintFormat("[ACR] MORTAR %1 reaches %2 m", FilePath.StripPath(tube), best);
   return best;
  }
@@ -689,7 +699,7 @@ class ACR_Mortars : Managed
   if (!CanReach(team.m_Tube.GetOrigin(), shell, target, flight))
   {
    if (distance < MIN_RANGE) reason = string.Format("target too close to %1 (under %2 m)", team.m_sName, MIN_RANGE);
-   else reason = string.Format("target is %1 km from %2, out of range (%3 km)", Km(distance), team.m_sName, Km(MaxRange(team.m_sTube)));
+   else reason = string.Format("target is %1 km from %2, out of range (%3 km)", Km(distance), team.m_sName, Km(MaxRange(team.m_sTube, team.m_sFaction)));
    return false;
   }
   return true;
@@ -900,8 +910,8 @@ class ACR_Mortars : Managed
   {
    if (team.m_sFaction != factionKey || team.m_eState != ACR_EMortarState.DEPLOYED || !team.m_Tube) continue;
    positions.Insert(team.m_Tube.GetOrigin());
-   radii.Insert(MaxRange(team.m_sTube));
-   labels.Insert(string.Format("~%1 range %2 km", team.m_sName, Km(MaxRange(team.m_sTube))));
+   radii.Insert(MaxRange(team.m_sTube, team.m_sFaction));
+   labels.Insert(string.Format("~%1 range %2 km", team.m_sName, Km(MaxRange(team.m_sTube, team.m_sFaction))));
   }
  }
 

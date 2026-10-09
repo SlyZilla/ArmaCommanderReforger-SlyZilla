@@ -300,5 +300,52 @@ modded class SCR_ResupplySelfSupportStationAction
    if (!found) m_bCheckIfItemInStorage = false;
   }
   super.Init(pOwnerEntity, pManagerComponent);
- }
+	}
+}
+
+// Vanilla resupply stations log an error when their game-mode catalog manager is not
+// ready at their first delayed init. They can still use their configured fallback cost.
+modded class SCR_BaseItemSupportStationComponent
+{
+	protected override bool InitValidSetup()
+	{
+		m_EntityCatalogManager = SCR_EntityCatalogManagerComponent.GetInstance();
+		return super.InitValidSetup();
+	}
+
+	protected override int GetSupplyAmountAction(IEntity actionOwner, IEntity actionUser, SCR_BaseUseSupportStationAction action)
+	{
+		if (!AreSuppliesEnabled()) return 0;
+		SCR_BaseItemHolderSupportStationAction itemHolder = SCR_BaseItemHolderSupportStationAction.Cast(action);
+		if (!itemHolder) return 0;
+
+		if (!m_EntityCatalogManager) m_EntityCatalogManager = SCR_EntityCatalogManagerComponent.GetInstance();
+		if (!m_EntityCatalogManager)
+			return Math.ClampInt(m_iFallbackItemSupplyCost + m_iBaseSupplyCostOnUse, 0, int.MAX);
+
+		SCR_EntityCatalogEntry catalogEntry = m_EntityCatalogManager.GetEntryWithPrefabFromAnyCatalog(EEntityCatalogType.ITEM, itemHolder.GetItemPrefab(), GetFaction());
+		if (!catalogEntry) return Math.ClampInt(m_iFallbackItemSupplyCost + m_iBaseSupplyCostOnUse, 0, int.MAX);
+		SCR_ArsenalItem arsenalData = SCR_ArsenalItem.Cast(catalogEntry.GetEntityDataOfType(SCR_ArsenalItem));
+		if (!arsenalData) return Math.ClampInt(m_iFallbackItemSupplyCost + m_iBaseSupplyCostOnUse, 0, int.MAX);
+
+		return Math.ClampInt(arsenalData.GetSupplyCost(m_eSupplyCostType) + m_iBaseSupplyCostOnUse, 0, int.MAX);
+	}
+}
+
+// Preserve the resupply component's own range validation while allowing its catalog
+// manager to become available after entity initialization.
+modded class SCR_ResupplySupportStationComponent
+{
+	protected override bool InitValidSetup()
+	{
+		if (UsesRange())
+		{
+			Print("'SCR_ResupplySupportStationComponent' does not support range. Make sure m_fRange is set to -1", LogLevel.ERROR);
+			return false;
+		}
+
+		if (!m_EntityCatalogManager) m_EntityCatalogManager = SCR_EntityCatalogManagerComponent.GetInstance();
+		if (!m_EntityCatalogManager) return true;
+		return super.InitValidSetup();
+	}
 }

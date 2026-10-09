@@ -6,6 +6,48 @@ class ACR_Requisition : Managed
 
  void ACR_Requisition(ACR_Manager manager) { m_Manager = manager; }
 
+ // Mod catalogs sometimes point at a vehicle/group prefab whose built-in faction
+ // key is still vanilla US/USSR. Bind every spawned unit to the selected world side.
+ protected static void SetUnitFaction(SCR_AIGroup group, string factionKey)
+ {
+  if (!group) return;
+  Faction faction = GetGame().GetFactionManager().GetFactionByKey(factionKey);
+  if (!faction) return;
+  group.SetFaction(faction);
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body) continue;
+   SCR_FactionAffiliationComponent affiliation = SCR_FactionAffiliationComponent.Cast(body.FindComponent(SCR_FactionAffiliationComponent));
+   if (affiliation) affiliation.SetAffiliatedFaction(faction);
+  }
+ }
+
+ protected static void SetOccupantFaction(IEntity vehicle, string factionKey)
+ {
+  array<IEntity> occupants = {};
+  ACR_PendingPurchase.Occupants(vehicle, occupants);
+  Faction faction = GetGame().GetFactionManager().GetFactionByKey(factionKey);
+  if (!faction) return;
+  foreach (IEntity body : occupants)
+  {
+   if (!body) continue;
+   AIControlComponent control = AIControlComponent.Cast(body.FindComponent(AIControlComponent));
+   AIAgent agent;
+   if (control) agent = control.GetControlAIAgent();
+   if (agent) SetUnitFaction(SCR_AIGroup.Cast(agent.GetParentGroup()), factionKey);
+   SCR_FactionAffiliationComponent affiliation = SCR_FactionAffiliationComponent.Cast(body.FindComponent(SCR_FactionAffiliationComponent));
+   if (affiliation) affiliation.SetAffiliatedFaction(faction);
+  }
+ }
+
+ protected void SetOccupantFactionLater(IEntity vehicle, string factionKey)
+ {
+  SetOccupantFaction(vehicle, factionKey);
+ }
+
  static const int REINFORCE_COST_PER_SOLDIER = 3;
 
  ACR_Base FindSpawnBase(string factionKey, string label)
@@ -153,7 +195,13 @@ class ACR_Requisition : Managed
   bool spawned;
   if (entry.m_bMortarTeam) spawned = m_Manager.Mortars().SpawnTeam(key, name, groupPos);
   else if (entry.m_bObserverTeam) spawned = m_Manager.FireMissions().SpawnTeam(key, name, groupPos);
-  else spawned = SpawnParts(purchase, entry.m_sGroup, entry.m_sVehicle, entry.m_bCrewed, entry.m_sPassengers, vehiclePos, groupPos);
+  else
+  {
+   ResourceName group = ACR_FactionCatalog.ResolvePrefab(key, entry.m_sGroup, EEntityCatalogType.GROUP);
+   ResourceName vehicle = ACR_FactionCatalog.ResolvePrefab(key, entry.m_sVehicle, EEntityCatalogType.VEHICLE);
+   ResourceName passengers = ACR_FactionCatalog.ResolvePrefab(key, entry.m_sPassengers, EEntityCatalogType.GROUP);
+   spawned = SpawnParts(purchase, group, vehicle, entry.m_bCrewed, passengers, vehiclePos, groupPos);
+  }
   if (!spawned)
   {
    if (purchase.m_sError.IsEmpty()) purchase.m_sError = "its crew did not spawn";
@@ -234,6 +282,8 @@ class ACR_Requisition : Managed
     if (!compartments) { purchase.m_sError = "vehicle has no seats for a crew"; return false; }
     array<ECompartmentType> seats = {ECompartmentType.PILOT, ECompartmentType.TURRET};
     if (!s_bTestNoCrew) compartments.SpawnDefaultOccupants(seats);
+    SetOccupantFaction(vehicle, faction);
+    if (!s_bTestNoCrew) GetGame().GetCallqueue().CallLater(SetOccupantFactionLater, 500, false, vehicle, faction);
     // A construction truck's crew gets the building shovel (the default crew has none).
     if ((ACR_Logistics.ServiceOfName(vehicleprefab) & ACR_EService.CONSTRUCTION) != 0)
      GetGame().GetCallqueue().CallLater(GiveShovels, 1500, false, vehicle, faction);
@@ -243,6 +293,7 @@ class ACR_Requisition : Managed
   {
    SCR_AIGroup spawned = SCR_AIGroup.Cast(SpawnForPurchase(group, groupPos));
    if (!spawned) { purchase.m_sError = "group did not spawn"; return false; }
+   SetUnitFaction(spawned, faction);
    purchase.m_Group = spawned;
    spawned.SetCustomName(name, 0);
   }
@@ -250,6 +301,7 @@ class ACR_Requisition : Managed
   {
    SCR_AIGroup riders = SCR_AIGroup.Cast(SpawnForPurchase(passengers, groupPos));
    if (!riders) { purchase.m_sError = "passengers did not spawn"; return false; }
+   SetUnitFaction(riders, faction);
    purchase.m_Riders = riders;
    riders.SetCustomName(name + " infantry", 0);
    if (vehicle) m_Manager.m_PendingBoarding.Set(riders, vehicle);

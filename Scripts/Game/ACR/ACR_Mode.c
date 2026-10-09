@@ -30,6 +30,7 @@ class ACR_Mode : GenericEntity
  {
   if (!GetGame().InPlayMode()) return;
   s_Instance = this;
+  ACR_FactionSelection.Apply();
   ACR_Manager manager = ACR_Manager.Start();
   manager.m_bHostGameMaster = m_bHostGameMaster;
   manager.m_SharedCommand = m_bSharedCommand;
@@ -62,6 +63,23 @@ class ACR_Mode : GenericEntity
   if (!manager) return;
   foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All)
   {
+   string factionKey = "";
+   float nearest = 1000000;
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (base.m_sOwner.IsEmpty()) continue;
+    float distance = vector.Distance(unit.GetOrigin(), base.GetOrigin());
+    if (distance < nearest) { nearest = distance; factionKey = base.m_sOwner; }
+   }
+   ResourceName group = unit.m_sGroup;
+   ResourceName vehicle = unit.m_sVehicle;
+   ResourceName passengers = unit.m_sPassengers;
+   if (!factionKey.IsEmpty())
+   {
+    group = ACR_FactionCatalog.ResolvePrefab(factionKey, group, EEntityCatalogType.GROUP);
+    vehicle = ACR_FactionCatalog.ResolvePrefab(factionKey, vehicle, EEntityCatalogType.VEHICLE);
+    passengers = ACR_FactionCatalog.ResolvePrefab(factionKey, passengers, EEntityCatalogType.GROUP);
+   }
    vector pos = unit.GetOrigin();
    vector vehiclePos = ACR_Manager.Ground(pos);
    vector groupPos = ACR_Manager.Ground(pos + Vector(6, 0, 6));
@@ -69,10 +87,10 @@ class ACR_Mode : GenericEntity
    if (unit.m_MovedTo)
    {
     vehiclePos = manager.ClearSpotNear(unit.m_MovedTo, 10, 30, 4);
-    if (unit.m_sVehicle.IsEmpty()) groupPos = manager.ClearSpotNear(unit.m_MovedTo, 5, 20, 1.5);
+    if (vehicle.IsEmpty()) groupPos = manager.ClearSpotNear(unit.m_MovedTo, 5, 20, 1.5);
     else groupPos = ACR_Manager.Ground(vehiclePos + Vector(6, 0, 6));
    }
-   manager.SpawnUnit(unit.m_sName, unit.m_sGroup, unit.m_sVehicle, unit.m_bCrewed, unit.m_sPassengers, vehiclePos, groupPos);
+   manager.SpawnUnit(unit.m_sName, group, vehicle, unit.m_bCrewed, passengers, vehiclePos, groupPos);
    PrintFormat("[ACR] Starting unit: %1 at %2", unit.m_sName, groupPos);
   }
  }

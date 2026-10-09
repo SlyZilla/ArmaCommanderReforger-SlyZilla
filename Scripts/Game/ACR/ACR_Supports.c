@@ -1248,6 +1248,7 @@ class ACR_Supports : Managed
  // ("USSR" contains "US": the old Contains test gave the Soviets the UH-1H and Hydras.)
  static bool IsWestern(string factionKey)
  {
+  if (factionKey == "RHS_AFRF") return false;
   if (factionKey.StartsWith("USSR")) return false;
   return factionKey == "US" || factionKey.Contains("US") || factionKey == "NATO" || factionKey == "BLUFOR";
  }
@@ -1445,8 +1446,9 @@ class ACR_Supports : Managed
  {
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
   if (settings && !settings.m_sSupportHelicopter.IsEmpty()) return settings.m_sSupportHelicopter;
-  if (IsWestern(factionKey)) return HELI_WEST;
-  return HELI_EAST;
+  ResourceName prefab = HELI_EAST;
+  if (IsWestern(factionKey)) prefab = HELI_WEST;
+  return ACR_FactionCatalog.ResolvePrefab(factionKey, prefab, EEntityCatalogType.VEHICLE);
  }
 
  // Door-gunner support: the side's transport helicopter with its door guns.
@@ -1454,16 +1456,18 @@ class ACR_Supports : Managed
  {
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
   if (settings && !settings.m_sSupportTransportHelicopter.IsEmpty()) return settings.m_sSupportTransportHelicopter;
-  if (IsWestern(factionKey)) return HELI_TRANSPORT_WEST;
-  return HELI_TRANSPORT_EAST;
+  ResourceName prefab = HELI_TRANSPORT_EAST;
+  if (IsWestern(factionKey)) prefab = HELI_TRANSPORT_WEST;
+  return ACR_FactionCatalog.ResolvePrefab(factionKey, prefab, EEntityCatalogType.VEHICLE);
  }
 
  ResourceName RocketFor(string factionKey)
  {
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
   if (settings && !settings.m_sSupportRocket.IsEmpty()) return settings.m_sSupportRocket;
-  if (IsWestern(factionKey)) return ROCKET_WEST;
-  return ROCKET_EAST;
+  ResourceName prefab = ROCKET_EAST;
+  if (IsWestern(factionKey)) prefab = ROCKET_WEST;
+  return ACR_FactionCatalog.ResolvePrefab(factionKey, prefab, EEntityCatalogType.VEHICLE);
  }
 
  // Aircraft and creeping barrages come from the side's nearest base.
@@ -1528,8 +1532,9 @@ class ACR_Supports : Managed
  // before the client's copy reached the ground, so its blast never played there.)
  ResourceName BatteryShellFor(string factionKey)
  {
-  if (IsWestern(factionKey)) return "{38BAE094333E31BF}Prefabs/Weapons/Ammo/Ammo_Shell_81mm_HE_M821.et";
-  return "{98EC9C526AFBA282}Prefabs/Weapons/Ammo/Ammo_Shell_82mm_HE_O832DU.et";
+  ResourceName shell = "{98EC9C526AFBA282}Prefabs/Weapons/Ammo/Ammo_Shell_82mm_HE_O832DU.et";
+  if (IsWestern(factionKey)) shell = "{38BAE094333E31BF}Prefabs/Weapons/Ammo/Ammo_Shell_81mm_HE_M821.et";
+  return ACR_FactionCatalog.ResolvePrefab(factionKey, shell, EEntityCatalogType.VEHICLE);
  }
 
  // One howitzer round: a shell dropped from high above the impact point (every machine flies

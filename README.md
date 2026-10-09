@@ -18,6 +18,15 @@ Playtesters: **PoppiPoppins** and **Hexxyz**.
 Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo).
 **Host-Test-Range.cmd** opens the normal menu with the addon loaded, for hosting.
 
+### Factions and mods
+
+The host setup menu can run vanilla US vs USSR, RHS US vs RHS Russia, RHS Russia vs Ukraine,
+or RHS US vs Ukraine. RHS and Ukraine Armed Forces RHS are optional; the launcher adds the
+required addons when selected. Ukraine Armed Forces RHS replaces the vanilla US faction for
+that session, so choose a pair containing **UA** to play it. ACE All in One is a separate
+optional toggle. Joiners should select the same faction pair and ACE setting as the host; a
+mod or faction mismatch is rejected by the server. The join menu explains the selections to check.
+
 **Command map** (M or F9):
 
 - Left-click a squad or soldier marker to select that squad. Left-click empty map to deselect.

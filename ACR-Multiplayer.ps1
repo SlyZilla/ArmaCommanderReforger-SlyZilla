@@ -44,6 +44,9 @@ try {
     $serverProfile = Join-Path $PSScriptRoot '.local-server'
     $started = Get-Date
     $setup = Show-HostSetup
+    $addonsDir = $addonsPath
+    if ($setup.Factions -ne 'vanilla') { $addonsDir += ',E:\ArmaReforgerMods\addons' }
+    $mod = '-addonsDir "' + $addonsDir + '" -addons ' + $setup.Addons
     $zt = Connect-ZeroTier
     $serverArgs = '-server "' + $setup.World + '" ' + $mod + ' -profile "' + $serverProfile + '" -bindPort ' + $Port + ' -maxFPS 60' + $backend + $setup.Args
     Write-Host 'Starting the server (a second window opens; leave it running)...' -ForegroundColor Cyan
@@ -95,6 +98,11 @@ try {
     $Address = '127.0.0.1'
   }
   else {
+    $joinSetup = Show-JoinModSetup
+    $addonsDir = $addonsPath
+    if ($joinSetup.Factions -ne 'vanilla') { $addonsDir += ',E:\ArmaReforgerMods\addons' }
+    $mod = '-addonsDir "' + $addonsDir + '" -addons ' + $joinSetup.Addons
+    Write-Host ('Selected ' + $joinSetup.Factions + ' and ACE=' + $joinSetup.ACE + '. Match both selections to the host or the server will reject the connection.') -ForegroundColor Yellow
     $zt = Connect-ZeroTier
     # Ask until we get something that looks like an address (an IP like 26.12.34.56,
     # or a name with a dot), remembering the last one used.

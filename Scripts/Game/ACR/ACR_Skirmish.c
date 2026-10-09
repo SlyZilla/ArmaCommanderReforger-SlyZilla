@@ -130,6 +130,7 @@ class ACR_Skirmish : GenericEntity
  {
   if (s_bApplied) return;
   s_bApplied = true;
+  ACR_FactionSelection.Apply();
   ACR_Skirmish layout = Choose();
   if (layout) layout.Apply();
  }
@@ -147,6 +148,8 @@ class ACR_Skirmish : GenericEntity
    if (parts.Count() != 2) continue;
    string faction = parts[0];
    faction.Replace(" ", "");
+   if (faction == "US") faction = ACR_FactionSelection.West();
+   else if (faction == "USSR") faction = ACR_FactionSelection.East();
    ACR_Base named = FindBase(parts[1]);
    if (!named) { PrintFormat("[ACR] SKIRMISH %1: HQ base '%2' not found", m_sName, parts[1]); continue; }
    hqs.Set(faction, named);

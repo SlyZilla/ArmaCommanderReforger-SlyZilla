@@ -29,8 +29,14 @@ try {
   $Extra = ($Extra + $setup.Args).Trim()
  }
  $addonsPath = Split-Path $PSScriptRoot -Parent
+ $addonsDir = $addonsPath
+ $addonList = 'AC230926A0010001'
+ if ($setup) {
+  $addonList = $setup.Addons
+  if ($setup.Factions -ne 'vanilla') { $addonsDir += ',E:\ArmaReforgerMods\addons' }
+ }
  # Players get their normal profile (controls, graphics); automated tests use a separate one.
- $arguments = '-addonsDir "' + $addonsPath + '" -addons AC230926A0010001 -noSplash'
+ $arguments = '-addonsDir "' + $addonsDir + '" -addons ' + $addonList + ' -noSplash'
  if ($TestProfile) { $arguments += ' -profile "' + (Join-Path $PSScriptRoot '.local-game') + '"' }
  if (!$HostMenu) { $arguments += ' -noBackend -world "' + $World + '"' }
  if ($Extra) { $arguments += ' ' + $Extra }
@@ -41,4 +47,3 @@ try {
  Read-Host 'Press Enter to close'
  exit 1
 }
-

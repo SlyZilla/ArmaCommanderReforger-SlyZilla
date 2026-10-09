@@ -103,7 +103,7 @@ class ACR_Report
  {
   ACR_SideStats s = Of(key);
   if (!s) return "";
-  string text = string.Format("Time %1\nSoldiers lost %2, enemy killed %3\nVehicles lost %4, enemy vehicles destroyed %5\nBases won %6, lost %7\nRP earned %8, spent %9",
+  string text = ACR_FactionSelection.DisplayName(key) + " report\n" + string.Format("Time %1\nSoldiers lost %2, enemy killed %3\nVehicles lost %4, enemy vehicles destroyed %5\nBases won %6, lost %7\nRP earned %8, spent %9",
    Clock(), s.m_iLost, s.m_iKills, s.m_iVehiclesLost, s.m_iVehicleKills, s.m_iBasesWon, s.m_iBasesLost, s.m_iRPEarned, s.m_iRPSpent);
   if (!s.m_aTimeline.IsEmpty())
   {
@@ -117,7 +117,7 @@ class ACR_Report
  static void LogAll()
  {
   foreach (string key, ACR_SideStats s : s_Sides)
-   PrintFormat("[ACR] REPORT %1: lost %2 killed %3 | vehicles lost %4 destroyed %5 | bases +%6 -%7 | RP +%8 -%9", key, s.m_iLost, s.m_iKills, s.m_iVehiclesLost, s.m_iVehicleKills, s.m_iBasesWon, s.m_iBasesLost, s.m_iRPEarned, s.m_iRPSpent);
+   PrintFormat("[ACR] REPORT %1: lost %2 killed %3 | vehicles lost %4 destroyed %5 | bases +%6 -%7 | RP +%8 -%9", ACR_FactionSelection.DisplayName(key), s.m_iLost, s.m_iKills, s.m_iVehiclesLost, s.m_iVehicleKills, s.m_iBasesWon, s.m_iBasesLost, s.m_iRPEarned, s.m_iRPSpent);
  }
 }
 

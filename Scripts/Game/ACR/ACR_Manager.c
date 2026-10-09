@@ -224,7 +224,9 @@ class ACR_Manager : Managed
   {
    string key = settings.m_sFaction;
    key.ToLower();
-   if (setAI) settings.m_bAICommander = ai == "both" || ai == key;
+   bool playable = ACR_FactionSelection.IsSelected(settings.m_sFaction);
+   if (setAI) settings.m_bAICommander = playable && (ai == "both" || ai == key);
+   else if (!playable) settings.m_bAICommander = false;
    if (setCap && unitCap.ToInt() > 0) settings.m_iAIUnitCap = unitCap.ToInt();
   }
   // Threat level (Jacob, 2 Oct): low = a smaller, infantry war; high = all-out war.
@@ -322,6 +324,7 @@ class ACR_Manager : Managed
  void Tick()
  {
   int t = System.GetTickCount();
+  if (!m_bHostOptionsApplied) ApplyHostOptions();
   ScanForSquads();
   ResolveCrewNames();
   m_Requisition.TickPending();
@@ -351,7 +354,6 @@ class ACR_Manager : Managed
   if (!m_Launchers) m_Launchers = new ACR_Launchers(this);
   Pings().Tick();
   t = ACR_Perf.Lap("cleanup", t);
-  if (!m_bHostOptionsApplied) ApplyHostOptions();
   WatchEvictions();
   m_iStatusTick++;
   if (m_iStatusTick % 300 == 0) ACR_Report.LogAll();

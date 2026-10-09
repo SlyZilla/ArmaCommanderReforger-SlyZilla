@@ -67,6 +67,7 @@ class ACR_Helipad : GenericEntity
   ResourceName prefab = MODEL_EAST;
   ACR_Base base = Base();
   if (base && ACR_Supports.IsWestern(base.m_sOwner)) prefab = MODEL_WEST;
+  if (base) prefab = ACR_FactionCatalog.ResolvePrefab(base.m_sOwner, prefab, EEntityCatalogType.GROUP);
   Resource resource = Resource.Load(prefab);
   if (!resource.IsValid()) return;
   EntitySpawnParams parameters = new EntitySpawnParams();
