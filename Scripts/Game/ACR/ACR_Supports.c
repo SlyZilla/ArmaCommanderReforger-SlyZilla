@@ -161,10 +161,9 @@ class ACR_LocalFlyover : Managed
 	void Step()
 	{
 		float elapsed = (GetGame().GetWorld().GetWorldTime() - m_fStartedAt) / 1000;
-		if (!m_Plane || elapsed > m_fSeconds)
+		if (!m_Plane)
 		{
 			GetGame().GetCallqueue().Remove(Step);
-			if (m_Plane) SCR_EntityHelper.DeleteEntityAndChildren(m_Plane);
 			m_Plane = null;
 			s_All.RemoveItem(this);
 			return;
@@ -177,6 +176,18 @@ class ACR_LocalFlyover : Managed
 		transform[2] = m_vAxes[2];
 		transform[3] = position;
 		m_Plane.SetTransform(transform);
+		// The configured route ends 2.5 km beyond the target, but listeners farther downrange
+		// can still be inside RHS's 1.5 km sound range. Let the plane leave that range locally
+		// before deleting it, so entity cleanup does not cut the engine loop off mid-tail.
+		if (elapsed <= m_fSeconds) return;
+		PlayerController controller = GetGame().GetPlayerController();
+		IEntity listener = null;
+		if (controller) listener = controller.GetControlledEntity();
+		if (listener && vector.DistanceXZ(listener.GetOrigin(), position) <= 1800) return;
+		GetGame().GetCallqueue().Remove(Step);
+		SCR_EntityHelper.DeleteEntityAndChildren(m_Plane);
+		m_Plane = null;
+		s_All.RemoveItem(this);
 	}
 }
 

@@ -128,7 +128,11 @@ class ACR_Mortars : Managed
   // Exact mission-maker mappings can replace every piece of the mortar set. The
   // vanilla values above remain the fallback when a faction has no mapping.
   group = ACR_FactionCatalog.ResolvePrefab(factionKey, group, EEntityCatalogType.GROUP);
-  for (int i = 0; i < crew.Count(); i++) crew[i] = ACR_FactionCatalog.ResolvePrefab(factionKey, crew[i], EEntityCatalogType.CHARACTER);
+  for (int i = 0; i < crew.Count(); i++)
+  {
+   if (ACR_FactionCatalog.StandardPath(factionKey) != "") crew[i] = ACR_FactionCatalog.StandardRifleman(factionKey, crew[i]);
+   else crew[i] = ACR_FactionCatalog.ResolvePrefab(factionKey, crew[i], EEntityCatalogType.CHARACTER);
+  }
   tube = ACR_FactionCatalog.ResolvePrefab(factionKey, tube, EEntityCatalogType.VEHICLE);
   // The faction base groups come with their own members (USSR: six riflemen), which the
   // game's spawn queue keeps topping up to: the crew become the group's member slots instead.

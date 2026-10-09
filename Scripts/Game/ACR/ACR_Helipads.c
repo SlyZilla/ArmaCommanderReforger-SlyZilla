@@ -270,11 +270,13 @@ class ACR_HeliStation : Managed
   if (!vehicle) return null;
   // Registered before the crew exists, so the squad scan never takes them for a squad.
   m_Supports.m_Vehicles.Insert(vehicle);
+  ACR_Vehicles.SetOwner(vehicle, factionKey);
+  ResourceName selectedCrew = m_Supports.ConfiguredCrewPrefab(factionKey, gunship);
+  if (!selectedCrew.IsEmpty()) ACR_Vehicles.SetCrewPrefab(vehicle, selectedCrew);
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   array<ECompartmentType> seats = {ECompartmentType.PILOT, ECompartmentType.TURRET};
   if (compartments) compartments.SpawnDefaultOccupants(seats);
-  ResourceName selectedCrew = m_Supports.ConfiguredCrewPrefab(factionKey, gunship);
-  if (!selectedCrew.IsEmpty()) ApplyCrewPrefab(vehicle, selectedCrew);
+  GetGame().GetCallqueue().CallLater(RememberStationCrew, 1000, false, vehicle);
   ACR_StationedHeli heli = new ACR_StationedHeli();
   heli.m_sFaction = factionKey;
   heli.m_sName = name;
@@ -285,6 +287,11 @@ class ACR_HeliStation : Managed
   m_Helis.Insert(heli);
   PrintFormat("[ACR] HELIPAD %1 %2 (%3) stationed on the pad at %4 (%5)", factionKey, name, prefab, pad.Spot(), base.m_sName);
   return heli;
+ }
+
+ protected void RememberStationCrew(IEntity vehicle)
+ {
+  if (vehicle) m_Supports.RememberCrew(vehicle);
  }
 
  bool Usable(ACR_StationedHeli heli)

@@ -205,6 +205,51 @@ class ACR_FactionCatalog
   return source;
  }
 
+ // RHS has no mortar-specific character prefabs. Use its standard rifleman for
+ // the crew so purchased mortar teams keep the selected faction's appearance.
+ static ResourceName StandardRifleman(string factionKey, ResourceName fallback)
+ {
+  SCR_EntityCatalog catalog = GetCatalog(factionKey, EEntityCatalogType.CHARACTER);
+  if (!catalog) return fallback;
+  array<SCR_EntityCatalogEntry> entries = {};
+  catalog.GetEntityList(entries);
+  foreach (SCR_EntityCatalogEntry entry : entries)
+  {
+   if (!entry.IsEnabled() || !IsStandard(factionKey, entry.GetPrefab(), EEntityCatalogType.CHARACTER)) continue;
+   if (entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_RIFLEMAN)) return entry.GetPrefab();
+  }
+  return fallback;
+ }
+
+ // RHS USMC MEF riflemen spawn with an 8x VC18DSCO. Remove that optic from
+ // their issued weapon; the M27's built-in sights remain available.
+ static void TrimUSMCRiflemanOptic(IEntity soldier)
+ {
+  if (!soldier || !soldier.GetPrefabData()) return;
+  string characterPrefab = soldier.GetPrefabData().GetPrefabName();
+  if (!characterPrefab.Contains("/RHS_USAF_USMC_MEF/") || !characterPrefab.Contains("Rifleman")) return;
+  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(soldier.FindComponent(BaseWeaponManagerComponent));
+  if (!weapons) return;
+  array<IEntity> list = {};
+  weapons.GetWeaponsList(list);
+  foreach (IEntity weaponEntity : list)
+  {
+   if (!weaponEntity) continue;
+   BaseWeaponComponent weapon = BaseWeaponComponent.Cast(weaponEntity.FindComponent(BaseWeaponComponent));
+   if (!weapon) continue;
+   array<AttachmentSlotComponent> attachments = {};
+   weapon.GetAttachments(attachments);
+   foreach (AttachmentSlotComponent attachmentSlot : attachments)
+   {
+    IEntity optic = attachmentSlot.GetAttachedEntity();
+    if (!optic || !optic.GetPrefabData()) continue;
+    if (!optic.GetPrefabData().GetPrefabName().Contains("optic_vc18dsco")) continue;
+    attachmentSlot.SetAttachment(null);
+    PrintFormat("[ACR] FACTION removed 8x optic from %1", FilePath.StripPath(characterPrefab));
+   }
+  }
+ }
+
  protected static ResourceName MatchCatalog(array<SCR_EntityCatalogEntry> entries, string sourceLeaf, string wanted, string factionKey, EEntityCatalogType type, bool standardOnly)
  {
   ResourceName suffixMatch;
@@ -323,6 +368,7 @@ class ACR_FactionCatalog
    AddCatalog(factionKey, EEntityCatalogType.GROUP, used, exclude, result);
    AddCatalog(factionKey, EEntityCatalogType.VEHICLE, used, exclude, result);
   }
+  EnsureRUAFVehicles(factionKey, result);
   // Mission makers can edit support requisitions per faction; an absent row keeps defaults.
   ACR_RequisitionEntry supportEntry = ACR_Mortars.MakeEntry();
   if (ApplySupportUnit(supportEntry, settings, ACR_ESupportUnitRole.MORTAR_TEAM)) result.Insert(supportEntry);
@@ -402,12 +448,14 @@ class ACR_FactionCatalog
    if (!entry.IsEnabled()) continue;
    ResourceName prefab = entry.GetPrefab();
    if (prefab.IsEmpty() || used.Contains(prefab) || exclude.Contains(prefab)) continue;
+   if (type == EEntityCatalogType.VEHICLE && IsRUAFCatalogVehicleExcluded(factionKey, prefab)) continue;
    if (!IsStandard(factionKey, prefab, type)) continue;
    // Guards can't be hired in vanilla either; static guns become supports later.
    if (entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_GUARD) || entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_GUARD)) continue;
    if (entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_TURRET) || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_AIRPLANE)) continue;
    string name = WidgetManager.Translate(entry.GetEntityName());
    if (name.IsEmpty()) name = FilePath.StripExtension(FilePath.StripPath(prefab));
+   if (type == EEntityCatalogType.GROUP && name == "Group") name = GroupName(prefab);
    // The catalog lists camouflage variants under the same name; offer each unit once,
    // in the faction's own paint when it has one.
    ACR_RequisitionEntry same = FindByName(result, name);
@@ -431,6 +479,56 @@ class ACR_FactionCatalog
    }
    used.Insert(prefab);
    result.Insert(item);
+  }
+ }
+
+ protected static string GroupName(ResourceName prefab)
+ {
+  string name = FilePath.StripExtension(FilePath.StripPath(prefab));
+  if (name.StartsWith("Group_")) name = name.Substring(6, name.Length() - 6);
+  array<string> prefixes = {"USAF_USMC_MEF_", "RHS_RF_MSV_VKPO_S_", "RHS_USAF_USMC_MEF_", "USSR_", "US_"};
+  foreach (string prefix : prefixes)
+   if (name.StartsWith(prefix)) { name = name.Substring(prefix.Length(), name.Length() - prefix.Length()); break; }
+  if (name.Contains("Sniper")) return "Sniper Team";
+  name.Replace("_", " ");
+  name.Replace("Team", " Team");
+  name.Replace("Squad", " Squad");
+  return name;
+ }
+
+ protected static bool IsRUAFCatalogVehicleExcluded(string factionKey, ResourceName prefab)
+ {
+  if (factionKey != "RHS_AFRF") return false;
+  string leaf = FilePath.StripExtension(FilePath.StripPath(prefab));
+  return leaf.StartsWith("APC_K17");
+ }
+
+ protected static void EnsureRUAFVehicles(string factionKey, array<ref ACR_RequisitionEntry> result)
+ {
+  if (factionKey != "RHS_AFRF") return;
+  bool btr70, brdm2;
+  foreach (ACR_RequisitionEntry entry : result)
+  {
+   string leaf = FilePath.StripExtension(FilePath.StripPath(entry.m_sVehicle));
+   if (leaf.Contains("BTR70")) btr70 = true;
+   if (leaf.Contains("BRDM2")) brdm2 = true;
+  }
+  if (!btr70)
+  {
+   ACR_RequisitionEntry btr = new ACR_RequisitionEntry();
+   btr.Set("BTR-70 Armored Personnel Carrier", "", "{C012BB3488BEA0C2}Prefabs/Vehicles/Wheeled/BTR70/BTR70.et", 76, 1);
+   btr.m_bArmed = true;
+   btr.m_bRare = true;
+   btr.m_bTransport = true;
+   result.Insert(btr);
+  }
+  if (!brdm2)
+  {
+   ACR_RequisitionEntry brdm = new ACR_RequisitionEntry();
+   brdm.Set("BRDM-2 Reconnaissance Vehicle", "", "{254289B9C09904AB}Prefabs/Vehicles/Wheeled/BRDM2/BRDM2.et", 76, 1);
+   brdm.m_bArmed = true;
+   brdm.m_bRare = true;
+   result.Insert(brdm);
   }
  }
 

@@ -404,6 +404,7 @@ class ACR_Manager : Managed
   GetGame().GetAIWorld().GetAIAgents(agents);
   foreach (AIAgent agent : agents)
   {
+   ACR_FactionCatalog.TrimUSMCRiflemanOptic(agent.GetControlledEntity());
    SCR_AIGroup group = SCR_AIGroup.Cast(agent);
    if (!group) group = SCR_AIGroup.Cast(agent.GetParentGroup());
    if (group && CanRegister(group)) Register(group);

@@ -118,31 +118,38 @@ class ACR_BaseSystem : Managed
 
  void Tick(ACR_Manager manager)
  {
-  CollectBodies();
+  CollectBodies(manager);
   foreach (ACR_Base base : ACR_Base.s_All)
    UpdateBase(manager, base);
   TickIncome(manager);
  }
 
  // Every living character with a faction: AI agents plus player bodies.
- protected void CollectBodies()
+ protected void CollectBodies(ACR_Manager manager)
  {
   m_Bodies.Clear();
   m_BodyFactions.Clear();
   array<AIAgent> agents = {};
   GetGame().GetAIWorld().GetAIAgents(agents);
   foreach (AIAgent agent : agents)
-   AddBody(agent.GetControlledEntity());
+   AddBody(agent.GetControlledEntity(), manager);
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
   foreach (int id : players)
-   AddBody(GetGame().GetPlayerManager().GetPlayerControlledEntity(id));
+   AddBody(GetGame().GetPlayerManager().GetPlayerControlledEntity(id), manager);
  }
 
- protected void AddBody(IEntity entity)
+ protected void AddBody(IEntity entity, ACR_Manager manager)
  {
   ChimeraCharacter character = ChimeraCharacter.Cast(entity);
   if (!character || m_Bodies.Contains(character) || character.GetCharacterController().IsDead()) return;
+  // Stationed support helicopter crews are not capture troops.
+  AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
+  if (control && control.GetControlAIAgent() && manager.m_Supports)
+  {
+   SCR_AIGroup group = SCR_AIGroup.Cast(control.GetControlAIAgent().GetParentGroup());
+   if (group && manager.m_Supports.IsSupportGroup(group)) return;
+  }
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(character.FindComponent(FactionAffiliationComponent));
   if (!affiliation || !affiliation.GetAffiliatedFaction()) return;
   m_Bodies.Insert(character);

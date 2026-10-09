@@ -216,7 +216,7 @@ class ACR_TestHelipad
   if (s_iRecrewAt > 0 && tick == s_iRecrewAt + 8)
   {
    ACR_TestRegress.Check("helipad: destroyed = gone, buy a new one", station.CountOf(Side(), true) == 0 && station.StatusFor(Side(), true).Contains("buy"), station.StatusFor(Side(), true));
-   ACR_TestRegress.Complete("helipad");
+   ACR_TestRegress.Complete("helipad", 16);
   }
   if (tick == s_iCalledAt + 210)
   {

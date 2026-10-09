@@ -5,6 +5,7 @@ class ACR_Vehicles
 {
  protected static ref array<IEntity> s_All = {};
  protected static ref map<IEntity, string> s_Owner = new map<IEntity, string>();
+ protected static ref map<IEntity, ResourceName> s_CustomCrew = new map<IEntity, ResourceName>();
 
  static void Register(IEntity vehicle)
  {
@@ -15,6 +16,18 @@ class ACR_Vehicles
  static void SetOwner(IEntity vehicle, string faction)
  {
   if (vehicle && !faction.IsEmpty()) s_Owner.Set(vehicle, faction);
+ }
+
+ static void SetCrewPrefab(IEntity vehicle, ResourceName crewman)
+ {
+  if (vehicle && !crewman.IsEmpty()) s_CustomCrew.Set(vehicle, crewman);
+ }
+
+ static ResourceName CustomCrew(IEntity vehicle)
+ {
+  ResourceName crewman;
+  if (vehicle) s_CustomCrew.Find(vehicle, crewman);
+  return crewman;
  }
 
  // Living vehicles (deleted ones are dropped as they are found).
@@ -93,10 +106,12 @@ modded class BaseCompartmentSlot
  override ResourceName GetDefaultOccupantPrefab(bool checkIfValid = true)
  {
   ResourceName own = super.GetDefaultOccupantPrefab(checkIfValid);
-  if (own.IsEmpty()) return own;
   IEntity vehicle = GetVehicle();
   string owner = ACR_Vehicles.BoughtBy(vehicle);
   if (owner.IsEmpty()) return own;
+  ResourceName custom = ACR_Vehicles.CustomCrew(vehicle);
+  if (!custom.IsEmpty()) return custom;
+  if (own.IsEmpty()) return own;
   ResourceName crewman = ACR_FactionCatalog.CrewmanFor(owner, vehicle);
   if (crewman.IsEmpty()) return own;
   return crewman;

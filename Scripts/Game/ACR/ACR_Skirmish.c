@@ -91,6 +91,14 @@ class ACR_Skirmish : GenericEntity
   return result;
  }
 
+ // Layouts are authored with US/USSR labels, while modded games use selected faction keys.
+ protected static string SelectedSide(string authoredSide)
+ {
+  if (authoredSide == "US") return ACR_FactionSelection.West();
+  if (authoredSide == "USSR") return ACR_FactionSelection.East();
+  return authoredSide;
+ }
+
  // The layout the host asked for, or null for the whole world.
  static ACR_Skirmish Choose()
  {
@@ -185,13 +193,15 @@ class ACR_Skirmish : GenericEntity
   foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
   {
    if (!point) continue;
-   ACR_Base target = hqs.Get(point.GetFactionKey());
-   if (!target || target == oldHQs.Get(point.GetFactionKey())) continue;
+   string side = SelectedSide(point.GetFactionKey());
+   ACR_Base target = hqs.Get(side);
+   if (!target) continue;
+   point.SetFactionKey(side);
    vector at = ACR_Manager.Ground(target.GetOrigin() + Vector(6, 0, 6));
    vector free;
    if (SCR_WorldTools.FindEmptyTerrainPosition(free, at, 20, 1.5, 2.5)) at = ACR_Manager.Ground(free);
    point.SetOrigin(at);
-   PrintFormat("[ACR] SKIRMISH spawn point %1 moved to %2 %3", point.GetFactionKey(), target.m_sName, at);
+   PrintFormat("[ACR] SKIRMISH spawn point %1 moved to %2 %3", side, target.m_sName, at);
   }
   // Owners: HQs to their side, everything else in play neutral; the rest retired.
   array<ACR_Base> all = {};
@@ -249,8 +259,8 @@ class ACR_Skirmish : GenericEntity
  {
   vector home;
   bool found;
-  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPointsForFaction(side))
-   if (point) { home = point.GetOrigin(); found = true; break; }
+  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
+   if (point && SelectedSide(point.GetFactionKey()) == side) { home = point.GetOrigin(); found = true; break; }
   ACR_Base best;
   float bestDistance = float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)
