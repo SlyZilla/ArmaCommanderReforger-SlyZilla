@@ -48,6 +48,7 @@ class ACR_BaseSystem : Managed
    {
     foreach (ACR_SupportEntry configured : settings.m_aSupports)
     {
+     if (!configured || !configured.m_bEnabled) continue;
      configured.Resolve();
      data.m_aSupports.Insert(configured);
     }

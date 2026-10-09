@@ -128,8 +128,9 @@ Without one, a side gets 50 RP, the automatic buy list and all supports, but **n
 | `m_aPrefabMappings` | empty | Exact prefab replacements for buy-list units, starting units, mortar and observer teams, support helicopters/rockets, battery shells and helipad models. Starting units also try catalog name/role matching. Missing matches keep the original prefab and log a fallback |
 | `m_bSupports` | on | The commander can call off-map supports |
 | `m_aSupports` | empty | Supports on offer (see below). Empty = all of them at default prices |
-| `m_sSupportHelicopter` | empty | Gunship for helicopter supports. Empty = UH-1H for western factions, Mi-8 otherwise |
-| `m_sSupportTransportHelicopter` | empty | Helicopter for the door-gunner support. Empty = armed UH-1H / armed Mi-8 |
+| `m_aSupportUnits` | empty | Optional per-role requisition support settings (see below). No row = current default; a row can disable or override one role |
+| `m_sSupportHelicopter` | empty | Legacy gunship airframe fallback; a `GUNSHIP` support-unit row takes precedence |
+| `m_sSupportTransportHelicopter` | empty | Legacy door-gunner airframe fallback; a `DOOR_GUN_HELI` support-unit row takes precedence |
 | `m_sSupportRocket` | empty | Rocket for rocket strikes and gunships. Empty = Hydra 70 / S-5 |
 
 "Western" means a faction key containing `US` (but not `USSR`), `NATO` or `BLUFOR`.
@@ -182,6 +183,7 @@ catalog when their prefab is in it; vehicles outside the catalog count as armed,
 | Setting | Default | What it does |
 |---|---|---|
 | `m_eType` | | Kind of support (table below) |
+| `m_bEnabled` | on | Offer this call-in; uncheck to omit it from this faction's support menu |
 | `m_sName` | empty = default | Name in the command panel |
 | `m_iCost` | -1 = default | Cost in RP |
 | `m_iCooldown` | -1 = default | Seconds before it can be called again |
@@ -199,6 +201,35 @@ catalog when their prefab is in it; vehicles outside the catalog count as armed,
 | `HELI_LOITER` | Helicopter: gunship (90 s) | 45 | 300 |
 | `HELI_DOOR_GUNS` | Helicopter: door gunners (120 s) | 20 | 150 |
 | `ARTILLERY_BATTERY` | Artillery: howitzer battery | 60 | 300 |
+
+#### Requisition support unit (`m_aSupportUnits`)
+
+Add a row with **+** to configure one role. Choose assets in the prefab browser on each resource
+field; the selected prefab path is saved with the faction entity. Roles without a row keep today's defaults. The
+`m_bEnabled` checkbox controls whether that unit can be bought; `m_iCost` and `m_iStock` set its
+purchase price and per-match quantity. Those values are separate from the cost and cooldown of the
+support calls above.
+
+| Setting | What it does |
+|---|---|
+| `m_eRole` | `MORTAR_TEAM`, `OBSERVER_TEAM`, `GUNSHIP`, or `DOOR_GUN_HELI` |
+| `m_bEnabled` | Offer this support unit for requisition; on by default |
+| `m_sName` | Buy-list name (empty = current default) |
+| `m_iCost` | Purchase cost in RP (-1 = current default) |
+| `m_iStock` | Base purchases per match (-1 = current default; normal threat scaling still applies) |
+| `m_sGroupPrefab` | Observer team's base group (observer role) |
+| `m_sPrimaryPrefab` | Spotter character (observer) |
+| `m_sSecondaryPrefab` | Radio operator character (observer) |
+| `m_sVehiclePrefab` | Support helicopter airframe (gunship or door-gunner role) |
+| `m_sCrewPrefab` | Crew character used for pilots and gunners, including replacement crew after servicing |
+
+Observer character prefabs bring the equipment/loadout authored on those characters. For a
+helicopter role, the selected crew prefab replaces the airframe's default pilot and gun-seat crew
+when first stationed, then is used again when servicing replaces crew. Empty airframe and crew
+fields keep the existing faction defaults. The older `m_sSupportHelicopter` and
+`m_sSupportTransportHelicopter` values remain as airframe fallbacks when that role has no
+`m_sVehiclePrefab`. Mortar-team prefab choices continue to use `m_aPrefabMappings`; its support-unit
+row controls whether the team is offered and its name, cost and stock.
 
 The mortar types and `ILLUMINATION` are fired by a **mortar team**: every side's buy list gets a
 "Mortar team" entry (30 RP, 2 per match; M252 for western factions, 2B14 otherwise). The team

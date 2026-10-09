@@ -29,6 +29,8 @@ class ACR_SupportEntry
 {
  [Attribute("0", UIWidgets.ComboBox, "Kind of support", "", ParamEnumArray.FromEnum(ACR_ESupportType))]
  ACR_ESupportType m_eType;
+ [Attribute("1", UIWidgets.CheckBox, "Offer this call-in")]
+ bool m_bEnabled = true;
  [Attribute("", UIWidgets.EditBox, "Name in the command panel (empty = default)")]
  string m_sName;
  [Attribute("-1", UIWidgets.EditBox, "Cost in RP (-1 = default)")]
@@ -354,6 +356,8 @@ class ACR_HeliRun : ACR_SupportRun
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   array<ECompartmentType> seats = {ECompartmentType.PILOT, ECompartmentType.TURRET};
   if (compartments) compartments.SpawnDefaultOccupants(seats);
+  ResourceName selectedCrew = supports.ConfiguredCrewPrefab(m_sFaction, !m_bDoorGuns);
+  if (!selectedCrew.IsEmpty()) supports.Station().ApplyCrewPrefab(m_Vehicle, selectedCrew);
   BaseVehicleControllerComponent controller = BaseVehicleControllerComponent.Cast(m_Vehicle.FindComponent(BaseVehicleControllerComponent));
   if (controller) controller.ForceStartEngine();
   // Arrives at full rotor speed, not spooling up from a standstill (Jacob, 2 Oct).
@@ -382,7 +386,7 @@ class ACR_HeliRun : ACR_SupportRun
   m_bLifting = true;
   Physics physics = m_Vehicle.GetPhysics();
   if (physics) { physics.EnableGravity(false); physics.SetVelocity(vector.Zero); }
-  supports.Station().ReplaceCrew(m_Vehicle, m_sFaction);
+  supports.Station().ReplaceCrew(m_Vehicle, m_sFaction, m_Home.m_bGunship);
   BaseVehicleControllerComponent controller = BaseVehicleControllerComponent.Cast(m_Vehicle.FindComponent(BaseVehicleControllerComponent));
   if (controller) controller.ForceStartEngine();
   Spool();
@@ -624,7 +628,7 @@ class ACR_HeliRun : ACR_SupportRun
     if (crewGroup) break;
    }
   }
-  ResourceName crewman = supports.CrewPrefab(m_sFaction);
+  ResourceName crewman = supports.CrewPrefab(m_sFaction, !m_bDoorGuns);
   foreach (BaseCompartmentSlot empty : slots)
   {
    if (empty.GetOccupant() || empty.GetType() != ECompartmentType.TURRET) continue;
@@ -1445,6 +1449,9 @@ class ACR_Supports : Managed
  ResourceName HelicopterFor(string factionKey)
  {
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  ACR_SupportUnitSettings unit;
+  if (settings) unit = settings.SupportUnit(ACR_ESupportUnitRole.GUNSHIP);
+  if (unit && !unit.m_sVehiclePrefab.IsEmpty()) return unit.m_sVehiclePrefab;
   if (settings && !settings.m_sSupportHelicopter.IsEmpty()) return settings.m_sSupportHelicopter;
   ResourceName prefab = HELI_EAST;
   if (IsWestern(factionKey)) prefab = HELI_WEST;
@@ -1455,6 +1462,9 @@ class ACR_Supports : Managed
  ResourceName TransportHelicopterFor(string factionKey)
  {
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  ACR_SupportUnitSettings unit;
+  if (settings) unit = settings.SupportUnit(ACR_ESupportUnitRole.DOOR_GUN_HELI);
+  if (unit && !unit.m_sVehiclePrefab.IsEmpty()) return unit.m_sVehiclePrefab;
   if (settings && !settings.m_sSupportTransportHelicopter.IsEmpty()) return settings.m_sSupportTransportHelicopter;
   ResourceName prefab = HELI_TRANSPORT_EAST;
   if (IsWestern(factionKey)) prefab = HELI_TRANSPORT_WEST;
@@ -1712,8 +1722,19 @@ class ACR_Supports : Managed
   if (move) move.Launch(dir, parentVelocity, 1, projectile, null, null, null, null);
  }
 
- ResourceName CrewPrefab(string factionKey)
+ ResourceName ConfiguredCrewPrefab(string factionKey, bool gunship)
  {
+  ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  if (!settings) return "";
+  ACR_SupportUnitSettings unit = settings.SupportUnit(gunship ? ACR_ESupportUnitRole.GUNSHIP : ACR_ESupportUnitRole.DOOR_GUN_HELI);
+  if (unit) return unit.m_sCrewPrefab;
+  return "";
+ }
+
+ ResourceName CrewPrefab(string factionKey, bool gunship = true)
+ {
+  ResourceName configured = ConfiguredCrewPrefab(factionKey, gunship);
+  if (!configured.IsEmpty()) return configured;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(factionKey);
   if (!data.m_aGarrison.IsEmpty()) return data.m_aGarrison[0];
   Faction faction = GetGame().GetFactionManager().GetFactionByKey(factionKey);

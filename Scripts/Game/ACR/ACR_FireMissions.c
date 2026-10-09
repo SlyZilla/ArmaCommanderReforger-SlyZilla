@@ -40,12 +40,22 @@ class ACR_FireMissions : Managed
 
  void ACR_FireMissions(ACR_Manager manager) { m_Manager = manager; }
 
- static ACR_RequisitionEntry MakeEntry()
+ static ACR_RequisitionEntry MakeEntry(ACR_FactionSettings settings = null)
  {
   ACR_RequisitionEntry entry = new ACR_RequisitionEntry();
   entry.Set(ENTRY_NAME, "", "", COST, STOCK);
   entry.m_bObserverTeam = true;
   entry.m_bArmed = false;
+  if (settings)
+  {
+   ACR_SupportUnitSettings unit = settings.SupportUnit(ACR_ESupportUnitRole.OBSERVER_TEAM);
+   if (unit)
+   {
+    if (!unit.m_sName.IsEmpty()) entry.m_sName = unit.m_sName;
+    if (unit.m_iCost >= 0) entry.m_iCost = unit.m_iCost;
+    if (unit.m_iStock >= 0) entry.m_iStock = unit.m_iStock;
+   }
+  }
   return entry;
  }
 
@@ -56,8 +66,15 @@ class ACR_FireMissions : Managed
   array<ResourceName> men = {FO_EAST, RTO_EAST};
   if (ACR_Supports.IsWestern(factionKey)) { group = ACR_Mortars.GROUP_WEST; men = {FO_WEST, RTO_WEST}; }
   else if (factionKey.Contains("FIA")) { group = ACR_Mortars.GROUP_FIA; men = {ACR_Mortars.RIFLE_FIA, RTO_FIA}; }
-  group = ACR_FactionCatalog.ResolvePrefab(factionKey, group, EEntityCatalogType.GROUP);
-  for (int i = 0; i < men.Count(); i++) men[i] = ACR_FactionCatalog.ResolvePrefab(factionKey, men[i], EEntityCatalogType.CHARACTER);
+  ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  ACR_SupportUnitSettings unit = null;
+  if (settings) unit = settings.SupportUnit(ACR_ESupportUnitRole.OBSERVER_TEAM);
+  if (unit && !unit.m_sGroupPrefab.IsEmpty()) group = unit.m_sGroupPrefab;
+  else group = ACR_FactionCatalog.ResolvePrefab(factionKey, group, EEntityCatalogType.GROUP);
+  if (unit && !unit.m_sPrimaryPrefab.IsEmpty()) men[0] = unit.m_sPrimaryPrefab;
+  else men[0] = ACR_FactionCatalog.ResolvePrefab(factionKey, men[0], EEntityCatalogType.CHARACTER);
+  if (unit && !unit.m_sSecondaryPrefab.IsEmpty()) men[1] = unit.m_sSecondaryPrefab;
+  else men[1] = ACR_FactionCatalog.ResolvePrefab(factionKey, men[1], EEntityCatalogType.CHARACTER);
   SCR_AIGroup.IgnoreSpawning(true);
   SCR_AIGroup spawned = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(group, pos));
   SCR_AIGroup.IgnoreSpawning(false);

@@ -187,7 +187,7 @@ class ACR_HeliStation : Managed
  }
 
  // Buy-list entries (only in worlds with helipads).
- static ACR_RequisitionEntry MakeEntry(bool gunship)
+ static ACR_RequisitionEntry MakeEntry(bool gunship, ACR_FactionSettings settings = null)
  {
   ACR_RequisitionEntry entry = new ACR_RequisitionEntry();
   if (gunship) entry.Set(GUNSHIP_ENTRY, "", "", GUNSHIP_COST, STOCK);
@@ -195,6 +195,16 @@ class ACR_HeliStation : Managed
   entry.m_iSupportHeli = 2;
   if (gunship) entry.m_iSupportHeli = 1;
   entry.m_bAircraft = true; // the AI's normal buying skips it (BuyHelicopter buys it)
+  if (settings)
+  {
+   ACR_SupportUnitSettings unit = settings.SupportUnit(gunship ? ACR_ESupportUnitRole.GUNSHIP : ACR_ESupportUnitRole.DOOR_GUN_HELI);
+   if (unit)
+   {
+    if (!unit.m_sName.IsEmpty()) entry.m_sName = unit.m_sName;
+    if (unit.m_iCost >= 0) entry.m_iCost = unit.m_iCost;
+    if (unit.m_iStock >= 0) entry.m_iStock = unit.m_iStock;
+   }
+  }
   return entry;
  }
 
@@ -261,6 +271,8 @@ class ACR_HeliStation : Managed
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   array<ECompartmentType> seats = {ECompartmentType.PILOT, ECompartmentType.TURRET};
   if (compartments) compartments.SpawnDefaultOccupants(seats);
+  ResourceName selectedCrew = m_Supports.ConfiguredCrewPrefab(factionKey, gunship);
+  if (!selectedCrew.IsEmpty()) ApplyCrewPrefab(vehicle, selectedCrew);
   ACR_StationedHeli heli = new ACR_StationedHeli();
   heli.m_sFaction = factionKey;
   heli.m_sName = name;
@@ -368,14 +380,14 @@ class ACR_HeliStation : Managed
  {
   array<IEntity> vehicles = {heli.m_Vehicle};
   m_Supports.m_Manager.m_Requisition.ServiceVehicles(vehicles);
-  ReplaceCrew(heli.m_Vehicle, heli.m_sFaction);
+  ReplaceCrew(heli.m_Vehicle, heli.m_sFaction, heli.m_bGunship);
  }
 
  // Empty pilot and gun seats get a new crewman (the dead are thrown out first, the wounded
  // patched up). Crewmen who got out (a helicopter shot up on its pad: the crew bails) are
  // replaced too: 4 Oct live, a repaired helicopter came back short of crew, and the crew on
  // foot was taken for a squad.
- void ReplaceCrew(IEntity vehicle, string factionKey)
+ void ReplaceCrew(IEntity vehicle, string factionKey, bool gunship = true)
  {
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   if (!compartments) return;
@@ -413,7 +425,7 @@ class ACR_HeliStation : Managed
    if (!crewGroup && stragglers < agents.Count()) crewGroup = known;
   }
   if (stragglers > 0) PrintFormat("[ACR] HELIPAD %1 crewmen who got out replaced", stragglers);
-  GetGame().GetCallqueue().CallLater(SeatCrew, 300, false, vehicle, factionKey, crewGroup);
+  GetGame().GetCallqueue().CallLater(SeatCrew, 300, false, vehicle, factionKey, gunship, crewGroup);
  }
 
  static bool Aboard(IEntity man, IEntity vehicle)
@@ -424,14 +436,14 @@ class ACR_HeliStation : Managed
   return slot && slot.GetVehicle() == vehicle;
  }
 
- protected void SeatCrew(IEntity vehicle, string factionKey, AIGroup crewGroup)
+ protected void SeatCrew(IEntity vehicle, string factionKey, bool gunship, AIGroup crewGroup)
  {
   if (!vehicle || Destroyed(vehicle)) return;
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   if (!compartments) return;
   array<BaseCompartmentSlot> slots = {};
   compartments.GetCompartments(slots);
-  ResourceName crewman = m_Supports.CrewPrefab(factionKey);
+  ResourceName crewman = m_Supports.CrewPrefab(factionKey, gunship);
   int seated;
   foreach (BaseCompartmentSlot slot : slots)
   {
@@ -441,6 +453,56 @@ class ACR_HeliStation : Managed
    if (man) seated++;
   }
   if (seated > 0) PrintFormat("[ACR] HELIPAD %1 new crewmen seated", seated);
+  m_Supports.RememberCrew(vehicle);
+ }
+
+ // Replace the airframe's default occupants when the mission maker selected a crew prefab.
+ // Keeping the original crew group preserves the support-crew tracking used by the squad scan.
+ void ApplyCrewPrefab(IEntity vehicle, ResourceName crewman)
+ {
+  if (!vehicle || crewman.IsEmpty()) return;
+  Resource resource = Resource.Load(crewman);
+  if (!resource.IsValid())
+  {
+   PrintFormat("[ACR] HELIPAD custom crew prefab invalid: %1; keeping airframe defaults", crewman);
+   return;
+  }
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return;
+  array<BaseCompartmentSlot> slots = {};
+  compartments.GetCompartments(slots);
+  AIGroup crewGroup;
+  int seats;
+  foreach (BaseCompartmentSlot slot : slots)
+  {
+   if (slot.GetType() != ECompartmentType.PILOT && slot.GetType() != ECompartmentType.TURRET) continue;
+   seats++;
+   IEntity occupant = slot.GetOccupant();
+   if (!occupant) continue;
+   AIControlComponent control = AIControlComponent.Cast(occupant.FindComponent(AIControlComponent));
+   if (!crewGroup && control && control.GetControlAIAgent()) crewGroup = control.GetControlAIAgent().GetParentGroup();
+  }
+  int replaced;
+  foreach (BaseCompartmentSlot seat : slots)
+  {
+   if (seat.GetType() != ECompartmentType.PILOT && seat.GetType() != ECompartmentType.TURRET) continue;
+   IEntity occupant = seat.GetOccupant();
+   if (occupant) SCR_EntityHelper.DeleteEntityAndChildren(occupant);
+   if (seat.SpawnCharacterInCompartment(crewman, crewGroup)) replaced++;
+  }
+  if (replaced < seats)
+  {
+   foreach (BaseCompartmentSlot seat : slots)
+   {
+    if (seat.GetType() != ECompartmentType.PILOT && seat.GetType() != ECompartmentType.TURRET) continue;
+    IEntity occupant = seat.GetOccupant();
+    if (occupant) SCR_EntityHelper.DeleteEntityAndChildren(occupant);
+   }
+   array<ECompartmentType> defaults = {ECompartmentType.PILOT, ECompartmentType.TURRET};
+   compartments.SpawnDefaultOccupants(defaults);
+   PrintFormat("[ACR] HELIPAD custom crew %1 seated %2/%3; restored airframe crew", crewman, replaced, seats);
+  }
+  else PrintFormat("[ACR] HELIPAD custom crew %1 seated in %2 compartment(s)", crewman, replaced);
   m_Supports.RememberCrew(vehicle);
  }
 

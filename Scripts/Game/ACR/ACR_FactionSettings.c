@@ -60,6 +60,41 @@ class ACR_PrefabMapping
  ResourceName m_sTo;
 }
 
+enum ACR_ESupportUnitRole
+{
+	MORTAR_TEAM,
+	OBSERVER_TEAM,
+	GUNSHIP,
+	DOOR_GUN_HELI
+}
+
+// Editable per-faction requisition support. Empty prefab fields keep the current
+// faction defaults; resource pickers let mission makers replace only what they need.
+[BaseContainerProps(), SCR_BaseContainerCustomTitleField("m_sName")]
+class ACR_SupportUnitSettings
+{
+ [Attribute("0", UIWidgets.ComboBox, "Support unit role", "", ParamEnumArray.FromEnum(ACR_ESupportUnitRole))]
+ ACR_ESupportUnitRole m_eRole;
+ [Attribute("1", UIWidgets.CheckBox, "Offer this unit for requisition")]
+ bool m_bEnabled = true;
+ [Attribute("", UIWidgets.EditBox, "Name shown in the requisition list (empty = default)")]
+ string m_sName;
+ [Attribute("-1", UIWidgets.EditBox, "Requisition cost in RP (-1 = default)")]
+ int m_iCost;
+ [Attribute("-1", UIWidgets.EditBox, "Quantity available per match (-1 = default)")]
+ int m_iStock;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Observer team base group prefab", "et")]
+ ResourceName m_sGroupPrefab;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Observer spotter character prefab", "et")]
+ ResourceName m_sPrimaryPrefab;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Observer radio operator character prefab", "et")]
+ ResourceName m_sSecondaryPrefab;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Support helicopter airframe prefab", "et")]
+ ResourceName m_sVehiclePrefab;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Support helicopter crew prefab used for pilots and gunners", "et")]
+ ResourceName m_sCrewPrefab;
+}
+
 // Per-faction Arma Commander setup, placed in World Editor: starting RP, what
 // the commander can buy, and which soldiers garrison bases.
 class ACR_FactionSettingsClass : GenericEntityClass {}
@@ -92,12 +127,22 @@ class ACR_FactionSettings : GenericEntity
  bool m_bSupports;
  [Attribute(desc: "Supports on offer. Empty = all of them with default prices and cooldowns.")]
  ref array<ref ACR_SupportEntry> m_aSupports;
- [Attribute("", UIWidgets.ResourcePickerThumbnail, "Gunship for helicopter supports (empty = UH-1H for western factions, Mi-8 otherwise)", "et")]
+ [Attribute(desc: "Optional editable requisition support units. Add a row to override defaults; each row can enable/disable a role and set its price, stock and prefabs.")]
+ ref array<ref ACR_SupportUnitSettings> m_aSupportUnits;
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Legacy gunship fallback; m_aSupportUnits airframe overrides it (empty = UH-1H west, Mi-8 east)", "et")]
  ResourceName m_sSupportHelicopter;
- [Attribute("", UIWidgets.ResourcePickerThumbnail, "Transport helicopter for the door-gunner support (empty = armed UH-1H for western factions, armed Mi-8 otherwise)", "et")]
+ [Attribute("", UIWidgets.ResourcePickerThumbnail, "Legacy door-gunner helicopter fallback; m_aSupportUnits airframe overrides it (empty = armed UH-1H west, Mi-8 east)", "et")]
  ResourceName m_sSupportTransportHelicopter;
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Rocket for rocket strikes and gunships (empty = Hydra 70 / S-5)", "et")]
  ResourceName m_sSupportRocket;
+
+ ACR_SupportUnitSettings SupportUnit(ACR_ESupportUnitRole role)
+ {
+  if (!m_aSupportUnits) return null;
+  foreach (ACR_SupportUnitSettings unit : m_aSupportUnits)
+   if (unit && unit.m_eRole == role) return unit;
+  return null;
+ }
 
  static ref array<ACR_FactionSettings> s_All = {};
 
@@ -188,15 +233,18 @@ class ACR_FactionCatalog
    AddCatalog(factionKey, EEntityCatalogType.GROUP, used, exclude, result);
    AddCatalog(factionKey, EEntityCatalogType.VEHICLE, used, exclude, result);
   }
-  // Every side can buy mortar teams: the mortar supports need one set up within range.
-  result.Insert(ACR_Mortars.MakeEntry());
-  // ... and forward observer teams, who call those mortars on what they see.
-  result.Insert(ACR_FireMissions.MakeEntry());
+  // Mission makers can edit support requisitions per faction; an absent row keeps defaults.
+  ACR_RequisitionEntry supportEntry = ACR_Mortars.MakeEntry();
+  if (ApplySupportUnit(supportEntry, settings, ACR_ESupportUnitRole.MORTAR_TEAM)) result.Insert(supportEntry);
+  supportEntry = ACR_FireMissions.MakeEntry(settings);
+  if (ApplySupportUnit(supportEntry, settings, ACR_ESupportUnitRole.OBSERVER_TEAM)) result.Insert(supportEntry);
   // Worlds with helipads: support helicopters are bought for a pad (a lost one is bought again).
   if (ACR_HeliStation.UsesPads(factionKey))
   {
-   result.Insert(ACR_HeliStation.MakeEntry(true));
-   result.Insert(ACR_HeliStation.MakeEntry(false));
+   supportEntry = ACR_HeliStation.MakeEntry(true, settings);
+   if (ApplySupportUnit(supportEntry, settings, ACR_ESupportUnitRole.GUNSHIP)) result.Insert(supportEntry);
+   supportEntry = ACR_HeliStation.MakeEntry(false, settings);
+   if (ApplySupportUnit(supportEntry, settings, ACR_ESupportUnitRole.DOOR_GUN_HELI)) result.Insert(supportEntry);
   }
   bool stepped = ACR_Pricing.Stepped(settings);
   foreach (ACR_RequisitionEntry entry : result)
@@ -205,6 +253,20 @@ class ACR_FactionCatalog
    ACR_Pricing.Setup(entry, stepped);
   }
   PrintFormat("[ACR] Requisition list for %1: %2 entries (%3 helipads in the world), pricing %4", factionKey, result.Count(), ACR_Helipad.s_All.Count(), ACR_Pricing.Name(stepped));
+ }
+
+ // Missing config rows preserve the built-in offer. A row can override only the values
+ // the mission maker cares about, or disable that support requisition entirely.
+ protected static bool ApplySupportUnit(ACR_RequisitionEntry entry, ACR_FactionSettings settings, ACR_ESupportUnitRole role)
+ {
+  if (!entry || !settings) return true;
+  ACR_SupportUnitSettings unit = settings.SupportUnit(role);
+  if (!unit) return true;
+  if (!unit.m_bEnabled) return false;
+  if (!unit.m_sName.IsEmpty()) entry.m_sName = unit.m_sName;
+  if (unit.m_iCost >= 0) entry.m_iCost = unit.m_iCost;
+  if (unit.m_iStock >= 0) entry.m_iStock = unit.m_iStock;
+  return true;
  }
 
  // Hand-added entries get the same automatic flags as catalog ones (aircraft, armed,
