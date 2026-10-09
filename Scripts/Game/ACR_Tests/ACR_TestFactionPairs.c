@@ -30,8 +30,48 @@ class ACR_TestFactionPairs
   return invalid;
  }
 
+ protected static int s_iExpected;
+
+ // RHS sides: one subunit and camouflage per side (Jacob, 8 Oct live test: MARSOC, desert
+ // and woodland mixed; officers and vehicle crews in vanilla 80s kit).
+ static int CheckStandard(string factionKey)
+ {
+  string standard = ACR_FactionCatalog.StandardPath(factionKey);
+  if (standard.IsEmpty()) return 0;
+  ACR_FactionData data = ACR_Manager.GetInstance().m_Bases.GetFaction(factionKey);
+  int offPool;
+  foreach (ResourceName soldier : data.m_aGarrison)
+  {
+   string soldierPath = soldier;
+   if (!soldierPath.Contains(standard)) { offPool++; PrintFormat("[ACR] FACTIONTEST %1 garrison off-standard: %2", factionKey, soldier); }
+  }
+  ACR_TestRegress.Check("factions: " + factionKey + " garrisons use only the standard subunit", !data.m_aGarrison.IsEmpty() && offPool == 0, string.Format("%1 of %2 off %3", offPool, data.m_aGarrison.Count(), standard));
+  int offList;
+  foreach (ACR_RequisitionEntry entry : data.m_aRequisitions)
+  {
+   // Support entries have their own known fallbacks (RHS has no mortar).
+   if (entry.m_bMortarTeam || entry.m_bObserverTeam || entry.m_iSupportHeli > 0) continue;
+   bool ok = true;
+   if (!entry.m_sGroup.IsEmpty() && !ACR_FactionCatalog.IsStandard(factionKey, entry.m_sGroup, EEntityCatalogType.GROUP)) ok = false;
+   if (!entry.m_sVehicle.IsEmpty() && !ACR_FactionCatalog.IsStandard(factionKey, entry.m_sVehicle, EEntityCatalogType.VEHICLE)) ok = false;
+   PrintFormat("[ACR] FACTIONTEST %1 buy: %2 | %3 | %4%5", factionKey, entry.m_sName, FilePath.StripPath(entry.m_sGroup), FilePath.StripPath(entry.m_sVehicle), ok);
+   if (!ok) offList++;
+  }
+  ACR_TestRegress.Check("factions: " + factionKey + " buy list uses the standard subunit and paint", offList == 0, string.Format("%1 off-standard entries", offList));
+  Faction faction = GetGame().GetFactionManager().GetFactionByKey(factionKey);
+  array<ref SCR_BasePlayerLoadout> loadouts = {};
+  GetGame().GetLoadoutManager().GetPlayerLoadoutsByFaction(faction, loadouts);
+  string officer;
+  if (!loadouts.IsEmpty()) officer = loadouts[0].GetLoadoutResource();
+  ACR_TestRegress.Check("factions: " + factionKey + " command unit is its own officer", loadouts.Count() == 1 && officer.Contains(standard), string.Format("%1 loadouts, %2", loadouts.Count(), FilePath.StripPath(officer)));
+  return 3;
+ }
+
+ static string Leaf(ResourceName prefab) { return FilePath.StripExtension(FilePath.StripPath(prefab)); }
+
  static void Run(int tick)
  {
+  if (tick == 25) { FinishCrews(); return; }
   if (tick != 10) return;
   string west = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
@@ -78,6 +118,76 @@ class ACR_TestFactionPairs
   if (uaPair) ACR_TestRegress.Check("factions: UAF resource is detected and labeled UA", ACR_FactionSelection.UkraineModLoaded() && ACR_FactionSelection.DisplayName("US") == "UA", ACR_FactionSelection.DisplayName("US"));
   int expected = 6;
   if (uaPair) expected = 7;
+  expected += CheckStandard(west) + CheckStandard(east);
+  if (selectedPair == "ru_us")
+  {
+   string swaps = string.Format("%1 %2 %3 %4",
+    Leaf(ACR_FactionCatalog.ResolvePrefab(west, "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et", EEntityCatalogType.GROUP)),
+    Leaf(ACR_FactionCatalog.ResolvePrefab(east, "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et", EEntityCatalogType.GROUP)),
+    Leaf(ACR_FactionCatalog.ResolvePrefab(west, "{4A71F755A4513227}Prefabs/Vehicles/Wheeled/M998/M1025.et", EEntityCatalogType.VEHICLE)),
+    Leaf(ACR_FactionCatalog.ResolvePrefab(east, "{259EE7B78C51B624}Prefabs/Vehicles/Wheeled/UAZ469/UAZ469.et", EEntityCatalogType.VEHICLE)));
+   ACR_TestRegress.Check("factions: starting units swap to the standard subunit and paint", swaps == "Group_USAF_USMC_MEF_RifleSquad Group_RHS_RF_MSV_VKPO_S_RifleSquad M1025_USAF UAZ469_Camo", swaps);
+   SCR_AutoSpawnLogic autoSpawn = new SCR_AutoSpawnLogic();
+   autoSpawn.ACR_SetForcedFaction("US");
+   Faction forced = autoSpawn.ACR_ForcedFaction();
+   string forcedKey = "none";
+   if (forced) forcedKey = forced.GetFactionKey();
+   ACR_TestRegress.Check("factions: the scenario's forced US side joins the selected west side", forcedKey == west, forcedKey);
+   expected += 2;
+   // Crewed vehicles of each side (the RHS catalogs reuse vanilla vehicles with vanilla crews).
+   ACR_Manager acr = ACR_Manager.GetInstance();
+   ACR_Base homeWest;
+   ACR_Base homeEast;
+   foreach (ACR_Base home : ACR_Base.s_All)
+   {
+    if (!homeWest && home.m_sOwner == west) homeWest = home;
+    if (!homeEast && home.m_sOwner == east) homeEast = home;
+   }
+   vector at = acr.ClearSpotNear(homeWest, 15, 60, 4);
+   acr.m_sSpawningFaction = west;
+   acr.SpawnUnit("Crew test west", "", "{3277F8B1FA06A2BC}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB_USAF.et", true, "", at, at);
+   vector at2 = acr.ClearSpotNear(homeEast, 15, 60, 4);
+   acr.m_sSpawningFaction = east;
+   acr.SpawnUnit("Crew test east", "", "{0B4DEA8078B78A9B}Prefabs/Vehicles/Wheeled/UAZ469/UAZ469_PKM.et", true, "", at2, at2);
+   acr.m_sSpawningFaction = "";
+   s_iExpected = expected + 1;
+   return;
+  }
   ACR_TestRegress.Complete("factions", expected);
+ }
+
+ protected static void FinishCrews()
+ {
+  if (s_iExpected == 0) return;
+  int seated, own;
+  string report;
+  array<IEntity> cars = {};
+  cars.Insert(FindCar(ACR_FactionSelection.West(), "M1025_armed_M2HB_USAF"));
+  cars.Insert(FindCar(ACR_FactionSelection.East(), "UAZ469_PKM"));
+  foreach (IEntity vehicle : cars)
+  {
+   if (!vehicle) { report += " missing"; continue; }
+   string standard = ACR_FactionCatalog.StandardPath(ACR_Vehicles.BoughtBy(vehicle));
+   array<IEntity> crew = {};
+   ACR_PendingPurchase.Occupants(vehicle, crew);
+   foreach (IEntity man : crew)
+   {
+    seated++;
+    string path = man.GetPrefabData().GetPrefabName();
+    if (!standard.IsEmpty() && path.Contains(standard)) own++;
+    report += " " + Leaf(path);
+   }
+  }
+  ACR_TestRegress.Check("factions: crewed vehicles seat the side's own crewmen", seated >= 4 && own == seated, string.Format("%1/%2:%3", own, seated, report));
+  ACR_TestRegress.Complete("factions", s_iExpected);
+ }
+
+ protected static IEntity FindCar(string factionKey, string leaf)
+ {
+  array<IEntity> all = {};
+  ACR_Vehicles.All(all);
+  foreach (IEntity vehicle : all)
+   if (ACR_Vehicles.BoughtBy(vehicle) == factionKey && vehicle.GetPrefabData() && Leaf(vehicle.GetPrefabData().GetPrefabName()) == leaf) return vehicle;
+  return null;
  }
 }

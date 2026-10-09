@@ -197,7 +197,9 @@ class ACR_HeliStation : Managed
   entry.m_bAircraft = true; // the AI's normal buying skips it (BuyHelicopter buys it)
   if (settings)
   {
-   ACR_SupportUnitSettings unit = settings.SupportUnit(gunship ? ACR_ESupportUnitRole.GUNSHIP : ACR_ESupportUnitRole.DOOR_GUN_HELI);
+   ACR_ESupportUnitRole role = ACR_ESupportUnitRole.DOOR_GUN_HELI;
+   if (gunship) role = ACR_ESupportUnitRole.GUNSHIP;
+   ACR_SupportUnitSettings unit = settings.SupportUnit(role);
    if (unit)
    {
     if (!unit.m_sName.IsEmpty()) entry.m_sName = unit.m_sName;

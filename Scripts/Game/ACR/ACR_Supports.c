@@ -1726,7 +1726,9 @@ class ACR_Supports : Managed
  {
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
   if (!settings) return "";
-  ACR_SupportUnitSettings unit = settings.SupportUnit(gunship ? ACR_ESupportUnitRole.GUNSHIP : ACR_ESupportUnitRole.DOOR_GUN_HELI);
+  ACR_ESupportUnitRole role = ACR_ESupportUnitRole.DOOR_GUN_HELI;
+  if (gunship) role = ACR_ESupportUnitRole.GUNSHIP;
+  ACR_SupportUnitSettings unit = settings.SupportUnit(role);
   if (unit) return unit.m_sCrewPrefab;
   return "";
  }

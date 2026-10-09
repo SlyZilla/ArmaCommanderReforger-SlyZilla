@@ -29,6 +29,14 @@ class ACR_Vehicles
   }
  }
 
+ // The side that bought it through AC: Actual, "" for any other vehicle.
+ static string BoughtBy(IEntity vehicle)
+ {
+  string owner;
+  if (vehicle) s_Owner.Find(vehicle, owner);
+  return owner;
+ }
+
  // Who a vehicle belongs to: the side that bought it, else its default faction.
  static string FactionOf(IEntity vehicle)
  {
@@ -74,5 +82,23 @@ modded class SCR_VehicleFactionAffiliationComponent
  {
   super.OnPostInit(owner);
   ACR_Vehicles.Register(owner);
+ }
+}
+
+// Bought vehicles of a side with its own crewmen (RHS) seat those instead of the
+// vehicle's default crew: RHS reuses vanilla vehicles, whose seats name vanilla 80s
+// soldiers (Jacob, 8 Oct). Seats without a default crewman stay empty.
+modded class BaseCompartmentSlot
+{
+ override ResourceName GetDefaultOccupantPrefab(bool checkIfValid = true)
+ {
+  ResourceName own = super.GetDefaultOccupantPrefab(checkIfValid);
+  if (own.IsEmpty()) return own;
+  IEntity vehicle = GetVehicle();
+  string owner = ACR_Vehicles.BoughtBy(vehicle);
+  if (owner.IsEmpty()) return own;
+  ResourceName crewman = ACR_FactionCatalog.CrewmanFor(owner, vehicle);
+  if (crewman.IsEmpty()) return own;
+  return crewman;
  }
 }

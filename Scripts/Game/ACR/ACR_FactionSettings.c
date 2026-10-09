@@ -188,11 +188,31 @@ class ACR_FactionCatalog
   if (!catalog) return source;
   array<SCR_EntityCatalogEntry> entries = {};
   catalog.GetEntityList(entries);
+  // The same vehicle in the faction's own paint (M923A1_transport -> M923A1_transport_MERDC).
+  if (type == EEntityCatalogType.VEHICLE)
+  {
+   array<string> paints = {};
+   PaintSuffixes(factionKey, paints);
+   foreach (string paint : paints)
+    foreach (SCR_EntityCatalogEntry entry : entries)
+     if (entry.IsEnabled() && FilePath.StripExtension(FilePath.StripPath(entry.GetPrefab())) == sourceLeaf + paint) return entry.GetPrefab();
+  }
+  // The faction's standard subunit first; any other match only if it has none.
+  ResourceName found = MatchCatalog(entries, sourceLeaf, wanted, factionKey, type, true);
+  if (found.IsEmpty()) found = MatchCatalog(entries, sourceLeaf, wanted, factionKey, type, false);
+  if (!found.IsEmpty()) return found;
+  PrintFormat("[ACR] FACTION fallback faction=%1 entry=%2 source prefab unchanged", factionKey, source);
+  return source;
+ }
+
+ protected static ResourceName MatchCatalog(array<SCR_EntityCatalogEntry> entries, string sourceLeaf, string wanted, string factionKey, EEntityCatalogType type, bool standardOnly)
+ {
   ResourceName suffixMatch;
   foreach (SCR_EntityCatalogEntry entry : entries)
   {
    if (!entry.IsEnabled()) continue;
    ResourceName candidate = entry.GetPrefab();
+   if (standardOnly && !IsStandard(factionKey, candidate, type)) continue;
    string leaf = FilePath.StripExtension(FilePath.StripPath(candidate));
    if (leaf == sourceLeaf) return candidate;
    if (wanted.Length() > 3 && leaf.Contains(wanted))
@@ -201,9 +221,79 @@ class ACR_FactionCatalog
     if (suffixMatch.IsEmpty()) suffixMatch = candidate;
    }
   }
-  if (!suffixMatch.IsEmpty()) return suffixMatch;
-  PrintFormat("[ACR] FACTION fallback faction=%1 entry=%2 source prefab unchanged", factionKey, source);
-  return source;
+  return suffixMatch;
+ }
+
+ // RHS catalogs mix several subunits and camouflages (RHS_USAF: USMC MEF woodland, MEF
+ // desert and MARSOC; RHS_AFRF: MSV in four uniforms plus special forces). Jacob, 8 Oct:
+ // one consistent look per side. Soldiers and groups come from one subunit; vehicles take
+ // the faction's paint where RHS has one and never the desert/tan versions.
+ static string StandardPath(string factionKey)
+ {
+  if (factionKey == "RHS_USAF") return "/RHS_USAF_USMC_MEF/";
+  if (factionKey == "RHS_AFRF") return "/MSV/VKPO_Summer/";
+  return "";
+ }
+
+ static void PaintSuffixes(string factionKey, notnull array<string> result)
+ {
+  result.Clear();
+  if (factionKey == "RHS_USAF") { result.Insert("_USAF"); result.Insert("_MERDC"); }
+  else if (factionKey == "RHS_AFRF") { result.Insert("_camo1"); result.Insert("_Camo"); }
+ }
+
+ static bool IsStandard(string factionKey, ResourceName prefab, EEntityCatalogType type)
+ {
+  string path = prefab;
+  if (path.Contains("NotSpawned")) return false;
+  string leaf = FilePath.StripExtension(FilePath.StripPath(prefab));
+  if (type == EEntityCatalogType.VEHICLE)
+  {
+   if (factionKey == "RHS_USAF" && leaf.EndsWith("_D")) return false;
+   if (factionKey == "RHS_AFRF" && leaf.EndsWith("_tan")) return false;
+   return true;
+  }
+  string standard = StandardPath(factionKey);
+  return standard.IsEmpty() || path.Contains(standard);
+ }
+
+ protected static ref map<string, ResourceName> s_Crewmen = new map<string, ResourceName>();
+
+ // The standard subunit's crewman (helicopter pilot for helicopters), "" when the faction
+ // has no standard subunit or no such soldier.
+ static ResourceName CrewmanFor(string factionKey, IEntity vehicle)
+ {
+  if (StandardPath(factionKey).IsEmpty() || !vehicle || !vehicle.GetPrefabData()) return "";
+  string vehiclePath = vehicle.GetPrefabData().GetPrefabName();
+  string role = "_Crew";
+  if (vehiclePath.Contains("/Helicopters/")) role = "_HeliPilot";
+  string key = factionKey + role;
+  ResourceName crewman;
+  if (s_Crewmen.Find(key, crewman)) return crewman;
+  SCR_EntityCatalog catalog = GetCatalog(factionKey, EEntityCatalogType.CHARACTER);
+  if (catalog)
+  {
+   array<SCR_EntityCatalogEntry> entries = {};
+   catalog.GetEntityList(entries);
+   foreach (SCR_EntityCatalogEntry entry : entries)
+   {
+    if (!entry.IsEnabled() || !IsStandard(factionKey, entry.GetPrefab(), EEntityCatalogType.CHARACTER)) continue;
+    if (FilePath.StripExtension(FilePath.StripPath(entry.GetPrefab())).EndsWith(role)) { crewman = entry.GetPrefab(); break; }
+   }
+  }
+  s_Crewmen.Set(key, crewman);
+  PrintFormat("[ACR] FACTION crewman %1 %2: %3", factionKey, role, crewman);
+  return crewman;
+ }
+
+ static int PaintRank(string factionKey, ResourceName prefab)
+ {
+  string leaf = FilePath.StripExtension(FilePath.StripPath(prefab));
+  array<string> paints = {};
+  PaintSuffixes(factionKey, paints);
+  for (int i = 0; i < paints.Count(); i++)
+   if (leaf.EndsWith(paints[i])) return paints.Count() - i;
+  return 0;
  }
 
  static void BuildRequisitions(string factionKey, ACR_FactionSettings settings, array<ref ACR_RequisitionEntry> result)
@@ -312,13 +402,21 @@ class ACR_FactionCatalog
    if (!entry.IsEnabled()) continue;
    ResourceName prefab = entry.GetPrefab();
    if (prefab.IsEmpty() || used.Contains(prefab) || exclude.Contains(prefab)) continue;
+   if (!IsStandard(factionKey, prefab, type)) continue;
    // Guards can't be hired in vanilla either; static guns become supports later.
    if (entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_GUARD) || entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_GUARD)) continue;
    if (entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_TURRET) || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_AIRPLANE)) continue;
    string name = WidgetManager.Translate(entry.GetEntityName());
    if (name.IsEmpty()) name = FilePath.StripExtension(FilePath.StripPath(prefab));
-   // The catalog lists camouflage variants under the same name; offer each unit once.
-   if (HasName(result, name)) continue;
+   // The catalog lists camouflage variants under the same name; offer each unit once,
+   // in the faction's own paint when it has one.
+   ACR_RequisitionEntry same = FindByName(result, name);
+   if (same)
+   {
+    if (type == EEntityCatalogType.VEHICLE && !same.m_sVehicle.IsEmpty() && PaintRank(factionKey, prefab) > PaintRank(factionKey, same.m_sVehicle))
+     same.m_sVehicle = prefab;
+    continue;
+   }
    ACR_RequisitionEntry item = new ACR_RequisitionEntry();
    if (type == EEntityCatalogType.GROUP)
    {
@@ -336,11 +434,11 @@ class ACR_FactionCatalog
   }
  }
 
- protected static bool HasName(array<ref ACR_RequisitionEntry> list, string name)
+ protected static ACR_RequisitionEntry FindByName(array<ref ACR_RequisitionEntry> list, string name)
  {
   foreach (ACR_RequisitionEntry item : list)
-   if (item.m_sName == name) return true;
-  return false;
+   if (item.m_sName == name) return item;
+  return null;
  }
 
  // 3 RP per soldier (Game Master's AI budget is one per soldier).
@@ -394,9 +492,16 @@ class ACR_FactionCatalog
   if (!catalog) return;
   array<SCR_EntityCatalogEntry> entries = {};
   catalog.GetEntityList(entries);
+  AddGarrisonSoldiers(factionKey, entries, true, result);
+  if (result.IsEmpty()) AddGarrisonSoldiers(factionKey, entries, false, result);
+ }
+
+ protected static void AddGarrisonSoldiers(string factionKey, array<SCR_EntityCatalogEntry> entries, bool standardOnly, array<ResourceName> result)
+ {
   foreach (SCR_EntityCatalogEntry entry : entries)
   {
    if (!entry.IsEnabled()) continue;
+   if (standardOnly && !IsStandard(factionKey, entry.GetPrefab(), EEntityCatalogType.CHARACTER)) continue;
    if (entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_RIFLEMAN))
    {
     // riflemen weighted double

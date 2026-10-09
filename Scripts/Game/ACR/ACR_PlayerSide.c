@@ -238,7 +238,20 @@ modded class SCR_AutoSpawnLogic
    faction = GetGame().GetFactionManager().GetFactionByKey(key);
    if (faction) return true;
   }
-  return super.GetForcedFaction(faction);
+  if (!super.GetForcedFaction(faction)) return false;
+  // The scenario names vanilla US or USSR; with a mod pair selected those sides aren't
+  // playable, so a player forced onto one spawned as vanilla US at its old HQ (8 Oct).
+  SCR_Faction forced = SCR_Faction.Cast(faction);
+  if (forced && !forced.IsPlayable())
+  {
+   string mapped;
+   if (forced.GetFactionKey() == "US") mapped = ACR_FactionSelection.West();
+   else if (forced.GetFactionKey() == "USSR") mapped = ACR_FactionSelection.East();
+   Faction selected;
+   if (!mapped.IsEmpty()) selected = GetGame().GetFactionManager().GetFactionByKey(mapped);
+   if (selected) faction = selected;
+  }
+  return true;
  }
 
  // Players who left keep a queued auto-spawn retry; the game's own retry then threw a
@@ -248,6 +261,9 @@ modded class SCR_AutoSpawnLogic
   if (!GetGame().GetPlayerManager().GetPlayerController(playerId)) return;
   super.DoSpawn_S(playerId);
  }
+
+ // For the faction test: the scenario's authored side.
+ void ACR_SetForcedFaction(string key) { m_sForcedFaction = key; }
 
  // For the regression test.
  Faction ACR_ForcedFaction()

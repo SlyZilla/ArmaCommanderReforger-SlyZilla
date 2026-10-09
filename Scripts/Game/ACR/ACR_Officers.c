@@ -27,8 +27,23 @@ modded class SCR_LoadoutManager
    Print("[ACR] Officer loadouts not found, keeping the world's loadouts", LogLevel.WARNING);
    return;
   }
+  // RHS sides (when loaded): their standard subunit's squad leader (RHS's catalogs have
+  // no officer). Same list on server and clients: both load the same mods.
+  ACR_AddOfficer(officers, "RHS_USAF", "USMC Officer", "{0B0F9BA9E9A6E118}Prefabs/Characters/Factions/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Character_RHS_USAF_USMC_SL.et");
+  ACR_AddOfficer(officers, "RHS_AFRF", "MSV Officer", "{963BD8F3900F27B4}Prefabs/Characters/Factions/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Character_RHS_RF_MSV_VKPO_S_SL.et");
   m_aPlayerLoadouts = officers;
-  Print("[ACR] Player loadouts: officers only");
+  PrintFormat("[ACR] Player loadouts: officers only (%1)", officers.Count());
+ }
+
+ protected void ACR_AddOfficer(array<ref SCR_BasePlayerLoadout> officers, string factionKey, string name, ResourceName prefab)
+ {
+  Resource resource = Resource.Load(prefab);
+  if (!resource || !resource.IsValid()) return;
+  SCR_FactionPlayerLoadout loadout = new SCR_FactionPlayerLoadout();
+  loadout.m_sLoadoutName = name;
+  loadout.m_sLoadoutResource = prefab;
+  loadout.m_sAffiliatedFaction = factionKey;
+  officers.Insert(loadout);
  }
 
  override array<ref SCR_BasePlayerLoadout> GetPlayerLoadouts() { ACR_UseOfficers(); return super.GetPlayerLoadouts(); }

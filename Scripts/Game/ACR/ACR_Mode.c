@@ -90,8 +90,12 @@ class ACR_Mode : GenericEntity
     if (vehicle.IsEmpty()) groupPos = manager.ClearSpotNear(unit.m_MovedTo, 5, 20, 1.5);
     else groupPos = ACR_Manager.Ground(vehiclePos + Vector(6, 0, 6));
    }
+   // The side owns its starting units like bought ones: crews and members join it (with a
+   // mod pair the crews kept the vehicle's vanilla US/USSR side and kit, 8 Oct).
+   manager.m_sSpawningFaction = factionKey;
    manager.SpawnUnit(unit.m_sName, group, vehicle, unit.m_bCrewed, passengers, vehiclePos, groupPos);
-   PrintFormat("[ACR] Starting unit: %1 at %2", unit.m_sName, groupPos);
+   manager.m_sSpawningFaction = "";
+   PrintFormat("[ACR] Starting unit: %1 (%2) at %3: %4 %5 %6", unit.m_sName, factionKey, groupPos, FilePath.StripPath(group), FilePath.StripPath(vehicle), FilePath.StripPath(passengers));
   }
  }
 
