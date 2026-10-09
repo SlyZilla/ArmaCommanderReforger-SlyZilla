@@ -71,7 +71,8 @@ class ACR_TestFactionPairs
 
  static void Run(int tick)
  {
-  if (tick == 25) { FinishCrews(); return; }
+  CheckFlyover(tick);
+  if (tick == 70) { FinishCrews(); return; }
   if (tick != 10) return;
   string west = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
@@ -150,15 +151,57 @@ class ACR_TestFactionPairs
    acr.m_sSpawningFaction = east;
    acr.SpawnUnit("Crew test east", "", "{0B4DEA8078B78A9B}Prefabs/Vehicles/Wheeled/UAZ469/UAZ469_PKM.et", true, "", at2, at2);
    acr.m_sSpawningFaction = "";
-   s_iExpected = expected + 1;
+   // Bomb run: both RHS sides fly the FA-18 (Jacob, 9 Oct). Call one on the east side's
+   // own base area (far from the crew cars) and fly a local copy here as a client would.
+   ACR_FactionData eastData2 = acr.m_Bases.GetFaction(east);
+   int bombIndex = -1;
+   bool flyovers = true;
+   array<ACR_FactionData> sides = {};
+   sides.Insert(westData);
+   sides.Insert(eastData2);
+   foreach (ACR_FactionData sideData : sides)
+   {
+    foreach (int i, ACR_SupportEntry support : sideData.m_aSupports)
+     if (support.m_eType == ACR_ESupportType.BOMB_RUN)
+     {
+      if (support.m_eBombRunDelivery != ACR_EBombRunDelivery.FLYOVER || support.m_sBombRunPrefab != ACR_Supports.FA18_FLYOVER) flyovers = false;
+      if (sideData == westData) bombIndex = i;
+     }
+   }
+   ACR_TestRegress.Check("factions: both RHS sides' bomb run is the FA-18 flyover", flyovers && bombIndex >= 0, string.Format("index %1", bombIndex));
+   acr.m_Bases.GetFaction(west).m_iRP += 500;
+   s_vBombTarget = ACR_Manager.Ground(homeEast.GetOrigin() + "250 0 250");
+   ACR_Supports.s_iExploded = 0;
+   if (!acr.m_Supports) acr.m_Supports = new ACR_Supports(acr);
+   string reply = "no bomb run";
+   if (bombIndex >= 0) reply = acr.m_Supports.Call(west, bombIndex, s_vBombTarget, true);
+   PrintFormat("[ACR] FACTIONTEST bomb run: %1", reply);
+   vector flyStart = ACR_Manager.Ground(homeWest.GetOrigin()) + "0 300 0";
+   ACR_LocalFlyover.Start(ACR_Supports.FA18_FLYOVER, flyStart, "1 0 0", 180, flyStart[1], 6);
+   s_vFlyStart = flyStart;
+   s_iExpected = expected + 5;
    return;
   }
   ACR_TestRegress.Complete("factions", expected);
  }
 
+ protected static vector s_vBombTarget;
+ protected static vector s_vFlyStart;
+
+ static void CheckFlyover(int tick)
+ {
+  if (s_iExpected == 0 || tick != 12) return;
+  ACR_LocalFlyover flyover = ACR_LocalFlyover.Latest();
+  float moved = -1;
+  if (flyover && flyover.m_Plane) moved = vector.DistanceXZ(flyover.m_Plane.GetOrigin(), s_vFlyStart);
+  ACR_TestRegress.Check("factions: a local FA-18 flies its path", moved > 180 && moved < 600, string.Format("%1 m in about 2 s", Math.Round(moved)));
+ }
+
  protected static void FinishCrews()
  {
   if (s_iExpected == 0) return;
+  ACR_TestRegress.Check("factions: the local FA-18 is removed after its flight", ACR_LocalFlyover.Latest() == null, "");
+  ACR_TestRegress.Check("factions: the bomb run's four bombs went off", ACR_Supports.s_iExploded == 4, string.Format("%1 bombs at %2", ACR_Supports.s_iExploded, s_vBombTarget));
   int seated, own;
   string report;
   array<IEntity> cars = {};

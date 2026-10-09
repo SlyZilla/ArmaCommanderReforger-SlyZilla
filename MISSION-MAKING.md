@@ -203,8 +203,8 @@ Each entry is one action in the commander's support menu, such as a mortar strik
 | `m_iCooldown` | -1 = default | Seconds before it can be called again |
 | `m_eBombRunDelivery` | `VIRTUAL` | Bomb-run delivery: existing virtual blasts, a flyover prefab plus virtual blasts, or an editable call-in prefab |
 | `m_sBombRunPrefab` | empty | Aircraft/flyover prefab (`FLYOVER`) or call-in spawner prefab (`EDITABLE_CALL_IN`) |
-| `m_fBombRunAltitude` | 150 m | Flyover height above the target; clamped to 30-1,000 m |
-| `m_fBombRunSpeed` | 110 m/s | Flyover speed; sets bomb spacing in time in `FLYOVER` mode; clamped to 20-400 m/s |
+| `m_fBombRunAltitude` | 300 m | Flyover height above the target, and never under 150 m over a hill on the way; clamped to 30-1,000 m |
+| `m_fBombRunSpeed` | 180 m/s | Flyover speed; sets bomb spacing in time in `FLYOVER` mode; clamped to 20-400 m/s |
 | `m_iBombRunBombs` | 4 | Virtual bombs in `VIRTUAL` or `FLYOVER` mode; clamped to 1-12 |
 | `m_fBombRunSpacing` | 28 m | Distance between impact points in `FLYOVER` mode; clamped to 1-500 m |
 | `m_fBombRunScatter` | 5 m | Random lateral impact scatter in metres; clamped to 0-100 m |

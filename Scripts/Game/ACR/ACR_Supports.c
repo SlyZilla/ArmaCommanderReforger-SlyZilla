@@ -49,10 +49,10 @@ class ACR_SupportEntry
 	ACR_EBombRunDelivery m_eBombRunDelivery;
 	[Attribute("", UIWidgets.ResourcePickerThumbnail, "Bomb run aircraft/flyover prefab or editable call-in spawner prefab", "et")]
 	ResourceName m_sBombRunPrefab;
-	[Attribute("150", UIWidgets.EditBox, "Flyover altitude above the target in metres")]
-	float m_fBombRunAltitude = 150;
-	[Attribute("110", UIWidgets.EditBox, "Flyover speed in metres per second")]
-	float m_fBombRunSpeed = 110;
+	[Attribute("300", UIWidgets.EditBox, "Flyover altitude above the target in metres (at least 150 m over any hill on the way)")]
+	float m_fBombRunAltitude = 300;
+	[Attribute("180", UIWidgets.EditBox, "Flyover speed in metres per second")]
+	float m_fBombRunSpeed = 180;
 	[Attribute("4", UIWidgets.EditBox, "Number of virtual bombs in a flyover or virtual run")]
 	int m_iBombRunBombs = 4;
 	[Attribute("28", UIWidgets.EditBox, "Distance between virtual bomb impacts in metres")]
@@ -79,42 +79,104 @@ class ACR_SupportRun : Managed
  void Finish() {}
 }
 
-// Configurable aircraft model that crosses the target before being cleaned up. Payload
-// remains AC:A's existing synchronized virtual explosions, so simple flyover assets do
-// not need a custom behavior component.
-class ACR_BombRunFlyover : ACR_SupportRun
+// Bomb-run aircraft model crossing the target, flown by every machine with a player on its
+// own non-replicated copy (a server-moved entity doesn't replicate its movement: clients
+// saw it frozen where it spawned). The payload stays AC:A's synchronized virtual blasts.
+// Jacob, 9 Oct: an audible jet over the target, "not too low". RHS's FA-18 model carries
+// its own engine sound (a loop that starts within 4 km of the listener, heard to 1.5 km).
+class ACR_LocalFlyover : Managed
 {
-	IEntity m_Aircraft;
+	protected static ref array<ref ACR_LocalFlyover> s_All = {};
+	static int s_iStarted; // tests
+	IEntity m_Plane;
 	vector m_vStart;
-	vector m_vDirection;
-	float m_fAltitude;
+	vector m_vDir;
 	float m_fSpeed;
-	float m_fElapsed;
-	float m_fDuration;
+	float m_fAltitude;
+	float m_fStartedAt;
+	float m_fSeconds;
+	vector m_vAxes[3];
 
-	override bool Frame(ACR_Supports supports, float dt, float now)
+	static void Start(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds)
 	{
-		if (!m_Aircraft) return false;
-		m_fElapsed += dt;
-		vector position = m_vStart + m_vDirection * (m_fSpeed * m_fElapsed);
-		position[1] = m_fAltitude;
-		vector transform[4];
-		Math3D.AnglesToMatrix(Vector(Math.Atan2(m_vDirection[0], m_vDirection[2]) * Math.RAD2DEG, 0, 0), transform);
-		transform[3] = position;
-		m_Aircraft.SetTransform(transform);
-		Physics physics = m_Aircraft.GetPhysics();
-		if (physics)
-		{
-			physics.SetVelocity(m_vDirection * m_fSpeed);
-			physics.SetAngularVelocity(vector.Zero);
-		}
-		return m_fElapsed < m_fDuration;
+		IEntity plane = ACR_Supports.SpawnLocal(prefab, start, vector.Zero);
+		if (!plane) return;
+		ACR_LocalFlyover flyover = new ACR_LocalFlyover();
+		flyover.m_Plane = plane;
+		flyover.m_vStart = start;
+		flyover.m_vDir = dir;
+		flyover.m_fSpeed = speed;
+		flyover.m_fAltitude = altitude;
+		flyover.m_fSeconds = seconds;
+		flyover.m_fStartedAt = GetGame().GetWorld().GetWorldTime();
+		flyover.Orient();
+		s_All.Insert(flyover);
+		s_iStarted++;
+		GetGame().GetCallqueue().CallLater(flyover.Step, 0, true);
+		flyover.Step();
 	}
 
-	override void Finish()
+	// Model axes -> world axes. Up is the model's +Y (it stands on its wheels); the nose is
+	// the model's root bone forward (+Z of V_F18: the engines sit at its -Z), flattened.
+	// The FA-18 mesh's nose lies along the model's X axis, not Z.
+	protected void Orient()
 	{
-		if (m_Aircraft) SCR_EntityHelper.DeleteEntityAndChildren(m_Aircraft);
-		m_Aircraft = null;
+		vector upModel = "0 1 0";
+		vector noseModel = "1 0 0";
+		Animation animation = m_Plane.GetAnimation();
+		if (animation)
+		{
+			TNodeId bone = animation.GetBoneIndex("V_F18");
+			if (bone >= 0)
+			{
+				vector boneMatrix[4];
+				animation.GetBoneMatrix(bone, boneMatrix);
+				vector nose = boneMatrix[2];
+				nose[1] = 0;
+				if (nose.Length() > 0.1) noseModel = nose.Normalized();
+			}
+		}
+		PrintFormat("[ACR] FLYOVER %1 nose along model %2", FilePath.StripPath(m_Plane.GetPrefabData().GetPrefabName()), noseModel);
+		vector rightModel = Cross(upModel, noseModel);
+		vector noseWorld = m_vDir;
+		noseWorld[1] = 0;
+		noseWorld.Normalize();
+		vector upWorld = "0 1 0";
+		vector rightWorld = Cross(upWorld, noseWorld);
+		for (int i = 0; i < 3; i++)
+			m_vAxes[i] = rightWorld * rightModel[i] + upWorld * upModel[i] + noseWorld * noseModel[i];
+	}
+
+	static ACR_LocalFlyover Latest()
+	{
+		if (s_All.IsEmpty()) return null;
+		return s_All[s_All.Count() - 1];
+	}
+
+	static vector Cross(vector a, vector b)
+	{
+		return Vector(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]);
+	}
+
+	void Step()
+	{
+		float elapsed = (GetGame().GetWorld().GetWorldTime() - m_fStartedAt) / 1000;
+		if (!m_Plane || elapsed > m_fSeconds)
+		{
+			GetGame().GetCallqueue().Remove(Step);
+			if (m_Plane) SCR_EntityHelper.DeleteEntityAndChildren(m_Plane);
+			m_Plane = null;
+			s_All.RemoveItem(this);
+			return;
+		}
+		vector position = m_vStart + m_vDir * (m_fSpeed * elapsed);
+		position[1] = m_fAltitude;
+		vector transform[4];
+		transform[0] = m_vAxes[0];
+		transform[1] = m_vAxes[1];
+		transform[2] = m_vAxes[2];
+		transform[3] = position;
+		m_Plane.SetTransform(transform);
 	}
 }
 
@@ -1306,8 +1368,22 @@ class ACR_Supports : Managed
    entry.m_iCost = -1;
    entry.m_iCooldown = -1;
    entry.Resolve();
+   // With RHS loaded, both sides' bomb run is an audible FA-18 flyover (Jacob, 9 Oct).
+   if (type == ACR_ESupportType.BOMB_RUN && HasPrefab(FA18_FLYOVER))
+   {
+    entry.m_eBombRunDelivery = ACR_EBombRunDelivery.FLYOVER;
+    entry.m_sBombRunPrefab = FA18_FLYOVER;
+   }
    entries.Insert(entry);
   }
+ }
+
+ static const ResourceName FA18_FLYOVER = "{76571A125EF9ECD7}Prefabs/Vehicles/Airplanes/FA18A/FA18A_Mesh.et";
+
+ static bool HasPrefab(ResourceName prefab)
+ {
+  Resource resource = Resource.Load(prefab);
+  return resource && resource.IsValid();
  }
 
  // ("USSR" contains "US": the old Contains test gave the Soviets the UH-1H and Hydras.)
@@ -1508,23 +1584,25 @@ class ACR_Supports : Managed
    Resource resource = Resource.Load(entry.m_sBombRunPrefab);
    if (!resource.IsValid()) return false;
    float speed = Math.Clamp(entry.m_fBombRunSpeed, 20, 400);
-   float altitude = Math.Clamp(entry.m_fBombRunAltitude, 30, 1000);
-   ACR_BombRunFlyover flyover = new ACR_BombRunFlyover();
-   flyover.m_vDirection = dir;
-   flyover.m_fSpeed = speed;
-   flyover.m_fAltitude = target[1] + altitude;
-   flyover.m_vStart = target - dir * (speed * delay);
-   flyover.m_vStart[1] = flyover.m_fAltitude;
-   flyover.m_fDuration = delay + 5;
-   EntitySpawnParams parameters = new EntitySpawnParams();
-   parameters.TransformMode = ETransformMode.WORLD;
-   Math3D.AnglesToMatrix(Vector(Math.Atan2(dir[0], dir[2]) * Math.RAD2DEG, 0, 0), parameters.Transform);
-   parameters.Transform[3] = flyover.m_vStart;
-   flyover.m_Aircraft = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), parameters);
-   if (!flyover.m_Aircraft) return false;
-   Physics physics = flyover.m_Aircraft.GetPhysics();
-   if (physics) physics.EnableGravity(false);
-   m_Runs.Insert(flyover);
+   vector flat = dir;
+   flat[1] = 0;
+   flat.Normalize();
+   vector start = target - flat * (speed * delay);
+   // Overhead at the set height, and never lower than 150 m over a hill on the way in or
+   // the first 2.5 km out.
+   float altitude = target[1] + Math.Clamp(entry.m_fBombRunAltitude, 30, 1000);
+   float pathLength = speed * delay + 2500;
+   for (float d = 0; d <= pathLength; d += 100)
+   {
+    vector point = start + flat * d;
+    altitude = Math.Max(altitude, GetGame().GetWorld().GetSurfaceY(point[0], point[2]) + 150);
+   }
+   start[1] = altitude;
+   float seconds = delay + 2500 / speed;
+   SCR_BaseGameMode mode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+   if (mode) mode.ACR_BroadcastFlyover(entry.m_sBombRunPrefab, start, flat, speed, altitude, seconds);
+   if (GetGame().GetPlayerController()) ACR_LocalFlyover.Start(entry.m_sBombRunPrefab, start, flat, speed, altitude, seconds);
+   PrintFormat("[ACR] SUPPORT flyover %1 at %2 m (%3 m over the target), %4 m/s", FilePath.StripPath(entry.m_sBombRunPrefab), Math.Round(altitude), Math.Round(altitude - target[1]), speed);
   }
 
   int count = Math.Clamp(entry.m_iBombRunBombs, 1, 12);
@@ -1673,8 +1751,10 @@ class ACR_Supports : Managed
 
  void ExplodeAt(vector impact) { Explode(impact); } // tests
 
+ static int s_iExploded; // tests
  protected void Explode(vector impact)
  {
+  s_iExploded++;
   impact[1] = GetGame().GetWorld().GetSurfaceY(impact[0], impact[2]) + 0.3;
   // Local on the server (damage only): the prefab replicates, and the replicated copy
   // died before it could show anything on clients. Each client makes its own (below).
@@ -2035,6 +2115,16 @@ modded class SCR_BaseGameMode
  protected void ACR_LaunchLater(IEntity projectile, vector dir, vector parentVelocity)
  {
   ACR_Supports.LaunchLocal(projectile, dir, parentVelocity);
+ }
+ void ACR_BroadcastFlyover(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds)
+ {
+  Rpc(ACR_RpcFlyover, prefab, start, dir, speed, altitude, seconds);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
+ protected void ACR_RpcFlyover(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds)
+ {
+  if (Replication.IsServer()) return;
+  ACR_LocalFlyover.Start(prefab, start, dir, speed, altitude, seconds);
  }
  void ACR_BroadcastExplosion(vector at)
  {
