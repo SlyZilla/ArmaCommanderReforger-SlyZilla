@@ -2,9 +2,10 @@
 //  - Mortar barrages (HE, creeping, smoke) and illumination are fired by a real mortar
 //    team (ACR_Mortars). The Game Master barrage modules below (spawned at the target,
 //    they fire and clean up) are kept for the coming howitzer battery.
-//  - Rocket strike and bomb run are "virtual aircraft": rockets launched from a
-//    moving point in the sky / large explosions along a line. No aircraft model
-//    is needed, so a modded jet can replace this later.
+//  - Rocket strike and the default bomb run are "virtual aircraft": rockets launched
+//    from a moving point in the sky / large explosions along a line. Bomb runs can
+//    optionally add a flyover prefab or hand a configured prefab to the editable-entity
+//    placement hook used by RHS and other scripted call-ins.
 //  - Helicopter rocket run / gunship loiter use a real crewed gunship that the script
 //    flies along a path (the AI cannot fly). Its door gunners fight on their own; it
 //    fires rocket salvos itself. It can be shot down. The door-gunner support is the
@@ -24,6 +25,13 @@ enum ACR_ESupportType
  ARTILLERY_BATTERY // battalion howitzers: no range limit, three heavy salvos over a wide area
 }
 
+enum ACR_EBombRunDelivery
+{
+	VIRTUAL,
+	FLYOVER,
+	EDITABLE_CALL_IN
+}
+
 [BaseContainerProps(), SCR_BaseContainerCustomTitleField("m_sName")]
 class ACR_SupportEntry
 {
@@ -37,6 +45,20 @@ class ACR_SupportEntry
  int m_iCost;
  [Attribute("-1", UIWidgets.EditBox, "Seconds before it can be called again (-1 = default)")]
  int m_iCooldown;
+	[Attribute("0", UIWidgets.ComboBox, "Bomb run delivery: virtual blasts, flyover prefab plus virtual blasts, or an editable call-in prefab", "", ParamEnumArray.FromEnum(ACR_EBombRunDelivery))]
+	ACR_EBombRunDelivery m_eBombRunDelivery;
+	[Attribute("", UIWidgets.ResourcePickerThumbnail, "Bomb run aircraft/flyover prefab or editable call-in spawner prefab", "et")]
+	ResourceName m_sBombRunPrefab;
+	[Attribute("150", UIWidgets.EditBox, "Flyover altitude above the target in metres")]
+	float m_fBombRunAltitude = 150;
+	[Attribute("110", UIWidgets.EditBox, "Flyover speed in metres per second")]
+	float m_fBombRunSpeed = 110;
+	[Attribute("4", UIWidgets.EditBox, "Number of virtual bombs in a flyover or virtual run")]
+	int m_iBombRunBombs = 4;
+	[Attribute("28", UIWidgets.EditBox, "Distance between virtual bomb impacts in metres")]
+	float m_fBombRunSpacing = 28;
+	[Attribute("5", UIWidgets.EditBox, "Random lateral scatter for virtual bomb impacts in metres")]
+	float m_fBombRunScatter = 5;
 
  // runtime
  float m_fReadyAt;
@@ -55,6 +77,45 @@ class ACR_SupportRun : Managed
  bool m_bDone;
  bool Frame(ACR_Supports supports, float dt, float now) { return false; }
  void Finish() {}
+}
+
+// Configurable aircraft model that crosses the target before being cleaned up. Payload
+// remains AC:A's existing synchronized virtual explosions, so simple flyover assets do
+// not need a custom behavior component.
+class ACR_BombRunFlyover : ACR_SupportRun
+{
+	IEntity m_Aircraft;
+	vector m_vStart;
+	vector m_vDirection;
+	float m_fAltitude;
+	float m_fSpeed;
+	float m_fElapsed;
+	float m_fDuration;
+
+	override bool Frame(ACR_Supports supports, float dt, float now)
+	{
+		if (!m_Aircraft) return false;
+		m_fElapsed += dt;
+		vector position = m_vStart + m_vDirection * (m_fSpeed * m_fElapsed);
+		position[1] = m_fAltitude;
+		vector transform[4];
+		Math3D.AnglesToMatrix(Vector(Math.Atan2(m_vDirection[0], m_vDirection[2]) * Math.RAD2DEG, 0, 0), transform);
+		transform[3] = position;
+		m_Aircraft.SetTransform(transform);
+		Physics physics = m_Aircraft.GetPhysics();
+		if (physics)
+		{
+			physics.SetVelocity(m_vDirection * m_fSpeed);
+			physics.SetAngularVelocity(vector.Zero);
+		}
+		return m_fElapsed < m_fDuration;
+	}
+
+	override void Finish()
+	{
+		if (m_Aircraft) SCR_EntityHelper.DeleteEntityAndChildren(m_Aircraft);
+		m_Aircraft = null;
+	}
 }
 
 // Rockets fired from a point moving through the sky toward the target.
@@ -1309,7 +1370,7 @@ class ACR_Supports : Managed
  }
 
  // Called by the commander (or AI). Returns the feedback message.
- string Call(string factionKey, int index, vector target, bool byAI = false)
+ string Call(string factionKey, int index, vector target, bool byAI = false, int callerPlayerId = -1)
  {
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(factionKey);
   if (index < 0 || index >= data.m_aSupports.Count()) return "Unknown support";
@@ -1318,6 +1379,12 @@ class ACR_Supports : Managed
   if (now < entry.m_fReadyAt) return string.Format("%1 is not ready (%2 s)", entry.m_sName, Math.Ceil((entry.m_fReadyAt - now) / 1000));
   // Mortar supports are fired by a real mortar team (ACR_Mortars): nothing is spent unless one can.
   if (ACR_Mortars.IsMortarType(entry.m_eType)) return CallMortars(factionKey, entry, target, byAI);
+  if (entry.m_eType == ACR_ESupportType.BOMB_RUN && entry.m_eBombRunDelivery != ACR_EBombRunDelivery.VIRTUAL)
+  {
+   if (entry.m_sBombRunPrefab.IsEmpty()) return "Choose a bomb-run prefab in this faction's support settings";
+   Resource bombRunResource = Resource.Load(entry.m_sBombRunPrefab);
+   if (!bombRunResource.IsValid()) return "Bomb-run prefab could not be loaded";
+  }
   // With helipads in the world, helicopter supports fly a helicopter bought for a pad.
   ACR_StationedHeli home;
   if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.UsesPads(factionKey))
@@ -1370,10 +1437,11 @@ class ACR_Supports : Managed
     break;
    }
    case ACR_ESupportType.BOMB_RUN:
-    for (int bomb = 0; bomb < 4; bomb++)
+    if (!StartBombRun(entry, target, dir, delay, callerPlayerId))
     {
-     vector impact = target + dir * ((bomb - 1.5) * 28) + Vector(Math.RandomFloat(-5, 5), 0, Math.RandomFloat(-5, 5));
-     GetGame().GetCallqueue().CallLater(Explode, delay * 1000 + bomb * 350, false, impact);
+     data.m_iRP += entry.m_iCost;
+     entry.m_fReadyAt = now;
+     return "Bomb-run prefab could not be spawned";
     }
     break;
    case ACR_ESupportType.HELI_GUN_RUN:
@@ -1423,6 +1491,93 @@ class ACR_Supports : Managed
   string message = string.Format("%1 on %2, ETA %3.", entry.m_sName, where, eta);
   if (!byAI) m_Manager.NotifyFaction(factionKey, message);
   return message;
+ }
+
+ protected bool StartBombRun(ACR_SupportEntry entry, vector target, vector dir, int delay, int callerPlayerId)
+ {
+  if (entry.m_eBombRunDelivery == ACR_EBombRunDelivery.EDITABLE_CALL_IN)
+  {
+   // RHS's call-in container spawns its prefab, then invokes this same engine hook so
+   // editable entities can initialize their slots, timing and warhead instigator.
+   GetGame().GetCallqueue().CallLater(SpawnBombRunCallIn, delay * 1000, false, entry.m_sBombRunPrefab, target, dir, callerPlayerId);
+   return true;
+  }
+
+  if (entry.m_eBombRunDelivery == ACR_EBombRunDelivery.FLYOVER)
+  {
+   Resource resource = Resource.Load(entry.m_sBombRunPrefab);
+   if (!resource.IsValid()) return false;
+   float speed = Math.Clamp(entry.m_fBombRunSpeed, 20, 400);
+   float altitude = Math.Clamp(entry.m_fBombRunAltitude, 30, 1000);
+   ACR_BombRunFlyover flyover = new ACR_BombRunFlyover();
+   flyover.m_vDirection = dir;
+   flyover.m_fSpeed = speed;
+   flyover.m_fAltitude = target[1] + altitude;
+   flyover.m_vStart = target - dir * (speed * delay);
+   flyover.m_vStart[1] = flyover.m_fAltitude;
+   flyover.m_fDuration = delay + 5;
+   EntitySpawnParams parameters = new EntitySpawnParams();
+   parameters.TransformMode = ETransformMode.WORLD;
+   Math3D.AnglesToMatrix(Vector(Math.Atan2(dir[0], dir[2]) * Math.RAD2DEG, 0, 0), parameters.Transform);
+   parameters.Transform[3] = flyover.m_vStart;
+   flyover.m_Aircraft = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), parameters);
+   if (!flyover.m_Aircraft) return false;
+   Physics physics = flyover.m_Aircraft.GetPhysics();
+   if (physics) physics.EnableGravity(false);
+   m_Runs.Insert(flyover);
+  }
+
+  int count = Math.Clamp(entry.m_iBombRunBombs, 1, 12);
+  float spacing = Math.Clamp(entry.m_fBombRunSpacing, 1, 500);
+  float scatter = Math.Clamp(entry.m_fBombRunScatter, 0, 100);
+  vector right = Vector(dir[2], 0, -dir[0]);
+  int interval = Math.Round(spacing / Math.Clamp(entry.m_fBombRunSpeed, 20, 400) * 1000);
+  if (entry.m_eBombRunDelivery == ACR_EBombRunDelivery.VIRTUAL)
+  {
+   spacing = 28;
+   interval = 350;
+  }
+  for (int bomb = 0; bomb < count; bomb++)
+  {
+   float along = (bomb - (count - 1) * 0.5) * spacing;
+   vector impact = target + dir * along + right * Math.RandomFloat(-scatter, scatter);
+   int impactDelay = delay * 1000 + bomb * interval;
+   if (entry.m_eBombRunDelivery == ACR_EBombRunDelivery.FLYOVER)
+    impactDelay = Math.Max(0, delay * 1000 + Math.Round(along / Math.Clamp(entry.m_fBombRunSpeed, 20, 400) * 1000));
+   GetGame().GetCallqueue().CallLater(Explode, impactDelay, false, impact);
+  }
+  return true;
+ }
+
+ protected void SpawnBombRunCallIn(ResourceName prefab, vector target, vector dir, int callerPlayerId)
+ {
+  Resource resource = Resource.Load(prefab);
+  if (!resource.IsValid())
+  {
+   PrintFormat("[ACR] SUPPORT bomb-run call-in prefab unavailable: %1", prefab);
+   return;
+  }
+  vector transform[4];
+  Math3D.AnglesToMatrix(Vector(Math.Atan2(dir[0], dir[2]) * Math.RAD2DEG, 0, 0), transform);
+  transform[3] = target;
+  EntitySpawnParams parameters = new EntitySpawnParams();
+  parameters.TransformMode = ETransformMode.WORLD;
+  for (int i = 0; i < 4; i++) parameters.Transform[i] = transform[i];
+  IEntity entity = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), parameters);
+  if (!entity)
+  {
+   PrintFormat("[ACR] SUPPORT bomb-run call-in spawn failed: %1", prefab);
+   return;
+  }
+  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(entity.FindComponent(SCR_EditableEntityComponent));
+  if (!editable)
+  {
+   PrintFormat("[ACR] SUPPORT bomb-run prefab has no editable call-in hook: %1", prefab);
+   SCR_EntityHelper.DeleteEntityAndChildren(entity);
+   return;
+  }
+  SCR_EditableEntityComponent parent;
+  editable.EOnEditorPlace(parent, null, 0, false, callerPlayerId);
  }
 
  protected string CallMortars(string factionKey, ACR_SupportEntry entry, vector target, bool byAI)

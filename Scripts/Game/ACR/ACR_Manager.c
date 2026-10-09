@@ -164,7 +164,7 @@ class ACR_Manager : Managed
   if (!m_Supports) m_Supports = new ACR_Supports(this);
   string key = faction.GetFactionKey();
   int before = m_Bases.GetRP(key);
-  string result = m_Supports.Call(key, index, target);
+  string result = m_Supports.Call(key, index, target, false, pc.GetPlayerId());
   int spent = before - m_Bases.GetRP(key);
   if (spent > 0)
   {
