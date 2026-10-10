@@ -243,7 +243,9 @@ class BBB_Combat
 	static void OnThreatSector(SCR_AIUtilityComponent utility, int sectorId)
 	{
 		Read();
-		if (!s_bResponse || !utility || !utility.m_SectorThreatFilter || !utility.m_AIInfo) return;
+		// Major-sector callbacks can report -1 when no sector is valid. The native
+		// threat-filter lookups below require a real sector index.
+		if (sectorId < 0 || !s_bResponse || !utility || !utility.m_SectorThreatFilter || !utility.m_AIInfo) return;
 		if (utility.m_AIInfo.HasUnitState(EUnitState.IN_TURRET) || utility.m_AIInfo.HasUnitState(EUnitState.PILOT) || utility.m_AIInfo.HasUnitState(EUnitState.UNCONSCIOUS)) return;
 		IEntity soldier = utility.m_OwnerEntity;
 		if (!soldier || BBB.PlayerOf(soldier)) return;
