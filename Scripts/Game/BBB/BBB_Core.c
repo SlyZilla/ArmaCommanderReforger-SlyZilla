@@ -30,9 +30,10 @@ class BBB_Hooks : Managed
 
 class BBB
 {
- static ref BBB_Hooks s_Hooks = new BBB_Hooks();
- static ref BBB_Gates s_Gates;
- static ref BBB_Launchers s_Launchers;
+	static ref BBB_Hooks s_Hooks = new BBB_Hooks();
+	static ref BBB_Gates s_Gates;
+	static ref BBB_Launchers s_Launchers;
+	static ref BBB_Combat s_Combat;
  protected static bool s_bStarted;
 
  // Server only. Ticks once a second on its own; Frame() must be called every frame
@@ -41,10 +42,12 @@ class BBB
  {
   if (hooks) s_Hooks = hooks;
   if (s_bStarted || !Replication.IsServer()) return;
-  s_bStarted = true;
-  BBB_Perf.Read();
-  s_Gates = new BBB_Gates();
-  s_Launchers = new BBB_Launchers();
+		s_bStarted = true;
+		BBB_Perf.Read();
+		s_Gates = new BBB_Gates();
+		s_Launchers = new BBB_Launchers();
+		s_Combat = new BBB_Combat();
+		BBB_Combat.s_Combat = s_Combat;
   GetGame().GetCallqueue().CallLater(Tick, 1000, true);
  }
 
@@ -55,8 +58,10 @@ class BBB
   if (GetGame()) GetGame().GetCallqueue().Remove(Tick);
   BBB_Unstick.StopAll();
   s_bStarted = false;
-  s_Gates = null;
-  s_Launchers = null;
+		s_Gates = null;
+		s_Launchers = null;
+		s_Combat = null;
+		BBB_Combat.s_Combat = null;
   s_Hooks = new BBB_Hooks();
  }
 
@@ -65,9 +70,11 @@ class BBB
   int t = System.GetTickCount();
   if (s_Gates) s_Gates.Tick();
   t = BBB_Perf.Lap("tick.gates", t);
-  if (s_Launchers) s_Launchers.Tick();
-  t = BBB_Perf.Lap("tick.launchers", t);
-  BBB_Perf.OnTick();
+		if (s_Launchers) s_Launchers.Tick();
+		t = BBB_Perf.Lap("tick.launchers", t);
+		if (s_Combat) s_Combat.Tick();
+		t = BBB_Perf.Lap("tick.combat", t);
+		BBB_Perf.OnTick();
  }
 
  // Every frame, once (a host and BBB's own frame source may both call it).

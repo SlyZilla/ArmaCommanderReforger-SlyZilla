@@ -180,18 +180,21 @@ modded class SCR_AIObserveThreatSystemBehavior
  {
   super.OnThreatSectorEscalation(ts, sectorId, dangerValue);
   BBB_Gunner.OnSector(m_Utility, sectorId);
+  BBB_Combat.OnThreatSector(m_Utility, sectorId);
  }
 
  override void OnMajorSectorChanged(SCR_AISectorThreatFilter ts, int newSectorId, int oldSectorId, float dangerValue)
  {
   super.OnMajorSectorChanged(ts, newSectorId, oldSectorId, dangerValue);
   BBB_Gunner.OnSector(m_Utility, newSectorId);
+  BBB_Combat.OnThreatSector(m_Utility, newSectorId);
  }
 
  override void OnDamageTaken(SCR_AISectorThreatFilter ts, int sectorId)
  {
   super.OnDamageTaken(ts, sectorId);
   BBB_Gunner.OnSector(m_Utility, sectorId);
+  BBB_Combat.OnThreatSector(m_Utility, sectorId);
  }
 }
 
