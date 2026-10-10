@@ -1,4 +1,4 @@
-// -acrMortarTest 1 (server-capable, about 3 min): the mortar team. Ground check on steep
+// -acrMortarTest 1 (server-capable, about 5 min): the mortar team. Ground check on steep
 // ground, set-up, a fire mission in range (real rounds), a refusal out of range, packing up
 // for a move and setting up again, a creeping barrage, and calls refused once it is dead.
 class ACR_TestMortar
@@ -158,6 +158,15 @@ class ACR_TestMortar
   {
    bool shellValid = !s_Team.m_sShell.IsEmpty() && Resource.Load(s_Team.m_sShell).IsValid();
    ACR_TestRegress.Check("mortar: smoke shell is valid and all 4 rounds fired", shellValid && ACR_Mortars.s_iLastFired == 4, string.Format("shell %1, fired %2", s_Team.m_sShell, ACR_Mortars.s_iLastFired));
+   ACR_Mortars.s_iLastFired = -1;
+   string large = Call(manager, ACR_ESupportType.MORTAR_HE_LARGE, ACR_Manager.Ground(home + Vector(0, 0, 700)));
+   ACR_TestRegress.Check("mortar: eight-round HE mission accepted", large.Contains("firing"), large);
+   s_iPhase = 21;
+   s_iSince = tick;
+  }
+  if (s_iPhase == 21 && s_Team && (ACR_Mortars.s_iLastFired >= 0 || waited > 80))
+  {
+   ACR_TestRegress.Check("mortar: all eight HE rounds fired across ammo batches", ACR_Mortars.s_iLastFired == 8, string.Format("fired %1, %2", ACR_Mortars.s_iLastFired, State()));
    s_Moved = ACR_Manager.Ground(s_Team.m_Spot + Vector(-30, 0, 8));
    PrintFormat("[ACR] MORTAR move order: %1", s_Team.m_Squad.MoveTo(s_Moved));
    s_iPhase = 3;
@@ -206,7 +215,7 @@ class ACR_TestMortar
   {
    string dead = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 600)));
    ACR_TestRegress.Check("mortar: no calls once the team is dead", dead.Contains("no mortar team"), dead);
-   ACR_TestRegress.Complete("mortar");
+   ACR_TestRegress.Complete("mortar", 21);
    s_iPhase = 7;
   }
  }

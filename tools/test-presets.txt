@@ -39,7 +39,7 @@ maphandoff|-acrMapHandoffTest 1|100
 regress|-acrRegressTest 1|100
 getout|-acrGetOutTest 1|110
 getoutold|-acrGetOutOldTest 1|110
-mortar|-acrMortarTest 1|260
+mortar|-acrMortarTest 1|360
 crew|-acrCrewTest 1|120
 crewold|-acrCrewOldTest 1|120
 bbbaim|-acrBbbAimTest 1|3000

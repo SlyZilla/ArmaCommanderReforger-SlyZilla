@@ -38,7 +38,8 @@ class ACR_MortarTeam : Managed
  int m_iRounds;
  IEntity m_Gunner;
  ResourceName m_sShell;
- int m_iHeldAtStart;
+ int m_iFired;
+ int m_iReserveRounds; // paid mission rounds not yet issued to a gunner
  bool m_bNoSpotLogged;
  ref map<IEntity, ResourceName> m_Backpacks = new map<IEntity, ResourceName>(); // carriers' own packs while they carry parts
  bool m_bPartsChecked;
@@ -772,14 +773,21 @@ class ACR_Mortars : Managed
    aims = {ACR_Manager.Ground(target - dir * 40), target, ACR_Manager.Ground(target + dir * 40)};
   }
   team.m_sShell = ShellFor(team, type);
+  team.m_iFired = 0;
   int total = rounds * aims.Count();
-  Supply(team, total);
+  team.m_iReserveRounds = total;
+  team.m_iRounds = total;
   foreach (int i, vector aim : aims)
   {
-   SCR_AIWaypointArtillerySupport waypoint = MakeWaypoint(aim, ammo, rounds);
-   if (!waypoint) continue;
-   if (i == 0) squad.AdoptWaypoint(waypoint, WP_FIRE, aim);
-   else team.m_Group.AddWaypoint(waypoint);
+   // Small batches fit even ordinary riflemen's inventories. Supply the actual
+   // gunner when each behavior starts, never while he is loading/firing a shell.
+   for (int remaining = rounds; remaining > 0; remaining -= 3)
+   {
+    SCR_AIWaypointArtillerySupport waypoint = MakeWaypoint(aim, ammo, Math.Min(3, remaining));
+    if (!waypoint) continue;
+    if (i == 0 && remaining == rounds) squad.AdoptWaypoint(waypoint, WP_FIRE, aim);
+    else team.m_Group.AddWaypoint(waypoint);
+   }
   }
   squad.SetOrder("Firing", ACR_EOrderState.HOLD);
   squad.m_OrderKind = ACR_EOrderKind.HUNT;
@@ -788,7 +796,7 @@ class ACR_Mortars : Managed
   team.m_fMissionEnd = GetGame().GetWorld().GetWorldTime() / 1000 + MISSION_TIMEOUT;
   team.m_sMission = typename.EnumToString(ACR_ESupportType, type);
   team.m_sStatus = "firing";
-  PrintFormat("[ACR] MORTAR %1 fire mission %2: shell %3, %4 rounds at %5 (%6 m), gunner holds %7", team.m_sName, team.m_sMission, team.m_sShell, total, target, vector.DistanceXZ(team.m_Tube.GetOrigin(), target), team.m_iHeldAtStart);
+  PrintFormat("[ACR] MORTAR %1 fire mission %2: shell %3, %4 rounds at %5 (%6 m), ammo budget %7", team.m_sName, team.m_sMission, team.m_sShell, total, target, vector.DistanceXZ(team.m_Tube.GetOrigin(), target), team.m_iReserveRounds);
  }
 
  protected SCR_AIWaypointArtillerySupport MakeWaypoint(vector aim, SCR_EAIArtilleryAmmoType ammo, int rounds)
@@ -806,46 +814,9 @@ class ACR_Mortars : Managed
   return waypoint;
  }
 
- // The crewman nearest the tube gets the shells (the game's gunner AI loads from its own pockets).
- protected void Supply(ACR_MortarTeam team, int rounds)
- {
-  IEntity gunner;
-  float best = float.MAX;
-  array<AIAgent> agents = {};
-  team.m_Squad.GetAgents(agents);
-  foreach (AIAgent agent : agents)
-  {
-   IEntity body = agent.GetControlledEntity();
-   if (!body || !ACR_Respawn.IsAlive(body) || ACR_Squad.FindController(body)) continue;
-   float distance = vector.Distance(body.GetOrigin(), team.m_Tube.GetOrigin());
-   if (distance < best) { best = distance; gunner = body; }
-  }
-  team.m_Gunner = gunner;
-  if (!gunner) return;
-  SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(gunner.FindComponent(SCR_InventoryStorageManagerComponent));
-  if (!inventory) return;
-  int held = CountShells(gunner, team.m_sShell);
-  int given;
-  for (int i = held; i < rounds; i++)
-  {
-   if (!inventory.TrySpawnPrefabToStorage(team.m_sShell)) break;
-   given++;
-  }
-  team.m_iHeldAtStart = held + given;
-  if (held + given >= rounds) return;
-  PrintFormat("[ACR] MORTAR %1: gunner could only carry %2 of %3 shells, the rest go to the others", team.m_sName, held + given, rounds);
-  int rest = rounds - held - given;
-  foreach (AIAgent other : agents)
-  {
-   IEntity body = other.GetControlledEntity();
-   if (!body || body == gunner || !ACR_Respawn.IsAlive(body)) continue;
-   SCR_InventoryStorageManagerComponent pockets = SCR_InventoryStorageManagerComponent.Cast(body.FindComponent(SCR_InventoryStorageManagerComponent));
-   while (rest > 0 && pockets && pockets.TrySpawnPrefabToStorage(team.m_sShell)) rest--;
-  }
- }
-
  static int CountShells(IEntity soldier, ResourceName shell)
  {
+  if (!soldier) return 0;
   SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(soldier.FindComponent(SCR_InventoryStorageManagerComponent));
   if (!inventory) return 0;
   array<IEntity> items = {};
@@ -854,6 +825,32 @@ class ACR_Mortars : Managed
   foreach (IEntity item : items)
    if (item && item.GetPrefabData() && item.GetPrefabData().GetPrefabName() == shell) count++;
   return count;
+ }
+
+ // Vanilla artillery loads only from the selected gunner's inventory. Supply a
+ // batch before his loading behavior starts; changing inventory during a shot
+ // can invalidate the shell reference held by the behavior tree.
+ void PrepareGunner(IEntity tube, IEntity gunner, bool fired = false)
+ {
+  foreach (ACR_MortarTeam team : m_Teams)
+  {
+   if (!team.m_bFiring || team.m_Tube != tube) continue;
+   if (fired) team.m_iFired++;
+   if (!gunner || ACR_Squad.FindController(gunner)) return;
+   team.m_Gunner = gunner;
+   if (fired) return; // Let the shot's inventory removal finish before moving another shell.
+   SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(gunner.FindComponent(SCR_InventoryStorageManagerComponent));
+   if (!inventory) return;
+   int held = CountShells(gunner, team.m_sShell);
+   int wanted = Math.Min(3, team.m_iRounds - team.m_iFired);
+   for (int added = held; added < wanted && team.m_iReserveRounds > 0; added++)
+   {
+    if (!inventory.TrySpawnPrefabToStorage(team.m_sShell)) break;
+    team.m_iReserveRounds--;
+   }
+   if (System.IsCLIParam("acrMortarTest")) PrintFormat("[ACR] MORTAR %1 batch: fired %2/%3, gunner holds %4, reserve %5", team.m_sName, team.m_iFired, team.m_iRounds, CountShells(gunner, team.m_sShell), team.m_iReserveRounds);
+   return;
+  }
  }
 
  protected void UpdateMission(ACR_MortarTeam team, float now)
@@ -872,9 +869,8 @@ class ACR_Mortars : Managed
  {
   if (!team.m_bFiring) return;
   team.m_bFiring = false;
-  int left;
-  if (team.m_Gunner) left = CountShells(team.m_Gunner, team.m_sShell);
-  s_iLastFired = team.m_iHeldAtStart - left;
+  team.m_iReserveRounds = 0;
+  s_iLastFired = team.m_iFired;
   PrintFormat("[ACR] MORTAR %1 fire mission %2 %3: %4 of %5 rounds fired", team.m_sName, team.m_sMission, why, s_iLastFired, team.m_iRounds);
   ACR_Squad squad = team.m_Squad;
   if (squad && team.m_eState == ACR_EMortarState.DEPLOYED && why != "packing up")
@@ -928,5 +924,26 @@ class ACR_Mortars : Managed
   team.m_fStillSince = 0;
   team.m_sStatus = "packed up";
   Tell(team, team.m_sName + " has a new mortar");
+ }
+}
+
+// Observe the actual artillery shot event instead of treating missing inventory
+// items as shots. Keep the hook scoped to AC:A's registered, firing mortar tubes.
+modded class SCR_AIStaticArtilleryBehavior
+{
+ override void OnActionSelected()
+ {
+  super.OnActionSelected();
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager && m_Utility)
+   manager.Mortars().PrepareGunner(m_ArtilleryEntity.m_Value, m_Utility.m_OwnerEntity);
+ }
+
+ override void Internal_OnArtilleryFired()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager && m_Utility)
+   manager.Mortars().PrepareGunner(m_ArtilleryEntity.m_Value, m_Utility.m_OwnerEntity, true);
+  super.Internal_OnArtilleryFired();
  }
 }
