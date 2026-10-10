@@ -22,6 +22,36 @@ class ACR_Vehicles
   // arsenals see the purchasing side's item catalog.
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(vehicle.FindComponent(FactionAffiliationComponent));
   if (affiliation) affiliation.SetAffiliatedFactionByKey(faction);
+  SCR_VehicleFactionAffiliationComponent vehicleFaction = SCR_VehicleFactionAffiliationComponent.Cast(affiliation);
+  if (vehicleFaction) vehicleFaction.ACR_SetPurchasingFaction(faction);
+ }
+
+ static SCR_ArsenalComponent ArsenalOf(IEntity entity)
+ {
+  if (!entity) return null;
+  SCR_ArsenalComponent arsenal = SCR_ArsenalComponent.Cast(entity.FindComponent(SCR_ArsenalComponent));
+  if (arsenal) return arsenal;
+  IEntity child = entity.GetChildren();
+  while (child)
+  {
+   arsenal = ArsenalOf(child);
+   if (arsenal) return arsenal;
+   child = child.GetSibling();
+  }
+  return null;
+ }
+
+ static void RefreshArsenals(IEntity entity)
+ {
+  if (!entity) return;
+  SCR_ArsenalComponent arsenal = SCR_ArsenalComponent.Cast(entity.FindComponent(SCR_ArsenalComponent));
+  if (arsenal) arsenal.RefreshArsenal();
+  IEntity child = entity.GetChildren();
+  while (child)
+  {
+   RefreshArsenals(child);
+   child = child.GetSibling();
+  }
  }
 
  static void SetCrewPrefab(IEntity vehicle, ResourceName crewman)
@@ -97,10 +127,47 @@ class ACR_Vehicles
 
 modded class SCR_VehicleFactionAffiliationComponent
 {
+ [RplProp(onRplName: "ACR_OnPurchasingFaction")]
+ protected string m_sACRPurchasingFaction;
+
+ string ACR_GetPurchasingFaction() { return m_sACRPurchasingFaction; }
+
+ void ACR_SetPurchasingFaction(string faction)
+ {
+  if (m_sACRPurchasingFaction == faction) return;
+  m_sACRPurchasingFaction = faction;
+  Replication.BumpMe();
+  ACR_OnPurchasingFaction();
+ }
+
+ protected void ACR_OnPurchasingFaction()
+ {
+  ACR_Vehicles.RefreshArsenals(GetOwner());
+ }
+
  override event void OnPostInit(IEntity owner)
  {
   super.OnPostInit(owner);
   ACR_Vehicles.Register(owner);
+ }
+}
+
+modded class SCR_ArsenalComponent
+{
+ override SCR_Faction GetAssignedFaction()
+ {
+  IEntity entity = GetOwner();
+  while (entity)
+  {
+   SCR_VehicleFactionAffiliationComponent affiliation = SCR_VehicleFactionAffiliationComponent.Cast(entity.FindComponent(SCR_VehicleFactionAffiliationComponent));
+   if (affiliation && !affiliation.ACR_GetPurchasingFaction().IsEmpty())
+   {
+    SCR_Faction faction = SCR_Faction.Cast(GetGame().GetFactionManager().GetFactionByKey(affiliation.ACR_GetPurchasingFaction()));
+    if (faction) return faction;
+   }
+   entity = entity.GetParent();
+  }
+  return super.GetAssignedFaction();
  }
 }
 

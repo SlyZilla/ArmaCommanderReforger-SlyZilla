@@ -31,6 +31,7 @@ class ACR_TestFactionPairs
  }
 
  protected static int s_iExpected;
+ protected static ref array<IEntity> s_ArsenalTrucks = {};
 
  // RHS sides: one subunit and camouflage per side (Jacob, 8 Oct live test: MARSOC, desert
  // and woodland mixed; officers and vehicle crews in vanilla 80s kit).
@@ -151,6 +152,15 @@ class ACR_TestFactionPairs
    acr.m_sSpawningFaction = east;
    acr.SpawnUnit("Crew test east", "", "{0B4DEA8078B78A9B}Prefabs/Vehicles/Wheeled/UAZ469/UAZ469_PKM.et", true, "", at2, at2);
    acr.m_sSpawningFaction = "";
+   array<string> arsenalBuyers = {west, east};
+   foreach (string buyingSide : arsenalBuyers)
+   {
+    vector arsenalAt = at;
+    if (buyingSide == east) arsenalAt = at2;
+    IEntity arsenalTruck = ACR_Manager.SpawnPrefab("{1FF144F8A209239D}Prefabs/Vehicles/Wheeled/M923A1/M923A1_arsenal.et", arsenalAt + Vector(0, 0, 30));
+    ACR_Vehicles.SetOwner(arsenalTruck, buyingSide);
+    s_ArsenalTrucks.Insert(arsenalTruck);
+   }
    // Bomb run: both RHS sides fly the FA-18 (Jacob, 9 Oct). Call one on the east side's
    // own base area (far from the crew cars) and fly a local copy here as a client would.
    ACR_FactionData eastData2 = acr.m_Bases.GetFaction(east);
@@ -179,7 +189,7 @@ class ACR_TestFactionPairs
    vector flyStart = ACR_Manager.Ground(homeWest.GetOrigin()) + "0 300 0";
    ACR_LocalFlyover.Start(ACR_Supports.FA18_FLYOVER, flyStart, "1 0 0", 180, flyStart[1], 6);
    s_vFlyStart = flyStart;
-   s_iExpected = expected + 5;
+   s_iExpected = expected + 7;
    return;
   }
   ACR_TestRegress.Complete("factions", expected);
@@ -200,6 +210,22 @@ class ACR_TestFactionPairs
  protected static void FinishCrews()
  {
   if (s_iExpected == 0) return;
+  array<string> buyers = {ACR_FactionSelection.West(), ACR_FactionSelection.East()};
+  foreach (int index, string buyer : buyers)
+  {
+   IEntity truck;
+   if (index < s_ArsenalTrucks.Count()) truck = s_ArsenalTrucks[index];
+   SCR_ArsenalComponent arsenal = ACR_Vehicles.ArsenalOf(truck);
+   bool correct;
+   array<SCR_ArsenalItem> items = {};
+   if (arsenal)
+   {
+    FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(truck.FindComponent(FactionAffiliationComponent));
+    if (affiliation) affiliation.SetAffiliatedFaction(null);
+    correct = arsenal.GetAssignedFaction() && arsenal.GetAssignedFaction().GetFactionKey() == buyer && arsenal.GetFilteredArsenalItems(items) && !items.IsEmpty();
+   }
+   ACR_TestRegress.Check("factions: empty purchased arsenal retains " + buyer + " catalog", correct, string.Format("%1 filtered items", items.Count()));
+  }
   ACR_TestRegress.Check("factions: the local FA-18 is removed after its flight", ACR_LocalFlyover.Latest() == null, "");
   ACR_TestRegress.Check("factions: the bomb run's four bombs went off", ACR_Supports.s_iExploded == 4, string.Format("%1 bombs at %2", ACR_Supports.s_iExploded, s_vBombTarget));
   int seated, own;
