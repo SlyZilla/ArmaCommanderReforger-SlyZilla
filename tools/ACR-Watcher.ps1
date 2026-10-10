@@ -30,6 +30,19 @@ $Presets = @{
 }
 
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
+# Only one queue consumer per checkout. Two launchers otherwise steal each
+# other's requests and start servers against the same profile and port.
+$watcherHash = [Security.Cryptography.SHA256]::Create()
+try {
+    $watcherKey = [BitConverter]::ToString($watcherHash.ComputeHash([Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($ProjectRoot).ToLowerInvariant()))).Replace('-', '')
+} finally { $watcherHash.Dispose() }
+$watcherCreated = $false
+$watcherMutex = New-Object Threading.Mutex($true, "Local\ACA_TestWatcher_$watcherKey", [ref]$watcherCreated)
+if (!$watcherCreated) {
+    $watcherMutex.Dispose()
+    Write-Host 'A test launcher is already watching this project. Keep that launcher open.' -ForegroundColor Yellow
+    exit 0
+}
 . (Join-Path $ProjectRoot 'ACR-Find.ps1')
 $TestServerProfile = Join-Path $ProjectRoot '.local-testserver'
 $script:TestServerPid = 0
@@ -303,11 +316,14 @@ function Invoke-Request($file) {
 
 Write-Host 'AC: Actual test launcher is running. Leave this window open; close it to stop.' -ForegroundColor Green
 Write-Host "Watching $RequestDir"
-while ($true) {
+try { while ($true) {
     try {
         Get-ChildItem -LiteralPath $RequestDir -Filter '*.request' | Sort-Object CreationTime | ForEach-Object { Invoke-Request $_ }
     } catch {
         Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
     }
     Start-Sleep -Seconds 2
+} } finally {
+    $watcherMutex.ReleaseMutex()
+    $watcherMutex.Dispose()
 }
