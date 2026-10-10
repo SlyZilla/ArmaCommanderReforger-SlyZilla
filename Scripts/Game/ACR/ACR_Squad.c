@@ -936,6 +936,7 @@ class ACR_Squad : Managed
   bool contact = KnownEnemies(350) > 0;
   FollowRoute();
   Cohesion(now, contact);
+  RecoverMovementWaypoint(now);
   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
   // (not after a Halt: m_Waypoint is gone then, and the old order must not come back)
   if (m_bForced && movingOrder && contact && m_Waypoint && !IsMounted() && !m_bRegrouping)
@@ -957,17 +958,6 @@ class ACR_Squad : Managed
     SetOrder("Holding position", ACR_EOrderState.DEFEND);
     m_OrderKind = ACR_EOrderKind.DEFEND;
     PrintFormat("[ACR] TACTICS %1: arrived, taking positions", m_Name);
-   }
-   else if (waypoints.IsEmpty() && anchor && vector.DistanceXZ(anchor.GetOrigin(), m_MoveTarget) > 90 && now >= m_fNextWaypointRecovery && m_iWaypointRecoveries < 4 && !m_bRegrouping)
-   {
-    // The engine can complete a move waypoint after a failed group move. Keep the
-    // player's order alive while the squad is still well outside its arrival radius.
-    m_fNextWaypointRecovery = now + 10000;
-    m_iWaypointRecoveries++;
-    if (IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius))
-     PrintFormat("[ACR] MOVE %1: waypoint disappeared %2 m from target; reissued (%3/4)", m_Name, (int)vector.DistanceXZ(anchor.GetOrigin(), m_MoveTarget), m_iWaypointRecoveries);
-    else
-     PrintFormat("[ACR] MOVE %1: waypoint disappeared but reissue failed", m_Name);
    }
   }
   DriveWatch(now, contact);
@@ -1054,6 +1044,8 @@ class ACR_Squad : Managed
 
  protected void NextLeg()
  {
+  m_iWaypointRecoveries = 0;
+  m_fNextWaypointRecovery = 0;
   vector leg = m_aRoute[0];
   m_aRoute.RemoveOrdered(0);
   if (m_aRoute.IsEmpty()) RestoreOrderAt(m_Route, m_Route.m_sPrefab, leg, m_Route.m_fRadius);
@@ -1115,10 +1107,14 @@ class ACR_Squad : Managed
  {
   if (m_aQueuePos.IsEmpty() || !m_aRoute.IsEmpty() || m_bRegrouping || !m_Group) return;
   if (m_Group.GetCurrentWaypoint()) return;
+  // An engine-completed waypoint is not proof that the squad reached it.
+  if (MovementStillPending()) return;
   vector next = m_aQueuePos[0];
   int kind = m_aQueueKind[0];
   m_aQueuePos.RemoveOrdered(0);
   m_aQueueKind.RemoveOrdered(0);
+  m_iWaypointRecoveries = 0;
+  m_fNextWaypointRecovery = 0;
   if (kind == 2)
   {
    PlaceGarrison(next);
@@ -1161,18 +1157,31 @@ class ACR_Squad : Managed
    NextLeg();
    return;
   }
-  // A failed path can make the engine remove a waypoint. Do not mistake that
-  // for arriving at this route hop and silently advance the squad past it.
-  float now = GetGame().GetWorld().GetWorldTime();
-  if (now >= m_fNextWaypointRecovery && m_iWaypointRecoveries < 4)
-  {
-   m_fNextWaypointRecovery = now + 10000;
-   m_iWaypointRecoveries++;
-   if (IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius))
-    PrintFormat("[ACR] ROUTE %1: waypoint disappeared %2 m from hop; reissued (%3/4)", m_Name, (int)toLeg, m_iWaypointRecoveries);
-   else
-    PrintFormat("[ACR] ROUTE %1: waypoint disappeared but hop reissue failed", m_Name);
-  }
+  // Recovery runs after route/queue handling, including the final mounted leg.
+ }
+
+ protected bool MovementStillPending()
+ {
+  ACR_EOrderState state = OrderState();
+  if (state != ACR_EOrderState.MOVE && state != ACR_EOrderState.DEFEND && state != ACR_EOrderState.ASSAULT && state != ACR_EOrderState.RETURN) return false;
+  if (m_sOrderPrefab != WP_MOVE && m_sOrderPrefab != WP_DEFEND && m_sOrderPrefab != WP_SEARCH_DESTROY && m_sOrderPrefab != WP_GARRISON) return false;
+  IEntity anchor = GetAnchor();
+  if (!anchor) return true;
+  float arrival = Math.Max(60, m_fOrderRadius);
+  if (IsMounted()) arrival = Math.Max(70, arrival);
+  if (!m_aRoute.IsEmpty()) arrival = 30;
+  if (!m_aRoute.IsEmpty() && IsMounted() && ACR_Transport.CrewedVehicle(this)) arrival = 70;
+  return vector.DistanceXZ(anchor.GetOrigin(), m_MoveTarget) >= arrival;
+ }
+
+ protected void RecoverMovementWaypoint(float now)
+ {
+  if (!m_Group || m_bRegrouping || m_bGarrisonPending || m_Group.GetCurrentWaypoint() || !MovementStillPending()) return;
+  if (now < m_fNextWaypointRecovery || m_iWaypointRecoveries >= 4) return;
+  m_fNextWaypointRecovery = now + 10000;
+  m_iWaypointRecoveries++;
+  IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, m_bForced);
+  PrintFormat("[ACR] MOVE %1: waypoint disappeared before arrival; recovery %2/4", m_Name, m_iWaypointRecoveries);
  }
 
  // ---------------------------------------------------------------- cohesion
@@ -1857,7 +1866,7 @@ class ACR_Squad : Managed
  protected bool CollectNearestVehicle(IEntity entity)
  {
   Vehicle vehicle = Vehicle.Cast(entity);
-  if (!vehicle) return true;
+  if (!vehicle || ACR_Logistics.Health(vehicle) <= 0) return true;
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   if (!compartments || !HasOpenSeat(compartments)) return true;
   float distance = vector.DistanceXZ(vehicle.GetOrigin(), m_SearchVehicleAt);

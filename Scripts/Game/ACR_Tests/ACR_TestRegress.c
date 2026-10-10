@@ -65,7 +65,9 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 55;
+ static const int EXPECTED = 62;
+ static SCR_AIGroup s_RecoveryGroup;
+ static IEntity s_ArsenalTruck;
 
  static ACR_Squad s_Defender;
  static SCR_AIGroup s_Stale;
@@ -93,6 +95,7 @@ class ACR_TestRegress
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {
+   Check("BBB rejects both negative and out-of-range threat sectors", !BBB_Combat.ValidSector(-1) && !BBB_Combat.ValidSector(SCR_AISectorThreatFilter.SECTOR_COUNT) && !BBB_Combat.ValidSector(100000) && BBB_Combat.ValidSector(0), "native lookup bounds");
    bool standardGunship;
    ACR_FactionData usOffers = manager.m_Bases.GetFaction("US");
    if (usOffers)
@@ -424,10 +427,14 @@ class ACR_TestRegress
    if (sovietSoldiers == 0) Skip("debug: reveal shows enemy soldiers", "no Soviet squads");
    else Check("debug: reveal shows enemy soldiers", sovietsSeen > 0 && !manager.m_Debug.Reveals("US"), string.Format("%1 seen of about %2", sovietsSeen, sovietSoldiers));
   }
+  if (tick == 45) MountedRecoveryCheck(manager, truck);
   // Vehicle crews carry their unit's name even when they register before they're seated
   // (2 Oct live: Truck 1 and Humvee 1 showed as "Squad 1" and "Squad 2").
   if (tick == 40)
   {
+   s_RecoveryGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1430 0 2850")));
+   s_ArsenalTruck = ACR_Manager.SpawnPrefab("{1FF144F8A209239D}Prefabs/Vehicles/Wheeled/M923A1/M923A1_arsenal.et", harness.Ground("1450 0 2850"));
+   ACR_Vehicles.SetOwner(s_ArsenalTruck, "USSR");
    manager.m_sSpawningFaction = "US";
    manager.SpawnUnit("Regress Truck", "", "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", true, "", harness.Ground("1500 0 2950"), harness.Ground("1506 0 2956"));
    // A crewed helicopter outside the helipads (Game Master / bought): AI can't fly it, so its
@@ -436,6 +443,19 @@ class ACR_TestRegress
   }
   if (tick == 44)
   {
+   RecoveryChecks(manager, truck);
+   SCR_ArsenalComponent arsenal = ACR_Vehicles.ArsenalOf(s_ArsenalTruck);
+   bool arsenalReady;
+   if (arsenal)
+   {
+    FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(s_ArsenalTruck.FindComponent(FactionAffiliationComponent));
+    if (affiliation) affiliation.SetAffiliatedFaction(null);
+    array<SCR_ArsenalItem> items = {};
+    arsenalReady = arsenal.GetAssignedFaction() && arsenal.GetAssignedFaction().GetFactionKey() == "USSR" && arsenal.GetFilteredArsenalItems(items) && !items.IsEmpty();
+   }
+   Check("empty purchased arsenal keeps its purchasing faction and item catalog", arsenalReady, "US prefab bought by USSR, current vehicle faction cleared");
+   // Keep the truck until server shutdown: nearby AI may still hold a contact
+   // report for it, so immediate deletion would invalidate that radio request.
    s_Heli = null;
    foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetName() == "Regress Heli") s_Heli = squad;
    bool moved;
@@ -553,6 +573,57 @@ class ACR_TestRegress
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
+ }
+
+ static void RecoveryChecks(ACR_Manager manager, IEntity truck)
+ {
+  ACR_Squad squad = manager.FindSquadByGroup(s_RecoveryGroup);
+  bool queuedKept, restored, halted;
+  if (squad && squad.GetAnchor())
+  {
+   vector first = ACR_Manager.Ground(squad.GetAnchor().GetOrigin() + Vector(600, 0, 0));
+   vector second = ACR_Manager.Ground(first + Vector(0, 0, 200));
+   squad.MoveTo(first);
+   squad.Queue(second, false);
+   squad.m_iOrderedBy = 4242;
+   int serial = squad.m_iOrderSerial;
+   AIWaypoint dropped = squad.m_Group.GetCurrentWaypoint();
+   if (dropped) { squad.m_Group.RemoveWaypoint(dropped); SCR_EntityHelper.DeleteEntityAndChildren(dropped); }
+   squad.Tactics(50, GetGame().GetWorld().GetWorldTime());
+   array<vector> points = {};
+   array<int> kinds = {};
+   squad.GetPlannedPoints(points, kinds);
+   queuedKept = squad.m_MoveTarget == first && points.Count() == 1 && points[0] == second;
+   restored = squad.m_Group.GetCurrentWaypoint() != null && squad.m_iOrderSerial == serial && squad.m_iOrderedBy == 4242;
+   squad.Halt("Holding");
+   squad.Tactics(50, GetGame().GetWorld().GetWorldTime() + 11000);
+   halted = !squad.m_Group.GetCurrentWaypoint() && squad.OrderState() == ACR_EOrderState.HOLD;
+   if (truck) squad.BoardCargo(truck, 10000, true, true);
+  }
+  Check("dropped waypoint keeps the queued destination behind the current move", queuedKept, "no silent skip");
+  Check("dropped move is reissued without changing issuer or order serial", restored, "recovery preserves attribution");
+  Check("Halt never recovers an old move", halted, "explicit cancellation");
+  ACR_FeedFrame frame = ACR_MapFeed.Build(manager, GetGame().GetFactionManager().GetFactionByKey("US"));
+  int count = frame.m_Leaders.Count();
+  Check("friendly map feed keeps all parallel marker arrays aligned", frame.m_LeaderPos.Count() == count && frame.m_GroupNames.Count() == count && frame.m_Symbols.Count() == count * 4 && frame.m_Status.Count() == count * 6 && frame.m_GroupIds.Count() == count && frame.m_Commandable.Count() == count && frame.m_LeaderStates.Count() == count && frame.m_Details.Count() == count, count.ToString());
+ }
+
+ static void MountedRecoveryCheck(ACR_Manager manager, IEntity truck)
+ {
+  ACR_Squad squad = manager.FindSquadByGroup(s_RecoveryGroup);
+  bool mounted;
+  if (squad && truck)
+  {
+   squad.MoveTo(ACR_Manager.Ground(truck.GetOrigin() + Vector(600, 0, 0)));
+   AIWaypoint dropped = squad.m_Group.GetCurrentWaypoint();
+   if (dropped) { squad.m_Group.RemoveWaypoint(dropped); SCR_EntityHelper.DeleteEntityAndChildren(dropped); }
+   squad.Tactics(50, GetGame().GetWorld().GetWorldTime());
+   mounted = squad.IsMounted() && squad.m_Group.GetCurrentWaypoint() != null;
+   squad.Halt("Holding");
+   // The server shuts down after this test. Keep the crew alive until then:
+   // deleting them here invalidates vanilla radio requests still in flight.
+  }
+  Check("final mounted move recovers a dropped waypoint", mounted, "boarding settled before the check");
  }
 
  // ---------------------------------------------------------------- R01/R05 helpers
