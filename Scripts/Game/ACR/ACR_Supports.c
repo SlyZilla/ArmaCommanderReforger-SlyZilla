@@ -100,7 +100,11 @@ class ACR_LocalFlyover : Managed
 	static void Start(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds)
 	{
 		IEntity plane = ACR_Supports.SpawnLocal(prefab, start, vector.Zero);
-		if (!plane) return;
+		if (!plane)
+		{
+			PrintFormat("[ACR] FLYOVER local spawn failed prefab=%1 at=%2", prefab, start);
+			return;
+		}
 		ACR_LocalFlyover flyover = new ACR_LocalFlyover();
 		flyover.m_Plane = plane;
 		flyover.m_vStart = start;
@@ -2135,6 +2139,7 @@ modded class SCR_BaseGameMode
  protected void ACR_RpcFlyover(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds)
  {
   if (Replication.IsServer()) return;
+  PrintFormat("[ACR] FLYOVER RPC received prefab=%1 at=%2", prefab, start);
   ACR_LocalFlyover.Start(prefab, start, dir, speed, altitude, seconds);
  }
  void ACR_BroadcastExplosion(vector at)
@@ -2145,7 +2150,8 @@ modded class SCR_BaseGameMode
  protected void ACR_RpcExplosion(vector at)
  {
   if (Replication.IsServer()) return;
-  ACR_Supports.SpawnLocal(ACR_Supports.BOMB, at, vector.Zero);
-  ACR_Supports.PlayBlast(at);
+  IEntity effect = ACR_Supports.SpawnLocal(ACR_Supports.BOMB, at, vector.Zero);
+  bool sound = ACR_Supports.PlayBlast(at);
+  PrintFormat("[ACR] SUPPORT explosion RPC received at=%1 effect=%2 sound=%3", at, effect != null, sound);
  }
 }

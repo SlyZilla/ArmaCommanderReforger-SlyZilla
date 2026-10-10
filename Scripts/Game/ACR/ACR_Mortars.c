@@ -788,7 +788,7 @@ class ACR_Mortars : Managed
   team.m_fMissionEnd = GetGame().GetWorld().GetWorldTime() / 1000 + MISSION_TIMEOUT;
   team.m_sMission = typename.EnumToString(ACR_ESupportType, type);
   team.m_sStatus = "firing";
-  PrintFormat("[ACR] MORTAR %1 fire mission %2: %3 rounds at %4 (%5 m), gunner holds %6", team.m_sName, team.m_sMission, total, target, vector.DistanceXZ(team.m_Tube.GetOrigin(), target), team.m_iHeldAtStart);
+  PrintFormat("[ACR] MORTAR %1 fire mission %2: shell %3, %4 rounds at %5 (%6 m), gunner holds %7", team.m_sName, team.m_sMission, team.m_sShell, total, target, vector.DistanceXZ(team.m_Tube.GetOrigin(), target), team.m_iHeldAtStart);
  }
 
  protected SCR_AIWaypointArtillerySupport MakeWaypoint(vector aim, SCR_EAIArtilleryAmmoType ammo, int rounds)

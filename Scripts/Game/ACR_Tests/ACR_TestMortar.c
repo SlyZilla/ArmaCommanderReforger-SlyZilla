@@ -144,10 +144,20 @@ class ACR_TestMortar
    s_iPhase = 2;
    s_iSince = tick;
   }
-  // 2: all rounds out, then a move order: packs up first
+  // 2: confirm a real smoke mission and all four smoke rounds before moving.
   if (s_iPhase == 2 && s_Team && (ACR_Mortars.s_iLastFired >= 0 || waited > 50))
   {
    ACR_TestRegress.Check("mortar: all 4 rounds fired", ACR_Mortars.s_iLastFired == 4, string.Format("fired %1, %2", ACR_Mortars.s_iLastFired, State()));
+   ACR_Mortars.s_iLastFired = -1;
+   string smoke = Call(manager, ACR_ESupportType.MORTAR_SMOKE, ACR_Manager.Ground(home + Vector(0, 0, 700)));
+   ACR_TestRegress.Check("mortar: smoke screen call accepted", smoke.Contains("firing"), smoke);
+   s_iPhase = 20;
+   s_iSince = tick;
+  }
+  if (s_iPhase == 20 && s_Team && (ACR_Mortars.s_iLastFired >= 0 || waited > 50))
+  {
+   bool shellValid = !s_Team.m_sShell.IsEmpty() && Resource.Load(s_Team.m_sShell).IsValid();
+   ACR_TestRegress.Check("mortar: smoke shell is valid and all 4 rounds fired", shellValid && ACR_Mortars.s_iLastFired == 4, string.Format("shell %1, fired %2", s_Team.m_sShell, ACR_Mortars.s_iLastFired));
    s_Moved = ACR_Manager.Ground(s_Team.m_Spot + Vector(-30, 0, 8));
    PrintFormat("[ACR] MORTAR move order: %1", s_Team.m_Squad.MoveTo(s_Moved));
    s_iPhase = 3;

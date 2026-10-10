@@ -15,7 +15,13 @@ class ACR_Vehicles
 
  static void SetOwner(IEntity vehicle, string faction)
  {
-  if (vehicle && !faction.IsEmpty()) s_Owner.Set(vehicle, faction);
+  if (!vehicle || faction.IsEmpty()) return;
+  s_Owner.Set(vehicle, faction);
+  // Requisition can reuse a vanilla vehicle prefab for RHS. Set its actual
+  // affiliation as well as our logistics owner so faction-aware systems such as
+  // arsenals see the purchasing side's item catalog.
+  FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(vehicle.FindComponent(FactionAffiliationComponent));
+  if (affiliation) affiliation.SetAffiliatedFactionByKey(faction);
  }
 
  static void SetCrewPrefab(IEntity vehicle, ResourceName crewman)

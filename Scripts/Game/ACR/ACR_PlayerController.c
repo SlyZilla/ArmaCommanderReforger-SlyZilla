@@ -5,6 +5,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  string m_Label;
  int m_State;          // 0 AI, 1 player-controlled, 2 dead
  bool m_Original;      // the player's command unit
+ bool m_bCommandUnit;  // persistent marker for a fellow commander, not a possession target
  bool m_Selected;
  RplId m_GroupId;      // squad this marker belongs to
  int m_BaseIndex = -1; // >= 0: this marker is a base
@@ -662,13 +663,12 @@ modded class SCR_PlayerController
    marker.m_UnitId = m_ACR_Data.m_LeaderIds[i];
    marker.m_Label = m_ACR_Data.m_GroupNames[i];
    marker.m_GroupId = m_ACR_Data.m_GroupIds[i];
+   marker.m_bCommandUnit = (m_ACR_GroupSymbols[i * 4 + 3] & 32) != 0;
    marker.m_Selected = ACR_IsSelected(marker.m_GroupId);
    marker.m_State = m_ACR_LeaderStates[i];
    if (marker.m_State == 1) marker.m_Label += " [PLAYER LEADER]";
    else marker.m_Label += " [AI LEADER]";
    vector pos = m_ACR_Data.m_LeaderPositions[i];
-   IEntity streamed = SCR_EntityHelper.RplIdToEntity(marker.m_UnitId);
-   if (streamed) pos = streamed.GetOrigin();
    marker.SetWorldPos(pos[0], pos[2]);
    if (!marker.m_GroupSymbol) marker.m_GroupSymbol = new SCR_MilitarySymbol();
    marker.m_GroupSymbol.Set(EMilitarySymbolIdentity.BLUFOR, m_ACR_GroupSymbols[i * 4 + 1], m_ACR_GroupSymbols[i * 4], m_ACR_GroupSymbols[i * 4 + 2]);
@@ -689,6 +689,7 @@ modded class SCR_PlayerController
   foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) candidates.Insert(groupMarker);
   foreach (ACR_UnitMarker marker : candidates)
   {
+   if (marker.m_bCommandUnit) continue;
    int pos[2];
    marker.GetWorldPos(pos);
    float dx = x - pos[0];

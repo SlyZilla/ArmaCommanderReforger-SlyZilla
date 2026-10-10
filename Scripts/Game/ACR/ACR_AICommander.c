@@ -619,6 +619,7 @@ class ACR_AICommander : Managed
    if (!candidate.m_sOwner.IsEmpty()) need = Math.Max(10, DefenceOf(candidate) * ATTACK_RATIO * 0.65) + candidate.m_iGarrisonLeft;
    if (counterDue) need = need * 0.7; // strike before they dig in
    need = need * pressure;
+   if (ACR_Manager.ThreatOption() == 2) need = need * 0.85; // High: launch a viable force sooner
    if (!wanted) { wanted = candidate; wantedRequired = need; }
    if (available >= need) { target = candidate; required = need; break; }
   }
@@ -1071,7 +1072,9 @@ class ACR_AICommander : Managed
       CallSupport(ACR_ESupportType.ARTILLERY_BATTERY, target.GetOrigin(), "battery preparation fire on " + target.m_sName);
     vector screen = attack.m_Staging + (target.GetOrigin() - attack.m_Staging) * 0.55;
     CallSupport(ACR_ESupportType.MORTAR_SMOKE, screen, "smoke screen for " + target.m_sName);
-    if (attack.m_bCounter) CallSupport(ACR_ESupportType.HELI_LOITER, target.GetOrigin(), "gunship for the counterattack on " + target.m_sName);
+    // Reserve gunship support for an assault, not only the rare counterattack.
+    // CallSupport still checks cooldown, range/pad readiness and friendly distance.
+    CallSupport(ACR_ESupportType.HELI_LOITER, target.GetOrigin(), "gunship for the assault on " + target.m_sName);
     foreach (ACR_Squad squad : attack.m_Squads)
     {
      squad.SetMode(ACR_EMoveMode.COMBAT);
@@ -1339,7 +1342,17 @@ class ACR_AICommander : Managed
   // recon) are rare and never doubled up.
   // Keep a fire-support budget unless troops are needed more.
   int keep = 0;
-  if (!UrgentTroops(mine.Count(), cap))
+  bool highThreat = ACR_Manager.ThreatOption() == 2;
+  if (highThreat)
+  {
+   // High intensity should field its fire support even while the infantry pool
+   // is still building. These checks remain stock/RP/pad gated and buy at most
+   // one support unit per strategy tick.
+   keep = SupportBudget();
+   if (BuyMortarTeam(spawn, data)) return;
+   if (BuyHelicopter(data)) return;
+  }
+  else if (!UrgentTroops(mine.Count(), cap))
   {
    keep = SupportBudget();
    if (BuyMortarTeam(spawn, data)) return;
@@ -1362,6 +1375,8 @@ class ACR_AICommander : Managed
     // Weigh by the base price: a unit whose stepped price has climbed isn't worth more.
     float weight = entry.m_iCost;
     if (entry.m_iBaseCost > 0) weight = entry.m_iBaseCost;
+    if (highThreat && !entry.m_sVehicle.IsEmpty()) weight *= 1.5;
+    if (highThreat && m_sFaction == "RHS_AFRF" && IsRUArmorEntry(entry)) weight *= 2;
     if (IsSpecialistTeam(entry))
     {
      if (OwnsLike(entry)) continue;
@@ -1386,6 +1401,14 @@ class ACR_AICommander : Managed
    string result = m_Manager.PurchaseAt(m_sFaction, pick, spawn);
    PrintFormat("[ACR] AI %1 requisition: %2", m_sFaction, result);
   }
+ }
+
+ protected bool IsRUArmorEntry(ACR_RequisitionEntry entry)
+ {
+  if (!entry || entry.m_sVehicle.IsEmpty()) return false;
+  string vehicle = FilePath.StripExtension(FilePath.StripPath(entry.m_sVehicle));
+  vehicle.ToLower();
+  return vehicle.Contains("btr70") || vehicle.Contains("brdm2");
  }
 
  static bool IsSpecialistTeam(ACR_RequisitionEntry entry)

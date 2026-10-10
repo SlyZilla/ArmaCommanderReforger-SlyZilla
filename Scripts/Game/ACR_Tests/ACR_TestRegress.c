@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 53;
+ static const int EXPECTED = 55;
 
  static ACR_Squad s_Defender;
  static SCR_AIGroup s_Stale;
@@ -93,6 +93,12 @@ class ACR_TestRegress
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {
+   bool standardGunship;
+   ACR_FactionData usOffers = manager.m_Bases.GetFaction("US");
+   if (usOffers)
+    foreach (ACR_RequisitionEntry offer : usOffers.m_aRequisitions)
+     if (offer.m_sVehicle.Contains("UH1H_armed_gunship") && offer.m_bCrewed && offer.m_bAircraft && offer.m_bRare) standardGunship = true;
+   Check("US gunship Huey remains in standard requisition", standardGunship, "armed UH-1H is a crewed rare aircraft");
    array<int> picked = {};
    array<string> sets = {};
    array<ref array<float>> orders = {{1000, 1100, 900}, {900, 1000, 1100}, {1100, 900, 1000}};
@@ -266,14 +272,22 @@ class ACR_TestRegress
   if (tick == 33)
   {
    bool shovel = false;
+   string truckFaction;
+   bool affiliationChanges;
    foreach (ACR_Squad squad : manager.m_Squads)
    {
     if (squad.GetName() != "Shovel Test") continue;
     IEntity shovelTruck = ACR_Transport.CrewedVehicle(squad);
     ChimeraCharacter driver = ACR_Squad.DriverOf(shovelTruck);
     shovel = driver && ACR_Manager.HasShovel(driver);
+    ACR_Vehicles.SetOwner(shovelTruck, "USSR");
+    FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(shovelTruck.FindComponent(FactionAffiliationComponent));
+    if (affiliation && affiliation.GetAffiliatedFaction()) truckFaction = affiliation.GetAffiliatedFaction().GetFactionKey();
+    affiliationChanges = truckFaction == "USSR";
+    ACR_Vehicles.SetOwner(shovelTruck, "US");
    }
    Check("construction truck driver has a shovel", shovel, ACR_Requisition.s_sLastShovel);
+   Check("vehicle affiliation follows its owning faction", affiliationChanges, truckFaction);
   }
   // 9. (1 Oct) Hosting with players on USSR: Arland has only a US player spawn point and
   //    the auto-spawn names US, so the game never finished loading.

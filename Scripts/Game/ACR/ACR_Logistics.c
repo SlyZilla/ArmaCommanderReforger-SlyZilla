@@ -502,6 +502,9 @@ class ACR_Logistics : Managed
  {
   array<IEntity> vehicles = {};
   squad.GetVehicles(vehicles);
+  // Possessed / player-crewed vehicles can temporarily fall out of the squad's
+  // agent seat scan. The squad's owned vehicle is still a valid service target.
+  if (squad.m_OwnVehicle && !vehicles.Contains(squad.m_OwnVehicle)) vehicles.Insert(squad.m_OwnVehicle);
   foreach (IEntity vehicle : vehicles)
    if (vehicle != station && vector.DistanceXZ(vehicle.GetOrigin(), station.GetOrigin()) <= SERVICE_RANGE + 5) ServeVehicle(station, flags, vehicle, now);
   array<AIAgent> agents = {};

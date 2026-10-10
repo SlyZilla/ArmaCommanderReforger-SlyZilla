@@ -538,6 +538,8 @@ class ACR_Squad : Managed
  bool m_bMortar;    // a mortar team (ACR_Mortars runs its set-up, packing and fire missions)
  bool m_bFireAtWill; // observers call fire missions / mortar teams fire on their own (ACR_FireMissions)
  int m_OrderKind;   // ACR_EOrderKind, for map symbology
+ protected float m_fNextWaypointRecovery;
+ protected int m_iWaypointRecoveries;
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -624,6 +626,8 @@ class ACR_Squad : Managed
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
   m_iGarrisonReissues = 0;
+  m_iWaypointRecoveries = 0;
+  m_fNextWaypointRecovery = 0;
   m_iOrderSerial++;
   m_iOrderedBy = 0;
   m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
@@ -954,6 +958,17 @@ class ACR_Squad : Managed
     m_OrderKind = ACR_EOrderKind.DEFEND;
     PrintFormat("[ACR] TACTICS %1: arrived, taking positions", m_Name);
    }
+   else if (waypoints.IsEmpty() && anchor && vector.DistanceXZ(anchor.GetOrigin(), m_MoveTarget) > 90 && now >= m_fNextWaypointRecovery && m_iWaypointRecoveries < 4 && !m_bRegrouping)
+   {
+    // The engine can complete a move waypoint after a failed group move. Keep the
+    // player's order alive while the squad is still well outside its arrival radius.
+    m_fNextWaypointRecovery = now + 10000;
+    m_iWaypointRecoveries++;
+    if (IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius))
+     PrintFormat("[ACR] MOVE %1: waypoint disappeared %2 m from target; reissued (%3/4)", m_Name, (int)vector.DistanceXZ(anchor.GetOrigin(), m_MoveTarget), m_iWaypointRecoveries);
+    else
+     PrintFormat("[ACR] MOVE %1: waypoint disappeared but reissue failed", m_Name);
+   }
   }
   DriveWatch(now, contact);
  }
@@ -1134,7 +1149,30 @@ class ACR_Squad : Managed
   // for a second at every hop (1 Oct live test).
   float handover = 30;
   if (IsMounted() && ACR_Transport.CrewedVehicle(this)) handover = 70;
-  if (waypoints.IsEmpty() || (leader && vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget) < handover)) NextLeg();
+  if (!waypoints.IsEmpty())
+  {
+   if (leader && vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget) < handover) NextLeg();
+   return;
+  }
+  if (!leader) return;
+  float toLeg = vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget);
+  if (toLeg < handover)
+  {
+   NextLeg();
+   return;
+  }
+  // A failed path can make the engine remove a waypoint. Do not mistake that
+  // for arriving at this route hop and silently advance the squad past it.
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now >= m_fNextWaypointRecovery && m_iWaypointRecoveries < 4)
+  {
+   m_fNextWaypointRecovery = now + 10000;
+   m_iWaypointRecoveries++;
+   if (IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius))
+    PrintFormat("[ACR] ROUTE %1: waypoint disappeared %2 m from hop; reissued (%3/4)", m_Name, (int)toLeg, m_iWaypointRecoveries);
+   else
+    PrintFormat("[ACR] ROUTE %1: waypoint disappeared but hop reissue failed", m_Name);
+  }
  }
 
  // ---------------------------------------------------------------- cohesion
@@ -1805,18 +1843,43 @@ class ACR_Squad : Managed
  }
 
  protected Vehicle m_FoundVehicle;
- protected bool CollectVehicle(IEntity entity)
- {
-  Vehicle vehicle = Vehicle.Cast(entity);
-  if (!vehicle) return true;
-  m_FoundVehicle = vehicle;
-  return false; // stop at the first hit
- }
+ protected vector m_SearchVehicleAt;
  Vehicle FindVehicleNear(vector position, float radius)
  {
   m_FoundVehicle = null;
-  GetGame().GetWorld().QueryEntitiesBySphere(position, radius, CollectVehicle);
+  m_SearchVehicleAt = position;
+  m_fVehicleSearchDistance = radius;
+  GetGame().GetWorld().QueryEntitiesBySphere(position, radius, CollectNearestVehicle);
   return m_FoundVehicle;
+ }
+
+ protected float m_fVehicleSearchDistance;
+ protected bool CollectNearestVehicle(IEntity entity)
+ {
+  Vehicle vehicle = Vehicle.Cast(entity);
+  if (!vehicle) return true;
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments || !HasOpenSeat(compartments)) return true;
+  float distance = vector.DistanceXZ(vehicle.GetOrigin(), m_SearchVehicleAt);
+  if (distance <= m_fVehicleSearchDistance)
+  {
+   m_fVehicleSearchDistance = distance;
+   m_FoundVehicle = vehicle;
+  }
+  return true;
+ }
+
+ protected bool HasOpenSeat(SCR_BaseCompartmentManagerComponent compartments)
+ {
+  array<ECompartmentType> types = {ECompartmentType.PILOT, ECompartmentType.TURRET, ECompartmentType.CARGO};
+  foreach (ECompartmentType type : types)
+  {
+   array<BaseCompartmentSlot> slots = {};
+   compartments.GetCompartmentsOfType(slots, type);
+   foreach (BaseCompartmentSlot slot : slots)
+    if (slot && !slot.GetOccupant()) return true;
+  }
+  return false;
  }
 
  // Where the squad is currently headed (any waypoint, including native orders).

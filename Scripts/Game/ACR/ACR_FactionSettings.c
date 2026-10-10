@@ -367,6 +367,7 @@ class ACR_FactionCatalog
    if (settings && settings.m_aExclude) exclude.Copy(settings.m_aExclude);
    AddCatalog(factionKey, EEntityCatalogType.GROUP, used, exclude, result);
    AddCatalog(factionKey, EEntityCatalogType.VEHICLE, used, exclude, result);
+   EnsureWestGunship(factionKey, exclude, result);
   }
   EnsureRUAFVehicles(factionKey, result);
   // Mission makers can edit support requisitions per faction; an absent row keeps defaults.
@@ -389,6 +390,22 @@ class ACR_FactionCatalog
    ACR_Pricing.Setup(entry, stepped);
   }
   PrintFormat("[ACR] Requisition list for %1: %2 entries (%3 helipads in the world), pricing %4", factionKey, result.Count(), ACR_Helipad.s_All.Count(), ACR_Pricing.Name(stepped));
+ }
+
+ // The catalogue's VEHICLE_TURRET label can filter the armed UH-1H out of the
+ // normal requisition list even though the support variant is still offered.
+ // Keep the standard US gunship purchasable as a rare, crewed vehicle.
+ protected static void EnsureWestGunship(string factionKey, array<ResourceName> exclude, array<ref ACR_RequisitionEntry> result)
+ {
+  if (factionKey != "US" || exclude.Contains(ACR_Supports.HELI_WEST)) return;
+  foreach (ACR_RequisitionEntry existing : result)
+   if (existing.m_sVehicle.Contains("UH1H_armed_gunship")) return;
+  ACR_RequisitionEntry heli = new ACR_RequisitionEntry();
+  heli.Set("Gunship Huey", "", ACR_Supports.HELI_WEST, 60, 1);
+  heli.m_bAircraft = true;
+  heli.m_bArmed = true;
+  heli.m_bRare = true;
+  result.Insert(heli);
  }
 
  // Missing config rows preserve the built-in offer. A row can override only the values

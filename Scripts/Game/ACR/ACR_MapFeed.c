@@ -257,7 +257,12 @@ class ACR_MapFeed
   Faction faction = frame.m_Faction;
   array<SCR_AIGroup> groups = {};
   foreach (ACR_Squad squad : manager.m_Squads)
+  {
    if (squad.m_Group && squad.GetFaction() == faction) groups.Insert(squad.m_Group);
+   // Private playable groups are omitted by the groups manager. Add the active
+   // command group explicitly so fellow commanders keep a marker while mounted.
+   if (squad.m_CommandGroup && squad.m_Commander > 0 && squad.GetFaction() == faction && !groups.Contains(squad.m_CommandGroup)) groups.Insert(squad.m_CommandGroup);
+  }
   SCR_GroupsManagerComponent groupsManager = SCR_GroupsManagerComponent.GetInstance();
   if (groupsManager)
   {
@@ -272,11 +277,13 @@ class ACR_MapFeed
   foreach (SCR_AIGroup group : groups)
   {
    if (!group || group.GetFaction() != faction) continue;
-   if (manager.FindSquadByCommandGroup(group)) continue;
    ACR_Squad squad = manager.FindSquadByGroup(group);
+   ACR_Squad commandSquad = manager.FindSquadByCommandGroup(group);
+   if (!squad) squad = commandSquad;
    IEntity leader = group.GetLeaderEntity();
-   if (squad) leader = squad.GetLeader();
-   else if (group.GetLeaderID() > 0) leader = GetGame().GetPlayerManager().GetPlayerControlledEntity(group.GetLeaderID());
+   if (commandSquad && group.GetLeaderID() > 0) leader = GetGame().GetPlayerManager().GetPlayerControlledEntity(group.GetLeaderID());
+   else if (squad && !commandSquad) leader = squad.GetLeader();
+   else if (!leader && group.GetLeaderID() > 0) leader = GetGame().GetPlayerManager().GetPlayerControlledEntity(group.GetLeaderID());
    ChimeraCharacter character = ChimeraCharacter.Cast(leader);
    if (!character || character.GetCharacterController().IsDead()) continue;
    RplId id = SCR_EntityHelper.EntityToRplId(leader);
@@ -313,7 +320,14 @@ class ACR_MapFeed
     if (squad.m_OwnVehicle == crewVehicle && !squad.InOwnVehicle()) name += " (dismounted)";
    }
    frame.m_Leaders.Insert(id);
-   frame.m_LeaderPos.Insert(leader.GetOrigin());
+   IEntity markerAnchor = leader;
+   if (commandSquad)
+   {
+    IEntity ridden = ACR_Transport.VehicleOf(leader);
+    if (ridden) markerAnchor = ridden;
+    name = "Command unit: " + squad.GetName();
+   }
+   frame.m_LeaderPos.Insert(markerAnchor.GetOrigin());
    frame.m_GroupNames.Insert(name);
    frame.m_Symbols.Insert(icons);
    frame.m_Symbols.Insert(dimension);
@@ -321,12 +335,13 @@ class ACR_MapFeed
    int mode = 0;
    if (squad) mode = squad.m_Mode;
    if (squad && ACR_GunnerDrive.SquadGunner(squad)) mode |= 16; // + flag: has an AI-manned turret
+   if (commandSquad) mode |= 32; // fellow command unit: visible, but not an F7 possession target
    frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret)
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    frame.m_LeaderStates.Insert(state);
    int canCommand = 0;
-   if (squad) canCommand = 1;
+   if (squad && !commandSquad) canCommand = 1;
    frame.m_Commandable.Insert(canCommand);
    RplId groupId = SCR_EntityHelper.EntityToRplId(group);
    frame.m_GroupIds.Insert(groupId);
@@ -351,6 +366,38 @@ class ACR_MapFeed
    frame.m_Status.Insert(age);
    int orderedAt = squad.m_fOrderedAt / 1000;
    statusSig += string.Format("%1,%2,%3,%4,%5,%6;", squad.m_iHealthPct, squad.m_iAmmoPct, squad.m_iFuelPct, squad.m_iStockPct, squad.m_iOrderedBy, orderedAt);
+  }
+  // Commanders are not always members of a registered squad or playable AI
+  // group. Keep one server-authored marker for every living commander so it
+  // remains visible to teammates while the player is mounted or detached.
+  array<int> commanders = manager.GetCommanders(faction);
+  if (commanders)
+  {
+   foreach (int playerId : commanders)
+   {
+    IEntity unit = GetGame().GetPlayerManager().GetPlayerControlledEntity(playerId);
+    ChimeraCharacter character = ChimeraCharacter.Cast(unit);
+    if (!character || character.GetCharacterController().IsDead()) continue;
+    RplId id = SCR_EntityHelper.EntityToRplId(unit);
+    if (!id.IsValid() || frame.m_Leaders.Contains(id)) continue;
+    IEntity anchor = ACR_Transport.VehicleOf(unit);
+    if (!anchor) anchor = unit;
+    string label = "Command unit: " + GetGame().GetPlayerManager().GetPlayerName(playerId);
+    frame.m_Leaders.Insert(id);
+    frame.m_LeaderPos.Insert(anchor.GetOrigin());
+    frame.m_GroupNames.Insert(label);
+    frame.m_Symbols.Insert(EMilitarySymbolIcon.INFANTRY);
+    frame.m_Symbols.Insert(EMilitarySymbolDimension.LAND);
+    frame.m_Symbols.Insert(EMilitarySymbolAmplifier.SQUAD);
+    frame.m_Symbols.Insert(32); // persistent commander marker; excluded from F7 possession
+    frame.m_LeaderStates.Insert(1);
+    frame.m_Commandable.Insert(0);
+    frame.m_GroupIds.Insert(RplId.Invalid());
+    frame.m_Details.Insert("");
+    for (int k = 0; k < 6; k++) frame.m_Status.Insert(-1);
+    bytes += 4 + 12 + label.Length() + 4 + 16 + 4 + 4 + 4 + 4;
+    statusSig += "-;" + id.AsString() + ";";
+   }
   }
   frame.m_Bytes.Set("groups", bytes + 32);
   frame.m_Bytes.Set("status", frame.m_GroupIds.Count() * 28 + 8);

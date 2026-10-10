@@ -65,10 +65,9 @@ class ACR_MapData : Managed
 
  vector LeaderPos(int index)
  {
-  vector pos = m_LeaderPositions[index];
-  IEntity leader = SCR_EntityHelper.RplIdToEntity(m_LeaderIds[index]);
-  if (leader) pos = leader.GetOrigin();
-  return pos;
+  // Server snapshots include the vehicle origin for mounted command units.
+  // Do not replace that position with a client-side streamed character entity.
+  return m_LeaderPositions[index];
  }
 
  bool IsCommanderId(int playerId)
