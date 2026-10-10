@@ -65,8 +65,10 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 62;
+ static const int EXPECTED = 64;
  static SCR_AIGroup s_RecoveryGroup;
+ static SCR_AIGroup s_BoardingGroup;
+ static SCR_AIGroup s_CancelBoardingGroup;
  static IEntity s_ArsenalTruck;
 
  static ACR_Squad s_Defender;
@@ -433,6 +435,8 @@ class ACR_TestRegress
   if (tick == 40)
   {
    s_RecoveryGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1430 0 2850")));
+   s_BoardingGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1506 0 2956")));
+   s_CancelBoardingGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1508 0 2958")));
    s_ArsenalTruck = ACR_Manager.SpawnPrefab("{1FF144F8A209239D}Prefabs/Vehicles/Wheeled/M923A1/M923A1_arsenal.et", harness.Ground("1450 0 2850"));
    ACR_Vehicles.SetOwner(s_ArsenalTruck, "USSR");
    manager.m_sSpawningFaction = "US";
@@ -444,6 +448,7 @@ class ACR_TestRegress
   if (tick == 44)
   {
    RecoveryChecks(manager, truck);
+   StartBoardingCheck(manager);
    SCR_ArsenalComponent arsenal = ACR_Vehicles.ArsenalOf(s_ArsenalTruck);
    bool arsenalReady;
    if (arsenal)
@@ -570,6 +575,10 @@ class ACR_TestRegress
     }
    }
    Check("helicopter crew stays seated after a refused move", crewmen > 0 && seated == crewmen, string.Format("%1 of %2 seated", seated, crewmen));
+  }
+  if (tick == 60)
+  {
+   BoardingCheck(manager);
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
@@ -624,6 +633,44 @@ class ACR_TestRegress
    // deleting them here invalidates vanilla radio requests still in flight.
   }
   Check("final mounted move recovers a dropped waypoint", mounted, "boarding settled before the check");
+ }
+
+ static void StartBoardingCheck(ACR_Manager manager)
+ {
+  ACR_Squad passengers = manager.FindSquadByGroup(s_BoardingGroup);
+  ACR_Squad crew;
+  foreach (ACR_Squad candidate : manager.m_Squads) if (candidate.GetName() == "Regress Truck") crew = candidate;
+  if (passengers && crew && crew.m_OwnVehicle) passengers.GetIn(crew.m_OwnVehicle.GetOrigin());
+  ACR_Squad cancelled = manager.FindSquadByGroup(s_CancelBoardingGroup);
+  if (cancelled && crew && crew.m_OwnVehicle)
+  {
+   cancelled.GetIn(crew.m_OwnVehicle.GetOrigin());
+   cancelled.Halt("Holding");
+  }
+ }
+
+ static void BoardingCheck(ACR_Manager manager)
+ {
+  ACR_Squad squad = manager.FindSquadByGroup(s_BoardingGroup);
+  ACR_Squad crew;
+  foreach (ACR_Squad candidate : manager.m_Squads) if (candidate.GetName() == "Regress Truck") crew = candidate;
+  int seated;
+  if (squad && crew && crew.m_OwnVehicle)
+  {
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents) if (ACR_Transport.VehicleOf(agent.GetControlledEntity()) == crew.m_OwnVehicle) seated++;
+  }
+  Check("Get In boards passengers in a truck crewed by another squad", crew && ACR_Squad.DriverOf(crew.m_OwnVehicle) && seated > 0, string.Format("%1 passengers", seated));
+  ACR_Squad cancelled = manager.FindSquadByGroup(s_CancelBoardingGroup);
+  int cancelledSeated;
+  if (cancelled)
+  {
+   array<AIAgent> cancelledAgents = {};
+   cancelled.GetAgents(cancelledAgents);
+   foreach (AIAgent cancelledAgent : cancelledAgents) if (ACR_Transport.VehicleOf(cancelledAgent.GetControlledEntity())) cancelledSeated++;
+  }
+  Check("Halt cancels delayed Get In seating", cancelled && cancelled.OrderState() == ACR_EOrderState.HOLD && cancelledSeated == 0, string.Format("%1 passengers", cancelledSeated));
  }
 
  // ---------------------------------------------------------------- R01/R05 helpers

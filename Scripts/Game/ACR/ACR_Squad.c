@@ -1776,7 +1776,45 @@ class ACR_Squad : Managed
   else if (!IssueWaypoint(WP_GET_IN_NEAREST, position, 20, true)) return false;
   SetOrder("Getting in", ACR_EOrderState.GET_IN);
   m_OrderKind = ACR_EOrderKind.GET_IN;
+  GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
+  m_BoardTarget = vehicle;
+  m_iBoardSerial = m_iOrderSerial;
+  float approach = 0;
+  IEntity boardAnchor = GetAnchor();
+  if (vehicle && boardAnchor) approach = vector.DistanceXZ(boardAnchor.GetOrigin(), vehicle.GetOrigin()) / 1.2 * 1000;
+  m_fBoardUntil = GetGame().GetWorld().GetWorldTime() + Math.Clamp(approach + 60000, 60000, 900000);
+  if (vehicle && m_OwnVehicle != vehicle) GetGame().GetCallqueue().CallLater(EnsureBoardVehicle, 8000, false);
   return true;
+ }
+
+ protected IEntity m_BoardTarget;
+ protected int m_iBoardSerial;
+ protected float m_fBoardUntil;
+
+ // Native Get In can refuse passengers when another group owns the driver.
+ // After allowing its normal approach/animation, seat only nearby AI passengers.
+ // A new order, player control or a lost vehicle cancels this fallback.
+ protected void EnsureBoardVehicle()
+ {
+  if (!m_Group || !m_BoardTarget || m_iBoardSerial != m_iOrderSerial || OrderState() != ACR_EOrderState.GET_IN || HasPlayer() || ACR_Logistics.Health(m_BoardTarget) <= 0) return;
+  if (GetGame().GetWorld().GetWorldTime() >= m_fBoardUntil) return;
+  int remaining;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+   if (agent && ACR_Respawn.IsAlive(agent.GetControlledEntity()) && ACR_Transport.VehicleOf(agent.GetControlledEntity()) != m_BoardTarget) remaining++;
+  if (remaining == 0) { ClearOrders(); return; }
+  IEntity anchor = GetAnchor();
+  if (anchor && !IsMounted() && vector.DistanceXZ(anchor.GetOrigin(), m_BoardTarget.GetOrigin()) > 20)
+  {
+   if (!m_Group.GetCurrentWaypoint() || (m_sOrderPrefab == WP_MOVE && vector.DistanceXZ(m_MoveTarget, m_BoardTarget.GetOrigin()) > 20))
+    IssueWaypoint(WP_MOVE, m_BoardTarget.GetOrigin(), 15, true);
+  }
+  float height, speed;
+  int seated;
+  if (BBB_Transport.Settled(m_BoardTarget, height, speed)) seated = BoardCargo(m_BoardTarget, 20, true, true);
+  if (seated > 0) PrintFormat("[ACR] BOARD %1: %2 nearby passengers seated in assigned vehicle", m_Name, seated);
+  GetGame().GetCallqueue().CallLater(EnsureBoardVehicle, 3000, false);
  }
 
  bool GetOut()
