@@ -281,8 +281,7 @@ class ACR_MapFeed
    ACR_Squad commandSquad = manager.FindSquadByCommandGroup(group);
    if (!squad) squad = commandSquad;
    IEntity leader = group.GetLeaderEntity();
-   if (commandSquad && group.GetLeaderID() > 0) leader = GetGame().GetPlayerManager().GetPlayerControlledEntity(group.GetLeaderID());
-   else if (squad && !commandSquad) leader = squad.GetLeader();
+   if (squad) leader = squad.GetLeader();
    else if (!leader && group.GetLeaderID() > 0) leader = GetGame().GetPlayerManager().GetPlayerControlledEntity(group.GetLeaderID());
    ChimeraCharacter character = ChimeraCharacter.Cast(leader);
    if (!character || character.GetCharacterController().IsDead()) continue;
@@ -321,12 +320,8 @@ class ACR_MapFeed
    }
    frame.m_Leaders.Insert(id);
    IEntity markerAnchor = leader;
-   if (commandSquad)
-   {
-    IEntity ridden = ACR_Transport.VehicleOf(leader);
-    if (ridden) markerAnchor = ridden;
-    name = "Command unit: " + squad.GetName();
-   }
+   IEntity ridden = ACR_Transport.VehicleOf(leader);
+   if (ridden) markerAnchor = ridden;
    frame.m_LeaderPos.Insert(markerAnchor.GetOrigin());
    frame.m_GroupNames.Insert(name);
    frame.m_Symbols.Insert(icons);
@@ -335,13 +330,12 @@ class ACR_MapFeed
    int mode = 0;
    if (squad) mode = squad.m_Mode;
    if (squad && ACR_GunnerDrive.SquadGunner(squad)) mode |= 16; // + flag: has an AI-manned turret
-   if (commandSquad) mode |= 32; // fellow command unit: visible, but not an F7 possession target
    frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret)
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    frame.m_LeaderStates.Insert(state);
    int canCommand = 0;
-   if (squad && !commandSquad) canCommand = 1;
+   if (squad) canCommand = 1;
    frame.m_Commandable.Insert(canCommand);
    RplId groupId = SCR_EntityHelper.EntityToRplId(group);
    frame.m_GroupIds.Insert(groupId);
@@ -375,14 +369,25 @@ class ACR_MapFeed
   {
    foreach (int playerId : commanders)
    {
-    IEntity unit = GetGame().GetPlayerManager().GetPlayerControlledEntity(playerId);
+    SCR_PlayerController commanderController = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(playerId));
+    if (!commanderController) continue;
+    IEntity unit = commanderController.GetMainEntity();
     ChimeraCharacter character = ChimeraCharacter.Cast(unit);
     if (!character || character.GetCharacterController().IsDead()) continue;
     RplId id = SCR_EntityHelper.EntityToRplId(unit);
-    if (!id.IsValid() || frame.m_Leaders.Contains(id)) continue;
+    if (!id.IsValid()) continue;
     IEntity anchor = ACR_Transport.VehicleOf(unit);
     if (!anchor) anchor = unit;
     string label = "Command unit: " + GetGame().GetPlayerManager().GetPlayerName(playerId);
+    int existing = frame.m_Leaders.Find(id);
+    if (existing >= 0)
+    {
+     frame.m_LeaderPos[existing] = anchor.GetOrigin();
+     frame.m_GroupNames[existing] = label;
+     frame.m_Symbols[existing * 4 + 3] = 32;
+     frame.m_Commandable[existing] = 0;
+     continue;
+    }
     frame.m_Leaders.Insert(id);
     frame.m_LeaderPos.Insert(anchor.GetOrigin());
     frame.m_GroupNames.Insert(label);
@@ -390,7 +395,9 @@ class ACR_MapFeed
     frame.m_Symbols.Insert(EMilitarySymbolDimension.LAND);
     frame.m_Symbols.Insert(EMilitarySymbolAmplifier.SQUAD);
     frame.m_Symbols.Insert(32); // persistent commander marker; excluded from F7 possession
-    frame.m_LeaderStates.Insert(1);
+    int commandState;
+    if (ACR_Squad.FindController(unit) > 0) commandState = 1;
+    frame.m_LeaderStates.Insert(commandState);
     frame.m_Commandable.Insert(0);
     frame.m_GroupIds.Insert(RplId.Invalid());
     frame.m_Details.Insert("");
