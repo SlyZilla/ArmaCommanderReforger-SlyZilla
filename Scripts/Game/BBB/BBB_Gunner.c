@@ -57,7 +57,7 @@ class BBB_Gunner
  // A sector of the threat filter changed: start the drill if it fits.
  static void OnSector(SCR_AIUtilityComponent utility, int sectorId)
  {
-  if (!utility || sectorId < 0 || !utility.m_SectorThreatFilter || !utility.m_AIInfo) return;
+  if (!utility || !BBB_Combat.ValidSector(sectorId) || !utility.m_SectorThreatFilter || !utility.m_AIInfo) return;
   if (!utility.m_AIInfo.HasUnitState(EUnitState.IN_TURRET)) return;
   IEntity gunner = utility.m_OwnerEntity;
   if (!gunner || !DrillOn(gunner)) return;

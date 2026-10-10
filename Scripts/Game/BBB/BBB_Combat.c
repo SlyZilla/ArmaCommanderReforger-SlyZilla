@@ -15,9 +15,14 @@ class BBB_Combat
 	static bool s_bDetail = true;
 	static bool s_bRadio = true;
 	static bool s_bResponse = true;
+	static bool s_bManeuver;
 	static int s_iWakeups;
 	static int s_iReports;
 	static int s_iResponses;
+	static int s_iIncomingFireCues;
+	static int s_iCuesWithTarget;
+	static int s_iCuesWithoutTarget;
+	static bool s_bTestMetrics;
 
 	static const float NEAR_ENEMY_M = 450;
 	static const float CONTACT_HOLD_S = 12;
@@ -32,6 +37,7 @@ class BBB_Combat
 	static const float AIRBORNE_M = 12;
 	static const float RADIO_CONE_DEG = 35;
 	static const float RESPONSE_PRIORITY = 69.5;
+	static const float BOUND_PAUSE_S = 2.5;
 
 	protected ref map<SCR_AIGroup, float> m_ActiveUntil = new map<SCR_AIGroup, float>();
 	protected ref map<SCR_AIGroup, ref array<ref BBB_CombatContact>> m_Reports = new map<SCR_AIGroup, ref array<ref BBB_CombatContact>>();
@@ -44,7 +50,14 @@ class BBB_Combat
 		if (System.GetCLIParam("bbbCombatDetail", value) && value == "0") s_bDetail = false;
 		if (System.GetCLIParam("bbbCombatRadio", value) && value == "0") s_bRadio = false;
 		if (System.GetCLIParam("bbbCombatResponse", value) && value == "0") s_bResponse = false;
-		PrintFormat("[BBB] COMBAT detail=%1 radio=%2 response=%3", s_bDetail, s_bRadio, s_bResponse);
+		if (System.GetCLIParam("bbbCombatManeuver", value) && value == "1") s_bManeuver = true;
+		PrintFormat("[BBB] COMBAT detail=%1 radio=%2 response=%3 maneuver=%4", s_bDetail, s_bRadio, s_bResponse, s_bManeuver);
+	}
+
+	static bool ManeuverOn()
+	{
+		Read();
+		return s_bManeuver;
 	}
 
 	void Tick()
@@ -59,12 +72,13 @@ class BBB_Combat
 		if (s_bRadio) PruneReports(groups, now);
 	}
 
-	static void SetTestMode(bool detail)
+	static void SetTestMode(bool detail, bool response)
 	{
 		if (!s_Combat) return;
 		s_bDetail = detail;
 		s_bRadio = false;
-		s_bResponse = false;
+		s_bResponse = response;
+		s_bTestMetrics = true;
 		s_Combat.m_ActiveUntil.Clear();
 	}
 
@@ -232,7 +246,7 @@ class BBB_Combat
 			if (distance < MIN_RESPONSE_M || distance > MAX_RESPONSE_M) continue;
 			to.Normalize();
 			float dot = vector.Dot(direction, to);
-			if (dot <= bestDot) continue;
+			if (dot <= bestDot || !OnGround(contact.m_vPosition)) continue;
 			bestDot = dot;
 			position = contact.m_vPosition;
 			age = since;
@@ -240,19 +254,34 @@ class BBB_Combat
 		return bestDot > minDot;
 	}
 
+	static bool ValidSector(int sectorId)
+	{
+		return sectorId >= 0 && sectorId < SCR_AISectorThreatFilter.SECTOR_COUNT;
+	}
+
 	static void OnThreatSector(SCR_AIUtilityComponent utility, int sectorId)
 	{
 		Read();
+		if (!s_bResponse && !s_bTestMetrics) return;
 		// Major-sector callbacks can report -1 when no sector is valid. The native
 		// threat-filter lookups below require a real sector index.
-		if (sectorId < 0 || !s_bResponse || !utility || !utility.m_SectorThreatFilter || !utility.m_AIInfo) return;
+		if (!ValidSector(sectorId) || !utility || !utility.m_SectorThreatFilter || !utility.m_AIInfo) return;
 		if (utility.m_AIInfo.HasUnitState(EUnitState.IN_TURRET) || utility.m_AIInfo.HasUnitState(EUnitState.PILOT) || utility.m_AIInfo.HasUnitState(EUnitState.UNCONSCIOUS)) return;
 		IEntity soldier = utility.m_OwnerEntity;
 		if (!soldier || BBB.PlayerOf(soldier)) return;
 		SCR_AICombatComponent combat = utility.m_CombatComponent;
-		if (!combat || combat.GetCurrentTarget() || combat.GetCombatMode() == EAIGroupCombatMode.HOLD_FIRE) return;
+		if (!combat) return;
 		int flags = utility.m_SectorThreatFilter.GetSectorFlags(sectorId);
 		if (!(flags & SCR_EAIThreatSectorFlags.DIRECTED_AT_ME) && !(flags & SCR_EAIThreatSectorFlags.CAUSED_DAMAGE)) return;
+		bool hasTarget;
+		if (s_bResponse || s_bTestMetrics) hasTarget = combat.GetCurrentTarget() != null;
+		if (s_bTestMetrics)
+		{
+			s_iIncomingFireCues++;
+			if (hasTarget) s_iCuesWithTarget++;
+			else s_iCuesWithoutTarget++;
+		}
+		if (!s_bResponse || hasTarget || combat.GetCombatMode() == EAIGroupCombatMode.HOLD_FIRE) return;
 		float now = GetGame().GetWorld().GetWorldTime() / 1000;
 		if (now < utility.m_fBBBContactFireReady) return;
 		BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(soldier.FindComponent(BaseWeaponManagerComponent));
@@ -309,9 +338,10 @@ class BBB_AIContactFireBehavior : SCR_AISuppressBehavior
 	{
 		if (GetGame().GetWorld().GetWorldTime() > m_fEndMs) { Complete(); return 0; }
 		if (!m_Utility || !m_Utility.m_CombatComponent) { Complete(); return 0; }
+		if (!BBB_Combat.s_bResponse || !BBB.IsAlive(m_Utility.m_OwnerEntity) || BBB.PlayerOf(m_Utility.m_OwnerEntity)) { Complete(); return 0; }
 		if (m_Utility.m_CombatComponent.GetCurrentTarget()) { Complete(); return 0; }
 		if (m_Utility.m_CombatComponent.GetCombatMode() == EAIGroupCombatMode.HOLD_FIRE) { Complete(); return 0; }
-		if (!m_Utility.m_AIInfo || m_Utility.m_AIInfo.HasUnitState(EUnitState.IN_TURRET) || m_Utility.m_AIInfo.HasUnitState(EUnitState.PILOT)) { Complete(); return 0; }
+		if (!m_Utility.m_AIInfo || m_Utility.m_AIInfo.HasUnitState(EUnitState.IN_TURRET) || m_Utility.m_AIInfo.HasUnitState(EUnitState.PILOT) || m_Utility.m_AIInfo.HasUnitState(EUnitState.UNCONSCIOUS)) { Complete(); return 0; }
 		return BBB_Combat.RESPONSE_PRIORITY;
 	}
 }
@@ -327,5 +357,18 @@ modded class SCR_AIGroupUtilityComponent
 	{
 		super.OnEnemyDetectedFiltered(group, target, reporter);
 		BBB_Combat.OnEnemyDetectedFiltered(group, target, reporter);
+	}
+}
+
+// Optional short bound for recognized threats: keep vanilla's attack movement and cover
+// selection, but reduce the pinned soldier's dwell in selected cover. Disabled by default
+// until a clean firefight comparison confirms a survival and shooting tradeoff.
+modded class SCR_AICombatMoveLogic_Attack
+{
+	override protected float ResolveStoppedWaitTime(bool inCover, EAIThreatState threat, EWeaponType weaponType)
+	{
+		float wait = super.ResolveStoppedWaitTime(inCover, threat, weaponType);
+		if (!BBB_Combat.ManeuverOn() || !inCover || !m_Target || threat != EAIThreatState.THREATENED) return wait;
+		return Math.Min(wait, BBB_Combat.BOUND_PAUSE_S);
 	}
 }

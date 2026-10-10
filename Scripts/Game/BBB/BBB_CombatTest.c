@@ -1,22 +1,31 @@
-// Observer-free A/B firefight for combat-detail scheduling. The lane has no nearby
-// observer: opposing groups must wake from the BBB combat-detail rule alone. Four short
-// rounds alternate faction and detail settings to reduce faction/order bias.
+// Observer-free A/B firefight for combat-detail scheduling and infantry return fire.
+// Two repeats of each detail/response combination alternate faction order. The test logs
+// whether real incoming-fire cues arrived with or without a recognized target; if no
+// no-target cues occur, the lane does not establish return-fire behavior.
 class BBB_CombatTestLane : BBB_AimLane
 {
 	float m_fFirstA = -1;
 	float m_fFirstB = -1;
 	int m_iStartAwake;
+	int m_iStartCues;
+	int m_iStartTargetCues;
+	int m_iStartUnknownCues;
+	int m_iStartResponses;
 	bool m_bDetail;
+	bool m_bResponse;
 	bool m_bSwap;
 }
 
 class BBB_CombatTest : BBB_AimTest
 {
 	static ref BBB_CombatTest s_CombatTest;
-	static const int ROUNDS = 4;
+	static const int ROUNDS = 8;
 	static const float ROUND_S = 35;
+	static const float NEAR_GROUP_CLEAR_M = 450;
+	static const float VISIBLE_GROUP_CLEAR_M = 700;
 
 	protected ref array<bool> m_aDetail = {};
+	protected ref array<bool> m_aResponse = {};
 	protected ref array<bool> m_aSwap = {};
 	protected ref array<string> m_aCombatKeys = {};
 	protected ref map<string, int> m_mRounds = new map<string, int>();
@@ -31,6 +40,7 @@ class BBB_CombatTest : BBB_AimTest
 	protected bool m_bOriginalDetail;
 	protected bool m_bOriginalRadio;
 	protected bool m_bOriginalResponse;
+	protected int m_iResponseBase;
 
 	static void MaybeStartCombat()
 	{
@@ -46,25 +56,42 @@ class BBB_CombatTest : BBB_AimTest
 		m_bOriginalDetail = BBB_Combat.s_bDetail;
 		m_bOriginalRadio = BBB_Combat.s_bRadio;
 		m_bOriginalResponse = BBB_Combat.s_bResponse;
+		m_iResponseBase = BBB_Combat.s_iResponses;
+		BBB_Combat.s_iIncomingFireCues = 0;
+		BBB_Combat.s_iCuesWithTarget = 0;
+		BBB_Combat.s_iCuesWithoutTarget = 0;
 		if (!FindIsolatedSite())
 		{
 			Print("[BBB] COMBATTEST no clear lane");
+			Print("[ACR] VERDICT FAIL test=bbbcombat reason=no isolated lane; no combat comparison ran");
 			Print("[ACR] TEST COMPLETE");
 			return;
 		}
 		LoadLane();
 		// Deliberately do not insert an ObserversSystem observer here.
 		m_aDetail.Insert(false); m_aSwap.Insert(false);
+		m_aResponse.Insert(false);
 		m_aDetail.Insert(true); m_aSwap.Insert(true);
+		m_aResponse.Insert(false);
 		m_aDetail.Insert(true); m_aSwap.Insert(false);
+		m_aResponse.Insert(true);
 		m_aDetail.Insert(false); m_aSwap.Insert(true);
+		m_aResponse.Insert(true);
+		m_aDetail.Insert(false); m_aSwap.Insert(false);
+		m_aResponse.Insert(true);
+		m_aDetail.Insert(true); m_aSwap.Insert(true);
+		m_aResponse.Insert(true);
+		m_aDetail.Insert(true); m_aSwap.Insert(false);
+		m_aResponse.Insert(false);
+		m_aDetail.Insert(false); m_aSwap.Insert(true);
+		m_aResponse.Insert(false);
 		m_fNextRound = Now() + 4;
 		GetGame().GetCallqueue().CallLater(TickCombat, 500, true);
 	}
 
-	// The Test Range itself can start ordinary ACR squads. Keep their current
-	// positions at least 700 m from either side of this lane so they cannot
-	// become an accidental observer or target during the comparison.
+	// Nearby ACR groups can become accidental observers. Keep them outside the
+	// combat-detail proximity radius; farther groups are allowed only when terrain blocks
+	// line of sight to both test positions.
 	protected bool FindIsolatedSite()
 	{
 		vector mins, maxs;
@@ -82,7 +109,7 @@ class BBB_CombatTest : BBB_AimTest
 					if (!LaneClear(from, dir) || !ClearOfExistingGroups(from, dir)) continue;
 					m_aSiteFrom.Insert(from);
 					m_aSiteDir.Insert(dir);
-					PrintFormat("[BBB] COMBATTEST lane at %1 heading %2 (%3 tried, 700 m clear)", from, dir, tested);
+					PrintFormat("[BBB] COMBATTEST lane at %1 heading %2 (%3 tried, no nearby or visible groups)", from, dir, tested);
 					return true;
 				}
 			}
@@ -101,7 +128,9 @@ class BBB_CombatTest : BBB_AimTest
 			IEntity anchor = BBB.AnchorOf(group);
 			if (!anchor) continue;
 			vector position = anchor.GetOrigin();
-			if (vector.DistanceXZ(position, from) < 700 || vector.DistanceXZ(position, to) < 700) return false;
+			float near = Math.Min(vector.DistanceXZ(position, from), vector.DistanceXZ(position, to));
+			if (near < NEAR_GROUP_CLEAR_M) return false;
+			if (near <= VISIBLE_GROUP_CLEAR_M && (Visible(position, from) || Visible(position, to))) return false;
 		}
 		return true;
 	}
@@ -109,9 +138,10 @@ class BBB_CombatTest : BBB_AimTest
 	protected bool StartCombatRound(int round)
 	{
 		if (round >= ROUNDS) return false;
-		BBB_Combat.SetTestMode(m_aDetail[round]);
+		BBB_Combat.SetTestMode(m_aDetail[round], m_aResponse[round]);
 		BBB_CombatTestLane lane = new BBB_CombatTestLane();
 		lane.m_bDetail = m_aDetail[round];
+		lane.m_bResponse = m_aResponse[round];
 		lane.m_bSwap = m_aSwap[round];
 		lane.m_vFrom = m_aSiteFrom[0];
 		lane.m_vDir = m_aSiteDir[0];
@@ -130,11 +160,17 @@ class BBB_CombatTest : BBB_AimTest
 		lane.m_fStart = Now();
 		lane.m_fHookAt = Now() + 3;
 		lane.m_iStartAwake = BBB_Combat.s_iWakeups;
+		lane.m_iStartCues = BBB_Combat.s_iIncomingFireCues;
+		lane.m_iStartTargetCues = BBB_Combat.s_iCuesWithTarget;
+		lane.m_iStartUnknownCues = BBB_Combat.s_iCuesWithoutTarget;
+		lane.m_iStartResponses = BBB_Combat.s_iResponses;
 		m_aLanes.Insert(lane);
 		m_fRoundEnd = Now() + ROUND_S;
-		string mode = "off";
-		if (lane.m_bDetail) mode = "on";
-		PrintFormat("[BBB] COMBATTEST round %1/%2: detail %3, swapped %4, two rifle squads at 100 m, no observer", round + 1, ROUNDS, mode, lane.m_bSwap);
+		string detail = "off";
+		string response = "off";
+		if (lane.m_bDetail) detail = "on";
+		if (lane.m_bResponse) response = "on";
+		PrintFormat("[BBB] COMBATTEST round %1/%2: detail %3, response %4, swapped %5, two rifle squads at 100 m, no observer", round + 1, ROUNDS, detail, response, lane.m_bSwap);
 		return true;
 	}
 
@@ -174,11 +210,15 @@ class BBB_CombatTest : BBB_AimTest
 		{
 			BBB_CombatTestLane lane = BBB_CombatTestLane.Cast(baseLane);
 			if (!lane) continue;
-			string key = "detail off";
-			if (lane.m_bDetail) key = "detail on";
+			string detail = "off";
+			string response = "off";
+			if (lane.m_bDetail) detail = "on";
+			if (lane.m_bResponse) response = "on";
+			string key = "detail " + detail + " response " + response;
 			int downA = Downed(lane.m_A);
 			int downB = Downed(lane.m_B);
 			PrintFormat("[BBB] COMBATTEST %1 swapped %2: shots %3/%4, first shot %5/%6 s, down %7/%8, wake events %9", key, lane.m_bSwap, lane.m_A.m_iShots, lane.m_B.m_iShots, lane.m_fFirstA, lane.m_fFirstB, downA, downB, BBB_Combat.s_iWakeups - lane.m_iStartAwake);
+			PrintFormat("[BBB] COMBATTEST cues: incoming %1, target %2, no target %3, response actions %4", BBB_Combat.s_iIncomingFireCues - lane.m_iStartCues, BBB_Combat.s_iCuesWithTarget - lane.m_iStartTargetCues, BBB_Combat.s_iCuesWithoutTarget - lane.m_iStartUnknownCues, BBB_Combat.s_iResponses - lane.m_iStartResponses);
 			if (!m_aCombatKeys.Contains(key)) m_aCombatKeys.Insert(key);
 			m_mRounds.Set(key, m_mRounds.Get(key) + 1);
 			m_mShotsA.Set(key, m_mShotsA.Get(key) + lane.m_A.m_iShots);
@@ -199,6 +239,7 @@ class BBB_CombatTest : BBB_AimTest
 		BBB_Combat.s_bDetail = m_bOriginalDetail;
 		BBB_Combat.s_bRadio = m_bOriginalRadio;
 		BBB_Combat.s_bResponse = m_bOriginalResponse;
+		BBB_Combat.s_bTestMetrics = false;
 		foreach (string key : m_aCombatKeys)
 		{
 			float firstA = -1;
@@ -207,6 +248,7 @@ class BBB_CombatTest : BBB_AimTest
 			if (m_mFirstBCount.Get(key) > 0) firstB = m_mFirstB.Get(key) / m_mFirstBCount.Get(key);
 			PrintFormat("[BBB] COMBATTEST TOTAL %1 rounds %2: shots %3/%4, mean first shot %5/%6 s, down %7/%8", key, m_mRounds.Get(key), m_mShotsA.Get(key), m_mShotsB.Get(key), firstA, firstB, m_mDownA.Get(key), m_mDownB.Get(key));
 		}
+		PrintFormat("[BBB] COMBATTEST cue totals: incoming %1 (target %2, no target %3), responses %4", BBB_Combat.s_iIncomingFireCues, BBB_Combat.s_iCuesWithTarget, BBB_Combat.s_iCuesWithoutTarget, BBB_Combat.s_iResponses - m_iResponseBase);
 		Print("[BBB] COMBATTEST done");
 		Print("[ACR] TEST COMPLETE");
 	}
