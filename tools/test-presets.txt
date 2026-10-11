@@ -59,7 +59,7 @@ bbbgunner|-acrBbbGunnerTest 1|2100
 bbbarmour|-acrBbbArmourTest 1|900
 bbbvanilla|-acrBbbVanillaTest 1|300|Worlds/BBB_TestArland.ent
 bbbgrenadier|-acrBbbGrenadierTest 1|1500
-bbbglnear|-acrBbbGrenadierNearTest 1|600
+bbbglnear|-acrBbbGrenadierNearTest 1|600|Worlds/BBB_TestArland.ent
 places|-acrPlacesTest 1|120|Worlds/ACR_Everon.ent
 everonsurvey|-acrEveronSurveyTest 1|150|Worlds/ACR_Everon.ent
 everon|-acrScenarioTest 1|240|Worlds/ACR_Everon.ent
@@ -78,3 +78,5 @@ fire|-acrFireTest 1|240
 factions|-acrFactionTest 1|120
 bbbsky|-acrBbbSkyTest 1|120|Worlds/BBB_TestArland.ent
 bbbcombat|-acrBbbCombatTest 1|420|Worlds/BBB_TestArland.ent
+bbbperception|-acrBbbPerceptionTest 1|300|Worlds/BBB_TestArland.ent
+bbbvision|-acrBbbVisionTest 1|160|Worlds/BBB_TestArland.ent

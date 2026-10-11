@@ -9,7 +9,9 @@
 class BBB_GrenadierTest : BBB_AimTest
 {
  static ref BBB_GrenadierTest s_GL;
- static bool s_bNear; // preset bbbglnear: US only, 75/100/150 m, to see why they hold fire up close
+ static bool s_bNear; // 100 m vehicle/faction swaps and the 75/150 m geometry probe
+ static bool s_bProbe; // short geometry/perception probe of BRDM, BTR and LAV
+ static bool s_bVision; // direct visual-sighting control with vehicle engines stopped
  static const ResourceName GL_US = "{84029128FA6F6BB9}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_GL.et";
  static const ResourceName GL_USSR = "{8E0FE664CE7D1CA9}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_GL.et";
  static const ResourceName BRDM = "{254289B9C09904AB}Prefabs/Vehicles/Wheeled/BRDM2/BRDM2.et";
@@ -37,6 +39,12 @@ class BBB_GrenadierTest : BBB_AimTest
  protected int m_iDriverOut;
  protected int m_iDriverSamples;
  protected string m_sTargets;
+ protected bool m_bTraceLogged;
+ protected int m_iTargetSamples;
+ protected int m_iTargetDetected;
+ protected int m_iTargetSeen;
+ protected int m_iNearCompleted;
+ protected int m_iNearRecognized;
  protected ref map<string, int> m_mTotal = new map<string, int>();
  protected ref map<string, float> m_mTotalF = new map<string, float>();
  protected ref array<string> m_aTKeys = {};
@@ -44,7 +52,9 @@ class BBB_GrenadierTest : BBB_AimTest
  static void MaybeStartGL()
  {
   if (s_GL || !Replication.IsServer()) return;
-  s_bNear = System.IsCLIParam("acrBbbGrenadierNearTest");
+  s_bVision = System.IsCLIParam("acrBbbVisionTest");
+  s_bProbe = System.IsCLIParam("acrBbbPerceptionTest") || s_bVision;
+  s_bNear = System.IsCLIParam("acrBbbGrenadierNearTest") || s_bProbe;
   if (!s_bNear && !System.IsCLIParam("bbbGrenadierTest") && !System.IsCLIParam("acrBbbGrenadierTest")) return;
   s_GL = new BBB_GrenadierTest();
   GetGame().GetCallqueue().CallLater(s_GL.Begin, 10000);
@@ -53,6 +63,8 @@ class BBB_GrenadierTest : BBB_AimTest
  void BBB_GrenadierTest()
  {
   m_aCheckDistances = {100, 200, 300};
+  if (s_bNear) m_aCheckDistances = {100};
+  if (s_bProbe) m_aCheckDistances = {75, 100, 150};
  }
 
  override protected void Begin()
@@ -76,8 +88,16 @@ class BBB_GrenadierTest : BBB_AimTest
   if (s_bNear)
   {
    // Why do US grenadiers not even see a BRDM/BTR at 100 m? Swap who is in what.
-   array<int> near = {0, 3, 4, 2, 0};
-   foreach (int k : near) { m_aKind.Insert(k); m_aRange.Insert(100); }
+   array<int> near = {0, 1, 3, 4, 2, 0};
+   if (s_bProbe) near = {0, 1, 0, 1, 2, 2};
+   array<float> probeRanges = {75, 75, 150, 150, 75, 150};
+   if (s_bVision) { near = {0, 1, 2}; probeRanges = {100, 100, 100}; }
+   foreach (int index, int k : near)
+   {
+    float range = 100;
+    if (s_bProbe) range = probeRanges[index];
+    m_aKind.Insert(k); m_aRange.Insert(range);
+   }
   }
   else
   {
@@ -200,6 +220,7 @@ class BBB_GrenadierTest : BBB_AimTest
   lane.m_fHookAt = Now() + 4;
   m_aLanes.Insert(lane);
   m_fRoundEnd = Now() + ROUND_S;
+  if (s_bProbe) m_fRoundEnd = Now() + 30;
   m_iGLStart = -1;
   m_iSamplesGL = 0;
   m_iSamplesRifle = 0;
@@ -210,6 +231,10 @@ class BBB_GrenadierTest : BBB_AimTest
   m_iDriverOut = 0;
   m_iDriverSamples = 0;
   m_sTargets = "";
+  m_bTraceLogged = false;
+  m_iTargetSamples = 0;
+  m_iTargetDetected = 0;
+  m_iTargetSeen = 0;
   m_fNextSample = Now() + 6;
   PrintFormat("[BBB] GLTEST round %1/%2: %3 at %4 m", round + 1, m_aKind.Count(), KindName(m_iKind), range);
   return true;
@@ -239,6 +264,18 @@ class BBB_GrenadierTest : BBB_AimTest
    {
     m_iMaxEnemy = Math.Max(m_iMaxEnemy, perception.GetTargetCount(ETargetCategory.ENEMY));
     m_iMaxDetected = Math.Max(m_iMaxDetected, perception.GetTargetCount(ETargetCategory.DETECTED));
+    if (s_bNear)
+    {
+     m_iTargetSamples++;
+     BaseTarget exact = perception.FindTargetPerceptionObject(m_Vehicle);
+     if (exact && exact.GetTimeSinceDetected() < 10) m_iTargetDetected++;
+     if (exact && exact.GetTimeLastSeen() > 0 && exact.GetTimeSinceSeen() < 10) m_iTargetSeen++;
+     if (!m_bTraceLogged)
+     {
+      m_bTraceLogged = true;
+      TraceVehicleAimpoints(man, perception);
+     }
+    }
    }
    if (combat && combat.GetRetreatTarget()) m_iMaxCantAttack++;
    if (!combat || !combat.GetCurrentTarget()) { m_iSamplesNone++; continue; }
@@ -262,9 +299,40 @@ class BBB_GrenadierTest : BBB_AimTest
   }
  }
 
+ protected void TraceVehicleAimpoints(IEntity man, PerceptionComponent perception)
+ {
+  if (!m_Vehicle) return;
+  PerceivableComponent perceivable = PerceivableComponent.Cast(m_Vehicle.FindComponent(PerceivableComponent));
+  if (!perceivable) return;
+  string faction = "none";
+  if (perceivable.GetPerceivedFaction()) faction = perceivable.GetPerceivedFaction().GetFactionKey();
+  PrintFormat("[BBB] GLTEST PERCEPTION vehicle=%1 faction=%2 type=%3 size=%4 recognition=%5 illumination=%6 simCounter=%7", BBB_Armour.Short(BBB_Armour.PrefabKey(m_Vehicle)), faction, perceivable.GetUnitType(), perceivable.GetEstimatedVisualSize(), perceivable.GetVisualRecognitionFactor(), perceivable.GetIlluminationFactor(), perception.GetSimulateCounter());
+  array<vector> points = {};
+  perceivable.GetAimpoints(points);
+  foreach (vector point : points)
+  {
+   TraceParam trace = new TraceParam();
+   trace.Start = man.GetOrigin() + Vector(0, 1.5, 0);
+   // Despite the generated API's model-space comment, the runtime returns
+   // world positions here (confirmed against the spawned vehicle's origin).
+   trace.End = point;
+   trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+   trace.Exclude = man;
+   float fraction = GetGame().GetWorld().TraceMove(trace, null);
+   bool hull = trace.TraceEnt == m_Vehicle;
+   if (trace.TraceEnt && trace.TraceEnt.GetRootParent() == m_Vehicle) hull = true;
+   PrintFormat("[BBB] GLTEST AIMPOINT world=%1 vehicleOrigin=%2 standingEyeTraceFraction=%3 hitHull=%4 blocker=%5", point, m_Vehicle.GetOrigin(), fraction, hull, BBB_Armour.Short(BBB_Armour.PrefabKey(trace.TraceEnt)));
+  }
+ }
+
  override protected void Tick()
  {
   float now = Now();
+  if (s_bVision && m_Vehicle)
+  {
+   BaseVehicleControllerComponent controller = BaseVehicleControllerComponent.Cast(m_Vehicle.FindComponent(BaseVehicleControllerComponent));
+   if (controller) { controller.CancelStart(); controller.ForceStopEngine(); }
+  }
   if (m_aLanes.IsEmpty())
   {
    if (now < m_fNextRound) return;
@@ -298,6 +366,15 @@ class BBB_GrenadierTest : BBB_AimTest
   foreach (BBB_AimLane lane : m_aLanes)
   {
    int range = Math.Round(vector.DistanceXZ(lane.m_vFrom, lane.m_vTo));
+   if (s_bNear)
+   {
+    m_iNearCompleted++;
+    bool perceived = m_iTargetDetected > 0;
+    if (s_bVision) perceived = m_iTargetSeen > 0;
+    if (perceived) m_iNearRecognized++;
+    PrintFormat("[BBB] GLTEST EXACT vehicle fresh-detected samples %1 of %2", m_iTargetDetected, m_iTargetSamples);
+    PrintFormat("[BBB] GLTEST EXACT direct visual-sighting samples %1 of %2 (engine-off control %3)", m_iTargetSeen, m_iTargetSamples, s_bVision);
+   }
    int fired = 0;
    if (m_iGLStart >= 0) fired = m_iGLStart - FortyMilAll();
    string hits = "";
@@ -335,6 +412,15 @@ class BBB_GrenadierTest : BBB_AimTest
   ObserversSystem observers = ObserversSystem.Cast(GetGame().GetWorld().FindSystem(ObserversSystem));
   if (observers) observers.RemoveObserverSP(OBSERVER_KEY);
   Print("[BBB] GLTEST done");
+  if (s_bNear)
+  {
+   string verdict = "PASS";
+   if (m_iNearCompleted != m_aKind.Count() || m_iNearRecognized != m_aKind.Count()) verdict = "FAIL";
+   string test = "bbbglnear";
+   if (s_bProbe) test = "bbbperception";
+   if (s_bVision) test = "bbbvision";
+   PrintFormat("[ACR] VERDICT %1 test=%2 rounds=%3 perceivedRounds=%4 requireDirectSight=%5 expected=%6", verdict, test, m_iNearCompleted, m_iNearRecognized, s_bVision, m_aKind.Count());
+  }
   Print("[ACR] TEST COMPLETE");
  }
 }
