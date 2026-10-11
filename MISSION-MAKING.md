@@ -487,6 +487,10 @@ to set an option directly; most hosts can just use the menu.
 
 ## Current limits
 
+- Vanilla church organs have a rare AI Easter egg: each organ has a 0.1% chance per minute
+  to send one conscious AI on foot within 50 m to play its 25-second toccata. Any faction can
+  play; player-controlled soldiers are excluded. Each trigger has a 30-minute cooldown.
+  The group keeps its orders, and new orders or a player at the keyboard cancel the detour.
 - **The game's US and USSR sides** are the most tested. The host menu also offers RHS and UA pairings;
   see [Factions and mods](#factions-and-mods). Other custom sides may not have player command gear yet.
   AI-only sides such as FIA may work, but have not been tested.

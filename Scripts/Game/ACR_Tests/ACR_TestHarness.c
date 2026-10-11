@@ -55,6 +55,7 @@ class ACR_TestHarness : Managed
  static const int MODE_MOTORIZED = 43;
  static const int MODE_FIRE = 44;
  static const int MODE_FACTIONS = 45;
+ static const int MODE_ORGAN = 46;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -105,6 +106,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrMotorizedTest", flag)) mode = MODE_MOTORIZED;
   if (System.GetCLIParam("acrFireTest", flag)) mode = MODE_FIRE;
   if (System.GetCLIParam("acrFactionTest", flag)) mode = MODE_FACTIONS;
+  if (System.GetCLIParam("acrOrganTest", flag)) mode = MODE_ORGAN;
   if (System.GetCLIParam("acrPadsTest", flag)) mode = MODE_PADS;
   if (System.GetCLIParam("acrHelipadTest", flag)) mode = MODE_HELIPAD;
   if (System.GetCLIParam("acrGarrisonTest", flag)) mode = MODE_GARRISON;
@@ -202,6 +204,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_MOTORIZED) { ACR_TestMotorized.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FIRE) { ACR_TestFire.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FACTIONS) { ACR_TestFactionPairs.Run(m_Ticks); return; }
+  if (m_Mode == MODE_ORGAN) { ACR_TestOrgan.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

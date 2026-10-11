@@ -124,6 +124,7 @@ class ACR_Manager : Managed
 
  static void Stop()
  {
+  ACR_OrganEasterEgg.Reset();
   ACR_Hud.Clear();
   ACR_Skirmish.Reset();
   ACR_Report.Reset();
@@ -332,6 +333,7 @@ class ACR_Manager : Managed
   EnsureCommanders();
   m_Bases.Tick(this);
   ACR_Garrison.Sweep();
+  ACR_OrganEasterEgg.Tick();
   t = ACR_Perf.Lap("bases", t);
   GrantGameMaster();
   ACR_PlayerSide.Enforce();
