@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 67;
+ static const int EXPECTED = 69;
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -723,6 +723,8 @@ class ACR_TestRegress
    Check("aircraft hull hits never train armour learning", false, "missing aircraft/crew/magazine/truck fixture");
    Check("aircraft and exposed crew ignore an existing useless-round verdict", false, "missing fixture");
    Check("ground vehicles retain armour learning and fire holds", false, "missing fixture");
+   Check("aircraft and seated crew cannot create group gunshot suppression contacts", false, "missing fixture");
+   Check("gunner drill rejects airborne sectors and keeps ground sectors", false, "missing fixture");
    return;
   }
   ref map<string, ref BBB_ArmourStat> savedStats = BBB_Armour.s_Stats;
@@ -745,6 +747,10 @@ class ACR_TestRegress
   Check("ground vehicles retain armour learning and fire holds", BBB_Armour.HitsOn(BBB_Armour.PrefabKey(s_ArsenalTruck)) >= BBB_Armour.s_iMinHits && BBB_Armour.UselessEntity(s_ArsenalTruck, magazine));
   BBB_Armour.s_Stats = savedStats;
   BBB_Armour.s_bLearn = savedLearn;
+  Check("aircraft and seated crew cannot create group gunshot suppression contacts", BBB_SuppressionSafety.AircraftSource(helicopter) && BBB_SuppressionSafety.AircraftSource(occupant) && !BBB_SuppressionSafety.AircraftSource(s_ArsenalTruck));
+  vector aircraftSector = helicopter.GetOrigin() + Vector(0, 40, 0);
+  vector groundSector = BBB.Ground(helicopter.GetOrigin()) + Vector(0, 1.5, 0);
+  Check("gunner drill rejects airborne sectors and keeps ground sectors", !BBB_SuppressionSafety.GroundSector(aircraftSector) && BBB_SuppressionSafety.GroundSector(groundSector));
  }
 
  static IEntity s_NoCrewVehicle;

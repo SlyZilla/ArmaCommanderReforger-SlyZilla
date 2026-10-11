@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A00100E0}Worlds/BBB_TestArland.ent"
+ Configurations {
+  ENTResourceClass PC {
+  }
+  ENTResourceClass HEADLESS : PC {
+  }
+ }
+}

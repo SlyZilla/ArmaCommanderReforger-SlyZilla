@@ -79,6 +79,7 @@ class BBB_Gunner
 
   vector me = gunner.GetOrigin();
   vector heard = utility.m_SectorThreatFilter.GetSectorPos(sectorId);
+  if (!BBB_SuppressionSafety.GroundSector(heard)) return;
   float distance = vector.DistanceXZ(me, heard);
   if (distance < MIN_M || distance > MAX_M) return;
 
@@ -133,6 +134,7 @@ class BBB_Gunner
   {
    if (!target || target.GetTimeSinceDetected() > 10) continue;
    vector at = target.GetLastDetectedPosition();
+   if (BBB_SuppressionSafety.AircraftSource(target.GetTargetEntity()) || !BBB_SuppressionSafety.GroundSector(at)) continue;
    vector to = at - me;
    to[1] = 0;
    float range = to.Length();

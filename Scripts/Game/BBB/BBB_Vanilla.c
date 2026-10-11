@@ -97,6 +97,7 @@ class BBB_Vanilla
   string verdict = "FAIL";
   if (BBB.IsStarted() && BBB_VanillaHooks.Cast(BBB.s_Hooks) && found && frames > 30) verdict = "PASS";
   PrintFormat("[BBB] VANILLATEST %1", verdict);
+  PrintFormat("[ACR] VERDICT %1 test=bbbvanilla started=%2 found=%3 frames=%4", verdict, BBB.IsStarted(), found, frames);
   if (spawned) SCR_EntityHelper.DeleteEntityAndChildren(spawned);
   Print("[ACR] TEST COMPLETE");
  }
