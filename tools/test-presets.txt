@@ -80,3 +80,4 @@ bbbsky|-acrBbbSkyTest 1|120|Worlds/BBB_TestArland.ent
 bbbcombat|-acrBbbCombatTest 1|420|Worlds/BBB_TestArland.ent
 bbbperception|-acrBbbPerceptionTest 1|300|Worlds/BBB_TestArland.ent
 bbbvision|-acrBbbVisionTest 1|160|Worlds/BBB_TestArland.ent
+bbblongrange|-acrBbbLongRangeTest 1|840|Worlds/BBB_TestArland.ent
