@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 64;
+ static const int EXPECTED = 67;
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -466,6 +466,7 @@ class ACR_TestRegress
    bool moved;
    if (s_Heli) moved = s_Heli.MoveTo(harness.Ground("1600 0 2700"));
    Check("helicopter crew is known as one and refuses a move", s_Heli != null && s_Heli.Aircraft() != null && !moved, string.Format("found %1, moved %2", s_Heli != null, moved));
+   AircraftArmourCheck(manager);
   }
   if (tick == 48)
   {
@@ -678,6 +679,74 @@ class ACR_TestRegress
  static int s_iTruckEntry = -1;
  static int s_iTruckBought, s_iTruckNamed, s_iRPAfterBuys, s_iTruckPaid;
  static string s_sGoodTruck, s_sNoCrewTruck;
+ static void AircraftArmourCheck(ACR_Manager manager)
+ {
+  IEntity helicopter;
+  if (s_Heli) helicopter = s_Heli.Aircraft();
+  array<AIAgent> crewAgents = {};
+  if (s_Heli) s_Heli.GetAgents(crewAgents);
+  IEntity occupant;
+  BaseMagazineComponent magazine;
+  foreach (AIAgent crewAgent : crewAgents)
+  {
+   IEntity man = crewAgent.GetControlledEntity();
+   if (!man || BBB_Armour.VehicleOf(man) != helicopter) continue;
+   occupant = man;
+   break;
+  }
+  // Pilots can keep their personal weapon holstered. Use a carried magazine
+  // from any fixture soldier rather than requiring the pilot to draw a gun.
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity soldier = agent.GetControlledEntity();
+    if (!soldier) continue;
+    BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(soldier.FindComponent(BaseWeaponManagerComponent));
+    if (!weapons) continue;
+    array<IEntity> carried = {};
+    weapons.GetWeaponsList(carried);
+    foreach (IEntity item : carried)
+    {
+     BaseWeaponComponent weapon = BaseWeaponComponent.Cast(item.FindComponent(BaseWeaponComponent));
+     if (weapon) magazine = weapon.GetCurrentMagazine();
+     if (magazine) break;
+    }
+    if (magazine) break;
+   }
+   if (magazine) break;
+  }
+  if (!helicopter || !occupant || !magazine || !s_ArsenalTruck)
+  {
+   Check("aircraft hull hits never train armour learning", false, "missing aircraft/crew/magazine/truck fixture");
+   Check("aircraft and exposed crew ignore an existing useless-round verdict", false, "missing fixture");
+   Check("ground vehicles retain armour learning and fire holds", false, "missing fixture");
+   return;
+  }
+  ref map<string, ref BBB_ArmourStat> savedStats = BBB_Armour.s_Stats;
+  bool savedLearn = BBB_Armour.s_bLearn;
+  BBB_Armour.s_Stats = new map<string, ref BBB_ArmourStat>();
+  BBB_Armour.s_bLearn = true;
+  BaseDamageContext hit = new BaseDamageContext();
+  hit.damageType = EDamageType.KINETIC;
+  hit.damageSource = s_ArsenalTruck; // Synthetic callback only; no damage applied.
+  for (int n = 0; n < BBB_Armour.s_iMinHits; n++) BBB_Armour.OnVehicleHit(helicopter, hit);
+  BBB_Armour.OnOccupantHit(occupant, hit);
+  Check("aircraft hull hits never train armour learning", BBB_Armour.s_Stats.IsEmpty());
+  BBB_ArmourStat learned = new BBB_ArmourStat();
+  learned.m_bUseless = true;
+  string ammo = BBB_Armour.Round(BBB_Armour.Key(magazine.GetAmmoType(0)));
+  BBB_Armour.s_Stats.Set(BBB_Armour.PrefabKey(helicopter) + "|" + ammo, learned);
+  Check("aircraft and exposed crew ignore an existing useless-round verdict", !BBB_Armour.UselessEntity(helicopter, magazine) && !BBB_Armour.UselessEntity(occupant, magazine));
+  for (int k = 0; k < BBB_Armour.s_iMinHits; k++) BBB_Armour.OnVehicleHit(s_ArsenalTruck, hit);
+  BBB_Armour.s_Stats.Set(BBB_Armour.PrefabKey(s_ArsenalTruck) + "|" + ammo, learned);
+  Check("ground vehicles retain armour learning and fire holds", BBB_Armour.HitsOn(BBB_Armour.PrefabKey(s_ArsenalTruck)) >= BBB_Armour.s_iMinHits && BBB_Armour.UselessEntity(s_ArsenalTruck, magazine));
+  BBB_Armour.s_Stats = savedStats;
+  BBB_Armour.s_bLearn = savedLearn;
+ }
+
  static IEntity s_NoCrewVehicle;
  static SCR_AIGroup s_ReinforceGroup;
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";

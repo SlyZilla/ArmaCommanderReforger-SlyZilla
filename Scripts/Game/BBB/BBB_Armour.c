@@ -128,6 +128,16 @@ class BBB_Armour
   return stat;
  }
 
+ // Hull hits cannot establish whether exposed aircraft crew can be hurt. Check
+ // simulation as well as perception type: mod aircraft may use a ground unit type.
+ static bool Aircraft(IEntity vehicle)
+ {
+  if (!vehicle) return false;
+  if (vehicle.FindComponent(VehicleHelicopterSimulation) || vehicle.FindComponent(VehicleFixedWingSimulation)) return true;
+  PerceivableComponent perceivable = PerceivableComponent.Cast(vehicle.FindComponent(PerceivableComponent));
+  return perceivable && perceivable.GetUnitType() == EAIUnitType.UnitType_Aircraft;
+ }
+
  // Test only: tally every hit on the watched vehicle ("type source" -> hits, effective damage).
  static void Watch(IEntity vehicle, notnull BaseDamageContext context)
  {
@@ -142,7 +152,7 @@ class BBB_Armour
  // A kinetic hit on a vehicle part (vehicle damage managers).
  static void OnVehicleHit(IEntity vehicle, notnull BaseDamageContext context)
  {
-  if (!s_bLearn || context.damageType != EDamageType.KINETIC || !context.damageSource) return;
+  if (!s_bLearn || context.damageType != EDamageType.KINETIC || !context.damageSource || Aircraft(vehicle)) return;
   int t = System.GetTickCount();
   string ammo = Round(PrefabKey(context.damageSource));
   string kind = PrefabKey(vehicle);
@@ -164,7 +174,7 @@ class BBB_Armour
  {
   if (!s_bLearn || context.damageType != EDamageType.KINETIC || !context.damageSource) return;
   IEntity vehicle = VehicleOf(occupant);
-  if (!vehicle) return;
+  if (!vehicle || Aircraft(vehicle)) return;
   string ammo = Round(PrefabKey(context.damageSource));
   string kind = PrefabKey(vehicle);
   if (ammo == "" || kind == "") return;
@@ -189,7 +199,7 @@ class BBB_Armour
  {
   if (!target || !magazine || s_Stats.IsEmpty()) return false;
   IEntity vehicle = VehicleOf(target.GetTargetEntity());
-  if (!vehicle) return false;
+  if (!vehicle || Aircraft(vehicle)) return false;
   string kind = PrefabKey(vehicle);
   string ammo = Round(Key(magazine.GetAmmoType(0)));
   BBB_ArmourStat stat = s_Stats.Get(kind + "|" + ammo);
@@ -200,7 +210,7 @@ class BBB_Armour
  {
   if (!targetEntity || !magazine || s_Stats.IsEmpty()) return false;
   IEntity vehicle = VehicleOf(targetEntity);
-  if (!vehicle) return false;
+  if (!vehicle || Aircraft(vehicle)) return false;
   BBB_ArmourStat stat = s_Stats.Get(PrefabKey(vehicle) + "|" + Round(Key(magazine.GetAmmoType(0))));
   return stat && stat.m_bUseless;
  }
