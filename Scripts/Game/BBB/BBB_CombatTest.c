@@ -41,6 +41,23 @@ class BBB_CombatTest : BBB_AimTest
 	protected bool m_bOriginalRadio;
 	protected bool m_bOriginalResponse;
 	protected int m_iResponseBase;
+	protected int m_iCompletedRounds;
+	protected bool m_bMissingTeams;
+	protected bool m_bOriginalPerf;
+	protected bool m_bOriginalPerfReport;
+
+	void BBB_CombatTest()
+	{
+		// This comparison is at 100 m. The inherited aim test also demands clear
+		// sight at 150/300/500 m, rejecting otherwise usable combat lanes.
+		m_aCheckDistances = {100};
+	}
+
+	protected override void PinDetail(AIAgent agent)
+	{
+		// The aim harness pins both sides awake. Here scheduling is one of the
+		// measured switches, so let the engine and BBB_Combat choose their LOD.
+	}
 
 	static void MaybeStartCombat()
 	{
@@ -53,6 +70,10 @@ class BBB_CombatTest : BBB_AimTest
 	protected void BeginCombat()
 	{
 		BBB_Combat.Read();
+		m_bOriginalPerf = BBB_Perf.s_bOn;
+		m_bOriginalPerfReport = BBB_Perf.s_bOwnReport;
+		BBB_Perf.s_bOn = true;
+		BBB_Perf.s_bOwnReport = true;
 		m_bOriginalDetail = BBB_Combat.s_bDetail;
 		m_bOriginalRadio = BBB_Combat.s_bRadio;
 		m_bOriginalResponse = BBB_Combat.s_bResponse;
@@ -65,6 +86,8 @@ class BBB_CombatTest : BBB_AimTest
 			Print("[BBB] COMBATTEST no clear lane");
 			Print("[ACR] VERDICT FAIL test=bbbcombat reason=no isolated lane; no combat comparison ran");
 			Print("[ACR] TEST COMPLETE");
+			BBB_Perf.s_bOn = m_bOriginalPerf;
+			BBB_Perf.s_bOwnReport = m_bOriginalPerfReport;
 			return;
 		}
 		LoadLane();
@@ -217,6 +240,8 @@ class BBB_CombatTest : BBB_AimTest
 			string key = "detail " + detail + " response " + response;
 			int downA = Downed(lane.m_A);
 			int downB = Downed(lane.m_B);
+			m_iCompletedRounds++;
+			if (lane.m_A.m_aMen.IsEmpty() || lane.m_B.m_aMen.IsEmpty()) m_bMissingTeams = true;
 			PrintFormat("[BBB] COMBATTEST %1 swapped %2: shots %3/%4, first shot %5/%6 s, down %7/%8, wake events %9", key, lane.m_bSwap, lane.m_A.m_iShots, lane.m_B.m_iShots, lane.m_fFirstA, lane.m_fFirstB, downA, downB, BBB_Combat.s_iWakeups - lane.m_iStartAwake);
 			PrintFormat("[BBB] COMBATTEST cues: incoming %1, target %2, no target %3, response actions %4", BBB_Combat.s_iIncomingFireCues - lane.m_iStartCues, BBB_Combat.s_iCuesWithTarget - lane.m_iStartTargetCues, BBB_Combat.s_iCuesWithoutTarget - lane.m_iStartUnknownCues, BBB_Combat.s_iResponses - lane.m_iStartResponses);
 			if (!m_aCombatKeys.Contains(key)) m_aCombatKeys.Insert(key);
@@ -240,6 +265,8 @@ class BBB_CombatTest : BBB_AimTest
 		BBB_Combat.s_bRadio = m_bOriginalRadio;
 		BBB_Combat.s_bResponse = m_bOriginalResponse;
 		BBB_Combat.s_bTestMetrics = false;
+		BBB_Perf.s_bOn = m_bOriginalPerf;
+		BBB_Perf.s_bOwnReport = m_bOriginalPerfReport;
 		foreach (string key : m_aCombatKeys)
 		{
 			float firstA = -1;
@@ -250,6 +277,10 @@ class BBB_CombatTest : BBB_AimTest
 		}
 		PrintFormat("[BBB] COMBATTEST cue totals: incoming %1 (target %2, no target %3), responses %4", BBB_Combat.s_iIncomingFireCues, BBB_Combat.s_iCuesWithTarget, BBB_Combat.s_iCuesWithoutTarget, BBB_Combat.s_iResponses - m_iResponseBase);
 		Print("[BBB] COMBATTEST done");
+		string verdict = "PASS";
+		if (m_iCompletedRounds != ROUNDS || m_bMissingTeams || BBB_Combat.s_iIncomingFireCues == 0) verdict = "FAIL";
+		PrintFormat("[ACR] VERDICT %1 test=bbbcombat rounds=%2 expected=%3 missingTeams=%4 incoming=%5", verdict, m_iCompletedRounds, ROUNDS, m_bMissingTeams, BBB_Combat.s_iIncomingFireCues);
+		if (BBB_Combat.s_iCuesWithoutTarget == 0) Print("[BBB] COMBATTEST return-fire comparison inconclusive: no incoming cues without a recognized target");
 		Print("[ACR] TEST COMPLETE");
 	}
 }

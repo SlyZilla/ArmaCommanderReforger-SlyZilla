@@ -77,3 +77,4 @@ everonsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Everon.ent
 fire|-acrFireTest 1|240
 factions|-acrFactionTest 1|120
 bbbsky|-acrBbbSkyTest 1|120|Worlds/BBB_TestArland.ent
+bbbcombat|-acrBbbCombatTest 1|420|Worlds/BBB_TestArland.ent
