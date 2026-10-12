@@ -73,6 +73,7 @@ class ACR_TestFactionPairs
  static void Run(int tick)
  {
   CheckFlyover(tick);
+  CheckUA(tick);
   if (tick == 70) { FinishCrews(); return; }
   if (tick != 10) return;
   string west = ACR_FactionSelection.West();
@@ -192,7 +193,94 @@ class ACR_TestFactionPairs
    s_iExpected = expected + 7;
    return;
   }
+  if (uaPair)
+  {
+   SpawnUATeams();
+   s_iUAExpected = expected + 5;
+   return;
+  }
   ACR_TestRegress.Complete("factions", expected);
+ }
+
+ // UA (11 Oct): every soldier of the US key is re-equipped in UA kit. A few extra teams
+ // cover the roles (MG, LAT, GL, sniper) beside the starting squads.
+ protected static int s_iUAExpected;
+ protected static void SpawnUATeams()
+ {
+  ACR_Manager acr = ACR_Manager.GetInstance();
+  ACR_Base home;
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (!home && base.m_sOwner == "US") home = base;
+  if (!home) return;
+  array<ResourceName> teams = {
+   "{958039B857396B7B}Prefabs/Groups/BLUFOR/Group_US_MachineGunTeam.et",
+   "{FAEA8B9E1252F56E}Prefabs/Groups/BLUFOR/Group_US_Team_LAT.et",
+   "{DE747BC9217D383C}Prefabs/Groups/BLUFOR/Group_US_Team_GL.et",
+   "{D807C7047E818488}Prefabs/Groups/BLUFOR/Group_US_SniperTeam.et"
+  };
+  acr.m_sSpawningFaction = "US";
+  foreach (int i, ResourceName team : teams)
+  {
+   vector at = acr.ClearSpotNear(home, 20, 80, 4);
+   acr.SpawnUnit("UA test " + i, team, "", false, "", at, at);
+  }
+  acr.m_sSpawningFaction = "";
+ }
+
+ static void CheckUA(int tick)
+ {
+  if (s_iUAExpected == 0 || tick != 45) return;
+  int soldiers, equipped, dressed, armed, supplied, east, west, oldKit, launchers;
+  string tally;
+  array<AIAgent> agents = {};
+  GetGame().GetAIWorld().GetAIAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity man = agent.GetControlledEntity();
+   if (!ChimeraCharacter.Cast(man) || !ACR_UALoadout.IsUA(man)) continue;
+   CharacterControllerComponent controller = ChimeraCharacter.Cast(man).GetCharacterController();
+   if (!controller || controller.IsDead()) continue;
+   soldiers++;
+   if (ACR_UALoadout.WasEquipped(man)) equipped++;
+   SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(man.FindComponent(SCR_InventoryStorageManagerComponent));
+   SCR_CharacterInventoryStorageComponent loadout = inventory.GetCharacterStorage();
+   string leaf = ACR_UALoadout.Leaf(man);
+   IEntity jacket = loadout.GetClothFromArea(LoadoutJacketArea);
+   IEntity pants = loadout.GetClothFromArea(LoadoutPantsArea);
+   if (leaf.Contains("HeliPilot") || (jacket && pants && jacket.GetPrefabData().GetPrefabName() == ACR_UALoadout.JACKET && pants.GetPrefabData().GetPrefabName() == ACR_UALoadout.PANTS)) dressed++;
+   else PrintFormat("[ACR] FACTIONTEST UA undressed %1 jacket=%2 pants=%3", leaf, ACR_UALoadout.Leaf(jacket), ACR_UALoadout.Leaf(pants));
+   BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(man.FindComponent(BaseWeaponManagerComponent));
+   array<IEntity> list = {};
+   if (weapons) weapons.GetWeaponsList(list);
+   IEntity primary;
+   foreach (IEntity weaponEntity : list)
+   {
+    BaseWeaponComponent weapon = BaseWeaponComponent.Cast(weaponEntity.FindComponent(BaseWeaponComponent));
+    if (!weapon) continue;
+    string name = ACR_UALoadout.Leaf(weaponEntity);
+    if (name.Contains("M60")) oldKit++;
+    if (weapon.GetWeaponType() == EWeaponType.WT_ROCKETLAUNCHER) launchers++;
+    else if (!primary && weapon.GetWeaponType() != EWeaponType.WT_HANDGUN && weapon.GetWeaponType() != EWeaponType.WT_FRAGGRENADE && weapon.GetWeaponType() != EWeaponType.WT_SMOKEGRENADE) primary = weaponEntity;
+   }
+   if (!primary) continue;
+   armed++;
+   string primaryLeaf = ACR_UALoadout.Leaf(primary);
+   tally += " " + primaryLeaf;
+   if (primaryLeaf.Contains("AK") || primaryLeaf.Contains("PK") || primaryLeaf.Contains("RPK") || primaryLeaf.Contains("SVD")) east++;
+   else west++;
+   BaseWeaponComponent primaryWeapon = BaseWeaponComponent.Cast(primary.FindComponent(BaseWeaponComponent));
+   array<BaseMuzzleComponent> muzzles = {};
+   primaryWeapon.GetMuzzlesList(muzzles);
+   if (!muzzles.IsEmpty() && ACR_UALoadout.CountPrefab(inventory, muzzles[0].GetDefaultMagazineOrProjectileName()) >= 2) supplied++;
+   else PrintFormat("[ACR] FACTIONTEST UA short of magazines %1 %2", leaf, primaryLeaf);
+  }
+  PrintFormat("[ACR] FACTIONTEST UA weapons east=%1 west=%2:%3", east, west, tally);
+  ACR_TestRegress.Check("factions: every UA soldier was re-equipped without a failure", soldiers >= 10 && equipped == soldiers && ACR_UALoadout.s_iFailed == 0, string.Format("%1/%2, %3 failed", equipped, soldiers, ACR_UALoadout.s_iFailed));
+  ACR_TestRegress.Check("factions: UA soldiers wear the UA jacket and pants", dressed == soldiers, string.Format("%1/%2", dressed, soldiers));
+  ACR_TestRegress.Check("factions: UA rifles mostly Soviet pattern, no M60s left", armed > 0 && east * 2 > armed && oldKit == 0, string.Format("east %1 west %2 of %3, M60 %4", east, west, armed, oldKit));
+  ACR_TestRegress.Check("factions: UA soldiers carry spare magazines for their weapon", supplied == armed, string.Format("%1/%2", supplied, armed));
+  ACR_TestRegress.Check("factions: the UA LAT team carries launchers", launchers >= 1, string.Format("%1 launchers", launchers));
+  ACR_TestRegress.Complete("factions", s_iUAExpected);
  }
 
  protected static vector s_vBombTarget;

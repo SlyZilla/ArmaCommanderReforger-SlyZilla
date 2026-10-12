@@ -192,6 +192,7 @@ class ACR_Respawn : Managed
   {
    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
    MakeColonel(pc);
+   if (pc) ACR_UALoadout.Check(pc.GetMainEntity());
    if (!pc || !pc.IsPossessing() || IsAlive(pc.GetMainEntity()))
    {
     m_DueAt.Remove(id);
