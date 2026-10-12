@@ -139,7 +139,8 @@ class BBB_Combat
 		{
 			if (!agent || !agent.GetControlledEntity()) continue;
 			if (agent.GetDangerEventsCount() > 0) return true;
-			SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.GetControlledEntity().FindComponent(SCR_AIUtilityComponent));
+			// Utility/perception live on the agent, not its controlled character.
+			SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
 			if (utility && utility.m_CombatComponent && utility.m_CombatComponent.GetCurrentTarget()) return true;
 		}
 		return false;
