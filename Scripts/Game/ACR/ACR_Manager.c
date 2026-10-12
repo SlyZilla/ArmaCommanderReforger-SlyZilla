@@ -101,6 +101,50 @@ class ACR_Manager : Managed
  // local input state
  protected IEntity m_LastLocalBody;
  protected bool m_WasMovementActive;
+ // Freeze diagnostics (board hfvac46: a possessed soldier ignores movement for a second or
+ // two). Logs when forward is held on foot but the body doesn't move, with what might hold it.
+ protected vector m_StallFrom;
+ protected float m_fStallSince = -1;
+ protected bool m_bStallLogged;
+
+ protected void WatchStall(IEntity body, bool movementActive, bool mapOpen, bool possessed)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(body);
+  float now = GetGame().GetWorld().GetWorldTime();
+  CharacterControllerComponent controller;
+  if (character) controller = character.GetCharacterController();
+  bool watching = controller && movementActive && !mapOpen && !character.IsInVehicle() && !controller.IsDead()
+   && !controller.IsUnconscious() && !controller.IsClimbing() && !controller.IsSwimming() && !GetGame().GetMenuManager().IsAnyMenuOpen();
+  if (!watching)
+  {
+   if (m_bStallLogged) PrintFormat("[ACR] STALL ended after %1 s (released or state changed)", ((now - m_fStallSince) / 1000).ToString(4, 1));
+   m_fStallSince = -1;
+   m_bStallLogged = false;
+   return;
+  }
+  vector at = character.GetOrigin();
+  if (m_fStallSince < 0 || vector.DistanceXZ(at, m_StallFrom) > 0.3)
+  {
+   if (m_bStallLogged) PrintFormat("[ACR] STALL ended after %1 s (moving again)", ((now - m_fStallSince) / 1000).ToString(4, 1));
+   m_StallFrom = at;
+   m_fStallSince = now;
+   m_bStallLogged = false;
+   return;
+  }
+  if (m_bStallLogged || now - m_fStallSince < 700) return;
+  m_bStallLogged = true;
+  string item = "none";
+  IEntity inHands = controller.GetCurrentItemInHands();
+  if (inHands && inHands.GetPrefabData()) item = FilePath.StripPath(inHands.GetPrefabData().GetPrefabName());
+  AIControlComponent ai = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
+  string aiState = "n/a";
+  if (ai && ai.IsAIActivated()) aiState = "ON";
+  else if (ai) aiState = "off";
+  PrintFormat("[ACR] STALL forward held, no movement 0.7 s: %1 possessed=%2 moveDisabled=%3 weaponDisabled=%4 stance=%5 changingStance=%6 changingItem=%7 gadget=%8 inHands=%9",
+   FilePath.StripPath(character.GetPrefabData().GetPrefabName()), possessed, controller.GetDisableMovementControls(), controller.GetDisableWeaponControls(),
+   typename.EnumToString(ECharacterStance, controller.GetStance()), controller.IsChangingStance(), controller.IsChangingItem(), controller.IsGadgetInHands(), item);
+  PrintFormat("[ACR] STALL more: ai=%1 falling=%2 speedInput=%3 sprinting=%4", aiState, controller.IsFalling(), controller.GetMovementSpeed(), controller.IsSprinting());
+ }
  protected bool m_WasMapOpen;
  protected bool m_HintShown;
 
@@ -1025,6 +1069,7 @@ class ACR_Manager : Managed
   else input.ActivateContext("ACR_TestContext");
   bool movementActive = input.IsActionActive("CharacterForward") && !mapOpen;
   IEntity localBody = pc.GetControlledEntity();
+  WatchStall(localBody, movementActive, mapOpen, pc.IsPossessing());
   if (localBody != m_LastLocalBody || (m_WasMovementActive && !movementActive) || mapOpen != m_WasMapOpen)
   {
    input.ResetAction("CharacterForward");

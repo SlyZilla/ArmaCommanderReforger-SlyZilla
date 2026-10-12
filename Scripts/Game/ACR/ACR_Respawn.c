@@ -181,6 +181,31 @@ class ACR_Respawn : Managed
   PrintFormat("[ACR] Command unit of player %1 ranked colonel", pc.GetPlayerId());
  }
 
+ // Freeze diagnostics (board hfvac46): log when a possessed soldier's AI is switched on or
+ // off while a player controls him (the AI and the player would then fight over the body).
+ protected ref map<int, int> m_PossessedAI = new map<int, int>();
+ protected void WatchPossessedAI(SCR_PlayerController pc)
+ {
+  if (!pc) return;
+  int id = pc.GetPlayerId();
+  int state = -1;
+  IEntity body = pc.GetControlledEntity();
+  if (pc.IsPossessing() && body)
+  {
+   AIControlComponent ai = AIControlComponent.Cast(body.FindComponent(AIControlComponent));
+   if (ai) state = ai.IsAIActivated();
+  }
+  int before = -1;
+  if (!m_PossessedAI.Find(id, before)) before = -1;
+  if (state != before && (state == 1 || before == 1))
+  {
+   string name = "none";
+   if (body && body.GetPrefabData()) name = FilePath.StripPath(body.GetPrefabData().GetPrefabName());
+   PrintFormat("[ACR] POSSESSED AI player=%1 %2: AI %3 (possessing %4)", id, name, state == 1, pc.IsPossessing());
+  }
+  m_PossessedAI.Set(id, state);
+ }
+
  // Every second: command units that died while their player was elsewhere.
  void Tick()
  {
@@ -192,6 +217,7 @@ class ACR_Respawn : Managed
   {
    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
    MakeColonel(pc);
+   WatchPossessedAI(pc);
    if (pc) ACR_UALoadout.Check(pc.GetMainEntity());
    if (!pc || !pc.IsPossessing() || IsAlive(pc.GetMainEntity()))
    {
