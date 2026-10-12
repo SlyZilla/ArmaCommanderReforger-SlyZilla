@@ -308,8 +308,17 @@ class ACR_FactionCatalog
  // has no standard subunit or no such soldier.
  static ResourceName CrewmanFor(string factionKey, IEntity vehicle)
  {
-  if (StandardPath(factionKey).IsEmpty() || !vehicle || !vehicle.GetPrefabData()) return "";
+  if (!vehicle || !vehicle.GetPrefabData()) return "";
   string vehiclePath = vehicle.GetPrefabData().GetPrefabName();
+  // UA (the US key under Ukraine Armed Forces RHS): the mod's vehicles (BTR-25, armed Mi-8)
+  // keep the vanilla Soviet default crew, so a bought BTR-25 was crewed by USSR riflemen
+  // (11 Oct: no gunner for Take over gunner). US crewmen; the UA kit pass dresses them.
+  if (factionKey == "US" && ACR_FactionSelection.UkraineModLoaded())
+  {
+   if (vehiclePath.Contains("/Helicopters/")) return "{42A502E3BB727CEB}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_HeliPilot.et";
+   return "{E1CB513B8B9B08F4}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Crew.et";
+  }
+  if (StandardPath(factionKey).IsEmpty()) return "";
   string role = "_Crew";
   if (vehiclePath.Contains("/Helicopters/")) role = "_HeliPilot";
   string key = factionKey + role;

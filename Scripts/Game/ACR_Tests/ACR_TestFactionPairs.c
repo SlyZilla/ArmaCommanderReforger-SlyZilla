@@ -196,7 +196,7 @@ class ACR_TestFactionPairs
   if (uaPair)
   {
    SpawnUATeams();
-   s_iUAExpected = expected + 7;
+   s_iUAExpected = expected + 8;
    return;
   }
   ACR_TestRegress.Complete("factions", expected);
@@ -224,6 +224,10 @@ class ACR_TestFactionPairs
    vector at = acr.ClearSpotNear(home, 20, 80, 4);
    acr.SpawnUnit("UA test " + i, team, "", false, "", at, at);
   }
+  // The UA mod's BTR-25 (BTR-70 hull, its own turret part): Jacob 11 Oct, Take over gunner
+  // didn't find its gunner.
+  vector btrAt = acr.ClearSpotNear(home, 30, 90, 6);
+  acr.SpawnUnit("UA BTR test", "", "{A3C0E731AEB7C2BD}Prefabs/Vehicles/Wheeled/BTR70/BTR-25_UA.et", true, "", btrAt, btrAt);
   acr.m_sSpawningFaction = "";
  }
 
@@ -288,12 +292,36 @@ class ACR_TestFactionPairs
    else PrintFormat("[ACR] FACTIONTEST UA short of magazines %1 %2", leaf, primaryLeaf);
   }
   PrintFormat("[ACR] FACTIONTEST UA weapons east=%1 west=%2:%3", east, west, tally);
+  // BTR-25 gunner: what Take over gunner would find.
+  string btrReport = "no BTR-25";
+  ChimeraCharacter btrGunner;
+  array<IEntity> allVehicles = {};
+  ACR_Vehicles.All(allVehicles);
+  foreach (IEntity btr : allVehicles)
+  {
+   if (!btr || !btr.GetPrefabData() || !ACR_UALoadout.Leaf(btr).Contains("BTR-25")) continue;
+   btrReport = ACR_GunnerDrive.DescribeTurrets(btr);
+   foreach (ACR_Squad crewSquad : ACR_Manager.GetInstance().m_Squads)
+   {
+    array<IEntity> crewVehicles = {};
+    crewSquad.GetVehicles(crewVehicles);
+    foreach (IEntity crewVehicle : crewVehicles)
+     if (crewVehicle == btr || crewVehicle.GetRootParent() == btr)
+     {
+      btrReport += " | squad " + crewSquad.GetName() + " vehicle " + ACR_UALoadout.Leaf(crewVehicle);
+      ChimeraCharacter found = ACR_GunnerDrive.SquadGunner(crewSquad);
+      if (found) btrGunner = found;
+     }
+   }
+  }
+  PrintFormat("[ACR] FACTIONTEST UA BTR-25: %1", btrReport);
   ACR_TestRegress.Check("factions: every UA soldier was re-equipped without a failure", soldiers >= 10 && equipped == soldiers && ACR_UALoadout.s_iFailed == 0, string.Format("%1/%2, %3 failed", equipped, soldiers, ACR_UALoadout.s_iFailed));
   ACR_TestRegress.Check("factions: UA soldiers wear the UA jacket and pants", dressed == soldiers, string.Format("%1/%2", dressed, soldiers));
   ACR_TestRegress.Check("factions: UA rifles mostly Soviet pattern, no M60s left", armed > 0 && east * 2 > armed && oldKit == 0, string.Format("east %1 west %2 of %3, M60 %4", east, west, armed, oldKit));
   ACR_TestRegress.Check("factions: UA soldiers carry spare magazines for their weapon", supplied == armed, string.Format("%1/%2", supplied, armed));
   ACR_TestRegress.Check("factions: no UA infantry wear aviator (Gentex) helmets", aviators == 0, string.Format("%1 aviator helmets", aviators));
   ACR_TestRegress.Check("factions: UA soldiers carry map, compass, watch, radio, meds, shovel and grenades", kitted == soldiers && ACR_UALoadout.s_iKitFailed == 0, string.Format("%1/%2, %3 short%4", kitted, soldiers, ACR_UALoadout.s_iKitFailed, kitShort));
+  ACR_TestRegress.Check("factions: Take over gunner finds the UA BTR-25's gunner", btrGunner != null, btrReport);
   ACR_TestRegress.Check("factions: the UA LAT team carries launchers", launchers >= 1, string.Format("%1 launchers", launchers));
   ACR_TestRegress.Complete("factions", s_iUAExpected);
  }

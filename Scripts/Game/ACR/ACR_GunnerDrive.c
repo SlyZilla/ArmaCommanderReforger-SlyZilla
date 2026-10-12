@@ -62,6 +62,33 @@ class ACR_GunnerDrive
  string m_EndReason;
 
  // The AI gunner of one of the squad's vehicles (null if none, or a player holds it).
+ // Test/diagnostic: every turret seat of a vehicle and its parts, and who sits there.
+ static string DescribeTurrets(IEntity vehicle)
+ {
+  string text = "";
+  array<IEntity> parts = {vehicle};
+  IEntity child = vehicle.GetChildren();
+  while (child)
+  {
+   parts.Insert(child);
+   child = child.GetSibling();
+  }
+  foreach (IEntity part : parts)
+  {
+   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(part.FindComponent(SCR_BaseCompartmentManagerComponent));
+   if (!compartments) continue;
+   array<BaseCompartmentSlot> slots = {};
+   compartments.GetCompartments(slots);
+   foreach (BaseCompartmentSlot slot : slots)
+   {
+    string who = "empty";
+    if (slot.GetOccupant()) who = FilePath.StripPath(slot.GetOccupant().GetPrefabData().GetPrefabName());
+    text += string.Format(" [%1 %2: %3]", FilePath.StripPath(part.GetPrefabData().GetPrefabName()), typename.EnumToString(ECompartmentType, slot.GetType()), who);
+   }
+  }
+  return text;
+ }
+
  static ChimeraCharacter SquadGunner(ACR_Squad squad)
  {
   if (!squad) return null;
