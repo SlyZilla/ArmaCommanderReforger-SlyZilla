@@ -196,7 +196,7 @@ class ACR_TestFactionPairs
   if (uaPair)
   {
    SpawnUATeams();
-   s_iUAExpected = expected + 5;
+   s_iUAExpected = expected + 7;
    return;
   }
   ACR_TestRegress.Complete("factions", expected);
@@ -230,7 +230,8 @@ class ACR_TestFactionPairs
  static void CheckUA(int tick)
  {
   if (s_iUAExpected == 0 || tick != 45) return;
-  int soldiers, equipped, dressed, armed, supplied, east, west, oldKit, launchers;
+  int soldiers, equipped, dressed, armed, supplied, east, west, oldKit, launchers, aviators, kitted;
+  string kitShort;
   string tally;
   array<AIAgent> agents = {};
   GetGame().GetAIWorld().GetAIAgents(agents);
@@ -247,8 +248,20 @@ class ACR_TestFactionPairs
    string leaf = ACR_UALoadout.Leaf(man);
    IEntity jacket = loadout.GetClothFromArea(LoadoutJacketArea);
    IEntity pants = loadout.GetClothFromArea(LoadoutPantsArea);
+   string helmetLeaf = ACR_UALoadout.Leaf(loadout.GetClothFromArea(LoadoutHeadCoverArea));
+   helmetLeaf.ToLower();
+   if (!leaf.Contains("Pilot") && (helmetLeaf.Contains("gentex") || helmetLeaf.Contains("exfil"))) aviators++;
    if (leaf.Contains("HeliPilot") || (jacket && pants && jacket.GetPrefabData().GetPrefabName() == ACR_UALoadout.JACKET && pants.GetPrefabData().GetPrefabName() == ACR_UALoadout.PANTS)) dressed++;
    else PrintFormat("[ACR] FACTIONTEST UA undressed %1 jacket=%2 pants=%3", leaf, ACR_UALoadout.Leaf(jacket), ACR_UALoadout.Leaf(pants));
+   string shortHere;
+   foreach (string kitLine : ACR_UALoadout.KIT)
+   {
+    array<string> kitParts = {};
+    kitLine.Split("|", kitParts, false);
+    if (kitParts.Count() == 3 && ACR_UALoadout.CountKind(man, inventory, kitParts[0]) < kitParts[2].ToInt()) shortHere += " " + kitParts[0];
+   }
+   if (shortHere.IsEmpty() || leaf.Contains("HeliPilot")) kitted++;
+   else kitShort += " " + leaf + ":" + shortHere;
    BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(man.FindComponent(BaseWeaponManagerComponent));
    array<IEntity> list = {};
    if (weapons) weapons.GetWeaponsList(list);
@@ -279,6 +292,8 @@ class ACR_TestFactionPairs
   ACR_TestRegress.Check("factions: UA soldiers wear the UA jacket and pants", dressed == soldiers, string.Format("%1/%2", dressed, soldiers));
   ACR_TestRegress.Check("factions: UA rifles mostly Soviet pattern, no M60s left", armed > 0 && east * 2 > armed && oldKit == 0, string.Format("east %1 west %2 of %3, M60 %4", east, west, armed, oldKit));
   ACR_TestRegress.Check("factions: UA soldiers carry spare magazines for their weapon", supplied == armed, string.Format("%1/%2", supplied, armed));
+  ACR_TestRegress.Check("factions: no UA infantry wear aviator (Gentex) helmets", aviators == 0, string.Format("%1 aviator helmets", aviators));
+  ACR_TestRegress.Check("factions: UA soldiers carry map, compass, watch, radio, meds, shovel and grenades", kitted == soldiers && ACR_UALoadout.s_iKitFailed == 0, string.Format("%1/%2, %3 short%4", kitted, soldiers, ACR_UALoadout.s_iKitFailed, kitShort));
   ACR_TestRegress.Check("factions: the UA LAT team carries launchers", launchers >= 1, string.Format("%1 launchers", launchers));
   ACR_TestRegress.Complete("factions", s_iUAExpected);
  }

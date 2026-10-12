@@ -6,7 +6,8 @@
 // a UA helmet, TV102 vests, Faradey boots, and a weapon by role. Weapons: mostly Soviet
 // pattern, about one in four Western (Jacob, 11 Oct: "mostly Soviet, some West"). Magazines
 // come from each new weapon's own default magazine, so they always fit.
-// Pilots keep their kit; crews keep their helmets. Inactive unless the UA mod is loaded.
+// Field kit (map, compass, watch, flashlight, radio, meds, MPL-50 shovel, RGD-5s, smoke) is topped
+// up 3 s later, once moved items have settled. Pilots keep their kit; crews keep their helmets. Inactive unless the UA mod is loaded.
 enum ACR_EUARole
 {
  RIFLEMAN,
@@ -29,6 +30,94 @@ class ACR_UALoadout
  static int s_iFailed;
  protected static ref set<EntityID> s_Done = new set<EntityID>();
  protected static ref map<string, ref array<ResourceName>> s_Pools;
+ protected static ref map<IEntity, ref array<IEntity>> s_Pending = new map<IEntity, ref array<IEntity>>();
+ static int s_iKitFailed;
+
+ // Field kit every UA soldier carries (Jacob, 11 Oct: no maps, compasses, watches, meds, grenades
+ // or shovels). The vanilla US base kit spawns into the pants, and the UA mod's pants prefab is
+ // missing, so it never spawned. "path part|prefab|count": a soldier holding any item whose prefab
+ // path contains the part counts toward it (old kit that moved over is kept, nothing doubles).
+ static ref array<string> KIT = {
+  "/Maps/|{13772C903CB5E4F7}Prefabs/Items/Equipment/Maps/Map_Paper_01/PaperMap_01_folded.et|1",
+  "/Compass/|{7CEF68E2BC68CE71}Prefabs/Items/Equipment/Compass/Compass_Adrianov.et|1",
+  "/Watches/|{6FD6C96121905202}Prefabs/Items/Equipment/Watches/Watch_Vostok.et|1",
+  "/Flashlights/|{575EA58E67448C2A}Prefabs/Items/Equipment/Flashlights/Flashlight_Soviet_01/Flashlight_Soviet_01.et|1",
+  "/Radios/|{73950FBA2D7DB5C5}Prefabs/Items/Equipment/Radios/Radio_ANPRC68.et|1",
+  "FieldDressing|{A81F501D3EF6F38E}Prefabs/Items/Medicine/FieldDressing_01/FieldDressing_US_01.et|2",
+  "Tourniquet|{D70216B1B2889129}Prefabs/Items/Medicine/Tourniquet_01/Tourniquet_US_01.et|1",
+  "Morphine|{0D9A5DCF89AE7AA9}Prefabs/Items/Medicine/MorphineInjection_01/MorphineInjection_01.et|1",
+  "ETool_|{062E2F1D7F6739D6}Prefabs/Items/Equipment/Accessories/ETool_MPL50/ETool_MPL50_FreeRoamBuilding_Gadget.et|1",
+  "/Grenades/Grenade_|{645C73791ECA1698}Prefabs/Weapons/Grenades/Grenade_RGD5.et|2",
+  "/Grenades/Smoke_|{77EAE5E07DC4678A}Prefabs/Weapons/Grenades/Smoke_RDG2.et|1"
+ };
+
+ // Items the soldier has whose prefab path contains part (worn gadgets and weapon slots too).
+ static int CountKind(IEntity soldier, SCR_InventoryStorageManagerComponent inventory, string part)
+ {
+  array<IEntity> items = {};
+  inventory.GetItems(items);
+  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(soldier.FindComponent(BaseWeaponManagerComponent));
+  if (weapons)
+  {
+   array<IEntity> held = {};
+   weapons.GetWeaponsList(held);
+   foreach (IEntity weapon : held)
+    if (weapon && !items.Contains(weapon)) items.Insert(weapon);
+  }
+  int count;
+  foreach (IEntity item : items)
+  {
+   if (!item || !item.GetPrefabData()) continue;
+   string path = item.GetPrefabData().GetPrefabName();
+   if (path.Contains(part)) count++;
+  }
+  return count;
+ }
+
+ // Tops the field kit up; returns the kinds still short (empty = complete).
+ static string TopUpKit(IEntity soldier)
+ {
+  SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(soldier.FindComponent(SCR_InventoryStorageManagerComponent));
+  if (!inventory) return " inventory";
+  string missing;
+  foreach (string line : KIT)
+  {
+   array<string> parts = {};
+   line.Split("|", parts, false);
+   if (parts.Count() != 3) continue;
+   int wanted = parts[2].ToInt();
+   int have = CountKind(soldier, inventory, parts[0]);
+   for (int n = have; n < wanted; n++)
+   {
+    if (!SpawnCarried(inventory, parts[1]))
+    {
+     missing += " " + FilePath.StripExtension(FilePath.StripPath(parts[1]));
+     break;
+    }
+   }
+  }
+  return missing;
+ }
+
+ static void Finish(IEntity soldier)
+ {
+  array<IEntity> old;
+  if (s_Pending.Find(soldier, old))
+  {
+   foreach (IEntity cloth : old)
+    if (cloth) SCR_EntityHelper.DeleteEntityAndChildren(cloth);
+   s_Pending.Remove(soldier);
+  }
+  if (!soldier) return;
+  ChimeraCharacter character = ChimeraCharacter.Cast(soldier);
+  if (!character || !character.GetCharacterController() || character.GetCharacterController().IsDead()) return;
+  string missing = TopUpKit(soldier);
+  if (!missing.IsEmpty())
+  {
+   s_iKitFailed++;
+   PrintFormat("[ACR] UA KIT %1 short:%2", Leaf(soldier), missing);
+  }
+ }
 
  static const ResourceName JACKET = "{A9D4DA189D2FBC65}Prefabs/Characters/Uniforms/Jacket_UA_M14_ground.et";
  static const ResourceName PANTS = "{846B61FF83278E38}Prefabs/Characters/Uniforms/Pants_AU_M14_piso.et";
@@ -108,12 +197,10 @@ class ACR_UALoadout
   Add("lat_west", "{9C5C20FB0E01E64F}Prefabs/Weapons/Launchers/M72/Launcher_M72A3.et", 2);
   Add("lat_west", "{7C45EC94C698246B}Prefabs/Weapons/Launchers/RPG75/Launcher_RPG75.et", 1);
 
-  Add("helmet", "{EED31918A22454F9}Prefabs/Characters/HeadGear/Helmet_ECH/variants/ECH_M14_ua.et", 4);
-  // Headgear_exfil_ua_m14 never fits the head slot (11 Oct test): left out.
-  Add("helmet", "{0368162B6B9C319D}Prefabs/Characters/HeadGear/Helmet_Gentex_56/ua_gentex_rhs.et", 1);
-  Add("helmet", "{87782D2671BAED67}Prefabs/Characters/HeadGear/Helmet_Gentex_56/ua_gentex_rhs_tipo2.et", 1);
-  Add("helmet", "{62E461DF7D5F7A0C}Prefabs/Characters/HeadGear/Helmet_Gentex_56/ua_gentex_rhs_tipo3.et", 1);
-  Add("helmet", "{5FD044E70833F33B}Prefabs/Characters/HeadGear/Helmet_Gentex_56/ua_gentex_rhs_tipo4.et", 1);
+  // Infantry ECH only (Jacob, 11 Oct: the Gentex 56 entries are aviator helmets with a "venom"
+  // mouth; Headgear_exfil_ua_m14 never fits the head slot). The UA M14 cover, some multicam.
+  Add("helmet", "{EED31918A22454F9}Prefabs/Characters/HeadGear/Helmet_ECH/variants/ECH_M14_ua.et", 3);
+  Add("helmet", "{C8E2AC206E2F5665}Prefabs/Characters/HeadGear/Helmet_ECH/Helmet_ECH_hc_v_r_p_cmc.et", 1);
 
   Add("vest", "{74F6035104400897}Prefabs/Characters/Vests/Vest_TV102/variants/Vest_TV102_rifleman_OD_UA.et", 2);
   Add("vest", "{E383053302D67DCA}Prefabs/Characters/Vests/Vest_TV102/variants/Vest_TV102_Basico_UA.et", 1);
@@ -265,9 +352,12 @@ class ACR_UALoadout
  // Into any storage that takes it (belt boxes may only fit a pack).
  static bool SpawnCarried(SCR_InventoryStorageManagerComponent inventory, ResourceName prefab)
  {
-  if (inventory.TrySpawnPrefabToStorage(prefab)) return true;
+  // Worn equipment slots first (wrist watch), so a watch is worn rather than pocketed.
   array<BaseInventoryStorageComponent> storages = {};
   inventory.GetStorages(storages);
+  foreach (BaseInventoryStorageComponent slotStorage : storages)
+   if (SCR_EquipmentStorageComponent.Cast(slotStorage) && inventory.CanInsertResourceInStorage(prefab, slotStorage) && inventory.TrySpawnPrefabToStorage(prefab, slotStorage)) return true;
+  if (inventory.TrySpawnPrefabToStorage(prefab)) return true;
   foreach (BaseInventoryStorageComponent storage : storages)
    if (storage && inventory.TrySpawnPrefabToStorage(prefab, storage)) return true;
   return false;
@@ -391,7 +481,11 @@ class ACR_UALoadout
     if (target && inventory.TryMoveItemToStorage(item, target)) moved++;
    }
   }
-  foreach (IEntity old : removed) SCR_EntityHelper.DeleteEntityAndChildren(old);
+  // Moves finish after this call: the old clothes go, and the field kit is topped up, 3 s later.
+  array<IEntity> pending = {};
+  pending.InsertAll(removed);
+  s_Pending.Set(soldier, pending);
+  GetGame().GetCallqueue().CallLater(Finish, 3000, false, soldier);
   // Loose old ammunition still in the inventory (backpacks, character storage).
   array<IEntity> items = {};
   inventory.GetItems(items);
