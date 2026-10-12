@@ -792,19 +792,19 @@ ACR_Skirmish ACR_Skirmish_SaintPhilippe {
  m_sName "Saint-Philippe"
  m_eSize 1
  m_sBases "Saint-Philippe, Saint-Philippe Factory, Saint-Philippe Harbor, North Industrial, Gallows Base, Landfill"
- m_sHQs "US=Airbase; USSR=Power Plant"
+ m_sHQs "US=Saint-Philippe Harbor; USSR=Gallows Base"
 }
 ACR_Skirmish ACR_Skirmish_Montignac {
  coords 5000 150 7300
  m_sName "Montignac"
  m_eSize 1
  m_sBases "Montignac, Montignac Industrial, Entre-Deux, Gorey, Raccoon Rock, Gravette, Provins"
- m_sHQs "US=Gravette Base; USSR=Central Industrial"
+ m_sHQs "US=Gravette; USSR=Provins"
 }
 ACR_Skirmish ACR_Skirmish_Levie {
  coords 7500 150 4600
  m_sName "Levie"
  m_eSize 1
  m_sBases "Levie, Levie Base, Laruns, La Valette, Quarry, Chotain, Camurac"
- m_sHQs "US=Chotain Base; USSR=Regina Sawmill"
+ m_sHQs "US=Chotain; USSR=Camurac"
 }

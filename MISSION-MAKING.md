@@ -336,8 +336,10 @@ This optional object defines a smaller match area on a large map: half the map, 
 about five bases. Add one object for each layout; its position does not matter. The host can choose the
 layout by name (`-acrLayout`) or choose a size (`-acrSize`) and get a random layout of that size. If no
 layout is chosen, the whole map is used. Everon has north and south halves, plus small areas around
-Saint-Philippe, Montignac, and Levie. Each layout has two helipads at its HQ. Add one or two
-`ACR_Helipad` objects for each HQ you list so both sides can park support helicopters.
+Saint-Philippe, Montignac, and Levie. Put a flashpoint's HQs on bases inside it, at opposite ends,
+so commanders start in the fight rather than at a far-off base. Everon's halves have two helipads at
+each HQ; its flashpoints have none yet, so both sides there get the off-map support helicopters. Add
+one or two `ACR_Helipad` objects for each HQ you list so both sides can park support helicopters.
 
 | Setting | Default | What it does |
 |---|---|---|

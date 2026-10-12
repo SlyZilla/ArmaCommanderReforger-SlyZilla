@@ -1,7 +1,6 @@
 // -acrSkirmishTest 1 (server, Everon, ~40 s): skirmish layouts (ACR_Skirmish). Every layout in
 // the world must name real bases and an HQ per side. The test plays the Saint-Philippe
-// flashpoint (US keeps the Airbase and its pads, USSR moves to the Power Plant, which has no
-// pad); -acrSkirmishSouthTest 1 plays the South half (USSR keeps the Harbor, US moves to
+// flashpoint (both HQs inside it, no pads: off-map helicopters); -acrSkirmishSouthTest 1 plays the South half (USSR keeps the Harbor, US moves to
 // Lamentin). Checks: bases in play, HQ owners, everything else neutral, starting units and
 // spawn points at the new HQ, helipads out of play, and that the side without a pad has no
 // support helicopters to buy and gets the off-map helicopter support instead.
@@ -30,6 +29,21 @@ class ACR_TestSkirmish
     pair.Split("=", parts, false);
     if (parts.Count() == 2 && ACR_Skirmish.FindBase(parts[1])) hqs++;
     else s_sProblems += layout.m_sName + " HQ: " + pair + "; ";
+    // Flashpoint HQs are bases of the flashpoint itself (Jacob, 11 Oct: commanders spawned
+    // at military sites 1-2 km outside it).
+    if (parts.Count() == 2 && layout.m_eSize == ACR_ESkirmishSize.FLASHPOINT)
+    {
+     bool inside;
+     string hqName = parts[1];
+     hqName.TrimInPlace();
+     foreach (string listed : names)
+     {
+      string listedName = listed;
+      listedName.TrimInPlace();
+      if (listedName == hqName) inside = true;
+     }
+     if (!inside) s_sProblems += layout.m_sName + " HQ outside the flashpoint: " + hqName + "; ";
+    }
    }
    if (hqs < 2) s_sProblems += layout.m_sName + ": " + hqs.ToString() + " HQs; ";
   }
@@ -59,9 +73,11 @@ class ACR_TestSkirmish
   if (tick != 12 && tick != 30) return;
   string moved = "USSR";
   string kept = "US";
-  string movedHQ = "Power Plant";
-  string keptHQ = "Airbase";
-  int expected = 8;
+  // Saint-Philippe: both sides start inside the flashpoint (US Saint-Philippe Harbor, USSR
+  // Gallows Base), away from the pads at the Airbase/Power Plant: off-map helicopters.
+  string movedHQ = "Gallows Base";
+  string keptHQ = "Saint-Philippe Harbor";
+  int expected = 6;
   if (South()) { moved = "US"; kept = "USSR"; movedHQ = "Lamentin"; keptHQ = "Harbor"; expected = 30; }
   if (tick == 12)
   {
@@ -95,11 +111,18 @@ class ACR_TestSkirmish
    bool pointMoved;
    foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPointsForFaction(moved))
     if (point && movedBase && vector.DistanceXZ(point.GetOrigin(), movedBase.GetOrigin()) < 60) pointMoved = true;
+   if (!South())
+   {
+    bool keptPoint;
+    foreach (SCR_SpawnPoint point2 : SCR_SpawnPoint.GetSpawnPointsForFaction(kept))
+     if (point2 && keptBase && vector.DistanceXZ(point2.GetOrigin(), keptBase.GetOrigin()) < 60) keptPoint = true;
+    pointMoved = pointMoved && keptPoint;
+   }
    ACR_TestRegress.Check("skirmish: player spawn point moved to the new HQ", pointMoved, moved);
    // Flashpoint HQs have two pads; the South HQ now has two at Lamentin. Retired bases are dropped.
    int gone, live;
    foreach (ACR_Helipad pad : ACR_Helipad.s_All) { if (pad.m_bGone) gone++; else live++; }
-   bool padsMatch = live == 4 && gone == ACR_Helipad.s_All.Count() - 4;
+   bool padsMatch = live == 0 && !ACR_HeliStation.UsesPads(kept) && !ACR_HeliStation.UsesPads(moved);
    int lamentinPads;
    if (South())
    {
@@ -115,11 +138,14 @@ class ACR_TestSkirmish
    foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(moved).m_aRequisitions) if (entry.m_iSupportHeli > 0) movedHelis++;
    foreach (ACR_RequisitionEntry entry2 : manager.m_Bases.GetFaction(kept).m_aRequisitions) if (entry2.m_iSupportHeli > 0) keptHelis++;
    bool heliAccess = ACR_HeliStation.UsesPads(kept) && ACR_HeliStation.UsesPads(moved) && movedHelis == 2 && keptHelis == 2;
+   if (!South()) heliAccess = movedHelis == 0 && keptHelis == 0;
    ACR_TestRegress.Check("skirmish: support helicopter access follows each side's pads", heliAccess, string.Format("%1 / %2", movedHelis, keptHelis));
    // A layout that leaves a side without a pad: that side calls the off-map gunship.
    foreach (ACR_Helipad drop : ACR_Helipad.s_All) if (drop.Faction() == moved) drop.Drop();
    ACR_Skirmish.RecountPads();
-   ACR_TestRegress.Check("skirmish: a side without pads uses off-map helicopters", ACR_HeliStation.UsesPads(kept) && !ACR_HeliStation.UsesPads(moved), "");
+   bool offMap = ACR_HeliStation.UsesPads(kept) && !ACR_HeliStation.UsesPads(moved);
+   if (!South()) offMap = !ACR_HeliStation.UsesPads(kept) && !ACR_HeliStation.UsesPads(moved);
+   ACR_TestRegress.Check("skirmish: a side without pads uses off-map helicopters", offMap, "");
    if (!manager.m_Supports) manager.m_Supports = new ACR_Supports(manager);
    ACR_FactionData data = manager.m_Bases.GetFaction(moved);
    data.m_iRP = 500;
