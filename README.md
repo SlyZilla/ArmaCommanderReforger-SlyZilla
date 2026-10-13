@@ -16,7 +16,7 @@ Playtesters: **PoppiPoppins** and **Hexxyz**.
 ## Playing the test range
 
 Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo).
-**Host-Test-Range.cmd** opens the normal menu with the addon loaded, for hosting.
+**Menu-ACA.cmd** (also **Host-Test-Range.cmd**) opens the game's normal main menu with the addon loaded: Scenarios lists AC: Actual - Arland / Everon, which open with the in-game match setup screen.
 
 ### Factions and mods
 

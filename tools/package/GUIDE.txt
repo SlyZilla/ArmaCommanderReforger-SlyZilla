@@ -28,6 +28,14 @@ HOW TO START
    Arma Reforger\); it remembers the answer. If anything fails, send
    ArmaCommanderReforger\launcher-log.txt to the person who sent you this.
 
+FROM THE GAME'S OWN MENU (NEW)
+-------------------------------
+Menu-ACA.cmd starts Arma Reforger at its normal main menu with the mod
+loaded. Under Scenarios you'll find AC: Actual - Arland and - Everon.
+Started that way, a match setup screen comes up before anything spawns:
+click the options to change them, then press Start. (Play-ACA.cmd skips
+this screen, because its own menu already asked.)
+
 PLAYING TOGETHER (EXPERIMENTAL)
 -------------------------------
 One person hosts on their PC and plays; the others join. Everyone needs this
