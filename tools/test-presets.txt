@@ -76,6 +76,9 @@ motorized|-acrMotorizedTest 1|230
 everonsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Everon.ent
 fire|-acrFireTest 1|240
 factions|-acrFactionTest 1|120
+uahands|-acrUAHandsTest 1|100|Worlds/BBB_TestArland.ent
+weaponreadyeast|-acrWeaponReadyEastTest 1|100|Worlds/BBB_TestArland.ent
+uahelmets|-acrUAHelmetTest 1|200|Worlds/BBB_TestArland.ent
 bbbsky|-acrBbbSkyTest 1|120|Worlds/BBB_TestArland.ent
 bbbcombat|-acrBbbCombatTest 1|420|Worlds/BBB_TestArland.ent
 bbbengagement|-acrBbbEngagementTest 1|260|Worlds/BBB_TestArland.ent

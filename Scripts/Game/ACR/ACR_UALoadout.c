@@ -201,6 +201,80 @@ class ACR_UALoadout
   // mouth; Headgear_exfil_ua_m14 never fits the head slot). The UA M14 cover, some multicam.
   Add("helmet", "{EED31918A22454F9}Prefabs/Characters/HeadGear/Helmet_ECH/variants/ECH_M14_ua.et", 3);
   Add("helmet", "{C8E2AC206E2F5665}Prefabs/Characters/HeadGear/Helmet_ECH/Helmet_ECH_hc_v_r_p_cmc.et", 1);
+  // Mixed donated/captured infantry helmets; no old US woodland covers or flight helmets.
+  Add("helmet", "{5F71AB03597B3D25}Prefabs/Characters/HeadGear/Helmet_6B47/Helmet_6B47.et", 1);
+  Add("helmet", "{8F222AE7CA3BAE81}Prefabs/Characters/HeadGear/Helmet_6B47/Helmet_6B47_6B50_balaclave.et", 1);
+  Add("helmet", "{CB544B14CBE1DB94}Prefabs/Characters/HeadGear/Helmet_6B47/Helmet_6B47_6M2_balaclava.et", 1);
+  Add("helmet", "{0D3ACE32B1D5020D}Prefabs/Characters/HeadGear/Helmet_6B47/Helmet_6B47_Goggles_6M2.et", 1);
+  Add("helmet", "{F4B075722D275962}Prefabs/Characters/HeadGear/Helmet_6B47/Helmet_6B47_no_cover_balaclava.et", 1);
+  Add("helmet", "{58A12E4317DFAA23}Prefabs/Characters/HeadGear/Helmet_6B7/Helmet_6B7.et", 1);
+  Add("helmet", "{3C2C345310D0CD01}Prefabs/Characters/HeadGear/Helmet_6B7/Helmet_6B7_Flora.et", 1);
+  Add("helmet", "{33D72F3EE7C7317D}Prefabs/Characters/HeadGear/Helmet_6B7/variants/Helmet_6B7_EMR.et", 1);
+  Add("helmet", "{78B935EA1B644A92}Prefabs/Characters/HeadGear/Helmet_6B7/variants/Helmet_6B7_EMR_balacl.et", 1);
+  Add("helmet", "{4298D95C60998247}Prefabs/Characters/HeadGear/Helmet_Caiman/Helmet_Caiman_Coy.et", 1);
+  Add("helmet", "{33915036D0448C92}Prefabs/Characters/HeadGear/Helmet_ECH/Helmet_ECH_hc_v_r.et", 1);
+  Add("helmet", "{32A9B6C3F80142A2}Prefabs/Characters/HeadGear/Helmet_ECH/Helmet_ECH_hc_v_r_p_cd.et", 1);
+  Add("helmet", "{B47A0A12801CEBD3}Prefabs/Characters/HeadGear/Helmet_ECH/Helmet_ECH_lc_p.et", 1);
+  Add("helmet", "{FB9D0F8C0DD700B1}Prefabs/Characters/HeadGear/Helmet_ECH/variants/Helmet_ECH_hc_v_r_cd_p_crossbow.et", 1);
+  Add("helmet", "{2755E5DB23A48945}Prefabs/Characters/HeadGear/Helmet_ECH/variants/Helmet_ECH_lc_c_l_crossbow_desert.et", 1);
+  Add("helmet", "{54A7E4E38371553E}Prefabs/Characters/HeadGear/Helmet_Exfil/Helmet_Exfil_Blk.et", 1);
+  Add("helmet", "{C9422C231B245E28}Prefabs/Characters/HeadGear/Helmet_Exfil/Variants/ION_MC_BLK/Helmet_Exfil_Blk_ION2.et", 1);
+  Add("helmet", "{7DBE7102DE69CF5A}Prefabs/Characters/HeadGear/Helmet_Exfil/Variants/ION_MC_BLK/Helmet_Exfil_Blk_ION7.et", 1);
+  Add("helmet", "{3F9761C87346CE69}Prefabs/Characters/HeadGear/Helmet_Exfil/Variants/ION_Parka/Helmet_Exfil_CoyBlk_ION4.et", 1);
+  Add("helmet", "{C366832EA8199448}Prefabs/Characters/HeadGear/Helmet_Exfil/Variants/ION_Shirts/Helmet_Exfil_Coy_ION.et", 1);
+  Add("helmet", "{D6C2E291F59E8985}Prefabs/Characters/HeadGear/Helmet_Kiver_RSP/Helmet_Kiver_RSP.et", 1);
+  Add("helmet", "{7E4302FF560EE02A}Prefabs/Characters/HeadGear/Helmet_Kiver_RSP/Variants/Helmet_Kiver_RSP_VKPO3.0.et", 1);
+  Add("helmet", "{049BE57E35FAB43B}Prefabs/Characters/HeadGear/Helmet_Kiver_RSP/Variants/Helmet_Kiver_RSP_VKPO3.0_2.et", 1);
+  Add("helmet", "{D1D8BCC152EFDD92}Prefabs/Characters/HeadGear/Helmet_Kiver_RSP/Variants/Helmet_Kiver_RSP_VKPO3.0_3.et", 1);
+  Add("helmet", "{D49AACE831556592}Prefabs/Characters/HeadGear/Helmet_LShZ/Helmet_LShZ_6m2_1_atacs.et", 1);
+  Add("helmet", "{0A7D5F1389978D48}Prefabs/Characters/HeadGear/Helmet_LShZ/Helmet_LShZ_HC_emr_balaclava_6m2.et", 1);
+  Add("helmet", "{FB2C64294D760FC6}Prefabs/Characters/HeadGear/Helmet_LShZ/variants/Helmet_LShZ_6m2_1_emr_balaclava.et", 1);
+  Add("helmet", "{BA25D4DB591C3D33}Prefabs/Characters/HeadGear/Helmet_LShZ/variants/RGOlive/Helmet_LShZ_new_Blk_HC_RGOlive1.et", 1);
+  Add("helmet", "{13FF459E30D393E8}Prefabs/Characters/HeadGear/Helmet_LShZ/variants/Vkpo3.0/Helmet_LShZ_new_OD_HC_Peltor_VKPO3.et", 1);
+  Add("helmet", "{30C72B292DEC093A}Prefabs/Characters/HeadGear/Helmet_LWH/Helmet_LWH_Shroud_aor1.et", 1);
+  Add("helmet", "{5C931FC991288614}Prefabs/Characters/HeadGear/Helmet_LWH/Helmet_LWH_Shroud_aor2.et", 1);
+  Add("helmet", "{C7E31755334DCB9E}Prefabs/Characters/HeadGear/Helmet_LWH/Helmet_LWH_Shroud_marpatDesert.et", 1);
+  Add("helmet", "{1285B7FAD09DC0D3}Prefabs/Characters/HeadGear/Helmet_LWH/Helmet_LWH_Shroud_marpatWoodland.et", 1);
+  Add("helmet", "{FA2B69EE738B0D43}Prefabs/Characters/HeadGear/Helmet_LWH/Helmet_LWH_aor1.et", 1);
+  Add("helmet", "{B769265F1F723E12}Prefabs/Characters/HeadGear/Helmet_MICH_ACH/Helmet_ACH_Cov_DCU.et", 1);
+  Add("helmet", "{E319701076AF6C79}Prefabs/Characters/HeadGear/Helmet_MICH_ACH/Helmet_ACH_SHROUD_m81.et", 1);
+  Add("helmet", "{2DC5B750CBAA9337}Prefabs/Characters/HeadGear/Helmet_MICH_ACH/Helmet_MICH2000_norotos_velcro_green2.et", 1);
+  Add("helmet", "{B0F22FBCFD3009E5}Prefabs/Characters/HeadGear/Helmet_MICH_ACH/Variants/FORECON/Helmet_MICH2000_norotos_rail_coyote_FORECON1.et", 1);
+  Add("helmet", "{0E48CBE42D2FED92}Prefabs/Characters/HeadGear/Helmet_MICH_ACH/Variants/FORECON/Helmet_MICH2000_norotos_rail_tan_FORECON6.et", 1);
+  Add("helmet", "{73ADF745BCECBF43}Prefabs/Characters/HeadGear/Helmet_OPSCORE/Helmet_OPSCORE_LBH_AOR1.et", 1);
+  Add("helmet", "{9070BE2FDD5F31DC}Prefabs/Characters/HeadGear/Helmet_OPSCORE/Helmet_OPSCORE_SF_BLK.et", 1);
+  Add("helmet", "{A36613EAD646961D}Prefabs/Characters/HeadGear/Helmet_OPSCORE/Helmet_OPSCORE_XP_MC_AMP.et", 1);
+  Add("helmet", "{60F173ECECE82BE8}Prefabs/Characters/HeadGear/Helmet_OPSCORE/variants/Helmet_OPSCORE_MT_Peltor_Marsoc1.et", 1);
+  Add("helmet", "{35BB2A86100E6B3A}Prefabs/Characters/HeadGear/Helmet_OPSCORE/variants/ION/Helmet_OPSCORE_MID_GRAY_AMP_ION3.et", 1);
+  Add("helmet", "{10E223B05E8874EA}Prefabs/Characters/HeadGear/Helmet_Spartan3/Helmet_Spartan3_FG.et", 1);
+  Add("helmet", "{4A5D91D707E3852B}Prefabs/Characters/HeadGear/Helmet_Spartan3/Helmet_Spartan3_MC_Peltor.et", 1);
+  Add("helmet", "{522497DBEF2795E6}Prefabs/Characters/HeadGear/Helmet_Spartan3/Helmet_Spartan3_OD_Sordin.et", 1);
+  Add("helmet", "{A81E72E9ABDC8FD5}Prefabs/Characters/HeadGear/Helmet_Spartan3/Variants/SSO/Helmet_Spartan3_FG_SSO.et", 1);
+  Add("helmet", "{A8CCC6D9FB7C524A}Prefabs/Characters/HeadGear/Helmet_Spartan3/Variants/VKPO3/Helmet_Spartan3_OD_Peltor_SOBR.et", 1);
+  Add("helmet", "{4C988BFF658AA819}Prefabs/Characters/HeadGear/Helmet_TBH3A/Helmet_TBH3A_HC.et", 1);
+  Add("helmet", "{CD67023CCC11EBCF}Prefabs/Characters/HeadGear/Helmet_TBH3A/Helmet_TBH3A_HC_Peltor_Blk.et", 1);
+  Add("helmet", "{4587DD4547DB33A1}Prefabs/Characters/HeadGear/Helmet_TBH3A/Helmet_TBH3A_LC_PMC.et", 1);
+  Add("helmet", "{5F5D712A4700FC45}Prefabs/Characters/HeadGear/Helmet_TBH3A/variants/ION/Helmet_TBH3A_HC_Peltor_Blk_ION.et", 1);
+  Add("helmet", "{08D8E1E034A40C8F}Prefabs/Characters/HeadGear/Helmet_TBH3A/variants/ION/Helmet_TBH3A_HC_Peltor_Tan_ION2.et", 1);
+  Add("helmet", "{3F70EA42E26BA189}Prefabs/Characters/HeadGear/Helmet_TOR/Helmet_TOR_Large.et", 1);
+  Add("helmet", "{BFB15A3CBE9188BA}Prefabs/Characters/HeadGear/Helmet_TOR/variants/Helmet_TOR_medium_amp_arsenal.et", 1);
+  Add("helmet", "{BC5D91E02CD9443E}Prefabs/Characters/HeadGear/Helmet_TOR/variants/RG/Helmet_TOR_Large_RG4.et", 1);
+  Add("helmet", "{285A61361A2C729A}Prefabs/Characters/HeadGear/Helmet_TOR/variants/RG/Helmet_TOR_small_green_RG2.et", 1);
+  Add("helmet", "{CBB64BB78343F126}Prefabs/Characters/HeadGear/Helmet_TOR/variants/RGOlive/Helmet_TOR_medium_black_RGOlive7.et", 1);
+  Add("helmet", "{364FF1A1CA2CA32E}Prefabs/Characters/HeadGear/Helmet_TOR2/Helmet_TOR2L_blk.et", 1);
+  Add("helmet", "{1CB7F72BBD5E2972}Prefabs/Characters/HeadGear/Helmet_TOR2/Helmet_TOR2M_AMP_olive.et", 1);
+  Add("helmet", "{29C9A2C915989EFE}Prefabs/Characters/HeadGear/Helmet_TOR2/Helmet_TOR2M_olive.et", 1);
+  Add("helmet", "{6A0D5DB25591CE40}Prefabs/Characters/HeadGear/Helmet_TOR2/variants/Helmet_TOR2L_blk_arsenal.et", 1);
+  Add("helmet", "{C79B2ECE26646C64}Prefabs/Characters/HeadGear/Helmet_TOR2/variants/Helmet_TOR2L_olive_arsenal.et", 1);
+  Add("helmet", "{034EC83B216F6F00}Prefabs/Characters/HeadGear/Helmet_Triada/Helmet_Triada_EmrM.et", 1);
+  Add("helmet", "{A7E6D7ECD5F684D7}Prefabs/Characters/HeadGear/Helmet_SSh68_01/Helmet_SSh68_01.et", 1);
+  Add("helmet", "{66196D85AB93D2BE}Prefabs/Characters/HeadGear/Helmet_SSh68_01/Helmet_SSh68_01_camo.et", 1);
+  Add("helmet", "{D4028ED16DEE99EE}Prefabs/Characters/HeadGear/Helmet_SSh68_01/Helmet_SSh68_01_camonet.et", 1);
+  Add("helmet", "{3D74845B9D0867B0}Prefabs/Characters/HeadGear/Helmet_SSh68_01/Helmet_SSh68_01_cover.et", 1);
+  Add("helmet", "{DD35D5EBA6364E77}Prefabs/Characters/HeadGear/Helmet_SSh68_01/Helmet_SSh68_01_cover_KLMK.et", 1);
+  Add("helmet", "{12035A212B2BE371}Prefabs/Characters/HeadGear/Helmet_SSh68_01/Helmet_SSh68_01_cover_KLMK_net.et", 1);
+  Add("helmet", "{5F8928B41FB86990}Prefabs/Characters/HeadGear/Helmet_SSh68_01/Helmet_SSh68_01_cover_KZS.et", 1);
+  Add("helmet", "{22963D69CA50EB9E}Prefabs/Characters/HeadGear/Helmet_SSh68_01/Helmet_SSh68_01_net.et", 1);
 
   Add("vest", "{74F6035104400897}Prefabs/Characters/Vests/Vest_TV102/variants/Vest_TV102_rifleman_OD_UA.et", 2);
   Add("vest", "{E383053302D67DCA}Prefabs/Characters/Vests/Vest_TV102/variants/Vest_TV102_Basico_UA.et", 1);
@@ -219,6 +293,16 @@ class ACR_UALoadout
  {
   if (Math.RandomFloat01() < s_fWestShare) return Pick(role + "_west");
   return Pick(role + "_east");
+ }
+
+ static void HelmetPool(notnull array<ResourceName> helmets)
+ {
+  helmets.Clear();
+  BuildPools();
+  ref array<ResourceName> entries;
+  if (!s_Pools.Find("helmet", entries)) return;
+  foreach (ResourceName entry : entries)
+   if (!helmets.Contains(entry)) helmets.Insert(entry);
  }
 
  static bool Active()
@@ -247,6 +331,8 @@ class ACR_UALoadout
  }
 
  static bool WasEquipped(IEntity soldier) { return soldier && s_Done.Contains(soldier.GetID()); }
+
+ static bool Settled(IEntity soldier) { return WasEquipped(soldier) && !s_Pending.Contains(soldier); }
 
  static string Leaf(IEntity entity)
  {
@@ -519,7 +605,9 @@ class ACR_UALoadout
   }
 
   CharacterControllerComponent controller = ChimeraCharacter.Cast(soldier).GetCharacterController();
-  if (controller && nowPrimary) controller.TryEquipRightHandItem(nowPrimary, EEquipItemType.EEquipTypeWeapon, false);
+  bool equipStarted;
+  if (controller && nowPrimary) equipStarted = controller.TryEquipRightHandItem(nowPrimary, EEquipItemType.EEquipTypeWeapon, false);
+  if (System.IsCLIParam("acrUAHandsTest")) PrintFormat("[ACR] UA HANDS initial %1 primary=%2 accepted=%3 changing=%4 hands=%5", leaf, weaponLeaf, equipStarted, controller && controller.IsChangingItem(), ACR_UALoadout.Leaf(controller.GetCurrentItemInHands()));
 
   PrintFormat("[ACR] UA LOADOUT %1 role=%2 weapon=%3 launcher=%4 mags+%5 moved=%6 failed:%7", leaf, typename.EnumToString(ACR_EUARole, role), weaponLeaf, Leaf(nowLauncher), spawned, moved, clothFails);
   return clothFails.IsEmpty() && primaryOk;

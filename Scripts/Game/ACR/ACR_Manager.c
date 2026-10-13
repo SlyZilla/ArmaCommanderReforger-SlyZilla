@@ -175,6 +175,7 @@ class ACR_Manager : Managed
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
+  ACR_SquadMarksmen.Reset();
   s_Instance = null;
  }
 
@@ -456,6 +457,7 @@ class ACR_Manager : Managed
    if (!group) group = SCR_AIGroup.Cast(agent.GetParentGroup());
    if (group && CanRegister(group)) Register(group);
   }
+  foreach (ACR_Squad squad : m_Squads) ACR_SquadMarksmen.Check(squad);
  }
 
  bool CanRegister(SCR_AIGroup group)

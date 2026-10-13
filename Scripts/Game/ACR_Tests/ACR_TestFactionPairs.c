@@ -74,6 +74,7 @@ class ACR_TestFactionPairs
  {
   CheckFlyover(tick);
   CheckUA(tick);
+  CheckDMRReplacements(tick);
   if (tick == 70) { FinishCrews(); return; }
   if (tick != 10) return;
   string west = ACR_FactionSelection.West();
@@ -196,7 +197,7 @@ class ACR_TestFactionPairs
   if (uaPair)
   {
    SpawnUATeams();
-   s_iUAExpected = expected + 8;
+   s_iUAExpected = expected + 16;
    return;
   }
   ACR_TestRegress.Complete("factions", expected);
@@ -205,6 +206,8 @@ class ACR_TestFactionPairs
  // UA (11 Oct): every soldier of the US key is re-equipped in UA kit. A few extra teams
  // cover the roles (MG, LAT, GL, sniper) beside the starting squads.
  protected static int s_iUAExpected;
+ protected static string s_OtherDMRName = "RU DMR test";
+ protected static int s_OtherDMRSize = 6;
  protected static void SpawnUATeams()
  {
   ACR_Manager acr = ACR_Manager.GetInstance();
@@ -229,12 +232,31 @@ class ACR_TestFactionPairs
   vector btrAt = acr.ClearSpotNear(home, 30, 90, 6);
   acr.SpawnUnit("UA BTR test", "", "{A3C0E731AEB7C2BD}Prefabs/Vehicles/Wheeled/BTR70/BTR-25_UA.et", true, "", btrAt, btrAt);
   acr.m_sSpawningFaction = "";
+  // Full squads, so the DMR policy is exercised independently of the specialist teams.
+  ResourceName uaFull = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
+  acr.m_sSpawningFaction = "US";
+  vector uaAt = acr.ClearSpotNear(home, 30, 90, 4);
+  acr.SpawnUnit("UA DMR test", uaFull, "", false, "", uaAt, uaAt);
+  string russian = ACR_FactionSelection.West();
+  if (russian == "US") russian = ACR_FactionSelection.East();
+  if (russian == "RHS_USAF") { s_OtherDMRName = "USMC DMR test"; s_OtherDMRSize = 9; }
+  ACR_Base ruHome;
+  foreach (ACR_Base candidate : ACR_Base.s_All)
+   if (!ruHome && candidate.m_sOwner == russian) ruHome = candidate;
+  if (ruHome)
+  {
+   acr.m_sSpawningFaction = russian;
+   ResourceName ruFull = ACR_FactionCatalog.ResolvePrefab(russian, "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et", EEntityCatalogType.GROUP);
+   vector ruAt = acr.ClearSpotNear(ruHome, 30, 90, 4);
+   acr.SpawnUnit(s_OtherDMRName, ruFull, "", false, "", ruAt, ruAt);
+  }
+  acr.m_sSpawningFaction = "";
  }
 
  static void CheckUA(int tick)
  {
   if (s_iUAExpected == 0 || tick != 45) return;
-  int soldiers, equipped, dressed, armed, supplied, east, west, oldKit, launchers, aviators, kitted;
+  int soldiers, equipped, dressed, armed, supplied, east, west, oldKit, launchers, aviators, kitted, emptyHands, onFootArmed;
   string kitShort;
   string tally;
   array<AIAgent> agents = {};
@@ -254,7 +276,7 @@ class ACR_TestFactionPairs
    IEntity pants = loadout.GetClothFromArea(LoadoutPantsArea);
    string helmetLeaf = ACR_UALoadout.Leaf(loadout.GetClothFromArea(LoadoutHeadCoverArea));
    helmetLeaf.ToLower();
-   if (!leaf.Contains("Pilot") && (helmetLeaf.Contains("gentex") || helmetLeaf.Contains("exfil"))) aviators++;
+   if (!leaf.Contains("Pilot") && (helmetLeaf.Contains("gentex") || helmetLeaf.Contains("hgu") || helmetLeaf.Contains("sph4") || helmetLeaf.Contains("zsh5"))) aviators++;
    if (leaf.Contains("HeliPilot") || (jacket && pants && jacket.GetPrefabData().GetPrefabName() == ACR_UALoadout.JACKET && pants.GetPrefabData().GetPrefabName() == ACR_UALoadout.PANTS)) dressed++;
    else PrintFormat("[ACR] FACTIONTEST UA undressed %1 jacket=%2 pants=%3", leaf, ACR_UALoadout.Leaf(jacket), ACR_UALoadout.Leaf(pants));
    string shortHere;
@@ -281,6 +303,15 @@ class ACR_TestFactionPairs
    }
    if (!primary) continue;
    armed++;
+   if (!controller.IsPlayerControlled() && !controller.IsUnconscious() && !ChimeraCharacter.Cast(man).IsInVehicle())
+   {
+    onFootArmed++;
+    if (!controller.GetCurrentItemInHands() && !controller.IsChangingItem())
+    {
+     emptyHands++;
+     PrintFormat("[ACR] FACTIONTEST UA EMPTY HANDS %1 carried=%2 current=%3", leaf, ACR_UALoadout.Leaf(primary), weapons.GetCurrentWeapon() != null);
+    }
+   }
    string primaryLeaf = ACR_UALoadout.Leaf(primary);
    tally += " " + primaryLeaf;
    if (primaryLeaf.Contains("AK") || primaryLeaf.Contains("PK") || primaryLeaf.Contains("RPK") || primaryLeaf.Contains("SVD")) east++;
@@ -323,7 +354,142 @@ class ACR_TestFactionPairs
   ACR_TestRegress.Check("factions: UA soldiers carry map, compass, watch, radio, meds, shovel and grenades", kitted == soldiers && ACR_UALoadout.s_iKitFailed == 0, string.Format("%1/%2, %3 short%4", kitted, soldiers, ACR_UALoadout.s_iKitFailed, kitShort));
   ACR_TestRegress.Check("factions: Take over gunner finds the UA BTR-25's gunner", btrGunner != null, btrReport);
   ACR_TestRegress.Check("factions: the UA LAT team carries launchers", launchers >= 1, string.Format("%1 launchers", launchers));
-  ACR_TestRegress.Complete("factions", s_iUAExpected);
+  ACR_TestRegress.Check("factions: armed UA infantry are not left empty-handed after the kit swap", onFootArmed > 0 && emptyHands == 0, string.Format("%1 empty of %2 on-foot armed soldiers", emptyHands, onFootArmed));
+  CheckFullDMR("UA DMR test", 9);
+  CheckFullDMR(s_OtherDMRName, s_OtherDMRSize);
+  ACR_TestRegress.Check("factions: both full rifle squads keep machine guns, grenadiers and launchers", FullSupports("UA DMR test", 2, 2, 2) && FullSupports(s_OtherDMRName, 1, 1, 1), "DMR replaces a rifle, not a support weapon");
+  BeginDMRReplacement("UA DMR test");
+  BeginDMRReplacement(s_OtherDMRName);
+ }
+
+ protected static ref array<string> s_DMRNames = {};
+ protected static ref array<ResourceName> s_DMRMissing = {};
+ protected static ref array<vector> s_DMRLocations = {};
+
+ static void BeginDMRReplacement(string name)
+ {
+  ACR_Squad squad = FullSquad(name);
+  IEntity target;
+  ResourceName original;
+  array<AIAgent> members = {};
+  if (squad) squad.GetAgents(members);
+  foreach (AIAgent agent : members)
+  {
+   IEntity man = agent.GetControlledEntity();
+   BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(man.FindComponent(BaseWeaponManagerComponent));
+   array<IEntity> carried = {};
+   if (weapons) weapons.GetWeaponsList(carried);
+   foreach (IEntity item : carried)
+    if (ACR_SquadMarksmen.IsDMR(item)) target = man;
+   if (target) break;
+  }
+  if (target)
+  {
+   original = target.GetPrefabData().GetPrefabName();
+   s_DMRLocations.Insert(target.GetOrigin() + Vector(2, 0, 0));
+   SCR_EntityHelper.DeleteEntityAndChildren(target);
+  }
+  else s_DMRLocations.Insert(vector.Zero);
+  s_DMRNames.Insert(name);
+  s_DMRMissing.Insert(original);
+ }
+
+ static void CheckDMRReplacements(int tick)
+ {
+  if (s_DMRNames.Count() != 2) return;
+  if (tick == 48)
+  {
+   foreach (int i, string name : s_DMRNames)
+   {
+    ACR_Squad squad = FullSquad(name);
+    array<ResourceName> missing = {};
+    if (squad) squad.GetMissing(missing);
+    bool correct = missing.Count() == 1 && missing[0] == s_DMRMissing[i] && !s_DMRMissing[i].IsEmpty();
+    ACR_TestRegress.Check("factions: " + name + " retains its original reinforcement recipe", correct, string.Format("%1 missing", missing.Count()));
+    if (!correct) continue;
+    Resource resource = Resource.Load(missing[0]);
+    EntitySpawnParams parameters = new EntitySpawnParams();
+    parameters.TransformMode = ETransformMode.WORLD;
+    parameters.Transform[3] = ACR_Manager.Ground(s_DMRLocations[i]);
+    IEntity replacement = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), parameters);
+    if (replacement) squad.m_Group.AddAIEntityToGroup(replacement);
+   }
+  }
+  if (tick == 65)
+  {
+   CheckFullDMR("UA DMR test", 9);
+   CheckFullDMR(s_OtherDMRName, s_OtherDMRSize);
+   ACR_TestRegress.Complete("factions", s_iUAExpected);
+  }
+ }
+
+ static ACR_Squad FullSquad(string name)
+ {
+  foreach (ACR_Squad squad : ACR_Manager.GetInstance().m_Squads)
+   if (squad.GetName() == name) return squad;
+  return null;
+ }
+
+ static void CheckFullDMR(string name, int size)
+ {
+  ACR_Squad squad = FullSquad(name);
+  int marksmen;
+  bool magazines;
+  string detail;
+  if (squad)
+  {
+   array<AIAgent> members = {};
+   squad.GetAgents(members);
+   foreach (AIAgent agent : members)
+   {
+    IEntity man = agent.GetControlledEntity();
+    BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(man.FindComponent(BaseWeaponManagerComponent));
+    array<IEntity> carried = {};
+    weapons.GetWeaponsList(carried);
+    foreach (IEntity gun : carried)
+    {
+     if (!ACR_SquadMarksmen.IsDMR(gun)) continue;
+     marksmen++;
+     detail += " " + ACR_UALoadout.Leaf(gun);
+     BaseWeaponComponent weapon = BaseWeaponComponent.Cast(gun.FindComponent(BaseWeaponComponent));
+     array<BaseMuzzleComponent> muzzles = {};
+     weapon.GetMuzzlesList(muzzles);
+     SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(man.FindComponent(SCR_InventoryStorageManagerComponent));
+     if (!muzzles.IsEmpty() && weapon.GetCurrentMagazine() && weapon.GetCurrentMagazine().GetAmmoCount() > 0 && ACR_UALoadout.CountPrefab(inventory, muzzles[0].GetDefaultMagazineOrProjectileName()) >= 2) magazines = true;
+    }
+   }
+   detail += string.Format(" size=%1 authored=%2", squad.CountAlive(), squad.m_Group.m_aUnitPrefabSlots.Count());
+  }
+  ACR_TestRegress.Check("factions: " + name + " has one loaded DMR and unchanged strength", squad && squad.CountAlive() == size && marksmen == 1 && magazines, string.Format("DMRs=%1 supplied=%2%3", marksmen, magazines, detail));
+ }
+
+ static bool FullSupports(string name, int mgNeed, int glNeed, int atNeed)
+ {
+  ACR_Squad squad = FullSquad(name);
+  if (!squad) return false;
+  int mg, gl, at;
+  array<AIAgent> members = {};
+  squad.GetAgents(members);
+  foreach (AIAgent agent : members)
+  {
+   IEntity man = agent.GetControlledEntity();
+   BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(man.FindComponent(BaseWeaponManagerComponent));
+   array<IEntity> carried = {};
+   weapons.GetWeaponsList(carried);
+   foreach (IEntity item : carried)
+   {
+    BaseWeaponComponent weapon = BaseWeaponComponent.Cast(item.FindComponent(BaseWeaponComponent));
+    if (!weapon) continue;
+    if (weapon.GetWeaponType() == EWeaponType.WT_MACHINEGUN) mg++;
+    if (weapon.GetWeaponType() == EWeaponType.WT_ROCKETLAUNCHER) at++;
+    array<BaseMuzzleComponent> muzzles = {};
+    weapon.GetMuzzlesList(muzzles);
+    foreach (BaseMuzzleComponent muzzle : muzzles)
+     if (muzzle.GetMuzzleType() == EMuzzleType.MT_UGLMuzzle) gl++;
+   }
+  }
+  PrintFormat("[ACR] FACTIONTEST DMR SUPPORT %1 MG=%2 GL=%3 AT=%4", name, mg, gl, at);
+  return mg >= mgNeed && gl >= glNeed && at >= atNeed;
  }
 
  protected static vector s_vBombTarget;
