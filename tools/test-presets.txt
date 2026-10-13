@@ -86,3 +86,4 @@ bbbtargetpriority|-acrBbbTargetPriorityTest 1|260|Worlds/BBB_TestArland.ent
 bbbperception|-acrBbbPerceptionTest 1|300|Worlds/BBB_TestArland.ent
 bbbvision|-acrBbbVisionTest 1|160|Worlds/BBB_TestArland.ent
 bbblongrange|-acrBbbLongRangeTest 1|840|Worlds/BBB_TestArland.ent
+flank|-acrFlankTest 1|160

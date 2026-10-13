@@ -468,8 +468,11 @@ class ACR_Squad : Managed
  }
 
  // The current order, to put back later with RestoreOrder.
+ ref ACR_CombatFlank m_CombatFlank = new ACR_CombatFlank();
+
  ACR_OrderSnapshot SnapshotOrder()
  {
+  if (m_CombatFlank.Active()) return m_CombatFlank.Original();
   return ACR_OrderSnapshot.Make(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, m_Order, OrderState(), m_OrderKind);
  }
 
@@ -623,6 +626,7 @@ class ACR_Squad : Managed
  // Every new order: a fresh serial, and nobody (yet) to credit it to.
  protected void NewOrder()
  {
+  m_CombatFlank.Cancel();
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
   m_iGarrisonReissues = 0;
@@ -922,7 +926,11 @@ class ACR_Squad : Managed
   }
   // A player is leading (or riding with) this squad: they give the orders, e.g.
   // with the command wheel. Re-issuing our last map order would wipe theirs.
-  if (HasPlayer()) return;
+  if (HasPlayer())
+  {
+   m_CombatFlank.YieldToPlayer(this);
+   return;
+  }
   HuntTick(now);
   if (m_bGarrisonPending && m_Order == "Garrisoning") PlaceGarrison(m_GarrisonPending);
   else if (m_sOrderPrefab == WP_GARRISON && m_Order == "Garrisoning" && m_Group.GetCurrentWaypoint() == null && m_iGarrisonReissues < 2)
@@ -934,6 +942,7 @@ class ACR_Squad : Managed
    else IssueWaypoint(WP_GARRISON, m_MoveTarget, m_fOrderRadius);
   }
   bool contact = KnownEnemies(350) > 0;
+  if (m_CombatFlank.Tick(this, now)) return;
   FollowRoute();
   Cohesion(now, contact);
   RecoverMovementWaypoint(now);
@@ -1087,6 +1096,11 @@ class ACR_Squad : Managed
  // Every point still ahead of the squad, in order: route legs, then queued orders.
  void GetPlannedPoints(notnull array<vector> points, notnull array<int> kinds)
  {
+  if (m_CombatFlank.Active())
+  {
+   points.Insert(m_CombatFlank.Original().m_Target);
+   kinds.Insert(m_CombatFlank.Original().m_iKind);
+  }
   int routeKind;
   if (m_Route) routeKind = m_Route.m_iKind;
   foreach (vector leg : m_aRoute)

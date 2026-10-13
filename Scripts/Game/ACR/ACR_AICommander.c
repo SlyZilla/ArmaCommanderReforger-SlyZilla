@@ -915,7 +915,7 @@ class ACR_AICommander : Managed
   {
    foreach (ACR_Squad squad : attack.m_Squads)
    {
-    if (squad == attack.m_Suppressor) continue;
+    if (squad == attack.m_Suppressor || squad.m_CombatFlank.Active()) continue;
     if (vector.DistanceXZ(PositionOf(squad), attack.m_Target.GetOrigin()) < attack.m_Target.m_fRadius * 0.6) continue;
     squad.SetMode(ACR_EMoveMode.COMBAT);
     squad.Assault(attack.m_Target.GetOrigin());

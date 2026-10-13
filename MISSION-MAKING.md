@@ -499,6 +499,10 @@ to set an option directly; most hosts can just use the menu.
   AI-only sides such as FIA may work, but have not been tested.
 - **Arland and Everon.** Everon (`Worlds/ACR_Everon.ent`) is a first pass: travel, rides and the AI
   commander over 13 km are still being tuned.
+- Advancing infantry in Combat mode can detour around a fresh infantry contact after a short
+  stalemate. Nearby squads take turns manoeuvring; the original destination and queued orders
+  remain. Defend, Suppress, Fast and Silent orders keep their assigned roles. Terrain and native
+  pathfinding limit which flanks can be used; live combat acceptance is still pending.
 - **No victory conditions**, by design: the match runs until the host ends it.
 - **The AI commander can't fly**: aircraft are for players only (support helicopters are script-flown).
 - Settings may still change between alpha builds. This page is updated with them.
