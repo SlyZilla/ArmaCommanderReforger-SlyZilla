@@ -23,8 +23,8 @@ if (-not (Test-Path $zip)) { Fail "No package found at $zip. Ask Claude to rebui
 if (-not (Test-Path $versionFile)) { Fail "No dist\VERSION.txt. Ask Claude to rebuild the package." }
 $version = (Get-Content $versionFile -Raw).Trim()
 
-& $gh auth status 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { Fail "Not logged in. Run: `"$gh`" auth login" }
+$authOut = (& $gh auth status 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0) { Write-Host $authOut; Fail "gh auth status failed (output above). If you are logged in, check for a second account or an expired token. Run: `"$gh`" auth login" }
 
 # Create the repository the first time (public, with a README so tags have a commit).
 & $gh repo view $repo 2>&1 | Out-Null
