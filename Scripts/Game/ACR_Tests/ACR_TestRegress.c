@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 69;
+ static const int EXPECTED = 74; // 69 + ACR_TestOptions.CHECKS (5)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -97,6 +97,7 @@ class ACR_TestRegress
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {
+   ACR_TestOptions.Run();
    Check("BBB rejects both negative and out-of-range threat sectors", !BBB_Combat.ValidSector(-1) && !BBB_Combat.ValidSector(SCR_AISectorThreatFilter.SECTOR_COUNT) && !BBB_Combat.ValidSector(100000) && BBB_Combat.ValidSector(0), "native lookup bounds");
    bool standardGunship;
    ACR_FactionData usOffers = manager.m_Bases.GetFaction("US");

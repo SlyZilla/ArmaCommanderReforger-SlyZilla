@@ -361,15 +361,43 @@ Create a **Mission Header** in Workbench and choose your saved world. This gives
 game's scenario list. Workbench fills in most of the details for you; this is what the saved file looks like:
 
 ```
-SCR_MissionHeader {
+ACR_MissionHeader {
  World "{<your world's GUID>}Worlds/<YourWorld>.ent"
  m_sName "AC: Actual - <Map>"
  m_sAuthor "<you>"
  m_sDescription "<one line>"
  m_sGameMode "Arma Commander Actual"
  m_iPlayerCount 8
+ m_sAcrSize "half"
 }
 ```
+
+Use the class `ACR_MissionHeader` (a plain `SCR_MissionHeader` still works, without the fields
+below). Its extra fields are the scenario's default [host options](#host-options), so you can ship
+several scenarios on one world (for example a full map and a flashpoint) that differ only in their
+header. Leave a text field blank or a number at `-1` to keep the world's own setting. A host's
+launch option beats the header; a dedicated server's config can also override header fields by
+name under `gameProperties.missionHeader`.
+
+| Field | Same as |
+|---|---|
+| `m_sAcrLayout` | `-acrLayout` |
+| `m_sAcrSize` | `-acrSize` |
+| `m_sAcrFactions` | `-acrFactions` |
+| `m_sAcrPlayers` | `-acrPlayers` |
+| `m_sAcrThreat` | `-acrThreat` |
+| `m_sAcrPricing` | `-acrPricing` |
+| `m_sAcrAI` | `-acrAI` |
+| `m_iAcrUnitCap` | `-acrUnitCap` |
+| `m_iAcrSoldierCap` | `-acrSoldierCap` |
+| `m_iAcrStartRP` | `-acrStartRP` |
+| `m_fAcrIncome` | `-acrIncome` |
+| `m_iAcrSkill` | `-acrSkill` |
+| `m_fAcrReaction` | `-acrReaction` |
+| `m_iAcrSharedCommand` | `-acrSharedCommand` (0 or 1) |
+| `m_iAcrRespawnSeconds` | `-acrRespawnSeconds` |
+| `m_iAcrGameMasterAll` | `-acrGameMasterAll` (0 or 1) |
+| `m_iAcrMarksmen` | `-acrMarksmen` (0 or 1) |
 
 The header only adds your world to the scenario list; it does not package or copy the world. Workbench
 creates the `.meta` files beside the world and header. Keep them there and do not edit them. When you

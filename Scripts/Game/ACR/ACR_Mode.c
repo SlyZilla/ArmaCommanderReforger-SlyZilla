@@ -38,7 +38,7 @@ class ACR_Mode : GenericEntity
   if (m_iAISkill > 0) manager.m_iAISkill = m_iAISkill;
   if (m_fAIPerception > 0) manager.m_fAIPerception = m_fAIPerception;
   string respawnFlag;
-  if (System.GetCLIParam("acrRespawnSeconds", respawnFlag)) manager.m_iRespawnSeconds = respawnFlag.ToInt();
+  if (ACR_Options.Get("acrRespawnSeconds", respawnFlag)) manager.m_iRespawnSeconds = respawnFlag.ToInt();
   if (Replication.IsServer())
   {
    GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 2000, false);

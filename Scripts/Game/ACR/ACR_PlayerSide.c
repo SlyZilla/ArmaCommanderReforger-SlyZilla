@@ -19,7 +19,7 @@ class ACR_PlayerSide
   if (s_bRead) return s_sKey;
   s_bRead = true;
   string value;
-  if (!System.GetCLIParam("acrPlayers", value)) return s_sKey;
+  if (!ACR_Options.Get("acrPlayers", value)) return s_sKey;
   value.Trim();
   string lower = value;
   lower.ToLower();
@@ -164,7 +164,8 @@ class ACR_FactionSelection
   if (!s_bApplied)
   {
    s_bApplied = true;
-   System.GetCLIParam("acrFactions", pair);
+   string chosen;
+   if (ACR_Options.Get("acrFactions", chosen) && chosen != "") pair = chosen;
    pair.ToLower();
    if (pair == "ru_us") { s_sWest = "RHS_USAF"; s_sEast = "RHS_AFRF"; }
    else if (pair == "ru_ua") { s_sWest = "US"; s_sEast = "RHS_AFRF"; }

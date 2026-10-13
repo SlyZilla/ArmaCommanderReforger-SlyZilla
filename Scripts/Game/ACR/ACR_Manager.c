@@ -248,24 +248,25 @@ class ACR_Manager : Managed
  }
 
  // ================================================================ host options
- // Chosen in the host launcher's setup menu and passed on the server's command
- // line; they override the scenario's own settings for this session.
+ // Chosen in the host launcher's setup menu and passed on the server's command line, or set
+ // in the scenario's ACR_MissionHeader (ACR_Options resolves both); they override the
+ // world's own settings for this session.
  //  -acrStartRP N  -acrIncome X  -acrAI both|none|<faction>  -acrSkill N
  //  -acrReaction X  -acrSoldierCap N  -acrUnitCap N  -acrSharedCommand 0|1  (-acrGameMasterAll, -acrFirstPlayerHost, -acrRespawnSeconds)
  protected void ApplyHostOptions()
  {
   m_bHostOptionsApplied = true;
   string value;
-  if (System.GetCLIParam("acrSkill", value) && value.ToInt() > 0) m_iAISkill = value.ToInt();
-  if (System.GetCLIParam("acrReaction", value) && value.ToFloat() > 0) m_fAIPerception = value.ToFloat();
-  if (System.GetCLIParam("acrSoldierCap", value) && value.ToInt() > 0) m_iSoldierCap = value.ToInt();
-  if (System.GetCLIParam("acrSharedCommand", value)) m_SharedCommand = value.ToInt() != 0;
-  m_bFirstPlayerHost = System.IsCLIParam("acrFirstPlayerHost");
+  if (ACR_Options.Get("acrSkill", value) && value.ToInt() > 0) m_iAISkill = value.ToInt();
+  if (ACR_Options.Get("acrReaction", value) && value.ToFloat() > 0) m_fAIPerception = value.ToFloat();
+  if (ACR_Options.Get("acrSoldierCap", value) && value.ToInt() > 0) m_iSoldierCap = value.ToInt();
+  if (ACR_Options.Get("acrSharedCommand", value)) m_SharedCommand = value.ToInt() != 0;
+  m_bFirstPlayerHost = ACR_Options.Flag("acrFirstPlayerHost");
   string ai;
-  bool setAI = System.GetCLIParam("acrAI", ai);
+  bool setAI = ACR_Options.Get("acrAI", ai);
   ai.ToLower();
   string unitCap;
-  bool setCap = System.GetCLIParam("acrUnitCap", unitCap);
+  bool setCap = ACR_Options.Get("acrUnitCap", unitCap);
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
   {
    string key = settings.m_sFaction;
@@ -292,6 +293,7 @@ class ACR_Manager : Managed
   }
   ACR_PlayerSide.Key();
   RaiseActiveAILimit();
+  ACR_Options.Log();
   PrintFormat("[ACR] Threat level: %1", ThreatName(threat));
   PrintFormat("[ACR] Host options: skill %1, reaction %2, soldier cap %3, AI %4, unit cap %5, start RP %6, income x%7, shared command %8",
    m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption(), m_SharedCommand);
@@ -327,7 +329,7 @@ class ACR_Manager : Managed
  static int StartRPOption()
  {
   string value;
-  if (System.GetCLIParam("acrStartRP", value) && value.ToInt() > 0) return value.ToInt();
+  if (ACR_Options.Get("acrStartRP", value) && value.ToInt() > 0) return value.ToInt();
   return -1;
  }
 
@@ -335,7 +337,7 @@ class ACR_Manager : Managed
  static int ThreatOption()
  {
   string value;
-  if (!System.GetCLIParam("acrThreat", value)) return 1;
+  if (!ACR_Options.Get("acrThreat", value)) return 1;
   value.ToLower();
   if (value == "low") return 0;
   if (value == "high") return 2;
@@ -361,7 +363,7 @@ class ACR_Manager : Managed
  static float IncomeOption()
  {
   string value;
-  if (System.GetCLIParam("acrIncome", value) && value.ToFloat() > 0) return value.ToFloat();
+  if (ACR_Options.Get("acrIncome", value) && value.ToFloat() > 0) return value.ToFloat();
   return 1;
  }
 
@@ -601,7 +603,7 @@ class ACR_Manager : Managed
  void PlayerConnected(int playerId)
  {
   // The first connection can arrive before the first regular host-option tick.
-  if (!m_bFirstPlayerHost && System.IsCLIParam("acrFirstPlayerHost")) m_bFirstPlayerHost = true;
+  if (!m_bFirstPlayerHost && ACR_Options.Flag("acrFirstPlayerHost")) m_bFirstPlayerHost = true;
   if (!m_bFirstPlayerHost || m_bFirstPlayerHostSelected) return;
   m_iFirstPlayerHost = playerId;
   m_bFirstPlayerHostSelected = true;
@@ -638,7 +640,7 @@ class ACR_Manager : Managed
   if (!core) return;
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
-  bool everyone = System.IsCLIParam("acrGameMasterAll"); // host chose to share it (Host-ACA asks)
+  bool everyone = ACR_Options.Flag("acrGameMasterAll"); // host chose to share it (Host-ACA asks)
   for (int i = m_aGameMasterGranted.Count() - 1; i >= 0; i--)
   {
    int grantedId = m_aGameMasterGranted[i];

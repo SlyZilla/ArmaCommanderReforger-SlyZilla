@@ -652,7 +652,7 @@ class ACR_Pricing
  static bool Stepped(ACR_FactionSettings settings)
  {
   string value;
-  if (System.GetCLIParam("acrPricing", value))
+  if (ACR_Options.Get("acrPricing", value))
   {
    value.ToLower();
    if (value == "stock") return false;

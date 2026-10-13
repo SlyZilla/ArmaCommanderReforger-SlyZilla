@@ -74,7 +74,7 @@ class ACR_Skirmish : GenericEntity
  static int SizeOption()
  {
   string value;
-  if (!System.GetCLIParam("acrSize", value)) return -1;
+  if (!ACR_Options.Get("acrSize", value)) return -1;
   value.ToLower();
   if (value == "half") return ACR_ESkirmishSize.HALF;
   if (value == "flashpoint" || value == "small" || value == "flash") return ACR_ESkirmishSize.FLASHPOINT;
@@ -103,7 +103,7 @@ class ACR_Skirmish : GenericEntity
  static ACR_Skirmish Choose()
  {
   string wanted;
-  System.GetCLIParam("acrLayout", wanted);
+  ACR_Options.Get("acrLayout", wanted);
   if (ACR_TestSkirmish.Wanted()) wanted = ACR_TestSkirmish.Layout();
   wanted = Simple(wanted);
   if (wanted != "" && wanted != "random")

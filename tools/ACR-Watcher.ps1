@@ -155,6 +155,12 @@ function Invoke-ServerTest($id, $preset, $config) {
     if ($script:TestServerPid) { Stop-Process -Id $script:TestServerPid -ErrorAction SilentlyContinue; $script:TestServerPid = 0 }
     $server = Find-SteamApp 'Arma Reforger Server' 'ArmaReforgerServer.exe'
     if (!$server) { Write-Result $id @('status=refused', 'reason=Arma Reforger Server not found'); return }
+    # Another dedicated server (the AiO Command Menu's test launcher, or a hosted game) holds
+    # port 2001: wait up to 10 min for it to close instead of failing at once (13 Oct).
+    $waited = 0
+    while ((Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) -and $waited -lt 600) { Start-Sleep -Seconds 5; $waited += 5 }
+    if (Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) { Write-Result $id @('status=refused', 'reason=another Reforger server kept running (port 2001)'); return }
+    if ($waited -gt 0) { Write-Host "[$time] Waited $waited s for another server to close" -ForegroundColor Yellow }
     $world = 'Worlds/ACR_TestRange.ent'
     if ($config.World) { $world = $config.World }
     New-Item -ItemType Directory -Force $TestServerProfile | Out-Null
@@ -193,6 +199,7 @@ function Invoke-ServerTest($id, $preset, $config) {
         if ($proc.HasExited) { $outcome = 'server exited'; break }
         if ($log -and (Test-Path -LiteralPath $log)) {
             $text = Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue
+            if ($text -match 'Unable to start replication') { $outcome = 'port busy (another server or hosted game is using 2001)'; break }
             $text = Remove-KnownNoise $text
             if ($text -match 'SCRIPT\s+\(E\)') { Start-Sleep -Seconds 3; $outcome = 'script error'; break }
             if ($text -match $config.DoneWhen) { Start-Sleep -Seconds 2; $outcome = 'completed'; break }

@@ -131,7 +131,7 @@ class ACR_SquadMarksmen
 		{
 			s_bRead = true;
 			string option;
-			if (System.GetCLIParam("acrMarksmen", option) && option == "0") s_bOn = false;
+			if (ACR_Options.Get("acrMarksmen", option) && option == "0") s_bOn = false;
 		}
 		if (!s_bOn || !squad || !squad.m_Group || !squad.GetFaction() || !squad.m_Group.GetPrefabData()) return;
 		SCR_AIGroup group = squad.m_Group;
