@@ -74,6 +74,8 @@ class BBB
 		t = BBB_Perf.Lap("tick.launchers", t);
 		if (s_Combat) s_Combat.Tick();
 		t = BBB_Perf.Lap("tick.combat", t);
+		BBB_WeaponReady.Tick();
+		t = BBB_Perf.Lap("tick.weaponReady", t);
 		BBB_Perf.OnTick();
  }
 
