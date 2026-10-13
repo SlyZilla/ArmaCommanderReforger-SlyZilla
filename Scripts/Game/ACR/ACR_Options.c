@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost"};
+  array<string> names = {"acrLayout", "acrSize", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup"};
   foreach (string name : names)
   {
    string value;
@@ -120,6 +120,8 @@ class ACR_MissionHeader : SCR_MissionHeader
  int m_iAcrGameMasterAll;
  [Attribute("-1", UIWidgets.EditBox, "Automatic squad marksmen: 0 or 1 (-acrMarksmen)")]
  int m_iAcrMarksmen;
+ [Attribute("-1", UIWidgets.EditBox, "Setup screen before the match: 1 = the host or an admin picks options and presses Start (-acrSetup)")]
+ int m_iAcrSetup;
 
  void Fill(map<string, string> values)
  {
@@ -140,6 +142,7 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrRespawnSeconds", m_iAcrRespawnSeconds);
   Number(values, "acrGameMasterAll", m_iAcrGameMasterAll);
   Number(values, "acrMarksmen", m_iAcrMarksmen);
+  Number(values, "acrSetup", m_iAcrSetup);
  }
 
  protected static void Text(map<string, string> values, string name, string value)

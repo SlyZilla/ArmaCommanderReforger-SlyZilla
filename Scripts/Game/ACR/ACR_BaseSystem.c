@@ -31,6 +31,9 @@ class ACR_BaseSystem : Managed
 
  // Buy list, garrison soldiers and RP for a faction, built from its
  // ACR_FactionSettings entity (or catalog defaults) the first time it's needed.
+ // Setup phase ended: build buy lists and RP again with the chosen options.
+ void ForgetFactions() { m_Factions.Clear(); }
+
  ACR_FactionData GetFaction(string factionKey)
  {
   ACR_FactionData data;

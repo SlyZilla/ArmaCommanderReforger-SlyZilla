@@ -260,6 +260,12 @@ modded class SCR_AutoSpawnLogic
  override protected void DoSpawn_S(int playerId)
  {
   if (!GetGame().GetPlayerManager().GetPlayerController(playerId)) return;
+  // Setup phase: players spawn once the host presses Start (ACR_Setup).
+  if (!ACR_Setup.Started())
+  {
+   GetGame().GetCallqueue().CallLater(DoSpawn_S, 1000, false, playerId);
+   return;
+  }
   // A hosting player (listen server, singleplayer) registers before the first frame,
   // where the skirmish layout moves the spawn points to its HQs: set it up now, so the
   // first command unit doesn't spawn at the scenario's authored HQ (11 Oct).

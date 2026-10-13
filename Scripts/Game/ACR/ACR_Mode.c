@@ -61,6 +61,12 @@ class ACR_Mode : GenericEntity
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
+  // Setup phase: the layout (and so the HQs) is only known once the host presses Start.
+  if (!ACR_Setup.Started() || !ACR_Skirmish.Applied())
+  {
+   GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 1000, false);
+   return;
+  }
   foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All)
   {
    string factionKey = "";
@@ -109,6 +115,9 @@ class ACR_Mode : GenericEntity
   if (System.IsCLIParam("acrSurveyTest")) ACR_TestSurvey.Run(null, m_iSeconds);
   // -acrPlacesTest: named map locations, for laying out a new map (ACR_TestPlaces).
   if (System.IsCLIParam("acrPlacesTest")) ACR_TestPlaces.Run(m_iSeconds);
+  // -acrSetupTest: the setup phase (ACR_TestSetup).
+  if (ACR_TestSetup.Wanted()) ACR_TestSetup.Run(m_iSeconds);
+  if (ACR_TestSetup.UiWanted()) ACR_TestSetup.RunUi(m_iSeconds);
   if (System.IsCLIParam("acrEveronSurveyTest")) ACR_TestPlaces.SurveyEveron(m_iSeconds);
   if (System.IsCLIParam("acrEveronPadsTest")) ACR_TestPads.SurveyEveron(m_iSeconds);
   // -acrSkirmishTest / -acrSkirmishSouthTest: skirmish layouts on Everon (ACR_TestSkirmish).
@@ -174,7 +183,7 @@ class ACR_Mode : GenericEntity
  override void EOnFrame(IEntity owner, float timeSlice)
  {
   // Skirmish size: the chosen layout is set up before anything else runs (ACR_Skirmish).
-  if (s_Instance == this && Replication.IsServer()) ACR_Skirmish.ApplyOnce();
+  if (s_Instance == this && Replication.IsServer() && ACR_Setup.Started()) ACR_Skirmish.ApplyOnce();
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (s_Instance == this && manager)
   {

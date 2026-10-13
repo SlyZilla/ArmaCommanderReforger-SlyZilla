@@ -172,6 +172,8 @@ class ACR_Manager : Managed
   ACR_Hud.Clear();
   ACR_Skirmish.Reset();
   ACR_Report.Reset();
+  ACR_Setup.Reset();
+  ACR_SetupClient.Reset();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
@@ -371,6 +373,8 @@ class ACR_Manager : Managed
 
  void Tick()
  {
+  // Setup phase: nothing runs until the host or an admin presses Start (ACR_Setup).
+  if (!ACR_Setup.Started()) { ACR_Setup.Tick(); return; }
   int t = System.GetTickCount();
   if (!m_bHostOptionsApplied) ApplyHostOptions();
   ScanForSquads();
@@ -1029,7 +1033,7 @@ class ACR_Manager : Managed
  // Every frame on the server (physics inputs must be refreshed continuously).
  void ServerFrame(float timeSlice)
  {
-  if (!Replication.IsServer()) return;
+  if (!Replication.IsServer() || !ACR_Setup.Started()) return;
   int t = System.GetTickCount();
   if (!m_Supports) m_Supports = new ACR_Supports(this);
   m_Supports.Frame(timeSlice);
@@ -1063,6 +1067,7 @@ class ACR_Manager : Managed
 
  void OnFrame()
  {
+  ACR_SetupClient.Frame();
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   if (!pc || !pc.GetControlledEntity()) return;
   InputManager input = GetGame().GetInputManager();

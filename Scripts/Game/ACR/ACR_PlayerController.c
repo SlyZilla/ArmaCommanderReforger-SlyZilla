@@ -169,6 +169,31 @@ modded class SCR_PlayerController
   SCR_HintManagerComponent.ShowCustomHint(message, "AC: Actual", 5, true);
  }
 
+ // ---------------------------------------------------------------- setup phase (ACR_Setup)
+ void ACR_SendSetup(bool active, bool allowed, string rows, string info)
+ {
+  Rpc(ACR_SetupOwner, active, allowed, rows, info);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_SetupOwner(bool active, bool allowed, string rows, string info)
+ {
+  ACR_SetupClient.Receive(active, allowed, rows, info);
+ }
+ void ACR_RequestSetup(string key)
+ {
+  Rpc(ACR_SetupServer, key);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_SetupServer(string key)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastCommand < 150) return;
+  m_ACR_LastCommand = now;
+  string result = ACR_Setup.Handle(GetPlayerId(), key);
+  PrintFormat("[ACR] SETUP player %1: %2", GetPlayerId(), result);
+  Rpc(ACR_FeedbackOwner, result);
+ }
+
  // ---------------------------------------------------------------- debug menu (host/admins)
  protected bool m_ACR_DebugAllowed;
  protected bool m_ACR_DebugOpen;

@@ -148,6 +148,8 @@ function Show-HostSetup([switch]$Solo) {
   }
   if ($s.SharedCommand -eq 'no') { $extra += ' -acrSharedCommand 0' } else { $extra += ' -acrSharedCommand 1' }
   $extra += ' -acrFactions ' + $s.Factions
+  # The launcher already asked: skip the in-game setup screen (ACR_Setup).
+  $extra += ' -acrSetup 0'
   return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE); Factions = $s.Factions; ACE = $s.ACE }
 }
 

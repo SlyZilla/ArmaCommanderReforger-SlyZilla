@@ -398,6 +398,7 @@ name under `gameProperties.missionHeader`.
 | `m_iAcrRespawnSeconds` | `-acrRespawnSeconds` |
 | `m_iAcrGameMasterAll` | `-acrGameMasterAll` (0 or 1) |
 | `m_iAcrMarksmen` | `-acrMarksmen` (0 or 1) |
+| `m_iAcrSetup` | `-acrSetup` (0 or 1) |
 
 The header only adds your world to the scenario list; it does not package or copy the world. Workbench
 creates the `.meta` files beside the world and header. Keep them there and do not edit them. When you
@@ -494,6 +495,7 @@ to set an option directly; most hosts can just use the menu.
 | `-acrSharedCommand 0` / `1` | Overrides `m_bSharedCommand` |
 | `-acrRespawnSeconds N` | Overrides `m_iRespawnSeconds` |
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
+| `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland and Everon scenarios set it in their header; the AC: Actual launchers pass `-acrSetup 0` because their menu already asked |
 | `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default; configured admins remain trusted, and authority does not transfer after the first player disconnects |
 
 ## Designing a good map

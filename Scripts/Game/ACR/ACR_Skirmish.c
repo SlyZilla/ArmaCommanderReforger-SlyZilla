@@ -135,6 +135,8 @@ class ACR_Skirmish : GenericEntity
 
  // Server, first frame (all world entities registered, before any tick), or earlier from the
  // auto-spawn when a hosting player spawns before that first frame (ACR_PlayerSide).
+ static bool Applied() { return s_bApplied; }
+
  static void ApplyOnce()
  {
   if (s_bApplied) return;
