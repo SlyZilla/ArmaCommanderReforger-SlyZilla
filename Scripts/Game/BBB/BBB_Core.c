@@ -24,6 +24,8 @@ class BBB_Hooks : Managed
  IEntity OwnVehicleOf(SCR_AIGroup group) { return null; }
  // Vehicles BBB must leave alone (e.g. one a player drives from the gunner seat).
  bool LeaveAlone(IEntity vehicle) { return false; }
+ // Host orders may reserve a squad for holding, defence or another job.
+ bool AllowFireManeuver(SCR_AIGroup group) { return true; }
  // Something dropped on the ground that the host may clean up later.
  void OnLitter(IEntity item) {}
 }
@@ -57,6 +59,7 @@ class BBB
  {
   if (GetGame()) GetGame().GetCallqueue().Remove(Tick);
   BBB_Unstick.StopAll();
+  BBB_FireManeuver.Stop();
   s_bStarted = false;
 		s_Gates = null;
 		s_Launchers = null;
@@ -74,6 +77,8 @@ class BBB
 		t = BBB_Perf.Lap("tick.launchers", t);
 		if (s_Combat) s_Combat.Tick();
 		t = BBB_Perf.Lap("tick.combat", t);
+		BBB_FireManeuver.Tick();
+		t = BBB_Perf.Lap("tick.fireManeuver", t);
 		BBB_WeaponReady.Tick();
 		t = BBB_Perf.Lap("tick.weaponReady", t);
 		BBB_Perf.OnTick();

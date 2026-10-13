@@ -45,6 +45,14 @@ class ACR_BBBHooks : BBB_Hooks
   return null;
  }
 
+ override bool AllowFireManeuver(SCR_AIGroup group)
+ {
+  ACR_Squad squad = SquadOf(group);
+  if (!squad || squad.m_Mode != ACR_EMoveMode.COMBAT || squad.m_Commander != 0 || squad.m_CombatFlank.Active()) return false;
+  ACR_EOrderState state = squad.OrderState();
+  return state == ACR_EOrderState.MOVE || state == ACR_EOrderState.ASSAULT || state == ACR_EOrderState.HUNT;
+ }
+
  override bool LeaveAlone(IEntity vehicle) { return m_Manager.IsGunnerDriven(vehicle); }
 
  override void OnLitter(IEntity item)
