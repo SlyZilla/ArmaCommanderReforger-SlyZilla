@@ -111,7 +111,7 @@ class BBB_Combat
 			SCR_AIGroup group = m_ActiveUntil.GetKey(index);
 			if (!group || !groups.Contains(group))
 			{
-				m_ActiveUntil.Remove(group);
+				m_ActiveUntil.RemoveElement(index);
 				continue;
 			}
 			float until = m_ActiveUntil.GetElement(index);
@@ -209,13 +209,13 @@ class BBB_Combat
 			SCR_AIGroup group = m_Reports.GetKey(index);
 			if (!group || !groups.Contains(group))
 			{
-				m_Reports.Remove(group);
+				m_Reports.RemoveElement(index);
 				continue;
 			}
 			ref array<ref BBB_CombatContact> contacts = m_Reports.GetElement(index);
 			for (int j = contacts.Count() - 1; j >= 0; j--)
 				if (now - contacts[j].m_fReportedAt > RADIO_TTL_S) contacts.RemoveOrdered(j);
-			if (contacts.IsEmpty()) m_Reports.Remove(group);
+			if (contacts.IsEmpty()) m_Reports.RemoveElement(index);
 		}
 	}
 

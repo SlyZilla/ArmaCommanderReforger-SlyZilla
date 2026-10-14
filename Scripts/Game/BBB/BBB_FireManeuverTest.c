@@ -148,6 +148,8 @@ class BBB_FireManeuverTest : BBB_AimTest
    SCR_AIGroup doomed = SpawnSquad(false, m_Lane.m_vFrom, m_Lane.m_vDir, m_Lane, 0);
    ref BBB_FireTeamJob deadJob = new BBB_FireTeamJob();
    deadJob.m_Group = doomed;
+   ref BBB_Combat pruning = new BBB_Combat();
+   pruning.SeedPruneCheck(doomed, m_Lane.m_A.m_Group, Now() + 120);
    float deadline = Now() + 120;
    BBB_FireManeuver.SeedDeletionCheck(doomed, deadJob, m_Lane.m_A.m_Group, deadline);
    if (doomed) SCR_EntityHelper.DeleteEntityAndChildren(doomed);
@@ -155,6 +157,14 @@ class BBB_FireManeuverTest : BBB_AimTest
    BBB_FireManeuver.Tick();
    CheckFM("deleted job pruned while native survivor stays active", BBB_FireManeuver.Job(m_Lane.m_A.m_Group) == activeJob && BBB_FireManeuver.DeletionJobCount() == 1);
    CheckFM("unrelated group cooldown survives deletion", BBB_FireManeuver.DeletionDeadline(m_Lane.m_A.m_Group) == deadline);
+   CheckFM("deleted cooldown key removed by index", BBB_FireManeuver.DeletionCooldownCount() == 1);
+   array<SCR_AIGroup> keptGroups = {m_Lane.m_A.m_Group};
+   pruning.RunPruneCheck(keptGroups, Now());
+   CheckFM("combat wake map drops deleted key and retains survivor", pruning.PruneWakeCount() == 1 && pruning.PruneWakeUntil(m_Lane.m_A.m_Group) == deadline);
+   CheckFM("combat report map drops deleted key and retains survivor", pruning.PruneReportCount() == 1 && pruning.PruneHasReport(m_Lane.m_A.m_Group));
+   keptGroups.Clear();
+   pruning.RunPruneCheck(keptGroups, Now());
+   CheckFM("combat maps drop live groups omitted by host", pruning.PruneWakeCount() == 0 && pruning.PruneReportCount() == 0);
   }
   // Keep the controlled sentries visible; their native aiming and firing
   // remain active. This is a drill fixture, not a claim about survival benefit.
@@ -303,9 +313,9 @@ class BBB_FireManeuverTest : BBB_AimTest
   if (m_Lane) Clear(m_Lane);
   BBB_FireManeuver.s_bOn = m_bSaved;
   string verdict = "PASS";
-  int expected = 18;
+  int expected = 22;
   int rounds = 4;
-  if (m_bProbe) { expected = 10; rounds = 1; }
+  if (m_bProbe) { expected = 14; rounds = 1; }
   if (!reason.IsEmpty() || m_iFinished != rounds || m_iFail > 0 || m_iPass != expected) verdict = "FAIL";
   PrintFormat("[BBB] FIRETEST results shots=%1 losses=%2 (two pairs are coverage, not a survival benefit claim)", m_Shots, m_Losses);
   PrintFormat("[ACR] VERDICT %1 test=bbbfiremaneuver passed=%2 failed=%3 expected=%4 rounds=%5 reason=%6", verdict, m_iPass, m_iFail, expected, m_iFinished, reason);
@@ -319,10 +329,34 @@ modded class BBB_FireManeuver
  static void SeedDeletionCheck(SCR_AIGroup doomed, BBB_FireTeamJob job, SCR_AIGroup survivor, float deadline)
  {
   s_Jobs.Set(doomed, job);
+  s_Next.Set(doomed, deadline);
   s_Next.Set(survivor, deadline);
  }
  static int DeletionJobCount() { return s_Jobs.Count(); }
+ static int DeletionCooldownCount() { return s_Next.Count(); }
  static float DeletionDeadline(SCR_AIGroup group) { return s_Next.Get(group); }
+}
+
+modded class BBB_Combat
+{
+ void SeedPruneCheck(SCR_AIGroup doomed, SCR_AIGroup survivor, float deadline)
+ {
+  m_ActiveUntil.Set(doomed, deadline);
+  m_ActiveUntil.Set(survivor, deadline);
+  ref array<ref BBB_CombatContact> deadReports = {};
+  ref array<ref BBB_CombatContact> liveReports = {};
+  BBB_CombatContact report = new BBB_CombatContact();
+  report.m_fReportedAt = GetGame().GetWorld().GetWorldTime() / 1000;
+  deadReports.Insert(report);
+  liveReports.Insert(report);
+  m_Reports.Set(doomed, deadReports);
+  m_Reports.Set(survivor, liveReports);
+ }
+ void RunPruneCheck(array<SCR_AIGroup> groups, float now) { DetailTick(groups, now); PruneReports(groups, now); }
+ int PruneWakeCount() { return m_ActiveUntil.Count(); }
+ float PruneWakeUntil(SCR_AIGroup group) { return m_ActiveUntil.Get(group); }
+ int PruneReportCount() { return m_Reports.Count(); }
+ bool PruneHasReport(SCR_AIGroup group) { return m_Reports.Contains(group); }
 }
 
 modded class SCR_BaseGameMode

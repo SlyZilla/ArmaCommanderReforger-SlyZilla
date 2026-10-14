@@ -172,7 +172,7 @@ class BBB_FireManeuver
    if (!groups.Contains(existing) || !s_bOn || !GroupAllowed(existing)) End(existing, now);
   }
   for (int c = s_Next.Count() - 1; c >= 0; c--)
-   if (!s_Next.GetKey(c) || !groups.Contains(s_Next.GetKey(c))) s_Next.Remove(s_Next.GetKey(c));
+   if (!s_Next.GetKey(c) || !groups.Contains(s_Next.GetKey(c))) s_Next.RemoveElement(c);
   if (!s_bOn) return;
   foreach (SCR_AIGroup group : groups)
   {
