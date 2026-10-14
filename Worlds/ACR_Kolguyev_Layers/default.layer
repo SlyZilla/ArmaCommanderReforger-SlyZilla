@@ -1,0 +1,151 @@
+SCR_BaseGameMode ACR_GameMode : "{1B76F75A3175E85C}Prefabs/MP/Modes/Plain/GameMode_Plain.et" {
+ components {
+  SCR_CampaignBuildingManagerComponent "{5C6878C4C62529D2}" {
+   m_sFreeRoamBuildingClientTrigger "{5E191CEAF4B95816}Prefabs/MP/FreeRoamBuildingClientTrigger.et"
+   m_BudgetType CAMPAIGN
+   m_iCompositionRefundPercentage 100
+   m_iXpRewardTreshold 5
+   m_iInitialRewardInterval 5
+   m_fRewardCurveIncrement 0.2
+   m_OutlineManager SCR_CampaignBuildingCompositionOutlineManager "{5D7A73031D9A11E1}" : "{96A8B496A076F1C0}scripts/Game/Building/CampaignBuildingCompositionOutline.conf" {
+    m_aCompositionLayouts {
+     SCR_CampaignBuildingCompositionOutline "{65A6BAECE8BB1339}" {
+      m_sEditableEntity "{6676FBB212B337D6}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_USSR_01.et"
+      m_sCompositionLayout "{F28A8D6AC99AD4E8}Prefabs/Compositions/Misc/FreeRoamBuilding/Layouts/FRB_VehicleMaintenance_M_01.et"
+     }
+    }
+   }
+   m_sPrefabsToBuildResource "{D2527D9AA5B4A33E}Configs/Editor/PlaceableEntities/Compositions/Compositions_FreeRoamBuilding.conf"
+   m_sPrefabToHoldSupplyOnRefund "{4BBE0A784C01900E}Prefabs/Props/Military/SupplyBox/SupplyCrate/SupplyCrate_01/SupplyCrate_01_FreeRoamBuilding.et"
+  }
+  SCR_MapConfigComponent "{5C669498E250A34B}" {
+   m_sGadgetMapConfigPath "{AC230926A0010098}Configs/Map/ACR_MapFullscreen.conf"
+  }
+  SCR_RespawnSystemComponent "{56B2B4793051E7C9}" {
+   m_SpawnLogic SCR_AutoSpawnLogic "{5D36888CC966608A}" {
+    m_sForcedFaction "US"
+   }
+  }
+ }
+ coords 6400 0 6400
+}
+SCR_FactionManager ACR_Factions : "{A242612865F2A48E}Prefabs/MP/Managers/Factions/FactionManager_Base.et" {
+ ID "AC230926A0010400"
+ Factions {
+  SCR_Faction "{56B2B46E999BF3BF}" : "{5EB46557DF2AA24F}Configs/Factions/US.conf" {
+   m_sFactionBackground "{F8AC305446D5D480}UI/Textures/DeployMenu/Loadout-BG/Loadout_US_BG.imageset"
+  }
+  SCR_Faction "{56B2B46E9AF80999}" : "{09727032415AC39B}Configs/Factions/USSR.conf" {
+   m_sFactionBackground "{21533F2089005056}UI/Textures/DeployMenu/Loadout-BG/Loadout_BG_USSR.imageset"
+  }
+  SCR_Faction "{AC230926A00102A1}" : "{F33C7BF22CBF3A8A}Configs/Factions/RHS_US_USMC.conf" {
+  }
+  SCR_Faction "{AC230926A00102A2}" : "{627A8CDE681D223D}Configs/Factions/RHS_RF_MSV.conf" {
+  }
+  SCR_Faction "{AC230926A00102A3}" : "{8053DB656DD18B14}Configs/Factions/FIA.conf" {
+  }
+ }
+ m_bCanChangeFactionsPlayable 1
+ coords 6400 0 6400
+}
+SCR_LoadoutManager ACR_Loadouts : "{97EF4C1A41F63DDB}Prefabs/MP/Managers/Loadouts/LoadoutManager_USxUSSR.et" {
+ coords 6400 0 6400
+}
+SCR_SpawnPoint ACR_PlayerSpawn : "{5A2220DD0C16958B}Prefabs/MP/Spawning/SpawnPoint_US.et" {
+ coords 4951 28.4 11903
+}
+SCR_SpawnPoint ACR_PlayerSpawn_USSR : "{4FEA25583D0975F7}Prefabs/MP/Spawning/SpawnPoint_USSR.et" {
+ coords 10027 2.1 1534
+}
+SCR_AIWorld ACR_AIWorld : "{E0A05C76552E7F58}Prefabs/AI/SCR_AIWorld.et" {
+ components {
+  NavmeshWorldComponent "{5584F30E67F617AD}" {
+   NavmeshSettings NavmeshWorld "{50FC63BEBE3973C5}" {
+    NavmeshFilesConfig BaseNavmeshFilesConfig "{AC230926A0010021}" {
+     NavmeshFile "{ACBE49C3E71A9E65}worlds/GameMaster/Navmeshes/GM_Cain.nmn"
+    }
+   }
+  }
+  NavmeshWorldComponent "{5584F30EEFEE1223}" {
+   NavmeshSettings ChimeraNavmeshWorld "{50FC63BEBE3973C5}" {
+    NavmeshFilesConfig BaseNavmeshFilesConfig "{60CA9BE5536BF701}" {
+     NavmeshFile "{27D8B11BF4E78009}worlds/GameMaster/Navmeshes/GM_Cain_vehicles.nmn"
+    }
+   }
+  }
+  NavmeshWorldComponent "{5C8C9B750D124A63}" {
+   NavmeshSettings NavmeshWorld "{5C8C9B750B60C6E2}" {
+    NavmeshFilesConfig BaseNavmeshFilesConfig "{5C90BD0EC793647D}" {
+     NavmeshFile "{1B1989747762AF12}worlds/MP/Navmeshes/LowResCain.nmn"
+    }
+   }
+  }
+ }
+ coords 6400 0 6400
+}
+PerceptionManager ACR_Perception : "{028DAEAD63E056BE}Prefabs/World/Game/PerceptionManager.et" {
+ coords 6400 111 6400
+}
+RadioManagerEntity ACR_Radio : "{B8E09FAB91C4ECCD}Prefabs/Systems/Radio/RadioManager.et" {
+ coords 6400 111 6400
+}
+ScriptedChatEntity ACR_Chat : "{536D80EB494DDC43}Prefabs/MP/Campaign/CampaignMPChatEntity.et" {
+ coords 6400 111 6400
+}
+ACR_Mode ACR_Mode {
+ coords 6400 111 6400
+}
+ACR_FactionSettings ACR_Settings_US {
+ coords 4950 28.2 11918
+ m_sFaction "US"
+ m_iStartingRP 100
+}
+ACR_FactionSettings ACR_Settings_USSR {
+ coords 10021 2.5 1551
+ m_sFaction "USSR"
+ m_iStartingRP 100
+}
+ACR_FactionSettings ACR_Settings_RHS_USAF {
+ coords 6400 11 6400
+ m_sFaction "RHS_USAF"
+ m_aPrefabMappings {
+  ACR_PrefabMapping "AC230926A0010401" {
+   m_sFrom "{EACD97CF4A702FAE}Prefabs/Groups/BLUFOR/Group_US_Base.et"
+   m_sTo "{F831DFB4A9B46152}Prefabs/Groups/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Group_USAF_USMC_MEF_RifleSquad.et"
+  }
+  ACR_PrefabMapping "AC230926A0010402" {
+   m_sFrom "{1CA3D30464EE4674}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Spotter.et"
+   m_sTo "{B74E289F7EDF5D62}Prefabs/Characters/Factions/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Character_RHS_USAF_USMC_Spotter.et"
+  }
+  ACR_PrefabMapping "AC230926A0010403" {
+   m_sFrom "{3726077BE60962FF}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_RTO.et"
+   m_sTo "{9A38B3DFD014403C}Prefabs/Characters/Factions/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Character_RHS_USAF_USMC_RTO.et"
+  }
+ }
+}
+ACR_FactionSettings ACR_Settings_RHS_AFRF {
+ coords 6400 11 6400
+ m_sFaction "RHS_AFRF"
+ m_aPrefabMappings {
+  ACR_PrefabMapping "AC230926A0010404" {
+   m_sFrom "{8DE0C0830FE0C33D}Prefabs/Groups/OPFOR/Group_USSR_Base.et"
+   m_sTo "{256AEA338E84EC28}Prefabs/Groups/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Group_RHS_RF_MSV_VKPO_S_RifleSquad.et"
+  }
+  ACR_PrefabMapping "AC230926A0010405" {
+   m_sFrom "{0DC67B4DFFD7A361}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_Scout_RTO.et"
+   m_sTo "{690C5407460D6271}Prefabs/Characters/Factions/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Character_RHS_RF_MSV_VKPO_S_Spotter.et"
+  }
+  ACR_PrefabMapping "AC230926A0010406" {
+   m_sFrom "{612F43A4D5AE765F}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_RTO.et"
+   m_sTo "{A7193FBD2F2C1EEC}Prefabs/Characters/Factions/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Character_RHS_RF_MSV_VKPO_S_RTO.et"
+  }
+  ACR_PrefabMapping "AC230926A0010407" {
+   m_sFrom "{3C6B3ED0C3AC30D5}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed_gunship_HE.et"
+   m_sTo "{80C975F8482DEE97}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed_black.et"
+  }
+  ACR_PrefabMapping "AC230926A0010408" {
+   m_sFrom "{7BD282AF716ED639}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MT_armed.et"
+   m_sTo "{4A465E25A866520E}Prefabs/Vehicles/Helicopters/Mi8MT/Mi8MTT-A_Black.et"
+  }
+ }
+}

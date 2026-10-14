@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A00100C0}Worlds/ACR_Kolguyev.ent"
+ Configurations {
+  ENTResourceClass PC {
+  }
+  ENTResourceClass HEADLESS : PC {
+  }
+ }
+}

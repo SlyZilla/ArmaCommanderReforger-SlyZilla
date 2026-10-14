@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A00100C1}Missions/ACR_Kolguyev.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}
