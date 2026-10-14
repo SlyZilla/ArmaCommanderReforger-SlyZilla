@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 75; // 69 + ACR_TestOptions.CHECKS (5) + reserve base
+ static const int EXPECTED = 77; // 69 + ACR_TestOptions.CHECKS (5) + reserve base + R15 + R18
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -78,6 +78,36 @@ class ACR_TestRegress
  static const ResourceName STALE_GROUP = "{3BF36BDEEB33AEC9}Prefabs/Groups/BLUFOR/Group_US_SentryTeam.et";
  static IEntity s_Layout;
  static const ResourceName LAYOUT_BASE = "{BB1B3769EB8C290D}Prefabs/Compositions/Misc/FreeRoamBuilding/CompositionLayoutBase.et";
+
+ // R15 (14 Oct review): each faction owns its support entries; a cooldown never reaches the
+ // settings entity or survives ForgetFactions. Runs last: it rebuilds the faction data.
+ static void SupportCloneCheck(ACR_Manager manager)
+ {
+  ACR_FactionSettings us = ACR_FactionSettings.Find("US");
+  if (!us) { Check("R15 support entries are per faction", false, "no US settings"); return; }
+  array<ref ACR_SupportEntry> saved = us.m_aSupports;
+  ACR_SupportEntry configured = new ACR_SupportEntry();
+  configured.m_eType = ACR_ESupportType.MORTAR_HE_SMALL;
+  configured.m_iCost = -1;
+  configured.m_iCooldown = -1;
+  us.m_aSupports = {configured};
+  manager.m_Bases.ForgetFactions();
+  if (manager.m_Bases.GetFaction("US").m_aSupports.IsEmpty())
+  {
+   us.m_aSupports = saved;
+   manager.m_Bases.ForgetFactions();
+   Check("R15 support entries are per faction", false, "US has supports off");
+   return;
+  }
+  ACR_SupportEntry first = manager.m_Bases.GetFaction("US").m_aSupports[0];
+  first.m_fReadyAt = 123456789;
+  bool own = first != configured && configured.m_fReadyAt == 0;
+  manager.m_Bases.ForgetFactions();
+  float fresh = manager.m_Bases.GetFaction("US").m_aSupports[0].m_fReadyAt;
+  us.m_aSupports = saved;
+  manager.m_Bases.ForgetFactions();
+  Check("R15 support entries are per faction", own && fresh == 0, string.Format("own copy %1, settings %2, after forget %3", own, configured.m_fReadyAt, fresh));
+ }
 
  static void Run(ACR_TestHarness harness, int tick)
  {
@@ -98,6 +128,16 @@ class ACR_TestRegress
   if (tick == 4)
   {
    ACR_TestOptions.Run();
+   // R18 (14 Oct review): records of deleted vehicles are dropped.
+   int recordsBefore = ACR_Vehicles.RecordCount();
+   EntitySpawnParams probeParams = new EntitySpawnParams();
+   IEntity probe = GetGame().SpawnEntity(GenericEntity, GetGame().GetWorld(), probeParams);
+   ACR_Vehicles.SetOwner(probe, "US");
+   ACR_Vehicles.SetCrewPrefab(probe, "{0000000000000000}probe.et");
+   int recordsWith = ACR_Vehicles.RecordCount();
+   delete probe;
+   ACR_Vehicles.Prune();
+   Check("R18 deleted vehicle records pruned", recordsWith == recordsBefore + 2 && ACR_Vehicles.RecordCount() == recordsBefore, string.Format("%1 -> %2 -> %3", recordsBefore, recordsWith, ACR_Vehicles.RecordCount()));
    // AI reserve (Jacob 14 Oct): a secure non-HQ base behind the front when one exists, else the HQ.
    array<string> reserveSides = {"US", "USSR"};
    foreach (string reserveSide : reserveSides)
@@ -597,6 +637,7 @@ class ACR_TestRegress
   if (tick == 60)
   {
    BoardingCheck(manager);
+   SupportCloneCheck(manager);
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }

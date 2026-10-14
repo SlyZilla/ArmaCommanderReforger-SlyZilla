@@ -69,6 +69,28 @@ class ACR_SupportEntry
   if (m_iCost < 0) m_iCost = ACR_Supports.DefaultCost(m_eType);
   if (m_iCooldown < 0) m_iCooldown = ACR_Supports.DefaultCooldown(m_eType);
  }
+
+ // A faction's own copy of a configured entry (R15): cooldowns are per copy, never shared
+ // with the settings entity or with another faction made from the same template.
+ ACR_SupportEntry Copy()
+ {
+  ACR_SupportEntry copy = new ACR_SupportEntry();
+  copy.m_eType = m_eType;
+  copy.m_bEnabled = m_bEnabled;
+  copy.m_sName = m_sName;
+  copy.m_iCost = m_iCost;
+  copy.m_iCooldown = m_iCooldown;
+  copy.m_eBombRunDelivery = m_eBombRunDelivery;
+  copy.m_sBombRunPrefab = m_sBombRunPrefab;
+  copy.m_fBombRunAltitude = m_fBombRunAltitude;
+  copy.m_fBombRunSpeed = m_fBombRunSpeed;
+  copy.m_iBombRunBombs = m_iBombRunBombs;
+  copy.m_fBombRunSpacing = m_fBombRunSpacing;
+  copy.m_fBombRunScatter = m_fBombRunScatter;
+  copy.m_fReadyAt = 0;
+  copy.Resolve();
+  return copy;
+ }
 }
 
 // A script-driven flight or firing run, updated every server frame.

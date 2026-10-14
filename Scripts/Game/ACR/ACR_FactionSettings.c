@@ -197,7 +197,12 @@ class ACR_FactionSettings : GenericEntity
    made.m_iAIAttacks = template.m_iAIAttacks;
    made.m_ePricing = template.m_ePricing;
    made.m_bSupports = template.m_bSupports;
-   made.m_aSupports = template.m_aSupports;
+   if (template.m_aSupports)
+   {
+    made.m_aSupports = {};
+    foreach (ACR_SupportEntry entry : template.m_aSupports)
+     if (entry) made.m_aSupports.Insert(entry.Copy());
+   }
   }
   PrintFormat("[ACR] FACTION settings for %1 copied from %2 (none in the world)", factionKey, templateKey);
  }
