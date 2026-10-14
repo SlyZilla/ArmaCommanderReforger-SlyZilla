@@ -76,7 +76,26 @@ class ACR_Vehicles
    if (!vehicle) { s_All.Remove(i); continue; }
    result.Insert(vehicle);
   }
+  Prune();
  }
+
+ // Drop deleted vehicles from the side and crew records (R18).
+ static void Prune()
+ {
+  for (int i = s_Owner.Count() - 1; i >= 0; i--)
+   if (!s_Owner.GetKey(i)) s_Owner.RemoveElement(i);
+  for (int j = s_CustomCrew.Count() - 1; j >= 0; j--)
+   if (!s_CustomCrew.GetKey(j)) s_CustomCrew.RemoveElement(j);
+ }
+
+ static void Reset()
+ {
+  s_All.Clear();
+  s_Owner.Clear();
+  s_CustomCrew.Clear();
+ }
+
+ static int RecordCount() { return s_Owner.Count() + s_CustomCrew.Count(); }
 
  // The side that bought it through AC: Actual, "" for any other vehicle.
  static string BoughtBy(IEntity vehicle)

@@ -175,6 +175,7 @@ class ACR_Manager : Managed
   ACR_Setup.Reset();
   ACR_SetupClient.Reset();
   ACR_FactionSelection.Reset();
+  ACR_Vehicles.Reset();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
