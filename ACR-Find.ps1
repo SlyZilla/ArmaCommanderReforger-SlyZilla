@@ -74,3 +74,26 @@ function Find-SteamApp([string]$folder, [string]$exe) {
   }
   return $null
 }
+
+# All-in-One Command Menu (separate mod, 629405AEFC950C12): when its Workshop copy is
+# downloaded on this PC, play/host/join load it too, no option needed. Its addons folder goes
+# FIRST in -addonsDir: with two copies of one mod ID the game takes the first folder's
+# (a development copy in the Workbench addons folder would win otherwise; checked 14 Oct).
+# Returns @(addonsDir, addonList), unchanged when it isn't installed.
+function Add-AIOCommandMenu([string]$addonsDir, [string]$addonList) {
+  $aioId = '629405AEFC950C12'
+  $candidates = @()
+  $docs = [Environment]::GetFolderPath('MyDocuments')
+  if ($docs) { $candidates += (Join-Path $docs 'My Games\ArmaReforger\addons') }
+  $candidates += 'E:\ArmaReforgerMods\addons'
+  foreach ($dir in $candidates) {
+    if (!(Test-Path -LiteralPath $dir)) { continue }
+    $hit = Get-ChildItem -LiteralPath $dir -Directory -Filter "*_$aioId" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (!$hit) { continue }
+    $dirs = @($dir) + @($addonsDir.Split(',') | Where-Object { $_ -and $_.TrimEnd('\') -ne $dir.TrimEnd('\') })
+    if (($addonList.Split(',')) -notcontains $aioId) { $addonList += ',' + $aioId }
+    Write-Host 'All-in-One Command Menu found (Workshop copy): loading it too.' -ForegroundColor DarkCyan
+    return @(($dirs -join ','), $addonList)
+  }
+  return @($addonsDir, $addonList)
+}

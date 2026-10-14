@@ -46,7 +46,8 @@ try {
     $setup = Show-HostSetup
     $addonsDir = $addonsPath
     if ($setup.Factions -ne 'vanilla') { $addonsDir += ',E:\ArmaReforgerMods\addons' }
-    $mod = '-addonsDir "' + $addonsDir + '" -addons ' + $setup.Addons
+    $withAio = Add-AIOCommandMenu $addonsDir $setup.Addons
+    $mod = '-addonsDir "' + $withAio[0] + '" -addons ' + $withAio[1]
     $zt = Connect-ZeroTier
     $serverArgs = '-server "' + $setup.World + '" ' + $mod + ' -profile "' + $serverProfile + '" -bindPort ' + $Port + ' -maxFPS 60' + $backend + $setup.Args
     Write-Host 'Starting the server (a second window opens; leave it running)...' -ForegroundColor Cyan
@@ -101,7 +102,8 @@ try {
     $joinSetup = Show-JoinModSetup
     $addonsDir = $addonsPath
     if ($joinSetup.Factions -ne 'vanilla') { $addonsDir += ',E:\ArmaReforgerMods\addons' }
-    $mod = '-addonsDir "' + $addonsDir + '" -addons ' + $joinSetup.Addons
+    $withAio = Add-AIOCommandMenu $addonsDir $joinSetup.Addons
+    $mod = '-addonsDir "' + $withAio[0] + '" -addons ' + $withAio[1]
     Write-Host ('Selected ' + $joinSetup.Factions + ' and ACE=' + $joinSetup.ACE + '. Match both selections to the host or the server will reject the connection.') -ForegroundColor Yellow
     $zt = Connect-ZeroTier
     # Ask until we get something that looks like an address (an IP like 26.12.34.56,

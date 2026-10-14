@@ -35,6 +35,11 @@ try {
   $addonList = $setup.Addons
   if ($setup.Factions -ne 'vanilla') { $addonsDir += ',E:\ArmaReforgerMods\addons' }
  }
+ if (!$TestProfile) {
+  . (Join-Path $PSScriptRoot 'ACR-Find.ps1')
+  $withAio = Add-AIOCommandMenu $addonsDir $addonList
+  $addonsDir = $withAio[0]; $addonList = $withAio[1]
+ }
  # Players get their normal profile (controls, graphics); automated tests use a separate one.
  $arguments = '-addonsDir "' + $addonsDir + '" -addons ' + $addonList + ' -noSplash'
  if ($TestProfile) { $arguments += ' -profile "' + (Join-Path $PSScriptRoot '.local-game') + '"' }
