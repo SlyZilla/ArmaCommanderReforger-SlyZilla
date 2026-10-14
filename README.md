@@ -27,6 +27,15 @@ that session, so choose a pair containing **UA** to play it. ACE All in One is a
 optional toggle. Joiners should select the same faction pair and ACE setting as the host; a
 mod or faction mismatch is rejected by the server. The join menu explains the selections to check.
 
+**Other faction mods (no promises).** AC: Actual can play any two factions a map lists, picked
+as Blue side / Red side on the in-game setup screen (or `-acrFactions WEST,EAST`). Arland and
+Everon list the game's US, USSR and FIA, plus RHS US and RHS Russia when RHS is loaded. Another
+faction mod works only if the map lists it (one line in the map's faction manager) and the mod
+sets up its factions the standard way (Game Master catalogs of soldiers, groups and vehicles).
+Even then it may look rough: mixed uniforms, a squad leader as your command unit, vanilla
+stand-ins for what the mod lacks. Only RHS and Ukraine Armed Forces RHS are hand-fitted.
+Want a faction mod supported properly? Ask on GitHub: https://github.com/propst-design/ACActual/issues
+
 **Command map** (M or F9):
 
 - Left-click a squad or soldier marker to select that squad. Left-click empty map to deselect.

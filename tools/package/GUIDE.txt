@@ -278,6 +278,17 @@ TIPS
   own) after 15 s. If it dies while you are controlling another soldier, you
   keep playing that soldier and a new commander body is waiting at base (F8).
 
+OTHER FACTION MODS (NO PROMISES)
+--------------------------------
+AC: Actual can play any two factions a map lists. Arland and Everon list
+the game's US, USSR and FIA, plus RHS US / RHS Russia when RHS is loaded,
+and UA through Ukraine Armed Forces RHS. Another faction mod only works if
+the map lists it and the mod sets up its factions the standard way (Game
+Master catalogs). Even then it may look rough (mixed uniforms, a squad
+leader as your command unit, vanilla stand-ins). Only RHS and UA are
+hand-fitted. Want a faction mod supported properly? Ask on GitHub:
+  https://github.com/propst-design/ACActual/issues
+
 KNOWN LIMITS (alpha)
 --------------------
 - Multiplayer, and shared command in particular, has had little testing.

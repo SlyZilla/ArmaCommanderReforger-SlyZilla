@@ -156,6 +156,23 @@ game's US side for that session. ACE All in One is a separate optional choice. E
 the same side pairing and ACE choice as the host. With no extra faction mods selected, the game uses its
 usual US vs USSR sides.
 
+**Any faction your world lists.** Besides those pairs, the in-game setup screen (Blue side / Red side)
+and `-acrFactions WEST,EAST` can pick any two factions in your world's faction manager whose Game Master
+catalogs have soldiers and groups. The world's US-side bases, units and spawns go to the first, USSR-side
+to the second. To offer a faction mod, add its faction config to the `Factions` list of the world's
+`SCR_FactionManager` (an entry whose mod isn't loaded is simply absent in that session):
+
+```
+  SCR_Faction "{<a new GUID>}" : "{<the mod's faction config GUID>}Configs/Factions/<Faction>.conf" {
+  }
+```
+
+A faction without its own `ACR_FactionSettings` entity copies the settings of the side it replaces
+(RP, AI commander, caps, prices, supports) and builds its buy list and garrisons from its catalog; its
+command unit is the catalog's officer, else its squad leader. This is not hand-fitting: an untuned faction
+can look mixed (several uniforms), and anything it lacks falls back to vanilla units. Only RHS and Ukraine
+Armed Forces RHS are hand-fitted. Requests for proper support of a faction mod: https://github.com/propst-design/ACActual/issues
+
 You can use `m_aPrefabMappings` to replace a unit with one from another mod. Add a row for the original
 prefab and choose its replacement from the prefab browser. AC: Actual also tries to match starting units
 by their catalog name or role. If it cannot find a replacement, it uses the original unit and writes a
