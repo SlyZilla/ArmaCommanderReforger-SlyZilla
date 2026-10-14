@@ -548,6 +548,7 @@ modded class SCR_PlayerController
  }
  protected IEntity m_ACR_BodyAtMapClose;
  protected bool m_ACR_SetupMapOpen;
+ int ACR_BaseMarkerCount() { return m_ACR_BaseMarkers.Count(); }
  // Setup phase, no body yet: the map shows the planned layout's bases only (ACR_Setup preview).
  void ACR_UpdateSetupMap()
  {

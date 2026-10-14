@@ -118,6 +118,45 @@ class ACR_TestSetup
   }
  }
 
+ // -acrSetupMapTest 1 (GAME, Kolguyev, ~75 s): the layout preview on the host's own map. The dialog
+ // shows the map row; "Show the layout on the map" opens the map with one marker per planned base;
+ // closing the map brings the dialog back; Start then builds the layout. The map stays open from
+ // second 12 to 40 so a screenshot can be taken.
+ static bool MapWanted() { return System.IsCLIParam("acrSetupMapTest"); }
+ static void RunMap(int second)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (second == 10)
+  {
+   ACR_SetupDialog dialog = ACR_SetupDialog.Cast(SCR_ConfigurableDialogUi.GetCurrentDialog());
+   ACR_TestRegress.Check("setup map: the host sees the dialog with the map row", dialog != null && ACR_SetupClient.s_sRows.Contains("map\tShow the layout on the map"), ACR_SetupClient.s_sRows);
+  }
+  if (second == 12) ACR_SetupClient.OpenPreviewMap();
+  if (second == 18)
+  {
+   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+   int markers = 0;
+   if (pc) markers = pc.ACR_BaseMarkerCount();
+   int planned = ACR_Setup.s_PreviewNames.Count();
+   ACR_TestRegress.Check("setup map: the map opens without a body", mapEntity && mapEntity.IsOpen() && pc && !pc.GetControlledEntity(), "");
+   ACR_TestRegress.Check("setup map: one marker per planned base", planned > 0 && markers == planned, string.Format("%1 markers, %2 planned", markers, planned));
+   ACR_TestRegress.Check("setup map: the dialog stays hidden while the map is open", SCR_ConfigurableDialogUi.GetCurrentDialog() == null, "");
+  }
+  if (second == 40) GetGame().GetMenuManager().CloseAllMenus();
+  if (second == 45)
+  {
+   SCR_MapEntity closed = SCR_MapEntity.GetMapInstance();
+   ACR_SetupDialog back = ACR_SetupDialog.Cast(SCR_ConfigurableDialogUi.GetCurrentDialog());
+   ACR_TestRegress.Check("setup map: closing the map brings the dialog back", (!closed || !closed.IsOpen()) && back != null, string.Format("dialog %1", back != null));
+   ACR_SetupClient.Request("start");
+  }
+  if (second == 60)
+  {
+   ACR_TestRegress.Check("setup map: Start builds the previewed layout and the host spawns", ACR_Generator.Built() && ACR_Base.s_All.Count() == ACR_Setup.s_PreviewNames.Count() && pc && pc.GetControlledEntity() != null, string.Format("%1 bases", ACR_Base.s_All.Count()));
+   ACR_TestRegress.Complete("setupmap", 6);
+  }
+ }
+
  // -acrReserveTest 1 (server, Everon, ~1 min): where the AI keeps its reserve on a big map.
  // US is given every neutral base north of the split line (z > 6650); the reserve must sit at a
  // secure non-HQ base, not the Airbase HQ. Logs the five best candidates.
