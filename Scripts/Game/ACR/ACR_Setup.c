@@ -190,7 +190,8 @@ class ACR_Setup
  protected static string Info(int left)
  {
   string info = "";
-  if (left >= 0) info = string.Format("Starts by itself in %1 s.", left);
+  if (Current("layout").StartsWith("gen:")) info = "Generated layout: support helicopters come from off the map; build a helipad to buy helicopters. ";
+  if (left >= 0) info += string.Format("Starts by itself in %1 s.", left);
   return info;
  }
 

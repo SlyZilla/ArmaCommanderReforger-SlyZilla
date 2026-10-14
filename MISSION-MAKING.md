@@ -363,7 +363,9 @@ dry ground if it is in water; circles that would overlap shrink, down to 35 m. T
 military sites (or the airport) far apart, or the two ends of a flashpoint: 2 RP, a 6-man garrison,
 a 70 m circle where there is room. Each side starts with the world's own `ACR_StartingUnit` objects,
 or two rifle squads, a weapons team, a truck and a car, and its player spawn point moves to its HQ.
-Hand-built helipads are not used: both sides get the off-map support helicopters. The setup
+Hand-built helipads are not used: both sides get the off-map support helicopters, and helicopters
+can only be bought once players build a helipad (construction truck). The AI commander builds none,
+so it uses no bought helicopters there (an air lift support call is planned). The setup
 screen's "Layout seed" row rolls a new seed; the log lists the layout (`[ACR] GEN BASE`).
 
 ### ACR_Skirmish
