@@ -547,6 +547,24 @@ modded class SCR_PlayerController
   mapEntity.ZoomPanSmooth(4, pos[0], pos[2]);
  }
  protected IEntity m_ACR_BodyAtMapClose;
+ protected bool m_ACR_SetupMapOpen;
+ // Setup phase, no body yet: the map shows the planned layout's bases only (ACR_Setup preview).
+ void ACR_UpdateSetupMap()
+ {
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  bool open = mapEntity && mapEntity.IsOpen() && ACR_SetupClient.s_bActive;
+  if (!open)
+  {
+   if (m_ACR_SetupMapOpen) ACR_ClearMarkers();
+   m_ACR_SetupMapOpen = false;
+   return;
+  }
+  SCR_MapMarkerManagerComponent manager = SCR_MapMarkerManagerComponent.GetInstance();
+  if (!manager) return;
+  if (!m_ACR_SetupMapOpen) Print("[ACR] SETUP preview map opened");
+  m_ACR_SetupMapOpen = true;
+  ACR_UpdateBaseMarkers(manager);
+ }
  void ACR_UpdateMap()
  {
   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();

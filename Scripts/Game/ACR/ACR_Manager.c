@@ -1079,6 +1079,7 @@ class ACR_Manager : Managed
  {
   ACR_SetupClient.Frame();
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (pc && !pc.GetControlledEntity()) pc.ACR_UpdateSetupMap();
   if (!pc || !pc.GetControlledEntity()) return;
   InputManager input = GetGame().GetInputManager();
   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();

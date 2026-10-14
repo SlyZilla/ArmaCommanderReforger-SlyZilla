@@ -19,6 +19,32 @@ class ACR_GenSite
  int m_iRank;        // which of two overlapping sites stays
  string m_sKey;      // the map's location key, e.g. Military, Harbour, Cain_Kamensk
  string m_sPrefab;
+
+ ACR_GenSite Copy()
+ {
+  ACR_GenSite copy = new ACR_GenSite();
+  copy.m_sName = m_sName;
+  copy.m_sKind = m_sKind;
+  copy.m_vPos = m_vPos;
+  copy.m_fRadius = m_fRadius;
+  copy.m_iValue = m_iValue;
+  copy.m_iRank = m_iRank;
+  copy.m_sKey = m_sKey;
+  copy.m_sPrefab = m_sPrefab;
+  return copy;
+ }
+
+ // Shown in the setup preview: "Military site, 3 RP".
+ string Describe()
+ {
+  string kind = m_sKind;
+  if (kind == "military") kind = "Military site";
+  else if (kind == "industry") kind = "Industry";
+  else if (kind == "airport") kind = "Airport";
+  else if (kind == "landmark") kind = "Hidden landmark";
+  else kind = "Settlement";
+  return string.Format("%1, %2 RP", kind, m_iValue);
+ }
 }
 
 class ACR_Generator
@@ -28,11 +54,14 @@ class ACR_Generator
  static ref array<ref ACR_GenSite> s_Sites = {};   // the layout in play (after Build)
  protected static ref array<IEntity> s_Found = {};
 
+ protected static ref array<ref ACR_GenSite> s_Surveyed;  // the map's sites, read once
+
  static void Reset()
  {
   s_bBuilt = false;
   s_iSeed = 0;
   s_Sites.Clear();
+  s_Surveyed = null;
  }
 
  static bool Built() { return s_bBuilt; }
@@ -268,8 +297,14 @@ class ACR_Generator
   hqs.Clear();
   RandomGenerator rng = new RandomGenerator();
   rng.SetSeed(seed);
+  // The map's places are read once (about a second), then copied for each plan.
+  if (!s_Surveyed)
+  {
+   s_Surveyed = {};
+   Survey(s_Surveyed);
+  }
   array<ref ACR_GenSite> sites = {};
-  Survey(sites);
+  foreach (ACR_GenSite surveyed : s_Surveyed) sites.Insert(surveyed.Copy());
   // Dry ground, and no two capture circles too close: the higher-ranked site stays.
   array<ref ACR_GenSite> kept = {};
   foreach (ACR_GenSite site : sites)

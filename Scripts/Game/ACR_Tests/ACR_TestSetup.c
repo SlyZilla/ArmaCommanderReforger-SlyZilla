@@ -121,6 +121,48 @@ class ACR_TestSetup
  // -acrReserveTest 1 (server, Everon, ~1 min): where the AI keeps its reserve on a big map.
  // US is given every neutral base north of the split line (z > 6650); the reserve must sit at a
  // secure non-HQ base, not the Airbase HQ. Logs the five best candidates.
+ // -acrSetupGenTest 1 (server, Kolguyev, ~40 s): the layout preview during setup (aca-f07).
+ static const int GEN_CHECKS = 5;
+ protected static ref array<string> s_PreviewNames = {};
+ static bool GenWanted() { return System.IsCLIParam("acrSetupGenTest"); }
+ static void RunGen(int second)
+ {
+  if (second == 6)
+  {
+   ACR_Setup.UpdatePreview();
+   string rows = ACR_Setup.Rows();
+   int first = ACR_Setup.s_PreviewNames.Count();
+   ACR_TestRegress.Check("setup preview: a generated layout is planned before Start", !ACR_Setup.Started() && first >= 15 && ACR_Base.s_All.IsEmpty(), string.Format("%1 bases planned, %2 built", first, ACR_Base.s_All.Count()));
+   ACR_TestRegress.Check("setup preview: rows offer the seed and the map", rows.Contains("seed\tLayout seed: ") && rows.Contains("map\tShow the layout on the map"), rows);
+   string seedBefore;
+   ACR_Options.Get("acrSeed", seedBefore);
+   string firstNames = "";
+   foreach (string n : ACR_Setup.s_PreviewNames) firstNames += n + ";";
+   ACR_Setup.Cycle("seed");
+   ACR_Setup.Cycle("layout"); // gen:full -> gen:half
+   ACR_Setup.UpdatePreview();
+   int half = ACR_Setup.s_PreviewNames.Count();
+   string seedAfter;
+   ACR_Options.Get("acrSeed", seedAfter);
+   ACR_TestRegress.Check("setup preview: a new seed and the half size re-plan it", seedAfter != seedBefore && half > 0 && half < first, string.Format("seed %1 -> %2, %3 -> %4 bases", seedBefore, seedAfter, first, half));
+   s_PreviewNames.Clear();
+   s_PreviewNames.Copy(ACR_Setup.s_PreviewNames);
+   ACR_Setup.Start("the setup preview test");
+  }
+  if (second == 14)
+  {
+   array<string> built = {};
+   foreach (ACR_Base base : ACR_Base.s_All) built.Insert(base.m_sName);
+   int same;
+   foreach (string planned : s_PreviewNames) if (built.Contains(planned)) same++;
+   ACR_TestRegress.Check("setup preview: Start builds exactly the previewed layout", ACR_Generator.Built() && same == s_PreviewNames.Count() && built.Count() == s_PreviewNames.Count(), string.Format("%1 of %2 previewed, %3 built", same, s_PreviewNames.Count(), built.Count()));
+   int ownedHQs;
+   foreach (ACR_Base hq : ACR_Base.s_All) if (hq.m_sOwner != "") ownedHQs++;
+   ACR_TestRegress.Check("setup preview: two HQs owned after Start", ownedHQs == 2, string.Format("%1 owned", ownedHQs));
+   ACR_TestRegress.Complete("setupgen", GEN_CHECKS);
+  }
+ }
+
  static bool ReserveWanted() { return System.IsCLIParam("acrReserveTest"); }
  static void RunReserve(int second)
  {

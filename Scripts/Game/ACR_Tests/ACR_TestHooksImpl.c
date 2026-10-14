@@ -29,6 +29,7 @@ modded class ACR_TestHooks
   if (ACR_TestSetup.Wanted()) ACR_TestSetup.Run(seconds);
   if (ACR_TestSetup.UiWanted()) ACR_TestSetup.RunUi(seconds);
   if (ACR_TestSetup.ReserveWanted()) ACR_TestSetup.RunReserve(seconds);
+  if (ACR_TestSetup.GenWanted()) ACR_TestSetup.RunGen(seconds);
   if (System.IsCLIParam("acrEveronSurveyTest")) ACR_TestPlaces.SurveyEveron(seconds);
   if (System.IsCLIParam("acrEveronPadsTest")) ACR_TestPads.SurveyEveron(seconds);
   // -acrSkirmishTest / -acrSkirmishSouthTest: skirmish layouts on Everon (ACR_TestSkirmish).

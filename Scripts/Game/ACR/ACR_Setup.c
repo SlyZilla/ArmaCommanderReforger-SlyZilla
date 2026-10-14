@@ -13,6 +13,15 @@ class ACR_Setup
  protected static bool s_bStarted;
  protected static float s_fFirstPlayerAt = -1;
  protected static ref map<int, string> s_Sent = new map<int, string>();
+ // Layout preview (aca-f07 editor, step 1): the bases the chosen battlefield will have, sent to
+ // the host's map as base markers while the phase lasts.
+ protected static string s_sPreviewSig;
+ static ref array<vector> s_PreviewPos = {};
+ static ref array<string> s_PreviewNames = {};
+ protected static ref array<string> s_PreviewOwners = {};
+ protected static ref array<string> s_PreviewDetails = {};
+ protected static ref array<float> s_PreviewRadii = {};
+ protected static ref map<int, string> s_PreviewSent = new map<int, string>();
 
  static bool Wanted()
  {
@@ -21,7 +30,7 @@ class ACR_Setup
    s_bDecided = true;
    string value;
    s_bWanted = ACR_Options.Get("acrSetup", value) && value == "1";
-   if (System.IsCLIParam("acrSetupTest") || System.IsCLIParam("acrSetupUiTest")) s_bWanted = true;
+   if (System.IsCLIParam("acrSetupTest") || System.IsCLIParam("acrSetupUiTest") || System.IsCLIParam("acrSetupGenTest")) s_bWanted = true;
    if (s_bWanted) Print("[ACR] SETUP phase: waiting for the host or an admin to press Start");
   }
   return s_bWanted;
@@ -41,6 +50,74 @@ class ACR_Setup
   s_bStarted = false;
   s_fFirstPlayerAt = -1;
   s_Sent.Clear();
+  s_sPreviewSig = "";
+  s_PreviewSent.Clear();
+  s_PreviewPos.Clear();
+  s_PreviewNames.Clear();
+ }
+
+ // The layout the current choices give: a generated plan (its seed fixed now, so Start builds
+ // exactly this), else the world's own bases. Recomputed only when the choices change.
+ static void UpdatePreview()
+ {
+  string layout = Current("layout");
+  bool generated = layout.StartsWith("gen:");
+  int seed = 0;
+  if (generated) seed = ACR_Generator.Seed();
+  string west = ACR_FactionSelection.West();
+  string east = ACR_FactionSelection.East();
+  string signature = string.Format("%1|%2|%3|%4", layout, seed, west, east);
+  if (signature == s_sPreviewSig) return;
+  s_sPreviewSig = signature;
+  s_PreviewPos.Clear();
+  s_PreviewNames.Clear();
+  s_PreviewOwners.Clear();
+  s_PreviewDetails.Clear();
+  s_PreviewRadii.Clear();
+  if (generated)
+  {
+   array<ref ACR_GenSite> plan = {};
+   array<ACR_GenSite> hqs = {};
+   if (!ACR_Generator.Plan(seed, ACR_Skirmish.SizeOption(), plan, hqs)) return;
+   foreach (ACR_GenSite site : plan)
+   {
+    string owner = "";
+    string detail = site.Describe();
+    if (hqs.Count() == 2 && site == hqs[0]) { owner = west; detail = "HQ (" + ACR_FactionSelection.DisplayName(west) + ")"; }
+    if (hqs.Count() == 2 && site == hqs[1]) { owner = east; detail = "HQ (" + ACR_FactionSelection.DisplayName(east) + ")"; }
+    AddPreview(site.m_vPos, site.m_sName, owner, detail, site.m_fRadius);
+   }
+  }
+  else
+  {
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    string baseOwner = base.m_sOwner;
+    if (baseOwner == "US") baseOwner = west;
+    else if (baseOwner == "USSR") baseOwner = east;
+    AddPreview(base.GetOrigin(), base.m_sName, baseOwner, "", base.m_fRadius);
+   }
+  }
+  PrintFormat("[ACR] SETUP preview %1: %2 bases", signature, s_PreviewNames.Count());
+ }
+
+ protected static void AddPreview(vector pos, string name, string owner, string detail, float radius)
+ {
+  s_PreviewPos.Insert(pos);
+  s_PreviewNames.Insert(name);
+  s_PreviewOwners.Insert(owner);
+  s_PreviewDetails.Insert(detail);
+  s_PreviewRadii.Insert(radius);
+ }
+
+ protected static void SendPreview(int playerId, SCR_PlayerController pc)
+ {
+  string sent;
+  if (s_PreviewSent.Find(playerId, sent) && sent == s_sPreviewSig) return;
+  s_PreviewSent.Set(playerId, s_sPreviewSig);
+  array<int> contested = {};
+  foreach (string n : s_PreviewNames) contested.Insert(0);
+  pc.ACR_SendBases(s_PreviewPos, s_PreviewNames, s_PreviewOwners, s_PreviewDetails, s_PreviewRadii, contested);
  }
 
  // Tests: force the phase on or off.
@@ -89,6 +166,7 @@ class ACR_Setup
  {
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
+  if (!s_bStarted) UpdatePreview();
   string rows = Rows();
   foreach (int id : players)
   {
@@ -96,6 +174,7 @@ class ACR_Setup
    if (!pc) continue;
    bool active = !s_bStarted;
    bool allowed = ACR_Manager.IsHostOrAdmin(id);
+   if (active && allowed) SendPreview(id, pc);
    string text = rows;
    if (!allowed) text = "";
    int left = SecondsLeft();
@@ -126,6 +205,8 @@ class ACR_Setup
    if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
    rows += key + "\t" + Label(key) + ": " + ValueName(key, Current(key)) + "\n";
   }
+  // Opens the map on the host's own screen with the layout drawn on it (client side).
+  if (!s_PreviewNames.IsEmpty()) rows += string.Format("map\tShow the layout on the map (%1 bases)\n", s_PreviewNames.Count());
   return rows;
  }
 
@@ -393,6 +474,9 @@ class ACR_SetupClient
    }
    return;
   }
+  // The layout preview: the map is open over the setup view; the dialog comes back when it closes.
+  SCR_MapEntity previewMap = SCR_MapEntity.GetMapInstance();
+  if (previewMap && previewMap.IsOpen()) return;
   if (!s_Dialog || !s_Dialog.GetRootWidget())
   {
    s_Dialog = new ACR_SetupDialog();
@@ -466,6 +550,14 @@ class ACR_SetupClient
   s_Camera = null;
  }
 
+ // "Show the layout on the map": the game's own full-screen map menu (works without a body).
+ static void OpenPreviewMap()
+ {
+  if (s_Dialog) { s_Dialog.Close(); s_Dialog = null; }
+  GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
+  SCR_HintManagerComponent.ShowCustomHint("The planned layout. Close the map to return to the match setup.", "AC: Actual", 8, true);
+ }
+
  static void Request(string key)
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
@@ -525,7 +617,9 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  protected void OnRow(SCR_ButtonBaseComponent button)
  {
   string key;
-  if (m_Keys.Find(button, key)) ACR_SetupClient.Request(key);
+  if (!m_Keys.Find(button, key)) return;
+  if (key == "map") { ACR_SetupClient.OpenPreviewMap(); return; }
+  ACR_SetupClient.Request(key);
  }
 
  // "Start": the server ends the phase and closes the dialog everywhere.

@@ -63,6 +63,7 @@ bbbglnear|-acrBbbGrenadierNearTest 1|600|Worlds/BBB_TestArland.ent
 places|-acrPlacesTest 1|120|Worlds/ACR_Everon.ent
 placeskolguyev|-acrPlacesTest 1|120|Worlds/ACR_Kolguyev.ent
 generate|-acrGenerateTest 1|150|Worlds/ACR_Kolguyev.ent
+setupgen|-acrSetupGenTest 1|120|Worlds/ACR_Kolguyev.ent
 generateeveron|-acrGenerateEveronTest 1|120|Worlds/ACR_Everon.ent
 everonsurvey|-acrEveronSurveyTest 1|150|Worlds/ACR_Everon.ent
 everon|-acrScenarioTest 1|240|Worlds/ACR_Everon.ent
