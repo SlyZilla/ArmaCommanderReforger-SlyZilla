@@ -50,7 +50,8 @@ function Show-HostSetup([switch]$Solo) {
   # Skirmish sizes: the whole map, or a layout (ACR_Skirmish) placed in the world's layer.
   # Choices: full, 'half' / 'flashpoint' (one at random), or one layout by name.
   function Get-SkirmishChoices([string]$world) {
-    $choices = @('full')
+    # Generated layouts (aca-f07) work on every map: built from the map's own named places.
+    $choices = @('full', 'generated', 'generated half', 'generated flashpoint')
     $layer = Join-Path $PSScriptRoot ($world -replace '\.ent$', '_Layers/default.layer')
     if (!(Test-Path -LiteralPath $layer)) { return ,$choices }
     $text = [IO.File]::ReadAllText($layer)
@@ -91,7 +92,7 @@ function Show-HostSetup([switch]$Solo) {
     Write-Host (' 14  Threat level            ' + $s.Threat + '   (low = small infantry war, high = all-out war)')
     $skirmishes = Get-SkirmishChoices $s.World
     if ($skirmishes -notcontains $s.Skirmish) { $s.Skirmish = 'full' }
-    if ($skirmishes.Count -gt 1) { Write-Host (' 15  Skirmish size           ' + $s.Skirmish + '   (full map, half of it, or a small flashpoint)') }
+    if ($skirmishes.Count -gt 1) { Write-Host (' 15  Skirmish size           ' + $s.Skirmish + '   (full map, half of it, a small flashpoint, or generated from the map)') }
     if (!$Solo) { Write-Host (' 16  First player is host    ' + $s.FirstPlayerHost + '   (trusted fallback on dedicated servers; no transfer after disconnect)') }
     Write-Host (' 17  ACE All in One          ' + $s.ACE + ' (optional, independent of factions)')
     $choice = (Read-Host 'Choice').Trim()
@@ -140,7 +141,12 @@ function Show-HostSetup([switch]$Solo) {
   if ($s.FirstPlayerHost -eq 'yes') { $extra += ' -acrFirstPlayerHost 1' }
   $extra += ' -acrThreat ' + $s.Threat
   # Skirmish: -acrSize half|flashpoint, plus -acrLayout <name> (spaces as _) for a chosen one.
-  if ($s.Skirmish -ne 'full' -and (Get-SkirmishChoices $s.World) -contains $s.Skirmish) {
+  if ($s.Skirmish -like 'generated*') {
+    $size = 'full'
+    if ($s.Skirmish -like '*half') { $size = 'half' } elseif ($s.Skirmish -like '*flashpoint') { $size = 'flashpoint' }
+    $extra += ' -acrLayout generated -acrSize ' + $size
+  }
+  elseif ($s.Skirmish -ne 'full' -and (Get-SkirmishChoices $s.World) -contains $s.Skirmish) {
     $parts = $s.Skirmish -split ': ', 2
     $size = ($parts[0] -split ' ')[0]
     $extra += ' -acrSize ' + $size

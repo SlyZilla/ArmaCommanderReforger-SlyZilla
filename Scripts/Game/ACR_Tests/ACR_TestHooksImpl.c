@@ -33,6 +33,9 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrEveronPadsTest")) ACR_TestPads.SurveyEveron(seconds);
   // -acrSkirmishTest / -acrSkirmishSouthTest: skirmish layouts on Everon (ACR_TestSkirmish).
   if (System.IsCLIParam("acrSkirmishTest") || System.IsCLIParam("acrSkirmishSouthTest")) ACR_TestSkirmish.Run(seconds);
+  // -acrGenerateTest / -acrGenerateEveronTest: the scenario generator (ACR_TestGenerate).
+  if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
+  if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
  }
 
  override string SkirmishLayout()

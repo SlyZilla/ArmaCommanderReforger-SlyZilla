@@ -102,6 +102,8 @@ class ACR_MissionHeader : SCR_MissionHeader
  string m_sAcrAI;
  [Attribute("-1", UIWidgets.EditBox, "AI commander squad cap per side (-acrUnitCap)")]
  int m_iAcrUnitCap;
+ [Attribute("-1", UIWidgets.EditBox, "Generated layout seed (-acrSeed); -1 or 0 = a new random layout each match")]
+ int m_iAcrSeed;
  [Attribute("-1", UIWidgets.EditBox, "Living AI soldiers per side (-acrSoldierCap)")]
  int m_iAcrSoldierCap;
  [Attribute("-1", UIWidgets.EditBox, "Starting RP per side (-acrStartRP)")]
@@ -133,6 +135,7 @@ class ACR_MissionHeader : SCR_MissionHeader
   Text(values, "acrPricing", m_sAcrPricing);
   Text(values, "acrAI", m_sAcrAI);
   Number(values, "acrUnitCap", m_iAcrUnitCap);
+  Number(values, "acrSeed", m_iAcrSeed);
   Number(values, "acrSoldierCap", m_iAcrSoldierCap);
   Number(values, "acrStartRP", m_iAcrStartRP);
   if (m_fAcrIncome >= 0) values.Set("acrIncome", m_fAcrIncome.ToString());

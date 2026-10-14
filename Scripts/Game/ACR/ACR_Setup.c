@@ -120,10 +120,10 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"west", "east", "layout", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared"};
+  array<string> keys = {"west", "east", "layout", "seed", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared"};
   foreach (string key : keys)
   {
-   if (key == "layout" && ACR_Skirmish.s_All.IsEmpty()) continue;
+   if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
    rows += key + "\t" + Label(key) + ": " + ValueName(key, Current(key)) + "\n";
   }
   return rows;
@@ -134,6 +134,7 @@ class ACR_Setup
   if (key == "west") return "Blue side";
   if (key == "east") return "Red side";
   if (key == "layout") return "Battlefield";
+  if (key == "seed") return "Layout seed";
   if (key == "threat") return "Threat";
   if (key == "pricing") return "Prices";
   if (key == "ai") return "AI commanders";
@@ -150,7 +151,11 @@ class ACR_Setup
   array<string> values = {};
   if (key == "layout")
   {
-   values.Insert("full");
+   // Generated layouts work on any map (aca-f07); a map without bases of its own has only those.
+   if (ACR_Generator.HasOwnBases()) values.Insert("full");
+   values.Insert("gen:full");
+   values.Insert("gen:half");
+   values.Insert("gen:flashpoint");
    bool half, flash;
    foreach (ACR_Skirmish layout : ACR_Skirmish.s_All)
    {
@@ -202,9 +207,22 @@ class ACR_Setup
   if (key == "east") return ACR_FactionSelection.East();
   if (key == "layout")
   {
-   if (ACR_Options.Get("acrLayout", value) && value != "") return "name:" + value;
-   if (ACR_Options.Get("acrSize", value) && value != "" && value != "full") return "size:" + value;
+   string size;
+   if (!ACR_Options.Get("acrSize", size) || size == "") size = "full";
+   size.ToLower();
+   string layout;
+   ACR_Options.Get("acrLayout", layout);
+   string layoutLower = layout;
+   layoutLower.ToLower();
+   if (layoutLower == "generated" || !ACR_Generator.HasOwnBases()) return "gen:" + size;
+   if (layout != "") return "name:" + layout;
+   if (size != "full") return "size:" + size;
    return "full";
+  }
+  if (key == "seed")
+  {
+   if (ACR_Options.Get("acrSeed", value) && value != "" && value != "0") return value;
+   return "";
   }
   if (!ACR_Options.Get(Option(key), value)) value = "";
   value.ToLower();
@@ -219,6 +237,7 @@ class ACR_Setup
  {
   if (value == "")
   {
+   if (key == "seed") return "random (click to roll one)";
    if (key == "pricing" || key == "ai") return "scenario's choice";
    return "scenario default";
   }
@@ -227,6 +246,9 @@ class ACR_Setup
    if (value == "full") return "whole map";
    if (value == "size:half") return "a random half";
    if (value == "size:flashpoint") return "a random flashpoint";
+   if (value == "gen:full") return "generated, whole map";
+   if (value == "gen:half") return "generated, half the map";
+   if (value == "gen:flashpoint") return "generated flashpoint";
    return value.Substring(5, value.Length() - 5);
   }
   if (key == "pricing" && value == "stock") return "fixed stock";
@@ -253,6 +275,16 @@ class ACR_Setup
  static string Cycle(string key)
  {
   if (s_bStarted) return "The match has started";
+  // The seed row rolls a new layout seed on every click.
+  if (key == "seed")
+  {
+   int seed = Math.RandomInt(1, 100000);
+   if (seed < 0) seed = -seed;
+   if (seed == 0) seed = 1;
+   ACR_Options.Set("acrSeed", seed.ToString());
+   Broadcast();
+   return Label(key) + ": " + seed.ToString();
+  }
   array<string> values = Values(key);
   if (values.IsEmpty()) return "Unknown option";
   string current = Current(key);
@@ -278,6 +310,7 @@ class ACR_Setup
   if (key == "layout")
   {
    if (value == "full") { ACR_Options.Set("acrLayout", ""); ACR_Options.Set("acrSize", "full"); }
+   else if (value.StartsWith("gen:")) { ACR_Options.Set("acrLayout", "generated"); ACR_Options.Set("acrSize", value.Substring(4, value.Length() - 4)); }
    else if (value.StartsWith("size:")) { ACR_Options.Set("acrLayout", ""); ACR_Options.Set("acrSize", value.Substring(5, value.Length() - 5)); }
    else { ACR_Options.Set("acrLayout", value.Substring(5, value.Length() - 5)); ACR_Options.Set("acrSize", ""); }
    return;

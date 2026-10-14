@@ -60,7 +60,7 @@ class ACR_Skirmish : GenericEntity
  // Helicopter supports of a side fly from its helipads, unless a layout left it without one.
  static bool SideHasPads(string factionKey)
  {
-  if (!s_Active) return true;
+  if (!s_Active && !ACR_Generator.Built()) return true;
   return s_PadSides.Contains(factionKey);
  }
 
@@ -111,7 +111,7 @@ class ACR_Skirmish : GenericEntity
   {
    foreach (ACR_Skirmish layout : s_All)
     if (Simple(layout.m_sName) == wanted) return layout;
-   PrintFormat("[ACR] SKIRMISH no layout named '%1' in this world", wanted);
+   if (wanted != "generated") PrintFormat("[ACR] SKIRMISH no layout named '%1' in this world", wanted);
   }
   int size = SizeOption();
   if (size < 0) return null;
@@ -143,6 +143,12 @@ class ACR_Skirmish : GenericEntity
   if (s_bApplied) return;
   s_bApplied = true;
   ACR_FactionSelection.Apply();
+  // A generated layout (aca-f07) replaces the hand-built one, at any size.
+  if (ACR_Generator.Wanted())
+  {
+   ACR_Generator.Build();
+   if (ACR_Generator.Built() && !ACR_Generator.s_Sites.IsEmpty()) return;
+  }
   ACR_Skirmish layout = Choose();
   if (layout) layout.Apply();
  }

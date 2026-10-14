@@ -347,6 +347,25 @@ A unit AC: Actual creates at this object's position 2 seconds after the match st
 AC: Actual also finds other AI groups already on the map, or added later by Game Master, and makes them
 commandable for their side. Use `ACR_StartingUnit` when you also want to give a group a name and vehicle.
 
+### Generated layouts
+
+AC: Actual can lay out a match on any map by itself, from the map's own named places. Choose
+"Generated" under Battlefield on the setup screen (or `-acrLayout generated`), with the whole map,
+half of it or a flashpoint (`-acrSize`). A world without any `ACR_Base` always plays a generated
+layout: a scenario for a new map then needs only the game mode, the managers, the faction settings
+and one player spawn point per side (see `Worlds/ACR_Kolguyev` for a complete example).
+
+The rules follow the hand-built Everon layout. Cities, towns, villages and settlements with houses
+become 1 RP bases (capture radius 90, 75, 60 and 45 m); military sites 3 RP (60 m); harbours,
+factories, power plants, sawmills, quarries and mines 2 RP (50 m); the airport 3 RP (80 m); and about
+one landmark for every ten bases a hidden 1 RP base (40 m). Bases sit on their map place, moved onto
+dry ground if it is in water; circles that would overlap shrink, down to 35 m. The HQs are two
+military sites (or the airport) far apart, or the two ends of a flashpoint: 2 RP, a 6-man garrison,
+a 70 m circle where there is room. Each side starts with the world's own `ACR_StartingUnit` objects,
+or two rifle squads, a weapons team, a truck and a car, and its player spawn point moves to its HQ.
+Hand-built helipads are not used: both sides get the off-map support helicopters. The setup
+screen's "Layout seed" row rolls a new seed; the log lists the layout (`[ACR] GEN BASE`).
+
 ### ACR_Skirmish
 
 This optional object defines a smaller match area on a large map: half the map, or a small fight around
@@ -406,6 +425,7 @@ name under `gameProperties.missionHeader`.
 | `m_sAcrPricing` | `-acrPricing` |
 | `m_sAcrAI` | `-acrAI` |
 | `m_iAcrUnitCap` | `-acrUnitCap` |
+| `m_iAcrSeed` | `-acrSeed` |
 | `m_iAcrSoldierCap` | `-acrSoldierCap` |
 | `m_iAcrStartRP` | `-acrStartRP` |
 | `m_fAcrIncome` | `-acrIncome` |
@@ -502,7 +522,8 @@ to set an option directly; most hosts can just use the menu.
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; fixed stock: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (fixed stock: double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
 | `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Worlds without one play in full |
-| `-acrLayout <name>` | Play this `ACR_Skirmish` layout (spaces may be written as `_`); overrides `-acrSize` |
+| `-acrLayout <name>` | Play this `ACR_Skirmish` layout (spaces may be written as `_`); overrides `-acrSize`. `-acrLayout generated` builds a layout from the map instead (see Generated layouts) |
+| `-acrSeed N` | Seed of a generated layout: the same seed, size and map give the same layout. Unset or 0 = a new random layout each match |
 | `-acrPricing stepped` / `stock` | Overrides every side's `m_ePricing` (stepped prices or fixed stock) |
 | `-acrStartRP N` | Starting RP for every side (overrides `m_iStartingRP`) |
 | `-acrIncome X` | Income multiplier (default 1) |
