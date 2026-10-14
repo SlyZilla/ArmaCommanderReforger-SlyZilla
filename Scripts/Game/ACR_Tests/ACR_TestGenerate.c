@@ -99,7 +99,8 @@ class ACR_TestGenerate
   bool flashOk = ACR_Generator.Plan(ACR_Generator.s_iSeed, ACR_ESkirmishSize.FLASHPOINT, flash, flashHQs);
   float spread = 0;
   foreach (ACR_GenSite f1 : flash) foreach (ACR_GenSite f2 : flash) spread = Math.Max(spread, vector.DistanceXZ(f1.m_vPos, f2.m_vPos));
-  ACR_TestRegress.Check("flashpoint size", flashOk && flash.Count() >= 5 && flash.Count() <= 7 && spread <= 5000 && flashHQs.Count() == 2, string.Format("%1 sites, %2 m across", flash.Count(), (int)spread));
+  bool hiddenHQ = (halfHQs.Count() == 2 && (halfHQs[0].m_sKind == "landmark" || halfHQs[1].m_sKind == "landmark")) || (flashHQs.Count() == 2 && (flashHQs[0].m_sKind == "landmark" || flashHQs[1].m_sKind == "landmark"));
+  ACR_TestRegress.Check("flashpoint size", flashOk && flash.Count() >= 5 && flash.Count() <= 7 && spread <= 5000 && flashHQs.Count() == 2 && !hiddenHQ, string.Format("%1 sites, %2 m across, hidden HQ %3", flash.Count(), (int)spread, hiddenHQ));
   foreach (ACR_GenSite fs : flash) PrintFormat("[ACR] GEN FLASHPOINT %1 | %2 | %3 %4", fs.m_sName, fs.m_sKind, (int)fs.m_vPos[0], (int)fs.m_vPos[2]);
   if (flashHQs.Count() == 2) PrintFormat("[ACR] GEN FLASHPOINT HQs %1 / %2", flashHQs[0].m_sName, flashHQs[1].m_sName);
   foreach (ACR_GenSite hs : half) PrintFormat("[ACR] GEN HALF %1 | %2 | %3 %4", hs.m_sName, hs.m_sKind, (int)hs.m_vPos[0], (int)hs.m_vPos[2]);

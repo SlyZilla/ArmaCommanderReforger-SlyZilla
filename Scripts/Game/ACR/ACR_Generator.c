@@ -450,6 +450,12 @@ class ACR_Generator
   array<ACR_GenSite> candidates = {};
   if (!flashpoint)
    foreach (ACR_GenSite site : pool) if (site.m_sKind == "military" || site.m_sKind == "airport") candidates.Insert(site);
+  // Never a hidden landmark.
+  if (candidates.Count() < 2)
+  {
+   candidates.Clear();
+   foreach (ACR_GenSite open : pool) if (open.m_sKind != "landmark") candidates.Insert(open);
+  }
   if (candidates.Count() < 2) candidates.Copy(pool);
   if (flashpoint) { Farthest(candidates, west, east); return; }
   // The three farthest pairs.
