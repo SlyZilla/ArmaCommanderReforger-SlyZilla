@@ -508,12 +508,13 @@ class ACR_AICommander : Managed
   bool counterDue = m_CounterTarget && m_CounterTarget.m_sOwner != m_sFaction && GetGame().GetWorld().GetWorldTime() < m_fCounterUntil && !IsAttacking(m_CounterTarget);
   array<ACR_Squad> free = {};
   MySquads(free, true);
-  // Keep a reserve at home once the force is big enough.
+  // Keep a reserve once the force is big enough, at a secure base behind the front (not the
+  // HQ unless nothing else fits: Jacob 14 Oct, reserves at the HQ took too long to respond).
   array<ACR_Squad> all = {};
   MySquads(all, false);
   if (all.Count() >= 5 && free.Count() >= 2 && Pressure() >= 0.9)
   {
-   ACR_Base home = HomeBase();
+   ACR_Base home = ReserveBase();
    if (home)
    {
     SortByDistance(free, home.GetOrigin());
@@ -789,6 +790,63 @@ class ACR_AICommander : Managed
   PrintFormat("[ACR] AI %1: forced attack (debug menu)", m_sFaction);
   LaunchAttack(attack, from, strength, strength, 1);
   return string.Format("%1 AI attacking %2 with %3 squad(s)", m_sFaction, target.m_sName, free.Count());
+ }
+
+ // Where the reserve waits: an own base that is safe (not contested, no known threat, at
+ // least RESERVE_MIN_FRONT from every enemy base we know of), bigger first (value, radius),
+ // not much farther back than RESERVE_IDEAL_FRONT, and not an HQ (IsHQ). The current
+ // reserve base gets a bonus so the reserve doesn't shuttle between two near-equal bases.
+ // Falls back to HomeBase (the HQ) when nothing else qualifies.
+ static const float RESERVE_MIN_FRONT = 600;
+ static const float RESERVE_IDEAL_FRONT = 1200;
+ protected ACR_Base m_ReserveBase;
+
+ bool ReserveFits(ACR_Base base)
+ {
+  if (!base || base.m_sOwner != m_sFaction || IsHQ(base) || base.m_bContested || ThreatTo(base) > 0) return false;
+  return FrontDistance(base) >= RESERVE_MIN_FRONT;
+ }
+
+ // Distance to the nearest enemy-held base we know of (any other base if none is known).
+ float FrontDistance(ACR_Base base)
+ {
+  float enemy = float.MAX;
+  float other = float.MAX;
+  foreach (ACR_Base candidate : ACR_Base.s_All)
+  {
+   if (candidate.m_sOwner == m_sFaction || !Visible(candidate)) continue;
+   float d = vector.DistanceXZ(base.GetOrigin(), candidate.GetOrigin());
+   if (!candidate.m_sOwner.IsEmpty()) enemy = Math.Min(enemy, d);
+   other = Math.Min(other, d);
+  }
+  if (enemy < float.MAX) return enemy;
+  return other;
+ }
+
+ // An HQ = a base with one of this side's player spawn points (most bases can deploy bought
+ // units, so m_bAllowSpawn doesn't tell; the skirmish layout moves the spawn points to its HQs).
+ bool IsHQ(ACR_Base base)
+ {
+  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
+   if (point && point.GetFactionKey() == m_sFaction && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
+  return false;
+ }
+
+ ACR_Base ReserveBase()
+ {
+  ACR_Base best;
+  float bestScore = -float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!ReserveFits(base)) continue;
+   float front = FrontDistance(base);
+   float score = base.m_iValue * 150 + base.m_fRadius - Math.Max(0, front - RESERVE_IDEAL_FRONT) * 0.25;
+   if (base == m_ReserveBase) score += 100;
+   if (score > bestScore) { bestScore = score; best = base; }
+  }
+  if (!best) best = HomeBase();
+  m_ReserveBase = best;
+  return best;
  }
 
  // The own spawn base furthest from the fighting.

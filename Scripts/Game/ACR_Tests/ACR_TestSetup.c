@@ -5,7 +5,7 @@
 // Start applies them (threat high reaches the game, starting units spawn).
 class ACR_TestSetup
 {
- static const int CHECKS = 15;
+ static const int CHECKS = 16;
  protected static int s_iStartedAt = -1;
 
  static bool Wanted() { return System.IsCLIParam("acrSetupTest"); }
@@ -80,6 +80,17 @@ class ACR_TestSetup
    array<ref SCR_BasePlayerLoadout> loadouts = {};
    int officers = GetGame().GetLoadoutManager().GetPlayerLoadoutsByFaction(fia, loadouts);
    ACR_TestRegress.Check("setup: FIA has a command unit loadout", officers > 0, string.Format("%1 loadouts", officers));
+   // AI reserve (Jacob 14 Oct): give US every neutral non-HQ base for a moment; the reserve must
+   // pick a secure one behind the front, not the HQ.
+   array<ACR_Base> lent = {};
+   foreach (ACR_Base neutral : ACR_Base.s_All)
+    if (neutral.m_sOwner.IsEmpty()) { neutral.m_sOwner = "US"; lent.Insert(neutral); }
+   ACR_AICommander reserveAI = new ACR_AICommander(manager, "US");
+   ACR_Base reserveAt = reserveAI.ReserveBase();
+   string reserveText = "none";
+   if (reserveAt) reserveText = string.Format("%1 (HQ %2, value %3, radius %4, %5 m from the front)", reserveAt.m_sName, reserveAI.IsHQ(reserveAt), reserveAt.m_iValue, reserveAt.m_fRadius, Math.Round(reserveAI.FrontDistance(reserveAt)));
+   ACR_TestRegress.Check("setup: the AI reserve waits at a secure non-HQ base behind the front", reserveAt && !reserveAI.IsHQ(reserveAt) && reserveAI.ReserveFits(reserveAt), string.Format("%1 of %2 lent bases", reserveText, lent.Count()));
+   foreach (ACR_Base back : lent) back.m_sOwner = "";
    ACR_TestRegress.Complete("setup", CHECKS);
   }
  }
@@ -105,5 +116,26 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup UI: the host spawns after Start", pc && pc.GetControlledEntity() != null, "");
    ACR_TestRegress.Complete("setupui", 4);
   }
+ }
+
+ // -acrReserveTest 1 (server, Everon, ~1 min): where the AI keeps its reserve on a big map.
+ // US is given every neutral base north of the split line (z > 6650); the reserve must sit at a
+ // secure non-HQ base, not the Airbase HQ. Logs the five best candidates.
+ static bool ReserveWanted() { return System.IsCLIParam("acrReserveTest"); }
+ static void RunReserve(int second)
+ {
+  if (second != 12) return;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  int lent;
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_sOwner.IsEmpty() && base.GetOrigin()[2] > 6650) { base.m_sOwner = "US"; lent++; }
+  ACR_AICommander ai = new ACR_AICommander(manager, "US");
+  ACR_Base at = ai.ReserveBase();
+  foreach (ACR_Base candidate : ACR_Base.s_All)
+   if (ai.ReserveFits(candidate)) PrintFormat("[ACR] RESERVE candidate %1 value %2 radius %3 front %4 m", candidate.m_sName, candidate.m_iValue, candidate.m_fRadius, Math.Round(ai.FrontDistance(candidate)));
+  string text = "none";
+  if (at) text = string.Format("%1 (HQ %2, value %3, radius %4, %5 m from the front)", at.m_sName, ai.IsHQ(at), at.m_iValue, at.m_fRadius, Math.Round(ai.FrontDistance(at)));
+  ACR_TestRegress.Check("reserve: Everon reserve at a secure non-HQ base", at && !ai.IsHQ(at) && ai.ReserveFits(at), string.Format("%1; %2 bases lent", text, lent));
+  ACR_TestRegress.Complete("reserve", 1);
  }
 }

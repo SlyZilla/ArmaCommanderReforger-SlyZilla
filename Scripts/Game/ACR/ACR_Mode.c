@@ -118,6 +118,7 @@ class ACR_Mode : GenericEntity
   // -acrSetupTest: the setup phase (ACR_TestSetup).
   if (ACR_TestSetup.Wanted()) ACR_TestSetup.Run(m_iSeconds);
   if (ACR_TestSetup.UiWanted()) ACR_TestSetup.RunUi(m_iSeconds);
+  if (ACR_TestSetup.ReserveWanted()) ACR_TestSetup.RunReserve(m_iSeconds);
   if (System.IsCLIParam("acrEveronSurveyTest")) ACR_TestPlaces.SurveyEveron(m_iSeconds);
   if (System.IsCLIParam("acrEveronPadsTest")) ACR_TestPads.SurveyEveron(m_iSeconds);
   // -acrSkirmishTest / -acrSkirmishSouthTest: skirmish layouts on Everon (ACR_TestSkirmish).

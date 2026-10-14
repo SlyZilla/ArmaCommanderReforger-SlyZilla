@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 74; // 69 + ACR_TestOptions.CHECKS (5)
+ static const int EXPECTED = 75; // 69 + ACR_TestOptions.CHECKS (5) + reserve base
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -98,6 +98,22 @@ class ACR_TestRegress
   if (tick == 4)
   {
    ACR_TestOptions.Run();
+   // AI reserve (Jacob 14 Oct): a secure non-HQ base behind the front when one exists, else the HQ.
+   array<string> reserveSides = {"US", "USSR"};
+   foreach (string reserveSide : reserveSides)
+   {
+    ACR_AICommander reserveAI = new ACR_AICommander(manager, reserveSide);
+    ACR_Base reserveAt = reserveAI.ReserveBase();
+    int reserveFitCount;
+    string reserveFitting;
+    foreach (ACR_Base candidate : ACR_Base.s_All)
+     if (reserveAI.ReserveFits(candidate)) { reserveFitCount++; reserveFitting += candidate.m_sName + " "; }
+    bool reserveOk = reserveAt != null && (reserveFitCount == 0 || (!reserveAI.IsHQ(reserveAt) && reserveAI.ReserveFits(reserveAt)));
+    string reserveText = "none";
+    if (reserveAt) reserveText = string.Format("%1 (HQ %2, %3 m from the front)", reserveAt.m_sName, reserveAI.IsHQ(reserveAt), Math.Round(reserveAI.FrontDistance(reserveAt)));
+    if (reserveSide == "US") ACR_TestRegress.Check("AI reserve waits at a secure base behind the front, not the HQ when one fits", reserveOk, string.Format("US: %1; fitting: %2", reserveText, reserveFitting));
+    else PrintFormat("[ACR] REGRESS info USSR reserve: %1; fitting: %2", reserveText, reserveFitting);
+   }
    Check("BBB rejects both negative and out-of-range threat sectors", !BBB_Combat.ValidSector(-1) && !BBB_Combat.ValidSector(SCR_AISectorThreatFilter.SECTOR_COUNT) && !BBB_Combat.ValidSector(100000) && BBB_Combat.ValidSector(0), "native lookup bounds");
    bool standardGunship;
    ACR_FactionData usOffers = manager.m_Bases.GetFaction("US");
