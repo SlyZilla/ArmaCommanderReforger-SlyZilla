@@ -2068,6 +2068,8 @@ class ACR_Squad : Managed
   GetGame().GetCallqueue().Remove(LinkSquad);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);
   GetGame().GetCallqueue().Remove(EnsureGetOut);
+  GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
+  GetGame().GetCallqueue().Remove(WakeCrew);
   if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
   SCR_GroupsManagerComponent manager = SCR_GroupsManagerComponent.GetInstance();
   if (manager && m_CommandGroup) manager.DeleteAndUnregisterGroup(m_CommandGroup);
@@ -2081,5 +2083,7 @@ class ACR_Squad : Managed
   GetGame().GetCallqueue().Remove(LinkSquad);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);
   GetGame().GetCallqueue().Remove(EnsureGetOut);
+  GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
+  GetGame().GetCallqueue().Remove(WakeCrew);
  }
 }
