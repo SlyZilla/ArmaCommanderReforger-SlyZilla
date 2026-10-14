@@ -162,8 +162,14 @@ class BBB_FireManeuver
   for (int j = s_Jobs.Count() - 1; j >= 0; j--)
   {
    SCR_AIGroup existing = s_Jobs.GetKey(j);
-   if (!existing) { Stop(); break; }
-   if (!existing || !groups.Contains(existing) || !s_bOn || !GroupAllowed(existing)) End(existing, now);
+   if (!existing)
+   {
+    BBB_FireTeamJob deadJob = s_Jobs.GetElement(j);
+    if (deadJob) { StopMoves(deadJob); ClearMembers(deadJob); }
+    s_Jobs.RemoveElement(j);
+    continue;
+   }
+   if (!groups.Contains(existing) || !s_bOn || !GroupAllowed(existing)) End(existing, now);
   }
   for (int c = s_Next.Count() - 1; c >= 0; c--)
    if (!s_Next.GetKey(c) || !groups.Contains(s_Next.GetKey(c))) s_Next.Remove(s_Next.GetKey(c));

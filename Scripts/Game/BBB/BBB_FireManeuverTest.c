@@ -11,7 +11,7 @@ class BBB_FireManeuverTest : BBB_AimTest
  protected float m_fEnd, m_fHook, m_fLog;
  protected int m_iFMRound, m_iFinished, m_iRequests, m_iArrivals, m_iSwaps;
  protected int m_iPass, m_iFail;
- protected bool m_bSaved, m_bGuards, m_bProbe;
+ protected bool m_bSaved, m_bGuards, m_bProbe, m_bDeletion;
  protected ref map<IEntity, vector> m_Positions = new map<IEntity, vector>();
  protected float m_fMoverTravel, m_fCoverTravel;
  protected int m_iCoverFire;
@@ -138,6 +138,23 @@ class BBB_FireManeuverTest : BBB_AimTest
    }
    ProbeCover(m_Lane.m_A.m_Group);
    ProbeCover(m_Lane.m_B.m_Group);
+  }
+  // Delete a second tracked group while a real native combat job is active.
+  // Retain the job value across entity deletion to exercise the decayed key.
+  BBB_FireTeamJob activeJob = BBB_FireManeuver.Job(m_Lane.m_A.m_Group);
+  if (!m_bDeletion && activeJob)
+  {
+   m_bDeletion = true;
+   SCR_AIGroup doomed = SpawnSquad(false, m_Lane.m_vFrom, m_Lane.m_vDir, m_Lane, 0);
+   ref BBB_FireTeamJob deadJob = new BBB_FireTeamJob();
+   deadJob.m_Group = doomed;
+   float deadline = Now() + 120;
+   BBB_FireManeuver.SeedDeletionCheck(doomed, deadJob, m_Lane.m_A.m_Group, deadline);
+   if (doomed) SCR_EntityHelper.DeleteEntityAndChildren(doomed);
+   CheckFM("deleted group key decays", !doomed && !deadJob.m_Group);
+   BBB_FireManeuver.Tick();
+   CheckFM("deleted job pruned while native survivor stays active", BBB_FireManeuver.Job(m_Lane.m_A.m_Group) == activeJob && BBB_FireManeuver.DeletionJobCount() == 1);
+   CheckFM("unrelated group cooldown survives deletion", BBB_FireManeuver.DeletionDeadline(m_Lane.m_A.m_Group) == deadline);
   }
   // Keep the controlled sentries visible; their native aiming and firing
   // remain active. This is a drill fixture, not a claim about survival benefit.
@@ -286,14 +303,26 @@ class BBB_FireManeuverTest : BBB_AimTest
   if (m_Lane) Clear(m_Lane);
   BBB_FireManeuver.s_bOn = m_bSaved;
   string verdict = "PASS";
-  int expected = 15;
+  int expected = 18;
   int rounds = 4;
-  if (m_bProbe) { expected = 7; rounds = 1; }
+  if (m_bProbe) { expected = 10; rounds = 1; }
   if (!reason.IsEmpty() || m_iFinished != rounds || m_iFail > 0 || m_iPass != expected) verdict = "FAIL";
   PrintFormat("[BBB] FIRETEST results shots=%1 losses=%2 (two pairs are coverage, not a survival benefit claim)", m_Shots, m_Losses);
   PrintFormat("[ACR] VERDICT %1 test=bbbfiremaneuver passed=%2 failed=%3 expected=%4 rounds=%5 reason=%6", verdict, m_iPass, m_iFail, expected, m_iFinished, reason);
   Print("[ACR] TEST COMPLETE");
  }
+}
+
+// Test-only access to protected registries; no production seeding API.
+modded class BBB_FireManeuver
+{
+ static void SeedDeletionCheck(SCR_AIGroup doomed, BBB_FireTeamJob job, SCR_AIGroup survivor, float deadline)
+ {
+  s_Jobs.Set(doomed, job);
+  s_Next.Set(survivor, deadline);
+ }
+ static int DeletionJobCount() { return s_Jobs.Count(); }
+ static float DeletionDeadline(SCR_AIGroup group) { return s_Next.Get(group); }
 }
 
 modded class SCR_BaseGameMode
