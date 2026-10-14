@@ -31,8 +31,55 @@ modded class SCR_LoadoutManager
   // no officer). Same list on server and clients: both load the same mods.
   ACR_AddOfficer(officers, "RHS_USAF", "USMC Officer", "{0B0F9BA9E9A6E118}Prefabs/Characters/Factions/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Character_RHS_USAF_USMC_SL.et");
   ACR_AddOfficer(officers, "RHS_AFRF", "MSV Officer", "{963BD8F3900F27B4}Prefabs/Characters/Factions/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Character_RHS_RF_MSV_VKPO_S_SL.et");
+  // Any other faction in the world (FIA, other faction mods): its own leader from its catalog,
+  // so a side picked on the setup screen always has a command unit.
+  ACR_AddCatalogOfficers(officers);
   m_aPlayerLoadouts = officers;
   PrintFormat("[ACR] Player loadouts: officers only (%1)", officers.Count());
+ }
+
+ protected void ACR_AddCatalogOfficers(array<ref SCR_BasePlayerLoadout> officers)
+ {
+  FactionManager manager = GetGame().GetFactionManager();
+  if (!manager) return;
+  array<Faction> all = {};
+  manager.GetFactionsList(all);
+  foreach (Faction baseFaction : all)
+  {
+   SCR_Faction faction = SCR_Faction.Cast(baseFaction);
+   if (!faction) continue;
+   string key = faction.GetFactionKey();
+   if (key == "CIV" || key.IsEmpty()) continue;
+   bool has;
+   foreach (SCR_BasePlayerLoadout existing : officers)
+   {
+    SCR_FactionPlayerLoadout factionLoadout = SCR_FactionPlayerLoadout.Cast(existing);
+    if (factionLoadout && factionLoadout.m_sAffiliatedFaction == key) has = true;
+   }
+   if (has) continue;
+   SCR_EntityCatalog catalog = faction.GetFactionEntityCatalogOfType(EEntityCatalogType.CHARACTER, false);
+   if (!catalog) continue;
+   array<SCR_EntityCatalogEntry> entries = {};
+   catalog.GetEntityList(entries);
+   // Same pick on server and clients: by name, officer > squad leader > leader > first.
+   array<string> prefabs = {};
+   foreach (SCR_EntityCatalogEntry entry : entries) prefabs.Insert(entry.GetPrefab());
+   prefabs.Sort();
+   string best;
+   int bestRank = 99;
+   foreach (string prefab : prefabs)
+   {
+    string leaf = FilePath.StripPath(prefab);
+    int rank = 4;
+    if (leaf.Contains("Officer")) rank = 0;
+    else if (leaf.Contains("_SL")) rank = 1;
+    else if (leaf.Contains("Leader")) rank = 2;
+    if (rank < bestRank) { bestRank = rank; best = prefab; }
+   }
+   if (best.IsEmpty()) continue;
+   ACR_AddOfficer(officers, key, key + " Officer", best);
+   PrintFormat("[ACR] Player loadout for %1: %2", key, FilePath.StripPath(best));
+  }
  }
 
  protected void ACR_AddOfficer(array<ref SCR_BasePlayerLoadout> officers, string factionKey, string name, ResourceName prefab)

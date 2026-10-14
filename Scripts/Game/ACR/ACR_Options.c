@@ -90,7 +90,7 @@ class ACR_MissionHeader : SCR_MissionHeader
  string m_sAcrLayout;
  [Attribute("", UIWidgets.EditBox, "Skirmish size: full, half or flashpoint (-acrSize)")]
  string m_sAcrSize;
- [Attribute("", UIWidgets.EditBox, "Faction pair: vanilla, ru_us, ru_ua or us_ua (-acrFactions)")]
+ [Attribute("", UIWidgets.EditBox, "Faction pair: vanilla, ru_us, ru_ua, us_ua or two faction keys WEST,EAST (-acrFactions)")]
  string m_sAcrFactions;
  [Attribute("", UIWidgets.EditBox, "Put every player on this faction key, or any (-acrPlayers)")]
  string m_sAcrPlayers;

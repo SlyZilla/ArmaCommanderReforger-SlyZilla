@@ -55,6 +55,7 @@ class ACR_Setup
  {
   if (s_bStarted) return;
   s_bStarted = true;
+  ACR_FactionSelection.Apply(); // the chosen pair becomes playable; the world's US/USSR owners map to it
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager) manager.m_Bases.ForgetFactions(); // buy lists and RP are built with the chosen options
   PrintFormat("[ACR] SETUP started by %1", who);
@@ -109,8 +110,8 @@ class ACR_Setup
 
  protected static string Info(int left)
  {
-  string info = string.Format("Factions: %1 v %2 (set when the server starts).", ACR_FactionSelection.DisplayName(ACR_FactionSelection.West()), ACR_FactionSelection.DisplayName(ACR_FactionSelection.East()));
-  if (left >= 0) info += string.Format(" Starts by itself in %1 s.", left);
+  string info = "";
+  if (left >= 0) info = string.Format("Starts by itself in %1 s.", left);
   return info;
  }
 
@@ -119,7 +120,7 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"layout", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared"};
+  array<string> keys = {"west", "east", "layout", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared"};
   foreach (string key : keys)
   {
    if (key == "layout" && ACR_Skirmish.s_All.IsEmpty()) continue;
@@ -130,6 +131,8 @@ class ACR_Setup
 
  static string Label(string key)
  {
+  if (key == "west") return "Blue side";
+  if (key == "east") return "Red side";
   if (key == "layout") return "Battlefield";
   if (key == "threat") return "Threat";
   if (key == "pricing") return "Prices";
@@ -158,13 +161,20 @@ class ACR_Setup
    if (flash) values.Insert("size:flashpoint");
    foreach (ACR_Skirmish named : ACR_Skirmish.s_All) values.Insert("name:" + named.m_sName);
   }
+  else if (key == "west" || key == "east")
+  {
+   // Every playable faction except the other side's.
+   string other = ACR_FactionSelection.East();
+   if (key == "east") other = ACR_FactionSelection.West();
+   array<string> keys = {};
+   ACR_FactionSelection.Candidates(keys);
+   foreach (string candidate : keys) if (candidate != other) values.Insert(candidate);
+  }
   else if (key == "threat") values = {"low", "normal", "high"};
   else if (key == "pricing") values = {"stepped", "stock"};
   else if (key == "ai")
   {
-   values = {"both", "none"};
-   values.Insert(ACR_FactionSelection.West());
-   values.Insert(ACR_FactionSelection.East());
+   values = {"both", "none", "west", "east"};
   }
   else if (key == "unitcap") values = {"", "4", "6", "8", "12", "16", "24"};
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
@@ -188,6 +198,8 @@ class ACR_Setup
  static string Current(string key)
  {
   string value;
+  if (key == "west") return ACR_FactionSelection.West();
+  if (key == "east") return ACR_FactionSelection.East();
   if (key == "layout")
   {
    if (ACR_Options.Get("acrLayout", value) && value != "") return "name:" + value;
@@ -219,10 +231,14 @@ class ACR_Setup
   }
   if (key == "pricing" && value == "stock") return "fixed stock";
   if (key == "pricing") return "stepped";
+  if (key == "west" || key == "east") return ACR_FactionSelection.DisplayName(value);
   if (key == "ai")
   {
    if (value == "both" || value == "none") return value;
-   return ACR_FactionSelection.DisplayName(value) + " only";
+   string side = value;
+   if (value == "west") side = ACR_FactionSelection.West();
+   else if (value == "east") side = ACR_FactionSelection.East();
+   return ACR_FactionSelection.DisplayName(side) + " only";
   }
   if (key == "income") return "x" + value;
   if (key == "shared")
@@ -257,6 +273,8 @@ class ACR_Setup
 
  static void SetValue(string key, string value)
  {
+  if (key == "west") { ACR_Options.Set("acrFactions", value + "," + ACR_FactionSelection.East()); return; }
+  if (key == "east") { ACR_Options.Set("acrFactions", ACR_FactionSelection.West() + "," + value); return; }
   if (key == "layout")
   {
    if (value == "full") { ACR_Options.Set("acrLayout", ""); ACR_Options.Set("acrSize", "full"); }

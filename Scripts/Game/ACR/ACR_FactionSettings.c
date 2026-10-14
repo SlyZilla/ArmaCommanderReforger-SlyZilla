@@ -166,6 +166,41 @@ class ACR_FactionSettings : GenericEntity
    if (settings.m_sFaction == factionKey) return settings;
   return null;
  }
+
+ // A selected faction the world has no settings entity for (any faction mod, or RHS on Everon)
+ // gets one copied from the authored side it replaces (US for the west side, USSR for the east):
+ // RP, AI commander, caps, pricing and supports. Prefab-specific lists (hand-picked buys,
+ // exclusions, garrisons, mappings, support units) aren't copied; its own catalog fills them.
+ static void EnsureFor(string factionKey, string templateKey)
+ {
+  if (factionKey.IsEmpty() || Find(factionKey)) return;
+  ACR_FactionSettings template = Find(templateKey);
+  EntitySpawnParams parameters = new EntitySpawnParams();
+  parameters.TransformMode = ETransformMode.WORLD;
+  if (template) parameters.Transform[3] = template.GetOrigin();
+  ACR_FactionSettings made = ACR_FactionSettings.Cast(GetGame().SpawnEntity(ACR_FactionSettings, GetGame().GetWorld(), parameters));
+  if (!made) return;
+  if (!s_All.Contains(made)) s_All.Insert(made);
+  made.m_sFaction = factionKey;
+  made.m_iStartingRP = 100;
+  made.m_bAICommander = true;
+  made.m_iAIUnitCap = 8;
+  made.m_iAIAttacks = 1;
+  made.m_ePricing = ACR_EPricing.STEPPED;
+  made.m_bAutoFill = true;
+  made.m_bSupports = true;
+  if (template)
+  {
+   made.m_iStartingRP = template.m_iStartingRP;
+   made.m_bAICommander = template.m_bAICommander;
+   made.m_iAIUnitCap = template.m_iAIUnitCap;
+   made.m_iAIAttacks = template.m_iAIAttacks;
+   made.m_ePricing = template.m_ePricing;
+   made.m_bSupports = template.m_bSupports;
+   made.m_aSupports = template.m_aSupports;
+  }
+  PrintFormat("[ACR] FACTION settings for %1 copied from %2 (none in the world)", factionKey, templateKey);
+ }
 }
 
 // Builds the runtime buy list and garrison pool for a faction.

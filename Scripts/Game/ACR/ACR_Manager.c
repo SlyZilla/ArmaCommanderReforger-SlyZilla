@@ -174,6 +174,7 @@ class ACR_Manager : Managed
   ACR_Report.Reset();
   ACR_Setup.Reset();
   ACR_SetupClient.Reset();
+  ACR_FactionSelection.Reset();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
@@ -267,8 +268,15 @@ class ACR_Manager : Managed
   string ai;
   bool setAI = ACR_Options.Get("acrAI", ai);
   ai.ToLower();
+  // "west"/"east" (the setup screen) = whichever faction plays that side.
+  if (ai == "west") ai = ACR_FactionSelection.West();
+  else if (ai == "east") ai = ACR_FactionSelection.East();
+  ai.ToLower();
   string unitCap;
   bool setCap = ACR_Options.Get("acrUnitCap", unitCap);
+  // Every selected side needs a settings entity (AI commander, RP); copy the authored side's.
+  ACR_FactionSettings.EnsureFor(ACR_FactionSelection.West(), "US");
+  ACR_FactionSettings.EnsureFor(ACR_FactionSelection.East(), "USSR");
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
   {
    string key = settings.m_sFaction;

@@ -42,6 +42,8 @@ SCR_FactionManager ACR_Factions : "{A242612865F2A48E}Prefabs/MP/Managers/Faction
   }
   SCR_Faction "{AC230926A00102A2}" : "{627A8CDE681D223D}Configs/Factions/RHS_RF_MSV.conf" {
   }
+  SCR_Faction "{AC230926A00102A3}" : "{8053DB656DD18B14}Configs/Factions/FIA.conf" {
+  }
  }
  m_bCanChangeFactionsPlayable 1
  coords 6400 0 6400

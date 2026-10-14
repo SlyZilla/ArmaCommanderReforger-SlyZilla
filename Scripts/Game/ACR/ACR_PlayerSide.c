@@ -135,9 +135,96 @@ class ACR_FactionSelection
   return s_bUAAvailable;
  }
 
- static string West() { Apply(); return s_sWest; }
- static string East() { Apply(); return s_sEast; }
- static bool IsSelected(string key) { Apply(); return key == s_sWest || key == s_sEast; }
+ // Before the setup phase ends (ACR_Setup) the pair isn't locked: West/East show the current
+ // choice without applying it.
+ static string West() { Apply(); if (!s_bApplied) { string w, e; Choice(w, e); return w; } return s_sWest; }
+ static string East() { Apply(); if (!s_bApplied) { string w, e; Choice(w, e); return e; } return s_sEast; }
+ static bool IsSelected(string key) { return key == West() || key == East(); }
+ static bool Applied() { return s_bApplied; }
+ static void Reset()
+ {
+  s_bApplied = false;
+  s_bWorldMapped = false;
+  s_sWest = "US";
+  s_sEast = "USSR";
+ }
+
+ // Sides that can be played: every faction in the world's faction manager (the world lists the
+ // factions it can use, vanilla or from mods) whose catalogs have soldiers and groups. Any
+ // faction mod works once a world's faction manager lists it; RHS/UA have extra fitting
+ // (StandardPath, paint, officers, UA kit) on top of this.
+ static void Candidates(notnull array<string> keys)
+ {
+  keys.Clear();
+  FactionManager manager = GetGame().GetFactionManager();
+  if (!manager) return;
+  array<Faction> all = {};
+  manager.GetFactionsList(all);
+  foreach (Faction baseFaction : all)
+  {
+   SCR_Faction faction = SCR_Faction.Cast(baseFaction);
+   if (!faction) continue;
+   string key = faction.GetFactionKey();
+   if (key == "CIV" || key.IsEmpty()) continue;
+   if (!HasEntries(faction, EEntityCatalogType.CHARACTER) || !HasEntries(faction, EEntityCatalogType.GROUP)) continue;
+   keys.Insert(key);
+  }
+ }
+
+ protected static bool HasEntries(SCR_Faction faction, EEntityCatalogType type)
+ {
+  SCR_EntityCatalog catalog = faction.GetFactionEntityCatalogOfType(type, false);
+  if (!catalog) return false;
+  array<SCR_EntityCatalogEntry> entries = {};
+  catalog.GetEntityList(entries);
+  return !entries.IsEmpty();
+ }
+
+ // A faction key as the world spells it, matched without case; "" if it isn't a candidate.
+ static string Key(string wanted)
+ {
+  wanted.Trim();
+  wanted.ToLower();
+  array<string> keys = {};
+  Candidates(keys);
+  foreach (string key : keys)
+  {
+   string lower = key;
+   lower.ToLower();
+   if (lower == wanted) return key;
+  }
+  return "";
+ }
+
+ // The chosen pair from -acrFactions / the header / the setup screen: a legacy pair name
+ // (vanilla, ru_us, ru_ua, us_ua) or two faction keys "WEST,EAST". Falls back to US/USSR.
+ static string Choice(out string west, out string east)
+ {
+  string pair = "vanilla";
+  string chosen;
+  if (ACR_Options.Get("acrFactions", chosen) && chosen != "") pair = chosen;
+  pair.ToLower();
+  west = "US";
+  east = "USSR";
+  if (pair == "ru_us") { west = "RHS_USAF"; east = "RHS_AFRF"; }
+  else if (pair == "ru_ua") { west = "US"; east = "RHS_AFRF"; }
+  else if (pair == "us_ua") { west = "RHS_USAF"; east = "US"; }
+  else if (pair != "vanilla")
+  {
+   string spaced = pair;
+   spaced.Replace(":", ",");
+   array<string> parts = {};
+   spaced.Split(",", parts, true);
+   if (parts.Count() == 2)
+   {
+    west = Key(parts[0]);
+    east = Key(parts[1]);
+   }
+  }
+  if ((pair == "ru_ua" || pair == "us_ua") && !UkraineModLoaded()) { west = "US"; east = "USSR"; }
+  if (west.IsEmpty() || east.IsEmpty() || west == east || !HasFaction(west) || !HasFaction(east)) { west = "US"; east = "USSR"; }
+  return pair;
+ }
  static string DisplayName(string key)
  {
   Apply();
@@ -160,29 +247,13 @@ class ACR_FactionSelection
   if (!Replication.IsServer()) return;
   FactionManager manager = GetGame().GetFactionManager();
   if (!manager) return;
-  string pair = "vanilla";
+  // Setup phase: the host may still change the pair; it is applied at Start.
+  if (!s_bApplied && !ACR_Setup.Started()) return;
   if (!s_bApplied)
   {
    s_bApplied = true;
-   string chosen;
-   if (ACR_Options.Get("acrFactions", chosen) && chosen != "") pair = chosen;
-   pair.ToLower();
-   if (pair == "ru_us") { s_sWest = "RHS_USAF"; s_sEast = "RHS_AFRF"; }
-   else if (pair == "ru_ua") { s_sWest = "US"; s_sEast = "RHS_AFRF"; }
-   else if (pair == "us_ua") { s_sWest = "RHS_USAF"; s_sEast = "US"; }
-   if ((pair == "ru_ua" || pair == "us_ua") && !UkraineModLoaded())
-   {
-    PrintFormat("[ACR] Faction pair %1 unavailable: Ukraine Armed Forces RHS not loaded", pair);
-    s_sWest = "US";
-    s_sEast = "USSR";
-   }
-   // Optional mods can be absent: keep the original playable sides in that case.
-   if (!HasFaction(s_sWest) || !HasFaction(s_sEast))
-   {
-    PrintFormat("[ACR] Faction pair %1 unavailable; using vanilla US / USSR", pair);
-    s_sWest = "US";
-    s_sEast = "USSR";
-   }
+   string pair = Choice(s_sWest, s_sEast);
+   PrintFormat("[ACR] Faction choice '%1' -> %2 / %3", pair, s_sWest, s_sEast);
    array<Faction> all = {};
    manager.GetFactionsList(all);
    foreach (Faction baseFaction : all)

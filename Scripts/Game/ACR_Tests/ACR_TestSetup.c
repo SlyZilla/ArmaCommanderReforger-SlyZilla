@@ -5,7 +5,7 @@
 // Start applies them (threat high reaches the game, starting units spawn).
 class ACR_TestSetup
 {
- static const int CHECKS = 8;
+ static const int CHECKS = 15;
  protected static int s_iStartedAt = -1;
 
  static bool Wanted() { return System.IsCLIParam("acrSetupTest"); }
@@ -40,6 +40,14 @@ class ACR_TestSetup
    string rp;
    ACR_Options.Get("acrStartRP", rp);
    ACR_TestRegress.Check("setup: numeric options cycle from the scenario default", cap == "4" && rp == "100", string.Format("unit cap %1, start RP %2", cap, rp));
+   // Any faction the world lists can play (13 Oct): Arland lists FIA; pick it for the red side.
+   array<string> keys = {};
+   ACR_FactionSelection.Candidates(keys);
+   string listed;
+   foreach (string k : keys) listed += k + " ";
+   ACR_TestRegress.Check("setup: playable factions come from the world's faction manager", keys.Contains("US") && keys.Contains("USSR") && keys.Contains("FIA") && !keys.Contains("CIV"), listed);
+   string red = ACR_Setup.Cycle("east");
+   ACR_TestRegress.Check("setup: the red side cycles to FIA without applying yet", ACR_FactionSelection.East() == "FIA" && ACR_FactionSelection.West() == "US" && !ACR_FactionSelection.Applied() && red.Contains("FIA"), red);
    ACR_Setup.Start("the setup test");
    s_iStartedAt = second;
   }
@@ -52,6 +60,26 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup: buy lists and RP are built with the chosen start RP", rp >= 100 && rp < 200, string.Format("RP %1", rp));
    int agents = Agents();
    ACR_TestRegress.Check("setup: the layout is applied and starting units spawn after Start", ACR_Skirmish.Applied() && agents > 0, string.Format("AI agents %1, squads %2", agents, manager.m_Squads.Count()));
+   FactionManager factions = GetGame().GetFactionManager();
+   SCR_Faction fia = SCR_Faction.Cast(factions.GetFactionByKey("FIA"));
+   SCR_Faction ussr = SCR_Faction.Cast(factions.GetFactionByKey("USSR"));
+   ACR_TestRegress.Check("setup: Start makes FIA the red side", ACR_FactionSelection.Applied() && ACR_FactionSelection.East() == "FIA" && fia && fia.IsPlayable() && ussr && !ussr.IsPlayable(), "");
+   int fiaBases, ussrBases;
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (base.m_sOwner == "FIA") fiaBases++;
+    if (base.m_sOwner == "USSR") ussrBases++;
+   }
+   ACR_TestRegress.Check("setup: the red side's bases belong to FIA", fiaBases > 0 && ussrBases == 0, string.Format("FIA %1, USSR %2", fiaBases, ussrBases));
+   int buys = -1;
+   if (manager) buys = manager.m_Bases.GetFaction("FIA").m_aRequisitions.Count();
+   ACR_TestRegress.Check("setup: FIA gets settings and a buy list from its catalog", ACR_FactionSettings.Find("FIA") != null && buys > 0, string.Format("buy list %1", buys));
+   int fiaSquads;
+   foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == "FIA") fiaSquads++;
+   ACR_TestRegress.Check("setup: the red side's starting units spawn as FIA", fiaSquads > 0, string.Format("FIA squads %1", fiaSquads));
+   array<ref SCR_BasePlayerLoadout> loadouts = {};
+   int officers = GetGame().GetLoadoutManager().GetPlayerLoadoutsByFaction(fia, loadouts);
+   ACR_TestRegress.Check("setup: FIA has a command unit loadout", officers > 0, string.Format("%1 loadouts", officers));
    ACR_TestRegress.Complete("setup", CHECKS);
   }
  }
