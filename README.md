@@ -10,7 +10,8 @@ This project is openly vibecoded. Nearly all of the code, launchers and document
 were written by **Claude** (Anthropic's AI model, working in Claude Cowork), directed,
 designed and play-tested by **Jacob** ([propst-design](https://github.com/propst-design)).
 Since 5 Oct **Codex** (OpenAI's coding agent) has contributed part of the code and tests too,
-working in the same repository under Jacob's direction.
+working in the same repository under Jacob's direction. Since 14 Oct **Antigravity**
+(Google's agentic coding environment, whichever model it runs) contributes as well.
 Expect rough edges; bug reports with logs help a lot.
 
 Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.
