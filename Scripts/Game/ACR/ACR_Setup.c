@@ -298,6 +298,8 @@ class ACR_SetupClient
  // screen, dialog included: Jacob 13 Oct heard the buttons but saw only the loading screen).
  // A plain camera over the battlefield until the player has a body.
  protected static CameraBase s_Camera;
+ protected static const ResourceName CAMERA = "{E1FF38EC8894C5F3}Prefabs/Editor/Camera/ManualCameraSpectate.et";
+ protected static float s_fDiagAt;
  protected static float s_fHintAt = -100000;
  protected static bool s_bChanged;
 
@@ -317,6 +319,7 @@ class ACR_SetupClient
   bool bodyless = local && !local.GetControlledEntity();
   if (s_bActive && bodyless) ShowCamera();
   else DropCamera();
+  if (s_bActive) Diagnose();
   if (!s_bActive)
   {
    if (s_Dialog) { s_Dialog.Close(); s_Dialog = null; }
@@ -361,7 +364,11 @@ class ACR_SetupClient
    parameters.TransformMode = ETransformMode.WORLD;
    Math3D.AnglesToMatrix(Vector(0, -30, 0), parameters.Transform);
    parameters.Transform[3] = eye;
-   s_Camera = CameraBase.Cast(GetGame().SpawnEntity(CameraBase, GetGame().GetWorld(), parameters));
+   // The game's own spectator camera (Game Master uses this family): a plain CameraBase drew
+   // nothing (Jacob 13 Oct, second look).
+   Resource prefab = Resource.Load(CAMERA);
+   if (prefab && prefab.IsValid()) s_Camera = CameraBase.Cast(GetGame().SpawnEntityPrefab(prefab, GetGame().GetWorld(), parameters));
+   if (!s_Camera) s_Camera = CameraBase.Cast(GetGame().SpawnEntity(CameraBase, GetGame().GetWorld(), parameters));
    if (!s_Camera) return;
    s_Camera.SetVerticalFOV(60);
    s_Camera.SetNearPlane(0.5);
@@ -369,6 +376,29 @@ class ACR_SetupClient
    Print("[ACR] SETUP camera over the battlefield while nobody has spawned");
   }
   if (cameras.CurrentCamera() != s_Camera) cameras.SetCamera(s_Camera);
+ }
+
+ // While nobody has seen the dialog work: what the client has on screen, every 3 s.
+ protected static void Diagnose()
+ {
+  float now = System.GetTickCount();
+  if (now - s_fDiagAt < 3000) return;
+  s_fDiagAt = now;
+  string camera = "none";
+  CameraManager cameras = GetGame().GetCameraManager();
+  if (cameras && cameras.CurrentCamera()) camera = cameras.CurrentCamera().ClassName() + " at " + cameras.CurrentCamera().GetOrigin().ToString();
+  string dialog = "none";
+  if (s_Dialog && s_Dialog.GetRootWidget())
+  {
+   Widget root = s_Dialog.GetRootWidget();
+   float w, h;
+   root.GetScreenSize(w, h);
+   dialog = string.Format("visible %1 opacity %2 size %3x%4", root.IsVisible(), root.GetOpacity(), w, h);
+  }
+  MenuBase top = GetGame().GetMenuManager().GetTopMenu();
+  string menu = "none";
+  if (top) menu = top.ClassName();
+  PrintFormat("[ACR] SETUP screen: loading screen %1, camera %2, dialog %3, top menu %4, allowed %5", ArmaReforgerLoadingAnim.IsOpen(), camera, dialog, menu, s_bAllowed);
  }
 
  protected static void DropCamera()
