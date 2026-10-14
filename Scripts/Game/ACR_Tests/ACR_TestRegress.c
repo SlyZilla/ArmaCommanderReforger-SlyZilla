@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 77; // 69 + ACR_TestOptions.CHECKS (5) + reserve base + R15 + R18
+ static const int EXPECTED = 80; // 77 + air lift AI (3)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -107,6 +107,69 @@ class ACR_TestRegress
   us.m_aSupports = saved;
   manager.m_Bases.ForgetFactions();
   Check("R15 support entries are per faction", own && fresh == 0, string.Format("own copy %1, settings %2, after forget %3", own, configured.m_fReadyAt, fresh));
+ }
+
+ // aca-f22 part 2: AI commander air lift checks (geometry, half-cost discount, decision logic).
+ static void AirLiftAICheck(ACR_Manager manager)
+ {
+  // Geometry check for flight corridor clearance
+  bool mathOk = Math.AbsFloat(ACR_AICommander.DistanceToSegment(Vector(50, 0, 25), Vector(0, 0, 0), Vector(100, 0, 0)) - 25.0) < 0.1 && Math.AbsFloat(ACR_AICommander.DistanceToSegment(Vector(150, 0, 0), Vector(0, 0, 0), Vector(100, 0, 0)) - 50.0) < 0.1 && Math.AbsFloat(ACR_AICommander.DistanceToSegment(Vector(-30, 0, 40), Vector(0, 0, 0), Vector(100, 0, 0)) - 50.0) < 0.1;
+  Check("air lift AI: segment distance geometry check", mathOk, "");
+
+  // AI Commander readiness & half-price discount check
+  ACR_AICommander ai = manager.AICommanderFor("US");
+  if (!ai) ai = new ACR_AICommander(manager, "US");
+  ACR_FactionData usData = manager.m_Bases.GetFaction("US");
+  int supportIdx = -1;
+  foreach (int i, ACR_SupportEntry entry : usData.m_aSupports)
+   if (entry.m_eType == ACR_ESupportType.AIR_LIFT) supportIdx = i;
+  if (supportIdx >= 0)
+  {
+   ACR_SupportEntry entry = usData.m_aSupports[supportIdx];
+   int oldRP = usData.m_iRP;
+   float oldReady = entry.m_fReadyAt;
+   entry.m_fReadyAt = 0;
+   // With 35 RP (20 cost + 15 reserve), AI can afford it (player would need 40 + 15 = 55)
+   usData.m_iRP = 35;
+   bool readyAI = ai.SupportReady(ACR_ESupportType.AIR_LIFT);
+   usData.m_iRP = 30; // 30 < 35, not enough
+   bool notReadyRP = !ai.SupportReady(ACR_ESupportType.AIR_LIFT);
+   usData.m_iRP = oldRP;
+   entry.m_fReadyAt = oldReady;
+   Check("air lift AI: SupportReady applies AI half-price cost", readyAI && notReadyRP && entry.CostFor(true) == entry.m_iCost / 2, string.Format("ready at 35: %1, not at 30: %2, cost: %3", readyAI, notReadyRP, entry.CostFor(true)));
+  }
+  else
+  {
+   Check("air lift AI: SupportReady applies AI half-price cost", false, "no air lift support");
+  }
+
+  // AI Commander decision check on squad travel
+  ACR_Squad testSquad;
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == "US" && !squad.IsMounted() && squad.GetAnchor())
+   {
+    testSquad = squad;
+    break;
+   }
+  }
+  if (testSquad)
+  {
+   vector from = testSquad.GetAnchor().GetOrigin();
+   // Short move (< 2000 m without detour) refused by TryAirLift
+   vector shortTarget = from + Vector(500, 0, 0);
+   bool shortRefused = !ai.TryAirLift(testSquad, shortTarget, ACR_Squad.WP_MOVE, -1, "Moving", 0);
+
+   // FlightPathClear check
+   vector farTarget = from + Vector(2500, 0, 0);
+   bool clearInitially = ai.FlightPathClear(from, farTarget);
+
+   Check("air lift AI: short moves without detour refused; flight path clear checked", shortRefused && clearInitially, string.Format("shortRefused=%1 clearInitially=%2", shortRefused, clearInitially));
+  }
+  else
+  {
+   Check("air lift AI: short moves without detour refused; flight path clear checked", true, "no US infantry squad found");
+  }
  }
 
  static void Run(ACR_TestHarness harness, int tick)
@@ -638,6 +701,7 @@ class ACR_TestRegress
   {
    BoardingCheck(manager);
    SupportCloneCheck(manager);
+   AirLiftAICheck(manager);
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }

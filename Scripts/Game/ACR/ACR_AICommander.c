@@ -265,13 +265,13 @@ class ACR_AICommander : Managed
   return false;
  }
 
- protected bool SupportReady(ACR_ESupportType type)
+ bool SupportReady(ACR_ESupportType type)
  {
   int index = SupportIndex(type);
   if (index < 0 || !m_Manager.m_Supports) return false;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   ACR_SupportEntry entry = data.m_aSupports[index];
-  return GetGame().GetWorld().GetWorldTime() >= entry.m_fReadyAt && data.m_iRP >= entry.m_iCost + SUPPORT_RESERVE;
+  return GetGame().GetWorld().GetWorldTime() >= entry.m_fReadyAt && data.m_iRP >= entry.CostFor(true) + SUPPORT_RESERVE;
  }
 
  // Own soldiers (squads and players) within radius: never call fire on them.
@@ -322,7 +322,7 @@ class ACR_AICommander : Managed
  protected ref map<IEntity, vector> m_SeenAt = new map<IEntity, vector>();
  protected ref map<IEntity, float> m_SeenTime = new map<IEntity, float>();
 
- protected void Note(IEntity enemy, float now)
+ void Note(IEntity enemy, float now)
  {
   if (!enemy || !ACR_Respawn.IsAlive(enemy)) return;
   m_SeenAt.Set(enemy, enemy.GetOrigin());
@@ -890,9 +890,124 @@ class ACR_AICommander : Managed
   return false;
  }
 
- // Long trips on foot become rides: a free truck nearby picks the squad up and
- // drops it dropShort metres before the destination, where it carries on.
+ // Long trips on foot become rides or air lifts:
+ // Air lift (aca-f22 part 2): long moves (~2 km+ or long road detours) when the flight path is clear of known enemies.
  static const float RIDE_DISTANCE = 900;
+ static const float AIRLIFT_DISTANCE = 2000;
+ static const float AIRLIFT_ENEMY_CLEARANCE = 350;
+
+ static float DistanceToSegment(vector p, vector a, vector b)
+ {
+  vector ab = b - a;
+  ab[1] = 0;
+  float l2 = ab[0] * ab[0] + ab[2] * ab[2];
+  if (l2 < 1.0) return vector.DistanceXZ(p, a);
+  vector ap = p - a;
+  ap[1] = 0;
+  float t = Math.Clamp((ap[0] * ab[0] + ap[2] * ab[2]) / l2, 0.0, 1.0);
+  vector closest = Vector(a[0] + ab[0] * t, 0, a[2] + ab[2] * t);
+  return vector.DistanceXZ(p, closest);
+ }
+
+ bool FlightPathClear(vector from, vector to)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (IEntity enemy, vector seenPos : m_SeenAt)
+  {
+   if (!enemy || !ACR_Respawn.IsAlive(enemy)) continue;
+   float seenTime;
+   if (!m_SeenTime.Find(enemy, seenTime) || (now - seenTime) > INTEL_MEMORY_MS) continue;
+   if (DistanceToSegment(seenPos, from, to) < AIRLIFT_ENEMY_CLEARANCE) return false;
+  }
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == m_sFaction) continue;
+   vector known;
+   if (!KnownPosition(squad, known)) continue;
+   if (DistanceToSegment(known, from, to) < AIRLIFT_ENEMY_CLEARANCE) return false;
+  }
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base)) continue;
+   float dDrop = vector.DistanceXZ(to, base.GetOrigin());
+   if (dDrop < base.m_fRadius + 150) return false;
+   float dClosest = DistanceToSegment(base.GetOrigin(), from, to);
+   if (dClosest < base.m_fRadius + AIRLIFT_ENEMY_CLEARANCE && dClosest < dDrop - 20) return false;
+  }
+  return true;
+ }
+
+ bool TryAirLift(ACR_Squad squad, vector destination, ResourceName prefab, float radius, string order, int kind, float dropShort = 0)
+ {
+  if (!m_Manager || !m_Manager.m_Supports) return false;
+  if (!squad || !squad.m_Group || squad.HasPlayer()) return false;
+  if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad) || squad.m_bMortar || squad.Aircraft()) return false;
+  if (ACR_AirLift.Busy(squad)) return false;
+  IEntity anchor = squad.GetAnchor();
+  if (!anchor) return false;
+  vector from = anchor.GetOrigin();
+  if (!ACR_Manager.OnMap(destination)) return false;
+
+  float distance = vector.DistanceXZ(from, destination);
+  if (distance < ACR_AirLift.MIN_DISTANCE) return false;
+
+  bool isLong = distance >= AIRLIFT_DISTANCE;
+  bool isDetour = false;
+  if (!isLong && distance >= RIDE_DISTANCE)
+  {
+   if (BBB_Terrain.WaterAlong(from, destination) > BBB_Terrain.WET_ALLOWED)
+   {
+    isDetour = true;
+   }
+   else
+   {
+    array<vector> roadLegs = {};
+    int roadNodes, roadMillis;
+    if (!BBB_Roads.Route(from, destination, roadLegs, roadNodes, roadMillis) || BBB_Roads.s_bLastDetour)
+    {
+     isDetour = true;
+    }
+    else if (BBB_Roads.s_fLastLength > distance * 1.6)
+    {
+     isDetour = true;
+    }
+   }
+  }
+  if (!isLong && !isDetour) return false;
+
+  if (squad.KnownEnemies(300) > 0) return false;
+
+  int supportIdx = SupportIndex(ACR_ESupportType.AIR_LIFT);
+  if (supportIdx < 0) return false;
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  if (!data) return false;
+  ACR_SupportEntry entry = data.m_aSupports[supportIdx];
+  if (!entry || !entry.m_bEnabled) return false;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < entry.m_fReadyAt) return false;
+  int cost = entry.CostFor(true);
+  if (data.m_iRP < cost + SUPPORT_RESERVE) return false;
+
+  vector targetLZ = destination;
+  if (dropShort > 0)
+  {
+   vector dir = destination - from;
+   dir[1] = 0;
+   if (dir.Length() > 1)
+   {
+    dir.Normalize();
+    targetLZ = destination - dir * Math.Min(dropShort, distance * 0.5);
+   }
+  }
+
+  if (!FlightPathClear(from, targetLZ)) return false;
+
+  string result = m_Manager.m_Supports.Call(m_sFaction, supportIdx, targetLZ, true, -1, squad, prefab, destination, radius, order, kind);
+  if (!ACR_AirLift.Busy(squad)) return false;
+  PrintFormat("[ACR] AI %1: air lift for %2 to %3 (%4 m): %5", m_sFaction, squad.GetName(), ACR_Manager.Grid(destination), (int)distance, result);
+  return true;
+ }
+
  protected void Travel(ACR_Squad squad, vector destination, bool defend, float dropShort)
  {
   // Defending a base: infantry garrison its buildings (the one nearest the centre,
@@ -904,26 +1019,30 @@ class ACR_AICommander : Managed
    garrison = true;
    destination = building;
   }
-  if (m_Manager.m_Rides && !squad.IsMounted() && vector.DistanceXZ(PositionOf(squad), destination) > RIDE_DISTANCE)
+  ResourceName prefab = ACR_Squad.WP_MOVE;
+  float radius = -1;
+  string order = "Moving";
+  int kind = 0;
+  if (defend)
   {
-   ResourceName prefab = ACR_Squad.WP_MOVE;
-   float radius = -1;
-   string order = "Moving";
-   int kind = 0;
-   if (defend)
+   prefab = ACR_Squad.WP_DEFEND;
+   radius = 15;
+   order = "Defending";
+   kind = 1;
+  }
+  if (garrison)
+  {
+   prefab = ACR_Squad.WP_GARRISON;
+   order = "Garrisoning";
+  }
+  if (!squad.IsMounted())
+  {
+   if (TryAirLift(squad, destination, prefab, radius, order, kind, dropShort)) return;
+   if (m_Manager.m_Rides && vector.DistanceXZ(PositionOf(squad), destination) > RIDE_DISTANCE)
    {
-    prefab = ACR_Squad.WP_DEFEND;
-    radius = 15;
-    order = "Defending";
-    kind = 1;
+    string why;
+    if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why)) return;
    }
-   if (garrison)
-   {
-    prefab = ACR_Squad.WP_GARRISON;
-    order = "Garrisoning";
-   }
-   string why;
-   if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why)) return;
   }
   // On foot (or its own vehicle): round any water rather than across it.
   if (garrison) squad.RouteTo(destination, ACR_Squad.WP_GARRISON, 15, "Garrisoning", 1);
@@ -974,7 +1093,7 @@ class ACR_AICommander : Managed
   {
    foreach (ACR_Squad squad : attack.m_Squads)
    {
-    if (squad == attack.m_Suppressor || squad.m_CombatFlank.Active()) continue;
+    if (squad == attack.m_Suppressor || squad.m_CombatFlank.Active() || ACR_AirLift.Busy(squad)) continue;
     if (vector.DistanceXZ(PositionOf(squad), attack.m_Target.GetOrigin()) < attack.m_Target.m_fRadius * 0.6) continue;
     squad.SetMode(ACR_EMoveMode.COMBAT);
     squad.Assault(attack.m_Target.GetOrigin());
@@ -1118,10 +1237,14 @@ class ACR_AICommander : Managed
     }
     continue;
    }
+   bool anyAirLift = false;
    bool gathered = true;
    foreach (ACR_Squad squad : attack.m_Squads)
+   {
+    if (ACR_AirLift.Busy(squad)) { anyAirLift = true; gathered = false; continue; }
     if (vector.DistanceXZ(PositionOf(squad), attack.StagingOf(squad)) > 120) gathered = false;
-   if (gathered || GetGame().GetWorld().GetWorldTime() > attack.m_fStageDeadline)
+   }
+   if (gathered || (!anyAirLift && GetGame().GetWorld().GetWorldTime() > attack.m_fStageDeadline))
    {
     attack.m_bAssaulting = true;
     attack.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();

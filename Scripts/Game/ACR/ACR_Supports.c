@@ -1527,7 +1527,7 @@ class ACR_Supports : Managed
 
  // Called by the commander (or AI). Returns the feedback message.
  // squad: the squad to fly (air lift only).
- string Call(string factionKey, int index, vector target, bool byAI = false, int callerPlayerId = -1, ACR_Squad squad = null)
+ string Call(string factionKey, int index, vector target, bool byAI = false, int callerPlayerId = -1, ACR_Squad squad = null, ResourceName finalPrefab = "", vector finalTarget = vector.Zero, float finalRadius = -1, string finalOrder = "", int finalKind = 0)
  {
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(factionKey);
   if (index < 0 || index >= data.m_aSupports.Count()) return "Unknown support";
@@ -1536,7 +1536,7 @@ class ACR_Supports : Managed
   if (now < entry.m_fReadyAt) return string.Format("%1 is not ready (%2 s)", entry.m_sName, Math.Ceil((entry.m_fReadyAt - now) / 1000));
   // Mortar supports are fired by a real mortar team (ACR_Mortars): nothing is spent unless one can.
   if (ACR_Mortars.IsMortarType(entry.m_eType)) return CallMortars(factionKey, entry, target, byAI);
-  if (entry.m_eType == ACR_ESupportType.AIR_LIFT) return ACR_AirLift.Call(this, factionKey, entry, target, byAI, squad);
+  if (entry.m_eType == ACR_ESupportType.AIR_LIFT) return ACR_AirLift.Call(this, factionKey, entry, target, byAI, squad, finalPrefab, finalTarget, finalRadius, finalOrder, finalKind);
   if (entry.m_eType == ACR_ESupportType.BOMB_RUN && entry.m_eBombRunDelivery != ACR_EBombRunDelivery.VIRTUAL)
   {
    if (entry.m_sBombRunPrefab.IsEmpty()) return "Choose a bomb-run prefab in this faction's support settings";

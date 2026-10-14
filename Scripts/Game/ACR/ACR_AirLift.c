@@ -232,6 +232,11 @@ class ACR_AirLift : ACR_SupportRun
  ref array<ref ACR_LiftHeli> m_Helis = {};
  ref array<vector> m_Pickups = {};
  ref array<vector> m_Drops = {};
+ ResourceName m_sFinalPrefab;
+ vector m_FinalTarget;
+ float m_fFinalRadius;
+ string m_sFinalOrder;
+ int m_iFinalKind;
  protected float m_fStarted;
  protected float m_fStageAt;
  protected float m_fNextStep;
@@ -264,7 +269,7 @@ class ACR_AirLift : ACR_SupportRun
  }
 
  // The support call (from ACR_Supports.Call). Nothing is spent unless helicopters can come.
- static string Call(ACR_Supports supports, string factionKey, ACR_SupportEntry entry, vector target, bool byAI, ACR_Squad squad)
+ static string Call(ACR_Supports supports, string factionKey, ACR_SupportEntry entry, vector target, bool byAI, ACR_Squad squad, ResourceName finalPrefab = "", vector finalTarget = vector.Zero, float finalRadius = -1, string finalOrder = "", int finalKind = 0)
  {
   for (int i = s_Active.Count() - 1; i >= 0; i--) if (!s_Active[i]) s_Active.Remove(i);
   if (!squad || !squad.m_Group) return "Select the squad to fly first, then call the air lift";
@@ -291,6 +296,11 @@ class ACR_AirLift : ACR_SupportRun
   lift.m_sFaction = factionKey;
   lift.m_sSquadName = name;
   lift.m_bByAI = byAI;
+  lift.m_sFinalPrefab = finalPrefab;
+  lift.m_FinalTarget = finalTarget;
+  lift.m_fFinalRadius = finalRadius;
+  lift.m_sFinalOrder = finalOrder;
+  lift.m_iFinalKind = finalKind;
   lift.m_Pickups.Copy(pickups);
   lift.m_Drops.Copy(drops);
   if (!lift.Begin(supports, now))
@@ -420,7 +430,16 @@ class ACR_AirLift : ACR_SupportRun
     if (carrying == 0) return false;
     if (!allDown) break;
     Stage(UNLOADING, now);
-    if (m_Squad && m_Squad.m_Group) m_Squad.GetOut();
+    if (m_Squad && m_Squad.m_Group)
+    {
+     if (!m_sFinalPrefab.IsEmpty())
+     {
+      vector dest = m_FinalTarget;
+      if (dest == vector.Zero) dest = m_Drops[0];
+      m_Squad.ContinueAfterDismount(m_sFinalPrefab, dest, m_fFinalRadius, m_sFinalOrder, m_iFinalKind);
+     }
+     m_Squad.GetOut();
+    }
     PrintFormat("[ACR] AIRLIFT %1: down at the drop-off, getting out", m_sSquadName);
     break;
    }
@@ -430,7 +449,19 @@ class ACR_AirLift : ACR_SupportRun
     if (still > 0 && now - m_fStageAt > UNLOAD_WAIT_MS) PutOut();
     if (still > 0 && now - m_fStageAt <= UNLOAD_WAIT_MS + 5000) break;
     // Out (or left 5 s to get clear of a forced exit): hold the landing zone, then go.
-    if (m_Squad && m_Squad.m_Group && Alive(m_Squad) > 0) m_Squad.Defend(m_Drops[0]);
+    if (m_Squad && m_Squad.m_Group && Alive(m_Squad) > 0)
+    {
+     if (!m_sFinalPrefab.IsEmpty())
+     {
+      vector finalDest = m_FinalTarget;
+      if (finalDest == vector.Zero) finalDest = m_Drops[0];
+      m_Squad.RestoreOrder(ACR_OrderSnapshot.Make(m_sFinalPrefab, finalDest, m_fFinalRadius, m_sFinalOrder, ACR_Squad.StateOfLabel(m_sFinalOrder), m_iFinalKind));
+     }
+     else
+     {
+      m_Squad.Defend(m_Drops[0]);
+     }
+    }
     Tell(supports, string.Format("%1 landed at %2.", m_sSquadName, ACR_Manager.Grid(m_Drops[0])));
     Leave(supports, now, "done");
     break;

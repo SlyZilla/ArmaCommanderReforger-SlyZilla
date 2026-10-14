@@ -376,7 +376,7 @@ a 70 m circle where there is room. Each side starts with the world's own `ACR_St
 or two rifle squads, a weapons team, a truck and a car, and its player spawn point moves to its HQ.
 Hand-built helipads are not used: both sides get the off-map support helicopters, and helicopters
 can only be bought once players build a helipad (construction truck). The AI commander builds none,
-so it uses no bought helicopters there (an air lift support call is planned). The setup
+so it uses no bought helicopters there (it uses the off-map air lift support call instead for long moves and detours). The setup
 screen's "Layout seed" row rolls a new seed; the log lists the layout (`[ACR] GEN BASE`).
 "Show and edit the layout on the map" opens the map with the planned bases: click a base, then
 click where it should go. A spot is refused (with the reason) when it is off the map, in water, too
