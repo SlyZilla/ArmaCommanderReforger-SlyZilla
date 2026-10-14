@@ -1,7 +1,8 @@
 # Workshop page description (draft, for when Workshop publishing comes off hold)
 
 Keep in step with README.md and tools/package/GUIDE.txt. Credits and licence lines still to add
-(Martin Hajek, then Anarch Cassius, Ilyushkius, Will; Claude credited openly; APL-SA).
+(Martin Hajek, then Anarch Cassius, Ilyushkius, Will; Claude credited openly, Codex as part
+contributor; playtesters PoppiPoppins, Hexxyz and Frost; APL-SA).
 
 ## Faction mods (disclaimer)
 

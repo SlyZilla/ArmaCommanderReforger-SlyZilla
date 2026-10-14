@@ -9,9 +9,11 @@ derivative stays APL-SA with credit to the original authors. See LICENSE.md.
 This project is openly vibecoded. Nearly all of the code, launchers and documentation
 were written by **Claude** (Anthropic's AI model, working in Claude Cowork), directed,
 designed and play-tested by **Jacob** ([propst-design](https://github.com/propst-design)).
+Since 5 Oct **Codex** (OpenAI's coding agent) has contributed part of the code and tests too,
+working in the same repository under Jacob's direction.
 Expect rough edges; bug reports with logs help a lot.
 
-Playtesters: **PoppiPoppins** and **Hexxyz**.
+Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.
 
 ## Playing the test range
 
