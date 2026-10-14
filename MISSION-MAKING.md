@@ -367,6 +367,10 @@ Hand-built helipads are not used: both sides get the off-map support helicopters
 can only be bought once players build a helipad (construction truck). The AI commander builds none,
 so it uses no bought helicopters there (an air lift support call is planned). The setup
 screen's "Layout seed" row rolls a new seed; the log lists the layout (`[ACR] GEN BASE`).
+"Show and edit the layout on the map" opens the map with the planned bases: click a base, then
+click where it should go. A spot is refused (with the reason) when it is off the map, in water, too
+close to another base's capture circle, or would bring the two HQs within 1000 m (300 m in a
+flashpoint). "Undo base moves" puts them all back; changing the seed or size drops them.
 
 ### ACR_Skirmish
 
