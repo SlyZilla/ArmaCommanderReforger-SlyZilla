@@ -53,6 +53,18 @@ $LogRoot     = Join-Path $ProfileDir 'logs'
 New-Item -ItemType Directory -Force $RequestDir | Out-Null
 Set-Content -LiteralPath (Join-Path $RequestDir 'watcher-started.txt') -Value (Get-Date -Format o)
 
+# Housekeeping (14 Oct): results and logs older than two weeks go, so the addon folder
+# doesn't fill up with test output. Recent runs, scripts and .request files are kept.
+$pruneBefore = (Get-Date).AddDays(-14)
+try {
+    Get-ChildItem -LiteralPath $RequestDir -File | Where-Object { ($_.Name -like '*.result.txt' -or $_.Name -like '*.build.txt') -and $_.LastWriteTime -lt $pruneBefore } | Remove-Item -Force -ErrorAction SilentlyContinue
+    foreach ($logDir in @((Join-Path $ProjectRoot '.local-game\logs'), (Join-Path $ProjectRoot '.local-testserver\logs'), (Join-Path $ProjectRoot '.local-server\logs'))) {
+        if (Test-Path -LiteralPath $logDir) {
+            Get-ChildItem -LiteralPath $logDir -Directory | Where-Object { $_.LastWriteTime -lt $pruneBefore } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+} catch { Write-Host "Housekeeping skipped: $($_.Exception.Message)" -ForegroundColor Yellow }
+
 function Find-Game {
     if ($GamePath -and (Test-Path -LiteralPath $GamePath)) { return $GamePath }
     $steamRoot = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
