@@ -104,7 +104,8 @@ class ACR_Skirmish : GenericEntity
  {
   string wanted;
   ACR_Options.Get("acrLayout", wanted);
-  if (ACR_TestSkirmish.Wanted()) wanted = ACR_TestSkirmish.Layout();
+  string testLayout = ACR_TestHooks.Get().SkirmishLayout();
+  if (testLayout != "") wanted = testLayout;
   wanted = Simple(wanted);
   if (wanted != "" && wanted != "random")
   {

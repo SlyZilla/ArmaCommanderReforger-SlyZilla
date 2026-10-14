@@ -7,6 +7,11 @@ top = 'ACActual-Arland'
 keep_dirs = ['Configs', 'Missions', 'Prefabs', 'Scripts', 'Worlds']
 # Dev-only test worlds stay out of player builds (Jacob, 11 Oct).
 skip_files = {'Worlds/BBB_TestArland.ent', 'Worlds/BBB_TestArland.ent.meta', 'Missions/BBB_TestArland.conf', 'Missions/BBB_TestArland.conf.meta'}
+# Test scripts stay out too (R17, Jacob 14 Oct); game code reaches them only through
+# ACR_TestHooks, which does nothing without them. The test range world and entity stay.
+def is_test_script(rel):
+    if rel.startswith('Scripts/Game/ACR_Tests/'): return True
+    return rel.startswith('Scripts/Game/BBB/') and rel.endswith('Test.c')
 keep_files = ['LICENSE.md', 'addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'ACR-Update.ps1', 'ACR-Find.ps1', 'ACR-ZeroTier.ps1', 'ACR-HostSetup.ps1', 'Play-Test-Range.cmd', 'README.md', 'MISSION-MAKING.md']
 # The mission-maker guide must list every World Editor setting and host option.
 if subprocess.run([sys.executable, str(root / 'tools/check_mission_doc.py')]).returncode != 0:
@@ -41,7 +46,8 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         z.write(root / f, f'{top}/ArmaCommanderReforger/{f}')
     for d in keep_dirs:
         for p in sorted((root / d).rglob('*')):
-            if p.is_file() and p.relative_to(root).as_posix() not in skip_files:
+            rel = p.relative_to(root).as_posix()
+            if p.is_file() and rel not in skip_files and not is_test_script(rel):
                 z.write(p, f'{top}/ArmaCommanderReforger/{p.relative_to(root).as_posix()}')
 print(out, out.stat().st_size, version)
 if not local:

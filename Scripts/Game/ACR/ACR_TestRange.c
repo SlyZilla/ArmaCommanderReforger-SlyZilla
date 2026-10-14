@@ -9,7 +9,6 @@ class ACR_TestRange : ACR_Mode
  IEntity m_Truck;
  vector m_Rally;
  vector m_Target;
- protected ref ACR_TestHarness m_Harness;
 
  // Same startup as any ACR_Mode scenario, plus the test squads and harness.
  override void EOnInit(IEntity owner)
@@ -21,12 +20,9 @@ class ACR_TestRange : ACR_Mode
    IEntity spawn = GetGame().GetWorld().FindEntityByName("ACR_PlayerSpawn");
    if (spawn) spawn.SetOrigin(ACR_Manager.Ground("1320 0 2832"));
    GetGame().GetCallqueue().CallLater(Setup, 1500, false);
-   m_Harness = ACR_TestHarness.CreateFromCommandLine(this);
-   if (m_Harness) GetGame().GetCallqueue().CallLater(m_Harness.Tick, 1000, true);
+   ACR_TestHooks.Get().RangeStarted(this);
   }
   Print("[ACR] Range initialized");
-  // A scenario test that landed on the range (wrong world): end at once.
-  if (System.IsCLIParam("acrScenarioTest")) ACR_TestRegress.Abort("scenario", "wrong world: restart the test launcher");
  }
 
  void Setup()
@@ -61,7 +57,7 @@ class ACR_TestRange : ACR_Mode
   if (GetGame())
   {
    GetGame().GetCallqueue().Remove(Setup);
-   if (m_Harness) GetGame().GetCallqueue().Remove(m_Harness.Tick);
+   ACR_TestHooks.Get().RangeEnded(this);
   }
  }
 }
