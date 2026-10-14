@@ -71,6 +71,33 @@ class BBB_Medic
  static ref map<IEntity, int> s_mDoneBy = new map<IEntity, int>();
  static ref map<IEntity, int> s_mHitBy = new map<IEntity, int>();
 
+ static void Stop()
+ {
+  if (GetGame()) GetGame().GetCallqueue().Remove(WatchGoing);
+  s_bWatching = false;
+  s_mHeld.Clear();
+  s_mHot.Clear();
+  s_mGoing.Clear();
+  s_mGoingTo.Clear();
+  s_aVanilla.Clear();
+  s_mStartedBy.Clear();
+  s_mDoneBy.Clear();
+  s_mHitBy.Clear();
+  s_iStarted = 0;
+  s_iDone = 0;
+  s_iHealersHit = 0;
+ }
+
+ protected static void StartWatching()
+ {
+  if (s_bWatching || !Replication.IsServer()) return;
+  s_bWatching = true;
+  // A callback added and removed during the same queue dispatch may still be
+  // pending. Reuse it on restart rather than adding a duplicate watch.
+  if (GetGame().GetCallqueue().GetRemainingTime(WatchGoing) < 0)
+   GetGame().GetCallqueue().CallLater(WatchGoing, 500, true);
+ }
+
  static void Read()
  {
   if (s_bRead) return;
@@ -204,6 +231,7 @@ class BBB_Medic
   }
   Prune(s_mHot);
   s_mHot.Set(casualty, NowMs());
+  StartWatching();
   PrintFormat("[BBB] MEDIC healer %1 hit on his way to %2: nobody goes there for %3 s", Name(healer), Name(casualty), HOT_S);
  }
 
@@ -212,6 +240,7 @@ class BBB_Medic
   if (!casualty) return;
   Prune(s_mHeld);
   s_mHeld.Set(casualty, NowMs());
+  StartWatching();
  }
 
  static void MarkGoing(IEntity healer, IEntity casualty)
@@ -226,23 +255,33 @@ class BBB_Medic
   }
   s_mGoing.Set(healer, NowMs());
   s_mGoingTo.Set(healer, casualty);
-  if (!s_bWatching && Replication.IsServer())
-  {
-   s_bWatching = true;
-   GetGame().GetCallqueue().CallLater(WatchGoing, 500, true);
-  }
+  StartWatching();
  }
 
  // Twice a second: a healer on his way who is down or bleeding was hit on his way.
  static void WatchGoing()
  {
+  // Stop() can run before a newly queued repeat becomes removable. Such a
+  // callback must cancel itself without touching the cleared mission state.
+  if (!s_bWatching)
+  {
+   if (GetGame()) GetGame().GetCallqueue().Remove(WatchGoing);
+   return;
+  }
+  Prune(s_mHeld);
+  Prune(s_mHot);
+  PruneCounts(s_mStartedBy);
+  PruneCounts(s_mDoneBy);
+  PruneCounts(s_mHitBy);
+  for (int v = s_aVanilla.Count() - 1; v >= 0; v--)
+   if (!s_aVanilla[v]) s_aVanilla.Remove(v);
   float now = NowMs();
   for (int i = s_mGoing.Count() - 1; i >= 0; i--)
   {
    IEntity healer = s_mGoing.GetKey(i);
-   if (!healer || now - s_mGoing.GetElement(i) > 4000)
+   if (!healer || !s_mGoingTo.Get(healer) || now - s_mGoing.GetElement(i) > 4000)
    {
-    s_mGoingTo.Remove(healer);
+    if (healer) s_mGoingTo.Remove(healer);
     s_mGoing.RemoveElement(i);
     continue;
    }
@@ -251,6 +290,12 @@ class BBB_Medic
    s_mGoingTo.Remove(healer);
    s_mGoing.RemoveElement(i);
    if (casualty && vector.Distance(healer.GetOrigin(), casualty.GetOrigin()) > ARRIVED_M) HealerHit(casualty, healer, On(casualty));
+  }
+  // A decayed key cannot be found through the null pointer's hash bucket.
+  for (int target = s_mGoingTo.Count() - 1; target >= 0; target--)
+  {
+   IEntity key = s_mGoingTo.GetKey(target);
+   if (!key || !s_mGoingTo.GetElement(target) || !s_mGoing.Contains(key)) s_mGoingTo.RemoveElement(target);
   }
  }
 
@@ -270,12 +315,17 @@ class BBB_Medic
  // Drop entries for deleted soldiers and old ones (keeps the maps small).
  static void Prune(map<IEntity, float> times)
  {
-  if (times.Count() < 32) return;
   float now = NowMs();
   for (int i = times.Count() - 1; i >= 0; i--)
   {
    if (!times.GetKey(i) || now - times.GetElement(i) > 120000) times.RemoveElement(i);
   }
+ }
+
+ protected static void PruneCounts(map<IEntity, int> counts)
+ {
+  for (int i = counts.Count() - 1; i >= 0; i--)
+   if (!counts.GetKey(i)) counts.RemoveElement(i);
  }
 
  static int HealingItems(IEntity soldier)
@@ -304,6 +354,7 @@ class BBB_Medic
  {
   if (!healer) return;
   perHealer.Set(healer, perHealer.Get(healer) + 1);
+  StartWatching();
  }
 }
 

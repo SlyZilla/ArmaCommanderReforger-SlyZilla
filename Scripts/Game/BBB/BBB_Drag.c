@@ -68,6 +68,28 @@ class BBB_Drag
  static int s_iArrived;
  static int s_iNoSpot;
 
+ static void Stop()
+ {
+  if (GetGame()) GetGame().GetCallqueue().Remove(Tick);
+  s_bTicking = false;
+  foreach (BBB_DragJob job : s_aJobs)
+   if (job) Finish(job, "BBB stopped");
+  s_aJobs.Clear();
+  s_mLast.Clear();
+  s_mRefusedLog.Clear();
+  s_iStarted = 0;
+  s_iArrived = 0;
+  s_iNoSpot = 0;
+ }
+
+ protected static void StartTicking()
+ {
+  if (s_bTicking || !Replication.IsServer()) return;
+  s_bTicking = true;
+  if (GetGame().GetCallqueue().GetRemainingTime(Tick) < 0)
+   GetGame().GetCallqueue().CallLater(Tick, 250, true);
+ }
+
  static void Read()
  {
   if (s_bRead) return;
@@ -207,6 +229,7 @@ class BBB_Drag
    return false;
   }
   s_mLast.Set(casualty, NowMs());
+  StartTicking();
   vector spot;
   if (enemies.IsEmpty() || !FindCover(healer, casualty, enemies, spot))
   {
@@ -227,6 +250,7 @@ class BBB_Drag
   if (s_mRefusedLog.Contains(casualty) && now - s_mRefusedLog.Get(casualty) < 10000) return;
   if (s_mRefusedLog.Count() > 64) s_mRefusedLog.Clear();
   s_mRefusedLog.Set(casualty, now);
+  StartTicking();
   PrintFormat("[BBB] DRAG %1 -> %2: not dragging, %3", BBB_Medic.Name(healer), BBB_Medic.Name(casualty), why);
  }
 
@@ -357,15 +381,20 @@ class BBB_Drag
   string how = "drags";
   if (carry) how = "carries";
   PrintFormat("[BBB] DRAG %1 %2 %3 %4 m to cover", BBB_Medic.Name(healer), how, BBB_Medic.Name(casualty), Math.Round(distance));
-  if (!s_bTicking)
-  {
-   s_bTicking = true;
-   GetGame().GetCallqueue().CallLater(Tick, 250, true);
-  }
+  StartTicking();
  }
 
  static void Tick()
  {
+  // A repeat queued just before Stop() may not yet have been removable.
+  if (!s_bTicking)
+  {
+   if (GetGame()) GetGame().GetCallqueue().Remove(Tick);
+   return;
+  }
+  // Keep sweeping even after a refused search or the last completed job.
+  BBB_Medic.Prune(s_mLast);
+  BBB_Medic.Prune(s_mRefusedLog);
   float now = NowMs();
   for (int i = s_aJobs.Count() - 1; i >= 0; i--)
   {
@@ -375,7 +404,7 @@ class BBB_Drag
    Finish(job, ended);
    s_aJobs.Remove(i);
   }
-  if (s_aJobs.IsEmpty())
+  if (s_aJobs.IsEmpty() && s_mLast.IsEmpty() && s_mRefusedLog.IsEmpty())
   {
    s_bTicking = false;
    GetGame().GetCallqueue().Remove(Tick);
@@ -434,7 +463,7 @@ class BBB_Drag
 
  static void Finish(BBB_DragJob job, string why)
  {
-  if (job.m_Healer && AceBool(job.m_Healer, "ACE_IsCarrier")) AceRelease(job.m_Healer);
+  if (job.m_Healer && AceLoaded() && AceBool(job.m_Healer, "ACE_IsCarrier")) AceRelease(job.m_Healer);
   if (job.m_Move && job.m_Move.GetActionState() != EAIActionState.COMPLETED && job.m_Move.GetActionState() != EAIActionState.FAILED) job.m_Move.Complete();
   if (job.m_Healer)
   {
@@ -445,8 +474,11 @@ class BBB_Drag
     if (job.m_Speed) settings.RemoveSetting(job.m_Speed);
    }
   }
-  float seconds = (NowMs() - job.m_fStartMs) / 1000;
-  PrintFormat("[BBB] DRAG %1 with %2: %3 after %4 s, %5 m from the spot", BBB_Medic.Name(job.m_Healer), BBB_Medic.Name(job.m_Casualty), why, Math.Round(seconds), Math.Round(vector.DistanceXZ(job.m_Healer.GetOrigin(), job.m_vSpot)));
+  float seconds;
+  float distance;
+  if (GetGame() && GetGame().GetWorld()) seconds = (NowMs() - job.m_fStartMs) / 1000;
+  if (job.m_Healer) distance = vector.DistanceXZ(job.m_Healer.GetOrigin(), job.m_vSpot);
+  PrintFormat("[BBB] DRAG %1 with %2: %3 after %4 s, %5 m from the spot", BBB_Medic.Name(job.m_Healer), BBB_Medic.Name(job.m_Casualty), why, Math.Round(seconds), Math.Round(distance));
  }
 }
 

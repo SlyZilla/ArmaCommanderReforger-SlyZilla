@@ -60,6 +60,8 @@ class BBB
   if (GetGame()) GetGame().GetCallqueue().Remove(Tick);
   BBB_Unstick.StopAll();
   BBB_FireManeuver.Stop();
+  BBB_Drag.Stop();
+  BBB_Medic.Stop();
   s_bStarted = false;
 		s_Gates = null;
 		s_Launchers = null;

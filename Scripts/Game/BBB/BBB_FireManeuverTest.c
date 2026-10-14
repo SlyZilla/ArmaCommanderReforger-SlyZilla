@@ -11,10 +11,13 @@ class BBB_FireManeuverTest : BBB_AimTest
  protected float m_fEnd, m_fHook, m_fLog;
  protected int m_iFMRound, m_iFinished, m_iRequests, m_iArrivals, m_iSwaps;
  protected int m_iPass, m_iFail;
- protected bool m_bSaved, m_bGuards, m_bProbe, m_bDeletion;
+ protected bool m_bSaved, m_bGuards, m_bProbe, m_bDeletion, m_bLifecycle;
  protected ref map<IEntity, vector> m_Positions = new map<IEntity, vector>();
  protected float m_fMoverTravel, m_fCoverTravel;
  protected int m_iCoverFire;
+ protected ref BBB_Hooks m_RestartHooks;
+ protected IEntity m_RestartMedic;
+ protected bool m_bRestartStarted;
  protected ref array<int> m_Shots = {};
  protected ref array<int> m_Losses = {};
 
@@ -124,6 +127,7 @@ class BBB_FireManeuverTest : BBB_AimTest
    m_Lane.m_bHooked = true;
    Hook(m_Lane.m_A, false);
    Hook(m_Lane.m_B, false);
+   if (!m_bLifecycle) LifecycleChecks(m_Lane.m_A.m_aMen[0]);
    PlaceOnNativeCover(m_Lane.m_A.m_Group);
    m_Lane.m_B.m_Group.GetGroupUtilityComponent().SetCombatMode(EAIGroupCombatMode.HOLD_FIRE);
    m_Lane.m_B.m_Group.GetGroupUtilityComponent().EvaluateCombatMode();
@@ -226,6 +230,101 @@ class BBB_FireManeuverTest : BBB_AimTest
   if (m_iFMRound == 4 || m_bProbe) FinishFM("");
   else StartRound();
  }
+ protected void LifecycleChecks(IEntity survivor)
+ {
+  m_bLifecycle = true;
+  BBB_Medic.Stop();
+  BBB_Drag.Stop();
+  IEntity doomed = Spawn(RIFLE_US, m_Lane.m_vFrom, m_Lane.m_vDir);
+  IEntity orphan = Spawn(RIFLE_US, m_Lane.m_vFrom, m_Lane.m_vDir);
+  SCR_AICharacterSettingsComponent settings = SCR_AICharacterSettingsComponent.FindOnControlledEntity(survivor);
+  AIControlComponent control = AIControlComponent.Cast(survivor.FindComponent(AIControlComponent));
+  SCR_AIUtilityComponent utility;
+  if (control && control.GetAIAgent()) utility = SCR_AIUtilityComponent.Cast(control.GetAIAgent().FindComponent(SCR_AIUtilityComponent));
+  CheckFM("lifecycle fixture has native soldiers and settings", doomed != null && orphan != null && settings != null && utility != null);
+  if (!doomed || !orphan || !settings || !utility) return;
+  float nowMs = BBB_Medic.NowMs();
+  array<IEntity> keys = {doomed, survivor};
+  foreach (IEntity key : keys)
+  {
+   BBB_Medic.s_mHeld.Set(key, nowMs);
+   BBB_Medic.s_mHot.Set(key, nowMs);
+   BBB_Medic.s_mStartedBy.Set(key, 7);
+   BBB_Medic.s_mDoneBy.Set(key, 8);
+   BBB_Medic.s_mHitBy.Set(key, 9);
+   BBB_Medic.s_aVanilla.Insert(key);
+   BBB_Medic.MarkGoing(key, survivor);
+   BBB_Drag.s_mLast.Set(key, nowMs);
+   BBB_Drag.s_mRefusedLog.Set(key, nowMs);
+  }
+  BBB_Medic.MarkGoing(orphan, doomed);
+  // A refused attempt starts pruning even without a drag job.
+  BBB_Drag.s_mRefusedLog.Remove(survivor);
+  BBB_Drag.Refused(survivor, survivor, "lifecycle fixture");
+  ref BBB_DragJob lostJob = new BBB_DragJob();
+  lostJob.m_Healer = doomed;
+  lostJob.m_Casualty = survivor;
+  lostJob.m_fStartMs = nowMs;
+  BBB_Drag.s_aJobs.Insert(lostJob);
+  SCR_EntityHelper.DeleteEntityAndChildren(doomed);
+  CheckFM("deleted soldier keys and job pointers decay", !doomed && !lostJob.m_Healer);
+  BBB_Medic.WatchGoing();
+  BBB_Drag.Tick();
+  CheckFM("small medic caches prune deleted keys and retain live values", BBB_Medic.s_mHeld.Count() == 1 && BBB_Medic.s_mHeld.Get(survivor) == nowMs && BBB_Medic.s_mHot.Count() == 1 && BBB_Medic.s_mHot.Get(survivor) == nowMs);
+  CheckFM("healer tracking prunes deleted keys and deleted destinations", BBB_Medic.s_mGoing.Count() == 1 && BBB_Medic.s_mGoingTo.Count() == 1 && BBB_Medic.s_mGoingTo.Get(survivor) == survivor);
+  CheckFM("medic counters and vanilla array prune deleted soldiers", BBB_Medic.s_mStartedBy.Count() == 1 && BBB_Medic.s_mDoneBy.Count() == 1 && BBB_Medic.s_mHitBy.Count() == 1 && BBB_Medic.s_aVanilla.Count() == 1 && BBB_Medic.s_mHitBy.Get(survivor) == 9);
+  CheckFM("drag caches retain live keys and release deleted healer job", BBB_Drag.s_mLast.Count() == 1 && BBB_Drag.s_mLast.Get(survivor) == nowMs && BBB_Drag.s_mRefusedLog.Count() == 1 && BBB_Drag.s_aJobs.IsEmpty());
+  CheckFM("pruning timers remain active without a drag job", GetGame().GetCallqueue().GetRemainingTime(BBB_Medic.WatchGoing) >= 0 && GetGame().GetCallqueue().GetRemainingTime(BBB_Drag.Tick) >= 0);
+  // Expired entries must also disappear below the former 32-entry threshold.
+  BBB_Medic.s_mHeld.Set(survivor, nowMs - 120001);
+  BBB_Drag.s_mLast.Set(survivor, nowMs - 120001);
+  BBB_Drag.s_mRefusedLog.Set(survivor, nowMs - 120001);
+  BBB_Medic.WatchGoing();
+  BBB_Drag.Tick();
+  CheckFM("expired small caches are pruned and idle drag watch stops", BBB_Medic.s_mHeld.IsEmpty() && BBB_Drag.s_mLast.IsEmpty() && BBB_Drag.s_mRefusedLog.IsEmpty() && !BBB_Drag.s_bTicking);
+  // Exercise shutdown with real temporary settings and a native move action.
+  ref BBB_DragJob activeDrag = new BBB_DragJob();
+  activeDrag.m_Healer = survivor;
+  activeDrag.m_Casualty = orphan;
+  activeDrag.m_fStartMs = nowMs;
+  activeDrag.m_Stance = SCR_AICharacterStanceSetting.Create(SCR_EAISettingOrigin.BEHAVIOR, SCR_EAIBehaviorCause.ALWAYS, ECharacterStance.CROUCH);
+  activeDrag.m_Speed = SCR_AICharacterMovementSpeedSetting.Create(SCR_EAISettingOrigin.BEHAVIOR, SCR_EAIBehaviorCause.ALWAYS, EMovementType.WALK);
+  settings.AddCharacterSetting(activeDrag.m_Stance, false);
+  settings.AddCharacterSetting(activeDrag.m_Speed, false);
+  activeDrag.m_Move = new BBB_AIDragMove(utility, null, survivor.GetOrigin(), BBB_Drag.MOVE_PRIORITY, 0, null, 1.0);
+  utility.AddAction(activeDrag.m_Move);
+  BBB_Drag.s_aJobs.Insert(activeDrag);
+  BBB_Drag.Refused(survivor, survivor, "shutdown fixture");
+  m_RestartHooks = BBB.s_Hooks;
+  m_RestartMedic = survivor;
+  m_bRestartStarted = BBB.IsStarted();
+  BBB.Stop();
+  array<SCR_AISettingBase> remaining = {};
+  settings.GetAllSettings(remaining);
+  CheckFM("BBB stop completes drag action and restores temporary settings", activeDrag.m_Move.GetActionState() == EAIActionState.COMPLETED && !remaining.Contains(activeDrag.m_Stance) && !remaining.Contains(activeDrag.m_Speed));
+  CheckFM("BBB stop clears all medic and drag registries", BBB_Medic.s_mHeld.IsEmpty() && BBB_Medic.s_mHot.IsEmpty() && BBB_Medic.s_mGoing.IsEmpty() && BBB_Medic.s_mGoingTo.IsEmpty() && BBB_Medic.s_mStartedBy.IsEmpty() && BBB_Medic.s_mDoneBy.IsEmpty() && BBB_Medic.s_mHitBy.IsEmpty() && BBB_Medic.s_aVanilla.IsEmpty() && BBB_Drag.s_mLast.IsEmpty() && BBB_Drag.s_mRefusedLog.IsEmpty() && BBB_Drag.s_aJobs.IsEmpty());
+  BBB.Stop();
+  // A repeat added and stopped in this same dispatch may still be pending.
+  // Allow both callback deadlines to pass and verify they cancel without work.
+  GetGame().GetCallqueue().CallLater(FinishLifecycleTimers, 750, false);
+  SCR_EntityHelper.DeleteEntityAndChildren(orphan);
+ }
+
+ protected void FinishLifecycleTimers()
+ {
+  int medicTimer = GetGame().GetCallqueue().GetRemainingTime(BBB_Medic.WatchGoing);
+  int dragTimer = GetGame().GetCallqueue().GetRemainingTime(BBB_Drag.Tick);
+  PrintFormat("[BBB] FIRETEST stopped timers medic=%1 drag=%2 watching=%3 ticking=%4", medicTimer, dragTimer, BBB_Medic.s_bWatching, BBB_Drag.s_bTicking);
+  CheckFM("repeated BBB stop removes both scheduled callbacks", !BBB_Medic.s_bWatching && !BBB_Drag.s_bTicking && medicTimer < 0 && dragTimer < 0);
+  BBB.Start(m_RestartHooks);
+  BBB_Medic.MarkGoing(m_RestartMedic, m_RestartMedic);
+  CheckFM("BBB restart can schedule medic tracking again", (!m_bRestartStarted || BBB.IsStarted()) && BBB_Medic.s_bWatching && GetGame().GetCallqueue().GetRemainingTime(BBB_Medic.WatchGoing) >= 0);
+  BBB_Medic.Stop();
+  BBB_Drag.Stop();
+  m_RestartHooks = null;
+  m_RestartMedic = null;
+ }
+
  protected void PlaceOnNativeCover(SCR_AIGroup group)
  {
   ChimeraCoverManagerComponent covers = ChimeraCoverManagerComponent.Cast(GetGame().GetAIWorld().FindComponent(ChimeraCoverManagerComponent));
@@ -309,13 +408,14 @@ class BBB_FireManeuverTest : BBB_AimTest
  protected void FinishFM(string reason)
  {
   GetGame().GetCallqueue().Remove(TickFM);
+  GetGame().GetCallqueue().Remove(FinishLifecycleTimers);
   BBB_FireManeuver.Stop();
   if (m_Lane) Clear(m_Lane);
   BBB_FireManeuver.s_bOn = m_bSaved;
   string verdict = "PASS";
-  int expected = 22;
+  int expected = 34;
   int rounds = 4;
-  if (m_bProbe) { expected = 14; rounds = 1; }
+  if (m_bProbe) { expected = 26; rounds = 1; }
   if (!reason.IsEmpty() || m_iFinished != rounds || m_iFail > 0 || m_iPass != expected) verdict = "FAIL";
   PrintFormat("[BBB] FIRETEST results shots=%1 losses=%2 (two pairs are coverage, not a survival benefit claim)", m_Shots, m_Losses);
   PrintFormat("[ACR] VERDICT %1 test=bbbfiremaneuver passed=%2 failed=%3 expected=%4 rounds=%5 reason=%6", verdict, m_iPass, m_iFail, expected, m_iFinished, reason);
