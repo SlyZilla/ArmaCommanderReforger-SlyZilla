@@ -57,6 +57,7 @@ class ACR_TestHarness : Managed
  static const int MODE_FACTIONS = 45;
  static const int MODE_ORGAN = 46;
  static const int MODE_FLANK = 47;
+ static const int MODE_AIRLIFT = 48;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -109,6 +110,8 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrFactionTest", flag)) mode = MODE_FACTIONS;
   if (System.GetCLIParam("acrOrganTest", flag)) mode = MODE_ORGAN;
   if (System.GetCLIParam("acrFlankTest", flag)) mode = MODE_FLANK;
+  if (System.GetCLIParam("acrAirLiftTest", flag)) mode = MODE_AIRLIFT;
+  if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrPadsTest", flag)) mode = MODE_PADS;
   if (System.GetCLIParam("acrHelipadTest", flag)) mode = MODE_HELIPAD;
   if (System.GetCLIParam("acrGarrisonTest", flag)) mode = MODE_GARRISON;
@@ -202,6 +205,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_MORTAR) { ACR_TestMortar.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_CREW) { ACR_TestCrew.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BATTERY) { ACR_TestBattery.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_AIRLIFT) { ACR_TestAirLift.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BLAST) { ACR_TestBlast.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MOTORIZED) { ACR_TestMotorized.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FIRE) { ACR_TestFire.Run(this, m_Ticks); return; }

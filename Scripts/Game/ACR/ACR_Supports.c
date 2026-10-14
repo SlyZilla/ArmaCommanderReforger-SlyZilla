@@ -22,7 +22,8 @@ enum ACR_ESupportType
  HELI_GUN_RUN,   // "rocket run" (the enum name stays: saved settings use it)
  HELI_LOITER,
  HELI_DOOR_GUNS, // transport helicopter, door gunners only, orbiting
- ARTILLERY_BATTERY // battalion howitzers: no range limit, three heavy salvos over a wide area
+ ARTILLERY_BATTERY, // battalion howitzers: no range limit, three heavy salvos over a wide area
+ AIR_LIFT          // off-map transport helicopter flies a squad to a landing zone (ACR_AirLift)
 }
 
 enum ACR_EBombRunDelivery
@@ -45,6 +46,8 @@ class ACR_SupportEntry
  int m_iCost;
  [Attribute("-1", UIWidgets.EditBox, "Seconds before it can be called again (-1 = default)")]
  int m_iCooldown;
+ [Attribute("-1", UIWidgets.EditBox, "Air lift only: RP when the AI commander calls it (-1 = half the cost)")]
+ int m_iAICost;
 	[Attribute("0", UIWidgets.ComboBox, "Bomb run delivery: virtual blasts, flyover prefab plus virtual blasts, or an editable call-in prefab", "", ParamEnumArray.FromEnum(ACR_EBombRunDelivery))]
 	ACR_EBombRunDelivery m_eBombRunDelivery;
 	[Attribute("", UIWidgets.ResourcePickerThumbnail, "Bomb run aircraft/flyover prefab or editable call-in spawner prefab", "et")]
@@ -68,6 +71,16 @@ class ACR_SupportEntry
   if (m_sName.IsEmpty()) m_sName = ACR_Supports.DefaultName(m_eType);
   if (m_iCost < 0) m_iCost = ACR_Supports.DefaultCost(m_eType);
   if (m_iCooldown < 0) m_iCooldown = ACR_Supports.DefaultCooldown(m_eType);
+  // The AI commander can't fly bought helicopters (no pads of its own on generated maps),
+  // so its air lifts cost half (Jacob, 14 Oct).
+  if (m_iAICost < 0) m_iAICost = m_iCost / 2;
+ }
+
+ // What this call costs the caller.
+ int CostFor(bool byAI)
+ {
+  if (byAI && m_eType == ACR_ESupportType.AIR_LIFT) return m_iAICost;
+  return m_iCost;
  }
 
  // A faction's own copy of a configured entry (R15): cooldowns are per copy, never shared
@@ -80,6 +93,7 @@ class ACR_SupportEntry
   copy.m_sName = m_sName;
   copy.m_iCost = m_iCost;
   copy.m_iCooldown = m_iCooldown;
+  copy.m_iAICost = m_iAICost;
   copy.m_eBombRunDelivery = m_eBombRunDelivery;
   copy.m_sBombRunPrefab = m_sBombRunPrefab;
   copy.m_fBombRunAltitude = m_fBombRunAltitude;
@@ -574,7 +588,7 @@ class ACR_HeliRun : ACR_SupportRun
    m_bLifting = false;
    m_fClimb = rise;
    m_fSpeed = 0;
-   PrintFormat("[ACR] SUPPORT %1 off the pad (%2 m up), heading out", m_Home.m_sName, (int)(m_Pos[1] - ground));
+   PrintFormat("[ACR] SUPPORT %1 off the ground (%2 m up), heading out", LogName(), (int)(m_Pos[1] - ground));
   }
   return true;
  }
@@ -597,7 +611,15 @@ class ACR_HeliRun : ACR_SupportRun
  protected bool FlyHome(ACR_Supports supports, float dt, float now)
  {
   foreach (ACR_HeliGun idle : m_Guns) idle.StopFire();
-  vector pad = m_Home.m_Pad.Spot();
+  if (!FlyToSpot(supports, m_Home.m_Pad.Spot(), dt, now)) return true;
+  Touchdown(supports);
+  return false;
+ }
+
+ // Flies to a landing spot (a pad, or an air lift's landing zone): slows down on the way in,
+ // hovers over it and sets down. True once it is down.
+ protected bool FlyToSpot(ACR_Supports supports, vector pad, float dt, float now)
+ {
   vector flat = pad - m_Pos;
   flat[1] = 0;
   float d = flat.Length();
@@ -647,14 +669,9 @@ class ACR_HeliRun : ACR_SupportRun
   if (now >= m_fNextAltLog)
   {
    m_fNextAltLog = now + 5000;
-   PrintFormat("[ACR] SUPPORT %1 returning: %2 m from its pad, %3 m up, %4 m/s", m_Home.m_sName, (int)d, (int)(m_Pos[1] - ground), (int)m_fSpeed);
+   PrintFormat("[ACR] SUPPORT %1 coming in: %2 m from its landing spot, %3 m up, %4 m/s", LogName(), (int)d, (int)(m_Pos[1] - ground), (int)m_fSpeed);
   }
-  if (d < 4 && m_Pos[1] <= pad[1] + 0.35)
-  {
-   Touchdown(supports);
-   return false;
-  }
-  return true;
+  return d < 4 && m_Pos[1] <= pad[1] + 0.35;
  }
 
  // On the pad: physics back on, engine off, servicing starts.
@@ -882,8 +899,16 @@ class ACR_HeliRun : ACR_SupportRun
   if (now - m_fStarted > limit) return false;
   if (!m_bAnalyzed && !m_bLifting && now - m_fStarted > 500) AnalyzeGuns(supports);
   Spool();
-  // The game spools the rotors up over ~20 s and has no way to set their speed, so the
-  // helicopter waits out of sight at its start point until they're at flying speed.
+  if (StillSpooling(now)) return true;
+  if (m_bLifting) return Lift(dt);
+  if (m_bReturning) return FlyHome(supports, dt, now);
+  return FlySupport(supports, dt, now);
+ }
+
+ // The game spools the rotors up over ~20 s and has no way to set their speed, so the
+ // helicopter waits out of sight at its start point until they're at flying speed.
+ protected bool StillSpooling(float now)
+ {
   if (!m_bSpooled)
   {
    float rpm, target;
@@ -905,8 +930,12 @@ class ACR_HeliRun : ACR_SupportRun
     return true;
    }
   }
-  if (m_bLifting) return Lift(dt);
-  if (m_bReturning) return FlyHome(supports, dt, now);
+  return false;
+ }
+
+ // The support mission itself: rocket run, gunship or door gunners.
+ protected bool FlySupport(ACR_Supports supports, float dt, float now)
+ {
 
   vector flat = m_Target - m_Pos;
   flat[1] = 0;
@@ -1155,6 +1184,13 @@ class ACR_HeliRun : ACR_SupportRun
   return true;
  }
 
+ // Log lines: the pad helicopter's own name, else the kind.
+ string LogName()
+ {
+  if (m_Home) return m_Home.m_sName;
+  return StationName();
+ }
+
  string StationName()
  {
   if (m_bDoorGuns) return "Door gunners";
@@ -1248,6 +1284,7 @@ class ACR_Supports : Managed
   return m_Station;
  }
  protected ref array<ref ACR_SupportRun> m_Runs = {};
+ void AddRun(ACR_SupportRun run) { m_Runs.Insert(run); }
 
  void Helicopters(array<ACR_HeliRun> result)
  {
@@ -1337,6 +1374,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_LOITER: return "Helicopter: gunship (90 s)";
    case ACR_ESupportType.HELI_DOOR_GUNS: return "Helicopter: door gunners (120 s)";
    case ACR_ESupportType.ARTILLERY_BATTERY: return "Artillery: howitzer battery";
+   case ACR_ESupportType.AIR_LIFT: return "Helicopter: air lift";
   }
   return "Support";
  }
@@ -1355,6 +1393,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_LOITER: return 45;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 20;
    case ACR_ESupportType.ARTILLERY_BATTERY: return 60;
+   case ACR_ESupportType.AIR_LIFT: return 40;
   }
   return 20;
  }
@@ -1373,6 +1412,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_LOITER: return 300;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 150;
    case ACR_ESupportType.ARTILLERY_BATTERY: return 300;
+   case ACR_ESupportType.AIR_LIFT: return 240;
   }
   return 120;
  }
@@ -1398,11 +1438,12 @@ class ACR_Supports : Managed
  // Every support type, used when a faction's settings list none.
  static void BuildDefaults(array<ref ACR_SupportEntry> entries)
  {
-  for (int type = ACR_ESupportType.MORTAR_HE_SMALL; type <= ACR_ESupportType.ARTILLERY_BATTERY; type++)
+  for (int type = ACR_ESupportType.MORTAR_HE_SMALL; type <= ACR_ESupportType.AIR_LIFT; type++)
   {
    ACR_SupportEntry entry = new ACR_SupportEntry();
    entry.m_eType = type;
    entry.m_iCost = -1;
+   entry.m_iAICost = -1;
    entry.m_iCooldown = -1;
    entry.Resolve();
    // With RHS loaded, both sides' bomb run is an audible FA-18 flyover (Jacob, 9 Oct).
@@ -1446,6 +1487,8 @@ class ACR_Supports : Managed
   compartments.GetCompartments(slots);
   foreach (BaseCompartmentSlot slot : slots)
   {
+   // Passengers (an air lift's squad) are not crew.
+   if (slot.GetType() == ECompartmentType.CARGO) continue;
    IEntity occupant = slot.GetOccupant();
    if (!occupant || !ACR_Respawn.IsAlive(occupant)) continue;
    AIControlComponent control = AIControlComponent.Cast(occupant.FindComponent(AIControlComponent));
@@ -1477,13 +1520,14 @@ class ACR_Supports : Managed
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!character || !character.GetCompartmentAccessComponent()) continue;
    BaseCompartmentSlot slot = character.GetCompartmentAccessComponent().GetCompartment();
-   if (slot && m_Vehicles.Contains(slot.GetVehicle())) return true;
+   if (slot && slot.GetType() != ECompartmentType.CARGO && m_Vehicles.Contains(slot.GetVehicle())) return true;
   }
   return false;
  }
 
  // Called by the commander (or AI). Returns the feedback message.
- string Call(string factionKey, int index, vector target, bool byAI = false, int callerPlayerId = -1)
+ // squad: the squad to fly (air lift only).
+ string Call(string factionKey, int index, vector target, bool byAI = false, int callerPlayerId = -1, ACR_Squad squad = null)
  {
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(factionKey);
   if (index < 0 || index >= data.m_aSupports.Count()) return "Unknown support";
@@ -1492,6 +1536,7 @@ class ACR_Supports : Managed
   if (now < entry.m_fReadyAt) return string.Format("%1 is not ready (%2 s)", entry.m_sName, Math.Ceil((entry.m_fReadyAt - now) / 1000));
   // Mortar supports are fired by a real mortar team (ACR_Mortars): nothing is spent unless one can.
   if (ACR_Mortars.IsMortarType(entry.m_eType)) return CallMortars(factionKey, entry, target, byAI);
+  if (entry.m_eType == ACR_ESupportType.AIR_LIFT) return ACR_AirLift.Call(this, factionKey, entry, target, byAI, squad);
   if (entry.m_eType == ACR_ESupportType.BOMB_RUN && entry.m_eBombRunDelivery != ACR_EBombRunDelivery.VIRTUAL)
   {
    if (entry.m_sBombRunPrefab.IsEmpty()) return "Choose a bomb-run prefab in this faction's support settings";

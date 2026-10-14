@@ -1120,7 +1120,11 @@ modded class SCR_PlayerController
   }
   if (m_ACR_PendingSupport >= 0 && m_ACR_PendingSupport < m_ACR_SupNames.Count())
   {
-   m_ACR_Panel.SetBase(m_ACR_SupNames[m_ACR_PendingSupport], "Right-click the target on the map. Click the entry again to cancel.");
+   string supportHint = "Right-click the target on the map. Click the entry again to cancel.";
+   string supportName = m_ACR_SupNames[m_ACR_PendingSupport];
+   supportName.ToLower();
+   if (supportName.Contains("air lift")) supportHint = "Select the squad to fly, then right-click where it should land. Click the entry again to cancel.";
+   m_ACR_Panel.SetBase(m_ACR_SupNames[m_ACR_PendingSupport], supportHint);
    return;
   }
   if (!m_ACR_SupportResult.IsEmpty() && System.GetTickCount() - m_ACR_SupportResultAt < 10000)
@@ -1263,7 +1267,7 @@ modded class SCR_PlayerController
    if (m_ACR_HasSupportTarget)
    {
     m_ACR_HasSupportTarget = false;
-    Rpc(ACR_SupportServer, support, m_ACR_SupportTarget);
+    Rpc(ACR_SupportServer, support, m_ACR_SupportTarget, m_ACR_SelectedGroup);
     m_ACR_PendingSupport = -1;
     m_ACR_SupportOpen = false;
     return;
@@ -1310,7 +1314,7 @@ modded class SCR_PlayerController
    if (!supportMap) return false;
    float sx, sz;
    supportMap.GetMapCursorWorldPosition(sx, sz);
-   Rpc(ACR_SupportServer, m_ACR_PendingSupport, Vector(sx, 0, sz));
+   Rpc(ACR_SupportServer, m_ACR_PendingSupport, Vector(sx, 0, sz), m_ACR_SelectedGroup);
    m_ACR_PendingSupport = -1;
    return true;
   }
@@ -1807,14 +1811,14 @@ modded class SCR_PlayerController
   foreach (int left : m_ACR_SupCooldowns) result.Insert(Math.Max(0, left - since));
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
- protected void ACR_SupportServer(int index, vector target)
+ protected void ACR_SupportServer(int index, vector target, RplId group)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
   float now = GetGame().GetWorld().GetWorldTime();
   if (now - m_ACR_LastCommand < 300) return;
   m_ACR_LastCommand = now;
-  Rpc(ACR_SupportResultOwner, manager.CallSupport(this, index, target));
+  Rpc(ACR_SupportResultOwner, manager.CallSupport(this, index, target, group));
  }
  // The answer to a support call, also kept in the panel for a while (a refusal such as
  // "out of range" was only a hint, easy to miss on the map).
@@ -1830,7 +1834,7 @@ modded class SCR_PlayerController
  // Test hook: call a support without the UI.
  void ACR_TestSupport(int index, vector target)
  {
-  Rpc(ACR_SupportServer, index, target);
+  Rpc(ACR_SupportServer, index, target, m_ACR_SelectedGroup);
  }
 
  // Base marker clicked: deploy the armed purchase there, otherwise select the base.

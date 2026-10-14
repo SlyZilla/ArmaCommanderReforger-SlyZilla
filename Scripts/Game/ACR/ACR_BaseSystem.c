@@ -49,10 +49,23 @@ class ACR_BaseSystem : Managed
   {
    if (settings && settings.m_aSupports && !settings.m_aSupports.IsEmpty())
    {
+    bool listsAirLift = false;
     foreach (ACR_SupportEntry configured : settings.m_aSupports)
     {
+     if (configured && configured.m_eType == ACR_ESupportType.AIR_LIFT) listsAirLift = true;
      if (!configured || !configured.m_bEnabled) continue;
      data.m_aSupports.Insert(configured.Copy());
+    }
+    // Lists made before the air lift existed (14 Oct) get it too; a row for it (on or off) decides.
+    if (!listsAirLift)
+    {
+     ACR_SupportEntry lift = new ACR_SupportEntry();
+     lift.m_eType = ACR_ESupportType.AIR_LIFT;
+     lift.m_iCost = -1;
+     lift.m_iCooldown = -1;
+     lift.m_iAICost = -1;
+     lift.Resolve();
+     data.m_aSupports.Insert(lift);
     }
    }
    else ACR_Supports.BuildDefaults(data.m_aSupports);

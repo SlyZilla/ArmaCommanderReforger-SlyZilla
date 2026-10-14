@@ -234,6 +234,7 @@ class ACR_Requests : Managed
   // Helicopter crews only hold or get out (AI can't fly; any move makes them get out and walk).
   bool crewSafe = command == ACR_ERequest.ORDER_FIRE_AT_WILL || command == ACR_ERequest.ORDER_HALT || command == ACR_ERequest.ORDER_GET_OUT || command == ACR_ERequest.ORDER_UNLOAD || command == ACR_ERequest.MODE_COMBAT || command == ACR_ERequest.MODE_FAST || command == ACR_ERequest.MODE_SILENT;
   if (!crewSafe && squad.Aircraft()) return outcome.Refuse(name + ": AI can't fly helicopters. Take the pilot's seat to fly it, or order Get out");
+  if (ACR_AirLift.Busy(squad)) return outcome.Refuse(name + " is on an air lift: orders again once it has landed");
   m_Manager.m_LastSquad.Set(pc.GetPlayerId(), squad);
   int serial = squad.m_iOrderSerial;
   switch (command)

@@ -153,6 +153,7 @@ class ACR_AICommander : Managed
    if (squad.HasPlayer() || !squad.GetAnchor()) continue; // players lead themselves
    if (squad.m_bMortar) continue; // mortar teams: PositionMortars
    if (squad.Aircraft()) continue; // helicopter crews: AI can't fly
+   if (ACR_AirLift.Busy(squad)) continue; // flown somewhere: leave it until it has landed
    if (freeOnly && squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED) continue;
    if (freeOnly && !squad.IsCombatUnit()) continue; // lone drivers, unarmed crews: kept out of the fighting
    result.Insert(squad);

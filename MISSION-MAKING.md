@@ -218,6 +218,7 @@ Each entry is one action in the commander's support menu, such as a mortar strik
 | `m_sName` | empty = default | Name in the command panel |
 | `m_iCost` | -1 = default | Cost in RP |
 | `m_iCooldown` | -1 = default | Seconds before it can be called again |
+| `m_iAICost` | -1 = half the cost | `AIR_LIFT` only: RP when the AI commander calls it |
 | `m_eBombRunDelivery` | `VIRTUAL` | Bomb-run delivery: existing virtual blasts, a flyover prefab plus virtual blasts, or an editable call-in prefab |
 | `m_sBombRunPrefab` | empty | Aircraft/flyover prefab (`FLYOVER`) or call-in spawner prefab (`EDITABLE_CALL_IN`) |
 | `m_fBombRunAltitude` | 300 m | Flyover height above the target, and never under 150 m over a hill on the way; clamped to 30-1,000 m |
@@ -239,6 +240,7 @@ Each entry is one action in the commander's support menu, such as a mortar strik
 | `HELI_LOITER` | Helicopter: gunship (90 s) | 45 | 300 |
 | `HELI_DOOR_GUNS` | Helicopter: door gunners (120 s) | 20 | 150 |
 | `ARTILLERY_BATTERY` | Artillery: howitzer battery | 60 | 300 |
+| `AIR_LIFT` | Helicopter: air lift | 40 (AI commander 20) | 240 |
 
 Set the bomb-run style in each side's support row. `VIRTUAL` uses AC: Actual's existing explosions and
 does not show a plane. `FLYOVER` sends the chosen aircraft or model over the target, then uses AC: Actual's
@@ -287,6 +289,15 @@ spots. The target must be at least 150 m away, with no friendly within 120 m. Th
 price and cooldown and can happen once every 45 seconds per side. Observer teams start with this option
 on. AI commanders' observers and mortar teams always use it. Mortar teams also fire two free, scattered
 rounds every 30 seconds at spotted enemies they can reach.
+
+`AIR_LIFT` flies a squad somewhere. Select the squad, pick the air lift, and right-click where it
+should land (at least 400 m away). One transport helicopter (two if the squad needs more seats) comes
+from off the map, lands on clear, level ground within 250 m of the squad, waits up to two minutes for it
+to board, and sets it down on clear ground within 200 m of the clicked point; the squad then holds there
+and the helicopters leave. No helipad is needed. The call is declined without a charge if there is no
+clear landing spot at either end. While a squad is on an air lift it takes no orders until it has landed.
+The AI commander pays half (`m_iAICost`), since it cannot fly bought helicopters. Support lists made
+before the air lift existed get it added; add an `AIR_LIFT` row with **Enabled** off to leave it out.
 
 `ARTILLERY_BATTERY` needs no team and can hit anywhere on the map. It arrives 75-120 seconds after the
 call: three groups of six heavy rounds, 10 seconds apart, landing within 120 m of the target. You can

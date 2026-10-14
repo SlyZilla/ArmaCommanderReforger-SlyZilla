@@ -206,7 +206,8 @@ class ACR_Manager : Managed
   return string.Format("grid %1-%2", x.ToString(3), z.ToString(3));
  }
 
- string CallSupport(SCR_PlayerController pc, int index, vector target)
+ // group: the squad selected on the caller's map (the air lift flies it).
+ string CallSupport(SCR_PlayerController pc, int index, vector target, RplId group = RplId.Invalid())
  {
   Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
   if (!faction) return "You have no faction";
@@ -215,7 +216,13 @@ class ACR_Manager : Managed
   if (!m_Supports) m_Supports = new ACR_Supports(this);
   string key = faction.GetFactionKey();
   int before = m_Bases.GetRP(key);
-  string result = m_Supports.Call(key, index, target, false, pc.GetPlayerId());
+  ACR_Squad squad;
+  if (group.IsValid())
+  {
+   squad = FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(group)));
+   if (squad && !m_Squads.Contains(squad)) squad = null;
+  }
+  string result = m_Supports.Call(key, index, target, false, pc.GetPlayerId(), squad);
   int spent = before - m_Bases.GetRP(key);
   if (spent > 0)
   {
