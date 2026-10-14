@@ -294,6 +294,10 @@ class ACR_SetupClient
  static string s_sRows;
  static string s_sInfo;
  protected static ref ACR_SetupDialog s_Dialog;
+ // Before anyone spawns there is no camera, so nothing is drawn (the loading screen stays on
+ // screen, dialog included: Jacob 13 Oct heard the buttons but saw only the loading screen).
+ // A plain camera over the battlefield until the player has a body.
+ protected static CameraBase s_Camera;
  protected static float s_fHintAt = -100000;
  protected static bool s_bChanged;
 
@@ -309,6 +313,10 @@ class ACR_SetupClient
  // Every frame on clients (ACR_Manager.OnFrame).
  static void Frame()
  {
+  PlayerController local = GetGame().GetPlayerController();
+  bool bodyless = local && !local.GetControlledEntity();
+  if (s_bActive && bodyless) ShowCamera();
+  else DropCamera();
   if (!s_bActive)
   {
    if (s_Dialog) { s_Dialog.Close(); s_Dialog = null; }
@@ -337,6 +345,39 @@ class ACR_SetupClient
   }
  }
 
+ protected static void ShowCamera()
+ {
+  CameraManager cameras = GetGame().GetCameraManager();
+  if (!cameras) return;
+  if (!s_Camera)
+  {
+   vector mins, maxs;
+   GetGame().GetWorld().GetBoundBox(mins, maxs);
+   vector centre = (mins + maxs) * 0.5;
+   // South of the centre, looking north and down over the map.
+   vector eye = Vector(centre[0], 0, centre[2] - (maxs[2] - mins[2]) * 0.25);
+   eye[1] = Math.Max(GetGame().GetWorld().GetSurfaceY(eye[0], eye[2]), 0) + 600;
+   EntitySpawnParams parameters = new EntitySpawnParams();
+   parameters.TransformMode = ETransformMode.WORLD;
+   Math3D.AnglesToMatrix(Vector(0, -30, 0), parameters.Transform);
+   parameters.Transform[3] = eye;
+   s_Camera = CameraBase.Cast(GetGame().SpawnEntity(CameraBase, GetGame().GetWorld(), parameters));
+   if (!s_Camera) return;
+   s_Camera.SetVerticalFOV(60);
+   s_Camera.SetNearPlane(0.5);
+   s_Camera.SetFarPlane(8000);
+   Print("[ACR] SETUP camera over the battlefield while nobody has spawned");
+  }
+  if (cameras.CurrentCamera() != s_Camera) cameras.SetCamera(s_Camera);
+ }
+
+ protected static void DropCamera()
+ {
+  if (!s_Camera) return;
+  delete s_Camera;
+  s_Camera = null;
+ }
+
  static void Request(string key)
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
@@ -345,6 +386,7 @@ class ACR_SetupClient
 
  static void Reset()
  {
+  DropCamera();
   s_bActive = false;
   s_bAllowed = false;
   if (s_Dialog) s_Dialog.Close();
