@@ -161,7 +161,7 @@ class ACR_TestSetup
  // US is given every neutral base north of the split line (z > 6650); the reserve must sit at a
  // secure non-HQ base, not the Airbase HQ. Logs the five best candidates.
  // -acrSetupGenTest 1 (server, Kolguyev, ~40 s): the layout preview during setup (aca-f07).
- static const int GEN_CHECKS = 5;
+ static const int GEN_CHECKS = 10;
  protected static ref array<string> s_PreviewNames = {};
  static bool GenWanted() { return System.IsCLIParam("acrSetupGenTest"); }
  static void RunGen(int second)
@@ -172,7 +172,7 @@ class ACR_TestSetup
    string rows = ACR_Setup.Rows();
    int first = ACR_Setup.s_PreviewNames.Count();
    ACR_TestRegress.Check("setup preview: a generated layout is planned before Start", !ACR_Setup.Started() && first >= 15 && ACR_Base.s_All.IsEmpty(), string.Format("%1 bases planned, %2 built", first, ACR_Base.s_All.Count()));
-   ACR_TestRegress.Check("setup preview: rows offer the seed and the map", rows.Contains("seed\tLayout seed: ") && rows.Contains("map\tShow the layout on the map"), rows);
+   ACR_TestRegress.Check("setup preview: rows offer the seed and the map", rows.Contains("seed\tLayout seed: ") && rows.Contains("map\tShow and edit the layout on the map"), rows);
    string seedBefore;
    ACR_Options.Get("acrSeed", seedBefore);
    string firstNames = "";
@@ -184,6 +184,7 @@ class ACR_TestSetup
    string seedAfter;
    ACR_Options.Get("acrSeed", seedAfter);
    ACR_TestRegress.Check("setup preview: a new seed and the half size re-plan it", seedAfter != seedBefore && half > 0 && half < first, string.Format("seed %1 -> %2, %3 -> %4 bases", seedBefore, seedAfter, first, half));
+   Moves();
    s_PreviewNames.Clear();
    s_PreviewNames.Copy(ACR_Setup.s_PreviewNames);
    ACR_Setup.Start("the setup preview test");
@@ -198,8 +199,77 @@ class ACR_TestSetup
    int ownedHQs;
    foreach (ACR_Base hq : ACR_Base.s_All) if (hq.m_sOwner != "") ownedHQs++;
    ACR_TestRegress.Check("setup preview: two HQs owned after Start", ownedHQs == 2, string.Format("%1 owned", ownedHQs));
+   ACR_Base moved;
+   foreach (ACR_Base b : ACR_Base.s_All) if (b.m_sName == s_sMoved) moved = b;
+   float off = -1;
+   if (moved) off = vector.DistanceXZ(moved.GetOrigin(), s_vMovedTo);
+   ACR_TestRegress.Check("layout editor: Start builds the moved base where it was put", moved && off >= 0 && off < 2, string.Format("%1 %2 m from the chosen spot", s_sMoved, (int)off));
    ACR_TestRegress.Complete("setupgen", GEN_CHECKS);
   }
+ }
+
+ protected static string s_sMoved;
+ protected static vector s_vMovedTo;
+
+ // Layout editor (aca-f07 step 2): moves refused and accepted, undo, kept for Start.
+ protected static void Moves()
+ {
+  int seed = ACR_Generator.Seed();
+  int size = ACR_Skirmish.SizeOption();
+  array<ref ACR_GenSite> layout = {};
+  array<ACR_GenSite> hqs = {};
+  ACR_Generator.Plan(seed, size, layout, hqs);
+  ACR_GenSite site;
+  ACR_GenSite neighbour;
+  foreach (ACR_GenSite s : layout)
+  {
+   if (hqs.Contains(s)) continue;
+   if (!site) site = s;
+   else if (!neighbour) neighbour = s;
+  }
+  if (!site || !neighbour || hqs.Count() != 2) { ACR_TestRegress.Abort("setupgen", "no layout to edit"); return; }
+  string stranger = ACR_Setup.HandleMove(999, site.m_sName, site.m_vPos[0] + 300, site.m_vPos[2]);
+  string reason;
+  bool crowd = ACR_Generator.Move(site.m_sName, neighbour.m_vPos[0] + 5, neighbour.m_vPos[2], reason);
+  ACR_TestRegress.Check("layout editor: a move onto another base and a stranger's move are refused", !crowd && reason.Contains("Too close") && stranger.Contains("Only the host"), reason + " / " + stranger);
+  // An HQ next to the other HQ.
+  bool hqRefused = false;
+  string hqReason = "";
+  for (int i = 0; i < 16 && !hqRefused; i++)
+  {
+   float angle = Math.PI2 * i / 16.0;
+   string r;
+   if (!ACR_Generator.Move(hqs[0].m_sName, hqs[1].m_vPos[0] + Math.Cos(angle) * 600, hqs[1].m_vPos[2] + Math.Sin(angle) * 600, r) && r.Contains("HQs")) { hqRefused = true; hqReason = r; }
+  }
+  ACR_TestRegress.Check("layout editor: HQs can't be moved close together", hqRefused && ACR_Generator.MoveCount() == 0, hqReason);
+  // A valid spot near the base.
+  bool accepted = false;
+  vector to;
+  for (int ring = 150; ring <= 1500 && !accepted; ring += 150)
+  {
+   for (int j = 0; j < 8 && !accepted; j++)
+   {
+    float a = Math.PI2 * j / 8.0;
+    to = Vector(site.m_vPos[0] + Math.Cos(a) * ring, 0, site.m_vPos[2] + Math.Sin(a) * ring);
+    accepted = ACR_Generator.Move(site.m_sName, to[0], to[2], reason);
+   }
+  }
+  ACR_Setup.UpdatePreview();
+  int index = ACR_Setup.s_PreviewNames.Find(site.m_sName);
+  float shown = -1;
+  if (index >= 0) shown = vector.DistanceXZ(ACR_Setup.s_PreviewPos[index], to);
+  ACR_TestRegress.Check("layout editor: a valid move is taken and shown in the preview", accepted && shown >= 0 && shown < 2 && ACR_Setup.Rows().Contains("undo\tUndo base moves (1)"), string.Format("%1; preview %2 m off", reason, (int)shown));
+  ACR_Generator.ClearMoves();
+  ACR_Setup.UpdatePreview();
+  index = ACR_Setup.s_PreviewNames.Find(site.m_sName);
+  float back = -1;
+  if (index >= 0) back = vector.DistanceXZ(ACR_Setup.s_PreviewPos[index], site.m_vPos);
+  ACR_TestRegress.Check("layout editor: undo puts it back", ACR_Generator.MoveCount() == 0 && back >= 0 && back < 2 && !ACR_Setup.Rows().Contains("undo"), string.Format("%1 m from its place", (int)back));
+  // Again, for Start.
+  ACR_Generator.Move(site.m_sName, to[0], to[2], reason);
+  ACR_Setup.UpdatePreview();
+  s_sMoved = site.m_sName;
+  s_vMovedTo = to;
  }
 
  static bool ReserveWanted() { return System.IsCLIParam("acrReserveTest"); }

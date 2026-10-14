@@ -15,6 +15,7 @@ class ACR_GenSite
  string m_sKind;     // city town village settlement military airport industry landmark
  vector m_vPos;
  float m_fRadius;
+ float m_fFullRadius; // the kind's own radius, before shrinking to fit
  int m_iValue;
  int m_iRank;        // which of two overlapping sites stays
  string m_sKey;      // the map's location key, e.g. Military, Harbour, Cain_Kamensk
@@ -27,6 +28,7 @@ class ACR_GenSite
   copy.m_sKind = m_sKind;
   copy.m_vPos = m_vPos;
   copy.m_fRadius = m_fRadius;
+  copy.m_fFullRadius = m_fFullRadius;
   copy.m_iValue = m_iValue;
   copy.m_iRank = m_iRank;
   copy.m_sKey = m_sKey;
@@ -56,12 +58,21 @@ class ACR_Generator
 
  protected static ref array<ref ACR_GenSite> s_Surveyed;  // the map's sites, read once
 
+ // Layout editor (aca-f07, step 2): bases the host moved on the setup map, by name. They belong
+ // to one seed and size; another seed or size ignores them.
+ static ref map<string, vector> s_Moves = new map<string, vector>();
+ protected static int s_iMovesSeed;
+ protected static int s_iMovesSize;
+ static int s_iMovesVersion;
+
  static void Reset()
  {
   s_bBuilt = false;
   s_iSeed = 0;
   s_Sites.Clear();
   s_Surveyed = null;
+  s_Moves.Clear();
+  s_iMovesVersion = 0;
  }
 
  static bool Built() { return s_bBuilt; }
@@ -213,6 +224,7 @@ class ACR_Generator
  {
   site.m_sKind = kind;
   site.m_fRadius = radius;
+  site.m_fFullRadius = radius;
   site.m_iValue = value;
   site.m_iRank = rank;
   site.m_sName = name;
@@ -361,6 +373,7 @@ class ACR_Generator
   hqs.Insert(west);
   hqs.Insert(east);
   foreach (ACR_GenSite p : pool) layout.Insert(p);
+  ApplyMoves(seed, size, layout);
   // HQs get a 70 m circle where there is room for it.
   foreach (ACR_GenSite hq : hqs)
   {
@@ -373,6 +386,90 @@ class ACR_Generator
    }
    if (allowed > hq.m_fRadius) hq.m_fRadius = allowed;
   }
+  return true;
+ }
+
+ // ---------------------------------------------------------------- layout editor
+ // The host's moves, applied after the sites and HQs are chosen (so a move never changes which
+ // places are in play). A moved base takes its kind's full circle, shrunk to fit.
+ protected static void ApplyMoves(int seed, int size, array<ref ACR_GenSite> layout)
+ {
+  if (s_Moves.IsEmpty() || seed != s_iMovesSeed || size != s_iMovesSize) return;
+  foreach (ACR_GenSite site : layout)
+  {
+   vector to;
+   if (!s_Moves.Find(site.m_sName, to)) continue;
+   site.m_vPos = to;
+   float allowed = site.m_fFullRadius;
+   if (allowed <= 0) allowed = site.m_fRadius;
+   foreach (ACR_GenSite other : layout)
+   {
+    if (other == site) continue;
+    float room = vector.DistanceXZ(other.m_vPos, site.m_vPos) - other.m_fRadius - 10;
+    if (room < allowed) allowed = room;
+   }
+   if (allowed < 35) allowed = 35; // checked when moved; a later move can only take the room it found
+   site.m_fRadius = allowed;
+  }
+ }
+
+ // Moves that apply to the current seed and size.
+ static int MoveCount()
+ {
+  if (s_Moves.IsEmpty()) return 0;
+  string text;
+  int seed = 0;
+  if (ACR_Options.Get("acrSeed", text)) seed = text.ToInt();
+  if (seed != s_iMovesSeed || ACR_Skirmish.SizeOption() != s_iMovesSize) return 0;
+  return s_Moves.Count();
+ }
+
+ static void ClearMoves()
+ {
+  s_Moves.Clear();
+  s_iMovesVersion++;
+ }
+
+ // The host moved a base on the setup map (server). Refused with a reason when the spot is off
+ // the map, in water, crowds another base's capture circle, or brings the HQs too close.
+ static bool Move(string name, float x, float z, out string reason)
+ {
+  int seed = Seed();
+  int size = ACR_Skirmish.SizeOption();
+  if (seed != s_iMovesSeed || size != s_iMovesSize)
+  {
+   s_Moves.Clear();
+   s_iMovesSeed = seed;
+   s_iMovesSize = size;
+  }
+  array<ref ACR_GenSite> layout = {};
+  array<ACR_GenSite> hqs = {};
+  if (!Plan(seed, size, layout, hqs)) { reason = "There is no generated layout to edit"; return false; }
+  ACR_GenSite site;
+  foreach (ACR_GenSite candidate : layout) if (candidate.m_sName == name) site = candidate;
+  if (!site) { reason = "No base called " + name; return false; }
+  vector pos = Vector(x, GetGame().GetWorld().GetSurfaceY(x, z), z);
+  if (!ACR_Manager.OnMap(pos)) { reason = "That spot is off the map"; return false; }
+  if (BBB_Terrain.IsWater(x, z)) { reason = "That spot is in water"; return false; }
+  foreach (ACR_GenSite other : layout)
+  {
+   if (other == site) continue;
+   float room = vector.DistanceXZ(other.m_vPos, pos) - other.m_fRadius - 10;
+   if (room < 35) { reason = string.Format("Too close to %1: capture circles need room", other.m_sName); return false; }
+  }
+  if (hqs.Count() == 2 && (site == hqs[0] || site == hqs[1]))
+  {
+   ACR_GenSite otherHQ = hqs[0];
+   if (site == hqs[0]) otherHQ = hqs[1];
+   float minimum = 1000;
+   if (size == ACR_ESkirmishSize.FLASHPOINT) minimum = 300;
+   if (vector.DistanceXZ(otherHQ.m_vPos, pos) < minimum) { reason = string.Format("The two HQs must stay at least %1 m apart", (int)minimum); return false; }
+  }
+  float moved = vector.DistanceXZ(site.m_vPos, pos);
+  s_Moves.Set(name, pos);
+  s_iMovesVersion++;
+  reason = string.Format("%1 moved %2 m", name, (int)moved);
+  PrintFormat("[ACR] GEN MOVE %1 -> %2 %3 (seed %4)", name, (int)x, (int)z, seed);
   return true;
  }
 

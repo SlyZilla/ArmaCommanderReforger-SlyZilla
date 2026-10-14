@@ -66,7 +66,7 @@ class ACR_Setup
   if (generated) seed = ACR_Generator.Seed();
   string west = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
-  string signature = string.Format("%1|%2|%3|%4", layout, seed, west, east);
+  string signature = string.Format("%1|%2|%3|%4|%5", layout, seed, west, east, ACR_Generator.s_iMovesVersion);
   if (signature == s_sPreviewSig) return;
   s_sPreviewSig = signature;
   s_PreviewPos.Clear();
@@ -207,7 +207,14 @@ class ACR_Setup
    rows += key + "\t" + Label(key) + ": " + ValueName(key, Current(key)) + "\n";
   }
   // Opens the map on the host's own screen with the layout drawn on it (client side).
-  if (!s_PreviewNames.IsEmpty()) rows += string.Format("map\tShow the layout on the map (%1 bases)\n", s_PreviewNames.Count());
+  bool generated = Current("layout").StartsWith("gen:");
+  if (!s_PreviewNames.IsEmpty())
+  {
+   if (generated) rows += string.Format("map\tShow and edit the layout on the map (%1 bases)\n", s_PreviewNames.Count());
+   else rows += string.Format("map\tShow the layout on the map (%1 bases)\n", s_PreviewNames.Count());
+  }
+  int moves = ACR_Generator.MoveCount();
+  if (generated && moves > 0) rows += string.Format("undo\tUndo base moves (%1)\n", moves);
   return rows;
  }
 
@@ -414,7 +421,25 @@ class ACR_Setup
    Start(string.Format("player %1", playerId));
    return "Match started";
   }
+  if (key == "undo")
+  {
+   ACR_Generator.ClearMoves();
+   Broadcast();
+   return "Base moves undone";
+  }
   return Cycle(key);
+ }
+
+ // The host moved a base on the setup map (server).
+ static string HandleMove(int playerId, string name, float x, float z)
+ {
+  if (!Wanted() || s_bStarted) return "The match has already started";
+  if (!ACR_Manager.IsHostOrAdmin(playerId)) return "Only the host or an admin can change the match setup";
+  if (!Current("layout").StartsWith("gen:")) return "Only generated battlefields can be edited: pick a Generated battlefield first";
+  string reason;
+  ACR_Generator.Move(name, x, z, reason);
+  Broadcast();
+  return reason;
  }
 }
 
@@ -556,7 +581,9 @@ class ACR_SetupClient
  {
   if (s_Dialog) { s_Dialog.Close(); s_Dialog = null; }
   GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
-  SCR_HintManagerComponent.ShowCustomHint("The planned layout. Close the map to return to the match setup.", "AC: Actual", 8, true);
+  string hint = "The planned layout. Close the map to return to the match setup.";
+  if (s_sRows.Contains("Show and edit")) hint = "The planned layout. To move a base, click it, then click where it should go. Close the map to return to the match setup.";
+  SCR_HintManagerComponent.ShowCustomHint(hint, "AC: Actual", 12, true);
  }
 
  static void Request(string key)

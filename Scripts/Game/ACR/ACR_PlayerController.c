@@ -193,6 +193,21 @@ modded class SCR_PlayerController
   PrintFormat("[ACR] SETUP player %1: %2", GetPlayerId(), result);
   Rpc(ACR_FeedbackOwner, result);
  }
+ // Layout editor: move a base of the generated layout (the server checks the spot).
+ void ACR_RequestSetupMove(string name, float x, float z)
+ {
+  Rpc(ACR_SetupMoveServer, name, x, z);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_SetupMoveServer(string name, float x, float z)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastCommand < 150) return;
+  m_ACR_LastCommand = now;
+  string result = ACR_Setup.HandleMove(GetPlayerId(), name, x, z);
+  PrintFormat("[ACR] SETUP player %1: %2", GetPlayerId(), result);
+  Rpc(ACR_FeedbackOwner, result);
+ }
 
  // ---------------------------------------------------------------- debug menu (host/admins)
  protected bool m_ACR_DebugAllowed;
@@ -556,15 +571,64 @@ modded class SCR_PlayerController
   bool open = mapEntity && mapEntity.IsOpen() && ACR_SetupClient.s_bActive;
   if (!open)
   {
-   if (m_ACR_SetupMapOpen) ACR_ClearMarkers();
+   if (m_ACR_SetupMapOpen)
+   {
+    ACR_ClearMarkers();
+    SCR_MapEntity.GetOnSelection().Remove(ACR_OnSetupMapClick);
+    m_ACR_SelectedBase = "";
+    m_ACR_SetupPicked = "";
+   }
    m_ACR_SetupMapOpen = false;
    return;
   }
   SCR_MapMarkerManagerComponent manager = SCR_MapMarkerManagerComponent.GetInstance();
   if (!manager) return;
-  if (!m_ACR_SetupMapOpen) Print("[ACR] SETUP preview map opened");
+  if (!m_ACR_SetupMapOpen)
+  {
+   Print("[ACR] SETUP preview map opened");
+   SCR_MapEntity.GetOnSelection().Insert(ACR_OnSetupMapClick);
+   m_ACR_SelectedBase = "";
+   m_ACR_SetupPicked = "";
+  }
   m_ACR_SetupMapOpen = true;
+  // A base picked (its marker or near it): say what the next click does.
+  if (m_ACR_SelectedBase != m_ACR_SetupPicked)
+  {
+   m_ACR_SetupPicked = m_ACR_SelectedBase;
+   if (m_ACR_SelectedBase != "" && ACR_SetupClient.s_sRows.Contains("Show and edit"))
+    SCR_HintManagerComponent.ShowCustomHint(string.Format("Click where %1 should go.", m_ACR_SelectedBase), "AC: Actual", 6, true);
+  }
   ACR_UpdateBaseMarkers(manager);
+ }
+ protected string m_ACR_SetupPicked;
+
+ // Layout editor (aca-f07 step 2): click a base to pick it, then click where it should go.
+ protected void ACR_OnSetupMapClick(vector screenPos)
+ {
+  if (System.GetTickCount() - m_ACR_LastUiClick < 400) return; // the click picked a marker
+  if (!ACR_SetupClient.s_bAllowed || !ACR_SetupClient.s_sRows.Contains("Show and edit")) return;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity) return;
+  float x, z;
+  mapEntity.GetMapCursorWorldPosition(x, z);
+  if (m_ACR_SelectedBase == "")
+  {
+   int best = -1;
+   float bestDistance = float.MAX;
+   foreach (int i, vector pos : m_ACR_Data.m_BasePositions)
+   {
+    float d = vector.DistanceXZ(pos, Vector(x, 0, z));
+    float reach = 60;
+    if (i < m_ACR_Data.m_BaseRadii.Count()) reach = Math.Max(reach, m_ACR_Data.m_BaseRadii[i]);
+    if (d < reach && d < bestDistance) { bestDistance = d; best = i; }
+   }
+   if (best >= 0) m_ACR_SelectedBase = m_ACR_Data.m_BaseNames[best];
+   return;
+  }
+  string name = m_ACR_SelectedBase;
+  m_ACR_SelectedBase = "";
+  m_ACR_SetupPicked = "";
+  ACR_RequestSetupMove(name, x, z);
  }
  void ACR_UpdateMap()
  {
