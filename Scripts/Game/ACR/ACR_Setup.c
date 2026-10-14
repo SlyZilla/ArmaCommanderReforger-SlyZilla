@@ -317,7 +317,14 @@ class ACR_SetupClient
  {
   PlayerController local = GetGame().GetPlayerController();
   bool bodyless = local && !local.GetControlledEntity();
-  if (s_bActive && bodyless) ShowCamera();
+  if (s_bActive && bodyless)
+  {
+   ShowCamera();
+   // The respawn system covers the screen with its loading placeholder until the first spawn
+   // (Jacob 13 Oct, third look: the dialog worked, clicks registered, but this image hid it).
+   SCR_RespawnSystemComponent respawn = SCR_RespawnSystemComponent.GetInstance();
+   if (respawn) respawn.DestroyLoadingPlaceholder();
+  }
   else DropCamera();
   if (s_bActive) Diagnose();
   if (!s_bActive)
