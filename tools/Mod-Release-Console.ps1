@@ -57,7 +57,7 @@ function Open-CheckedProject {
  $addonDirs += ',' + (Find-BaseGameAddons)
  $launchArgs = '-gproj "' + $project + '" -addonsDir "' + $addonDirs + '"'
  if (!$PublishUpdate) {
-  Set-Clipboard -Value (Get-Content -LiteralPath $notes.changelogFile -Raw)
+  Set-Clipboard -Value (Get-Content -LiteralPath $notes.changelogFile -Raw -Encoding UTF8)
   Write-Host "Opening checked $Mod $($notes.version): $project" -ForegroundColor Green
   Write-Host 'Its changelog is copied. In Publish Project, click Change notes and press Ctrl+V.'
   Write-Host "Use version $($notes.version); review page settings before uploading."
@@ -66,7 +66,7 @@ function Open-CheckedProject {
   return
  }
  Write-Host "WORKSHOP UPDATE: $Mod $($notes.installedVersion) -> $($notes.version)" -ForegroundColor Cyan
- Get-Content -LiteralPath $notes.changelogFile | Out-Host
+ Get-Content -LiteralPath $notes.changelogFile -Encoding UTF8 | Out-Host
  Write-Host 'This uploads an update using the existing Workshop item and your Workbench login.'
  $confirmation = 'PUBLISH ' + $Mod + ' ' + $notes.version
  if ((Read-Host "Type $confirmation to upload, or press Enter to cancel") -cne $confirmation) {

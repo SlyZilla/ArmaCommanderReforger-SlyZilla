@@ -13,7 +13,8 @@ try {
  $script:projectPath = Join-Path $fixtureRoot 'candidate with spaces/BetterBattleBuddies/addon.gproj'
  $script:notePath = Join-Path $fixtureRoot 'candidate with spaces/WORKSHOP-CHANGELOG.txt'
  New-Item -ItemType Directory -Path (Split-Path $script:projectPath -Parent) -Force | Out-Null
- Set-Content -LiteralPath $script:notePath -Value "0.1.2`n`n- Reviewed fixture notes."
+ $unicodeNote = "0.1.2`n`n- Reviewed fixture notes " + [char]0x2014 + ' verified.'
+ [IO.File]::WriteAllText($script:notePath, $unicodeNote, [Text.UTF8Encoding]::new($false))
  $script:launches = @()
  $script:answer = ''
  $script:copied = ''
@@ -47,6 +48,7 @@ try {
  Open-CheckedProject -Mod BBB
  if ($script:launches.Count -ne 1 -or $script:launches[0].args -match '-publishAddon') { throw 'Manual Open accidentally entered publication mode.' }
  if ($script:copied -notmatch 'Reviewed fixture notes') { throw 'Manual Open did not copy candidate notes.' }
+ if (!$script:copied.Contains([string][char]0x2014)) { throw 'Unicode changelog text was corrupted on the clipboard path.' }
  if ($script:launches[0].cwd -ne (Split-Path $script:WorkbenchPath -Parent)) { throw 'Wrong Workbench launch directory.' }
  Open-CheckedProject -Mod BBB -PublishUpdate
  if ($script:launches.Count -ne 1) { throw 'Cancelled review started a publisher.' }
