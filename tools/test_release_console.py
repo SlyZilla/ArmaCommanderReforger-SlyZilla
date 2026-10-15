@@ -129,6 +129,15 @@ class GuardTests(unittest.TestCase):
         with self.assertRaisesRegex(Blocked, 'source content changed'):
             self.console.checked('BBB')
 
+    def test_workbench_regenerated_candidate_index_allowed_but_missing_refused(self):
+        parent = self.mark_checked('BBB')
+        index = parent / 'BetterBattleBuddies/resourceDatabase.rdb'
+        index.write_bytes(b'Workbench regenerated resource index')
+        self.assertEqual(parent, self.console.checked('BBB'))
+        index.unlink()
+        with self.assertRaisesRegex(Blocked, 'edited or damaged'):
+            self.console.checked('BBB')
+
     def test_output_inside_addons_refused(self):
         with self.assertRaisesRegex(Blocked, 'OUTSIDE'):
             Console(self.root, self.root.parent / '_bad-release')

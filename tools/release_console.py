@@ -154,7 +154,9 @@ class Console:
             if not path.resolve().is_relative_to(addon.resolve()):
                 raise Blocked('Unsafe candidate file path.')
             expected.add(item['path'])
-            if not path.is_file() or digest(path) != item['sha256']:
+            # Workbench regenerates this index on project open. Its inputs (.meta files,
+            # scripts/configs/assets) remain hash-locked; the generated index must exist.
+            if not path.is_file() or (item['path'] != 'resourceDatabase.rdb' and digest(path) != item['sha256']):
                 raise Blocked(f'{mod}: candidate was edited or damaged: {item["path"]}. Prepare a fresh copy.')
         actual = {p.relative_to(addon).as_posix() for p in addon.rglob('*') if p.is_file()}
         if actual != expected:

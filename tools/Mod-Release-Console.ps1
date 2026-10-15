@@ -4,6 +4,23 @@ param([string]$WorkbenchPath, [string]$InstalledAddons = 'E:\ArmaReforgerMods\ad
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $backend = Join-Path $PSScriptRoot 'release_console.py'
+$consoleState = Join-Path $root '.release-console'
+New-Item -ItemType Directory -Path $consoleState -Force | Out-Null
+try { Start-Transcript -Path (Join-Path $consoleState 'console.log') -Append -Force | Out-Null } catch { Write-Warning 'Console log could not be started.' }
+function Find-BaseGameAddons {
+ $steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
+ $libraries = @($steam, 'E:\SteamLibrary', 'C:\Program Files (x86)\Steam')
+ if ($steam -and (Test-Path -LiteralPath (Join-Path $steam 'steamapps/libraryfolders.vdf'))) {
+  foreach ($match in [regex]::Matches((Get-Content -LiteralPath (Join-Path $steam 'steamapps/libraryfolders.vdf') -Raw), '"path"\s+"([^"]+)"')) { $libraries += $match.Groups[1].Value.Replace('\\', '\') }
+ }
+ foreach ($library in $libraries) {
+  if (!$library) { continue }
+  $candidate = Join-Path $library 'steamapps/common/Arma Reforger/addons'
+  $baseProject = Join-Path $candidate 'data/ArmaReforger.gproj'
+  if ((Test-Path -LiteralPath $baseProject) -and (Get-Content -LiteralPath $baseProject -Raw) -match 'GUID\s+"58D0FB3206B6F859"') { return $candidate }
+ }
+ throw 'Arma Reforger base-game addon files were not found in the Steam libraries.'
+}
 function Invoke-Guard([string[]]$Arguments) {
  $result = & python $backend @Arguments
  if ($LASTEXITCODE -ne 0) { throw 'Release blocked. The reason is printed above; ask your coding agent to resolve it.' }
@@ -36,8 +53,9 @@ function Open-CheckedProject([string]$Mod) {
   $bbbProject = Invoke-Guard @('check', 'BBB')
   $addonDirs += ',' + (Split-Path (Split-Path $bbbProject -Parent) -Parent)
  }
- # An isolated search path also keeps Workbench from resolving a development BBB copy.
- Start-Process -FilePath $script:WorkbenchPath -ArgumentList ('-gproj "' + $project + '" -addonsDir "' + $addonDirs + '"')
+ # Tools supply core; the game supplies data. Neither may depend on the shortcut working folder.
+ $addonDirs += ',' + (Find-BaseGameAddons)
+ Start-Process -FilePath $script:WorkbenchPath -WorkingDirectory (Split-Path $script:WorkbenchPath -Parent) -ArgumentList ('-gproj "' + $project + '" -addonsDir "' + $addonDirs + '"')
 }
 while ($true) {
  Write-Host ''
@@ -68,5 +86,9 @@ while ($true) {
    }
    default { Write-Host 'Choose one of the listed numbers.' }
   }
- } catch { Write-Host $_.Exception.Message -ForegroundColor Red }
+ } catch {
+  Write-Host $_.Exception.Message -ForegroundColor Red
+  Write-Host ('Error saved in ' + (Join-Path $consoleState 'console.log'))
+  Read-Host 'Press Enter to return to the menu' | Out-Null
+ }
 }
