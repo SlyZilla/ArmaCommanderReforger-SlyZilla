@@ -111,6 +111,7 @@ class BBB_MedicTest : BBB_AimTest
   MCheck("alerted-go", BBB_Medic.Decide(40, 0.5, false, false, false) == BBB_Medic.GO, "threat 0.5, not pinned");
   MCheck("dash-go", BBB_Medic.Decide(8, 0.1, false, true, false) == BBB_Medic.GO, "8 m dash, casualty in view");
   MCheck("hot-hold", BBB_Medic.Decide(40, 0.01, false, false, true) == BBB_Medic.HOLD_HOT, "healer hit there");
+  MCheck("smoking-hold", BBB_Medic.Decide(40, 0.01, false, false, false, true) == BBB_Medic.HOLD_SMOKING, "waiting for smoke bloom");
  }
 
  protected void MedicBegin()

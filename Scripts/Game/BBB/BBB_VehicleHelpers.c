@@ -170,7 +170,7 @@ class BBB_VehicleHelpers : Managed
   CompartmentAccessComponent actorAccess;
   foreach (BaseCompartmentSlot comp : compartments)
   {
-   if (comp.IsGetInLocked()) return 0;
+   if (comp.IsGetInLocked()) continue;
    IEntity occ = comp.GetOccupant();
    ChimeraCharacter ch = ChimeraCharacter.Cast(occ);
    if (ch)
@@ -178,7 +178,7 @@ class BBB_VehicleHelpers : Managed
     CompartmentAccessComponent acc = ch.GetCompartmentAccessComponent();
     if (acc)
     {
-     if (acc.IsGettingIn() || acc.IsGettingOut()) return 0;
+     if (acc.IsGettingIn() || acc.IsGettingOut()) continue;
      if (!actorAccess && !BBB.PlayerOf(ch) && BBB.IsAlive(ch)) actorAccess = acc;
     }
    }
@@ -189,6 +189,7 @@ class BBB_VehicleHelpers : Managed
   array<int> checkedDoors = {};
   foreach (BaseCompartmentSlot comp : compartments)
   {
+   if (comp.IsGetInLocked()) continue;
    IEntity occ = comp.GetOccupant();
    ChimeraCharacter ch = ChimeraCharacter.Cast(occ);
    if (ch && BBB.PlayerOf(ch)) continue;
@@ -197,7 +198,11 @@ class BBB_VehicleHelpers : Managed
    if (ch && BBB.IsAlive(ch))
    {
     CompartmentAccessComponent occAcc = ch.GetCompartmentAccessComponent();
-    if (occAcc) access = occAcc;
+    if (occAcc)
+    {
+     if (occAcc.IsGettingIn() || occAcc.IsGettingOut()) continue;
+     access = occAcc;
+    }
    }
 
    int turnOut = comp.GetTurnOutDoorIndex();

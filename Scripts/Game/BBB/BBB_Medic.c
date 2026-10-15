@@ -54,6 +54,17 @@ class BBB_Medic
  static const int HOLD_BLEEDING = 2;
  static const int HOLD_ENEMY = 3;
  static const int HOLD_HOT = 4;
+ static const int HOLD_SMOKING = 5;
+
+ static bool s_bSmokeOn = true;
+ static const float SMOKE_BLOOM_MS = 4000;
+ static const float SMOKE_DURATION_MS = 30000;
+ static const float SMOKE_COOLDOWN_MS = 45000;
+ static const float SMOKE_RADIUS = 9.0;
+ static const float SMOKE_THROW_MAX_M = 38.0;
+
+ static ref map<IEntity, float> s_mSmokeTime = new map<IEntity, float>();
+ static ref map<IEntity, vector> s_mSmokePos = new map<IEntity, vector>();
 
  // Casualty -> world time (ms) a heal for him was last held / he became a hot spot.
  static ref map<IEntity, float> s_mHeld = new map<IEntity, float>();
@@ -79,6 +90,8 @@ class BBB_Medic
   s_mHot.Clear();
   s_mGoing.Clear();
   s_mGoingTo.Clear();
+  s_mSmokeTime.Clear();
+  s_mSmokePos.Clear();
   s_aVanilla.Clear();
   s_mStartedBy.Clear();
   s_mDoneBy.Clear();
@@ -104,7 +117,20 @@ class BBB_Medic
   s_bRead = true;
   string value;
   if (System.GetCLIParam("bbbMedic", value)) s_bOn = value == "1";
-  PrintFormat("[BBB] MEDIC safer healing on=%1", s_bOn);
+  if (System.GetCLIParam("bbbMedicSmoke", value)) s_bSmokeOn = value != "0";
+  PrintFormat("[BBB] MEDIC safer healing on=%1 smoke=%2", s_bOn, s_bSmokeOn);
+ }
+
+ static bool SmokeOn()
+ {
+  Read();
+  return s_bSmokeOn;
+ }
+
+ static float SmokeAge(IEntity casualty)
+ {
+  if (!casualty || !s_mSmokeTime.Contains(casualty)) return -1;
+  return NowMs() - s_mSmokeTime.Get(casualty);
  }
 
  static bool On(IEntity soldier)
@@ -122,9 +148,10 @@ class BBB_Medic
 
  // The decision itself, from plain facts (unit-checked by BBB_MedicTest).
  // exposed: an enemy can see the casualty and the hold for that hasn't run out yet.
- static int Decide(float distance, float threat, bool bleeding, bool exposed, bool hot)
+ static int Decide(float distance, float threat, bool bleeding, bool exposed, bool hot, bool smoking = false)
  {
   if (distance <= ARRIVED_M) return GO;
+  if (smoking) return HOLD_SMOKING;
   if (bleeding) return HOLD_BLEEDING;
   if (threat >= THREAT_HOLD) return HOLD_SUPPRESSED;
   if (hot) return HOLD_HOT;
@@ -140,6 +167,7 @@ class BBB_Medic
    case HOLD_BLEEDING: return "bleeding himself";
    case HOLD_ENEMY: return "casualty in view of the enemy";
    case HOLD_HOT: return "a healer was hit going there";
+   case HOLD_SMOKING: return "waiting for smoke screen to bloom";
   }
   return "go";
  }
@@ -159,6 +187,46 @@ class BBB_Medic
   ChimeraCharacter character = ChimeraCharacter.Cast(soldier);
   if (character.GetCharacterController().IsUnconscious()) return false;
   return !Bleeding(soldier);
+ }
+
+ static bool HasSmokeGrenade(IEntity soldier)
+ {
+  if (!soldier) return false;
+  ChimeraCharacter character = ChimeraCharacter.Cast(soldier);
+  if (!character) return false;
+  SCR_AICombatComponent combat = SCR_AICombatComponent.Cast(character.FindComponent(SCR_AICombatComponent));
+  if (!combat) return false;
+  return combat.FindWeaponOfType(EWeaponType.WT_SMOKEGRENADE) != null;
+ }
+
+ static bool LineIntersectsSphere(vector from, vector to, vector center, float radius)
+ {
+  vector dir = to - from;
+  float lenSq = dir.LengthSq();
+  if (lenSq < 0.001) return vector.DistanceSq(from, center) <= radius * radius;
+  vector fromToCenter = center - from;
+  float t = vector.Dot(fromToCenter, dir) / lenSq;
+  t = Math.Clamp(t, 0.0, 1.0);
+  vector closest = from + dir * t;
+  return vector.DistanceSq(closest, center) <= radius * radius;
+ }
+
+ static bool IsOccludedBySmoke(vector from, vector to)
+ {
+  if (!s_bSmokeOn) return false;
+  float now = NowMs();
+  for (int i = s_mSmokeTime.Count() - 1; i >= 0; i--)
+  {
+   IEntity cas = s_mSmokeTime.GetKey(i);
+   if (!cas) continue;
+   float elapsed = now - s_mSmokeTime.GetElement(i);
+   if (elapsed >= SMOKE_BLOOM_MS && elapsed <= SMOKE_DURATION_MS)
+   {
+    vector smokePos = s_mSmokePos.Get(cas);
+    if (LineIntersectsSphere(from, to, smokePos, SMOKE_RADIUS)) return true;
+   }
+  }
+  return false;
  }
 
  // Does an enemy the healer's group saw or heard lately have a clear line to the casualty?
@@ -190,6 +258,7 @@ class BBB_Medic
  // pulled in a metre so the enemy and the casualty themselves don't block it.
  static bool ClearLine(vector from, vector to)
  {
+  if (IsOccludedBySmoke(from, to)) return false;
   vector eye = from + Vector(0, 1.5, 0);
   vector body = to + Vector(0, 0.4, 0);
   vector dir = body - eye;
@@ -202,6 +271,103 @@ class BBB_Medic
   trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
   float fraction = GetGame().GetWorld().TraceMove(trace, null);
   return fraction >= 0.99;
+ }
+
+ static bool TryDeploySmoke(IEntity healer, IEntity casualty)
+ {
+  Read();
+  if (!s_bSmokeOn || !healer || !casualty) return false;
+  float now = NowMs();
+  if (s_mSmokeTime.Contains(casualty) && now - s_mSmokeTime.Get(casualty) < SMOKE_COOLDOWN_MS) return false;
+
+  SCR_AIGroup group = GroupOf(healer);
+  if (!group) return false;
+
+  vector casPos = casualty.GetOrigin();
+  vector enemyPos = vector.Zero;
+  SCR_AIGroupUtilityComponent utility = group.GetGroupUtilityComponent();
+  if (utility && utility.m_Perception)
+  {
+   float bestDistSq = 600 * 600;
+   foreach (SCR_AITargetInfo target : utility.m_Perception.m_aTargets)
+   {
+    if (!target) continue;
+    if (target.m_eCategory != EAITargetInfoCategory.DETECTED && target.m_eCategory != EAITargetInfoCategory.IDENTIFIED) continue;
+    float distSq = vector.DistanceSqXZ(target.m_vWorldPos, casPos);
+    if (distSq < bestDistSq)
+    {
+     bestDistSq = distSq;
+     enemyPos = target.m_vWorldPos;
+    }
+   }
+  }
+
+  if (enemyPos == vector.Zero)
+  {
+   if (s_mHot.Contains(casualty))
+   {
+    vector toCas = casPos - healer.GetOrigin();
+    toCas[1] = 0;
+    if (toCas.LengthSq() > 1) enemyPos = casPos + toCas.Normalized() * 20;
+   }
+   if (enemyPos == vector.Zero)
+   {
+    vector fwd = healer.GetTransformAxis(2);
+    enemyPos = casPos + fwd * 25;
+   }
+  }
+
+  vector toEnemy = enemyPos - casPos;
+  toEnemy[1] = 0;
+  float enemyDist = toEnemy.Length();
+  if (enemyDist < 1.0) toEnemy = "0 0 1";
+  else toEnemy = toEnemy / enemyDist;
+
+  float throwDistance = Math.Clamp(enemyDist * 0.35, 8.0, 16.0);
+  vector smokePos = casPos + toEnemy * throwDistance;
+  smokePos[1] = GetGame().GetWorld().GetSurfaceY(smokePos[0], smokePos[2]);
+
+  IEntity thrower = null;
+  ChimeraCharacter chHealer = ChimeraCharacter.Cast(healer);
+  if (chHealer && Fit(healer) && !chHealer.IsInVehicle() && HasSmokeGrenade(healer))
+  {
+   if (vector.DistanceXZ(healer.GetOrigin(), smokePos) <= SMOKE_THROW_MAX_M) thrower = healer;
+  }
+
+  if (!thrower)
+  {
+   array<AIAgent> agents = {};
+   BBB.s_Hooks.GetMembers(group, agents);
+   float bestThrowerDist = SMOKE_THROW_MAX_M;
+   foreach (AIAgent agent : agents)
+   {
+    ChimeraCharacter member = ChimeraCharacter.Cast(agent.GetControlledEntity());
+    if (!member || member == casualty || member == healer || !Fit(member) || member.IsInVehicle()) continue;
+    if (!HasSmokeGrenade(member)) continue;
+    float d = vector.DistanceXZ(member.GetOrigin(), smokePos);
+    if (d <= bestThrowerDist)
+    {
+     bestThrowerDist = d;
+     thrower = member;
+    }
+   }
+  }
+
+  if (!thrower) return false;
+
+  SCR_AIUtilityComponent throwerUtil = SCR_AIUtilityComponent.Cast(thrower.FindComponent(SCR_AIUtilityComponent));
+  if (!throwerUtil) return false;
+
+  SCR_AIThrowGrenadeToBehavior behavior = new SCR_AIThrowGrenadeToBehavior(
+   throwerUtil, null, smokePos, EWeaponType.WT_SMOKEGRENADE, 0.1, SCR_AIActionBase.PRIORITY_BEHAVIOR_THROW_GRENADE
+  );
+  throwerUtil.AddAction(behavior);
+
+  s_mSmokeTime.Set(casualty, now);
+  s_mSmokePos.Set(casualty, smokePos);
+  StartWatching();
+  PrintFormat("[BBB] MEDIC SMOKE %1 deploying smoke to %2 for casualty %3", Name(thrower), smokePos, Name(casualty));
+  return true;
  }
 
  static SCR_AIGroup GroupOf(IEntity soldier)
@@ -270,6 +436,12 @@ class BBB_Medic
   }
   Prune(s_mHeld);
   Prune(s_mHot);
+  Prune(s_mSmokeTime);
+  for (int s = s_mSmokePos.Count() - 1; s >= 0; s--)
+  {
+   IEntity key = s_mSmokePos.GetKey(s);
+   if (!key || !s_mSmokeTime.Contains(key)) s_mSmokePos.RemoveElement(s);
+  }
   PruneCounts(s_mStartedBy);
   PruneCounts(s_mDoneBy);
   PruneCounts(s_mHitBy);
@@ -395,7 +567,17 @@ modded class SCR_AIMedicHealBehavior
    if (!exposed) m_fBBBExposedSince = 0;
    else if (m_fBBBExposedSince <= 0) m_fBBBExposedSince = now;
    else if (now - m_fBBBExposedSince > BBB_Medic.EXPOSED_HOLD_S * 1000) exposed = false;
-   int decision = BBB_Medic.Decide(distance, threat, BBB_Medic.Bleeding(healer), exposed, BBB_Medic.Hot(casualty));
+   bool hot = BBB_Medic.Hot(casualty);
+   bool smoking = false;
+   if (BBB_Medic.SmokeOn() && distance > BBB_Medic.ARRIVED_M)
+   {
+    if (exposed || hot || threat >= 0.33)
+     BBB_Medic.TryDeploySmoke(healer, casualty);
+    float smokeAge = BBB_Medic.SmokeAge(casualty);
+    if (smokeAge >= 0 && smokeAge < BBB_Medic.SMOKE_BLOOM_MS)
+     smoking = true;
+   }
+   int decision = BBB_Medic.Decide(distance, threat, BBB_Medic.Bleeding(healer), exposed, hot, smoking);
    if (decision != m_iBBBDecision) PrintFormat("[BBB] MEDIC %1 -> %2 at %3 m: %4", BBB_Medic.Name(healer), BBB_Medic.Name(casualty), Math.Round(distance), BBB_Medic.Reason(decision));
    m_iBBBDecision = decision;
   }
