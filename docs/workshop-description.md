@@ -21,10 +21,11 @@ No additional mods required for the vanilla factions.
 
 Everon, Arland and Kolguyev scenarios are included. Before the match, the host/admin chooses
 the sides, battlefield, threat, prices, AI commanders, squad cap, starting RP and income.
-Everon offers a hand-built whole-island layout, halves and flashpoints. Generated layouts
-use map places and terrain; preview the plan, reroll its seed, or click a base and then its
-new position before pressing Start. Kolguyev always uses a generated layout.
-Other terrains need a scenario configured for this mode.
+Everon offers a hand-built whole-island layout, halves and flashpoints. Procedural layouts
+generate bases and HQs from a terrain's named locations; preview the plan, reroll its seed,
+or click a base and then its new position before pressing Start. Kolguyev always uses a
+generated layout. Other terrains require a small AC: Actual scenario setup; installing a
+map mod alone does not add an AC: Actual entry to the scenario list.
 
 On generated layouts, build a helipad before buying helicopters. Off-map air lift needs no pad.
 There are no victory conditions; play for the fight and the territory.
