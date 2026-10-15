@@ -542,11 +542,11 @@ class ACR_AirLift : ACR_SupportRun
    string seatName = "";
    foreach (BaseCompartmentSlot trySeat : seats)
    {
-    ok = access.GetInVehicle(best.m_Vehicle, trySeat, !close, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+    ok = access.GetInVehicle(best.m_Vehicle, trySeat, !close, -1, ECloseDoorAfterActions.CLOSE_DOOR, false);
     seatName = trySeat.GetCompartmentName();
     if (ok) { claimed.Insert(trySeat); break; }
    }
-   if (!ok && !close) ok = access.GetInVehicle(best.m_Vehicle, seat, false, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   if (!ok && !close) ok = access.GetInVehicle(best.m_Vehicle, seat, false, -1, ECloseDoorAfterActions.CLOSE_DOOR, false);
    PrintFormat("[ACR] AIRLIFT board %1: %2 m, placed %3, seat %4 -> %5", m_sSquadName, (int)bestDistance, !close, seatName, ok);
   }
   return aboard;

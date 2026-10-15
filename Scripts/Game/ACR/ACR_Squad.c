@@ -1662,7 +1662,7 @@ class ACR_Squad : Managed
    {
     if (seat.GetOccupant() || taken.Contains(seat) || (seat.IsReserved() && !seat.IsReservedBy(character))) continue;
     taken.Insert(seat);
-    bool ok = access.GetInVehicle(vehicle, seat, teleport, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+    bool ok = access.GetInVehicle(vehicle, seat, teleport, -1, ECloseDoorAfterActions.CLOSE_DOOR, false);
     if (System.IsCLIParam("acrRideTest")) PrintFormat("[ACR] BOARD %1 m, seat %2, placed %3 -> %4", (int)distance, seat.GetCompartmentName(), teleport, ok);
     if (ok)
     {

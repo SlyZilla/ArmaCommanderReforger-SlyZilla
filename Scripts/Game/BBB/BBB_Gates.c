@@ -15,15 +15,25 @@ class BBB_Gates : Managed
  protected ref array<IEntity> m_Found = {};
  protected ref map<IEntity, int> m_OnBed = new map<IEntity, int>();
 
+ protected static bool s_bDoors = true;
+
+ void BBB_Gates()
+ {
+  string val;
+  if (System.GetCLIParam("bbbDoors", val) && val == "0") s_bDoors = false;
+ }
+
  void Tick()
  {
   array<SCR_AIGroup> groups = {};
   BBB.s_Hooks.GetGroups(groups);
+  array<IEntity> handledVehicles = {};
   foreach (SCR_AIGroup group : groups)
   {
    if (!group) continue;
    OpenGatesFor(group);
    GetOffBeds(group);
+   CloseDoors(group, handledVehicles);
   }
  }
 
@@ -122,5 +132,105 @@ class BBB_Gates : Managed
    soldier.Teleport(transform);
    PrintFormat("[ACR] %1: soldier stuck on a vehicle set down beside it", BBB.s_Hooks.NameOf(group));
   }
+ }
+
+ // ---------------------------------------------------------------- vehicle doors & hatches
+
+ protected void CloseDoors(SCR_AIGroup group, notnull array<IEntity> handledVehicles)
+ {
+  if (!s_bDoors || !group || BBB.HasPlayer(group)) return;
+  IEntity vehicle = BBB_Transport.CrewedVehicle(group);
+  if (!vehicle)
+  {
+   array<AIAgent> agents = {};
+   BBB.s_Hooks.GetMembers(group, agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    vehicle = BBB_Transport.VehicleOf(body);
+    if (vehicle) break;
+   }
+  }
+  if (!vehicle || handledVehicles.Contains(vehicle) || BBB.s_Hooks.LeaveAlone(vehicle)) return;
+  handledVehicles.Insert(vehicle);
+  CloseVehicleDoors(vehicle);
+ }
+
+ static int CloseVehicleDoors(IEntity vehicle)
+ {
+  if (!s_bDoors || !vehicle) return 0;
+  BaseCompartmentManagerComponent manager = BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(BaseCompartmentManagerComponent));
+  if (!manager) return 0;
+
+  array<BaseCompartmentSlot> compartments = {};
+  manager.GetCompartments(compartments);
+  if (compartments.IsEmpty()) return 0;
+
+  CompartmentAccessComponent actorAccess;
+  foreach (BaseCompartmentSlot comp : compartments)
+  {
+   if (comp.IsGetInLocked()) return 0;
+   IEntity occ = comp.GetOccupant();
+   ChimeraCharacter ch = ChimeraCharacter.Cast(occ);
+   if (ch)
+   {
+    CompartmentAccessComponent acc = ch.GetCompartmentAccessComponent();
+    if (acc)
+    {
+     if (acc.IsGettingIn() || acc.IsGettingOut()) return 0;
+     if (!actorAccess && !BBB.PlayerOf(ch) && BBB.IsAlive(ch)) actorAccess = acc;
+    }
+   }
+  }
+  if (!actorAccess) return 0;
+
+  int closed = 0;
+  array<int> checkedDoors = {};
+  foreach (BaseCompartmentSlot comp : compartments)
+  {
+   IEntity occ = comp.GetOccupant();
+   ChimeraCharacter ch = ChimeraCharacter.Cast(occ);
+   if (ch && BBB.PlayerOf(ch)) continue;
+
+   CompartmentAccessComponent access = actorAccess;
+   if (ch && BBB.IsAlive(ch))
+   {
+    CompartmentAccessComponent occAcc = ch.GetCompartmentAccessComponent();
+    if (occAcc) access = occAcc;
+   }
+
+   int turnOut = comp.GetTurnOutDoorIndex();
+   if (turnOut >= 0 && !checkedDoors.Contains(turnOut))
+   {
+    checkedDoors.Insert(turnOut);
+    if (!comp.IsOccupantTurnedOut() && manager.IsDoorOpen(turnOut) && !manager.IsDoorFake(turnOut) && !manager.GetDoorUser(turnOut))
+    {
+     bool didClose = false;
+     if (access.CanAccessDoor(vehicle, manager, turnOut))
+      didClose = access.CloseDoor(vehicle, ECharacterDoorAnimType.NO_CHARACTER_ANIM, turnOut);
+     if (!didClose && access != actorAccess && actorAccess.CanAccessDoor(vehicle, manager, turnOut))
+      didClose = actorAccess.CloseDoor(vehicle, ECharacterDoorAnimType.NO_CHARACTER_ANIM, turnOut);
+     if (didClose) closed++;
+    }
+   }
+
+   array<int> doorIndices = {};
+   comp.GetAvailableDoorIndices(doorIndices);
+   foreach (int doorIndex : doorIndices)
+   {
+    if (doorIndex < 0 || checkedDoors.Contains(doorIndex)) continue;
+    checkedDoors.Insert(doorIndex);
+    if (manager.IsDoorOpen(doorIndex) && !manager.IsDoorFake(doorIndex) && !manager.GetDoorUser(doorIndex))
+    {
+     bool didCloseDoor = false;
+     if (access.CanAccessDoor(vehicle, manager, doorIndex))
+      didCloseDoor = access.CloseDoor(vehicle, ECharacterDoorAnimType.NO_CHARACTER_ANIM, doorIndex);
+     if (!didCloseDoor && access != actorAccess && actorAccess.CanAccessDoor(vehicle, manager, doorIndex))
+      didCloseDoor = actorAccess.CloseDoor(vehicle, ECharacterDoorAnimType.NO_CHARACTER_ANIM, doorIndex);
+     if (didCloseDoor) closed++;
+    }
+   }
+  }
+  return closed;
  }
 }

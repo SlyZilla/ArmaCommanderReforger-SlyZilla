@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 80; // 77 + air lift AI (3)
+ static const int EXPECTED = 81; // 80 + vehicle doors (1)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -594,6 +594,7 @@ class ACR_TestRegress
    foreach (ACR_Squad squad : manager.m_Squads) if (squad.GetName() == "Regress Truck") crew = squad;
    Check("vehicle crew keeps its unit name", crew != null && crew.m_OwnVehicle != null, string.Format("found %1", crew != null));
    if (crew) Check("idle truck crew can give rides", manager.m_Rides && manager.m_Rides.WhyNotTaxi(crew, "US").IsEmpty(), manager.m_Rides.WhyNotTaxi(crew, "US"));
+   if (crew && crew.m_OwnVehicle) VehicleDoorsCheck(crew.m_OwnVehicle);
   }
   // After-action report (5 Oct): kills/losses, bases, RP tallied per side.
   if (tick == 45)
@@ -794,6 +795,40 @@ class ACR_TestRegress
    foreach (AIAgent cancelledAgent : cancelledAgents) if (ACR_Transport.VehicleOf(cancelledAgent.GetControlledEntity())) cancelledSeated++;
   }
   Check("Halt cancels delayed Get In seating", cancelled && cancelled.OrderState() == ACR_EOrderState.HOLD && cancelledSeated == 0, string.Format("%1 passengers", cancelledSeated));
+ }
+
+ static void VehicleDoorsCheck(IEntity vehicle)
+ {
+  if (!vehicle) { Check("AI crew closes vehicle doors when aboard", false, "no vehicle"); return; }
+  BaseCompartmentManagerComponent compManager = BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(BaseCompartmentManagerComponent));
+  if (!compManager) { Check("AI crew closes vehicle doors when aboard", false, "no compartment manager"); return; }
+  ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
+  if (!driver || !driver.GetCompartmentAccessComponent()) { Check("AI crew closes vehicle doors when aboard", false, "no driver access"); return; }
+  CompartmentAccessComponent access = driver.GetCompartmentAccessComponent();
+
+  int testDoor = -1;
+  array<BaseCompartmentSlot> slots = {};
+  compManager.GetCompartments(slots);
+  foreach (BaseCompartmentSlot slot : slots)
+  {
+   array<int> doors = {};
+   slot.GetAvailableDoorIndices(doors);
+   foreach (int d : doors)
+   {
+    if (d >= 0 && !compManager.IsDoorFake(d)) { testDoor = d; break; }
+   }
+   if (testDoor >= 0) break;
+  }
+
+  if (testDoor < 0) { Check("AI crew closes vehicle doors when aboard", false, "no real door found"); return; }
+
+  access.OpenDoor(vehicle, ECharacterDoorAnimType.NO_CHARACTER_ANIM, testDoor);
+  bool wasOpen = compManager.IsDoorOpen(testDoor);
+
+  int closed = BBB_Gates.CloseVehicleDoors(vehicle);
+  bool isOpenNow = compManager.IsDoorOpen(testDoor);
+
+  Check("AI crew closes vehicle doors when aboard", wasOpen && !isOpenNow && closed > 0, string.Format("door %1: wasOpen %2, isOpenNow %3, closed %4", testDoor, wasOpen, isOpenNow, closed));
  }
 
  // ---------------------------------------------------------------- R01/R05 helpers
