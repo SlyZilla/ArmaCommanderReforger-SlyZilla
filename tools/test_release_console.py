@@ -1,5 +1,7 @@
 """Destructive cases run only in temporary fixture repositories, never real mod folders."""
 from pathlib import Path
+import contextlib
+import io
 import json
 import subprocess
 import tempfile
@@ -173,8 +175,14 @@ class GuardTests(unittest.TestCase):
                 index[item['path']] = [str(pak), len(payload), len(data), len(data), 0]
                 payload.extend(data)
         pak.write_bytes(payload)
-        with patch('pakread.index', side_effect=lambda directory, path: write_json(Path(path), index)):
-            self.console.installed('BBB', installed)
+        def fake_index(directory, path):
+            write_json(Path(path), index)
+            print('index progress must not contaminate the project path')
+        with patch('pakread.index', side_effect=fake_index):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.console.installed('BBB', installed)
+            self.assertEqual('', output.getvalue())
             pak.write_bytes(b'X' + payload[1:])
             with self.assertRaisesRegex(Blocked, 'content is stale'):
                 self.console.installed('BBB', installed)

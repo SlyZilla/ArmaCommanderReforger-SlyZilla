@@ -1,6 +1,7 @@
 """Local release guard. Never uploads, deletes old releases, or edits development files."""
 from pathlib import Path
 import argparse
+import contextlib
 import datetime as dt
 import hashlib
 import json
@@ -236,7 +237,9 @@ class Console:
             raise Blocked(f'{mod}: downloaded Workshop dependency declarations differ from the prepared release.')
         index_path = self.state / ('installed-' + mod + '.json')
         self.state.mkdir(parents=True, exist_ok=True)
-        pakread.index(str(matches[0]), str(index_path))
+        # CLI stdout is reserved for the single checked project path consumed by PowerShell.
+        with contextlib.redirect_stdout(sys.stderr):
+            pakread.index(str(matches[0]), str(index_path))
         index = {k.lower(): v for k, v in read_json(index_path).items()}
         expected = {item['path'].lower(): item for item in manifest['files']
                     if item['path'].startswith(('Scripts/', 'Configs/')) and
