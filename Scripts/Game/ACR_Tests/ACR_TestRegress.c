@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 82; // 81 + medic smoke (1)
+ static const int EXPECTED = 83; // 82 + transport tactical dismount (1)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -219,6 +219,11 @@ class ACR_TestRegress
    }
    Check("BBB rejects both negative and out-of-range threat sectors", !BBB_Combat.ValidSector(-1) && !BBB_Combat.ValidSector(SCR_AISectorThreatFilter.SECTOR_COUNT) && !BBB_Combat.ValidSector(100000) && BBB_Combat.ValidSector(0), "native lookup bounds");
    Check("BBB medic holds during smoke bloom and advances when clear", BBB_Medic.Decide(40, 0.01, false, false, false, true) == BBB_Medic.HOLD_SMOKING && BBB_Medic.Decide(40, 0.01, false, false, false, false) == BBB_Medic.GO && BBB_Medic.LineIntersectsSphere("0 0 0", "10 0 0", "5 0 0", 1.0) && !BBB_Medic.LineIntersectsSphere("0 0 0", "10 0 0", "5 10 0", 1.0), "smoke bloom hold & sphere intersection");
+   BBB_Transport.OnVehicleHit(truck);
+   bool hitTracked = BBB_Transport.VehicleHitRecently(truck, 5000);
+   BBB_Transport.ClearHits();
+   bool hitCleared = !BBB_Transport.VehicleHitRecently(truck);
+   Check("BBB transport tracks vehicle hit events and clear", hitTracked && hitCleared && !BBB_Transport.VehicleHitRecently(null), "hit recorded and cleared");
    bool standardGunship;
    ACR_FactionData usOffers = manager.m_Bases.GetFaction("US");
    if (usOffers)

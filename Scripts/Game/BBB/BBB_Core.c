@@ -67,6 +67,7 @@ class BBB
   BBB_Medic.Stop();
   BBB_RelaxedMarch.Stop();
   BBB_HorizonScan.Stop();
+  BBB_Transport.ClearHits();
   s_bStarted = false;
 		s_VehicleHelpers = null;
 		s_Launchers = null;

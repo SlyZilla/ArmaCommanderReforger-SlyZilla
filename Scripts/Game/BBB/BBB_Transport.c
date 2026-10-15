@@ -70,4 +70,23 @@ class BBB_Transport
   if (System.IsCLIParam("acrTransportTest")) PrintFormat("[ACR] SETTLE origin %1 underside %2 below %3 -> %4 m", pos[1], bottom, below, height);
   return speed < SETTLED_SPEED && height < SETTLED_HEIGHT;
  }
+
+ static ref map<IEntity, float> s_mLastVehicleHit = new map<IEntity, float>();
+
+ static void OnVehicleHit(IEntity vehicle)
+ {
+  if (!vehicle || !GetGame() || !GetGame().GetWorld()) return;
+  s_mLastVehicleHit.Set(vehicle, GetGame().GetWorld().GetWorldTime());
+ }
+
+ static bool VehicleHitRecently(IEntity vehicle, float windowMs = 6000)
+ {
+  if (!vehicle || !GetGame() || !GetGame().GetWorld() || !s_mLastVehicleHit.Contains(vehicle)) return false;
+  return GetGame().GetWorld().GetWorldTime() - s_mLastVehicleHit.Get(vehicle) < windowMs;
+ }
+
+ static void ClearHits()
+ {
+  s_mLastVehicleHit.Clear();
+ }
 }

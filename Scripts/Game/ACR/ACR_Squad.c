@@ -785,6 +785,37 @@ class ACR_Squad : Managed
   return false;
  }
 
+ IEntity MountedVehicle()
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (character && character.IsInVehicle())
+   {
+    IEntity v = ACR_Transport.VehicleOf(character);
+    if (v) return v;
+   }
+  }
+  return null;
+ }
+
+ bool IsMountedAsCargo()
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (character && character.IsInVehicle())
+   {
+    if (ACR_Transport.SeatOf(character) == ECompartmentType.CARGO) return true;
+   }
+  }
+  return false;
+ }
+
  // Is anyone of this squad aboard its own vehicle?
  bool InOwnVehicle()
  {
@@ -970,6 +1001,57 @@ class ACR_Squad : Managed
    }
   }
   DriveWatch(now, contact);
+  CheckTacticalDismount(now, contact);
+ }
+
+ protected void CheckTacticalDismount(float now, bool contact)
+ {
+  if (m_bUnsticking || !m_Group || HasPlayer()) return;
+  ACR_EOrderState state = OrderState();
+  if (state == ACR_EOrderState.DISMOUNT || state == ACR_EOrderState.GET_OUT) return;
+
+  if (IsMountedAsCargo())
+  {
+   IEntity vehicle = MountedVehicle();
+   if (!vehicle) return;
+   if (!CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent))) return;
+
+   bool hitRecently = BBB_Transport.VehicleHitRecently(vehicle, 6000);
+   int enemiesNear = KnownEnemies(250);
+   bool underFire = (contact && enemiesNear > 0) || hitRecently;
+   if (!underFire) return;
+
+   ChimeraCharacter driver = DriverOf(vehicle);
+   bool driverLost = !driver || !ACR_Respawn.IsAlive(driver);
+   Physics phys = vehicle.GetPhysics();
+   float speed = 0;
+   if (phys) speed = phys.GetVelocity().Length();
+
+   bool dismount = false;
+   string reason = "";
+
+   if (driverLost && speed < 3.0)
+   {
+    dismount = true;
+    reason = "driver lost under fire";
+   }
+   else if (hitRecently && speed < 5.0)
+   {
+    dismount = true;
+    reason = "vehicle taking fire";
+   }
+   else if (speed < 3.5)
+   {
+    dismount = true;
+    reason = "ambushed under fire";
+   }
+
+   if (dismount)
+   {
+    PrintFormat("[ACR] TACTICS %1: tactical dismount (%2), continuing on foot", m_Name, reason);
+    DismountAndContinue(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, m_Order, m_OrderKind);
+   }
+  }
  }
 
  // Crewmen leaving a driver or gunner seat when no order of ours asked for it are logged
@@ -1296,9 +1378,9 @@ class ACR_Squad : Managed
  // AI passengers carry on on foot (7 Oct live: drivers walked away from vehicles that
  // only needed another way round, and the AI re-crewed them into the same spot).
  // Only an unarmed vehicle stopped under fire is abandoned.
- static const float STALL_SECONDS = 15;
- static const float STALL_SECONDS_FIGHTING = 40; // armed and in contact: the gunner may be busy, give it longer
- static const float STALL_SECONDS_HELPLESS = 6;  // under fire with no gunner
+ static const float STALL_SECONDS = 8;
+ static const float STALL_SECONDS_FIGHTING = 25; // armed and in contact: the gunner may be busy, give it longer
+ static const float STALL_SECONDS_HELPLESS = 3;  // under fire with no gunner
  static const int UNSTICK_TRIES = 2;
  static const int REROUTE_TRIES = 1;
 
@@ -1403,8 +1485,28 @@ class ACR_Squad : Managed
  {
   if (m_bUnsticking || !m_Group) return;
   IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  if (!vehicle) return;
+  if (!CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent))) return;
+
+  Physics phys = vehicle.GetPhysics();
+  float speed = 0;
+  if (phys) speed = phys.GetVelocity().Length();
+
   ChimeraCharacter driver = DriverOf(vehicle);
   ACR_Manager manager = ACR_Manager.GetInstance();
+
+  bool hitRecently = BBB_Transport.VehicleHitRecently(vehicle, 6000);
+  bool underFire = (contact && KnownEnemies(300) > 0) || hitRecently;
+
+  if (underFire && (!driver || !ACR_Respawn.IsAlive(driver)))
+  {
+   if (speed < 2.0)
+   {
+    Bail(vehicle, "driver lost under fire", true);
+    return;
+   }
+  }
+
   bool eligible = driver != null && ACR_Respawn.IsAlive(driver) && IsMember(driver) && FindController(driver) == 0;
   if (eligible && manager && manager.IsGunnerDriven(vehicle)) eligible = false;
   bool wantsToMove;
@@ -1413,9 +1515,9 @@ class ACR_Squad : Managed
    array<AIWaypoint> waypoints = {};
    m_Group.GetWaypoints(waypoints);
    bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
-   wantsToMove = !waypoints.IsEmpty() && movingOrder && vector.DistanceXZ(vehicle.GetOrigin(), m_MoveTarget) > 40;
+   wantsToMove = !waypoints.IsEmpty() && movingOrder && vector.DistanceXZ(vehicle.GetOrigin(), m_MoveTarget) > 15;
   }
-  if (!wantsToMove || vehicle != m_StallVehicle || vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5)
+  if (!wantsToMove || vehicle != m_StallVehicle || (speed > 1.0 && vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5))
   {
    if (vehicle != m_StallVehicle || !wantsToMove) { m_iUnsticks = 0; m_iReroutes = 0; }
    m_StallVehicle = vehicle;
@@ -1428,7 +1530,21 @@ class ACR_Squad : Managed
   // Fighting vehicles (anything with a turret: LAV, BTR, BRDM, gun trucks) keep
   // their crew aboard; only soft, unarmed vehicles are abandoned.
   bool fightingVehicle = HasTurret(vehicle);
-  bool underFire = contact && KnownEnemies(300) > 0;
+
+  if (underFire && speed < 3.5 && manager)
+  {
+   array<ACR_Squad> riders = {};
+   ACR_Transport.PassengerSquads(manager, vehicle, riders);
+   foreach (ACR_Squad rider : riders)
+   {
+    if (rider != this && !rider.HasPlayer() && rider.OrderState() != ACR_EOrderState.DISMOUNT)
+    {
+     PrintFormat("[ACR] DRIVE %1: ordering cargo riders %2 to dismount under fire", m_Name, rider.GetName());
+     rider.DismountAndContinue(rider.m_sOrderPrefab, rider.m_MoveTarget, rider.m_fOrderRadius, rider.m_Order, rider.m_OrderKind);
+    }
+   }
+  }
+
   if (underFire && !fightingVehicle && stalled >= STALL_SECONDS_HELPLESS) { Bail(vehicle, "stopped under fire, unarmed", false); return; }
   float limit = STALL_SECONDS;
   if (underFire || armed) limit = STALL_SECONDS_FIGHTING;
