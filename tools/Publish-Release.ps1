@@ -11,6 +11,10 @@ try { Start-Transcript -Path (Join-Path $root 'dist\publish-log.txt') -Force | O
 
 function Fail($msg) { Write-Host ""; Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 
+# Fail before any GitHub mutation, including public documentation synchronization.
+& python (Join-Path $PSScriptRoot 'package_guard.py') verify
+if ($LASTEXITCODE -ne 0) { Fail 'Fallback ZIP failed source/integrity checks. Ask the coding agent to rebuild it. For Workshop use Mod-Release-Console.cmd.' }
+
 # Find gh even if PATH hasn't picked it up yet.
 $gh = (Get-Command gh -ErrorAction SilentlyContinue).Source
 if (-not $gh) {

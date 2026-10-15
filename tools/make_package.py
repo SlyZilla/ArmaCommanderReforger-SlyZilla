@@ -1,8 +1,11 @@
 # Builds dist/ACActual-WithBBB.zip: a player-only copy of the addon plus guide and launcher.
 import os, sys, zipfile, pathlib, subprocess, datetime
 from bbb_dependency import source as bbb_source, release_files as bbb_files
+from release_console import clean_commit
+from package_guard import seal
 bbb_root, bbb_commit = bbb_source()
 root = pathlib.Path(__file__).resolve().parent.parent
+clean_commit(root)
 out = root / 'dist' / 'ACActual-WithBBB.zip'
 out.parent.mkdir(exist_ok=True)
 top = 'ACActual-Arland'
@@ -57,3 +60,4 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
 print(out, out.stat().st_size, version)
 if not local:
     (root / 'dist' / 'VERSION.txt').write_text(version + '\n')
+    seal(root)

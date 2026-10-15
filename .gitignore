@@ -16,3 +16,4 @@ play-settings.txt
 zerotier.txt
 join-settings.txt
 __pycache__/
+.release-console/

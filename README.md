@@ -4,6 +4,12 @@ A Reforger rebuild of the Arma 3 **Arma Commander** hybrid RTS/FPS mode. The ori
 Martin Hájek; ported from the community fork by Anarch Cassius, Ilyushkius and Will) is APL-SA licensed, so this
 derivative stays APL-SA with credit to the original authors. See LICENSE.md.
 
+Maintaining this development checkout: double-click **Mod-Release-Console.cmd** for Workshop
+release preparation, checked project opening and downloaded-content verification across ACA,
+BBB and AiO. The console chooses the folders and checks freshness for you. Release workflow
+details and agent instructions live in documentation. `Publish-Release.cmd` is the separate legacy
+GitHub ZIP publisher.
+
 ## Made with AI
 
 This project is openly vibecoded. Nearly all of the code, launchers and documentation
