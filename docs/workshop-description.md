@@ -27,6 +27,10 @@ or click a base and then its new position before pressing Start. Kolguyev always
 generated layout. Other terrains require a small AC: Actual scenario setup; installing a
 map mod alone does not add an AC: Actual entry to the scenario list.
 
+Mission makers can create scenarios on other terrains with generated or hand-placed bases,
+custom factions and starting forces. Workbench setup and configuration guide:
+https://github.com/propst-design/ACActual/blob/main/MISSION-MAKING.md
+
 On generated layouts, build a helipad before buying helicopters. Off-map air lift needs no pad.
 There are no victory conditions; play for the fight and the territory.
 
