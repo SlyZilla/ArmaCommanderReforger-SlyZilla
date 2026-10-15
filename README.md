@@ -16,6 +16,14 @@ Expect rough edges; bug reports with logs help a lot.
 
 Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.
 
+## Playing from Workshop
+
+Once the Workshop item is published, enable it and select an included AC: Actual scenario
+in Scenarios or Host. The host/admin picks the sides and match options on the setup screen,
+then presses Start. No external launcher is needed for Workshop play.
+Report bugs and issues at https://github.com/propst-design/ACActual/issues (include the map,
+mod set, steps to reproduce and logs if available).
+
 ## Playing the test range
 
 Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo).
@@ -46,8 +54,8 @@ Want a faction mod supported properly? Ask on GitHub: https://github.com/propst-
 - Commander only: **Combat / Fast / Silent** set how the squad moves; **right-click** the map to move it there.
   **Defend** or **Get in**, then right-click, to defend a spot or board a vehicle near the click.
   **Get out** dismounts it; **Unload** dismounts other squads riding in its vehicles.
-- One commander per side (the first player, automatically). **Leave command** hands it to the next player.
-  With nobody left in command, anyone can **Take command**.
+- Multiple commanders can share a side, its squads and its requisition pool.
+  **Leave command** gives up command; **Take command** joins it when available.
 
 | Key | Action |
 | --- | --- |
