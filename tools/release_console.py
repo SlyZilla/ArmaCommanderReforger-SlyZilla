@@ -60,6 +60,26 @@ def no_links(path):
             raise Blocked(f'Linked path refused: {part}')
 
 
+def latest_release_notes(source):
+    path = source / 'CHANGELOG.md'
+    no_links(path)
+    if not path.is_file():
+        raise Blocked(f'{source.name}: add and commit CHANGELOG.md before preparing a release.')
+    text = path.read_text(encoding='utf-8-sig').replace('\r\n', '\n')
+    sections = list(re.finditer(r'^##\s+(.+)$', text, re.M))
+    if not sections:
+        raise Blocked('CHANGELOG.md needs a top release heading: ## 0.1.0')
+    heading = sections[0]
+    version = re.match(r'(\d+\.\d+\.\d+)(?:\s|$)', heading[1])
+    if not version:
+        raise Blocked('The first CHANGELOG.md release must have a numeric version, not Unreleased/TBD.')
+    body = text[heading.end():sections[1].start() if len(sections) > 1 else len(text)].strip()
+    if not re.search(r'^[-*] \S', body, re.M) or re.search(r'\b(TODO|TBD|FIXME)\b', body, re.I):
+        raise Blocked('The latest changelog needs reviewed release bullets without placeholders.')
+    version = version[1]
+    return version, f'{version}\n\n{body}\n'
+
+
 class Console:
     def __init__(self, root=ROOT, output=None):
         self.root = root.resolve()
@@ -81,6 +101,16 @@ class Console:
         source = self.source(mod)
         sha = clean_commit(source)
         no_links(source)
+        version, change_note = latest_release_notes(source)
+        reviewed = git(source, 'log', '-1', '--format=%H', '--', 'CHANGELOG.md')
+        if not reviewed:
+            raise Blocked('Commit CHANGELOG.md before preparing a release.')
+        changed = git(source, 'diff', '--name-only', reviewed, 'HEAD', '--',
+                      'addon.gproj', *spec['dirs']).splitlines()
+        changed = [p for p in changed if not p.startswith(('Scripts/Game/ACR_Tests/',
+                   'Scripts/Game/BBB_Tests/')) and 'BBB_TestArland' not in p]
+        if changed:
+            raise Blocked(f'{mod}: production changed since CHANGELOG.md was reviewed. Update and commit its release notes first.')
         dependency = None
         if mod == 'ACA':
             dependency = read_json(source / 'tools/bbb-source.json')['commit']
@@ -127,8 +157,12 @@ class Console:
         description = source / 'docs/workshop-description.md'
         if description.is_file():
             (parent / 'WORKSHOP-DESCRIPTION.txt').write_bytes(description.read_bytes())
+        (parent / 'CHANGELOG.md').write_bytes((source / 'CHANGELOG.md').read_bytes())
+        (parent / 'WORKSHOP-CHANGELOG.txt').write_text(change_note, encoding='utf-8')
         manifest = dict(mod=mod, commit=sha, bbbCommit=dependency, sourceRoot=str(source),
-                        addonRoot=str(addon), builtUtc=stamp, files=files)
+                        addonRoot=str(addon), builtUtc=stamp, files=files, releaseVersion=version,
+                        releaseNotes=[dict(path=name, sha256=digest(parent / name))
+                                      for name in ['CHANGELOG.md', 'WORKSHOP-CHANGELOG.txt']])
         write_json(parent / 'WORKSHOP-BUILD.json', manifest)
         # Detect source edits while copying, including ignored resource database changes.
         self.verify_manifest(parent, current=True)
@@ -161,9 +195,19 @@ class Console:
         actual = {p.relative_to(addon).as_posix() for p in addon.rglob('*') if p.is_file()}
         if actual != expected:
             raise Blocked(f'{mod}: candidate file set changed. Prepare a fresh copy.')
+        notes = manifest.get('releaseNotes', [])
+        if {item['path'] for item in notes} != {'CHANGELOG.md', 'WORKSHOP-CHANGELOG.txt'}:
+            raise Blocked(f'{mod}: candidate predates required changelog handling. Prepare again.')
+        for item in notes:
+            path = parent / item['path']
+            no_links(path)
+            if not path.is_file() or digest(path) != item['sha256']:
+                raise Blocked(f'{mod}: release notes changed after preparation. Update source and prepare again.')
         if current and clean_commit(self.source(mod)) != manifest['commit']:
             raise Blocked(f'{mod}: source moved on since this candidate. Prepare a fresh copy.')
         if current:
+            if digest(self.source(mod) / 'CHANGELOG.md') != next(i['sha256'] for i in notes if i['path'] == 'CHANGELOG.md'):
+                raise Blocked(f'{mod}: source changelog changed since staging. Prepare again.')
             for item in manifest['files']:
                 if item['path'] != 'addon.gproj' and digest(self.source(mod) / item['path']) != item['sha256']:
                     raise Blocked(f'{mod}: source content changed since staging: {item["path"]}. Prepare again.')
@@ -196,6 +240,45 @@ class Console:
         parent = self.stage(mod)
         self.smoke(parent, dependency)
         return parent
+
+    def notes_info(self, mod):
+        parent = self.checked(mod)
+        manifest = read_json(parent / 'WORKSHOP-BUILD.json')
+        return dict(mod=mod, version=manifest['releaseVersion'],
+                    project=str(Path(manifest['addonRoot']) / 'addon.gproj'),
+                    changelogFile=str(parent / 'WORKSHOP-CHANGELOG.txt'))
+
+    def downloaded_version(self, mod, installed_root):
+        matches = []
+        for directory in Path(installed_root).iterdir():
+            project = directory / 'addon.gproj'
+            if project.is_file() and re.search(r'\bGUID\s+"' + SPECS[mod]['guid'] + '"',
+                                               project.read_text(encoding='utf-8-sig')):
+                matches.append(directory)
+        if len(matches) != 1:
+            raise Blocked('CLI updates require exactly one downloaded Workshop copy to establish the current version.')
+        data = matches[0] / 'ServerData.json'
+        # The game's ServerData.json can contain a truncated/non-JSON trailer.
+        if data.is_file():
+            match = re.search(r'"revision"\s*:\s*\{\s*"version"\s*:\s*"(\d+\.\d+\.\d+)"',
+                              data.read_text(encoding='utf-8-sig', errors='replace'))
+            if match:
+                return match[1]
+        versions = [m[1] for path in matches[0].glob('addon.gproj_*_manifest.json')
+                    if (m := re.fullmatch(r'addon\.gproj_(\d+\.\d+\.\d+)_manifest\.json', path.name))]
+        if len(versions) != 1:
+            raise Blocked('Cannot determine installed Workshop version. Download the current release before CLI publication.')
+        return versions[0]
+
+    def publish_info(self, mod, installed_root):
+        info = self.notes_info(mod)
+        current = self.downloaded_version(mod, installed_root)
+        if tuple(map(int, info['version'].split('.'))) <= tuple(map(int, current.split('.'))):
+            raise Blocked(f'{mod} {current} is already installed. A new update needs a higher version and reviewed changelog; do not republish for tooling-only changes.')
+        if mod == 'ACA':
+            self.installed('BBB', installed_root)
+        info['installedVersion'] = current
+        return info
 
     def checked(self, mod):
         if not self.pointer(mod).is_file():
@@ -265,7 +348,7 @@ class Console:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'check', 'status', 'installed'])
+    parser.add_argument('action', choices=['prepare', 'check', 'status', 'installed', 'notes', 'publish-info'])
     parser.add_argument('mod', choices=SPECS, nargs='?')
     parser.add_argument('--installed-root', type=Path, default=Path('E:/ArmaReforgerMods/addons'))
     options = parser.parse_args()
@@ -280,6 +363,10 @@ def main():
         return
     if not options.mod:
         parser.error('Choose a mod.')
+    if options.action in ['notes', 'publish-info']:
+        info = console.publish_info(options.mod, options.installed_root) if options.action == 'publish-info' else console.notes_info(options.mod)
+        print(json.dumps(info))
+        return
     if options.action == 'prepare':
         parent = console.prepare(options.mod)
     else:

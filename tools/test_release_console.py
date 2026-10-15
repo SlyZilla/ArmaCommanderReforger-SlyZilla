@@ -30,6 +30,7 @@ class GuardTests(unittest.TestCase):
             (root / '.gitignore').write_text('.release-console/\nresourceDatabase.rdb\n')
             for name in spec['files'] + ['resourceDatabase.rdb']:
                 (root / name).write_text(name)
+            (root / 'CHANGELOG.md').write_text('# Changelog\n\n## 0.1.0\n\n- Reviewed fixture release.\n')
             deps = f'"{SPECS["BBB"]["guid"]}"' if mod == 'ACA' else ''
             (root / 'addon.gproj').write_text(f'GameProject {{\n GUID "{spec["guid"]}"\n TITLE "Development"\n Dependencies {{ {deps} }}\n}}')
             for directory in spec['dirs']:
@@ -147,6 +148,70 @@ class GuardTests(unittest.TestCase):
         self.commit(self.root)
         with self.assertRaisesRegex(Blocked, 'pinned dependency'):
             self.console.stage('ACA')
+
+    def test_release_notes_generated_and_history_preserved(self):
+        notes = '# Changelog\n\n## 0.2.0 — next\n\n- New player feature.\n\n## 0.1.0\n\n- Old release.\n'
+        (self.bbb / 'CHANGELOG.md').write_text(notes, encoding='utf-8')
+        self.commit(self.bbb)
+        parent = self.mark_checked('BBB')
+        info = self.console.notes_info('BBB')
+        self.assertEqual('0.2.0', info['version'])
+        output = Path(info['changelogFile']).read_text(encoding='utf-8')
+        self.assertIn('New player feature.', output)
+        self.assertNotIn('Old release.', output)
+        self.assertIn('Old release.', (parent / 'CHANGELOG.md').read_text(encoding='utf-8'))
+
+    def test_release_notes_tamper_refused(self):
+        parent = self.mark_checked('BBB')
+        (parent / 'WORKSHOP-CHANGELOG.txt').write_text('incorrect notes')
+        with self.assertRaisesRegex(Blocked, 'release notes changed'):
+            self.console.checked('BBB')
+
+    def test_missing_unversioned_and_placeholder_notes_refused(self):
+        path = self.bbb / 'CHANGELOG.md'
+        for value in ['# Changelog', '## Unreleased\n- Feature', '## 0.1.0\n- TODO', '## 0.1.0\nEmpty']:
+            path.write_text(value)
+            self.commit(self.bbb)
+            with self.assertRaises(Blocked):
+                self.console.stage('BBB')
+        path.unlink()
+        self.commit(self.bbb)
+        with self.assertRaisesRegex(Blocked, 'CHANGELOG.md'):
+            self.console.stage('BBB')
+
+    def test_production_after_notes_review_requires_changelog_update(self):
+        path = self.bbb / 'Scripts/Game/BBB/fixture.c'
+        path.write_text('class NewFeature {}')
+        self.commit(self.bbb)
+        with self.assertRaisesRegex(Blocked, 'production changed'):
+            self.console.stage('BBB')
+        with (self.bbb / 'CHANGELOG.md').open('a') as handle:
+            handle.write('- Added the new feature.\n')
+        self.commit(self.bbb)
+        self.console.stage('BBB')
+
+    def test_cli_publish_refuses_current_and_older_versions(self):
+        self.mark_checked('BBB')
+        for version in ['0.1.0', '0.2.0']:
+            with patch.object(self.console, 'downloaded_version', return_value=version):
+                with self.assertRaisesRegex(Blocked, 'higher version'):
+                    self.console.publish_info('BBB', self.base)
+        with patch.object(self.console, 'downloaded_version', return_value='0.0.9'):
+            info = self.console.publish_info('BBB', self.base)
+            self.assertEqual('0.1.0', info['version'])
+            self.assertTrue(Path(info['changelogFile']).is_file())
+
+    def test_installed_version_read_from_game_metadata_and_manifest_fallback(self):
+        installed = self.base / 'downloaded'
+        copy = installed / 'BBB'
+        copy.mkdir(parents=True)
+        (copy / 'addon.gproj').write_text(f'GUID "{SPECS["BBB"]["guid"]}"')
+        data = copy / 'ServerData.json'
+        data.write_text('{"revision":{"version":"0.1.1"}, trailing incomplete JSON')
+        self.assertEqual('0.1.1', self.console.downloaded_version('BBB', installed))
+        data.unlink()
+        (copy / 'addon.gproj_0.1.2_manifest.json').write_text('{}')
+        self.assertEqual('0.1.2', self.console.downloaded_version('BBB', installed))
 
     def test_aca_test_scripts_excluded(self):
         test = self.root / 'Scripts/Game/ACR_Tests/test.c'
