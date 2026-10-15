@@ -1,14 +1,27 @@
-AC: ACTUAL (Arma Commander Actual) - Arland and Everon
-===================================================
-An early, unofficial fan remake of the Arma 3 "Arma Commander" mode: you're the US commander.
-You order squads around on the map, jump into any of your soldiers, buy
-reinforcements with RP, and take bases from an AI-run Soviet side.
-This is an alpha build, so expect rough edges.
+AC: ACTUAL (Arma Commander Actual) - Everon, Arland and Kolguyev
+================================================================
+An unofficial fan port of the Arma 3 "Arma Commander" mode. Command squads
+on the map, take over friendly AI soldiers, buy units with requisition
+points (RP), and capture bases. Play solo against AI or share command
+with friends. Pick sides and match options before starting.
+This is an alpha build, so expect rough edges. There are no victory
+conditions or saved matches.
+
+This guide is for the Windows Steam ZIP launchers. For an installed
+Workshop copy, enable the mod and choose an AC: Actual scenario in the
+game's Scenarios or Host menu; use the in-game setup screen, then Start.
+No external launcher is needed for Workshop play.
 
 WHAT YOU NEED
 -------------
 - Arma Reforger on Steam, installed and up to date (Windows PC).
-- Nothing else. No Workshop download, and no Workbench.
+- No Workbench or extra mod is required for vanilla play from this ZIP.
+- Optional RHS/UA/ACE mods must already be downloaded. The launcher selects
+  their addon IDs but currently expects faction files in
+  E:\ArmaReforgerMods\addons (a development-PC path); other installs may need
+  addon search paths adjusted. It does not download these mods for you.
+- If All-in-One Command Menu is installed locally from Workshop, Play/Host/
+  Join load it automatically. Joiners need it too when the host loads it.
 
 HOW TO START
 ------------
@@ -18,11 +31,11 @@ HOW TO START
 3. Double-click  Play-ACA.cmd  (next to this guide).
    A setup menu opens first (side, AI, RP, threat level...): press Enter
    to start with the remembered settings (option 1 switches the map:
-   Arland or Everon). The game then starts straight into
+   Arland, Everon or Kolguyev). The game then starts straight into
    the scenario (singleplayer and offline).
    The first load takes a while because the game compiles the mod's scripts.
    If Windows SmartScreen asks, choose "More info" > "Run anyway". It's a
-   one-line script that starts the game with the mod loaded.
+   launcher script that starts the game with the mod loaded.
    The launcher finds the game in any Steam library. If it can't, a window
    asks you to pick ArmaReforgerSteam.exe once (in ...\steamapps\common\
    Arma Reforger\); it remembers the answer. If anything fails, send
@@ -31,7 +44,8 @@ HOW TO START
 PLAYING TOGETHER (EXPERIMENTAL)
 -------------------------------
 One person hosts on their PC and plays; the others join. Everyone needs this
-same folder (send them the same zip) and the same, up-to-date Reforger.
+same mod version (send them the same zip), optional mod set, faction/ACE
+choices and up-to-date Reforger.
 
 HOST (one person):
 1. Install the free "Arma Reforger Server" tool once: in Steam, go to
@@ -80,15 +94,18 @@ CONNECTING OVER THE INTERNET - pick ONE:
  On the same home network, just use the host's 192.168.x.x address.
 
 WHO DOES WHAT:
-- Everyone plays US. The first player in is a commander (map orders,
-  buying, supports). With shared command (on by default, option 12 in the
-  host setup) anyone else can press "Take command" in the map panel too:
-  every commander can order every squad and all share one RP pool. Players
-  not in command take over US soldiers (F7), drive gun trucks, fight and
-  ping. "Leave command" hands it back. With shared command off there is
-  one commander at a time.
-- The host (first player connected) gets Game Master (Y). Option 11 in the
-  host setup gives it to everyone who joins.
+- Players join the chosen side, or pick in game when Players' side is any.
+  The first eligible player on a side takes command. With Shared command
+  on (default, option 13), others can press "Take command" too: every
+  commander can order every squad and all share one RP pool. Non-commanders
+  can possess friendly AI soldiers (F7), drive, fight and ping.
+  "Leave command" gives up command. Shared command off allows one commander
+  per side. The AI commander leads a side only while no player commands it.
+- These launchers run a dedicated server. Being the first joiner does not
+  grant Game Master by default. Configured server admins are trusted;
+  option 16 "First player is host" explicitly trusts the first connection
+  for this session (no transfer after disconnect). Option 12 gives Game
+  Master to everyone. Use these options only for your intended group.
 
 IF IT DOESN'T CONNECT:
 - Both players close everything and try the files in the "If joining fails"
@@ -98,46 +115,41 @@ IF IT DOESN'T CONNECT:
 - Logs: host server log in ArmaCommanderReforger\.local-server\logs, game
   logs in Documents\My Games\ArmaReforger\logs. Send the newest ones.
 
-THE SITUATION
--------------
-ARLAND: you spawn at the US Airfield on the west side of Arland. Your forces nearby
-are 1st Squad, 2nd Squad, a Weapons Team, a crewed truck (Truck 1) and a
-crewed Humvee (Humvee 1). The Soviets hold the east side with their own AI
-commander, which buys units, defends, and attacks your bases.
+THE BATTLEFIELDS
+----------------
+The following describes the hand-built vanilla layouts. Faction choices
+replace the sides and forces; smaller or generated layouts move their HQs.
 
-Bases (distances are from your spawn at the Airfield):
-  Airfield .......... YOURS. Your HQ; you buy units here.
-  Barracks .......... yours, 0.5 km south-east
-  Harbor ............ neutral, 0.5 km north
-  Farm .............. neutral, 0.9 km east
-  Military Hill ..... neutral, 1.4 km east (worth extra)
-  Lighthouse ........ neutral control point, 1.7 km south (no income,
-                      no deploying)
-  Ridge ............. neutral, 1.8 km south-east
-  Heide ............. SOVIET HQ, 1.9 km east (Heide town)
-  Arlberg ........... Soviet, 1.9 km south-east
-  Heide Lighthouse .. Soviet control point, 2.3 km east, on the coast
-  Arlberg Harbor .... Soviet and HIDDEN until your troops get near it.
-                      It's 2.5 km south-east, on the coast past Arlberg.
+ARLAND: US starts at Airfield with Barracks; USSR starts at Heide with
+Arlberg and Arlberg Harbor (hidden from opponents until discovered).
+Harbor, Farm, Military Hill, Ridge and Lighthouse start neutral. Both
+lighthouses are tactical points with no income or deployment. US starts
+with two rifle squads, a weapons team, a crewed truck and a crewed Humvee.
 
-EVERON (new, first pass): the US HQ is the military site at the north-east
-corner of the Airbase (north of Saint-Philippe); the Soviet HQ is the
-Saint-Pierre harbor on the south-east coast, about 11 km away. Every town
-and village is a neutral base; military sites and industry give more RP,
-and a few lesser landmarks are hidden bases. Both sides start with two
-rifle squads, a weapons team, a truck and a car.
-Everon is big, so the setup menu (option 14) also offers smaller games:
-the North or South half of the island, or a small flashpoint of about six
-bases round one hotspot (Saint-Philippe, Montignac or Levie), with each
-side's HQ close by. Pick one by name or let it roll at random.
+EVERON: US starts at the Airbase in the north; USSR starts at Saint-Pierre
+in the south-east. Towns, villages, military sites and industry form the
+objectives. Option 15 offers North/South halves and flashpoints around
+Saint-Philippe, Montignac or Levie, as well as generated layouts.
 
-- To capture a base, get soldiers inside its ring and clear the enemies out.
-  More soldiers capture it faster. Garrisoned bases have defenders that appear
-  when you get close.
-- Bases you own give RP (Requisition Points) every minute. You can deploy
-  units you buy at any base you own that isn't under attack (the two
-  lighthouse control points excepted).
-- There's no win screen yet. Play until one side owns the map.
+KOLGUYEV: always generated from the terrain's named locations. Generated
+whole-map, half-map and flashpoint choices are also available on Arland
+and Everon. Both sides' HQs and starting forces move to the generated plan.
+There are no pre-placed pads in generated games: build a helipad before
+buying helicopters. Off-map air lift needs no pad.
+
+The launchers choose settings before launching and skip the in-game setup
+screen. When using an included scenario through the game's menu instead,
+the in-game setup screen can preview a generated plan, reroll its seed and
+move bases (click a base, then its destination). Use "Return to match
+setup" to return, then Start. Installing another terrain alone does not
+add an AC: Actual scenario; mission makers must set one up.
+
+- Soldiers inside a base's ring capture it; a greater advantage in numbers
+  captures faster. Garrison defenders deploy when enemies approach.
+- Income is 5 RP plus owned income bases' values every minute, multiplied
+  by the host's income setting. Purchases deploy at owned bases that allow
+  spawning and are not contested. Prices and stocks depend on host options.
+- There is no win screen: the match continues until you end it.
 
 CONTROLS
 --------
@@ -145,6 +157,9 @@ F9 (or M)   Open or close the command map. No map item is needed.
 F7          Take over the soldier you're aiming at. On the map, F7 takes over
             the marker under the cursor.
 F8          Go back to your own commander body.
+            F7 only takes living AI in your side's commandable squads, never
+            another player's soldier or command unit.
+            Rebind mod keys in Settings > Controls > AC: Actual.
 Y           Game Master (host/admin). This is a debug and "fix Arma" tool:
             unstick vehicles, delete stuck units, spawn stuff. Press Y again
             to return.
@@ -165,36 +180,56 @@ ON THE COMMAND MAP
     Defend, then right-click   defend that spot
     Get in, then right-click   board a vehicle near the click
     Get out / Unload       dismount the squad, or the passengers it carries
-    Ride, then right-click a free truck nearby (no more than 800 m away, and
-                           no farther than half the trip) picks the squad up,
-                           drives it there and drops it off. Trips under
-                           400 m are walked.
-    Reinforce              refill missing soldiers (3 RP each). They appear
-                           at your nearest base and then have to reach
-                           the squad.
+    Ride, then right-click the destination. A free crewed truck nearby
+                           (within 800 m, no farther than half the trip)
+                           picks up the squad and drives it there. Trips
+                           under 400 m, or with slow road detours, are walked.
+    Reinforce              missing soldiers cost 3 RP each, sent from the
+                           nearest eligible owned base. Refused with enemies
+                           within 300 m, even if not spotted. At a deploy
+                           base it also heals/restocks soldiers (free if
+                           ammo-only); vehicle rearm/repair costs extra.
     Halt                   drop all orders and stand still
     Switch to squad        jump into that squad's leader
     Take over gunner       jump into the gun of the squad's vehicle
 - RIGHT-CLICK on the map moves the selected squad there. A line shows each
   squad's current order.
 - To toggle Defend or Get in off again, click the same button a second time.
+- Garrison, then right-click a building to hold its usable windows/doors.
+  Advancing Combat infantry can try a flank when stalled against a fresh contact;
+  defending, pinned, Fast and Silent squads are excluded from that behavior.
 - BUYING UNITS: click "Requisition" at the top of the panel, click a unit in
   the list, then left-click inside the ring of one of YOUR bases. The unit
   deploys at that spot (a click just outside is pulled to the ring's edge). Right-click cancels. Vehicles come with crews. The list shows
-  the price, and your RP is shown in the panel. Infantry, cars and trucks
-  never run out, but every one your side buys makes the next one dearer
+  the price, and your RP is shown in the panel. With default stepped
+  pricing, ordinary infantry, cars and trucks have unlimited stock, but
+  each purchase makes the next one dearer
   (+15% of the first price each time; +25% at low threat, +8% at high).
   Rare units (helicopters, armour, mortar teams) show how many are left.
+  With fixed-stock pricing every unit has a limited stock and fixed price.
+  Purchases also stop at the host's living-soldier threshold; a purchase
+  begun below that threshold may take the side over it.
 - SUPPORTS: click "Supports" in the panel, click one (price and cooldown are
   listed), then RIGHT-CLICK the target on the map. Everyone on your side gets
-  a message with the grid and arrival time. Available:
+  a message with the grid and arrival time. Mortar calls and illumination
+  need a bought mortar team, stopped and set up in range (M252 about 2.9 km,
+  2B14 about 2.3 km; at least 100 m). Available:
     Mortars: HE small / HE large / creeping barrage / smoke screen
     Illumination flares (4 flares over about a minute)
-    Air: rocket strike, bomb run (off-map jets: you see and hear the rockets
-         and bombs, not the plane)
-    Helicopter: gun run (one rocket pass) or loiter (circles the target for
-         90 s; door gunners and rocket salvos). It flies in from your nearest
-         base and CAN be shot down.
+    Artillery: howitzer battery (virtual, no range limit, no team needed)
+    Air: rocket strike, bomb run (virtual by default; RHS can show a jet
+         flyover, and mission makers can configure delivery)
+    Helicopter: rocket run, gunship (90 s), door gunners (120 s).
+         With helipads, buy the support helicopter first: it flies from
+         its pad, returns and services. Layouts without pads use off-map
+         combat support. Helicopters CAN be shot down.
+    Helicopter: air lift. Select an infantry squad, then right-click a
+         destination at least 400 m away. One or two off-map helicopters
+         carry the squad to clear ground within 200 m of the click.
+         Capacity depends on the helicopter; troops without seats stay behind.
+         The squad must be on foot with no player controlling a member.
+         No pad needed; default 40 RP / 4-minute cooldown. The squad holds
+         at the landing zone; it cannot take other orders during the lift.
   A red ring with a countdown marks each incoming support on the map.
   Keep your own troops out of it!
 - REPORT (panel button, everyone): your side's running after-action report:
@@ -238,17 +273,18 @@ ON THE COMMAND MAP
   they're out of it.
 - RADIO: sightings by your AI squads and sentries also come in as short
   radio calls in chat (at most one every 15 s).
-- INTEL: enemies your side has actually seen show as red hostile symbols
+- INTEL: enemies reported to your side show as red hostile symbols
   (infantry, vehicle, armed vehicle, armour, helicopter) at the spot they
   were last seen. After 30 s they turn dashed ("suspected"), after 90 s
-  they disappear. Your squads, your bases' sentries and you and your
-  friends (anything within 300 m in clear view) all count. The INTEL box at
+  they disappear. AI perception and players' line of sight within 300 m
+  count. Owned bases also automatically report enemies inside the capture
+  radius plus 60 m, without line of sight or a physical sentry. The INTEL box at
   the top left lists new sightings, newest first. The enemy AI works from
   the same kind of picture, so staying out of sight matters.
 
 THE ENEMY AI
 ------------
-The Soviet commander plays smarter than it looks: it keeps a reserve, comes at
+The AI commander on either side keeps a reserve, comes at
 a base from several directions, shells it and lays smoke before assaulting,
 has one squad pin you down while the others move, pulls beaten squads back,
 counterattacks bases it just lost, and calls mortars on you when you attack
@@ -273,14 +309,15 @@ TIPS
   gunner, then drive it yourself.
 - You can fight in person too. Press F7 on any of your soldiers, then F8 to go
   back to your commander.
-- Stuck AI or a flipped vehicle? Press Y (Game Master) and fix it.
+- Stuck AI or a flipped vehicle? A host/admin with Game Master can use Y
+  to fix it. See the dedicated-server permissions above.
 - If your commander body dies you respawn at your HQ (or nearest base you
   own) after 15 s. If it dies while you are controlling another soldier, you
   keep playing that soldier and a new commander body is waiting at base (F8).
 
 OTHER FACTION MODS (NO PROMISES)
 --------------------------------
-AC: Actual can play any two factions a map lists. Arland and Everon list
+AC: Actual can play any two eligible factions a map lists. Our three worlds list
 the game's US, USSR and FIA, plus RHS US / RHS Russia when RHS is loaded,
 and UA through Ukraine Armed Forces RHS. Another faction mod only works if
 the map lists it and the mod sets up its factions the standard way (Game
@@ -291,9 +328,14 @@ hand-fitted. Want a faction mod supported properly? Ask on GitHub:
 
 KNOWN LIMITS (alpha)
 --------------------
-- Multiplayer, and shared command in particular, has had little testing.
+- Multiplayer has had friend playtests, but coverage is limited, especially
+  for joining during setup and generated layouts.
   Expect bugs; logs and a short note of what happened are gold.
-- No victory condition: play until one side is clearly beaten.
+- No victory condition or save/resume system.
+- Controller/console play is unverified; these launchers require Windows.
+- AI base building is not implemented. Construction trucks can build forward
+  deploy points, but command posts do not yet store building supplies; keep
+  a stocked construction truck available for further construction.
 - Game logs are in Documents\My Games\ArmaReforger\logs if something breaks.
   Sending the newest console.log helps a lot.
 - Found a bug? Report it at https://github.com/propst-design/ACActual/issues
@@ -306,7 +348,8 @@ Made by Jacob (propst-design) and Claude. This mod is openly vibecoded:
 nearly all of the code, launchers and this guide were written by Claude,
 Anthropic's AI model (in Claude Cowork); Jacob directed, designed and
 play-tested it. Codex (OpenAI's coding agent) has contributed part of the
-code and tests since 5 Oct.
+code and tests since 5 Oct. Antigravity (Google's agentic coding environment)
+also contributes.
 Playtesters: PoppiPoppins, Hexxyz and Frost.
 
 Based on "Arma Commander" for Arma 3 by Martin Hajek

@@ -7,7 +7,7 @@ acr = root / 'Scripts/Game/ACR'
 # Classes mission makers place or fill in, and the files they live in.
 classes = {
     'ACR_Mode.c': ['ACR_Mode', 'ACR_StartingUnit'],
-    'ACR_FactionSettings.c': ['ACR_RequisitionEntry', 'ACR_SupportUnitSettings', 'ACR_FactionSettings'],
+    'ACR_FactionSettings.c': ['ACR_RequisitionEntry', 'ACR_PrefabMapping', 'ACR_SupportUnitSettings', 'ACR_FactionSettings'],
     'ACR_Base.c': ['ACR_Base'],
     'ACR_Helipads.c': ['ACR_Helipad'],
     'ACR_Skirmish.c': ['ACR_Skirmish'],

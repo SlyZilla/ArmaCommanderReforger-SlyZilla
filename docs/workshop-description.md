@@ -1,7 +1,7 @@
 # Arma Commander: Actual
 
 An unofficial, openly vibecoded port of the Arma 3 mod Arma Commander to Arma Reforger.
-Command squads from the map, then take over a friendly soldier and fight alongside them.
+Command squads from the map, then take over a friendly AI soldier and fight alongside them.
 Play solo against AI commanders or share command with friends in multiplayer.
 No additional mods required for the vanilla factions.
 
@@ -9,8 +9,8 @@ No additional mods required for the vanilla factions.
 
 - Command map with squad status, spotted enemies and radio reports. Several commanders can
   share a side, orders and a requisition pool.
-- Move, defend, assault, queue waypoints and garrison buildings. Advancing infantry stalled
-  against a spotted contact can try a flank; pinned squads keep their position.
+- Move, defend, hunt, queue waypoints and garrison buildings. Advancing infantry stalled
+  against a spotted contact can try a flank.
 - Capture bases for requisition income; buy infantry, vehicles, mortar crews and observers.
 - Call artillery, air support or transport helicopters to carry squads to a landing zone.
 - Build field service stations, forward spawn points and helipads with construction trucks.
@@ -32,7 +32,8 @@ custom factions and starting forces. Workbench setup and configuration guide:
 https://github.com/propst-design/ACActual/blob/main/MISSION-MAKING.md
 
 On generated layouts, build a helipad before buying helicopters. Off-map air lift needs no pad.
-There are no victory conditions; play for the fight and the territory.
+There are no victory conditions or saved matches; play for the fight and the territory.
+Intel includes automatic enemy reports within an owned base's radius plus 60 m, without line of sight.
 
 ## Getting started and controls
 
@@ -52,7 +53,7 @@ controller and console play have not been validated.
 
 ## Faction mods and compatibility
 
-AC: Actual plays any two factions a map lists, picked on the setup screen. Our maps list
+AC: Actual plays any two eligible factions a map lists, picked on the setup screen. Our maps list
 the game's US, USSR and FIA, plus RHS US and RHS Russia when RHS is loaded, and UA through
 Ukraine Armed Forces RHS. RHS and UA are optional and are the only hand-fitted faction mods.
 Players joining a modded server need its mod set.

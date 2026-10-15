@@ -18,36 +18,65 @@ Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.
 
 ## Playing from Workshop
 
-Once the Workshop item is published, enable it and select an included AC: Actual scenario
-in Scenarios or Host. The host/admin picks the sides and match options on the setup screen,
-then presses Start. No external launcher is needed for Workshop play.
-Report bugs and issues at https://github.com/propst-design/ACActual/issues (include the map,
-mod set, steps to reproduce and logs if available).
+For an installed Workshop copy, enable it and select an included AC: Actual scenario in Scenarios or
+Host. The host/admin picks the sides and match options on the setup screen, then presses Start. No
+external launcher is needed for Workshop play. Report bugs and issues at
+https://github.com/propst-design/ACActual/issues (include the map, mod set, steps to reproduce and
+logs if available).
+
+## Maps and match options
+
+Everon, Arland and Kolguyev are included. Everon has a hand-built full-island layout, north/south
+halves and three flashpoints. Arland has a hand-built layout and is the main automated test map. All
+three support generated layouts; Kolguyev always generates its bases and HQs from named map
+locations. Generated layouts can be previewed, rerolled and adjusted by clicking a base and then its
+new position on the in-game setup map. Other terrains need an AC: Actual scenario setup; installing
+a terrain alone does not add one.
+
+Capture bases for RP, requisition squads and vehicles, and call mortar, artillery and air support.
+Construction trucks build service stations, forward deploy points and helipads. There are no victory
+conditions or saved matches. Better Battle Buddies is included in the mod.
+
+## Playing from the ZIP or development folder
+
+The release ZIP includes **Play-ACA.cmd**, **Host-ACA.cmd**, **Join-ACA.cmd** and a **READ ME
+FIRST.txt** guide. Its launchers ask for match options before starting and skip the in-game setup
+screen. Published ZIPs self-update; keep custom work in a separate addon or use a development copy
+without the release updater source.
 
 ## Playing the test range
 
-Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo).
-**Host-Test-Range.cmd** opens the normal menu with the addon loaded, for hosting.
+Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo). In the development
+checkout, **Host-Test-Range.cmd** opens the normal game menu with the addon loaded. Unpacked local
+addons do not appear in the game's Scenarios/Host lists; use **Host-ACA.cmd** for a local
+multiplayer scenario instead. The ZIP does not include Host-Test-Range.cmd.
 
-### Factions and mods
+## Factions and mods
 
-The host setup menu can run vanilla US vs USSR, RHS US vs RHS Russia, RHS Russia vs Ukraine,
-or RHS US vs Ukraine. RHS and Ukraine Armed Forces RHS are optional; the launcher adds the
-required addons when selected. Ukraine Armed Forces RHS replaces the vanilla US faction for
-that session, so choose a pair containing **UA** to play it. ACE All in One is a separate
-optional toggle. Joiners should select the same faction pair and ACE setting as the host; a
-mod or faction mismatch is rejected by the server. The join menu explains the selections to check.
+The host setup menu can run vanilla US vs USSR, RHS US vs RHS Russia, RHS Russia vs Ukraine, or RHS
+US vs Ukraine. RHS and Ukraine Armed Forces RHS are optional; the launcher adds the required addon
+IDs when selected; it does not download those mods. The current ZIP/development launcher expects
+optional faction mods in `E:\ArmaReforgerMods\addons`; it is configured for the development PC, so
+other installations may need their addon search paths adjusted. Ukraine Armed Forces RHS replaces
+the vanilla US faction for that session, so choose a pair containing **UA** to play it. ACE All in
+One is a separate optional toggle. Play/Host/Join also automatically load All-in-One Command Menu if
+its Workshop copy is found locally; it is a separate optional mod and joiners need it when the host
+loads it. Joiners should select the same faction pair and ACE setting as the host; a mod mismatch
+can prevent joining, and a different faction choice can produce the wrong setup. The join menu
+explains the selections to check.
 
-**Other faction mods (no promises).** AC: Actual can play any two factions a map lists, picked
-as Blue side / Red side on the in-game setup screen (or `-acrFactions WEST,EAST`). Arland and
-Everon list the game's US, USSR and FIA, plus RHS US and RHS Russia when RHS is loaded. Another
-faction mod works only if the map lists it (one line in the map's faction manager) and the mod
-sets up its factions the standard way (Game Master catalogs of soldiers, groups and vehicles).
-Even then it may look rough: mixed uniforms, a squad leader as your command unit, vanilla
-stand-ins for what the mod lacks. Only RHS and Ukraine Armed Forces RHS are hand-fitted.
-Want a faction mod supported properly? Ask on GitHub: https://github.com/propst-design/ACActual/issues
+**Other faction mods (no promises).** AC: Actual can play any two eligible factions a map lists,
+picked as Blue side / Red side on the in-game setup screen (or `-acrFactions WEST,EAST`). The three
+scenario worlds list the game's US, USSR and FIA, plus RHS US and RHS Russia when RHS is loaded.
+Another faction mod works only if the map lists it (one line in the map's faction manager) and the
+mod sets up its factions the standard way (Game Master catalogs of soldiers, groups and vehicles).
+Even then it may look rough: mixed uniforms, a squad leader as your command unit, vanilla stand-ins
+for what the mod lacks. Only RHS and Ukraine Armed Forces RHS are hand-fitted. Want a faction mod
+supported properly? Ask on GitHub: https://github.com/propst-design/ACActual/issues
 
-**Command map** (M or F9):
+## Command map and controls
+
+Open with M or F9:
 
 - Left-click a squad or soldier marker to select that squad. Left-click empty map to deselect.
 - The panel on the right shows the squad. **Switch to squad** takes over its leader (or another free soldier).
@@ -63,11 +92,21 @@ Want a faction mod supported properly? Ask on GitHub: https://github.com/propst-
 | F8 | Return to your command unit |
 | F9 | Open/close the command map (no map item needed) |
 | F6 (in a vehicle) | Drop every passenger squad now (a second press within 3 s overrides the "too high/fast" warning) |
-| F5 | Test hotkey: move selected squad to cursor (map) or 35 m ahead |
-| W/A/S/D in a turret | Gunner drives: steer the vehicle's AI driver (a map order hands control back) |
+| F5 | Move selected squad to cursor (map) or 35 m ahead |
+| W/A/S/D in a turret | Gunner drive with an AI driver (a map order hands control back) |
 | Command menu key (default: backtick) | Native squad orders, only while possessing a squad leader |
 
-Logs: automated tests write to `.local-game/logs/<date>/console.log`; normal play uses `Documents/My Games/ArmaReforger/logs`. Lines are tagged `[ACR]`.
+F7 only takes over living soldiers in your side's commandable squads, never another player's soldier
+or command unit. Keys can be rebound under **Settings > Controls > AC: Actual**. PC keyboard/mouse
+is the tested control scheme; console/controller play remains unverified.
+
+Intel comes from AI perception, player line of sight within 300 m, and automatic reports inside an
+owned base's radius plus 60 m (no line-of-sight requirement). Contacts turn suspected after 30 s and
+expire after 90 s without an update. The AI commander uses its side's intel.
+
+Logs: automated tests write to `.local-game/logs/<date>/console.log`; normal play uses `Documents/My
+Games/ArmaReforger/logs`. Mod lines use `[ACR]` and `[BBB]`; ZIP-host server logs use
+`ArmaCommanderReforger/.local-server/logs`.
 
 ## Code layout (`Scripts/Game`)
 

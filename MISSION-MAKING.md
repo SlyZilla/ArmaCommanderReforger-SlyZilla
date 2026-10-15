@@ -3,8 +3,9 @@
 This guide shows how to set up AC: Actual on a different map, test your changes, and play a custom
 map with a friend. It also lists the settings you can change in Workbench.
 
-> AC: Actual is an early alpha. Arland is the most tested map; Everon is a first pass. Expect to
-> report bugs, and send logs: every mode line in the log starts with `[ACR]`.
+> AC: Actual is an alpha. Arland is the main automated test map; Everon is the main large-map
+> playtest terrain. Kolguyev uses generated layouts. New maps, faction combinations and multiplayer
+> setup paths still need playtesting. Mod log lines use `[ACR]` (the included AI systems also use `[BBB]`).
 
 ## Contents
 
@@ -23,9 +24,10 @@ map with a friend. It also lists the settings you can change in Workbench.
 ## Before you start
 
 - **Arma Reforger Tools** (Workbench) from Steam. Workbench is the editor used to make and test maps.
-- **The AC: Actual addon.** Until AC: Actual is on the Workshop, get the `ArmaCommanderReforger` folder
-  from the [latest release](https://github.com/propst-design/ACActual/releases/latest) zip and add it to
-  Workbench with **Add Existing Project**.
+- **The AC: Actual addon.** Use the installed Workshop project if available, or get the
+  `ArmaCommanderReforger` folder from the [release ZIP](https://github.com/propst-design/ACActual/releases/latest)
+  and add its `addon.gproj` to Workbench with **Add Existing Project**. Avoid loading two copies with
+  the same addon ID. Keep custom work out of an installation that self-updates.
 - **Your own addon** (your own mod project). Set AC: Actual, GUID `AC230926A0010001`, as a dependency so
   your map can use AC: Actual's game mode and settings. Keep your work in your own addon so an AC: Actual
   update does not replace it.
@@ -38,7 +40,7 @@ contains and shares your work. A **mission header** gives your world a name in t
 
 ## Quick start: copy Arland
 
-The quickest way to make a new map is to copy the working Arland setup and move its objects:
+For a hand-placed layout, copy the working Arland setup and move its objects:
 
 1. In your addon, create a world using the terrain you want (for example, Everon).
 2. In AC: Actual's `Worlds/ACR_Arland.ent`, copy everything from the `default` layer and paste it into
@@ -50,7 +52,14 @@ The quickest way to make a new map is to copy the working Arland setup and move 
 6. Play it from Workbench and check that bases, units, and the command panel appear. See
    [Testing your scenario](#testing-your-scenario).
 
-To play a custom map with a friend today, see [Play a custom map with a friend](#play-a-custom-map-with-a-friend).
+For a generated layout, use `Worlds/ACR_Kolguyev.ent` and its layer as the example instead: copy the
+managers and game mode to a world on your terrain, configure its navmesh and factions, and provide a
+player spawn point for each side. Leave out `ACR_Base` objects to generate bases automatically. The
+terrain needs usable named map places and enough dry land to form a plan; generation is not
+guaranteed on every terrain. See [Generated layouts](#generated-layouts).
+
+To play a custom map with a friend, see [Play a custom map with a
+friend](#play-a-custom-map-with-a-friend).
 
 ## What a world needs
 
@@ -59,18 +68,17 @@ Workbench's browser. Paths starting with `ACR_` are part of AC: Actual; the othe
 
 | Entity | Prefab / class | Needed? | Why |
 |---|---|---|---|
-| Object | Prefab / class to add | Needed? | What it does |
-|---|---|---|---|
 | Game mode | `Prefabs/MP/Modes/Plain/GameMode_Plain.et` | Yes | Lets the game handle spawning, the map, and construction components (below) |
 | Faction manager | e.g. `Prefabs/MP/Managers/Factions/FactionManager_USxUSSR.et` | Yes | Sets the sides in the match. Their faction keys must match the AC: Actual settings |
 | Loadout manager | e.g. `Prefabs/MP/Managers/Loadouts/LoadoutManager_USxUSSR.et` | Yes | Sets what players spawn with (AC: Actual uses officer gear; see [Current limits](#current-limits)) |
 | Player spawn point | e.g. `Prefabs/MP/Spawning/SpawnPoint_US.et` | Yes, one per playable side | Shows where that side's HQ is. Command units respawn at the nearest base it owns |
 | AI world | `Prefabs/AI/SCR_AIWorld.et` with the map's navigation files | Yes | Gives AI soldiers and vehicles routes they can use |
 | Perception manager | `Prefabs/World/Game/PerceptionManager.et` | Yes | Lets AI notice other units |
-| Radio manager | `Prefabs/Systems/Radio/RadioManager.et` | Yes | Lets units send radio reports |
+| Radio manager | `Prefabs/Systems/Radio/RadioManager.et` | Yes | Radio system |
+| Chat entity | `Prefabs/MP/Campaign/CampaignMPChatEntity.et` | Yes for chat | Copy `ACR_Chat` from a shipped world; the plain game mode does not supply chat |
 | **`ACR_Mode`** | class `ACR_Mode` | Yes, exactly one | Starts the mode |
 | **`ACR_FactionSettings`** | class `ACR_FactionSettings` | Recommended, one per side | RP, buy list, AI commander, supports |
-| **`ACR_Base`** | class `ACR_Base` | Yes, several | Bases to capture; owned bases are where units deploy |
+| **`ACR_Base`** | class `ACR_Base` | Hand-built layouts only | Capture/deployment points. With none, the mode generates a layout |
 | **`ACR_StartingUnit`** | class `ACR_StartingUnit` | Optional | Units that exist when the match starts |
 
 ### Settings on the game mode
@@ -91,7 +99,11 @@ Add these components to the game mode object. The Arland map has working example
   - **Helipad**: a pad for support helicopters and where bought helicopters appear, for the side's nearest base.
   - **Headquarters / Player Hub**: away from existing bases it becomes a forward base ("FOB 1"...) where
     units can be bought and reinforcements deploy; hidden from the enemy until found, no income.
-  AI squads that need ammo, repairs, fuel or healing also head for these.
+  AI squads that need ammo, repairs, fuel or healing also head for these. Service is slow and
+  free; the Reinforce button's paid instant vehicle service remains separate. Building costs
+  draw from construction-truck stock. A built command post does not yet provide a construction
+  supply pool, so further building still needs a stocked truck. The AI commander does not build
+  bases or helipads.
 
 ### AI world and navmesh
 
@@ -145,22 +157,26 @@ AI commander is turned off.
 | `m_sSupportTransportHelicopter` | empty | Legacy door-gunner airframe fallback; a `DOOR_GUN_HELI` support-unit row takes precedence |
 | `m_sSupportRocket` | empty | Rocket for rocket strikes and gunships. Empty = Hydra 70 / S-5 |
 
-AC: Actual uses faction keys to tell sides apart. A key containing `US` (but not `USSR`), `NATO`, or
-`BLUFOR` counts as a western side for settings such as mortar choice.
+AC: Actual uses faction keys to tell sides apart. For default support assets, `RHS_AFRF` and keys
+starting with `USSR` count as eastern; otherwise keys containing `US`, or exactly `NATO` or
+`BLUFOR`, count as western. Other keys use eastern defaults unless prefab mappings replace them.
 
 #### Factions and mods
 
-The host setup menu offers four side pairings: the game's US vs USSR, RHS US vs RHS AFRF, UA vs RHS AFRF,
-or RHS US vs UA. The menu loads the required RHS or UA mods for the chosen pair. The UA mod replaces the
-game's US side for that session. ACE All in One is a separate optional choice. Everyone joining must use
-the same side pairing and ACE choice as the host. With no extra faction mods selected, the game uses its
-usual US vs USSR sides.
+The external ZIP/development launcher menu offers four side pairings: the game's US vs USSR, RHS US
+vs RHS AFRF, UA vs RHS AFRF, or RHS US vs UA. The launcher selects the RHS/UA addon IDs but does not
+download them; its current search path for optional faction mods is `E:\ArmaReforgerMods\addons`,
+which may need adapting on another PC. The UA mod replaces the game's US side for that session. ACE
+All in One is a separate optional choice. Everyone joining must use the same side pairing and ACE
+choice as the host. With no extra faction mods selected, the game uses its usual US vs USSR sides.
 
-**Any faction your world lists.** Besides those pairs, the in-game setup screen (Blue side / Red side)
-and `-acrFactions WEST,EAST` can pick any two factions in your world's faction manager whose Game Master
-catalogs have soldiers and groups. The world's US-side bases, units and spawns go to the first, USSR-side
-to the second. To offer a faction mod, add its faction config to the `Factions` list of the world's
-`SCR_FactionManager` (an entry whose mod isn't loaded is simply absent in that session):
+**Any faction your world lists.** Besides those pairs, the in-game setup screen (Blue side / Red
+side) and `-acrFactions WEST,EAST` can pick any two eligible factions in your world's faction
+manager whose Game Master catalogs have soldiers and groups. The in-game screen only selects among
+already-loaded mods; it does not load or download faction mods. The world's US-side bases, units and
+spawns go to the first, USSR-side to the second. To offer a faction mod, add its faction config to
+the `Factions` list of the world's `SCR_FactionManager` (an entry whose mod isn't loaded is simply
+absent in that session):
 
 ```
   SCR_Faction "{<a new GUID>}" : "{<the mod's faction config GUID>}Configs/Factions/<Faction>.conf" {
@@ -173,10 +189,17 @@ command unit is the catalog's officer, else its squad leader. This is not hand-f
 can look mixed (several uniforms), and anything it lacks falls back to vanilla units. Only RHS and Ukraine
 Armed Forces RHS are hand-fitted. Requests for proper support of a faction mod: https://github.com/propst-design/ACActual/issues
 
-You can use `m_aPrefabMappings` to replace a unit with one from another mod. Add a row for the original
-prefab and choose its replacement from the prefab browser. AC: Actual also tries to match starting units
-by their catalog name or role. If it cannot find a replacement, it uses the original unit and writes a
-`[ACR] FACTION fallback` line in the server log.
+You can use `m_aPrefabMappings` to replace a unit with one from another mod. Each row is an
+`ACR_PrefabMapping` with two resource pickers:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `m_sFrom` | empty | Exact original prefab to replace |
+| `m_sTo` | empty | Replacement prefab |
+
+Choose both from the prefab browser. AC: Actual also tries to match starting units by their catalog
+name or role. If it cannot find a replacement, it uses the original unit and writes a `[ACR] FACTION
+fallback` line in the server log.
 
 **Automatic buy list.** AC: Actual adds each enabled infantry group and vehicle from the faction's Game
 Master catalog. It leaves out guards, fixed weapons, and planes. Prices: infantry 3 RP per soldier (at least 6); vehicles
@@ -262,7 +285,7 @@ wait time for calling in support above.
 | `m_bEnabled` | Offer this support unit for requisition; on by default |
 | `m_sName` | Buy-list name (empty = current default) |
 | `m_iCost` | Purchase cost in RP (-1 = current default) |
-| `m_iStock` | Base purchases per match (-1 = current default; normal threat scaling still applies) |
+| `m_iStock` | Base purchases per match (-1 = current default; under fixed-stock pricing, threat scaling applies; stepped pricing keeps rare-unit stock fixed) |
 | `m_sGroupPrefab` | Observer team's base group (observer role) |
 | `m_sPrimaryPrefab` | Spotter character (observer) |
 | `m_sSecondaryPrefab` | Radio operator character (observer) |
@@ -290,14 +313,17 @@ price and cooldown and can happen once every 45 seconds per side. Observer teams
 on. AI commanders' observers and mortar teams always use it. Mortar teams also fire two free, scattered
 rounds every 30 seconds at spotted enemies they can reach.
 
-`AIR_LIFT` flies a squad somewhere. Select the squad, pick the air lift, and right-click where it
-should land (at least 400 m away). One transport helicopter (two if the squad needs more seats) comes
-from off the map, lands on clear, level ground within 250 m of the squad, waits up to two minutes for it
-to board, and sets it down on clear ground within 200 m of the clicked point; the squad then holds there
-and the helicopters leave. No helipad is needed. The call is declined without a charge if there is no
-clear landing spot at either end. While a squad is on an air lift it takes no orders until it has landed.
+`AIR_LIFT` flies an infantry squad with no player-controlled member. It must be on foot and not a
+vehicle crew. Capacity depends on the helicopter; one or two fly, and troops without seats stay
+behind. Select the squad, pick the air lift, and right-click where it should land (at least 400 m
+away). One transport helicopter (two if the squad needs more seats) comes from off the map, lands on
+clear, level ground within 250 m of the squad, waits up to two minutes for it to board, and sets it
+down on clear ground within 200 m of the clicked point; the squad then holds there and the
+helicopters leave. No helipad is needed. The call is declined without a charge if there is no clear
+landing spot at either end. While a squad is on an air lift it takes no orders until it has landed.
 The AI commander pays half (`m_iAICost`), since it cannot fly bought helicopters. Support lists made
-before the air lift existed get it added; add an `AIR_LIFT` row with **Enabled** off to leave it out.
+before the air lift existed get it added; add an `AIR_LIFT` row with **Enabled** off to leave it
+out.
 
 `ARTILLERY_BATTERY` needs no team and can hit anywhere on the map. It arrives 75-120 seconds after the
 call: three groups of six heavy rounds, 10 seconds apart, landing within 120 m of the target. You can
@@ -360,39 +386,46 @@ commandable for their side. Use `ACR_StartingUnit` when you also want to give a 
 
 ### Generated layouts
 
-AC: Actual can lay out a match on any map by itself, from the map's own named places. Choose
-"Generated" under Battlefield on the setup screen (or `-acrLayout generated`), with the whole map,
-half of it or a flashpoint (`-acrSize`). A world without any `ACR_Base` always plays a generated
-layout: a scenario for a new map then needs only the game mode, the managers, the faction settings
-and one player spawn point per side (see `Worlds/ACR_Kolguyev` for a complete example).
+AC: Actual can lay out a match from a terrain's named places when it has enough usable sites and dry
+land. Choose "Generated" under Battlefield on the setup screen (or `-acrLayout generated`), with the
+whole map, half of it or a flashpoint (`-acrSize`). A world without any `ACR_Base` always plays a
+generated layout: a scenario for a new map then needs only the game mode, the managers, the faction
+settings and one player spawn point per side (see `Worlds/ACR_Kolguyev` for a complete example).
 
 The rules follow the hand-built Everon layout. Cities, towns, villages and settlements with houses
 become 1 RP bases (capture radius 90, 75, 60 and 45 m); military sites 3 RP (60 m); harbours,
-factories, power plants, sawmills, quarries and mines 2 RP (50 m); the airport 3 RP (80 m); and about
-one landmark for every ten bases a hidden 1 RP base (40 m). Bases sit on their map place, moved onto
-dry ground if it is in water; circles that would overlap shrink, down to 35 m. The HQs are two
-military sites (or the airport) far apart, or the two ends of a flashpoint: 2 RP, a 6-man garrison,
-a 70 m circle where there is room. Each side starts with the world's own `ACR_StartingUnit` objects,
-or two rifle squads, a weapons team, a truck and a car, and its player spawn point moves to its HQ.
-Hand-built helipads are not used: both sides get the off-map support helicopters, and helicopters
-can only be bought once players build a helipad (construction truck). The AI commander builds none,
-so it uses no bought helicopters there (it uses the off-map air lift support call instead for long moves and detours). The setup
-screen's "Layout seed" row rolls a new seed; the log lists the layout (`[ACR] GEN BASE`).
-"Show and edit the layout on the map" opens the map with the planned bases: click a base, then
-click where it should go. A spot is refused (with the reason) when it is off the map, in water, too
-close to another base's capture circle, or would bring the two HQs within 1000 m (300 m in a
-flashpoint). "Undo base moves" puts them all back; changing the seed or size drops them.
+factories, power plants, sawmills, quarries and mines 2 RP (50 m); the airport 3 RP (80 m); and
+about one landmark for every ten bases a hidden 1 RP base (40 m). Bases sit on their map place,
+moved onto dry ground if it is in water; circles that would overlap shrink, down to 35 m. The HQs
+prefer two widely separated military/airport sites, falling back to other suitable sites; a
+flashpoint uses its farthest pair: 2 RP, a 6-man garrison, a 70 m circle where there is room. Other
+generated bases start neutral with no garrison. Each side starts with the world's own
+`ACR_StartingUnit` objects, or two rifle squads, a weapons team, a truck and a car, and its player
+spawn point moves to its HQ. Hand-built helipads are not used: both sides get the off-map support
+helicopters, and helicopters need a live helipad for purchase (players can build one with a
+construction truck). The AI commander builds none, so it uses no bought helicopters there (it uses
+the off-map air lift support call instead for long moves and detours). The setup screen's "Layout
+seed" row rolls a new seed; the same seed, size and terrain data reproduce a plan within the same
+version, but manual moves and later mod/terrain changes can alter it; the log lists the layout
+(`[ACR] GEN BASE`). "Show and edit the layout on the map" opens the map with the planned bases:
+click a base, then click where it should go. A spot is refused (with the reason) when it is off the
+map, in water, too close to another base's capture circle, or would bring the two HQs within 1000 m
+(300 m in a flashpoint). These are placement checks, not a guarantee of road access or good combat
+terrain. Use "Return to match setup" to leave the map. "Undo base moves" puts all moves back;
+changing the seed or size drops them. Moves apply to this match only; there is no saved-layout
+export.
 
 ### ACR_Skirmish
 
-This optional object defines a smaller match area on a large map: half the map, or a small fight around
-about five bases. Add one object for each layout; its position does not matter. The host can choose the
-layout by name (`-acrLayout`) or choose a size (`-acrSize`) and get a random layout of that size. If no
-layout is chosen, the whole map is used. Everon has north and south halves, plus small areas around
-Saint-Philippe, Montignac, and Levie. Put a flashpoint's HQs on bases inside it, at opposite ends,
-so commanders start in the fight rather than at a far-off base. Everon's halves have two helipads at
-each HQ; its flashpoints have none yet, so both sides there get the off-map support helicopters. Add
-one or two `ACR_Helipad` objects for each HQ you list so both sides can park support helicopters.
+This optional object defines a smaller match area on a large map: half the map, or a small fight
+around about five bases. Add one object for each layout; its position does not matter. The host can
+choose the layout by name (`-acrLayout`) or choose a size (`-acrSize`) and get a random layout of
+that size. If no layout is chosen, the whole map is used. Everon has north and south halves, plus
+small areas around Saint-Philippe, Montignac, and Levie. Put a flashpoint's HQs on bases inside it,
+at opposite ends, so commanders start in the fight rather than at a far-off base. Everon's halves
+have two helipads at each HQ; its flashpoints have none yet, so both sides there get the off-map
+support helicopters. Add one or two `ACR_Helipad` objects for each HQ you list if you want both
+sides to park support helicopters.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -410,8 +443,10 @@ helipad gets the off-map support helicopters instead of buying them for pads.
 
 ## Mission header
 
-Create a **Mission Header** in Workbench and choose your saved world. This gives the map a name in the
-game's scenario list. Workbench fills in most of the details for you; this is what the saved file looks like:
+Create an **ACR_MissionHeader** in Workbench and choose your saved world. This supplies the scenario
+metadata. The game's Scenarios/Host lists discover published Workshop scenarios; an unpacked addon
+loaded with `-addonsDir` does not acquire a menu entry just by having a header. Workbench fills in
+most of the details for you; this is what the saved file looks like:
 
 ```
 ACR_MissionHeader {
@@ -421,6 +456,7 @@ ACR_MissionHeader {
  m_sDescription "<one line>"
  m_sGameMode "Arma Commander Actual"
  m_iPlayerCount 8
+ m_iAcrSetup 1
  m_sAcrSize "half"
 }
 ```
@@ -429,8 +465,10 @@ Use the class `ACR_MissionHeader` (a plain `SCR_MissionHeader` still works, with
 below). Its extra fields are the scenario's default [host options](#host-options), so you can ship
 several scenarios on one world (for example a full map and a flashpoint) that differ only in their
 header. Leave a text field blank or a number at `-1` to keep the world's own setting. A host's
-launch option beats the header; a dedicated server's config can also override header fields by
-name under `gameProperties.missionHeader`.
+launch option beats the header; a dedicated server's config can also override header fields by name
+under `gameProperties.missionHeader`. AC: Actual's custom fields have been tested through mission
+headers, but their JSON override path still needs validation on an installed Workshop server. The
+in-game setup screen, when enabled, overrides these defaults at Start.
 
 | Field | Same as |
 |---|---|
@@ -454,9 +492,9 @@ name under `gameProperties.missionHeader`.
 | `m_iAcrMarksmen` | `-acrMarksmen` (0 or 1) |
 | `m_iAcrSetup` | `-acrSetup` (0 or 1) |
 
-The header only adds your world to the scenario list; it does not package or copy the world. Workbench
-creates the `.meta` files beside the world and header. Keep them there and do not edit them. When you
-choose the world in the header, Workbench fills in its resource ID and path for you. The world's ID is
+The header describes the scenario; it does not publish, package or copy the world. Workbench creates
+the `.meta` files beside the world and header. Keep them there and do not edit them. When you choose
+the world in the header, Workbench fills in its resource ID and path for you. The world's ID is
 different from the addon's ID shown in `addon.gproj`.
 
 ## Save, export and run
@@ -486,20 +524,22 @@ world files named `Worlds/ACR_*.ent`, with each map's layer in
 1. Save your map in the AC: Actual project as `Worlds/ACR_<Name>.ent`. Keep its layer at
    `Worlds/ACR_<Name>_Layers/default.layer`. The terrain can stay in a separate addon.
 2. Put its header in `Missions/ACR_<Name>.conf`. Workbench fills in which world it opens.
-3. To play alone, run `Start-Test-Range.ps1 -World "Worlds/ACR_<Name>.ent"`. The setup menu opens
-   with your map selected. Choose the settings and press Enter. `Play-ACA.cmd` opens the same menu,
-   starting with Arland selected; you can switch to your map there.
+3. To play alone, run `Start-Test-Range.ps1 -World "Worlds/ACR_<Name>.ent"`. The setup menu opens.
+   Select your map in option 1 (the menu restores remembered settings), choose the other settings
+   and press Enter. `Play-ACA.cmd` opens the same menu,
+   using the remembered selection (Arland on first use); you can switch to your map there.
 4. To host a multiplayer game, run `Host-ACA.cmd` from the AC: Actual development project and select
    your map in the host menu. The launcher starts the server and then joins it on your PC. Your friend
    runs `Join-ACA.cmd` from a matching copy of that project and enters the address shown in your host
    window. You both need the same map files and the same faction-mod choices.
 
 These launchers use the files in the AC: Actual project directly, so there is no Workshop upload or
-package build for a local test. They start the selected world file directly; the mission header is for
-the game's scenario list. To let a friend play, give them a matching copy of the development project
-with your map included. Use that project copy, not the release zip: the release launcher updates itself
-and can replace your custom map with the released files. The helper also loads only AC: Actual and its
-chosen faction mods; a custom terrain mod is not added automatically.
+package build for a local test. They start the selected world file directly; the mission header is
+for the game's scenario list. To let a friend play, give them a matching copy of the development
+project with your map included. Use that project copy, not the release zip: the release launcher
+updates itself and can replace your custom map with the released files. The helper loads AC: Actual,
+its selected faction/ACE mods, and a locally detected Workshop copy of All-in-One Command Menu. A
+custom terrain or separate scenario addon is not added automatically.
 
 ### Run a map kept in your own addon
 
@@ -509,26 +549,24 @@ Workbench, publish the addon with AC: Actual listed as a dependency, then enable
 The [scenario setup guide](https://community.bistudio.com/wiki/Arma_Reforger:Capture_%26_Hold_Setup)
 shows how the header makes a scenario appear in that list.
 
-For your own first test, **Private** visibility is fine. Private addons are only visible to you. To let a
-friend find the addon, publish it as **Unlisted** and send them its link, or use **Test** if you want it
-listed with other test mods. See Bohemia's
-[publishing guide](https://community.bistudio.com/wiki/Arma_Reforger:Mod_Publishing_Process).
+Use the visibility and testing options offered by Workbench's publisher for your intended players;
+check the [publishing
+guide](https://community.bistudio.com/wiki/Arma_Reforger:Mod_Publishing_Process). Do not assume an
+uploader-only item is available to friends.
 
-**Important for playing together:** the current AC: Actual launcher only loads AC: Actual and its chosen
-faction mods. It does not load a separate mission-maker addon, so that map will not appear in its map
-menu. If both addons are published and available to the game, the normal steps are **Multiplayer** >
-**Host**, choose the scenario and its required mods, then start the server. Your friend joins that server.
-AC: Actual is not currently on the Workshop, so the game cannot download it as a dependency; both players
-need the same AC: Actual files installed. If the game's host screen cannot select that local AC: Actual
-addon, this route cannot host your separate addon today. For co-op today, use the AC: Actual development
-project route above.
+The supplied launcher does not load a separate mission-maker addon or list its worlds. For the
+normal **Multiplayer > Host** flow, both players must be able to install and enable the scenario
+addon, AC: Actual and any terrain/faction dependencies through the game. An unpacked local AC:
+Actual copy alone is not discoverable in those scenario lists. For a local launcher test, use the
+matching development-project route above, with any additional addon dependencies added to the launch
+arguments.
 
 ## Host options
 
-The host can change some match settings when starting the game, without editing the map. These are
-called launch options. The AC: Actual setup menu sets them for you, both when hosting and when playing
-alone (the game also acts as the server in singleplayer). The table is here for mission makers who want
-to set an option directly; most hosts can just use the menu.
+Options resolve from mission-header defaults, then `-acr...` launch arguments, then choices on the
+in-game setup screen. Workshop scenarios enable that screen; ZIP/development Play and Host launchers
+ask in an external menu and pass `-acrSetup 0`. A world launched directly has no mission header. The
+table lists launch options for mission makers and server operators; most hosts use a setup menu.
 
 | Option | What it does |
 |---|---|
@@ -538,19 +576,19 @@ to set an option directly; most hosts can just use the menu.
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; fixed stock: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (fixed stock: double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
-| `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Worlds without one play in full |
+| `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Hand-built worlds without a matching layout play in full; generated layouts support all three sizes |
 | `-acrLayout <name>` | Play this `ACR_Skirmish` layout (spaces may be written as `_`); overrides `-acrSize`. `-acrLayout generated` builds a layout from the map instead (see Generated layouts) |
-| `-acrSeed N` | Seed of a generated layout: the same seed, size and map give the same layout. Unset or 0 = a new random layout each match |
+| `-acrSeed N` | Seed of a generated layout: the same seed, size and terrain data give the same plan within a version (before manual moves). Unset or 0 = a new random layout each match |
 | `-acrPricing stepped` / `stock` | Overrides every side's `m_ePricing` (stepped prices or fixed stock) |
-| `-acrStartRP N` | Starting RP for every side (overrides `m_iStartingRP`) |
+| `-acrStartRP N` | Positive starting RP for every side (overrides `m_iStartingRP`; 0 does not override) |
 | `-acrIncome X` | Income multiplier (default 1) |
 | `-acrSkill N` | AI skill (overrides `m_iAISkill`) |
 | `-acrReaction X` | AI spotting speed (overrides `m_fAIPerception`) |
-| `-acrSoldierCap N` | Living AI soldiers per side before purchases stop (default 100). The game's active-AI limit is raised to 2 x this + 64 so bought squads are never left empty |
+| `-acrSoldierCap N` | Soft living-AI threshold per side before purchases/reinforcements stop (default 100 before threat scaling). A purchase begun below it can take the side over. The active-AI limit is raised to at least 2 x the resolved cap + 64 to avoid the vanilla 128-agent ceiling |
 | `-acrSharedCommand 0` / `1` | Overrides `m_bSharedCommand` |
 | `-acrRespawnSeconds N` | Overrides `m_iRespawnSeconds` |
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
-| `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland and Everon scenarios set it in their header; the AC: Actual launchers pass `-acrSetup 0` because their menu already asked |
+| `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual launchers pass `-acrSetup 0` because their menu already asked |
 | `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default; configured admins remain trusted, and authority does not transfer after the first player disconnects |
 
 ## Designing a good map
@@ -581,22 +619,30 @@ to set an option directly; most hosts can just use the menu.
   The group keeps its orders, and new orders or a player at the keyboard cancel the detour.
 - **The game's US and USSR sides** are the most tested. The host menu also offers RHS and UA pairings;
   see [Factions and mods](#factions-and-mods). Other custom sides may not have player command gear yet.
-  AI-only sides such as FIA may work, but have not been tested.
-- **Arland and Everon.** Everon (`Worlds/ACR_Everon.ent`) is a first pass: travel, rides and the AI
-  commander over 13 km are still being tuned.
+  FIA selection, starting units, buy lists and command loadouts have automated coverage; broad
+  live faction/mod combinations remain less tested.
+- **Everon, Arland and Kolguyev.** Everon is the main large-map playtest terrain; travel, rides
+  and AI behavior are still being tuned. Kolguyev uses generated layouts; other terrains need
+  their own scenario setup and working navigation data.
 - Advancing infantry in Combat mode can detour around a fresh infantry contact after a short
   stalemate. Nearby squads take turns manoeuvring; the original destination and queued orders
   remain. Defend, Suppress, Fast and Silent orders keep their assigned roles. Terrain and native
   pathfinding limit which flanks can be used; live combat acceptance is still pending.
 - **No victory conditions**, by design: the match runs until the host ends it.
-- **The AI commander can't fly**: aircraft are for players only (support helicopters are script-flown).
+- **The AI commander cannot fly bought aircraft.** Combat support and off-map air lift are
+  script-flown; the AI can call air lifts for long moves and road detours.
+- **Player construction only:** AI base/helipad building and command-post construction supply
+  pools are not implemented. There is no save/resume system.
+- **Intel includes automatic base reports:** enemies within an owned base's radius plus 60 m
+  are reported without line of sight. Reinforce also refuses enemies within 300 m even when unseen.
+- **PC controls:** keyboard/mouse is the tested control scheme; console/controller play is unverified.
 - Settings may still change between alpha builds. This page is updated with them.
 
 ## Testing your scenario
 
 1. Start the map from Workbench. For a map saved inside the AC: Actual project, you can also use
    `Start-Test-Range.ps1 -World "Worlds/ACR_<Name>.ent"` to play alone, or
-   `ACR-Multiplayer.ps1 -Mode Host` to host it. See [Save, export and run](#save-export-and-run).
+   `ACR-Multiplayer.ps1 -Mode Host` to host it; select your map in the menu. See [Save, export and run](#save-export-and-run).
 2. Open Workbench's console, or the game's log in `Documents/My Games/ArmaReforger/logs/<date>/console.log`.
    Check that:
    - `[ACR] Scenario started` appears: AC: Actual is running on the map.
@@ -620,7 +666,8 @@ development project, not the release zip, so the updater does not replace the cu
 
 If you keep your map in a separate addon, you can test it in Workbench and publish it for the game's
 scenario list. But the supplied AC: Actual launcher cannot load that separate addon yet. A published
-scenario can use the game's normal Multiplayer > Host flow only when both players can install and enable
-the mission addon and its AC: Actual dependency. Since AC: Actual is not on Workshop yet, both players
-need the same AC: Actual release files. See [Run a map kept in your own addon](#run-a-map-kept-in-your-own-addon)
-for the current limitations and options.
+scenario can use the game's normal Multiplayer > Host flow only when both players can install and
+enable the mission addon and its AC: Actual dependency. Both players need a compatible AC: Actual
+version and all dependencies. An unpacked local copy does not by itself create a Scenarios/Host
+entry. See [Run a map kept in your own addon](#run-a-map-kept-in-your-own-addon) for the current
+limitations and options.
