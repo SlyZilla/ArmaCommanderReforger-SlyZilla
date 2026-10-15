@@ -50,6 +50,26 @@ class BBB_LookTest
 		GetGame().GetCallqueue().CallLater(Step1_InspectInitial, 3000);
 	}
 
+	static vector s_vInitHeadAngles;
+	static vector s_vInitHeadLocalAngles;
+	static int s_iHeadBone = -1;
+	static int s_iNeckBone = -1;
+
+	static void GetBoneAngles(IEntity ent, int bone, out vector worldAngles, out vector localAngles)
+	{
+		worldAngles = vector.Zero;
+		localAngles = vector.Zero;
+		if (!ent || bone < 0) return;
+		Animation anim = ent.GetAnimation();
+		if (!anim) return;
+		vector mat[4];
+		if (anim.GetBoneMatrix(bone, mat))
+			worldAngles = Math3D.MatrixToAngles(mat);
+		vector locMat[4];
+		if (anim.GetBoneLocalMatrix(bone, locMat))
+			localAngles = Math3D.MatrixToAngles(locMat);
+	}
+
 	static void Step1_InspectInitial()
 	{
 		array<AIAgent> agents = {};
@@ -69,6 +89,7 @@ class BBB_LookTest
 
 		ChimeraCharacter soldier = ChimeraCharacter.Cast(agents[0].GetControlledEntity());
 		s_SoldierUS = soldier;
+		BBB_HorizonScan.SetExemptSoldier(soldier);
 		s_Utility = SCR_AIUtilityComponent.Cast(agents[0].FindComponent(SCR_AIUtilityComponent));
 		s_Controller = soldier.GetCharacterController();
 		s_HeadAiming = CharacterHeadAimingComponent.Cast(soldier.GetHeadAimingComponent());
@@ -76,48 +97,62 @@ class BBB_LookTest
 
 		Check("US soldier components valid", s_Utility != null && s_Controller != null && s_HeadAiming != null && s_Perception != null);
 
-		// Record initial state facing North
+		Animation anim = soldier.GetAnimation();
+		if (anim)
+		{
+			s_iHeadBone = anim.GetBoneIndex("Head");
+			if (s_iHeadBone < 0) s_iHeadBone = anim.GetBoneIndex("head");
+			s_iNeckBone = anim.GetBoneIndex("Neck1");
+		}
+
+		GetBoneAngles(soldier, s_iHeadBone, s_vInitHeadAngles, s_vInitHeadLocalAngles);
+
 		vector ypr = soldier.GetYawPitchRoll();
 		vector aimRotModel = soldier.GetAimRotationModel();
 		vector headAimRot = s_HeadAiming.GetAimingRotation();
+		vector lookAngles = s_HeadAiming.GetLookAngles();
 		vector eyePos = soldier.EyePosition();
 
-		PrintFormat("[BBB] LOOKTEST Initial: YPR=%1 AimRotModel=%2 HeadAimRot=%3 EyePos=%5",
-			ypr, aimRotModel, headAimRot, eyePos);
+		PrintFormat("[BBB] LOOKTEST Initial: YPR=%1 AimRotModel=%2 HeadAimRot=%3 LookAngles=%4 HeadBone=%5 HeadW=%6 HeadL=%7 NeckBone=%8 EyePos=%9",
+			ypr, aimRotModel, headAimRot, lookAngles, s_iHeadBone, s_vInitHeadAngles, s_vInitHeadLocalAngles, s_iNeckBone, eyePos);
 
-		// Test stationary LookAt 45 degrees right (North-East)
-		GetGame().GetCallqueue().CallLater(Step2_TestLookAtStationary, 1000);
+		GetGame().GetCallqueue().CallLater(Step2_TestStationaryHeadTurn, 800);
 	}
 
-	static void Step2_TestLookAtStationary()
+	static void Step2_TestStationaryHeadTurn()
 	{
 		ChimeraCharacter soldier = ChimeraCharacter.Cast(s_SoldierUS);
-		vector origin = soldier.GetOrigin();
+		Print("[BBB] LOOKTEST Step 2: Testing stationary head turn (forced freelook + LookX=45)");
 
-		// Target position 45 deg right (X = +15m, Z = +15m)
-		vector lookTarget = origin + Vector(15, 1.5, 15);
-		PrintFormat("[BBB] LOOKTEST Step 2: LookAt target=%1 priority=100 duration=3.0", lookTarget);
+		BBB_HorizonScan.ApplyScan(soldier, 45.0, 0.0);
 
-		s_Utility.m_LookAction.LookAt(lookTarget, 100, 3.0);
-
-		GetGame().GetCallqueue().CallLater(Step2_CheckLookAtStationary, 1200);
+		GetGame().GetCallqueue().CallLater(Step2_CheckStationaryHeadTurn, 1000);
 	}
 
-	static void Step2_CheckLookAtStationary()
+	static void Step2_CheckStationaryHeadTurn()
 	{
 		ChimeraCharacter soldier = ChimeraCharacter.Cast(s_SoldierUS);
 		vector ypr = soldier.GetYawPitchRoll();
 		vector aimRotModel = soldier.GetAimRotationModel();
 		vector headAimRot = s_HeadAiming.GetAimingRotation();
-		vector eyePos = soldier.EyePosition();
+		AimingComponent weaponAim = soldier.GetWeaponAimingComponent();
+		vector weaponDirWorld = vector.Zero;
+		if (weaponAim) weaponDirWorld = weaponAim.GetAimingDirectionWorld();
+		vector headW, headL;
+		GetBoneAngles(soldier, s_iHeadBone, headW, headL);
 
-		PrintFormat("[BBB] LOOKTEST Stationary LookAt Result: YPR=%1 AimRotModel=%2 HeadAimRot=%3 EyePos=%4",
-			ypr, aimRotModel, headAimRot, eyePos);
+		PrintFormat("[BBB] LOOKTEST Step 2 Result: ForcedFreeLook=%1 YPR=%2 AimRotModel=%3 HeadAimRot=%4 HeadW=%5 HeadL=%6 WeaponDirW=%7",
+			s_Controller.IsFreeLookForced(), ypr, aimRotModel, headAimRot, headW, headL, weaponDirWorld);
 
-		bool rotated = Math.AbsFloat(ypr[0]) > 5.0 || Math.AbsFloat(aimRotModel[0]) > 0.05;
-		Check("Stationary LookAction turns soldier", rotated, string.Format("bodyYaw=%1 headYaw=%2", ypr[0], aimRotModel[0]));
+		bool bodyStatic = Math.AbsFloat(ypr[0]) < 2.0;
+		bool weaponForward = weaponDirWorld[2] > 0.9;
+		bool headTurned = headAimRot[0] > 30.0 || Math.AbsFloat(headW[0] - s_vInitHeadAngles[0]) > 10.0;
+		Check("Stationary ForcedFreeLook turns head without rotating body or weapon",
+			bodyStatic && weaponForward && headTurned,
+			string.Format("bodyYaw=%1 headYaw=%2 weaponDir=%3", ypr[0], headAimRot[0], weaponDirWorld));
 
-		s_Utility.m_LookAction.Cancel();
+		BBB_HorizonScan.ResetScan(soldier, s_Utility);
+
 		GetGame().GetCallqueue().CallLater(Step3_TestMovingLook, 1500);
 	}
 
@@ -154,10 +189,9 @@ class BBB_LookTest
 
 		PrintFormat("[BBB] LOOKTEST Marching: origin=%1 vel=%2 speed=%3 ypr=%4", origin, vel, vel.Length(), ypr);
 
-		// Command soldier to look East (+X by 50m, 90 degrees to march heading)
-		vector lookFlank = origin + Vector(50, 1.5, 0);
-		PrintFormat("[BBB] LOOKTEST Commanding LookAt East during North march: target=%1", lookFlank);
-		s_Utility.m_LookAction.LookAt(lookFlank, 100, 3.0);
+		// Direct head look during march with anim graph shared variables and forced freelook
+		Print("[BBB] LOOKTEST Commanding HeadAiming 45 deg East with ForcedFreeLook during North march");
+		BBB_HorizonScan.ApplyScan(soldier, 45.0, 0.0);
 
 		GetGame().GetCallqueue().CallLater(Step3_CheckMarchingLook, 1200);
 	}
@@ -176,18 +210,22 @@ class BBB_LookTest
 		AimingComponent weaponAim = soldier.GetWeaponAimingComponent();
 		vector weaponDirWorld = vector.Zero;
 		if (weaponAim) weaponDirWorld = weaponAim.GetAimingDirectionWorld();
+		vector headW, headL;
+		GetBoneAngles(soldier, s_iHeadBone, headW, headL);
 
-		PrintFormat("[BBB] LOOKTEST Marching Look Result: vel=%1 speed=%2 bodyYPR=%3 aimRotModel=%4 aimDirW=%5 weaponDirW=%6",
-			vel, vel.Length(), ypr, aimRotModel, aimDirWorld, weaponDirWorld);
+		PrintFormat("[BBB] LOOKTEST Marching FreeLook Result: vel=%1 speed=%2 bodyYPR=%3 aimRotModel=%4 headAimRot=%5 aimDirW=%6 weaponDirW=%7 headW=%8",
+			vel, vel.Length(), ypr, aimRotModel, headAimRot, aimDirWorld, weaponDirWorld, headW);
 
-		// Check if soldier continued moving North while looking/aiming East
-		bool movingNorth = (vel[2] > 0.3); // positive Z velocity = moving North
-		bool lookingEast = (aimDirWorld[0] > 0.4 || weaponDirWorld[0] > 0.4 || aimRotModel[0] > 0.2 || ypr[0] > 20.0);
+		// Check if soldier continued moving North while looking East with head only
+		bool movingNorth = (vel[2] > 0.3);
+		bool bodyFacingNorth = (Math.AbsFloat(ypr[0]) < 25.0);
+		bool headScanningEast = (headAimRot[0] > 20.0 || aimDirWorld[0] > 0.3 || Math.AbsFloat(headW[0] - s_vInitHeadAngles[0]) > 10.0);
 
-		Check("Marching soldier preserves travel while scanning flank", movingNorth || vel.Length() > 0.3,
-			string.Format("vel=%1 bodyYPR=%2 aimDir=%3", vel, ypr, aimDirWorld));
+		Check("Marching soldier turns head to scan flank while body marches forward",
+			movingNorth && bodyFacingNorth && headScanningEast,
+			string.Format("vel=%1 bodyYPR=%2 headAimRot=%3 headW=%4", vel, ypr, headAimRot, headW));
 
-		s_Utility.m_LookAction.Cancel();
+		BBB_HorizonScan.ResetScan(soldier, s_Utility);
 		GetGame().GetCallqueue().CallLater(Step4_TestFlankPerception, 2000);
 	}
 
@@ -198,7 +236,7 @@ class BBB_LookTest
 
 		// Spawn enemy 60 degrees to the right (flank) at 45 meters
 		vector enemyPos = origin + Vector(39, 0, 22.5);
-		s_GroupUSSR = SCR_AIGroup.Cast(Spawn("{E552DABF363BA7C0}Prefabs/Groups/OPFOR/Group_USSR_LightFireTeam.et", enemyPos, Vector(-1, 0, 0)));
+		s_GroupUSSR = SCR_AIGroup.Cast(Spawn("{657590C1EC9E27D3}Prefabs/Groups/OPFOR/Group_USSR_LightFireTeam.et", enemyPos, Vector(-1, 0, 0)));
 
 		if (!s_GroupUSSR)
 		{

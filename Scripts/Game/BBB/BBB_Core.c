@@ -66,6 +66,7 @@ class BBB
   BBB_Drag.Stop();
   BBB_Medic.Stop();
   BBB_RelaxedMarch.Stop();
+  BBB_HorizonScan.Stop();
   s_bStarted = false;
 		s_VehicleHelpers = null;
 		s_Launchers = null;
@@ -89,6 +90,8 @@ class BBB
 		t = BBB_Perf.Lap("tick.weaponReady", t);
 		BBB_RelaxedMarch.Tick();
 		t = BBB_Perf.Lap("tick.relaxedMarch", t);
+		BBB_HorizonScan.Tick();
+		t = BBB_Perf.Lap("tick.horizonScan", t);
 		BBB_Perf.OnTick();
  }
 
