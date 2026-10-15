@@ -182,7 +182,7 @@ class BBB_HorizonScan
 						utility.m_iBBBScanSide = -utility.m_iBBBScanSide;
 						if (utility.m_iBBBScanSide == 0) utility.m_iBBBScanSide = 1;
 
-						float scanYaw = side * Math.RandomFloat(30.0, 45.0);
+						float scanYaw = side * Math.RandomFloat(35.0, 75.0);
 						float scanPitch = Math.RandomFloat(-5.0, 5.0);
 
 						ApplyScan(soldier, scanYaw, scanPitch);

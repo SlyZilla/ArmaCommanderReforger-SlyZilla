@@ -122,9 +122,9 @@ class BBB_LookTest
 	static void Step2_TestStationaryHeadTurn()
 	{
 		ChimeraCharacter soldier = ChimeraCharacter.Cast(s_SoldierUS);
-		Print("[BBB] LOOKTEST Step 2: Testing stationary head turn (forced freelook + LookX=45)");
+		Print("[BBB] LOOKTEST Step 2: Testing stationary head turn (forced freelook + LookX=90)");
 
-		BBB_HorizonScan.ApplyScan(soldier, 45.0, 0.0);
+		BBB_HorizonScan.ApplyScan(soldier, 90.0, 0.0);
 
 		GetGame().GetCallqueue().CallLater(Step2_CheckStationaryHeadTurn, 1000);
 	}
@@ -190,8 +190,8 @@ class BBB_LookTest
 		PrintFormat("[BBB] LOOKTEST Marching: origin=%1 vel=%2 speed=%3 ypr=%4", origin, vel, vel.Length(), ypr);
 
 		// Direct head look during march with anim graph shared variables and forced freelook
-		Print("[BBB] LOOKTEST Commanding HeadAiming 45 deg East with ForcedFreeLook during North march");
-		BBB_HorizonScan.ApplyScan(soldier, 45.0, 0.0);
+		Print("[BBB] LOOKTEST Commanding HeadAiming 75 deg East with ForcedFreeLook during North march");
+		BBB_HorizonScan.ApplyScan(soldier, 75.0, 0.0);
 
 		GetGame().GetCallqueue().CallLater(Step3_CheckMarchingLook, 1200);
 	}
