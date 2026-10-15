@@ -5,6 +5,8 @@ class BBB_RelaxedMarch
 	static bool s_bRead;
 	static bool s_bOn = true;
 	static const float QUIET_MS = 15000;
+	protected static ref BBB_VanillaHooks s_WorldGroups = new BBB_VanillaHooks();
+	protected static ref array<SCR_AIGroup> s_aHostGroups = {};
 
 	static void Read()
 	{
@@ -16,10 +18,15 @@ class BBB_RelaxedMarch
 
 	static bool Travel(SCR_AIBehaviorBase action)
 	{
-		if (!action || action.EvaluatePriorityLevel() >= SCR_AIActionBase.PRIORITY_LEVEL_PLAYER) return false;
-		if (action.Type() != SCR_AIMoveInFormationBehavior && action.Type() != SCR_AIMoveIndividuallyBehavior) return false;
+		if (!action || action.EvaluatePriorityLevel() >= SCR_AIActionBase.PRIORITY_LEVEL_GAMEMASTER) return false;
+		bool formation = action.Type() == SCR_AIMoveInFormationBehavior;
+		bool individual = SCR_AIMoveIndividuallyBehavior.Cast(action) != null;
+		if (!formation && !individual) return false;
 		SCR_AIActivityBase activity = action.GetGroupActivityContext();
-		return activity && activity.Type() == SCR_AIMoveActivity;
+		if (activity) return activity.Type() == SCR_AIMoveActivity;
+		// Custom individual movement must explicitly identify ordinary travel.
+		// GROUP_GOAL/COMBAT movement (bounds, clears, assaults) stays ready.
+		return formation || (individual && action.GetCause() == SCR_EAIBehaviorCause.SAFE);
 	}
 
 	static bool Danger(AIAgent agent, SCR_AIUtilityComponent utility)
@@ -46,15 +53,21 @@ class BBB_RelaxedMarch
 		if (!group) return false;
 		SCR_AIWaypoint waypoint = SCR_AIWaypoint.Cast(group.GetCurrentWaypoint());
 		if (SCR_SearchAndDestroyWaypoint.Cast(waypoint)) return false;
-		if (waypoint && waypoint.GetPriorityLevel() >= SCR_AIActionBase.PRIORITY_LEVEL_PLAYER) return false;
-		return group && BBB.s_Hooks.AllowRelaxedMarch(group) && Travel(utility.GetCurrentBehavior());
+		if (waypoint && waypoint.GetPriorityLevel() >= SCR_AIActionBase.PRIORITY_LEVEL_GAMEMASTER) return false;
+		bool allowed = !s_aHostGroups.Contains(group) || BBB.s_Hooks.AllowRelaxedMarch(group);
+		return allowed && Travel(utility.GetCurrentBehavior());
 	}
 
 	static void Tick()
 	{
 		Read();
 		array<SCR_AIGroup> groups = {};
-		BBB.s_Hooks.GetGroups(groups);
+		BBB.s_Hooks.GetGroups(s_aHostGroups);
+		groups.Copy(s_aHostGroups);
+		array<SCR_AIGroup> nativeGroups = {};
+		s_WorldGroups.GetGroups(nativeGroups);
+		foreach (SCR_AIGroup worldGroup : nativeGroups)
+			if (!groups.Contains(worldGroup)) groups.Insert(worldGroup);
 		float now = GetGame().GetWorld().GetWorldTime();
 		foreach (SCR_AIGroup group : groups)
 		{
@@ -93,6 +106,8 @@ class BBB_RelaxedMarch
 		bool enabled = s_bOn;
 		s_bOn = false;
 		Tick();
+		s_WorldGroups = new BBB_VanillaHooks(); // new world's clock may start below this cache's timestamp
+		s_aHostGroups.Clear();
 		s_bOn = enabled;
 	}
 }
