@@ -55,6 +55,12 @@ class ACR_BBBHooks : BBB_Hooks
 
  override bool LeaveAlone(IEntity vehicle) { return m_Manager.IsGunnerDriven(vehicle); }
 
+ override bool AllowRelaxedMarch(SCR_AIGroup group)
+ {
+  ACR_Squad squad = SquadOf(group);
+  return squad && squad.OrderState() == ACR_EOrderState.MOVE && !squad.m_CombatFlank.Active();
+ }
+
  override void OnLitter(IEntity item)
  {
   if (m_Manager.m_Cleanup) m_Manager.m_Cleanup.AddLitter(item);

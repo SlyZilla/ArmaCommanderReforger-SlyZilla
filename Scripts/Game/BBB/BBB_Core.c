@@ -27,6 +27,8 @@ class BBB_Hooks : Managed
  bool LeaveAlone(IEntity vehicle) { return false; }
  // Host orders may reserve a squad for holding, defence or another job.
  bool AllowFireManeuver(SCR_AIGroup group) { return true; }
+ // Quiet ordinary travel may lower weapons; host assault/clear orders may veto.
+ bool AllowRelaxedMarch(SCR_AIGroup group) { return true; }
  // Something dropped on the ground that the host may clean up later.
  void OnLitter(IEntity item) {}
 }
@@ -63,6 +65,7 @@ class BBB
   BBB_FireManeuver.Stop();
   BBB_Drag.Stop();
   BBB_Medic.Stop();
+  BBB_RelaxedMarch.Stop();
   s_bStarted = false;
 		s_VehicleHelpers = null;
 		s_Launchers = null;
@@ -84,6 +87,8 @@ class BBB
 		t = BBB_Perf.Lap("tick.fireManeuver", t);
 		BBB_WeaponReady.Tick();
 		t = BBB_Perf.Lap("tick.weaponReady", t);
+		BBB_RelaxedMarch.Tick();
+		t = BBB_Perf.Lap("tick.relaxedMarch", t);
 		BBB_Perf.OnTick();
  }
 
