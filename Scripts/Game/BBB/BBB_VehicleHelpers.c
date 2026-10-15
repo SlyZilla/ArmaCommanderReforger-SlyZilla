@@ -1,11 +1,12 @@
-// Two small helpers for AI vehicles, ticked once a second on the server (BBB.Tick).
+// Three helpers for AI vehicles, ticked once a second on the server (BBB.Tick).
 // Gates: the game's AI driver stops, gets out and opens a closed gate on its
 // route, which often wrecked rides (the transport counted as lost). AI-driven
 // vehicles now open gates just ahead of them, without stopping.
 // Truck beds: soldiers getting out of cargo seats sometimes end up standing on
 // the bed and never get down. One still up there after 4 s is set down on
 // the ground beside the vehicle.
-class BBB_Gates : Managed
+// Doors & hatches: AI crews close vehicle doors and hatches once back aboard.
+class BBB_VehicleHelpers : Managed
 {
  static const float LOOK_AHEAD = 25;    // m in front of the vehicle: the AI driver stops
  static const float LOOK_RADIUS = 25;   // for a gate up to ~45 m ahead
@@ -17,7 +18,7 @@ class BBB_Gates : Managed
 
  protected static bool s_bDoors = true;
 
- void BBB_Gates()
+ void BBB_VehicleHelpers()
  {
   string val;
   if (System.GetCLIParam("bbbDoors", val) && val == "0") s_bDoors = false;

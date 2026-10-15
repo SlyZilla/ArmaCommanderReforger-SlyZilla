@@ -3,10 +3,11 @@
 // AC: Actual plugs in through BBB_Hooks (ACR_BBBHooks), so this folder can later
 // become its own mod with a vanilla adapter for Conflict and Game Master.
 //
-// What's here: gates opened ahead of AI vehicles and soldiers set down from truck
-// beds (BBB_Gates), spent disposable launchers dropped (BBB_Launchers), road routes
-// and land routes (BBB_Roads, BBB_Terrain), the "vehicle settled" check for
-// dismounts (BBB_Transport) and backing a stuck vehicle out (BBB_Unstick).
+// What's here: gates opened ahead of AI vehicles, soldiers set down from truck
+// beds, and AI vehicle doors closed (BBB_VehicleHelpers), spent disposable launchers
+// dropped (BBB_Launchers), road routes and land routes (BBB_Roads, BBB_Terrain),
+// the "vehicle settled" check for dismounts (BBB_Transport) and backing a stuck
+// vehicle out (BBB_Unstick).
 
 // What the host mod tells BBB. The defaults suit plain vanilla groups.
 class BBB_Hooks : Managed
@@ -33,7 +34,7 @@ class BBB_Hooks : Managed
 class BBB
 {
 	static ref BBB_Hooks s_Hooks = new BBB_Hooks();
-	static ref BBB_Gates s_Gates;
+	static ref BBB_VehicleHelpers s_VehicleHelpers;
 	static ref BBB_Launchers s_Launchers;
 	static ref BBB_Combat s_Combat;
  protected static bool s_bStarted;
@@ -46,7 +47,7 @@ class BBB
   if (s_bStarted || !Replication.IsServer()) return;
 		s_bStarted = true;
 		BBB_Perf.Read();
-		s_Gates = new BBB_Gates();
+		s_VehicleHelpers = new BBB_VehicleHelpers();
 		s_Launchers = new BBB_Launchers();
 		s_Combat = new BBB_Combat();
 		BBB_Combat.s_Combat = s_Combat;
@@ -63,7 +64,7 @@ class BBB
   BBB_Drag.Stop();
   BBB_Medic.Stop();
   s_bStarted = false;
-		s_Gates = null;
+		s_VehicleHelpers = null;
 		s_Launchers = null;
 		s_Combat = null;
 		BBB_Combat.s_Combat = null;
@@ -73,8 +74,8 @@ class BBB
  static void Tick()
  {
   int t = System.GetTickCount();
-  if (s_Gates) s_Gates.Tick();
-  t = BBB_Perf.Lap("tick.gates", t);
+  if (s_VehicleHelpers) s_VehicleHelpers.Tick();
+  t = BBB_Perf.Lap("tick.vehicleHelpers", t);
 		if (s_Launchers) s_Launchers.Tick();
 		t = BBB_Perf.Lap("tick.launchers", t);
 		if (s_Combat) s_Combat.Tick();

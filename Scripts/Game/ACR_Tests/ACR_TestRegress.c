@@ -825,7 +825,7 @@ class ACR_TestRegress
   access.OpenDoor(vehicle, ECharacterDoorAnimType.NO_CHARACTER_ANIM, testDoor);
   bool wasOpen = compManager.IsDoorOpen(testDoor);
 
-  int closed = BBB_Gates.CloseVehicleDoors(vehicle);
+  int closed = BBB_VehicleHelpers.CloseVehicleDoors(vehicle);
   bool isOpenNow = compManager.IsDoorOpen(testDoor);
 
   Check("AI crew closes vehicle doors when aboard", wasOpen && !isOpenNow && closed > 0, string.Format("door %1: wasOpen %2, isOpenNow %3, closed %4", testDoor, wasOpen, isOpenNow, closed));
