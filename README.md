@@ -18,8 +18,8 @@ Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.
 
 ## Playing from Workshop
 
-For an installed Workshop copy, enable it and select an included AC: Actual scenario in Scenarios or
-Host. The host/admin picks the sides and match options on the setup screen, then presses Start. No
+Workshop is the normal install route: open Workshop in Reforger, search for **Arma Commander
+Actual**, download and enable it, then select an included AC: Actual scenario in Scenarios or Host. The host/admin picks the sides and match options on the setup screen, then presses Start. No
 external launcher is needed for Workshop play. Report bugs and issues at
 https://github.com/propst-design/ACActual/issues (include the map, mod set, steps to reproduce and
 logs if available).
@@ -37,7 +37,7 @@ Capture bases for RP, requisition squads and vehicles, and call mortar, artiller
 Construction trucks build service stations, forward deploy points and helipads. There are no victory
 conditions or saved matches. Better Battle Buddies is included in the mod.
 
-## Playing from the ZIP or development folder
+## Legacy ZIP / development launchers
 
 The release ZIP includes **Play-ACA.cmd**, **Host-ACA.cmd**, **Join-ACA.cmd** and a **READ ME
 FIRST.txt** guide. Its launchers ask for match options before starting and skip the in-game setup

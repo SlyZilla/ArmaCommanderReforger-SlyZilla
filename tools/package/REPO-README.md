@@ -2,8 +2,14 @@
 
 An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode to Arma Reforger.
 
-**Download:** [ACActual-Arland.zip](https://github.com/propst-design/ACActual/releases/latest/download/ACActual-Arland.zip).
-Unzip it and open "READ ME FIRST.txt". The Host and Join launchers update themselves from this page.
+## Play through Workshop
+
+1. Open **Workshop** in Arma Reforger and search for **Arma Commander Actual**.
+2. Download and enable the mod.
+3. Choose an **AC: Actual** scenario in **Scenarios** for solo play or **Multiplayer > Host** to host.
+4. Pick sides and match options on the in-game setup screen, then press **Start**.
+
+Friends join through the game's multiplayer browser. **No external launcher or ZIP download is needed.** Vanilla factions need no additional mods.
 
 ## Features
 
@@ -16,9 +22,9 @@ Unzip it and open "READ ME FIRST.txt". The Host and Join launchers update themse
 - **Intel.** AI perception and player line of sight reveal enemies; owned bases also automatically report enemies inside their radius plus 60 m, without line of sight. Contacts become suspected after 30 s and expire after 90 s without updates. The AI commander plans from its side's intel.
 - **Logistics.** Ammo, repair, fuel and medical trucks resupply nearby units, carry limited stock and restock at your bases. Players can use arsenal, supply and construction trucks too.
 - **Vehicles.** Rides by truck or helicopter to a landing zone, road-following AI drivers, and gunner drive (drive and steer from a turret with an AI driver aboard).
-- **Multiplayer.** Host and Join launchers that update themselves. The host picks the players' side, RP, income, AI skill and limits. Several players can command the same side together, with tagged orders, map and 3D pings, and one shared RP pool.
+- **Multiplayer.** Host and join through Reforger. The host/admin chooses sides and match settings in game. Several players can command the same side together, with tagged orders, map and 3D pings, and one shared RP pool.
 - **Construction.** Player construction trucks build service stations, helipads and forward deploy points. AI base building and a construction-supply pool at command posts are not implemented.
-- **Game Master** for a listen host or configured server admin, to unstick vehicles and fix things. Dedicated-server launchers can optionally trust the first joiner; this is off by default.
+- **Game Master** for a listen host or configured server admin, to unstick vehicles and fix things.
 
 ## Maps and setup
 
@@ -33,10 +39,6 @@ Host. The host/admin picks sides and match options before Start. The in-game set
 preview generated layouts, reroll the seed and move bases by clicking a base and then its new
 position. The Workshop route needs no external launcher. Console/controller play remains unverified.
 
-The ZIP is the Windows Steam launcher route: Play-ACA or Host-ACA asks for options before launching
-and skips the in-game setup screen. Its archive keeps the historical name ACActual-Arland.zip but
-includes all three maps. See READ ME FIRST.txt for setup, controls and connection help.
-
 ## Factions and optional mods
 
 Vanilla US, USSR and FIA are available in the scenario worlds. The in-game setup screen can pick any
@@ -45,11 +47,10 @@ only hand-fitted faction mods. UA replaces the vanilla US faction for that sessi
 a faction entry in the world and standard Game Master catalogs; mixed uniforms, substitute equipment
 and a squad leader as the command unit may result.
 
-The ZIP launcher offers four faction pairs and an ACE All in One toggle. It selects addon IDs, does
-not download those mods, and currently expects optional faction files in
-`E:\ArmaReforgerMods\addons`. All-in-One Command Menu is separate and optional, but Play/Host/Join
-automatically load its Workshop copy if found locally. Joiners need the host's mod set and the same
-faction/ACE selections. Use GitHub issues for faction support requests.
+Enable any optional faction mods before starting; the setup screen selects among factions already
+loaded by the scenario. Joiners need the server's mod set. ACE All in One and All-in-One Command
+Menu are separate optional mods, not requirements for vanilla AC: Actual. Use GitHub issues for
+faction support requests.
 
 ## Basic controls
 
@@ -113,3 +114,13 @@ fork by **Anarch Cassius**, **Ilyushkius** and **Will**. Rebuilt for Arma Reforg
 Licensed under the [Arma Public License Share Alike (APL-SA)](https://www.bohemia.net/community/licenses/arma-public-license-share-alike),
 the same license as the original: attribution, noncommercial, share alike, Arma games only.
 Provided as-is, without warranty.
+
+## Legacy ZIP / development launchers
+
+Workshop is the normal way to install and play. The [ZIP download](https://github.com/propst-design/ACActual/releases/latest/download/ACActual-Arland.zip)
+remains a Windows Steam fallback for local/development use. Its historical filename includes
+Arland, Everon and Kolguyev. Read its **READ ME FIRST.txt** for Play/Host/Join instructions.
+These launchers choose options outside the game and skip the in-game setup screen; published ZIPs
+self-update from GitHub. Optional faction mod paths are currently configured for the development
+PC (`E:\ArmaReforgerMods\addons`). They do not download those mods. Locally detected Workshop
+copies of All-in-One Command Menu are automatically loaded, so joiners need that mod too.
