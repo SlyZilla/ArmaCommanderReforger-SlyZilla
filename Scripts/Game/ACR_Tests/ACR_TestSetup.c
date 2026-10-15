@@ -120,8 +120,8 @@ class ACR_TestSetup
 
  // -acrSetupMapTest 1 (GAME, Kolguyev, ~75 s): the layout preview on the host's own map. The dialog
  // shows the map row; "Show the layout on the map" opens the map with one marker per planned base;
- // closing the map brings the dialog back; Start then builds the layout. The map stays open from
- // second 12 to 40 so a screenshot can be taken.
+ // returning via the visible button and the keyboard handler brings the dialog back; reopening
+ // must restore the controls, then Start builds the layout. Never force-close menus in this test.
  static bool MapWanted() { return System.IsCLIParam("acrSetupMapTest"); }
  static void RunMap(int second)
  {
@@ -129,7 +129,7 @@ class ACR_TestSetup
   if (second == 10)
   {
    ACR_SetupDialog dialog = ACR_SetupDialog.Cast(SCR_ConfigurableDialogUi.GetCurrentDialog());
-   ACR_TestRegress.Check("setup map: the host sees the dialog with the map row", dialog != null && ACR_SetupClient.s_sRows.Contains("map\tShow the layout on the map"), ACR_SetupClient.s_sRows);
+   ACR_TestRegress.Check("setup map: the host sees the dialog with the map row", dialog != null && ACR_SetupClient.s_sRows.Contains("map\tShow and edit the layout on the map"), ACR_SetupClient.s_sRows);
   }
   if (second == 12) ACR_SetupClient.OpenPreviewMap();
   if (second == 18)
@@ -142,7 +142,31 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup map: one marker per planned base", planned > 0 && markers == planned, string.Format("%1 markers, %2 planned", markers, planned));
    ACR_TestRegress.Check("setup map: the dialog stays hidden while the map is open", SCR_ConfigurableDialogUi.GetCurrentDialog() == null, "");
   }
-  if (second == 40) GetGame().GetMenuManager().CloseAllMenus();
+  if (second == 28)
+  {
+   SCR_MapMenuUI menu = SCR_MapMenuUI.Cast(GetGame().GetMenuManager().GetTopMenu());
+   Widget backButton;
+   if (menu) backButton = menu.GetRootWidget().FindAnyWidget("ACR_SetupReturn");
+   SCR_ButtonTextComponent button;
+   if (backButton) button = SCR_ButtonTextComponent.FindButtonTextComponent(backButton);
+   bool visible = backButton && backButton.IsVisible();
+   bool context = GetGame().GetInputManager().IsContextActive("ACR_SetupMapContext");
+   ACR_TestRegress.Check("setup map: visible return button and bodyless input context", button && visible && context, string.Format("button %1 visible %2 context %3", button != null, visible, context));
+   if (button) button.m_OnClicked.Invoke(button);
+  }
+  if (second == 32)
+  {
+   SCR_MapEntity afterButton = SCR_MapEntity.GetMapInstance();
+   ACR_TestRegress.Check("setup map: return button restores setup without starting", afterButton && !afterButton.IsOpen() && SCR_ConfigurableDialogUi.GetCurrentDialog() != null && !ACR_Setup.Started(), "");
+   ACR_SetupClient.OpenPreviewMap();
+  }
+  if (second == 40)
+  {
+   SCR_MapMenuUI reopened = SCR_MapMenuUI.Cast(GetGame().GetMenuManager().GetTopMenu());
+   ACR_TestRegress.Check("setup map: preview can reopen with its return controls", reopened && reopened.GetRootWidget().FindAnyWidget("ACR_SetupReturn") != null, "");
+   // Same callback registered for MenuBack/GadgetMap; hardware key delivery needs a live check.
+   if (reopened) reopened.ACR_ReturnToSetup();
+  }
   if (second == 45)
   {
    SCR_MapEntity closed = SCR_MapEntity.GetMapInstance();
@@ -153,7 +177,7 @@ class ACR_TestSetup
   if (second == 60)
   {
    ACR_TestRegress.Check("setup map: Start builds the previewed layout and the host spawns", ACR_Generator.Built() && ACR_Base.s_All.Count() == ACR_Setup.s_PreviewNames.Count() && pc && pc.GetControlledEntity() != null, string.Format("%1 bases", ACR_Base.s_All.Count()));
-   ACR_TestRegress.Complete("setupmap", 6);
+   ACR_TestRegress.Complete("setupmap", 9);
   }
  }
 

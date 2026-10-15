@@ -502,7 +502,12 @@ class ACR_SetupClient
   }
   // The layout preview: the map is open over the setup view; the dialog comes back when it closes.
   SCR_MapEntity previewMap = SCR_MapEntity.GetMapInstance();
-  if (previewMap && previewMap.IsOpen()) return;
+  if (previewMap && previewMap.IsOpen())
+  {
+   // Keep it alive across the input/world update boundary (the host has no character tick).
+   GetGame().GetInputManager().ActivateContext("ACR_SetupMapContext", 100);
+   return;
+  }
   if (!s_Dialog || !s_Dialog.GetRootWidget())
   {
    s_Dialog = new ACR_SetupDialog();
@@ -581,8 +586,8 @@ class ACR_SetupClient
  {
   if (s_Dialog) { s_Dialog.Close(); s_Dialog = null; }
   GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
-  string hint = "The planned layout. Close the map to return to the match setup.";
-  if (s_sRows.Contains("Show and edit")) hint = "The planned layout. To move a base, click it, then click where it should go. Close the map to return to the match setup.";
+  string hint = "The planned layout. Press Escape or Return to match setup to go back.";
+  if (s_sRows.Contains("Show and edit")) hint = "To move a base, click it, then click where it should go. Press Escape or Return to match setup to go back.";
   SCR_HintManagerComponent.ShowCustomHint(hint, "AC: Actual", 12, true);
  }
 
@@ -599,6 +604,63 @@ class ACR_SetupClient
   s_bAllowed = false;
   if (s_Dialog) s_Dialog.Close();
   s_Dialog = null;
+ }
+}
+
+// A bodyless host has no map gadget to close the fullscreen map. Keep the return controls
+// on the map menu itself so they have the same lifetime, including repeated preview visits.
+modded class SCR_MapMenuUI
+{
+ protected Widget m_ACR_SetupReturn;
+ protected bool m_ACR_SetupPreview;
+
+ override void OnMenuOpen()
+ {
+  super.OnMenuOpen();
+  m_ACR_SetupPreview = ACR_SetupClient.s_bActive;
+  if (!m_ACR_SetupPreview) return;
+  InputManager input = GetGame().GetInputManager();
+  input.AddActionListener("MenuBack", EActionTrigger.DOWN, ACR_ReturnToSetup);
+  input.AddActionListener("GadgetMap", EActionTrigger.DOWN, ACR_ReturnToSetup);
+  m_ACR_SetupReturn = GetGame().GetWorkspace().CreateWidgets("{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout", GetRootWidget());
+  if (!m_ACR_SetupReturn) return;
+  m_ACR_SetupReturn.SetName("ACR_SetupReturn");
+  FrameSlot.SetAnchorMin(m_ACR_SetupReturn, 1, 0);
+  FrameSlot.SetAnchorMax(m_ACR_SetupReturn, 1, 0);
+  FrameSlot.SetAlignment(m_ACR_SetupReturn, 1, 0);
+  FrameSlot.SetPos(m_ACR_SetupReturn, -24, 96);
+  FrameSlot.SetSize(m_ACR_SetupReturn, 340, 48);
+  SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(m_ACR_SetupReturn);
+  if (button)
+  {
+   button.SetText("Return to match setup");
+   button.m_OnClicked.Insert(ACR_OnSetupReturn);
+  }
+ }
+
+ void ACR_ReturnToSetup()
+ {
+  if (!m_ACR_SetupPreview || GetGame().GetMenuManager().GetTopMenu() != this) return;
+  GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+ }
+
+ protected void ACR_OnSetupReturn(SCR_ButtonBaseComponent button)
+ {
+  ACR_ReturnToSetup();
+ }
+
+ override void OnMenuClose()
+ {
+  if (m_ACR_SetupPreview)
+  {
+   InputManager input = GetGame().GetInputManager();
+   input.RemoveActionListener("MenuBack", EActionTrigger.DOWN, ACR_ReturnToSetup);
+   input.RemoveActionListener("GadgetMap", EActionTrigger.DOWN, ACR_ReturnToSetup);
+   m_ACR_SetupPreview = false;
+  }
+  if (m_ACR_SetupReturn) m_ACR_SetupReturn.RemoveFromHierarchy();
+  m_ACR_SetupReturn = null;
+  super.OnMenuClose();
  }
 }
 
