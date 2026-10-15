@@ -1,7 +1,9 @@
-# Builds dist/ACActual-Arland.zip: a player-only copy of the addon plus guide and launcher.
+# Builds dist/ACActual-WithBBB.zip: a player-only copy of the addon plus guide and launcher.
 import os, sys, zipfile, pathlib, subprocess, datetime
+from bbb_dependency import source as bbb_source, release_files as bbb_files
+bbb_root, bbb_commit = bbb_source()
 root = pathlib.Path(__file__).resolve().parent.parent
-out = root / 'dist' / 'ACActual-Arland.zip'
+out = root / 'dist' / 'ACActual-WithBBB.zip'
 out.parent.mkdir(exist_ok=True)
 top = 'ACActual-Arland'
 keep_dirs = ['Configs', 'Missions', 'Prefabs', 'Scripts', 'Worlds']
@@ -23,7 +25,7 @@ try:
 except Exception:
     sha = 'local'
 # --local: a test build for Jacob that must not self-update (the updater would replace it
-# with the latest published release). It goes to dist/ACActual-Arland-local.zip.
+# with the latest published release). It goes to dist/ACActual-WithBBB-local.zip.
 local = '--local' in sys.argv
 args = [a for a in sys.argv[1:] if a != '--local']
 version = args[0] if args else 'v' + datetime.date.today().strftime('%Y.%m.%d') + '-' + sha
@@ -32,8 +34,11 @@ update_source = source_file.read_text().strip() if source_file.exists() else ''
 if local:
     version += '-local'
     update_source = ''
-    out = root / 'dist' / 'ACActual-Arland-local.zip'
+    out = root / 'dist' / 'ACActual-WithBBB-local.zip'
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+    for p in bbb_files(bbb_root):
+        z.write(p, f'{top}/BetterBattleBuddies/{p.relative_to(bbb_root).as_posix()}')
+    z.writestr(f'{top}/BetterBattleBuddies/SOURCE-COMMIT.txt', bbb_commit + '\n')
     z.writestr(f'{top}/ArmaCommanderReforger/VERSION.txt', version + '\n')
     if update_source:
         z.writestr(f'{top}/ArmaCommanderReforger/update-source.txt', update_source + '\n')

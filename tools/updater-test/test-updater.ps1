@@ -18,15 +18,16 @@ function New-Run([string]$name) {
   return (Join-Path $dir 'ACActual-Arland')
 }
 
-function Run-Case([string]$name, [string]$zip, $assets = $null, [string]$tag = 'v-new', [string]$fail = '', [switch]$Git, [long]$size = 0) {
+function Run-Case([string]$name, [string]$zip, $assets = $null, [string]$tag = 'v-new', [string]$fail = '', [switch]$Git, [long]$size = 0, [switch]$Legacy) {
   $pkg = New-Run $name
   $addon = Join-Path $pkg 'ArmaCommanderReforger'
   if ($Git) { New-Item -ItemType Directory (Join-Path $addon '.git') | Out-Null }
   $before = Hash-Tree $pkg
   . (Join-Path $addon 'ACR-Update.ps1')
+  if ($Legacy) { . (Join-Path $here 'legacy-updater.ps1') }
   $script:zipSource = ''
   if ($zip) { $script:zipSource = Join-Path $here $zip }
-  if (!$assets) { $assets = @(@{ name = 'ACActual-Arland.zip'; browser_download_url = 'good'; size = $size }) }
+  if (!$assets) { $assets = @(@{ name = 'ACActual-WithBBB.zip'; browser_download_url = 'good'; size = $size }) }
   $script:rel = [pscustomobject]@{ tag_name = $tag; assets = $assets }
   function Get-ACRRelease([string]$repo) { return $script:rel }
   function Save-ACRAsset([string]$url, [string]$path) { Copy-Item $script:zipSource $path }
@@ -53,17 +54,21 @@ function Clean($pkg) { return !(Test-Path (Join-Path $pkg '.acr-update-state')) 
 $r = Run-Case 'valid' 'good.zip'
 $ver = (Get-Content (Join-Path $r.Addon 'VERSION.txt') -Raw).Trim()
 Check 'valid package installs' ($r.Returned -eq $true -and $ver -eq 'v-new' -and !(Test-Path (Join-Path $r.Addon 'Prefabs/ACR/Obsolete/Gone.et')) -and (Settings-Kept $r.Addon) -and (Clean $r.Pkg) -and (Test-Path (Join-Path $r.Addon 'Scripts/Game/ACR/ACR_Manager.c'))) "returned $($r.Returned) version $ver"
+Check 'paired update replaces BBB and removes obsolete files' ((Test-Path (Join-Path $r.Pkg 'BetterBattleBuddies/Scripts/Game/BBB/BBB_Core.c')) -and !(Test-Path (Join-Path $r.Pkg 'BetterBattleBuddies/Obsolete.txt'))) 'BBB installed with ACA'
 
 # 2-7, 11-12: bad downloads leave the install exactly as it was
-foreach ($c in @(@('wrong root', 'wrongroot.zip'), @('two roots', 'tworoots.zip'), @('missing Prefabs', 'noprefabs.zip'), @('corrupt zip', 'corrupt.zip'), @('version mismatch', 'badversion.zip'), @('other mod id', 'othermod.zip'))) {
+foreach ($c in @(@('wrong root', 'wrongroot.zip'), @('two roots', 'tworoots.zip'), @('missing Prefabs', 'noprefabs.zip'), @('corrupt zip', 'corrupt.zip'), @('version mismatch', 'badversion.zip'), @('other mod id', 'othermod.zip'), @('missing BBB', 'nobbb.zip'), @('missing BBB bios', 'nobbbbios.zip'), @('wrong BBB identity', 'otherbbb.zip'))) {
   $r = Run-Case ($c[0] -replace ' ', '-') $c[1]
   Check ('rejected: ' + $c[0]) ($r.Returned -eq $false -and $r.Unchanged -and (Clean $r.Pkg)) "returned $($r.Returned) unchanged $($r.Unchanged)"
 }
+# A pre-split updater cannot install another addon; renamed assets force manual migration.
+$r = Run-Case 'legacy-migration' 'good.zip' -Legacy
+Check 'old updater refuses paired asset without changing install' ($r.Returned -eq $false -and $r.Unchanged -and (Clean $r.Pkg)) "returned $($r.Returned) unchanged $($r.Unchanged)"
 # Size mismatch (truncated download)
 $r = Run-Case 'truncated' 'good.zip' -size 12345
 Check 'rejected: incomplete download' ($r.Returned -eq $false -and $r.Unchanged) "returned $($r.Returned) unchanged $($r.Unchanged)"
 # Unrelated ZIP listed first: the named asset is used
-$r = Run-Case 'unrelated-first' 'good.zip' -assets @(@{ name = 'source-code.zip'; browser_download_url = 'bad' }, @{ name = 'ACActual-Arland.zip'; browser_download_url = 'good' })
+$r = Run-Case 'unrelated-first' 'good.zip' -assets @(@{ name = 'source-code.zip'; browser_download_url = 'bad' }, @{ name = 'ACActual-WithBBB.zip'; browser_download_url = 'good' })
 Check 'unrelated first zip is ignored' ($r.Returned -eq $true -and (Get-Content (Join-Path $r.Addon 'VERSION.txt') -Raw).Trim() -eq 'v-new') "returned $($r.Returned)"
 # Release without our asset
 $r = Run-Case 'no-asset' 'good.zip' -assets @(@{ name = 'other.zip'; browser_download_url = 'x' })
@@ -96,7 +101,7 @@ $backupBefore = Hash-Tree $backup
 . (Join-Path $addon 'ACR-Update.ps1')
 $script:releaseQueried = $false
 $script:recoveryFailed = $false
-$script:rel = [pscustomobject]@{ tag_name = 'v-new'; assets = @(@{ name = 'ACActual-Arland.zip'; browser_download_url = 'good'; size = 0 }) }
+$script:rel = [pscustomobject]@{ tag_name = 'v-new'; assets = @(@{ name = 'ACActual-WithBBB.zip'; browser_download_url = 'good'; size = 0 }) }
 $script:zipSource = Join-Path $here 'good.zip'
 function Get-ACRRelease([string]$repo) { $script:releaseQueried = $true; return $script:rel }
 function Save-ACRAsset([string]$url, [string]$path) { Copy-Item $script:zipSource $path }

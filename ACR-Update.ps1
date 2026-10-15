@@ -10,7 +10,7 @@
 # the next launch. Local state (host/play settings, last host, zerotier.txt, logs,
 # profiles) is never part of the package and is left alone.
 
-$script:ACR_AssetName = 'ACActual-Arland.zip'
+$script:ACR_AssetName = 'ACActual-WithBBB.zip'
 $script:ACR_PackageTop = 'ACActual-Arland'
 $script:ACR_AddonFolder = 'ArmaCommanderReforger'
 $script:ACR_ModId = 'AC230926A0010001'
@@ -18,7 +18,7 @@ $script:ACR_ModId = 'AC230926A0010001'
 # files removed upstream disappear (Prefabs included).
 $script:ACR_AddonDirs = @('Configs', 'Missions', 'Prefabs', 'Scripts', 'Worlds')
 $script:ACR_AddonFiles = @('LICENSE.md', 'addon.gproj', 'resourceDatabase.rdb', 'Start-Test-Range.ps1', 'ACR-Multiplayer.ps1', 'ACR-Update.ps1', 'ACR-Find.ps1', 'ACR-ZeroTier.ps1', 'ACR-HostSetup.ps1', 'Play-Test-Range.cmd', 'README.md', 'MISSION-MAKING.md', 'VERSION.txt', 'update-source.txt')
-$script:ACR_RootItems = @('READ ME FIRST.txt', 'Play-ACA.cmd', 'Host-ACA.cmd', 'Join-ACA.cmd', 'Leave-ZeroTier.cmd', 'If joining fails')
+$script:ACR_RootItems = @('BetterBattleBuddies', 'READ ME FIRST.txt', 'Play-ACA.cmd', 'Host-ACA.cmd', 'Join-ACA.cmd', 'Leave-ZeroTier.cmd', 'If joining fails')
 $script:ACR_Required = @('addon.gproj', 'VERSION.txt', 'ACR-Update.ps1', 'ACR-Multiplayer.ps1', 'Start-Test-Range.ps1', 'Scripts', 'Worlds', 'Configs', 'Missions', 'Prefabs')
 
 # The package's versioned items as (relative path, full path) under the package root
@@ -68,6 +68,14 @@ function Test-ACRPackage([string]$extracted, [string]$tag) {
   if ($gproj -notmatch $script:ACR_ModId) { throw 'the download is a different mod (mod ID does not match)' }
   $version = (Get-Content -LiteralPath (Join-Path $addon 'VERSION.txt') -Raw).Trim()
   if ($tag -and $version -ne $tag) { throw ('the download says version ' + $version + ', the release is ' + $tag) }
+  $projectText = Get-Content -LiteralPath (Join-Path $addon 'addon.gproj') -Raw
+  if ($projectText -match 'BBB0261015000001') {
+    $bbb = Join-Path $top 'BetterBattleBuddies'
+    foreach ($required in @('addon.gproj', 'resourceDatabase.rdb', 'Scripts/Game/BBB/BBB_Core.c', 'Configs/BBB/BBB_Bios.conf', 'Configs/BBB/BBB_CivBios.conf')) {
+      if (!(Test-Path -LiteralPath (Join-Path $bbb $required))) { throw ('BBB dependency is missing ' + $required) }
+    }
+    if ((Get-Content -LiteralPath (Join-Path $bbb 'addon.gproj') -Raw) -notmatch 'GUID\s+"BBB0261015000001"') { throw 'BBB dependency has the wrong mod ID' }
+  }
   return $top
 }
 

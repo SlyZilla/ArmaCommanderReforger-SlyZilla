@@ -12,6 +12,13 @@ Workshop copy, enable the mod and choose an AC: Actual scenario in the
 game's Scenarios or Host menu; use the in-game setup screen, then Start.
 No external launcher is needed for Workshop play.
 
+BBB DEPENDENCY / ZIP UPGRADE
+----------------------------
+This paired package contains ArmaCommanderReforger and BetterBattleBuddies.
+Keep both folders together. Upgrading from an old single-addon ZIP requires
+downloading and extracting the complete ACActual-WithBBB.zip once; its old
+updater cannot install BBB. New paired packages update both addons together.
+
 WHAT YOU NEED
 -------------
 - Arma Reforger on Steam, installed and up to date (Windows PC).

@@ -3,7 +3,7 @@
 An unofficial, openly vibecoded port of the Arma 3 mod Arma Commander to Arma Reforger.
 Command squads from the map, then take over a friendly AI soldier and fight alongside them.
 Play solo against AI commanders or share command with friends in multiplayer.
-No additional mods required for the vanilla factions.
+Requires Better Battle Buddies (BBB). No faction mods required for vanilla sides.
 
 ## Command and fight
 
@@ -14,7 +14,7 @@ No additional mods required for the vanilla factions.
 - Capture bases for requisition income; buy infantry, vehicles, mortar crews and observers.
 - Call artillery, air support or transport helicopters to carry squads to a landing zone.
 - Build field service stations, forward spawn points and helipads with construction trucks.
-- Built-in Better Battle Buddies improves AI combat priorities, medic behavior, vehicle doors
+- The Better Battle Buddies dependency improves AI combat priorities, medic behavior, vehicle doors
   and quiet marching. Expect rough edges: this is an actively developed project.
 
 ## Pick your battlefield

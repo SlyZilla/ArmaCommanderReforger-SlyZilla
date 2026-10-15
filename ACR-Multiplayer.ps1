@@ -32,6 +32,7 @@ try {
     exit $LASTEXITCODE
   }
   $addonsPath = Split-Path $PSScriptRoot -Parent
+  Assert-BBBDependency $addonsPath
   $mod = '-addonsDir "' + $addonsPath + '" -addons AC230926A0010001'
   $backend = ' -noBackend'
   if ($Online) { $backend = '' }

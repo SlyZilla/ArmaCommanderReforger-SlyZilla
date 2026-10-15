@@ -5,7 +5,7 @@ map with a friend. It also lists the settings you can change in Workbench.
 
 > AC: Actual is an alpha. Arland is the main automated test map; Everon is the main large-map
 > playtest terrain. Kolguyev uses generated layouts. New maps, faction combinations and multiplayer
-> setup paths still need playtesting. Mod log lines use `[ACR]` (the included AI systems also use `[BBB]`).
+> setup paths still need playtesting. Development ACA now depends on standalone BBB (`BBB0261015000001`); keep its checkout beside ACA. Publish BBB before dependent ACA/scenario releases. Mod log lines use `[ACR]` (the included AI systems also use `[BBB]`).
 
 ## Contents
 

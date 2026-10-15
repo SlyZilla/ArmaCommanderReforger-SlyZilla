@@ -9,7 +9,7 @@ An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode
 3. Choose an **AC: Actual** scenario in **Scenarios** for solo play or **Multiplayer > Host** to host.
 4. Pick sides and match options on the in-game setup screen, then press **Start**.
 
-Friends join through the game's multiplayer browser. **No external launcher or ZIP download is needed.** Vanilla factions need no additional mods.
+Friends join through the game's multiplayer browser. **No external launcher or ZIP download is needed.** For the split release, Better Battle Buddies is a required dependency; allow Workshop to install it too. The older Workshop build still bundles BBB.
 
 ## Features
 
@@ -117,10 +117,12 @@ Provided as-is, without warranty.
 
 ## Legacy ZIP / development launchers
 
-Workshop is the normal way to install and play. The [ZIP download](https://github.com/propst-design/ACActual/releases/latest/download/ACActual-Arland.zip)
-remains a Windows Steam fallback for local/development use. Its historical filename includes
-Arland, Everon and Kolguyev. Read its **READ ME FIRST.txt** for Play/Host/Join instructions.
+Workshop is the normal way to install and play. The [ZIP download](https://github.com/propst-design/ACActual/releases/latest/download/ACActual-WithBBB.zip)
+remains a Windows Steam fallback for local/development use, covering Arland, Everon and
+Kolguyev. Read its **READ ME FIRST.txt** for Play/Host/Join instructions.
 These launchers choose options outside the game and skip the in-game setup screen; published ZIPs
 self-update from GitHub. Optional faction mod paths are currently configured for the development
 PC (`E:\ArmaReforgerMods\addons`). They do not download those mods. Locally detected Workshop
 copies of All-in-One Command Menu are automatically loaded, so joiners need that mod too.
+
+The paired ZIP contains both ArmaCommanderReforger and BetterBattleBuddies. Older single-addon ZIP users must download and extract it once; their updater cannot install BBB. Keep both folders together.

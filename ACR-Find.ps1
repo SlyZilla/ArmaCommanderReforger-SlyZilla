@@ -97,3 +97,15 @@ function Add-AIOCommandMenu([string]$addonsDir, [string]$addonList) {
   }
   return @($addonsDir, $addonList)
 }
+
+# BBB is a required standalone addon. Development and ZIP copies keep it beside ACA.
+function Assert-BBBDependency([string]$addonsDir) {
+  foreach ($dir in $addonsDir.Split(',')) {
+    if (!(Test-Path -LiteralPath $dir)) { continue }
+    foreach ($addon in Get-ChildItem -LiteralPath $dir -Directory) {
+      $project = Join-Path $addon.FullName 'addon.gproj'
+      if ((Test-Path -LiteralPath $project) -and (Get-Content -LiteralPath $project -Raw) -match 'GUID\s+"BBB0261015000001"') { return }
+    }
+  }
+  throw 'Better Battle Buddies is required. Install the complete ACActual-WithBBB.zip with both addon folders, or use the in-game Workshop installation.'
+}

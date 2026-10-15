@@ -23,6 +23,8 @@ if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Commit or stash changes before buil
 & python (Join-Path $PSScriptRoot 'check_mission_doc.py')
 if ($LASTEXITCODE -ne 0) { throw 'Update MISSION-MAKING.md first.' }
 
+$bbbCommit = & python (Join-Path $PSScriptRoot 'bbb_dependency.py')
+if ($LASTEXITCODE -ne 0) { throw 'Resolve the pinned BBB dependency first.' }
 $releaseFiles = @('resourceDatabase.rdb', 'LICENSE.md', 'README.md', 'MISSION-MAKING.md')
 foreach ($name in @('Scripts', 'Configs', 'Missions', 'Prefabs', 'Worlds', 'addon.gproj') + $releaseFiles) {
     if (!(Test-Path -LiteralPath (Join-Path $sourceRoot $name))) { throw "Missing release source: $name" }
@@ -97,7 +99,7 @@ Copy-Item -LiteralPath (Join-Path $sourceRoot 'docs/workshop-description.md') -D
 $files = @(Get-ChildItem -LiteralPath $releaseRoot -Recurse -File | Sort-Object FullName | ForEach-Object {
     @{ path = $_.FullName.Substring($releaseRoot.Length + 1).Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
 })
-@{ sourceRoot = $sourceRoot; addonRoot = $releaseRoot; commit = $sha.Trim(); builtUtc = [DateTime]::UtcNow.ToString('o'); files = $files } |
+@{ sourceRoot = $sourceRoot; addonRoot = $releaseRoot; commit = $sha.Trim(); bbbCommit = $bbbCommit.Trim(); bbbModId = "BBB0261015000001"; builtUtc = [DateTime]::UtcNow.ToString('o'); files = $files } |
     ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $marker -Encoding UTF8
 Write-Output "Workshop candidate: $releaseRoot"
 Write-Output "Source: $sha"

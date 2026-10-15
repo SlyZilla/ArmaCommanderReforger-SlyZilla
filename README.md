@@ -35,13 +35,18 @@ a terrain alone does not add one.
 
 Capture bases for RP, requisition squads and vehicles, and call mortar, artillery and air support.
 Construction trucks build service stations, forward deploy points and helipads. There are no victory
-conditions or saved matches. Better Battle Buddies is included in the mod.
+conditions or saved matches. This development tree now requires the separate Better Battle Buddies
+addon (`BBB0261015000001`). Keep its checkout beside this one in Workbench/addons; source is in
+`propst-design/BetterBattleBuddies` (private). The installed Workshop version may still bundle BBB
+until the split is published. Do not upload this ACA tree before BBB is available on Workshop.
 
 ## Legacy ZIP / development launchers
 
 The release ZIP includes **Play-ACA.cmd**, **Host-ACA.cmd**, **Join-ACA.cmd** and a **READ ME
 FIRST.txt** guide. Its launchers ask for match options before starting and skip the in-game setup
-screen. Published ZIPs self-update; keep custom work in a separate addon or use a development copy
+screen. New paired ZIPs use **ACActual-WithBBB.zip** and contain both addon folders. Users of the older
+single-addon ZIP must download/extract the complete paired ZIP once; the old updater cannot install
+BBB. After that migration, published paired ZIPs self-update. Keep custom work in a separate addon or use a development copy
 without the release updater source.
 
 ## Playing the test range

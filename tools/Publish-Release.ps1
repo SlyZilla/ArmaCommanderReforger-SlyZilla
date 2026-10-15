@@ -1,11 +1,11 @@
-# Publishes dist\ACActual-Arland.zip as a GitHub release, so the launchers of
+# Publishes dist\ACActual-WithBBB.zip as a GitHub release, so the launchers of
 # everyone who has the package pick it up on their next start.
 # Windows PowerShell treats native stderr output as an error under 'Stop'; gh writes
 # normal status text to stderr, so keep 'Continue' and check exit codes instead.
 $ErrorActionPreference = 'Continue'
 $root = Split-Path $PSScriptRoot -Parent
 $repo = (Get-Content (Join-Path $root 'tools\package\update-source.txt') -Raw).Trim()
-$zip = Join-Path $root 'dist\ACActual-Arland.zip'
+$zip = Join-Path $root 'dist\ACActual-WithBBB.zip'
 $versionFile = Join-Path $root 'dist\VERSION.txt'
 try { Start-Transcript -Path (Join-Path $root 'dist\publish-log.txt') -Force | Out-Null } catch {}
 
@@ -78,11 +78,11 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host "Publishing $version to $repo ..."
-$notes = "Download ACActual-Arland.zip below, unzip it, and read 'READ ME FIRST.txt'.`nAlready have it? Just start Host-ACA or Join-ACA; they update themselves.`nFound a bug? [Report it here](https://github.com/$repo/issues/new/choose); the README lists what most needs multiplayer testing."
+$notes = "Download ACActual-WithBBB.zip below, unzip it, and read 'READ ME FIRST.txt'.`nUpgrading from the old single-addon ZIP? Download and extract this complete package once; the old updater cannot install the new BBB dependency.`nFound a bug? [Report it here](https://github.com/$repo/issues/new/choose); the README lists what most needs multiplayer testing."
 & $gh release create $version $zip --repo $repo --title $version --notes $notes --latest
 if ($LASTEXITCODE -ne 0) { Fail "Release upload failed (see above)." }
 
 Write-Host ""
 Write-Host "Published $version." -ForegroundColor Green
 Write-Host "Permanent download link for your buddies:"
-Write-Host "  https://github.com/$repo/releases/latest/download/ACActual-Arland.zip"
+Write-Host "  https://github.com/$repo/releases/latest/download/ACActual-WithBBB.zip"

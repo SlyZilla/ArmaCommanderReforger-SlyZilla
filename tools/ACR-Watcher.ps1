@@ -153,6 +153,7 @@ function Invoke-Push($id) {
 function Get-TestMissionId($world) {
     $name = [IO.Path]::GetFileNameWithoutExtension($world)
     $meta = Join-Path $ProjectRoot ('Missions/' + $name + '.conf.meta')
+    if (!(Test-Path -LiteralPath $meta)) { $meta = Join-Path (Split-Path $ProjectRoot -Parent) ('BetterBattleBuddies/Missions/' + $name + '.conf.meta') }
     if (!(Test-Path -LiteralPath $meta)) { return $null }
     $m = Select-String -LiteralPath $meta -Pattern 'Name\s+"(\{[0-9A-F]{16}\}Missions/[^"]+)"' | Select-Object -First 1
     if ($m) { return $m.Matches[0].Groups[1].Value }

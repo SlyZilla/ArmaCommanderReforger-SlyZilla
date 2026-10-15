@@ -1,5 +1,6 @@
 param([switch]$HostMenu, [switch]$TestProfile, [switch]$NoSetup, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'ACR-Find.ps1')
 # Everything this window shows also goes to launcher-log.txt (send it if something fails).
 try { Start-Transcript -Path (Join-Path $PSScriptRoot 'launcher-log.txt') -Force | Out-Null } catch {}
 try {
@@ -30,6 +31,7 @@ try {
  }
  $addonsPath = Split-Path $PSScriptRoot -Parent
  $addonsDir = $addonsPath
+ Assert-BBBDependency $addonsDir
  $addonList = 'AC230926A0010001'
  if ($setup) {
   $addonList = $setup.Addons
