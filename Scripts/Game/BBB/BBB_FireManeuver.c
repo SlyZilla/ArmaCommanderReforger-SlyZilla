@@ -34,7 +34,7 @@ class BBB_FireManeuver
  // Resolve readiness from actual equipped native selection, not prefab names.
  static bool Ready(SCR_AIUtilityComponent utility)
  {
-  if (!utility || !utility.m_CombatComponent || !utility.m_CombatMoveState) return false;
+  if (!utility || !utility.m_CombatComponent || !utility.m_CombatMoveState || BBB_OrderIntent.Blocks(utility)) return false;
   SCR_AICombatComponent combat = utility.m_CombatComponent;
   SCR_AIBehaviorBase behavior = utility.GetCurrentBehavior();
   if (!SCR_AIAttackBehavior.Cast(behavior) && !SCR_AISuppressBehavior.Cast(behavior)) return false;

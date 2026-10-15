@@ -1,3 +1,13 @@
+class BBB_OrderIntentTestHold : SCR_AIBehaviorBase
+{
+ void BBB_OrderIntentTestHold(SCR_AIUtilityComponent utility, SCR_AIActivityBase groupActivity)
+ {
+  m_sBehaviorTree = "AI/BehaviorTrees/Chimera/Soldier/Wait.bt";
+  SetPriorityLevel(PRIORITY_LEVEL_PLAYER);
+ }
+ override float CustomEvaluate() { return 0; }
+}
+
 // Close-contact diagnosis. Targets come only from native perception; test geometry
 // is used for measurement, never supplied to production target selection.
 class BBB_EngagementTest : BBB_CombatTest
@@ -298,6 +308,13 @@ class BBB_EngagementTest : BBB_CombatTest
 				GuardCheck("direct behavior priority", !BBB_Engagement.Eligible(utility, combat, target));
 				behavior.SetPriorityLevel(previousLevel);
 			}
+			BBB_OrderIntentTestHold pending = new BBB_OrderIntentTestHold(utility, null);
+			utility.AddAction(pending);
+			GuardCheck("queued player order during a combat reaction", BBB_OrderIntent.Blocks(utility) && !BBB_Engagement.Eligible(utility, combat, target));
+			pending.SetRemoveAction(true);
+			pending.Fail();
+			GuardCheck("cancelled queued order releases the guard", !BBB_OrderIntent.Blocks(utility));
+
 		}
 		SCR_AIWaypoint waypoint = SCR_AIWaypoint.Cast(group.GetCurrentWaypoint());
 		if (!m_WaypointGuard && waypoint)
@@ -326,9 +343,9 @@ class BBB_EngagementTest : BBB_CombatTest
 		BBB_Perf.s_bOn = m_bOriginalPerf;
 		BBB_Perf.s_bOwnReport = m_bOriginalPerfReport;
 		string verdict = "PASS";
-		if (m_Completed != 8 || m_Missing || m_SelectedSamples == 0 || m_Shots == 0 || m_GuardPasses != 4 || m_GuardFailures > 0) verdict = "FAIL";
+		if (m_Completed != 8 || m_Missing || m_SelectedSamples == 0 || m_Shots == 0 || m_GuardPasses != 6 || m_GuardFailures > 0) verdict = "FAIL";
 		if (m_TargetComparison && (BBB_Engagement.s_iFiltered == 0 || BBB_Engagement.s_iResolved == 0 || m_TotalHandoffShots == 0)) verdict = "FAIL";
-		PrintFormat("[BBB] ENGAGE guard totals passed=%1 failed=%2 expected=4", m_GuardPasses, m_GuardFailures);
+		PrintFormat("[BBB] ENGAGE guard totals passed=%1 failed=%2 expected=6", m_GuardPasses, m_GuardFailures);
 		string testName = "bbbengagement";
 		if (m_TargetComparison) testName = "bbbtargetpriority";
 		PrintFormat("[ACR] VERDICT %1 test=%2 rounds=%3 expected=8 missing=%4 targetSamples=%5 shots=%6 (fixture coverage and order guards, not a behavior acceptance verdict)", verdict, testName, m_Completed, m_Missing, m_SelectedSamples, m_Shots);

@@ -59,15 +59,7 @@ class BBB_Engagement
 		BaseMagazineComponent magazine = selected.GetCurrentMagazine();
 		if (!magazine || magazine.GetAmmoCount() <= 0) return false;
 		// Preserve explicit fast/forced movement and direct player/GM activities.
-		SCR_AIBehaviorBase action = utility.GetCurrentBehavior();
-		if (action && action.EvaluatePriorityLevel() >= SCR_AIActionBase.PRIORITY_LEVEL_PLAYER) return false;
-		AIAgent agent = utility.GetAIAgent();
-		AIGroup group;
-		if (agent) group = agent.GetParentGroup();
-		SCR_AIWaypoint waypoint;
-		if (group) waypoint = SCR_AIWaypoint.Cast(group.GetCurrentWaypoint());
-		if (waypoint && waypoint.GetPriorityLevel() >= SCR_AIActionBase.PRIORITY_LEVEL_PLAYER) return false;
-		return true;
+		return !BBB_OrderIntent.Blocks(utility);
 	}
 }
 
