@@ -460,6 +460,124 @@ class ACR_HeliRun : ACR_SupportRun
  bool m_bReturning;
  bool m_bLanded;
  protected float m_fSpeed;
+ static const float FLIGHT_ACCEL = 1.5; // m/s squared: about 37 s to cruise from a hover
+ static const float FLIGHT_BRAKE = 3;
+ protected float m_fNextTerrain;
+ protected float m_fTerrainY;
+ protected float m_fTerrainSpeed = SPEED_RUN;
+ protected ref array<IEntity> m_aFlightIgnore = {};
+
+ static float ApproachSpeed(float speed, float wanted, float dt)
+ {
+  return speed + Math.Clamp(wanted - speed, -FLIGHT_BRAKE * dt, FLIGHT_ACCEL * dt);
+ }
+
+ // Reserve 3 s for vertical-speed response and use only 5 of the available 8 m/s climb.
+ // Slow down to buy climb time when a ridge cannot be cleared at the current speed.
+ static float ClimbSafeSpeed(float distance, float rise)
+ {
+  if (rise <= 0) return SPEED_RUN;
+  return Math.Clamp((distance - 25) / (rise / 5 + 3), 0, SPEED_RUN);
+ }
+
+ protected void IgnoreFlightOccupants()
+ {
+  m_aFlightIgnore.Clear();
+  m_aFlightIgnore.Insert(m_Vehicle);
+  SCR_BaseCompartmentManagerComponent flightSeats = SCR_BaseCompartmentManagerComponent.Cast(m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  array<BaseCompartmentSlot> occupied = {};
+  if (flightSeats) flightSeats.GetCompartments(occupied);
+  foreach (BaseCompartmentSlot seat : occupied)
+   if (seat.GetOccupant()) m_aFlightIgnore.Insert(seat.GetOccupant());
+ }
+
+ // Last movement check, including vertical takeoff and descent. Prediction can be
+ // stale when another vehicle moves in; never advance the rotor envelope through it.
+ protected bool RotorMoveClear(vector from, vector to)
+ {
+  TraceBox rotor = new TraceBox();
+  rotor.Mins = Vector(-12, 2.5, -12);
+  rotor.Maxs = Vector(12, 10, 12);
+  rotor.Start = from;
+  rotor.End = to;
+  rotor.ExcludeArray = m_aFlightIgnore;
+  rotor.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  if (GetGame().GetWorld().TraceMove(rotor, null) < 1) return false;
+  // The long, narrow tail extends beyond the main disk. Rotate its envelope with
+  // the fuselage instead of requiring level terrain under unused square corners.
+  TraceOBB tail = new TraceOBB();
+  tail.Mins = Vector(-3, 1, -17);
+  tail.Maxs = Vector(3, 10, 2);
+  float radians = m_fBodyYaw * Math.DEG2RAD;
+  tail.Mat[0] = Vector(Math.Cos(radians), 0, -Math.Sin(radians));
+  tail.Mat[1] = Vector(0, 1, 0);
+  tail.Mat[2] = Heading(m_fBodyYaw);
+  tail.Start = from;
+  tail.End = to;
+  tail.ExcludeArray = m_aFlightIgnore;
+  tail.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  return GetGame().GetWorld().TraceMove(tail, null) >= 1;
+ }
+
+ protected void GuardFlightMove(vector previous)
+ {
+  IgnoreFlightOccupants();
+  if (RotorMoveClear(previous, m_Pos)) return;
+  // An upward escape may still be clear even when forward movement is blocked.
+  vector escape = previous;
+  escape[1] = Math.Max(previous[1], m_Pos[1]);
+  if (escape[1] > previous[1] && RotorMoveClear(previous, escape)) m_Pos = escape;
+  else
+  {
+   m_Pos = previous;
+   m_fClimb = 0;
+  }
+  m_fSpeed = 0;
+ }
+
+ protected float FlightClearance(vector forward, float above, float now)
+ {
+  if (now < m_fNextTerrain) return m_fTerrainY;
+  m_fNextTerrain = now + 250;
+  BaseWorld world = GetGame().GetWorld();
+  vector side = Vector(forward[2], 0, -forward[0]);
+  float horizon = Math.Max(400, m_fSpeed * 20 + m_fSpeed * m_fSpeed / (FLIGHT_BRAKE * 2));
+  m_fTerrainSpeed = SPEED_RUN;
+  m_fTerrainY = m_Pos[1] - 20;
+  for (float ahead = 0; ahead <= horizon; ahead += 20)
+  {
+   for (int lane = -1; lane <= 1; lane++)
+   {
+    vector probe = m_Pos + forward * ahead + side * (lane * 18);
+    float surface = Math.Max(0, world.GetSurfaceY(probe[0], probe[2]));
+    float rise = surface + 35 - m_Pos[1];
+    m_fTerrainSpeed = Math.Min(m_fTerrainSpeed, ClimbSafeSpeed(ahead, rise));
+    float time = ahead / Math.Max(10, m_fSpeed);
+    m_fTerrainY = Math.Max(m_fTerrainY, surface + above - Math.Max(0, time - 3) * 5);
+   }
+  }
+  // Sweep the whole rotor/tail envelope along the stopping corridor; terrain samples
+  // alone know nothing about trees, buildings or powerline pylons. Ignore our own hull.
+  TraceBox sweep = new TraceBox();
+  sweep.Mins = Vector(-18, 1, -18);
+  sweep.Maxs = Vector(18, 10, 18);
+  sweep.Start = m_Pos;
+  float reach = Math.Max(40, m_fSpeed * m_fSpeed / (FLIGHT_BRAKE * 2) + m_fSpeed * 3 + 30);
+  sweep.End = m_Pos + forward * reach;
+  // Seated characters are not necessarily children of the airframe in trace queries.
+  // Their gear must not be mistaken for an obstacle after boarding.
+  IgnoreFlightOccupants();
+  sweep.ExcludeArray = m_aFlightIgnore;
+  sweep.Flags = TraceFlags.ENTS;
+  float hit = world.TraceMove(sweep, null);
+  if (hit < 1)
+  {
+   if (System.IsCLIParam("acrAirLiftContactTest")) PrintFormat("[ACR] LIFTCONTACT obstacle %1 at %2, fraction %3, position %4", sweep.TraceEnt, sweep.End, hit, m_Pos);
+   m_fTerrainSpeed = Math.Min(m_fTerrainSpeed, Math.Max(0, (reach * hit - 30) / (m_fSpeed / FLIGHT_BRAKE + 3)));
+   m_fTerrainY = Math.Max(m_fTerrainY, m_Pos[1] + 25);
+  }
+  return m_fTerrainY;
+ }
  bool m_bLoiter;
  bool m_bDoorGuns;   // transport version: no rockets
  static const float DOOR_SIDE_SWAP_MS = 30000;
@@ -575,6 +693,7 @@ class ACR_HeliRun : ACR_SupportRun
  // Straight up off the pad, the nose swinging round toward the target.
  protected bool Lift(float dt)
  {
+  vector previous = m_Pos;
   float ground = GetGame().GetWorld().GetSurfaceY(m_Pos[0], m_Pos[2]);
   float rise = LIFT_RATE;
   if (m_Pos[1] - ground < 3) rise = LIFT_RATE * 0.5;
@@ -582,12 +701,16 @@ class ACR_HeliRun : ACR_SupportRun
   float wantYaw = Math.Atan2(m_Dir[0], m_Dir[2]) * Math.RAD2DEG;
   m_fYaw = Wrap(m_fYaw + Math.Clamp(Wrap(wantYaw - m_fYaw), -15 * dt, 15 * dt));
   m_fBodyYaw = m_fYaw;
-  Place(Vector(0, rise, 0), 0, 0);
+  GuardFlightMove(previous);
+  vector velocity = vector.Zero;
+  if (dt > 0) velocity = (m_Pos - previous) * (1 / dt);
+  Place(velocity, 0, 0);
   if (m_Pos[1] - ground >= LIFT_HEIGHT)
   {
    m_bLifting = false;
    m_fClimb = rise;
    m_fSpeed = 0;
+   m_fNextTerrain = 0;
    PrintFormat("[ACR] SUPPORT %1 off the ground (%2 m up), heading out", LogName(), (int)(m_Pos[1] - ground));
   }
   return true;
@@ -632,10 +755,18 @@ class ACR_HeliRun : ACR_SupportRun
   // Slower near the pad, and while still turning toward it (no circling round it).
   float facing = Math.Max(0.2, Math.Cos(Math.Min(Math.AbsFloat(delta), 90) * Math.DEG2RAD));
   float wanted = Math.Clamp(d * 0.22, 0, SPEED_RUN) * facing;
-  float before = m_fSpeed;
-  m_fSpeed += (wanted - m_fSpeed) * Math.Min(1, dt * 0.8);
-  vector previous = m_Pos;
   vector forward = Heading(m_fYaw);
+  float terrainY = m_Pos[1];
+  if (d > 25)
+  {
+   terrainY = FlightClearance(forward, ALT_TRANSIT, now);
+   wanted = Math.Min(wanted, m_fTerrainSpeed);
+  }
+  // Brake early enough to stop with a bounded deceleration.
+  wanted = Math.Min(wanted, Math.Sqrt(FLIGHT_BRAKE * 2 * d));
+  float before = m_fSpeed;
+  m_fSpeed = ApproachSpeed(m_fSpeed, wanted, dt);
+  vector previous = m_Pos;
   vector move;
   // The last stretch is flown straight at the pad whatever the nose does (a hover taxi).
   if (d < 40) move = toPad * Math.Min(Math.Min(m_fSpeed, d * 0.5 + 0.3) * dt, d);
@@ -644,22 +775,34 @@ class ACR_HeliRun : ACR_SupportRun
   // Height: transit height far out, then a glide down to a hover over the pad, then down.
   float ground = GetGame().GetWorld().GetSurfaceY(m_Pos[0], m_Pos[2]);
   float wantedY;
-  if (d > 300) wantedY = SafeAltitude(m_Pos, forward, ALT_TRANSIT);
-  else wantedY = Math.Max(pad[1] + Math.Clamp((d - 8) * 0.35, 4, ALT_TRANSIT), ground + Math.Clamp((d - 8) * 0.3, 4, 20));
+  if (d > 300) wantedY = terrainY;
+  else
+  {
+   wantedY = Math.Max(pad[1] + Math.Clamp((d - 8) * 0.35, 12, ALT_TRANSIT), ground + 12);
+   if (d > 25) wantedY = Math.Max(wantedY, terrainY);
+  }
   float rate = Math.Clamp((wantedY - m_Pos[1]) * 0.6, -6, 8);
-  if (d < 4)
+  if (d < 1)
   {
    wantedY = pad[1];
    rate = -Math.Clamp((m_Pos[1] - pad[1]) * 0.4, 1.2, 4);
   }
   m_fClimb += (rate - m_fClimb) * Math.Min(1, dt * 1.5);
   m_Pos[1] = previous[1] + m_fClimb * dt;
-  if (d >= 4 && m_Pos[1] < ground + 3) m_Pos[1] = ground + 3;
+  if (d < 1) m_Pos[1] = Math.Max(pad[1], m_Pos[1]);
+  // Hold horizontal movement if the next step would enter terrain while still climbing.
+  if (d > 40 && m_Pos[1] < ground + 20)
+  {
+   m_Pos[0] = previous[0];
+   m_Pos[2] = previous[2];
+   m_fSpeed = 0;
+  }
   if (d > 300)
   {
    vector away = Separation(supports);
    if (away != vector.Zero) m_Pos = m_Pos + away * (2 * dt);
   }
+  GuardFlightMove(previous);
   float pitch = -Math.Clamp(m_fSpeed * 0.1, 0, 6);
   if (m_fSpeed < before - 0.05 && m_fSpeed > 3) pitch = 5; // flaring
   m_fRoll += (0 - m_fRoll) * Math.Min(1, dt * 2);
@@ -671,7 +814,7 @@ class ACR_HeliRun : ACR_SupportRun
    m_fNextAltLog = now + 5000;
    PrintFormat("[ACR] SUPPORT %1 coming in: %2 m from its landing spot, %3 m up, %4 m/s", LogName(), (int)d, (int)(m_Pos[1] - ground), (int)m_fSpeed);
   }
-  return d < 4 && m_Pos[1] <= pad[1] + 0.35;
+  return d < 1 && m_Pos[1] <= pad[1] + 0.35;
  }
 
  // On the pad: physics back on, engine off, servicing starts.

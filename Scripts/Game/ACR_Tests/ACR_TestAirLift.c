@@ -5,8 +5,9 @@
 // -acrAirLiftTwoTest 1 (srv:airlifttwo): the same with 2 seats per helicopter, so two fly.
 class ACR_TestAirLift
 {
- static const int CHECKS = 8;
+ static const int CHECKS = 9;
  static vector s_Target;
+ static float s_fMaxDamage;
  static int s_iStage = -1;
  static int s_iMaxAboard;
  static int s_iAliveAtTakeoff;
@@ -20,14 +21,18 @@ class ACR_TestAirLift
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager || !h.m_Range) return;
   ACR_Squad alpha = manager.FindSquadByGroup(h.m_Range.m_Group);
-  if (tick == 1)
+  // Settings and groups can finish registering after the first harness tick.
+  // Keep this a transport drill throughout, including newly spawned garrisons.
+  foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All) settings.m_bAICommander = false;
+  foreach (ACR_Squad peaceful : manager.m_Squads)
   {
-   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
-   if (soviets) soviets.m_bAICommander = false;
-   ACR_FactionSettings us = ACR_FactionSettings.Find("US");
-   if (us) us.m_bAICommander = false;
+   if (peaceful.m_Group && peaceful.m_Group.GetGroupUtilityComponent()) peaceful.m_Group.GetGroupUtilityComponent().SetCombatMode(EAIGroupCombatMode.HOLD_FIRE);
   }
-  if (!alpha || !alpha.GetAnchor()) return;
+  if (!alpha || !alpha.GetAnchor())
+  {
+   if (tick > 5) ACR_TestRegress.Abort("airlift", "transport squad lost");
+   return;
+  }
   if (tick == 5) Call(h, manager, alpha);
   if (tick > 5 && s_iEndTick < 0) Watch(manager, alpha, tick);
   if (s_iEndTick >= 0 && tick == s_iEndTick) Finish(manager, alpha);
@@ -48,16 +53,37 @@ class ACR_TestAirLift
   ACR_TestRegress.Check("airlift: refused without a squad and when too close", noSquad.Contains("Select the squad") && tooClose.Contains("walk it") && data.m_iRP == 500, noSquad + " / " + tooClose);
   // A drop-off about 1 km away with room to land.
   array<vector> spots = {};
-  for (int i = 0; i < 16 && spots.IsEmpty(); i++)
+  int wantedSpots = 1;
+  if (ACR_LiftHeli.s_iTestSeats > 0) wantedSpots = 2;
+  vector targetCenter;
+  for (int i = 0; i < 256 && spots.IsEmpty(); i++)
   {
-   float angle = Math.PI2 * i / 16.0;
-   vector candidate = from + Vector(Math.Cos(angle) * 1000, 0, Math.Sin(angle) * 1000);
-   if (ACR_Manager.OnMap(candidate) && !BBB_Terrain.IsWater(candidate[0], candidate[2])) ACR_LandingZone.Find(candidate, 120, 1, spots);
+   int bearing = i % 64;
+   int ring = i / 64;
+   float angle = Math.PI2 * bearing / 64.0;
+   float distance = 600 + ring * 300;
+   vector candidate = from + Vector(Math.Cos(angle) * distance, 0, Math.Sin(angle) * distance);
+   if (ACR_Manager.OnMap(candidate) && !BBB_Terrain.IsWater(candidate[0], candidate[2])) ACR_LandingZone.Find(candidate, 100, wantedSpots, spots);
+   if (spots.Count() < wantedSpots) spots.Clear();
+   else targetCenter = candidate;
   }
   if (spots.IsEmpty()) { ACR_TestRegress.Abort("airlift", "no open ground 1 km from Alpha"); return; }
   s_Target = spots[0];
+  if (wantedSpots == 2) s_Target = targetCenter;
   string result = manager.m_Supports.Call("US", index, s_Target, false, -1, alpha);
   PrintFormat("[ACR] TEST airlift call: %1", result);
+  ACR_AirLift called = ACR_AirLift.For(alpha);
+  if (called) PrintFormat("[ACR] TEST airlift landing room: %1 pickup, %2 drop spots", called.m_Pickups.Count(), called.m_Drops.Count());
+  if (called && System.IsCLIParam("acrAirLiftContactTest"))
+  {
+   foreach (ACR_LiftHeli quick : called.m_Helis)
+   {
+    quick.m_Pos = quick.m_Spot;
+    quick.m_bDown = true;
+   }
+   ACR_AirLift.NEAR_BOARD_MS = 0;
+   ACR_AirLift.FORCE_BOARD_MS = 0;
+  }
   int spent = 500 - data.m_iRP;
   ACR_TestRegress.Check("airlift: called, full price for a player, half for the AI commander", ACR_AirLift.Busy(alpha) && spent == entry.m_iCost && entry.CostFor(true) == entry.m_iCost / 2 && entry.m_iCost > 0, string.Format("%1; spent %2 of %3, AI %4", result, spent, entry.m_iCost, entry.CostFor(true)));
  }
@@ -78,6 +104,12 @@ class ACR_TestAirLift
   }
   foreach (ACR_LiftHeli heli : lift.m_Helis)
   {
+   if (heli.m_Vehicle)
+   {
+    float damage = heli.MovementDamage();
+    if (damage > s_fMaxDamage) PrintFormat("[ACR] AIRLIFTTEST damage %1 at %2 (stage %3)", damage, heli.m_Pos, lift.m_iStage);
+    s_fMaxDamage = Math.Max(s_fMaxDamage, damage);
+   }
    if (!heli.m_Vehicle || s_Helis.Contains(heli.m_Vehicle)) continue;
    s_Helis.Insert(heli.m_Vehicle);
    SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(heli.m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
@@ -122,6 +154,7 @@ class ACR_TestAirLift
   foreach (IEntity heli : s_Helis) if (heli) left++;
   foreach (IEntity crewman : s_Crew) if (crewman) left++;
   ACR_TestRegress.Check("airlift: helicopters and crews gone afterwards", left == 0 && s_Helis.Count() > 0, string.Format("%1 of %2 helicopters/crew left", left, s_Helis.Count() + s_Crew.Count()));
+  ACR_TestRegress.Check("airlift: rotors and drivetrain undamaged throughout", s_fMaxDamage < 0.01, s_fMaxDamage.ToString());
   ACR_TestRegress.Complete("airlift", CHECKS);
  }
 }

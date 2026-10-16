@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 83; // 82 + transport tactical dismount (1)
+ static const int EXPECTED = 85; // 83 + helicopter acceleration and climb-time guards (2)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -709,6 +709,8 @@ class ACR_TestRegress
    BoardingCheck(manager);
    SupportCloneCheck(manager);
    AirLiftAICheck(manager);
+   Check("air lift accelerates gently and brakes at a bounded rate", Math.AbsFloat(ACR_HeliRun.ApproachSpeed(0, 55, 1) - 1.5) < 0.01 && Math.AbsFloat(ACR_HeliRun.ApproachSpeed(55, 0, 1) - 52) < 0.01 && ACR_HeliRun.ApproachSpeed(1, 0, 1) == 0);
+   Check("air lift slows for climb time and holds below a nearby ridge", ACR_HeliRun.ClimbSafeSpeed(200, 100) < 9 && ACR_HeliRun.ClimbSafeSpeed(20, 100) == 0 && ACR_HeliRun.ClimbSafeSpeed(1000, 0) == ACR_HeliRun.SPEED_RUN);
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }

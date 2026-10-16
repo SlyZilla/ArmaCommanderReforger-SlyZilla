@@ -110,6 +110,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrFactionTest", flag)) mode = MODE_FACTIONS;
   if (System.GetCLIParam("acrOrganTest", flag)) mode = MODE_ORGAN;
   if (System.GetCLIParam("acrFlankTest", flag)) mode = MODE_FLANK;
+  if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrPadsTest", flag)) mode = MODE_PADS;

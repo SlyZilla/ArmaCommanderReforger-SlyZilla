@@ -46,6 +46,8 @@ crewold|-acrCrewOldTest 1|120
 bbbaim|-acrBbbAimTest 1|3000
 bbbsuppress|-acrBbbSuppressTest 1|1200
 battery|-acrBatteryTest 1|120
+liftclearance|-acrLiftClearanceTest 1|150|Worlds/ACR_Kolguyev.ent
+liftcontact|-acrAirLiftContactTest 1|240
 airlift|-acrAirLiftTest 1|460
 airlifttwo|-acrAirLiftTwoTest 1|460
 pads|-acrPadsTest 1|130|Worlds/ACR_Arland.ent

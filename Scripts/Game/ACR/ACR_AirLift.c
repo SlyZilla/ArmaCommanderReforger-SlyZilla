@@ -11,11 +11,12 @@
 // still aboard after UNLOAD_WAIT_MS is put out) -> LEAVING. While a squad has an air lift, map
 // orders to it are refused and the AI commander leaves it alone (ACR_AirLift.Busy).
 
-// Open, level ground for a helicopter: nothing (trees, buildings, walls, people) within 12 m.
+// Open, level ground for a helicopter: a swept obstacle volume covering the rotor disk
+// and tail, plus a survey of the ground beneath the whole footprint.
 class ACR_LandingZone
 {
- static const float CLEAR_RADIUS = 12;
- static const float MAX_RISE = 2.5;   // m between the highest and lowest ground in the circle
+ static const float CLEAR_RADIUS = 18;
+ static const float MAX_RISE = 2.5;   // m between the highest and lowest ground in the footprint
  static const float SPACING = 40;     // m between two helicopters' spots
  static const float RING_STEP = 20;
 
@@ -45,17 +46,17 @@ class ACR_LandingZone
   return spots.Count();
  }
 
- // Downward traces on a 4 m grid within 12 m (like the helipad survey): anything standing
- // 0.4 m or more over the ground blocks it; so do water and a slope.
+ // Sample the ground separately from obstacles. A continuous box sweep catches narrow
+ // trunks, poles and overhanging branches that the old spaced pencil rays missed.
  static bool Clear(vector spot)
  {
   if (!ACR_Manager.OnMap(spot)) return false;
   BaseWorld world = GetGame().GetWorld();
   float low = 100000;
   float high = -100000;
-  for (float dx = -CLEAR_RADIUS; dx <= CLEAR_RADIUS; dx += 4)
+  for (float dx = -CLEAR_RADIUS; dx <= CLEAR_RADIUS; dx += 2)
   {
-   for (float dz = -CLEAR_RADIUS; dz <= CLEAR_RADIUS; dz += 4)
+   for (float dz = -CLEAR_RADIUS; dz <= CLEAR_RADIUS; dz += 2)
    {
     if (dx * dx + dz * dz > CLEAR_RADIUS * CLEAR_RADIUS) continue;
     float x = spot[0] + dx;
@@ -65,15 +66,16 @@ class ACR_LandingZone
     low = Math.Min(low, ground);
     high = Math.Max(high, ground);
     if (high - low > MAX_RISE) return false;
-    TraceParam trace = new TraceParam();
-    trace.Start = Vector(x, ground + 40, z);
-    trace.End = Vector(x, ground - 0.5, z);
-    trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
-    float fraction = world.TraceMove(trace, null);
-    if (fraction < 1 && 40 - 40.5 * fraction >= 0.4) return false;
    }
   }
-  return true;
+  float floorY = world.GetSurfaceY(spot[0], spot[2]);
+  TraceBox clearance = new TraceBox();
+  clearance.Mins = Vector(-CLEAR_RADIUS, 0.4, -CLEAR_RADIUS);
+  clearance.Maxs = Vector(CLEAR_RADIUS, 12, CLEAR_RADIUS);
+  clearance.Start = Vector(spot[0], floorY + 40, spot[2]);
+  clearance.End = Vector(spot[0], floorY, spot[2]);
+  clearance.Flags = TraceFlags.ENTS;
+  return world.TraceMove(clearance, null) >= 1;
  }
 }
 
@@ -151,14 +153,22 @@ class ACR_LiftHeli : ACR_HeliRun
   float want = Math.Atan2(dir[0], dir[2]) * Math.RAD2DEG;
   m_fYaw = Wrap(m_fYaw + Math.Clamp(Wrap(want - m_fYaw), -24 * dt, 24 * dt));
   m_fBodyYaw = m_fYaw;
-  m_fSpeed += (SPEED_RUN - m_fSpeed) * Math.Min(1, dt * 0.4);
-  vector previous = m_Pos;
   vector forward = Heading(m_fYaw);
+  float wantedY = FlightClearance(forward, ALT_TRANSIT, now);
+  m_fSpeed = ApproachSpeed(m_fSpeed, Math.Min(SPEED_RUN, m_fTerrainSpeed), dt);
+  vector previous = m_Pos;
   m_Pos = m_Pos + forward * (m_fSpeed * dt);
-  float wantedY = SafeAltitude(m_Pos, forward, ALT_TRANSIT);
   float rate = Math.Clamp((wantedY - m_Pos[1]) * 0.6, -6, 8);
   m_fClimb += (rate - m_fClimb) * Math.Min(1, dt * 1.5);
   m_Pos[1] = previous[1] + m_fClimb * dt;
+  float ground = GetGame().GetWorld().GetSurfaceY(m_Pos[0], m_Pos[2]);
+  if (m_Pos[1] < ground + 20)
+  {
+   m_Pos[0] = previous[0];
+   m_Pos[2] = previous[2];
+   m_fSpeed = 0;
+  }
+  GuardFlightMove(previous);
   vector velocity = vector.Zero;
   if (dt > 0) velocity = (m_Pos - previous) * (1 / dt);
   Place(velocity, -Math.Clamp(m_fSpeed * 0.1, 0, 6), 0);
@@ -319,7 +329,10 @@ class ACR_AirLift : ACR_SupportRun
   squad.MoveTo(meet);
   squad.SetOrder("Air lift: to the landing zone", ACR_EOrderState.MOVE);
   ACR_LiftHeli first = lift.m_Helis[0];
-  int eta = (int)(vector.DistanceXZ(first.m_Start, pickups[0]) / ACR_HeliRun.SPEED_RUN + ACR_HeliRun.SPOOL_MAX_SECONDS * 0.9);
+  // Include spool-up, gentle acceleration, braking and the final vertical descent.
+  float seconds = vector.DistanceXZ(first.m_Start, pickups[0]) / ACR_HeliRun.SPEED_RUN + ACR_HeliRun.SPOOL_MAX_SECONDS;
+  seconds += ACR_HeliRun.SPEED_RUN / (ACR_HeliRun.FLIGHT_ACCEL * 2) + ACR_HeliRun.SPEED_RUN / (ACR_HeliRun.FLIGHT_BRAKE * 2);
+  int eta = (int)(seconds + ACR_HeliRun.ALT_TRANSIT / ACR_HeliRun.LIFT_RATE);
   string message = string.Format("%1 for %2: %3 helicopter(s) landing at %4, ETA about %5 s.", entry.m_sName, name, lift.m_Helis.Count(), ACR_Manager.Grid(pickups[0]), (int)(Math.Round(eta / 15.0) * 15));
   PrintFormat("[ACR] AIRLIFT %1 %2: %3 helicopter(s), %4 soldiers, pickup %5, drop %6 (%7 m), cost %8%9", factionKey, name, lift.m_Helis.Count(), Alive(squad), pickups[0], drops[0], (int)vector.DistanceXZ(pickups[0], drops[0]), cost, AIText(byAI));
   if (!byAI) supports.m_Manager.NotifyFaction(factionKey, message);

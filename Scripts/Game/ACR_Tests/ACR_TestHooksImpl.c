@@ -5,6 +5,7 @@ modded class ACR_TestHooks
 
  override void RangeStarted(ACR_TestRange range)
  {
+  if (System.IsCLIParam("acrAirLiftTest") || System.IsCLIParam("acrAirLiftTwoTest") || System.IsCLIParam("acrAirLiftContactTest")) ACR_Options.Set("acrAI", "none");
   m_Harness = ACR_TestHarness.CreateFromCommandLine(range);
   if (m_Harness) GetGame().GetCallqueue().CallLater(m_Harness.Tick, 1000, true);
   // A scenario test that landed on the range (wrong world): end at once.
@@ -36,6 +37,7 @@ modded class ACR_TestHooks
   // -acrSkirmishTest / -acrSkirmishSouthTest: skirmish layouts on Everon (ACR_TestSkirmish).
   if (System.IsCLIParam("acrSkirmishTest") || System.IsCLIParam("acrSkirmishSouthTest")) ACR_TestSkirmish.Run(seconds);
   // -acrGenerateTest / -acrGenerateEveronTest: the scenario generator (ACR_TestGenerate).
+  if (System.IsCLIParam("acrLiftClearanceTest")) ACR_TestLiftClearance.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
  }
