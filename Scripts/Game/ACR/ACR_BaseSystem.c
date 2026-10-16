@@ -395,6 +395,7 @@ class ACR_BaseSystem : Managed
   if (base.m_bIncome) text += string.Format(" | +%1 RP", base.m_iValue);
   else text += " | no income";
   if (base.m_bContested) text += " | CONTESTED";
+  if (base.m_bHidden) text += " | Hidden";
   if (base.m_sOwner.IsEmpty() && !base.m_sCapturer.IsEmpty())
    text += string.Format(" | %1 capturing %2/100", base.m_sCapturer, Math.Round(base.m_fScore));
   else if (!base.m_sOwner.IsEmpty() && base.m_fScore < 100)

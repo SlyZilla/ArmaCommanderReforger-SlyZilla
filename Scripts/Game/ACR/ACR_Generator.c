@@ -11,6 +11,7 @@
 // sites within 1.8 km of one town, HQs inside it at opposite ends).
 class ACR_GenSite
 {
+ string m_sId; // original surveyed name; edits survive display-name changes
  string m_sName;
  string m_sKind;     // city town village settlement military airport industry landmark
  vector m_vPos;
@@ -24,6 +25,7 @@ class ACR_GenSite
  ACR_GenSite Copy()
  {
   ACR_GenSite copy = new ACR_GenSite();
+  copy.m_sId = m_sId;
   copy.m_sName = m_sName;
   copy.m_sKind = m_sKind;
   copy.m_vPos = m_vPos;
@@ -57,10 +59,12 @@ class ACR_Generator
  protected static ref array<IEntity> s_Found = {};
 
  protected static ref array<ref ACR_GenSite> s_Surveyed;  // the map's sites, read once
+ protected static ref array<ref ACR_GenSite> s_NamePlaces = {}; // named hills need not become CPs
 
- // Layout editor (aca-f07, step 2): bases the host moved on the setup map, by name. They belong
+ // Layout editor (aca-f07): bases the host moved on the setup map, by stable site ID. They belong
  // to one seed and size; another seed or size ignores them.
  static ref map<string, vector> s_Moves = new map<string, vector>();
+ protected static ref array<string> s_Deleted = {};
  protected static int s_iMovesSeed;
  protected static int s_iMovesSize;
  static int s_iMovesVersion;
@@ -71,7 +75,9 @@ class ACR_Generator
   s_iSeed = 0;
   s_Sites.Clear();
   s_Surveyed = null;
+  s_NamePlaces.Clear();
   s_Moves.Clear();
+  s_Deleted.Clear();
   s_iMovesVersion = 0;
  }
 
@@ -143,6 +149,7 @@ class ACR_Generator
  static void Survey(notnull array<ref ACR_GenSite> sites)
  {
   sites.Clear();
+  s_NamePlaces.Clear();
   BaseWorld world = GetGame().GetWorld();
   vector mins, maxs;
   world.GetBoundBox(mins, maxs);
@@ -169,6 +176,13 @@ class ACR_Generator
    }
    string shown = raw;
    if (raw.StartsWith("#")) shown = WidgetManager.Translate(raw);
+   if (type == EMapDescriptorType.MDT_NAME_HILL && shown != "" && !shown.StartsWith("#"))
+   {
+    ACR_GenSite hill = new ACR_GenSite();
+    hill.m_vPos = site.m_vPos;
+    hill.m_sName = shown;
+    s_NamePlaces.Insert(hill);
+   }
    if (!Classify(site, type, shown)) continue;
    pending.Insert(site);
   }
@@ -185,6 +199,7 @@ class ACR_Generator
    pending.RemoveOrdered(best);
   }
   NameIndustry(sites);
+  foreach (ACR_GenSite identified : sites) identified.m_sId = identified.m_sName;
  }
 
  // Kind, radius, value and (for settlements and landmarks) the name. False = not a base.
@@ -373,6 +388,9 @@ class ACR_Generator
   hqs.Insert(west);
   hqs.Insert(east);
   foreach (ACR_GenSite p : pool) layout.Insert(p);
+  if (seed == s_iMovesSeed && size == s_iMovesSize)
+   for (int removed = layout.Count() - 1; removed >= 0; removed--)
+    if (s_Deleted.Contains(layout[removed].m_sId) && !hqs.Contains(layout[removed])) layout.RemoveOrdered(removed);
   ApplyMoves(seed, size, layout);
   // HQs get a 70 m circle where there is room for it.
   foreach (ACR_GenSite hq : hqs)
@@ -398,7 +416,7 @@ class ACR_Generator
   foreach (ACR_GenSite site : layout)
   {
    vector to;
-   if (!s_Moves.Find(site.m_sName, to)) continue;
+   if (!s_Moves.Find(site.m_sId, to)) continue;
    site.m_vPos = to;
    float allowed = site.m_fFullRadius;
    if (allowed <= 0) allowed = site.m_fRadius;
@@ -411,23 +429,84 @@ class ACR_Generator
    if (allowed < 35) allowed = 35; // checked when moved; a later move can only take the room it found
    site.m_fRadius = allowed;
   }
+  foreach (ACR_GenSite renamed : layout)
+  {
+   if (!s_Moves.Contains(renamed.m_sId)) continue;
+   string label = NameAt(renamed.m_vPos, renamed.m_sKind);
+   string unique = label;
+   int number = 2;
+   bool duplicate = true;
+   while (duplicate)
+   {
+    duplicate = false;
+    foreach (ACR_GenSite named : layout) if (named != renamed && named.m_sName == unique) duplicate = true;
+    if (duplicate) { unique = label + " " + number.ToString(); number++; }
+   }
+   renamed.m_sName = unique;
+  }
  }
 
- // Moves that apply to the current seed and size.
+ // Include landmarks, even those not selected for this layout (e.g. Pobedy Peak).
+ static string NameAt(vector at, string kind)
+ {
+  string name = "Control point";
+  float distance = float.MAX;
+  foreach (ACR_GenSite place : s_Surveyed)
+  {
+   float away = vector.DistanceXZ(at, place.m_vPos);
+   if (away < distance) { distance = away; name = place.m_sName; }
+  }
+  foreach (ACR_GenSite hill : s_NamePlaces)
+  {
+   float hillDistance = vector.DistanceXZ(at, hill.m_vPos);
+   if (hillDistance < distance) { distance = hillDistance; name = hill.m_sName; }
+  }
+  if (kind == "military" && !name.Contains("Base")) name += " Base";
+  else if (kind == "airport" && !name.Contains("Airfield")) name += " Airfield";
+  else if (kind == "industry") name += " Industry";
+  return name;
+ }
+
+ // Edited sites (moves and deletions) for the current seed and size.
  static int MoveCount()
  {
-  if (s_Moves.IsEmpty()) return 0;
   string text;
   int seed = 0;
   if (ACR_Options.Get("acrSeed", text)) seed = text.ToInt();
   if (seed != s_iMovesSeed || ACR_Skirmish.SizeOption() != s_iMovesSize) return 0;
-  return s_Moves.Count();
+  return s_Moves.Count() + s_Deleted.Count();
  }
 
  static void ClearMoves()
  {
   s_Moves.Clear();
+  s_Deleted.Clear();
   s_iMovesVersion++;
+ }
+
+ static bool Delete(string name, out string reason)
+ {
+  array<ref ACR_GenSite> layout = {};
+  array<ACR_GenSite> hqs = {};
+  int seed = Seed();
+  int size = ACR_Skirmish.SizeOption();
+  if (!Plan(seed, size, layout, hqs)) { reason = "There is no generated layout to edit"; return false; }
+  foreach (ACR_GenSite site : layout)
+  {
+   if (site.m_sName != name) continue;
+   if (hqs.Contains(site)) { reason = "HQs cannot be deleted; move them instead"; return false; }
+   if (layout.Count() <= 3) { reason = "Keep at least one capture point and the two HQs"; return false; }
+   if (seed != s_iMovesSeed || size != s_iMovesSize) ClearMoves();
+   s_iMovesSeed = seed;
+   s_iMovesSize = size;
+   s_Deleted.Insert(site.m_sId);
+   s_Moves.Remove(site.m_sId);
+   s_iMovesVersion++;
+   reason = name + " deleted. Undo layout edits restores it";
+   return true;
+  }
+  reason = "No base called " + name;
+  return false;
  }
 
  // The host moved a base on the setup map (server). Refused with a reason when the spot is off
@@ -439,6 +518,7 @@ class ACR_Generator
   if (seed != s_iMovesSeed || size != s_iMovesSize)
   {
    s_Moves.Clear();
+   s_Deleted.Clear();
    s_iMovesSeed = seed;
    s_iMovesSize = size;
   }
@@ -466,7 +546,7 @@ class ACR_Generator
    if (vector.DistanceXZ(otherHQ.m_vPos, pos) < minimum) { reason = string.Format("The two HQs must stay at least %1 m apart", (int)minimum); return false; }
   }
   float moved = vector.DistanceXZ(site.m_vPos, pos);
-  s_Moves.Set(name, pos);
+  s_Moves.Set(site.m_sId, pos);
   s_iMovesVersion++;
   reason = string.Format("%1 moved %2 m", name, (int)moved);
   PrintFormat("[ACR] GEN MOVE %1 -> %2 %3 (seed %4)", name, (int)x, (int)z, seed);

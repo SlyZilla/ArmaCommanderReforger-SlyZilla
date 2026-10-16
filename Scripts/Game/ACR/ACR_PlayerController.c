@@ -3,6 +3,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
 {
  RplId m_UnitId;
  string m_Label;
+ string m_BaseCaption; // display only; requests retain the exact label
  int m_State;          // 0 AI, 1 player-controlled, 2 dead
  bool m_Original;      // the player's command unit
  bool m_bCommandUnit;  // persistent marker for a fellow commander, not a possession target
@@ -35,10 +36,12 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  void RefreshStyle()
  {
   if (!m_MarkerWidgetComp) return;
-  string key = string.Format("%1|%2|%3|%4|%5", m_Label, m_State, m_Original, m_Selected, m_iSymbolKey);
+  string shown = m_Label;
+  if (m_BaseIndex >= 0) shown = m_BaseCaption;
+  string key = string.Format("%1|%2|%3|%4|%5", shown, m_State, m_Original, m_Selected, m_iSymbolKey);
   if (key == m_sStyled) return;
   m_sStyled = key;
-  m_MarkerWidgetComp.SetText(m_Label, true);
+  m_MarkerWidgetComp.SetText(shown, true);
   m_MarkerWidgetComp.SetTextVisible(true);
   Color color = new Color(0.1, 0.65, 1, 1);
   if (m_State == 1) color = new Color(1, 0.75, 0.1, 1);
@@ -596,11 +599,25 @@ modded class SCR_PlayerController
   {
    m_ACR_SetupPicked = m_ACR_SelectedBase;
    if (m_ACR_SelectedBase != "" && ACR_SetupClient.s_sRows.Contains("Show and edit"))
-    SCR_HintManagerComponent.ShowCustomHint(string.Format("Click where %1 should go.", m_ACR_SelectedBase), "AC: Actual", 6, true);
+    SCR_HintManagerComponent.ShowCustomHint(string.Format("Selected: %1. Click its destination or Delete selected CP. HQs can only be moved.", m_ACR_SelectedBase), "AC: Actual", 6, true);
   }
   ACR_UpdateBaseMarkers(manager);
  }
  protected string m_ACR_SetupPicked;
+
+ void ACR_DeleteSetupSelection()
+ {
+  ACR_MarkUiClick();
+  if (!ACR_SetupClient.s_bActive || !ACR_SetupClient.s_bAllowed) return;
+  if (m_ACR_SelectedBase == "")
+  {
+   SCR_HintManagerComponent.ShowCustomHint("Click a capture point first, then Delete selected CP.", "AC: Actual", 5, true);
+   return;
+  }
+  ACR_RequestSetup("delete:" + m_ACR_SelectedBase);
+  m_ACR_SelectedBase = "";
+  m_ACR_SetupPicked = "";
+ }
 
  // Layout editor (aca-f07 step 2): click a base to pick it, then click where it should go.
  protected void ACR_OnSetupMapClick(vector screenPos)
@@ -1717,6 +1734,19 @@ modded class SCR_PlayerController
  }
 
 
+ // Text symbols remain readable at every zoom; ownership still supplies the colour.
+ static string ACR_BaseCaption(string label, string detail, bool preview)
+ {
+  string symbol = "[CP] ";
+  if (detail.Contains("3 RP")) symbol = "[CP III] ";
+  else if (detail.Contains("2 RP")) symbol = "[CP II] ";
+  else if (detail.Contains("1 RP")) symbol = "[CP I] ";
+  if (detail.StartsWith("HQ (")) symbol = "[HQ] ";
+  if (detail.Contains("Hidden")) symbol = "[HIDDEN] " + symbol;
+  if (preview) return symbol + label + " - " + detail;
+  return symbol + label;
+ }
+
  protected void ACR_UpdateBaseMarkers(SCR_MapMarkerManagerComponent manager)
  {
   if (m_ACR_BaseMarkers.Count() != m_ACR_Data.m_BaseNames.Count())
@@ -1740,6 +1770,9 @@ modded class SCR_PlayerController
    marker.m_BaseIndex = i;
    marker.m_Label = m_ACR_Data.m_BaseNames[i];
    marker.m_Selected = m_ACR_SelectedBase == marker.m_Label;
+   string detail = m_ACR_Data.m_BaseDetails[i];
+   marker.m_BaseCaption = ACR_BaseCaption(marker.m_Label, detail, ACR_SetupClient.s_bActive);
+   if (marker.m_Selected) marker.m_BaseCaption = "> " + marker.m_BaseCaption + " <";
    vector pos = m_ACR_Data.m_BasePositions[i];
    marker.SetWorldPos(pos[0], pos[2]);
    marker.RefreshStyle();

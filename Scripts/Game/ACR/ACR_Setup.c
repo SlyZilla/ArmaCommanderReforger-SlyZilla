@@ -83,8 +83,8 @@ class ACR_Setup
    {
     string owner = "";
     string detail = site.Describe();
-    if (hqs.Count() == 2 && site == hqs[0]) { owner = west; detail = "HQ (" + ACR_FactionSelection.DisplayName(west) + ")"; }
-    if (hqs.Count() == 2 && site == hqs[1]) { owner = east; detail = "HQ (" + ACR_FactionSelection.DisplayName(east) + ")"; }
+    if (hqs.Count() == 2 && site == hqs[0]) { owner = west; detail = "HQ (" + ACR_FactionSelection.DisplayName(west) + "), 2 RP"; }
+    if (hqs.Count() == 2 && site == hqs[1]) { owner = east; detail = "HQ (" + ACR_FactionSelection.DisplayName(east) + "), 2 RP"; }
     AddPreview(site.m_vPos, site.m_sName, owner, detail, site.m_fRadius);
    }
   }
@@ -95,7 +95,10 @@ class ACR_Setup
     string baseOwner = base.m_sOwner;
     if (baseOwner == "US") baseOwner = west;
     else if (baseOwner == "USSR") baseOwner = east;
-    AddPreview(base.GetOrigin(), base.m_sName, baseOwner, "", base.m_fRadius);
+    string baseDetail = string.Format("Control point, %1 RP", base.m_iValue);
+    if (!base.m_bIncome) baseDetail = "Control point, no income";
+    if (base.m_bHidden) baseDetail += " | Hidden";
+    AddPreview(base.GetOrigin(), base.m_sName, baseOwner, baseDetail, base.m_fRadius);
    }
   }
   PrintFormat("[ACR] SETUP preview %1: %2 bases", signature, s_PreviewNames.Count());
@@ -214,7 +217,7 @@ class ACR_Setup
    else rows += string.Format("map\tShow the layout on the map (%1 bases)\n", s_PreviewNames.Count());
   }
   int moves = ACR_Generator.MoveCount();
-  if (generated && moves > 0) rows += string.Format("undo\tUndo base moves (%1)\n", moves);
+  if (generated && moves > 0) rows += string.Format("undo\tUndo layout edits (%1)\n", moves);
   return rows;
  }
 
@@ -425,7 +428,15 @@ class ACR_Setup
   {
    ACR_Generator.ClearMoves();
    Broadcast();
-   return "Base moves undone";
+   return "Layout edits undone";
+  }
+  if (key.StartsWith("delete:"))
+  {
+   if (!Current("layout").StartsWith("gen:")) return "Only generated battlefields can be edited";
+   string reason;
+   ACR_Generator.Delete(key.Substring(7, key.Length() - 7), reason);
+   Broadcast();
+   return reason;
   }
   return Cycle(key);
  }
@@ -587,7 +598,7 @@ class ACR_SetupClient
   if (s_Dialog) { s_Dialog.Close(); s_Dialog = null; }
   GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   string hint = "The planned layout. Press Escape or Return to match setup to go back.";
-  if (s_sRows.Contains("Show and edit")) hint = "To move a base, click it, then click where it should go. Press Escape or Return to match setup to go back.";
+  if (s_sRows.Contains("Show and edit")) hint = "Click a CP, then its destination or Delete selected CP. HQs can only be moved. Undo layout edits restores moves and deletions. Markers show RP value and hidden sites. Press Escape or Return to match setup to go back.";
   SCR_HintManagerComponent.ShowCustomHint(hint, "AC: Actual", 12, true);
  }
 
@@ -612,6 +623,7 @@ class ACR_SetupClient
 modded class SCR_MapMenuUI
 {
  protected Widget m_ACR_SetupReturn;
+ protected Widget m_ACR_SetupDelete;
  protected bool m_ACR_SetupPreview;
 
  override void OnMenuOpen()
@@ -636,6 +648,27 @@ modded class SCR_MapMenuUI
    button.SetText("Return to match setup");
    button.m_OnClicked.Insert(ACR_OnSetupReturn);
   }
+  if (!ACR_SetupClient.s_bAllowed || !ACR_SetupClient.s_sRows.Contains("Show and edit")) return;
+  m_ACR_SetupDelete = GetGame().GetWorkspace().CreateWidgets("{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout", GetRootWidget());
+  if (!m_ACR_SetupDelete) return;
+  m_ACR_SetupDelete.SetName("ACR_SetupDelete");
+  FrameSlot.SetAnchorMin(m_ACR_SetupDelete, 1, 0);
+  FrameSlot.SetAnchorMax(m_ACR_SetupDelete, 1, 0);
+  FrameSlot.SetAlignment(m_ACR_SetupDelete, 1, 0);
+  FrameSlot.SetPos(m_ACR_SetupDelete, -24, 152);
+  FrameSlot.SetSize(m_ACR_SetupDelete, 340, 48);
+  SCR_ButtonTextComponent deleteButton = SCR_ButtonTextComponent.FindButtonTextComponent(m_ACR_SetupDelete);
+  if (deleteButton)
+  {
+   deleteButton.SetText("Delete selected CP");
+   deleteButton.m_OnClicked.Insert(ACR_OnSetupDelete);
+  }
+ }
+
+ protected void ACR_OnSetupDelete(SCR_ButtonBaseComponent button)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (pc) pc.ACR_DeleteSetupSelection();
  }
 
  void ACR_ReturnToSetup()
@@ -660,6 +693,8 @@ modded class SCR_MapMenuUI
   }
   if (m_ACR_SetupReturn) m_ACR_SetupReturn.RemoveFromHierarchy();
   m_ACR_SetupReturn = null;
+  if (m_ACR_SetupDelete) m_ACR_SetupDelete.RemoveFromHierarchy();
+  m_ACR_SetupDelete = null;
   super.OnMenuClose();
  }
 }

@@ -123,6 +123,8 @@ class ACR_TestSetup
  // returning via the visible button and the keyboard handler brings the dialog back; reopening
  // must restore the controls, then Start builds the layout. Never force-close menus in this test.
  static bool MapWanted() { return System.IsCLIParam("acrSetupMapTest"); }
+ protected static string s_sMapDeleted;
+ protected static int s_iMapBeforeDelete;
  static void RunMap(int second)
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
@@ -141,6 +143,34 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup map: the map opens without a body", mapEntity && mapEntity.IsOpen() && pc && !pc.GetControlledEntity(), "");
    ACR_TestRegress.Check("setup map: one marker per planned base", planned > 0 && markers == planned, string.Format("%1 markers, %2 planned", markers, planned));
    ACR_TestRegress.Check("setup map: the dialog stays hidden while the map is open", SCR_ConfigurableDialogUi.GetCurrentDialog() == null, "");
+  }
+  if (second == 20)
+  {
+   array<ref ACR_GenSite> layout = {};
+   array<ACR_GenSite> hqs = {};
+   ACR_Generator.Plan(ACR_Generator.Seed(), ACR_Skirmish.SizeOption(), layout, hqs);
+   foreach (ACR_GenSite site : layout)
+   {
+    if (hqs.Contains(site)) continue;
+    s_sMapDeleted = site.m_sName;
+    break;
+   }
+   s_iMapBeforeDelete = ACR_Setup.s_PreviewNames.Count();
+   if (pc) pc.ACR_ClickBase(s_sMapDeleted);
+  }
+  if (second == 22)
+  {
+   SCR_MapMenuUI editor = SCR_MapMenuUI.Cast(GetGame().GetMenuManager().GetTopMenu());
+   Widget deleteWidget;
+   if (editor) deleteWidget = editor.GetRootWidget().FindAnyWidget("ACR_SetupDelete");
+   SCR_ButtonTextComponent deleteButton;
+   if (deleteWidget) deleteButton = SCR_ButtonTextComponent.FindButtonTextComponent(deleteWidget);
+   ACR_TestRegress.Check("setup map: visible delete control", deleteButton && deleteWidget.IsVisible(), "Delete selected CP");
+   if (deleteButton) deleteButton.m_OnClicked.Invoke(deleteButton);
+  }
+  if (second == 26)
+  {
+   ACR_TestRegress.Check("setup map: delete button removes selected CP and its marker", !ACR_Setup.s_PreviewNames.Contains(s_sMapDeleted) && ACR_Setup.s_PreviewNames.Count() == s_iMapBeforeDelete - 1 && pc && pc.ACR_BaseMarkerCount() == s_iMapBeforeDelete - 1, s_sMapDeleted);
   }
   if (second == 28)
   {
@@ -164,6 +194,7 @@ class ACR_TestSetup
   {
    SCR_MapMenuUI reopened = SCR_MapMenuUI.Cast(GetGame().GetMenuManager().GetTopMenu());
    ACR_TestRegress.Check("setup map: preview can reopen with its return controls", reopened && reopened.GetRootWidget().FindAnyWidget("ACR_SetupReturn") != null, "");
+   ACR_TestRegress.Check("setup map: delete control restored on reopening", reopened && reopened.GetRootWidget().FindAnyWidget("ACR_SetupDelete") != null, "");
    // Same callback registered for MenuBack/GadgetMap; hardware key delivery needs a live check.
    if (reopened) reopened.ACR_ReturnToSetup();
   }
@@ -177,7 +208,10 @@ class ACR_TestSetup
   if (second == 60)
   {
    ACR_TestRegress.Check("setup map: Start builds the previewed layout and the host spawns", ACR_Generator.Built() && ACR_Base.s_All.Count() == ACR_Setup.s_PreviewNames.Count() && pc && pc.GetControlledEntity() != null, string.Format("%1 bases", ACR_Base.s_All.Count()));
-   ACR_TestRegress.Complete("setupmap", 9);
+   bool absent = true;
+   foreach (ACR_Base built : ACR_Base.s_All) if (built.m_sName == s_sMapDeleted) absent = false;
+   ACR_TestRegress.Check("setup map: deleted CP is absent from the started match", absent, s_sMapDeleted);
+   ACR_TestRegress.Complete("setupmap", 13);
   }
  }
 
@@ -185,7 +219,7 @@ class ACR_TestSetup
  // US is given every neutral base north of the split line (z > 6650); the reserve must sit at a
  // secure non-HQ base, not the Airbase HQ. Logs the five best candidates.
  // -acrSetupGenTest 1 (server, Kolguyev, ~40 s): the layout preview during setup (aca-f07).
- static const int GEN_CHECKS = 10;
+ static const int GEN_CHECKS = 23;
  protected static ref array<string> s_PreviewNames = {};
  static bool GenWanted() { return System.IsCLIParam("acrSetupGenTest"); }
  static void RunGen(int second)
@@ -208,6 +242,7 @@ class ACR_TestSetup
    string seedAfter;
    ACR_Options.Get("acrSeed", seedAfter);
    ACR_TestRegress.Check("setup preview: a new seed and the half size re-plan it", seedAfter != seedBefore && half > 0 && half < first, string.Format("seed %1 -> %2, %3 -> %4 bases", seedBefore, seedAfter, first, half));
+   EditorChecks();
    Moves();
    s_PreviewNames.Clear();
    s_PreviewNames.Copy(ACR_Setup.s_PreviewNames);
@@ -228,11 +263,14 @@ class ACR_TestSetup
    float off = -1;
    if (moved) off = vector.DistanceXZ(moved.GetOrigin(), s_vMovedTo);
    ACR_TestRegress.Check("layout editor: Start builds the moved base where it was put", moved && off >= 0 && off < 2, string.Format("%1 %2 m from the chosen spot", s_sMoved, (int)off));
+   ACR_TestRegress.Check("editor: deleted CP stays absent after Start", !built.Contains(s_sDeleted), s_sDeleted);
+   ACR_TestRegress.Check("editor: deletion requests after Start are refused", ACR_Setup.Handle(999, "delete:" + s_sMoved).Contains("already started"), "setup closed");
    ACR_TestRegress.Complete("setupgen", GEN_CHECKS);
   }
  }
 
  protected static string s_sMoved;
+ protected static string s_sDeleted;
  protected static vector s_vMovedTo;
 
  // Layout editor (aca-f07 step 2): moves refused and accepted, undo, kept for Start.
@@ -279,10 +317,10 @@ class ACR_TestSetup
    }
   }
   ACR_Setup.UpdatePreview();
-  int index = ACR_Setup.s_PreviewNames.Find(site.m_sName);
+  int index = PreviewAt(to);
   float shown = -1;
   if (index >= 0) shown = vector.DistanceXZ(ACR_Setup.s_PreviewPos[index], to);
-  ACR_TestRegress.Check("layout editor: a valid move is taken and shown in the preview", accepted && shown >= 0 && shown < 2 && ACR_Setup.Rows().Contains("undo\tUndo base moves (1)"), string.Format("%1; preview %2 m off", reason, (int)shown));
+  ACR_TestRegress.Check("layout editor: a valid move is taken and shown in the preview", accepted && shown >= 0 && shown < 2 && ACR_Setup.Rows().Contains("undo\tUndo layout edits (1)"), string.Format("%1; preview %2 m off", reason, (int)shown));
   ACR_Generator.ClearMoves();
   ACR_Setup.UpdatePreview();
   index = ACR_Setup.s_PreviewNames.Find(site.m_sName);
@@ -292,8 +330,79 @@ class ACR_TestSetup
   // Again, for Start.
   ACR_Generator.Move(site.m_sName, to[0], to[2], reason);
   ACR_Setup.UpdatePreview();
-  s_sMoved = site.m_sName;
+  int movedIndex = PreviewAt(to);
+  if (movedIndex >= 0) s_sMoved = ACR_Setup.s_PreviewNames[movedIndex];
   s_vMovedTo = to;
+  ACR_Generator.Plan(seed, size, layout, hqs);
+  foreach (ACR_GenSite remove : layout)
+  {
+   if (hqs.Contains(remove) || remove.m_sName == s_sMoved) continue;
+   s_sDeleted = remove.m_sName;
+   break;
+  }
+  bool deleted = ACR_Generator.Delete(s_sDeleted, reason);
+  ACR_Setup.UpdatePreview();
+  ACR_TestRegress.Check("editor: final deletion is reflected before Start", deleted && !ACR_Setup.s_PreviewNames.Contains(s_sDeleted), reason);
+ }
+
+ // Locate by position because a move may change its display name.
+ protected static int PreviewAt(vector at)
+ {
+  foreach (int i, vector pos : ACR_Setup.s_PreviewPos)
+   if (vector.DistanceXZ(at, pos) < 2) return i;
+  return -1;
+ }
+
+ protected static void EditorChecks()
+ {
+  int seed = ACR_Generator.Seed();
+  int size = ACR_Skirmish.SizeOption();
+  array<ref ACR_GenSite> layout = {};
+  array<ACR_GenSite> hqs = {};
+  ACR_Generator.Plan(seed, size, layout, hqs);
+  ACR_GenSite source, target;
+  foreach (ACR_GenSite site : layout)
+  {
+   if (hqs.Contains(site)) continue;
+   if (!source) source = site;
+   else if (!target) target = site;
+  }
+  if (!source || !target) { ACR_TestRegress.Abort("setupgen", "no editable CP pair"); return; }
+  int count = layout.Count();
+  string peak = ACR_Generator.NameAt(Vector(5064, 0, 6340), "landmark");
+  ACR_TestRegress.Check("editor: Pobedy hill names moved CPs even though hills are not generated bases", peak == WidgetManager.Translate("#AR-MapLocation_Cain_PikPobedy"), peak);
+  string reason;
+  string stranger = ACR_Setup.Handle(999, "delete:" + target.m_sName);
+  bool hq = ACR_Generator.Delete(hqs[0].m_sName, reason);
+  ACR_TestRegress.Check("editor: unauthorized deletion and HQ deletion refused", stranger.Contains("Only the host") && !hq && reason.Contains("HQs") && ACR_Generator.MoveCount() == 0, reason);
+  bool deleted = ACR_Generator.Delete(target.m_sName, reason);
+  ACR_Setup.UpdatePreview();
+  ACR_TestRegress.Check("editor: deleting a CP removes only that preview marker", deleted && ACR_Setup.s_PreviewNames.Count() == count - 1 && !ACR_Setup.s_PreviewNames.Contains(target.m_sName), reason);
+  bool moved = ACR_Generator.Move(source.m_sName, target.m_vPos[0], target.m_vPos[2], reason);
+  ACR_Setup.UpdatePreview();
+  int index = PreviewAt(target.m_vPos);
+  string renamed;
+  if (index >= 0) renamed = ACR_Setup.s_PreviewNames[index];
+  string expected = ACR_Generator.NameAt(target.m_vPos, source.m_sKind);
+  ACR_TestRegress.Check("editor: moved CP takes destination place name", moved && renamed == expected && renamed != source.m_sName, renamed + " / " + expected);
+  bool again = ACR_Generator.Move(renamed, target.m_vPos[0], target.m_vPos[2], reason);
+  ACR_Setup.UpdatePreview();
+  ACR_TestRegress.Check("editor: renamed CP can be moved again without duplicate edits", again && PreviewAt(target.m_vPos) >= 0 && ACR_Generator.MoveCount() == 2, reason);
+  ACR_Options.Set("acrSeed", (seed + 1).ToString());
+  ACR_Setup.UpdatePreview();
+  ACR_TestRegress.Check("editor: edits do not leak to another seed", ACR_Generator.MoveCount() == 0, "another seed");
+  ACR_Options.Set("acrSeed", seed.ToString());
+  ACR_Setup.UpdatePreview();
+  ACR_TestRegress.Check("editor: returning to the seed restores its edits", ACR_Generator.MoveCount() == 2 && PreviewAt(target.m_vPos) >= 0, "original seed");
+  bool removedRenamed = ACR_Generator.Delete(renamed, reason);
+  ACR_Setup.UpdatePreview();
+  ACR_TestRegress.Check("editor: renamed CP can be deleted", removedRenamed && ACR_Setup.s_PreviewNames.Count() == count - 2 && !ACR_Setup.s_PreviewNames.Contains(renamed), reason);
+  ACR_Generator.ClearMoves();
+  ACR_Setup.UpdatePreview();
+  ACR_TestRegress.Check("editor: undo restores deleted and moved CPs", ACR_Generator.MoveCount() == 0 && ACR_Setup.s_PreviewNames.Count() == count && ACR_Setup.s_PreviewNames.Contains(source.m_sName) && ACR_Setup.s_PreviewNames.Contains(target.m_sName), "all edits cleared");
+  string high = SCR_PlayerController.ACR_BaseCaption("Depot", "Industry, 3 RP", true);
+  string hidden = SCR_PlayerController.ACR_BaseCaption("Peak [1]", "Unclaimed | +1 RP | Hidden", false);
+  ACR_TestRegress.Check("editor: captions distinguish value, hidden sites and HQs", high.Contains("[CP III]") && high.Contains("Industry, 3 RP") && hidden.Contains("[HIDDEN]") && SCR_PlayerController.ACR_BaseCaption("HQ", "HQ (US), 2 RP", true).Contains("[HQ]"), high + " / " + hidden);
  }
 
  static bool ReserveWanted() { return System.IsCLIParam("acrReserveTest"); }

@@ -411,8 +411,13 @@ version, but manual moves and later mod/terrain changes can alter it; the log li
 click a base, then click where it should go. A spot is refused (with the reason) when it is off the
 map, in water, too close to another base's capture circle, or would bring the two HQs within 1000 m
 (300 m in a flashpoint). These are placement checks, not a guarantee of road access or good combat
-terrain. Use "Return to match setup" to leave the map. "Undo base moves" puts all moves back;
-changing the seed or size drops them. Moves apply to this match only; there is no saved-layout
+terrain. Moving a CP updates its name to a nearby named place or hill, preserving its type/value.
+Select a CP and use "Delete selected CP" to remove it before Start. HQs cannot be deleted, and
+at least one ordinary CP must remain. Preview markers show HQ/CP value, type and hidden status;
+the selected label is bracketed. Hidden sites remain concealed during play until discovered.
+Use "Return to match setup" to leave the map. "Undo layout edits" restores moves and deletions.
+Edits belong to one seed and size: changing either hides them; returning restores them unless
+you have edited a different layout or used Undo. Edits apply to this match only; there is no saved-layout
 export.
 
 ### ACR_Skirmish
