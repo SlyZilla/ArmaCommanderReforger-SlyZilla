@@ -62,6 +62,7 @@ class ACR_TestLiftClearance
   if (second == 5) Prepare();
   if (second == 7 && s_Obstacle)
   {
+   ACR_TestRegress.Check("fixture overhang stays at the requested height", Math.AbsFloat(s_Obstacle.GetOrigin()[1] - s_Zone[1] - 20) < 0.01, s_Obstacle.GetOrigin().ToString());
    ACR_TestRegress.Check("landing volume rejects an overhang outside the old 12 m disk", !ACR_LandingZone.Clear(s_Zone));
    vector blockedFrom = s_Zone + Vector(0, 15, 0);
    ACR_TestRegress.Check("tail movement guard rejects the overhang", !s_Helis.IsEmpty() && !s_Helis[0].CanMoveAt(blockedFrom, blockedFrom + Vector(1, 0, 0)));
@@ -101,7 +102,7 @@ class ACR_TestLiftClearance
    ACR_TestRegress.Check("final braking reaches the landing center and touches down", s_bLanded);
    ACR_TestRegress.Check("vertical landing leaves rotors and drivetrain undamaged", s_fMaxDamage < 0.01, s_fMaxDamage.ToString());
    foreach (ACR_ClearanceTestHeli cleanup : s_Helis) cleanup.Finish();
-   ACR_TestRegress.Complete("liftclearance", 10);
+   ACR_TestRegress.Complete("liftclearance", 11);
   }
  }
 
@@ -141,7 +142,11 @@ class ACR_TestLiftClearance
   if (zones.IsEmpty()) { ACR_TestRegress.Abort("liftclearance", "no landing fixture"); return; }
   s_Zone = zones[0];
   s_Obstacle = ACR_Manager.SpawnPrefab(ACR_TestStructures.HUMVEE, s_Zone + Vector(16, 20, 2));
-  if (s_Obstacle && s_Obstacle.GetPhysics()) s_Obstacle.GetPhysics().ChangeSimulationState(SimulationState.COLLISION);
+  if (!s_Obstacle) { ACR_TestRegress.Abort("liftclearance", "no obstacle fixture"); return; }
+  if (s_Obstacle.GetPhysics()) s_Obstacle.GetPhysics().ChangeSimulationState(SimulationState.COLLISION);
+  // SpawnPrefab intentionally snaps purchases to the ground. Move this frozen
+  // fixture afterward so the clearance tests exercise an actual overhang.
+  s_Obstacle.SetOrigin(s_Zone + Vector(16, 20, 2));
   if (!manager.m_Supports) manager.m_Supports = new ACR_Supports(manager);
   array<ResourceName> prefabs = {ACR_Supports.HELI_TRANSPORT_WEST, ACR_Supports.HELI_TRANSPORT_EAST};
   foreach (int i, ResourceName prefab : prefabs)

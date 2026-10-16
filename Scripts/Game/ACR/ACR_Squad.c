@@ -506,7 +506,7 @@ class ACR_Squad : Managed
  // hand-overs, used by the AI commander and rides): the state a label stands for.
  static ACR_EOrderState StateOfLabel(string label)
  {
-  if (label == "Moving") return ACR_EOrderState.MOVE;
+  if (label == "Moving" || label == "Air lift: to the landing zone") return ACR_EOrderState.MOVE;
   if (label == "Defending" || label == "Holding position" || label == "Garrisoning") return ACR_EOrderState.DEFEND;
   if (label == "Assaulting") return ACR_EOrderState.ASSAULT;
   if (label == "Suppressing") return ACR_EOrderState.SUPPRESS;
@@ -522,7 +522,7 @@ class ACR_Squad : Managed
  {
   ACR_EOrderState state = OrderState();
   string label = m_Order;
-  bool oldMoving = label == "Moving";
+  bool oldMoving = label == "Moving" || label == "Air lift: to the landing zone";
   bool oldFinished = oldMoving || label == "Assaulting" || label == "Suppressing" || label == "Getting in" || label == "Getting out";
   if ((state == ACR_EOrderState.MOVE) == oldMoving && FinishesOnArrival(state) == oldFinished) return;
   ACR_Perf.s_iInvariantErrors++;

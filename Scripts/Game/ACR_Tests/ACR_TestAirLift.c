@@ -5,12 +5,13 @@
 // -acrAirLiftTwoTest 1 (srv:airlifttwo): the same with 2 seats per helicopter, so two fly.
 class ACR_TestAirLift
 {
- static const int CHECKS = 9;
+ static const int CHECKS = 10;
  static vector s_Target;
  static float s_fMaxDamage;
  static int s_iStage = -1;
  static int s_iMaxAboard;
  static int s_iAliveAtTakeoff;
+ static int s_iAliveAtCall;
  static bool s_bDropped;          // Alpha lost its squad status during the flight
  static int s_iEndTick = -1;
  static ref array<IEntity> s_Helis = {};
@@ -48,6 +49,7 @@ class ACR_TestAirLift
   if (index < 0) { ACR_TestRegress.Abort("airlift", "no air lift in the US support list"); return; }
   ACR_SupportEntry entry = data.m_aSupports[index];
   vector from = alpha.GetAnchor().GetOrigin();
+  s_iAliveAtCall = ACR_AirLift.Alive(alpha);
   string noSquad = manager.m_Supports.Call("US", index, from + Vector(0, 0, 900), false, -1, null);
   string tooClose = manager.m_Supports.Call("US", index, from + Vector(120, 0, 0), false, -1, alpha);
   ACR_TestRegress.Check("airlift: refused without a squad and when too close", noSquad.Contains("Select the squad") && tooClose.Contains("walk it") && data.m_iRP == 500, noSquad + " / " + tooClose);
@@ -74,6 +76,13 @@ class ACR_TestAirLift
   PrintFormat("[ACR] TEST airlift call: %1", result);
   ACR_AirLift called = ACR_AirLift.For(alpha);
   if (called) PrintFormat("[ACR] TEST airlift landing room: %1 pickup, %2 drop spots", called.m_Pickups.Count(), called.m_Drops.Count());
+  array<ACR_HeliRun> traffic = {};
+  manager.m_Supports.Helicopters(traffic);
+  int registered;
+  if (called)
+   foreach (ACR_LiftHeli carrier : called.m_Helis)
+    if (traffic.Contains(carrier)) registered++;
+  ACR_TestRegress.Check("airlift: every carrier participates in helicopter avoidance", called != null && registered == called.m_Helis.Count() && registered > 0, string.Format("%1 carriers registered", registered));
   if (called && System.IsCLIParam("acrAirLiftContactTest"))
   {
    foreach (ACR_LiftHeli quick : called.m_Helis)
@@ -136,7 +145,7 @@ class ACR_TestAirLift
   if (ACR_LiftHeli.s_iTestSeats > 0) wanted = 2;
   ACR_TestRegress.Check("airlift: enough helicopters for the squad", s_Helis.Count() == wanted, string.Format("%1 helicopter(s), %2 wanted", s_Helis.Count(), wanted));
   ACR_TestRegress.Check("airlift: helicopters landed by the squad", s_iStage >= ACR_AirLift.BOARDING, string.Format("last stage %1", s_iStage));
-  ACR_TestRegress.Check("airlift: the whole squad boarded and took off", s_iMaxAboard >= s_iAliveAtTakeoff && s_iAliveAtTakeoff > 0, string.Format("%1 aboard of %2", s_iMaxAboard, s_iAliveAtTakeoff));
+  ACR_TestRegress.Check("airlift: the whole squad boarded and took off", s_iMaxAboard >= s_iAliveAtCall && s_iAliveAtTakeoff == s_iAliveAtCall && s_iAliveAtCall > 0, string.Format("%1 aboard of %2 called, %3 alive at takeoff", s_iMaxAboard, s_iAliveAtCall, s_iAliveAtTakeoff));
   ACR_TestRegress.Check("airlift: still a squad in the air (not taken for helicopter crew)", !s_bDropped && manager.m_Squads.Contains(alpha), "");
   int near, outside;
   array<AIAgent> agents = {};
@@ -149,7 +158,7 @@ class ACR_TestAirLift
    outside++;
    if (vector.DistanceXZ(soldier.GetOrigin(), s_Target) < 120) near++;
   }
-  ACR_TestRegress.Check("airlift: landed at the drop-off, everyone out, holding it", near == outside && outside > 0 && alpha.OrderState() == ACR_EOrderState.DEFEND, string.Format("%1 of %2 within 120 m, order %3", near, outside, alpha.m_Order));
+  ACR_TestRegress.Check("airlift: landed at the drop-off, everyone alive and out, holding it", near == outside && outside == s_iAliveAtCall && outside > 0 && alpha.OrderState() == ACR_EOrderState.DEFEND, string.Format("%1 of %2 within 120 m, %3 called, order %4", near, outside, s_iAliveAtCall, alpha.m_Order));
   int left;
   foreach (IEntity heli : s_Helis) if (heli) left++;
   foreach (IEntity crewman : s_Crew) if (crewman) left++;

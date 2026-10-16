@@ -154,7 +154,7 @@ class ACR_LiftHeli : ACR_HeliRun
   m_fYaw = Wrap(m_fYaw + Math.Clamp(Wrap(want - m_fYaw), -24 * dt, 24 * dt));
   m_fBodyYaw = m_fYaw;
   vector forward = Heading(m_fYaw);
-  float wantedY = FlightClearance(forward, ALT_TRANSIT, now);
+  float wantedY = FlightClearance(forward, ALT_TRANSIT + m_iStack * STACK_STEP, now);
   m_fSpeed = ApproachSpeed(m_fSpeed, Math.Min(SPEED_RUN, m_fTerrainSpeed), dt);
   vector previous = m_Pos;
   m_Pos = m_Pos + forward * (m_fSpeed * dt);

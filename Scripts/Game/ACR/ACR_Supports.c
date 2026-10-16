@@ -502,21 +502,28 @@ class ACR_HeliRun : ACR_SupportRun
   rotor.End = to;
   rotor.ExcludeArray = m_aFlightIgnore;
   rotor.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
-  if (GetGame().GetWorld().TraceMove(rotor, null) < 1) return false;
-  // The long, narrow tail extends beyond the main disk. Rotate its envelope with
-  // the fuselage instead of requiring level terrain under unused square corners.
-  TraceOBB tail = new TraceOBB();
-  tail.Mins = Vector(-3, 1, -17);
-  tail.Maxs = Vector(3, 10, 2);
-  float radians = m_fBodyYaw * Math.DEG2RAD;
-  tail.Mat[0] = Vector(Math.Cos(radians), 0, -Math.Sin(radians));
-  tail.Mat[1] = Vector(0, 1, 0);
-  tail.Mat[2] = Heading(m_fBodyYaw);
-  tail.Start = from;
-  tail.End = to;
+  BaseWorld world = GetGame().GetWorld();
+  if (world.TraceMove(rotor, null) < 1) return false;
+  // A movement trace can permit an overlap already present at its start. Check
+  // the destination volume too, including when a moving obstacle entered it.
+  rotor.Start = to;
+  if (world.TracePosition(rotor, null) < 0) return false;
+  // The long, narrow tail extends beyond the main disk. Enclose its rotated bounds
+  // in a world-aligned box rather than using a full rotor-width square at tail height.
+  TraceBox tail = new TraceBox();
+  vector nose = Heading(m_fBodyYaw);
+  vector tailCenter = nose * -11;
+  float halfX = Math.AbsFloat(nose[0]) * 6 + Math.AbsFloat(nose[2]) * 3;
+  float halfZ = Math.AbsFloat(nose[2]) * 6 + Math.AbsFloat(nose[0]) * 3;
+  tail.Mins = Vector(-halfX, 1, -halfZ);
+  tail.Maxs = Vector(halfX, 10, halfZ);
+  tail.Start = from + tailCenter;
+  tail.End = to + tailCenter;
   tail.ExcludeArray = m_aFlightIgnore;
   tail.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
-  return GetGame().GetWorld().TraceMove(tail, null) >= 1;
+  if (world.TraceMove(tail, null) < 1) return false;
+  tail.Start = tail.End;
+  return world.TracePosition(tail, null) >= 0;
  }
 
  protected void GuardFlightMove(vector previous)
@@ -631,7 +638,7 @@ class ACR_HeliRun : ACR_SupportRun
   vector toward = m_Target - m_Pos;
   toward[1] = 0;
   if (toward.Length() > 1) m_Dir = toward.Normalized();
-  m_Pos[1] = SafeAltitude(m_Pos, m_Dir, ALT_TRANSIT);
+  m_Pos[1] = SafeAltitude(m_Pos, m_Dir, ALT_TRANSIT + m_iStack * STACK_STEP);
   m_fYaw = Math.Atan2(m_Dir[0], m_Dir[2]) * Math.RAD2DEG;
   m_fBodyYaw = m_fYaw;
   Resource resource = Resource.Load(prefab);
@@ -759,7 +766,7 @@ class ACR_HeliRun : ACR_SupportRun
   float terrainY = m_Pos[1];
   if (d > 25)
   {
-   terrainY = FlightClearance(forward, ALT_TRANSIT, now);
+   terrainY = FlightClearance(forward, ALT_TRANSIT + m_iStack * STACK_STEP, now);
    wanted = Math.Min(wanted, m_fTerrainSpeed);
   }
   // Brake early enough to stop with a bounded deceleration.
@@ -1436,6 +1443,10 @@ class ACR_Supports : Managed
   {
    ACR_HeliRun heli = ACR_HeliRun.Cast(run);
    if (heli) result.Insert(heli);
+   ACR_AirLift lift = ACR_AirLift.Cast(run);
+   if (lift)
+    foreach (ACR_LiftHeli carrier : lift.m_Helis)
+     if (carrier.m_Vehicle && !carrier.m_bDestroyed && !carrier.m_bAway) result.Insert(carrier);
   }
  }
 
