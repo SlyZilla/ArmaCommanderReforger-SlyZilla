@@ -18,8 +18,9 @@ map with a friend. It also lists the settings you can change in Workbench.
 7. [Host options](#host-options)
 8. [Designing a good map](#designing-a-good-map)
 9. [Current limits](#current-limits)
-10. [Testing your scenario](#testing-your-scenario)
-11. [Play a custom map with a friend](#play-a-custom-map-with-a-friend)
+10. [Battlefield character](#battlefield-character)
+11. [Testing your scenario](#testing-your-scenario)
+12. [Play a custom map with a friend](#play-a-custom-map-with-a-friend)
 
 ## Before you start
 
@@ -618,10 +619,6 @@ table lists launch options for mission makers and server operators; most hosts u
 
 ## Current limits
 
-- Vanilla church organs have a rare AI Easter egg: each organ has a 0.1% chance per minute
-  to send one conscious AI on foot within 50 m to play its 25-second toccata. Any faction can
-  play; player-controlled soldiers are excluded. Each trigger has a 30-minute cooldown.
-  The group keeps its orders, and new orders or a player at the keyboard cancel the detour.
 - **The game's US and USSR sides** are the most tested. The host menu also offers RHS and UA pairings;
   see [Factions and mods](#factions-and-mods). Other custom sides may not have player command gear yet.
   FIA selection, starting units, buy lists and command loadouts have automated coverage; broad
@@ -642,6 +639,14 @@ table lists launch options for mission makers and server operators; most hosts u
   are reported without line of sight. Reinforce also refuses enemies within 300 m even when unseen.
 - **PC controls:** keyboard/mouse is the tested control scheme; console/controller play is unverified.
 - Settings may still change between alpha builds. This page is updated with them.
+
+## Battlefield character
+
+Vanilla church organs have a rare AI Easter egg: each organ has a 0.1% chance per
+minute to send one conscious AI on foot within 50 m to play its 25-second toccata.
+Any faction can play; player-controlled soldiers are excluded. Each trigger has a
+30-minute cooldown. The group keeps its orders, and new orders or a player at the
+keyboard cancel the detour.
 
 ## Testing your scenario
 

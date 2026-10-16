@@ -1,9 +1,14 @@
 # Arma Commander: Actual
 
-An unofficial, openly vibecoded port of the Arma 3 mod Arma Commander to Arma Reforger.
+Plan the attack. Call in support. Then grab a rifle and see how your plan survives contact.
+
 Command squads from the map, then take over a friendly AI soldier and fight alongside them.
-Play solo against AI commanders or share command with friends in multiplayer.
-Requires Better Battle Buddies (BBB). No faction mods required for vanilla sides.
+Capture territory across Arland, Everon and Kolguyev, solo against AI commanders or sharing
+command with friends. An unofficial, openly vibecoded Reforger port of Arma 3's Arma Commander.
+
+This description covers the prepared 0.5.4 split release, which requires Better Battle Buddies
+(BBB). The last documented published ACA build is 0.5.3, with the earlier AI code bundled.
+No faction mods are required for vanilla sides.
 
 ## Command and fight
 
@@ -12,7 +17,7 @@ Requires Better Battle Buddies (BBB). No faction mods required for vanilla sides
 - Move, defend, hunt, queue waypoints and garrison buildings. Advancing infantry stalled
   against a spotted contact can try a flank.
 - Capture bases for requisition income; buy infantry, vehicles, mortar crews and observers.
-- Call artillery, air support or transport helicopters to carry squads to a landing zone.
+- Bring down artillery, call combat helicopters, or try an off-map squad air lift.
 - Build field service stations, forward spawn points and helipads with construction trucks.
 - The Better Battle Buddies dependency improves AI combat priorities, medic behavior, vehicle doors
   and quiet marching. Expect rough edges: this is an actively developed project.
@@ -33,12 +38,14 @@ https://github.com/propst-design/ACActual/blob/main/MISSION-MAKING.md
 
 On generated layouts, build a helipad before buying helicopters. Off-map air lift needs no pad.
 There are no victory conditions or saved matches; play for the fight and the territory.
+Off-map air lift has passed automated transport/clearance tests; broader multiplayer acceptance remains open.
 Intel includes automatic enemy reports within an owned base's radius plus 60 m, without line of sight.
 
 ## Getting started and controls
 
 Enable the mod, select an included AC: Actual scenario in Scenarios or Host, choose your
-options on the setup screen, then press Start. Friends joining during setup wait for the host.
+options on the setup screen, then press Start. Friends joining during setup wait for the host;
+multiplayer setup and generated-layout acceptance checks are still ongoing.
 The Workshop version needs no external launcher.
 
 - M / F9: command map. Left-click a squad, right-click a destination.

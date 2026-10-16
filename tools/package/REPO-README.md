@@ -1,5 +1,10 @@
 # Arma Commander Actual (AC: Actual)
 
+[![Game: Arma Reforger](https://img.shields.io/badge/Arma-Reforger-556b2f?style=flat-square)](https://reforger.armaplatform.com/)
+[![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#help-test-it)
+[![BBB required by the split release](https://img.shields.io/badge/Split_release-Requires_BBB-teal?style=flat-square)](#play-through-workshop)
+[![License: APL-SA](https://img.shields.io/badge/License-APL--SA-orange?style=flat-square)](LICENSE.md)
+
 An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode to Arma Reforger.
 
 ## Play through Workshop
@@ -9,22 +14,21 @@ An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode
 3. Choose an **AC: Actual** scenario in **Scenarios** for solo play or **Multiplayer > Host** to host.
 4. Pick sides and match options on the in-game setup screen, then press **Start**.
 
-Friends join through the game's multiplayer browser. **No external launcher or ZIP download is needed.** For the split release, Better Battle Buddies is a required dependency; allow Workshop to install it too. The older Workshop build still bundles BBB.
+Friends join through the game's multiplayer browser. **No external launcher or ZIP download is needed.**
 
-## Features
+Release status in the local development records: **0.5.3 was published; 0.5.4 is prepared**.
+The prepared split release requires Better Battle Buddies (BBB), available separately on Workshop;
+allow Workshop to install the dependency when prompted. ACA 0.5.3 bundles the earlier AI code.
+Features described here include development work; consult the installed version's change notes.
 
-- **Command from the map.** Select squads (click, Shift+click or Ctrl+drag), then give move, defend, garrison, get in/out, ride and hunt orders, chaining up to 8 waypoints. Each squad shows health and ammo bars.
-- **Jump into a friendly AI soldier** (F7), and back to your commander (F8).
-- **Requisition.** Bases you own earn RP. Spend it on infantry squads and crewed vehicles, deployed at an owned base that allows spawning and is not contested.
-- **Supports.** Buy mortar teams for HE, creeping barrage, smoke and illumination within range. Call a virtual howitzer battery, rocket/bomb runs, helicopter combat support, or an off-map air lift for a squad. Support helicopters can be shot down; on layouts with pads, buy and station them first.
-- **Bases.** Capture a base by clearing it and holding its ring. Garrisons appear when you get close, and some enemy bases stay hidden until you find them.
-- **An AI commander** for either side. It buys units, keeps a reserve, attacks from several directions with smoke and mortars, counterattacks and defends.
-- **Intel.** AI perception and player line of sight reveal enemies; owned bases also automatically report enemies inside their radius plus 60 m, without line of sight. Contacts become suspected after 30 s and expire after 90 s without updates. The AI commander plans from its side's intel.
-- **Logistics.** Ammo, repair, fuel and medical trucks resupply nearby units, carry limited stock and restock at your bases. Players can use arsenal, supply and construction trucks too.
-- **Vehicles.** Rides by truck or helicopter to a landing zone, road-following AI drivers, and gunner drive (drive and steer from a turret with an AI driver aboard).
-- **Multiplayer.** Host and join through Reforger. The host/admin chooses sides and match settings in game. Several players can command the same side together, with tagged orders, map and 3D pings, and one shared RP pool.
-- **Construction.** Player construction trucks build service stations, helipads and forward deploy points. AI base building and a construction-supply pool at command posts are not implemented.
-- **Game Master** for a listen host or configured server admin, to unstick vehicles and fix things.
+## What you can do
+
+- **Command and fight.** Give squads map orders, queue waypoints and hold buildings. Press F7 to take over a friendly AI soldier, then F8 to return to your commander.
+- **Build your force.** Capture bases for requisition points (RP), then buy infantry and crewed vehicles. An AI commander can lead either side.
+- **Bring support.** Use mortar teams, artillery and combat helicopters. Off-map squad air lift has passed automated transport/clearance tests; multiplayer acceptance remains open.
+- **Keep the front supplied.** Service trucks carry ammunition, fuel and medical supplies. Construction trucks build service stations, helipads and forward deploy points; AI base building is not implemented.
+- **Share command.** Several players can order the same side's squads, share an RP pool and coordinate with map/3D pings.
+- **Fight over what you know.** AI perception and player sight reveal contacts. Owned bases also report nearby enemies without line of sight; stale contacts fade from the map.
 
 ## Maps and setup
 
@@ -63,19 +67,13 @@ keys under Settings > Controls > AC: Actual.
 
 ## Help test it
 
-Multiplayer is playable and has had friend playtests; coverage is still limited, especially for new
-setup and generated-layout features. If you play it with friends, these are the things we most want
-to hear about, working or not:
+Multiplayer has had friend playtests, but newer setup and generated-layout paths
+still need broader acceptance. Reports of working behavior are useful too:
 
-- **Shared commanding** (two or more commanders on a side): each commander's orders show on the others' maps as dashed lines with a name tag, the squad panel says who gave an order, and re-tasking an order under 30 s old asks first.
-- **Pings**: Alt+click on the map pings "look here"; Alt+right-click opens a picker for Look, Attack, Defend and Support (click, or keys 1 to 4). Pings show on your side's HUD with a distance. The 3D ping key starts unbound under Controls > AC: Actual.
-- **Support pings**: clicking a Support ping aims your next support call (mortar, helicopter, airstrike) at it.
-- **Feed and roster**: RP spending and commanders joining or leaving show in the feed, and the command panel lists the side's commanders.
-- **Service trucks**: arsenal, ammo, repair and construction trucks used by players and AI squads drain the same supplies; the construction truck can build.
-- **Gunner drive**: a player gunner driving the vehicle with the AI driver; it should be smooth with sensible gear changes.
-- **Intel feed**: spotted enemies appear on the map by type and fade after about 90 s.
-- **Joining and sides**: players land on the side the host chose, and late joiners get a working map.
-- **Long games**: anything that gets stuck, slows down or stops working after an hour or more.
+- Join during setup and after the match starts; check sides, spawning and the command map.
+- Share a side with another commander; check orders, pings and the common RP pool.
+- Play a generated layout; check capture points, travel and encounters.
+- Try a longer session; report stalled squads, vehicle trouble or slowdowns.
 
 ## Reporting bugs
 

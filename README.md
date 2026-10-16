@@ -1,26 +1,20 @@
-# Arma Commander Actual (AC: Actual) - development
+# Arma Commander Actual (AC: Actual)
 
-A Reforger rebuild of the Arma 3 **Arma Commander** hybrid RTS/FPS mode. The original (by
-Martin Hájek; ported from the community fork by Anarch Cassius, Ilyushkius and Will) is APL-SA licensed, so this
-derivative stays APL-SA with credit to the original authors. See LICENSE.md.
+[![Game: Arma Reforger](https://img.shields.io/badge/Arma-Reforger-556b2f?style=flat-square)](https://reforger.armaplatform.com/)
+[![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#development-limits)
+[![Requires Better Battle Buddies](https://img.shields.io/badge/Requires-Better_Battle_Buddies-teal?style=flat-square)](#maps-and-match-options)
+[![License: APL-SA](https://img.shields.io/badge/License-APL--SA-orange?style=flat-square)](LICENSE.md)
 
-Maintaining this development checkout: double-click **Mod-Release-Console.cmd** for Workshop
-release preparation, checked project opening and downloaded-content verification across ACA,
-BBB and AiO. The console chooses the folders and checks freshness for you. Release workflow
-details and agent instructions live in documentation. `Publish-Release.cmd` is the separate legacy
-GitHub ZIP publisher.
+Command squads from the map, then take control of a friendly AI soldier and join
+the fight. Capture bases, requisition units and coordinate support across Arland,
+Everon and Kolguyev. Play solo against AI commanders or share command with friends.
 
-## Made with AI
+An unofficial Reforger rebuild of Arma 3's **Arma Commander**, licensed under
+APL-SA. Original authors and contributors are credited below and in [LICENSE.md](LICENSE.md).
 
-This project is openly vibecoded. Nearly all of the code, launchers and documentation
-were written by **Claude** (Anthropic's AI model, working in Claude Cowork), directed,
-designed and play-tested by **Jacob** ([propst-design](https://github.com/propst-design)).
-Since 5 Oct **Codex** (OpenAI's coding agent) has contributed part of the code and tests too,
-working in the same repository under Jacob's direction. Since 14 Oct **Antigravity**
-(Google's agentic coding environment, whichever model it runs) contributes as well.
-Expect rough edges; bug reports with logs help a lot.
-
-Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.
+This README covers the development checkout as well as the basics of playing.
+The changelog lists **0.5.4 as prepared** and **0.5.3 as previously published**;
+development features are not proof of a Workshop update. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Playing from Workshop
 
@@ -43,8 +37,9 @@ Capture bases for RP, requisition squads and vehicles, and call mortar, artiller
 Construction trucks build service stations, forward deploy points and helipads. There are no victory
 conditions or saved matches. This development tree now requires the separate Better Battle Buddies
 addon (`BBB0261015000001`). Keep its checkout beside this one in Workbench/addons; source is in
-`propst-design/BetterBattleBuddies` (private). The installed Workshop version may still bundle BBB
-until the split is published. Do not upload this ACA tree before BBB is available on Workshop.
+`propst-design/BetterBattleBuddies` (private). BBB 0.1.3 is released; ACA's documented
+0.5.3 Workshop build still bundles the older AI code. The separate dependency belongs
+to the prepared split release. Verify the exact BBB dependency before publishing ACA.
 
 ## Legacy ZIP / development launchers
 
@@ -141,3 +136,39 @@ Every AI group that is not a player group and has soldiers is registered as a sq
 belongs to its faction, and only players of that faction can possess or command it.
 
 Mission makers: see [MISSION-MAKING.md](MISSION-MAKING.md). Docs and past validation evidence are in `docs/`.
+
+## Working on the mod
+
+Start with [documentation](documentation), then the relevant sections of [documentation](documentation).
+The documentation covers architecture, engine constraints, validation, current work and
+release procedures. [MISSION-MAKING.md](MISSION-MAKING.md) explains how to build a
+scenario in your own addon so updates do not overwrite your work.
+
+Keep the BBB checkout beside this one under Workbench's `addons` directory.
+Production mode code lives under `Scripts/Game/ACR`; the code map above gives
+entry points. BBB owns the general AI systems in its separate addon.
+
+For maintainers on the shared Windows setup, **Mod-Release-Console.cmd** prepares
+checked ACA/BBB/AiO snapshots, opens the selected project and verifies downloaded
+content. Its details are in the documentation. **Publish-Release.cmd** is the separate
+legacy GitHub ZIP publisher. The public GitHub README is maintained in
+`tools/package/REPO-README.md`; this file is the development checkout's guide.
+
+### Development limits
+
+Off-map air lift has passed automated loaded-transport, clearance and terrain
+checks. Broader live and multiplayer acceptance remains open. Generated-layout editing has automated coverage; visual and multiplayer
+acceptance remain open. Keep custom changes in your own addon or a development
+copy without the release updater.
+
+## Made with AI
+
+This project is openly vibecoded. Nearly all of the code, launchers and documentation
+were written by **Claude** (Anthropic's AI model, working in Claude Cowork), directed,
+designed and play-tested by **Jacob** ([propst-design](https://github.com/propst-design)).
+Since 5 Oct **Codex** (OpenAI's coding agent) has contributed part of the code and tests too,
+working in the same repository under Jacob's direction. Since 14 Oct **Antigravity**
+(Google's agentic coding environment, whichever model it runs) contributes as well.
+Expect rough edges; bug reports with logs help a lot.
+
+Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.

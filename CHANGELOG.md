@@ -2,6 +2,9 @@
 
 ## 0.5.4 — prepared 2026-10-15
 
+Prepared development changes; publication is not confirmed here. Air-lift transport
+and terrain-clearance checks pass; broader live/multiplayer acceptance remains pending.
+
 - Generated-layout editing now updates moved CP names from nearby places, allows deleting non-HQ CPs before Start, and restores moves and deletions with Undo layout edits.
 - Map markers identify CP value and hidden sites after discovery; setup previews show site type and value with a clearer selection label.
 - Moved shared AI improvements into the required standalone Better Battle Buddies addon. Workshop installations now resolve BBB as a dependency.
