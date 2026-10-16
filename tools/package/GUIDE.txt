@@ -42,10 +42,10 @@ HOW TO START
    rename the "ArmaCommanderReforger" folder inside.
 2. Close Arma Reforger if it's running.
 3. Double-click  Play-ACA.cmd  (next to this guide).
-   A setup menu opens first (side, AI, RP, threat level...): press Enter
-   to start with the remembered settings (option 1 switches the map:
-   Arland, Everon or Kolguyev). The game then starts straight into
-   the scenario (singleplayer and offline).
+   Choose the map and optional faction/ACE mods, then press Enter.
+   The game opens its startup screen: choose the playable sides,
+   battlefield, threat, RP and other match settings, then press Start.
+   Old launcher match settings are ignored (singleplayer and offline).
    The first load takes a while because the game compiles the mod's scripts.
    If Windows SmartScreen asks, choose "More info" > "Run anyway". It's a
    launcher script that starts the game with the mod loaded.
@@ -65,19 +65,19 @@ HOST (one person):
    Library, switch the filter to include Tools, find "Arma Reforger Server",
    click Install.
 2. Double-click  Host-ACA.cmd
-   - First a HOST SETUP list appears: players' side (any, or everyone on
-     US / USSR with the AI commanding the other), starting RP, income,
-     which sides get an AI commander, AI skill and reaction speed, soldier and squad
-     limits, respawn delay, Game Master for everyone, shared command.
-     Type a number to
-     change one, Enter to start. Your choices are remembered.
+   - Choose only the map and optional faction/ACE mods, then press Enter.
+     Playable sides and match settings are chosen on the in-game startup
+     screen. The launcher remembers only the map and loaded mods.
+     Connect before friends: the first connection has host access,
+     including setup and Game Master; access never transfers on disconnect.
    - The first time, it explains ZeroTier and asks whether to set it up
      (see "Connecting" below).
    - A server window opens (leave it open) and Windows may ask about the
      firewall: tick BOTH Private and Public and click Allow.
    - The script prints your addresses, waits until the mission has loaded
      (about 1 minute), then starts your game and joins automatically.
-3. Give your friend the address to join (see "Connecting" below).
+3. Once you have connected, choose match settings in game and press Start.
+   Give your friend the address to join (see "Connecting" below).
 4. When done: quit the game, then close the server window.
 
 JOINING (everyone else):
@@ -150,9 +150,8 @@ and Everon. Both sides' HQs and starting forces move to the generated plan.
 There are no pre-placed pads in generated games: build a helipad before
 buying helicopters. Off-map air lift needs no pad.
 
-The launchers choose settings before launching and skip the in-game setup
-screen. When using an included scenario through the game's menu instead,
-the in-game setup screen can preview a generated plan, reroll its seed and
+Play/Host launchers and included scenarios use the in-game setup screen.
+It can preview a generated plan, reroll its seed and
 move bases (click a base, then its destination). Use "Return to match
 setup" to return, then Start. Installing another terrain alone does not
 add an AC: Actual scenario; mission makers must set one up.

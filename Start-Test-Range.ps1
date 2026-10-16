@@ -21,8 +21,8 @@ try {
   $GamePath = Find-SteamApp 'Arma Reforger' 'ArmaReforgerSteam.exe'
  }
  if (!$GamePath -or !(Test-Path -LiteralPath $GamePath)) { throw 'Arma Reforger was not found. Run this script with -GamePath pointing to ArmaReforgerSteam.exe.' }
- # Scenario worlds (not the test range, not automated tests): the host options menu, as when
- # hosting (Enter starts with the remembered settings). The game is its own server here.
+ # Scenario worlds: choose only the map/mods before loading. Match settings stay in game.
+ # Automated tests and explicit -NoSetup/-Extra callers keep their existing argument path.
  if (!$TestProfile -and !$HostMenu -and !$NoSetup -and $World -notlike '*TestRange*') {
   . (Join-Path $PSScriptRoot 'ACR-HostSetup.ps1')
   $setup = Show-HostSetup -Solo

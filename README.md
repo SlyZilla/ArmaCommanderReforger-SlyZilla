@@ -44,8 +44,9 @@ to the prepared split release. Verify the exact BBB dependency before publishing
 ## Legacy ZIP / development launchers
 
 The release ZIP includes **Play-ACA.cmd**, **Host-ACA.cmd**, **Join-ACA.cmd** and a **READ ME
-FIRST.txt** guide. Its launchers ask for match options before starting and skip the in-game setup
-screen. New paired ZIPs use **ACActual-WithBBB.zip** and contain both addon folders. Users of the older
+FIRST.txt** guide. Play and Host ask only for the map and optional mods before loading; choose
+playable sides and match settings on the in-game startup screen, then press **Start**.
+New paired ZIPs use **ACActual-WithBBB.zip** and contain both addon folders. Users of the older
 single-addon ZIP must download/extract the complete paired ZIP once; the old updater cannot install
 BBB. After that migration, published paired ZIPs self-update. Keep custom work in a separate addon or use a development copy
 without the release updater source.

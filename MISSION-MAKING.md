@@ -570,14 +570,17 @@ arguments.
 ## Host options
 
 Options resolve from mission-header defaults, then `-acr...` launch arguments, then choices on the
-in-game setup screen. Workshop scenarios enable that screen; ZIP/development Play and Host launchers
-ask in an external menu and pass `-acrSetup 0`. A world launched directly has no mission header. The
-table lists launch options for mission makers and server operators; most hosts use a setup menu.
+in-game setup screen. Workshop scenarios and ZIP/development Play and Host launchers enable that
+screen. Launchers choose only the map and optional mods; old saved match settings are ignored.
+Play passes `-acrSetup 1`; Host also enables the existing `-acrFirstPlayerHost 1` fallback because
+it runs a separate local server: the host must connect first, and access never transfers after
+disconnect. A world launched directly has no mission header. The table retains launch options for
+mission makers, automated tests and server operators; players choose match settings in game.
 
 | Option | What it does |
 |---|---|
 | `-acrPlayers US` / `USSR` / `any` | Put every player on one side. The mode places a spawn point for that side at one of its bases |
-| `-acrFactions vanilla` / `ru_us` / `ru_ua` / `us_ua` / `<west>,<east>` | Select the playable faction pair: a named pair (the launcher's Factions menu) or any two faction keys your world's faction manager lists, e.g. `US,FIA`. The world's US-side bases and units go to the first, USSR-side to the second. A faction is playable when the world lists it and its catalog has soldiers and groups; a side without an `ACR_FactionSettings` entity copies the replaced side's settings (RP, AI commander, caps, supports) and builds its buy list from its catalog |
+| `-acrFactions vanilla` / `ru_us` / `ru_ua` / `us_ua` / `<west>,<east>` | Select the playable faction pair: a named pair or any two faction keys your world's faction manager lists, e.g. `US,FIA`. The world's US-side bases and units go to the first, USSR-side to the second. A faction is playable when the world lists it and its catalog has soldiers and groups; a side without an `ACR_FactionSettings` entity copies the replaced side's settings (RP, AI commander, caps, supports) and builds its buy list from its catalog |
 | `-acrMarksmen 0` | Disable the automatic DMR carrier in full UA/Russian rifle squads (enabled by default; keeps squad size and support weapons) |
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
@@ -594,8 +597,8 @@ table lists launch options for mission makers and server operators; most hosts u
 | `-acrSharedCommand 0` / `1` | Overrides `m_bSharedCommand` |
 | `-acrRespawnSeconds N` | Overrides `m_iRespawnSeconds` |
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
-| `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual launchers pass `-acrSetup 0` because their menu already asked |
-| `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default; configured admins remain trusted, and authority does not transfer after the first player disconnects |
+| `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual Play and Host launchers pass `-acrSetup 1` and leave match settings to this screen |
+| `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default for ordinary dedicated servers; Host-ACA enables it for its separate local server, so the launching host must connect before friends. Configured admins remain trusted, and authority does not transfer after the first player disconnects |
 
 ## Designing a good map
 

@@ -118,7 +118,9 @@ Provided as-is, without warranty.
 Workshop is the normal way to install and play. The [ZIP download](https://github.com/propst-design/ACActual/releases/latest/download/ACActual-WithBBB.zip)
 remains a Windows Steam fallback for local/development use, covering Arland, Everon and
 Kolguyev. Read its **READ ME FIRST.txt** for Play/Host/Join instructions.
-These launchers choose options outside the game and skip the in-game setup screen; published ZIPs
+These launchers choose only the map and optional mods before loading. Choose playable sides and
+match settings on the in-game startup screen, then press **Start**. Host connects first to control
+setup on its separate local server; that access does not transfer after disconnect. Published ZIPs
 self-update from GitHub. Optional faction mod paths are currently configured for the development
 PC (`E:\ArmaReforgerMods\addons`). They do not download those mods. Locally detected Workshop
 copies of All-in-One Command Menu are automatically loaded, so joiners need that mod too.

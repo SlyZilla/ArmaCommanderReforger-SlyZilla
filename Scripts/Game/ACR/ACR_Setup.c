@@ -1,5 +1,5 @@
 // Setup phase (Workshop host options, step 2, 13 Oct). With acrSetup on (our shipped
-// scenarios' headers turn it on; the launchers pass -acrSetup 0, tests start from a world
+// scenarios and Play/Host launchers turn it on; tests start from a world
 // without a header), nothing starts until the host or an admin presses Start: no ticks,
 // no skirmish layout, no starting units, no player spawns. Meanwhile they see a dialog
 // with the match options; each click cycles one option on the server (ACR_Options.Set).
