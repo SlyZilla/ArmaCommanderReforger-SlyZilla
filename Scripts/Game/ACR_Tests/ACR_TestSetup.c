@@ -125,6 +125,8 @@ class ACR_TestSetup
  static bool MapWanted() { return System.IsCLIParam("acrSetupMapTest"); }
  protected static string s_sMapDeleted;
  protected static int s_iMapBeforeDelete;
+ protected static vector s_vRememberedMapCenter;
+ protected static float s_fRememberedMapZoom;
  static void RunMap(int second)
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
@@ -142,6 +144,8 @@ class ACR_TestSetup
    int planned = ACR_Setup.s_PreviewNames.Count();
    ACR_TestRegress.Check("setup map: the map opens without a body", mapEntity && mapEntity.IsOpen() && pc && !pc.GetControlledEntity(), "");
    ACR_TestRegress.Check("setup map: one marker per planned base", planned > 0 && markers == planned, string.Format("%1 markers, %2 planned", markers, planned));
+   ACR_TestRegress.Check("setup map: base captions visible without hovering", pc && pc.ACR_TestBaseCaptionsVisible(), "actual MarkerText widgets");
+   ACR_TestRegress.Check("setup map: base captions remain visible after mouse leave", pc && pc.ACR_TestBaseCaptionsVisible(true), "vanilla mouse-leave callback");
    ACR_TestRegress.Check("setup map: the dialog stays hidden while the map is open", SCR_ConfigurableDialogUi.GetCurrentDialog() == null, "");
   }
   if (second == 20)
@@ -195,6 +199,7 @@ class ACR_TestSetup
    SCR_MapMenuUI reopened = SCR_MapMenuUI.Cast(GetGame().GetMenuManager().GetTopMenu());
    ACR_TestRegress.Check("setup map: preview can reopen with its return controls", reopened && reopened.GetRootWidget().FindAnyWidget("ACR_SetupReturn") != null, "");
    ACR_TestRegress.Check("setup map: delete control restored on reopening", reopened && reopened.GetRootWidget().FindAnyWidget("ACR_SetupDelete") != null, "");
+   ACR_TestRegress.Check("setup map: reopened preview restores visible base captions", pc && pc.ACR_TestBaseCaptionsVisible(), "");
    // Same callback registered for MenuBack/GadgetMap; hardware key delivery needs a live check.
    if (reopened) reopened.ACR_ReturnToSetup();
   }
@@ -211,7 +216,42 @@ class ACR_TestSetup
    bool absent = true;
    foreach (ACR_Base built : ACR_Base.s_All) if (built.m_sName == s_sMapDeleted) absent = false;
    ACR_TestRegress.Check("setup map: deleted CP is absent from the started match", absent, s_sMapDeleted);
-   ACR_TestRegress.Complete("setupmap", 13);
+  }
+  if (second == 63) GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
+  if (second == 66)
+  {
+   SCR_MapEntity positioned = SCR_MapEntity.GetMapInstance();
+   if (positioned && positioned.IsOpen() && pc && pc.GetControlledEntity())
+   {
+    vector body = pc.GetControlledEntity().GetOrigin();
+    float mapX = 7000;
+    if (body[0] > 5000) mapX = 3000;
+    positioned.ZoomPanSmooth(0.8, mapX, 5000, 0);
+   }
+  }
+  if (second == 68)
+  {
+   SCR_MapEntity remembered = SCR_MapEntity.GetMapInstance();
+   if (remembered && remembered.IsOpen())
+   {
+    float rememberedX, rememberedZ;
+    remembered.GetMapCenterWorldPosition(rememberedX, rememberedZ);
+    s_vRememberedMapCenter = Vector(rememberedX, 0, rememberedZ);
+    s_fRememberedMapZoom = remembered.GetCurrentZoom();
+   }
+   ACR_TestRegress.Check("setup map: gameplay base captions visible without hovering", pc && pc.ACR_TestBaseCaptionsVisible(), "after Start, actual MarkerText widgets");
+   GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+  }
+  if (second == 70) GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
+  if (second == 73)
+  {
+   SCR_MapEntity restored = SCR_MapEntity.GetMapInstance();
+   float restoredX, restoredZ;
+   if (restored) restored.GetMapCenterWorldPosition(restoredX, restoredZ);
+   bool sameView = restored && restored.IsOpen() && s_fRememberedMapZoom > 0 && vector.DistanceXZ(s_vRememberedMapCenter, Vector(restoredX, 0, restoredZ)) < 5 && Math.AbsFloat(restored.GetCurrentZoom() - s_fRememberedMapZoom) < 0.001;
+   ACR_TestRegress.Check("setup map: reopening gameplay map preserves pan and zoom", sameView, string.Format("centre %1 -> %2, zoom %3", s_vRememberedMapCenter, Vector(restoredX, 0, restoredZ), s_fRememberedMapZoom));
+   ACR_TestRegress.Check("setup map: reopened gameplay restores visible base captions", pc && pc.ACR_TestBaseCaptionsVisible(true), "also after mouse leave");
+   ACR_TestRegress.Complete("setupmap", 19);
   }
  }
 
@@ -421,5 +461,25 @@ class ACR_TestSetup
   if (at) text = string.Format("%1 (HQ %2, value %3, radius %4, %5 m from the front)", at.m_sName, ai.IsHQ(at), at.m_iValue, at.m_fRadius, Math.Round(ai.FrontDistance(at)));
   ACR_TestRegress.Check("reserve: Everon reserve at a secure non-HQ base", at && !ai.IsHQ(at) && ai.ReserveFits(at), string.Format("%1; %2 bases lent", text, lent));
   ACR_TestRegress.Complete("reserve", 1);
+ }
+}
+
+// Inspect the actual native marker widget, not just the caption-producing string.
+modded class SCR_PlayerController
+{
+ bool ACR_TestBaseCaptionsVisible(bool mouseLeave = false)
+ {
+  if (m_ACR_BaseMarkers.IsEmpty()) return false;
+  foreach (ACR_UnitMarker marker : m_ACR_BaseMarkers)
+  {
+   Widget root = marker.GetRootWidget();
+   if (!root) return false;
+   SCR_MapMarkerWidgetComponent component = SCR_MapMarkerWidgetComponent.Cast(root.FindHandler(SCR_MapMarkerWidgetComponent));
+   if (!component) return false;
+   if (mouseLeave) component.OnMouseLeave(root, null, 0, 0);
+   TextWidget caption = TextWidget.Cast(root.FindAnyWidget("MarkerText"));
+   if (!caption || !caption.IsVisible() || caption.GetText() != marker.m_BaseCaption) return false;
+  }
+  return true;
  }
 }

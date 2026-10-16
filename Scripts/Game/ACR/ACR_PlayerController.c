@@ -557,13 +557,6 @@ modded class SCR_PlayerController
   m_ACR_Markers.Clear();
   m_ACR_GroupMarkers.Clear();
  }
- void ACR_CenterMap()
- {
-  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
-  if (!mapEntity || !mapEntity.IsOpen() || !GetControlledEntity()) return;
-  vector pos = GetControlledEntity().GetOrigin();
-  mapEntity.ZoomPanSmooth(4, pos[0], pos[2]);
- }
  protected IEntity m_ACR_BodyAtMapClose;
  protected bool m_ACR_SetupMapOpen;
  int ACR_BaseMarkerCount() { return m_ACR_BaseMarkers.Count(); }
@@ -690,7 +683,7 @@ modded class SCR_PlayerController
     m_ACR_SelectedBase = "";
     m_ACR_CursorMode = ACR_ECursorMode.MOVE;
    }
-   GetGame().GetCallqueue().CallLater(ACR_CenterMap, 100, false);
+   // Keep the map's existing pan and zoom; opening it must not jump to the soldier.
    ACR_OpenPanel(mapEntity);
   }
   m_ACR_MapWasOpen = true;

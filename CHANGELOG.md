@@ -6,7 +6,8 @@ Prepared development changes; publication is not confirmed here. Air-lift transp
 and terrain-clearance checks pass; broader live/multiplayer acceptance remains pending.
 
 - Generated-layout editing now updates moved CP names from nearby places, allows deleting non-HQ CPs before Start, and restores moves and deletions with Undo layout edits.
-- Map markers identify CP value and hidden sites after discovery; setup previews show site type and value with a clearer selection label.
+- Map markers identify CP value and hidden sites after discovery; setup previews show site type and value with a clearer selection label. Base labels stay visible without hovering.
+- Opening the command map keeps its pan and zoom instead of jumping to your soldier.
 - Moved shared AI improvements into the required standalone Better Battle Buddies addon. Workshop installations now resolve BBB as a dependency.
 - Medics and teammates deploy smoke cover toward enemy threats before advancing to treat exposed casualties.
 - Cargo passengers can dismount from a slowing ground vehicle under fire and continue toward their objective. Fighting-vehicle crews remain aboard to fight.
