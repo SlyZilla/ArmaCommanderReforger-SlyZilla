@@ -61,6 +61,11 @@ class ACR_BBBHooks : BBB_Hooks
   return squad && squad.OrderState() == ACR_EOrderState.MOVE && !squad.m_CombatFlank.Active();
  }
 
+ override bool ManagesVehicleDriving(SCR_AIGroup group)
+ {
+  return SquadOf(group) != null;
+ }
+
  override void OnLitter(IEntity item)
  {
   if (m_Manager.m_Cleanup) m_Manager.m_Cleanup.AddLitter(item);
