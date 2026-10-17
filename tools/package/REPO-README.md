@@ -1,5 +1,10 @@
 # Arma Commander Actual (AC: Actual)
 
+> [!IMPORTANT]
+> **Install and update AC: Actual through the in-game Workshop.**
+> This public repository hosts player documentation, bug reports and legacy ZIP releases; active source development is maintained in a separate private repository.
+> **GitHub ZIPs and their external launchers are a legacy/development fallback and may lag behind Workshop.** Use the Workshop version for normal play; see [Play through Workshop](#play-through-workshop) below.
+
 [![Game: Arma Reforger](https://img.shields.io/badge/Arma-Reforger-556b2f?style=flat-square)](https://reforger.armaplatform.com/)
 [![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#help-test-it)
 [![BBB required by the split release](https://img.shields.io/badge/Split_release-Requires_BBB-teal?style=flat-square)](#play-through-workshop)
