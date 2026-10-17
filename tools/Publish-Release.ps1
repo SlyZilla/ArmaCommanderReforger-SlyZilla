@@ -68,7 +68,7 @@ Sync-RepoFile (Join-Path $root 'LICENSE.md') 'LICENSE.md'
 Sync-RepoFile (Join-Path $root 'MISSION-MAKING.md') 'MISSION-MAKING.md'
 Sync-RepoFile (Join-Path $root 'tools\package\github\ISSUE_TEMPLATE\bug_report.md') '.github/ISSUE_TEMPLATE/bug_report.md'
 Sync-RepoFile (Join-Path $root 'tools\package\github\ISSUE_TEMPLATE\config.yml') '.github/ISSUE_TEMPLATE/config.yml'
-& $gh repo edit $repo --description "Arma Commander Actual (AC: Actual): unofficial, vibecoded fan port of Arma Commander to Arma Reforger. Install through the in-game Workshop. ZIP releases are a legacy/development fallback." 2>&1 | Out-Null
+& $gh repo edit $repo --description "Legacy AC: Actual docs and ZIP/updater downloads. Main project: github.com/propst-design/ArmaCommanderReforger. Install and update through the in-game Workshop." 2>&1 | Out-Null
 Start-Sleep -Seconds 1
 
 # Remove drafts left behind by a failed upload.

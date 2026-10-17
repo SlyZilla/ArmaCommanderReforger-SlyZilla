@@ -12,6 +12,11 @@ Everon and Kolguyev. Play solo against AI commanders or share command with frien
 An unofficial Reforger rebuild of Arma 3's **Arma Commander**, licensed under
 APL-SA. Original authors and contributors are credited below and in [LICENSE.md](LICENSE.md).
 
+This is the main public source and development repository for AC: Actual.
+Install and update through the in-game Workshop for normal play. The older
+[ACActual repository](https://github.com/propst-design/ACActual) retains historical
+documentation, existing issues and legacy ZIP downloads/updaters.
+
 This README covers the development checkout as well as the basics of playing.
 The changelog lists **0.5.4 as prepared** and **0.5.3 as previously published**;
 development features are not proof of a Workshop update. See [CHANGELOG.md](CHANGELOG.md).
@@ -21,7 +26,7 @@ development features are not proof of a Workshop update. See [CHANGELOG.md](CHAN
 Workshop is the normal install route: open Workshop in Reforger, search for **Arma Commander
 Actual**, download and enable it, then select an included AC: Actual scenario in Scenarios or Host. The host/admin picks the sides and match options on the setup screen, then presses Start. No
 external launcher is needed for Workshop play. Report bugs and issues at
-https://github.com/propst-design/ACActual/issues (include the map, mod set, steps to reproduce and
+https://github.com/propst-design/ArmaCommanderReforger/issues (include the map, mod set, steps to reproduce and
 logs if available).
 
 ## Maps and match options
@@ -79,7 +84,7 @@ Another faction mod works only if the map lists it (one line in the map's factio
 mod sets up its factions the standard way (Game Master catalogs of soldiers, groups and vehicles).
 Even then it may look rough: mixed uniforms, a squad leader as your command unit, vanilla stand-ins
 for what the mod lacks. Only RHS and Ukraine Armed Forces RHS are hand-fitted. Want a faction mod
-supported properly? Ask on GitHub: https://github.com/propst-design/ACActual/issues
+supported properly? Ask on GitHub: https://github.com/propst-design/ArmaCommanderReforger/issues
 
 ## Command map and controls
 
@@ -153,7 +158,7 @@ For maintainers on the shared Windows setup, **Mod-Release-Console.cmd** prepare
 checked ACA/BBB/AiO snapshots, opens the selected project and verifies downloaded
 content. Its details are in the documentation. **Publish-Release.cmd** is the separate
 legacy GitHub ZIP publisher. The public GitHub README is maintained in
-`tools/package/REPO-README.md`; this file is the development checkout's guide.
+`tools/package/REPO-README.md`; this file is the main source repository's guide.
 
 ### Development limits
 
