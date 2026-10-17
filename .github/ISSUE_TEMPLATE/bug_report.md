@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something broke or behaved oddly in AC: Actual
+about: "Something broke or behaved oddly in AC: Actual"
 title: ""
 labels: bug
 ---
