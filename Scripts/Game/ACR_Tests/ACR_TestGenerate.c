@@ -205,3 +205,47 @@ class ACR_TestGenerate
   ACR_TestRegress.Complete("generateeveron", EVERON_CHECKS);
  }
 }
+
+// Synthetic terrain fixtures exercise the real sampler and graph traversal without relying on
+// a particular map's bridge assets. Physical bridge traversal still needs live acceptance.
+class ACR_TestAccess : ACR_GenAccess
+{
+ int m_Mode;
+ override protected bool Surface(vector p, bool road, out float height)
+ {
+  height = 10;
+  if (m_Mode == 1 && p[0] >= 40 && p[0] <= 60) height = 40;
+  if (m_Mode == 2) height += p[0] * 0.25;
+  if (m_Mode >= 3 && p[0] >= 40 && p[0] <= 60) return road && m_Mode == 4;
+  return true;
+ }
+ bool Leg(int mode, bool road = false)
+ {
+  m_Mode = mode;
+  return PassableLeg(Vector(0, 0, 0), Vector(100, 0, 0), road);
+ }
+ void Fixture()
+ {
+  m_Mode = 0; m_fX = 0; m_fZ = 0; m_fCell = 100; m_iW = 3; m_iH = 1;
+  m_Land = {1, 0, 1}; m_Links = {0, 0, 0};
+  m_RoadPoints = {Vector(0, 10, 0), Vector(100, 10, 0), Vector(200, 10, 0)};
+  m_Extra.Clear();
+  AddEdge(0, 3); AddEdge(3, 4); AddEdge(4, 5); AddEdge(5, 2);
+ }
+ static void Run()
+ {
+  ACR_TestAccess access = new ACR_TestAccess();
+  ACR_TestRegress.Check("access: flat and moderate slopes pass", access.Leg(0) && access.Leg(2) && access.Leg(2, true));
+  ACR_TestRegress.Check("access: interior cliff rejected despite equal endpoint heights", !access.Leg(1) && !access.Leg(1, true));
+  ACR_TestRegress.Check("access: water needs a verified road deck", !access.Leg(3) && !access.Leg(3, true) && !access.Leg(4) && access.Leg(4, true));
+  access.Fixture();
+  array<int> reached = {};
+  access.Reach(Vector(0, 0, 0), Vector(100, 0, 500), reached, 20);
+  bool bridge = access.CanReach(Vector(200, 0, 0), reached, Vector(100, 0, 500), 20);
+  access.Reach(Vector(0, 0, 0), Vector(100, 0, 0), reached, 20);
+  bool blocked = !access.CanReach(Vector(200, 0, 0), reached, Vector(100, 0, 0), 20);
+  ACR_TestRegress.Check("access: bridge graph connects shores and respects enemy HQ", bridge && blocked);
+  access.Reach(Vector(0, 0, 0), Vector(0, 0, 0), reached, 20);
+  ACR_TestRegress.Check("access: starting connector cannot enter enemy HQ", !access.CanReach(Vector(200, 0, 0), reached, Vector(0, 0, 0), 20));
+ }
+}

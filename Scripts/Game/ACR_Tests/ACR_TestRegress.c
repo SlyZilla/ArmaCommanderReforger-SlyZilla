@@ -65,7 +65,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 85; // 83 + helicopter acceleration and climb-time guards (2)
+ static const int EXPECTED = 90; // 85 + generated access sampling/connectivity guards (5)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -191,6 +191,7 @@ class ACR_TestRegress
   if (tick == 4)
   {
    ACR_TestOptions.Run();
+   ACR_TestAccess.Run();
    // R18 (14 Oct review): records of deleted vehicles are dropped.
    int recordsBefore = ACR_Vehicles.RecordCount();
    EntitySpawnParams probeParams = new EntitySpawnParams();
