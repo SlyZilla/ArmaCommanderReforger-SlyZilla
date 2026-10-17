@@ -6,13 +6,13 @@
 //   it) and compares it with Jacob's hand-built bases.
 class ACR_TestGenerate
 {
- static const int CHECKS = 12;
+ static const int CHECKS = 20;
  static const int EVERON_CHECKS = 3;
 
  static string Signature(array<ref ACR_GenSite> layout, array<ACR_GenSite> hqs)
  {
   string text = "";
-  foreach (ACR_GenSite site : layout) text += string.Format("%1@%2,%3;", site.m_sName, (int)site.m_vPos[0], (int)site.m_vPos[2]);
+  foreach (ACR_GenSite site : layout) text += string.Format("%1@%2,%3:%4:%5;", site.m_sName, (int)site.m_vPos[0], (int)site.m_vPos[2], site.m_bIncome, site.m_iValue);
   if (hqs.Count() == 2) text += "HQ:" + hqs[0].m_sName + "/" + hqs[1].m_sName;
   return text;
  }
@@ -26,13 +26,14 @@ class ACR_TestGenerate
   ACR_Base westHQ, eastHQ;
   int ownedCount;
   int hidden;
+  bool hiddenRules = true;
   bool overlap;
   bool wet;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (base.m_sOwner == west) { westHQ = base; ownedCount++; }
    else if (base.m_sOwner == east) { eastHQ = base; ownedCount++; }
-   if (base.m_bHidden) hidden++;
+   if (base.m_bHidden) { hidden++; if (base.m_bIncome) hiddenRules = false; }
    if (BBB_Terrain.IsWater(base.GetOrigin()[0], base.GetOrigin()[2])) wet = true;
    foreach (ACR_Base other : ACR_Base.s_All)
     if (other != base && vector.DistanceXZ(other.GetOrigin(), base.GetOrigin()) < other.m_fRadius + base.m_fRadius) overlap = true;
@@ -43,7 +44,7 @@ class ACR_TestGenerate
   bool hqRules = westHQ && eastHQ && westHQ.m_iValue == 2 && eastHQ.m_iValue == 2 && westHQ.m_iGarrison == 6 && westHQ.m_fRadius >= 45 && eastHQ.m_fRadius >= 45;
   ACR_TestRegress.Check("HQs follow the Everon rules", hqRules, string.Format("value 2, garrison 6, radius %1 / %2", (int)westHQ.m_fRadius, (int)eastHQ.m_fRadius));
   ACR_TestRegress.Check("bases on dry ground, circles apart", !wet && !overlap, string.Format("wet %1, overlap %2", wet, overlap));
-  ACR_TestRegress.Check("hidden landmarks", hidden >= 2, string.Format("%1 hidden", hidden));
+  ACR_TestRegress.Check("landmarks remain hidden tactical objectives", hiddenRules, string.Format("%1 accessible hidden sites, no passive income", hidden));
   // Starting units at their HQ.
   ACR_Manager manager = ACR_Manager.GetInstance();
   int westNear, eastNear;
@@ -92,7 +93,7 @@ class ACR_TestGenerate
   array<ACR_GenSite> halfHQs = {};
   bool halfOk = ACR_Generator.Plan(ACR_Generator.s_iSeed, ACR_ESkirmishSize.HALF, half, halfHQs);
   int fullCount = ACR_Generator.s_Sites.Count();
-  ACR_TestRegress.Check("half size", halfOk && half.Count() >= 6 && half.Count() <= fullCount / 2 + 1 && halfHQs.Count() == 2 && halfHQs[0] != halfHQs[1], string.Format("%1 of %2 sites", half.Count(), fullCount));
+  ACR_TestRegress.Check("half size", halfOk && half.Count() >= 6 && half.Count() <= 0.65 * fullCount + 1 && halfHQs.Count() == 2 && halfHQs[0] != halfHQs[1], string.Format("%1 of %2 sites", half.Count(), fullCount));
   // Flashpoint: 5-7 sites close together, HQs inside it.
   array<ref ACR_GenSite> flash = {};
   array<ACR_GenSite> flashHQs = {};
@@ -109,7 +110,72 @@ class ACR_TestGenerate
   int unnamed;
   foreach (ACR_Base named : ACR_Base.s_All) if (named.m_sName == "" || named.m_sName.StartsWith("Base ") || named.m_sName.StartsWith("#")) unnamed++;
   ACR_TestRegress.Check("bases named from the map", unnamed == 0, string.Format("%1 unnamed", unnamed));
+  BalanceChecks(manager);
   ACR_TestRegress.Complete("generate", CHECKS);
+ }
+
+ protected static void BalanceChecks(ACR_Manager manager)
+ {
+  bool builtFlags = true;
+  int earning, tactical;
+  foreach (ACR_GenSite site : ACR_Generator.s_Sites)
+  {
+   if (site.m_bIncome) earning++; else tactical++;
+   ACR_Base match;
+   foreach (ACR_Base base : ACR_Base.s_All) if (base.m_sName == site.m_sName) match = base;
+   if (!match || match.m_bIncome != site.m_bIncome || match.m_iValue != site.m_iValue) builtFlags = false;
+  }
+  ACR_TestRegress.Check("economy: build preserves income and tactical site flags", builtFlags && earning > 2 && tactical > 0, string.Format("%1 earning, %2 tactical", earning, tactical));
+  ACR_TestRegress.Check("economy: starting funding and reinforcement fee unchanged", manager.m_Bases.m_iBasicIncome == 5 && manager.m_Bases.m_iStartingRP == 50 && ACR_Requisition.REINFORCE_COST_PER_SOLDIER == 3, "basic 5, starting 50, reinforcement 3");
+  array<int> seeds = {45289, 37941, 7919, 15838, 23757, 31676};
+  bool planned = true, spaced = true, forward = true, opening = true, repeatable = true;
+  foreach (int seed : seeds)
+  {
+   array<ref ACR_GenSite> layout = {}, again = {};
+   array<ACR_GenSite> hqs = {}, againHQs = {};
+   if (!ACR_Generator.Plan(seed, ACR_ESkirmishSize.HALF, layout, hqs) || hqs.Count() != 2 || layout.Count() < 6) { planned = false; continue; }
+   ACR_Generator.Plan(seed, ACR_ESkirmishSize.HALF, again, againHQs);
+   if (Signature(layout, hqs) != Signature(again, againHQs)) repeatable = false;
+   int incomeCount, value;
+   foreach (ACR_GenSite p : layout)
+   {
+    if (p.m_bIncome) { incomeCount++; value += p.m_iValue; }
+    if (!hqs.Contains(p) && p.m_sKind != "landmark")
+    {
+     int home = 0;
+     if (vector.DistanceXZ(p.m_vPos, hqs[1].m_vPos) < vector.DistanceXZ(p.m_vPos, hqs[0].m_vPos)) home = 1;
+     float homeDistance = vector.DistanceXZ(p.m_vPos, hqs[home].m_vPos);
+     int closer = 0;
+     foreach (ACR_GenSite neighbour : layout)
+     {
+      if (hqs.Contains(neighbour) || neighbour.m_sKind == "landmark") continue;
+      float ownDistance = vector.DistanceXZ(neighbour.m_vPos, hqs[home].m_vPos);
+      if (ownDistance <= vector.DistanceXZ(neighbour.m_vPos, hqs[1 - home].m_vPos) && ownDistance < homeDistance) closer++;
+     }
+     if ((homeDistance <= 2000 || closer < 4) && !p.m_bIncome) opening = false;
+    }
+    if (!hqs.Contains(p) && !ACR_Generator.BetweenHQs(p.m_vPos, hqs[0].m_vPos, hqs[1].m_vPos)) forward = false;
+    foreach (ACR_GenSite q : layout)
+    {
+     if (q == p) continue;
+     float gap = vector.DistanceXZ(p.m_vPos, q.m_vPos);
+     if (gap < 250 || (gap < 350 && p.m_iOpeningSide < 0 && q.m_iOpeningSide < 0)) spaced = false;
+    }
+    if (seed == 45289) PrintFormat("[ACR] ECON HALF %1 | %2 | %3 %4 | value %5 income %6 opening %7", p.m_sName, p.m_sKind, (int)p.m_vPos[0], (int)p.m_vPos[2], p.m_iValue, p.m_bIncome, p.m_iOpeningSide);
+   }
+   if (incomeCount >= layout.Count()) opening = false;
+   PrintFormat("[ACR] ECON PLAN seed %1: %2 objectives, %3 income, total base RP %4, HQs %5 / %6", seed, layout.Count(), incomeCount, value, hqs[0].m_sName, hqs[1].m_sName);
+  }
+  ACR_TestRegress.Check("generator: southern-half seeds produce repeatable reduced layouts", planned && repeatable, "45289, 37941 and four additional seeds");
+  ACR_TestRegress.Check("generator: objective spacing protects opening pairs without dense clusters", spaced, "350 m normally, 250 m protected opening pairs");
+  ACR_TestRegress.Check("generator: no automatic objectives directly behind the HQs", forward, "200 m tolerance, accessible flanks retained");
+  ACR_TestRegress.Check("economy: home regions and four nearest objectives keep full income", opening, "2 km home regions; later sites can be tactical");
+  bool cutsHQ = !ACR_GenAccess.OutsideHQ(Vector(0, 0, 0), Vector(1000, 0, 0), Vector(500, 0, 0));
+  bool bypass = ACR_GenAccess.OutsideHQ(Vector(0, 0, 400), Vector(1000, 0, 400), Vector(500, 0, 0));
+  ACR_TestRegress.Check("generator: access rejects crossing an HQ but allows a perimeter bypass", cutsHQ && bypass, "350 m perimeter, including edge interiors");
+  bool peninsula = !ACR_Generator.BetweenHQs(Vector(1421, 0, 7481), Vector(2248, 0, 7375), Vector(7669, 0, 5061));
+  bool flank = ACR_Generator.BetweenHQs(Vector(7637, 0, 4513), Vector(2248, 0, 7375), Vector(7606, 0, 5000));
+  ACR_TestRegress.Check("generator: Kolguyev rear peninsula excluded without cutting the eastern flank", peninsula && flank, "West Cape behind NW HQ; Ugoldar Power Plant beside eastern HQ");
  }
 
  // Everon: plan a full layout and compare it with the hand-built one.
@@ -134,7 +200,7 @@ class ACR_TestGenerate
   if (hqs.Count() == 2) PrintFormat("[ACR] GEN EVERON HQs %1 / %2 (%3 m)", hqs[0].m_sName, hqs[1].m_sName, (int)vector.DistanceXZ(hqs[0].m_vPos, hqs[1].m_vPos));
   PrintFormat("[ACR] GEN EVERON not generated: %1", missing);
   ACR_TestRegress.Check("Everon plan made", ok && layout.Count() >= 30, string.Format("%1 sites", layout.Count()));
-  ACR_TestRegress.Check("Everon plan covers the hand-built bases", authored > 0 && matched >= authored * 0.8, string.Format("%1 of %2 hand-built bases have a generated base within 120 m", matched, authored));
+  ACR_TestRegress.Check("Everon keeps a reduced spread of authored locations", authored > 0 && 0.65 * authored <= matched && layout.Count() <= authored, string.Format("%1 of %2 hand-built locations retained within 120 m", matched, authored));
   ACR_TestRegress.Check("Everon HQs far apart", hqs.Count() == 2 && vector.DistanceXZ(hqs[0].m_vPos, hqs[1].m_vPos) >= 5000, "");
   ACR_TestRegress.Complete("generateeveron", EVERON_CHECKS);
  }

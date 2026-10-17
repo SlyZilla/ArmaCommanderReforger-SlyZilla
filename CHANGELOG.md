@@ -5,6 +5,8 @@
 Prepared development changes; publication is not confirmed here. Air-lift transport
 and terrain-clearance checks pass; broader live/multiplayer acceptance remains pending.
 
+- Generated battlefields have fewer crowded objectives and fewer passive-income sites. Home-region income is protected; tactical points still support control and deployment. Starting funding and reinforcement prices are unchanged.
+- Generated HQ placement checks rear approaches and dry-land access to avoid stranding objectives behind an opposing HQ on a peninsula.
 - Generated-layout editing now updates moved CP names from nearby places, allows deleting non-HQ CPs before Start, and restores moves and deletions with Undo layout edits.
 - Map markers identify CP value and hidden sites after discovery; setup previews show site type and value with a clearer selection label. Base labels stay visible without hovering.
 - Opening the command map keeps its pan and zoom instead of jumping to your soldier.

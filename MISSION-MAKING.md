@@ -393,14 +393,28 @@ whole map, half of it or a flashpoint (`-acrSize`). A world without any `ACR_Bas
 generated layout: a scenario for a new map then needs only the game mode, the managers, the faction
 settings and one player spawn point per side (see `Worlds/ACR_Kolguyev` for a complete example).
 
-The rules follow the hand-built Everon layout. Cities, towns, villages and settlements with houses
-become 1 RP bases (capture radius 90, 75, 60 and 45 m); military sites 3 RP (60 m); harbours,
-factories, power plants, sawmills, quarries and mines 2 RP (50 m); the airport 3 RP (80 m); and
-about one landmark for every ten bases a hidden 1 RP base (40 m). Bases sit on their map place,
-moved onto dry ground if it is in water; circles that would overlap shrink, down to 35 m. The HQs
-prefer two widely separated military/airport sites, falling back to other suitable sites; a
-flashpoint uses its farthest pair: 2 RP, a 6-man garrison, a 70 m circle where there is room. Other
-generated bases start neutral with no garrison. Each side starts with the world's own
+Site kinds are based on the hand-built Everon layout: settlements have nominal value 1 and
+capture radii 90/75/60/45 m; military sites value 3 (60 m); industry value 2 (50 m); airports
+value 3 (80 m). Hidden landmarks are tactical objectives (40 m), with no passive income.
+Generated layouts now distinguish income-producing sites from tactical capture/deployment points.
+The four nearest ordinary objectives per side and non-landmark sites within 2 km of either HQ
+keep their full original income. Further economic sites are selected for strategic value and
+spread (normally 800 m from another income site), aiming for about half the ordinary objectives
+plus the two HQs. Protected opening sites can exceed that target; compact flashpoints protect
+two opening objectives per side. Other sites remain useful for control and deployment but pay
+no RP. Basic income, starting RP, capture rules and reinforcement prices are unchanged. This
+selection applies to generated layouts; hand-authored bases still use their own `m_bIncome` flags.
+
+Ordinary generated objectives are normally at least 350 m apart; two nearby opening objectives
+per side may be 250 m apart to preserve the opening. Compact flashpoints keep their existing
+circle-spacing rule. Bases remain on their map places, moved onto dry ground when necessary;
+capture circles can shrink to 35 m. HQ candidates remain widely separated (at least 80% of the
+greatest eligible military/airport separation), preferring fewer rear or inaccessible objectives.
+The generator removes objectives directly behind HQ approaches and checks dry-land access from
+both sides while excluding the opposing HQ perimeter (350 m, or 100 m in a compact flashpoint).
+This cached coarse terrain check catches HQ/peninsula bottlenecks; it does not guarantee roads,
+navmesh paths, bridge use or good combat terrain. HQs pay 2 RP, with six guards and a 70 m circle
+where there is room. Other generated bases start neutral with no garrison. Each side starts with the world's own
 `ACR_StartingUnit` objects, or two rifle squads, a weapons team, a truck and a car, and its player
 spawn point moves to its HQ. Hand-built helipads are not used: both sides get the off-map support
 helicopters, and helicopters need a live helipad for purchase (players can build one with a
@@ -412,7 +426,9 @@ version, but manual moves and later mod/terrain changes can alter it; the log li
 click a base, then click where it should go. A spot is refused (with the reason) when it is off the
 map, in water, too close to another base's capture circle, or would bring the two HQs within 1000 m
 (300 m in a flashpoint). These are placement checks, not a guarantee of road access or good combat
-terrain. Moving a CP updates its name to a nearby named place or hill, preserving its type/value.
+terrain. Moving a CP updates its name to a nearby named place or hill, preserving its type/value. Income
+selection follows the edited positions, including protection around moved HQs. Automatic spacing
+and rear/access filtering run before manual edits, so they do not erase intentional host moves.
 Select a CP and use "Delete selected CP" to remove it before Start. HQs cannot be deleted, and
 at least one ordinary CP must remain. Preview markers show HQ/CP value, type and hidden status;
 the selected label is bracketed. Hidden sites remain concealed during play until discovered.

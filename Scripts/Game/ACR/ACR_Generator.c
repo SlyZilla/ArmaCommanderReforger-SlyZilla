@@ -1,10 +1,12 @@
 // Scenario generator (board aca-f07, 14 Oct). Builds bases, HQs and starting units from the map's
 // own named places, by the rules of Jacob's hand-built Everon layout:
-//   city r90 / town r75 / village r60 / settlement r45: value 1
-//   military site r60: value 3; industry (harbour, factory, power plant, sawmill, quarry, mine) r50: value 2
-//   airport r80: value 3; a few landmarks r40: value 1, hidden
+//   city r90 / town r75 / village r60 / settlement r45: nominal value 1
+//   military r60: value 3; industry r50: value 2; airport r80: value 3
+//   home-region/nearest objectives retain income; a spaced strategic selection also earns RP;
+//   remaining objectives (including hidden landmarks) are tactical, not passive income.
 //   HQs: value 2, radius >= 70, garrison 6, owned; other bases start neutral with no garrison.
-// Every base sits on its map place (moved onto dry ground when the place is in water).
+// Thin crowded objectives; reject rear/HQ-blocked approaches using cached land connectivity.
+// Bases remain on their map places (moved onto dry ground when the place is in water).
 // Runs instead of a hand-built layout when the host picks "Generated" (acrLayout generated) or
 // the world has no bases (e.g. ACR_Kolguyev). Same seed + size + world = same layout.
 // Sizes: full map; half (the sites on one side of the map's long axis); flashpoint (about seven
@@ -18,6 +20,8 @@ class ACR_GenSite
  float m_fRadius;
  float m_fFullRadius; // the kind's own radius, before shrinking to fit
  int m_iValue;
+ bool m_bIncome;
+ int m_iOpeningSide = -1; // protected opening income, otherwise -1
  int m_iRank;        // which of two overlapping sites stays
  string m_sKey;      // the map's location key, e.g. Military, Harbour, Cain_Kamensk
  string m_sPrefab;
@@ -32,6 +36,8 @@ class ACR_GenSite
   copy.m_fRadius = m_fRadius;
   copy.m_fFullRadius = m_fFullRadius;
   copy.m_iValue = m_iValue;
+  copy.m_bIncome = m_bIncome;
+  copy.m_iOpeningSide = m_iOpeningSide;
   copy.m_iRank = m_iRank;
   copy.m_sKey = m_sKey;
   copy.m_sPrefab = m_sPrefab;
@@ -47,6 +53,7 @@ class ACR_GenSite
   else if (kind == "airport") kind = "Airport";
   else if (kind == "landmark") kind = "Hidden landmark";
   else kind = "Settlement";
+  if (!m_bIncome) return kind + ", tactical (no income)";
   return string.Format("%1, %2 RP", kind, m_iValue);
  }
 }
@@ -59,6 +66,7 @@ class ACR_Generator
  protected static ref array<IEntity> s_Found = {};
 
  protected static ref array<ref ACR_GenSite> s_Surveyed;  // the map's sites, read once
+ protected static ref ACR_GenAccess s_Access;
  protected static ref array<ref ACR_GenSite> s_NamePlaces = {}; // named hills need not become CPs
 
  // Layout editor (aca-f07): bases the host moved on the setup map, by stable site ID. They belong
@@ -75,6 +83,7 @@ class ACR_Generator
   s_iSeed = 0;
   s_Sites.Clear();
   s_Surveyed = null;
+  s_Access = null;
   s_NamePlaces.Clear();
   s_Moves.Clear();
   s_Deleted.Clear();
@@ -387,11 +396,21 @@ class ACR_Generator
   if (rng.RandFloat01() < 0.5) { ACR_GenSite swap = west; west = east; east = swap; }
   hqs.Insert(west);
   hqs.Insert(east);
+  int unthinned = pool.Count();
+  FairObjectives(pool, hqs, size == ACR_ESkirmishSize.FLASHPOINT);
+  int accessible = pool.Count();
+  // An unsafe site must not displace a valid neighbour or consume a protected opening slot.
+  ThinObjectives(pool, hqs, size == ACR_ESkirmishSize.FLASHPOINT);
+  if (System.IsCLIParam("acrGenerateTest") || System.IsCLIParam("acrGenerateEveronTest")) PrintFormat("[ACR] GEN QUALITY seed %1 size %2: %3 -> accessible %4 -> spaced %5", seed, size, unthinned, accessible, pool.Count());
+  if (pool.Count() < 3) return false;
   foreach (ACR_GenSite p : pool) layout.Insert(p);
   if (seed == s_iMovesSeed && size == s_iMovesSize)
    for (int removed = layout.Count() - 1; removed >= 0; removed--)
     if (s_Deleted.Contains(layout[removed].m_sId) && !hqs.Contains(layout[removed])) layout.RemoveOrdered(removed);
   ApplyMoves(seed, size, layout);
+  // Re-evaluate around the edited HQ positions, so moving an HQ does not strand its opening
+  // income at the old location. Automatic fairness filters never erase the host's own edits.
+  AssignEconomy(layout, hqs, size == ACR_ESkirmishSize.FLASHPOINT);
   // HQs get a 70 m circle where there is room for it.
   foreach (ACR_GenSite hq : hqs)
   {
@@ -405,6 +424,164 @@ class ACR_Generator
    if (allowed > hq.m_fRadius) hq.m_fRadius = allowed;
   }
   return true;
+ }
+
+ // Keep the HQs and the two closest opening objectives per side before thinning the rest.
+ // Opening pairs may be 250 m apart; other objectives need 350 m. A flashpoint is deliberately
+ // compact already (5-7 sites), so it retains its existing circle-spacing rule.
+ protected static void ThinObjectives(array<ACR_GenSite> pool, array<ACR_GenSite> hqs, bool flash)
+ {
+  if (flash) return;
+  array<ref ACR_GenSite> kept = {};
+  foreach (ACR_GenSite hq : hqs) kept.Insert(hq);
+  if (!flash)
+  {
+   for (int side = 0; side < 2; side++)
+    for (int opening = 0; opening < 2; opening++)
+    {
+     ACR_GenSite closest;
+     float nearest = float.MAX;
+     foreach (ACR_GenSite candidate : pool)
+     {
+      if (kept.Contains(candidate) || candidate.m_sKind == "landmark") continue;
+      float away = vector.DistanceXZ(candidate.m_vPos, hqs[side].m_vPos);
+      if (away > vector.DistanceXZ(candidate.m_vPos, hqs[1 - side].m_vPos)) continue;
+      bool room = true;
+      foreach (ACR_GenSite prior : kept) if (vector.DistanceXZ(candidate.m_vPos, prior.m_vPos) < 250) room = false;
+      if (room && away < nearest) { nearest = away; closest = candidate; }
+     }
+     if (closest) { closest.m_iOpeningSide = side; kept.Insert(closest); }
+    }
+  }
+  float spacing = 350;
+  for (int rank = 5; rank >= 0; rank--)
+   foreach (ACR_GenSite site : pool)
+   {
+    if (site.m_iRank != rank || kept.Contains(site)) continue;
+    bool fits = true;
+    foreach (ACR_GenSite other : kept) if (vector.DistanceXZ(site.m_vPos, other.m_vPos) < spacing) fits = false;
+    if (fits && Fit(kept, site)) kept.Insert(site);
+   }
+  pool.Clear();
+  foreach (ACR_GenSite retained : kept) pool.Insert(retained);
+ }
+
+ // Avoid objectives directly behind an HQ, while retaining reachable flank objectives.
+ // A whole half-plane cut would wrongly remove towns beside, rather than behind, an HQ.
+ static bool BetweenHQs(vector at, vector west, vector east)
+ {
+  vector axis = east - west;
+  axis[1] = 0;
+  float length = axis.Length();
+  if (length < 1) return false;
+  float along = vector.Dot(at - west, axis / length);
+  vector offset = at - west;
+  offset[1] = 0;
+  float lateral = (offset - axis / length * along).Length();
+  if (along < -200 && -along > 0.75 * lateral) return false;
+  if (along > length + 200 && along - length > 0.75 * lateral) return false;
+  return true;
+ }
+
+ protected static void FairObjectives(array<ACR_GenSite> pool, array<ACR_GenSite> hqs, bool flash)
+ {
+  if (!s_Access)
+  {
+   s_Access = new ACR_GenAccess();
+   s_Access.Build(s_Surveyed);
+  }
+  array<int> westReach = {}, eastReach = {};
+  float clearance = ACR_GenAccess.HQ_CLEARANCE;
+  if (flash) clearance = 100;
+  s_Access.Reach(hqs[0].m_vPos, hqs[1].m_vPos, westReach, clearance);
+  s_Access.Reach(hqs[1].m_vPos, hqs[0].m_vPos, eastReach, clearance);
+  for (int i = pool.Count() - 1; i >= 0; i--)
+  {
+   ACR_GenSite site = pool[i];
+   if (hqs.Contains(site)) continue;
+   if (!BetweenHQs(site.m_vPos, hqs[0].m_vPos, hqs[1].m_vPos) || !s_Access.CanReach(site.m_vPos, westReach, hqs[1].m_vPos, clearance) || !s_Access.CanReach(site.m_vPos, eastReach, hqs[0].m_vPos, clearance)) pool.RemoveOrdered(i);
+  }
+ }
+
+ // Among otherwise suitable, widely separated HQ pairs, prefer the one that strands the
+ // fewest objectives. This avoids fixing a bad HQ choice by unnecessarily deleting a region.
+ protected static int AccessibleCount(array<ACR_GenSite> pool, ACR_GenSite west, ACR_GenSite east)
+ {
+  if (!s_Access)
+  {
+   s_Access = new ACR_GenAccess();
+   s_Access.Build(s_Surveyed);
+  }
+  array<int> westReach = {}, eastReach = {};
+  s_Access.Reach(west.m_vPos, east.m_vPos, westReach);
+  s_Access.Reach(east.m_vPos, west.m_vPos, eastReach);
+  int count = 2;
+  foreach (ACR_GenSite site : pool)
+  {
+   if (site == west || site == east) continue;
+   if (BetweenHQs(site.m_vPos, west.m_vPos, east.m_vPos) && s_Access.CanReach(site.m_vPos, westReach, east.m_vPos) && s_Access.CanReach(site.m_vPos, eastReach, west.m_vPos)) count++;
+  }
+  return count;
+ }
+
+ // Home regions and four nearest ordinary objectives per side keep their full income. This
+ // protects the opening; later RP comes from a spaced selection of strategic sites instead
+ // of every town/landmark. HQ/basic income, starting RP and reinforcement prices are untouched.
+ static void AssignEconomy(array<ref ACR_GenSite> layout, array<ACR_GenSite> hqs, bool flash)
+ {
+  foreach (ACR_GenSite site : layout) { site.m_bIncome = false; site.m_iOpeningSide = -1; }
+  foreach (ACR_GenSite hq : hqs) { hq.m_bIncome = true; hq.m_iValue = 2; }
+  int starters = 4;
+  if (flash) starters = 2;
+  for (int side = 0; side < 2; side++)
+   for (int opening = 0; opening < starters; opening++)
+   {
+    ACR_GenSite closest;
+    float distance = float.MAX;
+    foreach (ACR_GenSite candidate : layout)
+    {
+     if (candidate.m_bIncome || candidate.m_sKind == "landmark") continue;
+     float away = vector.DistanceXZ(candidate.m_vPos, hqs[side].m_vPos);
+     if (away > vector.DistanceXZ(candidate.m_vPos, hqs[1 - side].m_vPos)) continue;
+     if (away < distance) { distance = away; closest = candidate; }
+    }
+    if (closest) { closest.m_bIncome = true; closest.m_iOpeningSide = side; }
+   }
+  // A dense home region must not lose early funding simply because it has a fifth nearby
+  // objective. These sites remain valuable later, too: there is no timed income nerf.
+  if (!flash)
+   foreach (ACR_GenSite nearby : layout)
+   {
+    if (nearby.m_bIncome || nearby.m_sKind == "landmark") continue;
+    float westDistance = vector.DistanceXZ(nearby.m_vPos, hqs[0].m_vPos);
+    float eastDistance = vector.DistanceXZ(nearby.m_vPos, hqs[1].m_vPos);
+    if (Math.Min(westDistance, eastDistance) > 2000) continue;
+    nearby.m_bIncome = true;
+    nearby.m_iOpeningSide = 0;
+    if (eastDistance < westDistance) nearby.m_iOpeningSide = 1;
+   }
+  int earning;
+  foreach (ACR_GenSite counted : layout) if (counted.m_bIncome) earning++;
+  int target = Math.Max(earning, 2 + Math.Ceil(0.5 * (layout.Count() - 2)));
+  float separation = 800;
+  if (flash) separation = 300;
+  while (earning < target)
+  {
+   ACR_GenSite best;
+   float score = -1;
+   foreach (ACR_GenSite option : layout)
+   {
+    if (option.m_bIncome || option.m_sKind == "landmark") continue;
+    float nearest = float.MAX;
+    foreach (ACR_GenSite income : layout) if (income.m_bIncome) nearest = Math.Min(nearest, vector.DistanceXZ(option.m_vPos, income.m_vPos));
+    if (nearest < separation) continue;
+    float value = option.m_iRank * 400 + Math.Min(nearest, 2500);
+    if (value > score) { score = value; best = option; }
+   }
+   if (!best) break;
+   best.m_bIncome = true;
+   earning++;
+  }
  }
 
  // ---------------------------------------------------------------- layout editor
@@ -655,8 +832,9 @@ class ACR_Generator
    }
  }
 
- // HQ pair: among military sites and airports (else every site), one of the three pairs
- // farthest apart (by seed). A flashpoint uses its two farthest sites.
+ // HQ pair: keep at least 80% of the greatest military/airport separation, prefer fewer
+ // rear objectives, then vary among the three farthest eligible pairs. Flashpoints use
+ // their two farthest non-landmark sites.
  protected static void PickHQs(array<ACR_GenSite> pool, bool flashpoint, RandomGenerator rng, out ACR_GenSite west, out ACR_GenSite east)
  {
   array<ACR_GenSite> candidates = {};
@@ -670,14 +848,31 @@ class ACR_Generator
   }
   if (candidates.Count() < 2) candidates.Copy(pool);
   if (flashpoint) { Farthest(candidates, west, east); return; }
+  ACR_GenSite spanA, spanB;
+  Farthest(candidates, spanA, spanB);
+  if (!spanA || !spanB) return;
+  float minimumSpan = 0.8 * vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
   // The three farthest pairs.
-  array<float> dist = {0, 0, 0};
+  array<float> dist = {-float.MAX, -float.MAX, -float.MAX};
   array<int> ia = {-1, -1, -1};
   array<int> ib = {-1, -1, -1};
+  int bestRear = int.MAX;
   for (int i = 0; i < candidates.Count(); i++)
    for (int j = i + 1; j < candidates.Count(); j++)
    {
     float d = vector.DistanceXZ(candidates[i].m_vPos, candidates[j].m_vPos);
+    if (d < minimumSpan) continue;
+    // Prefer pairs with objectives between them, rather than a base partway along a peninsula.
+    int rear = 0;
+    foreach (ACR_GenSite objective : pool)
+     if (!BetweenHQs(objective.m_vPos, candidates[i].m_vPos, candidates[j].m_vPos)) rear++;
+    if (rear > bestRear) continue;
+    if (rear < bestRear)
+    {
+     bestRear = rear;
+     dist = {-float.MAX, -float.MAX, -float.MAX};
+     ia = {-1, -1, -1}; ib = {-1, -1, -1};
+    }
     for (int k = 0; k < 3; k++)
     {
      if (d <= dist[k]) continue;
@@ -686,11 +881,20 @@ class ACR_Generator
      break;
     }
    }
-  int count = 0;
-  for (int c = 0; c < 3; c++) if (ia[c] >= 0) count++;
-  if (count == 0) return;
-  int choice = Math.Floor(rng.RandFloat01() * count);
-  if (choice >= count) choice = count - 1;
+  array<int> accessible = {};
+  int bestCount = -1;
+  for (int c = 0; c < 3; c++)
+  {
+   if (ia[c] < 0) continue;
+   int retained = AccessibleCount(pool, candidates[ia[c]], candidates[ib[c]]);
+   if (retained < bestCount) continue;
+   if (retained > bestCount) { accessible.Clear(); bestCount = retained; }
+   accessible.Insert(c);
+  }
+  if (accessible.IsEmpty()) return;
+  int pick = Math.Floor(rng.RandFloat01() * accessible.Count());
+  if (pick >= accessible.Count()) pick = accessible.Count() - 1;
+  int choice = accessible[pick];
   west = candidates[ia[choice]];
   east = candidates[ib[choice]];
  }
@@ -766,7 +970,7 @@ class ACR_Generator
   string sizeName = "full";
   if (size >= 0) sizeName = ACR_Skirmish.SizeName(size);
   PrintFormat("[ACR] GENERATED seed %1 size %2: %3 bases; HQs %4=%5 %6=%7, %8 m apart", s_iSeed, sizeName, layout.Count(), westSide, hqs[0].m_sName, eastSide, hqs[1].m_sName, (int)vector.DistanceXZ(hqs[0].m_vPos, hqs[1].m_vPos));
-  foreach (ACR_GenSite s : layout) PrintFormat("[ACR] GEN BASE %1 | %2 | %3 %4 | v%5 r%6", s.m_sName, s.m_sKind, (int)s.m_vPos[0], (int)s.m_vPos[2], s.m_iValue, (int)s.m_fRadius);
+  foreach (ACR_GenSite s : layout) PrintFormat("[ACR] GEN BASE %1 | %2 | %3 %4 | v%5 r%6 | income %7", s.m_sName, s.m_sKind, (int)s.m_vPos[0], (int)s.m_vPos[2], s.m_iValue, (int)s.m_fRadius, s.m_bIncome);
  }
 
  protected static ACR_Base MakeBase(ACR_GenSite site, string owner)
@@ -778,7 +982,7 @@ class ACR_Generator
   base.m_sName = site.m_sName;
   base.m_iValue = site.m_iValue;
   base.m_fRadius = site.m_fRadius;
-  base.m_bIncome = true;
+  base.m_bIncome = site.m_bIncome;
   base.m_bHidden = site.m_sKind == "landmark";
   base.m_bAllowSpawn = true;
   base.m_iGarrison = 0;
@@ -787,6 +991,7 @@ class ACR_Generator
   base.m_fScore = 0;
   if (owner != "")
   {
+   base.m_bIncome = true;
    base.m_iValue = 2;
    base.m_iGarrison = 6;
    base.m_bHidden = false;

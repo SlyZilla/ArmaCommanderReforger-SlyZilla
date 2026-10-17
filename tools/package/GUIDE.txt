@@ -147,6 +147,11 @@ Saint-Philippe, Montignac or Levie, as well as generated layouts.
 KOLGUYEV: always generated from the terrain's named locations. Generated
 whole-map, half-map and flashpoint choices are also available on Arland
 and Everon. Both sides' HQs and starting forces move to the generated plan.
+Generated layouts space objectives out and distinguish income sites from
+tactical points. Nearby home objectives keep income; later economic sites
+are fewer. Starting funding and reinforcement prices are unchanged.
+Automatic layouts screen rear approaches and dry-land routes around HQs;
+review the preview map before Start, especially on unfamiliar terrain.
 There are no pre-placed pads in generated games: build a helipad before
 buying helicopters. Off-map air lift needs no pad.
 
