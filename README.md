@@ -12,10 +12,11 @@ Everon and Kolguyev. Play solo against AI commanders or share command with frien
 An unofficial Reforger rebuild of Arma 3's **Arma Commander**, licensed under
 APL-SA. Original authors and contributors are credited below and in [LICENSE.md](LICENSE.md).
 
-This is the main public source and development repository for AC: Actual.
+This is the main public source, development and [issue tracker](https://github.com/propst-design/ArmaCommanderReforger/issues) for AC: Actual.
 Install and update through the in-game Workshop for normal play. The older
 [ACActual repository](https://github.com/propst-design/ACActual) retains historical
-documentation, existing issues and legacy ZIP downloads/updaters.
+documentation, existing issues and legacy ZIP downloads/updaters. File new bug
+reports and feature requests in this repository's issue tracker.
 
 This README covers the development checkout as well as the basics of playing.
 The changelog lists **0.5.4 as prepared** and **0.5.3 as previously published**;

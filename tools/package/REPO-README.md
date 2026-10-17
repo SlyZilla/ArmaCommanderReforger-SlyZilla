@@ -82,7 +82,7 @@ still need broader acceptance. Reports of working behavior are useful too:
 
 ## Reporting bugs
 
-[Open an issue](https://github.com/propst-design/ACActual/issues/new/choose) and include:
+[Open an issue](https://github.com/propst-design/ArmaCommanderReforger/issues/new/choose) and include:
 
 1. **What happened**, and what you expected instead.
 2. **How to make it happen again**, if you know.

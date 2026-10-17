@@ -188,7 +188,7 @@ A faction without its own `ACR_FactionSettings` entity copies the settings of th
 (RP, AI commander, caps, prices, supports) and builds its buy list and garrisons from its catalog; its
 command unit is the catalog's officer, else its squad leader. This is not hand-fitting: an untuned faction
 can look mixed (several uniforms), and anything it lacks falls back to vanilla units. Only RHS and Ukraine
-Armed Forces RHS are hand-fitted. Requests for proper support of a faction mod: https://github.com/propst-design/ACActual/issues
+Armed Forces RHS are hand-fitted. Requests for proper support of a faction mod: https://github.com/propst-design/ArmaCommanderReforger/issues
 
 You can use `m_aPrefabMappings` to replace a unit with one from another mod. Each row is an
 `ACR_PrefabMapping` with two resource pickers:
@@ -681,7 +681,7 @@ keyboard cancel the detour.
    - `[ACR] Host options: ...` shows the settings you selected.
 3. Open the map with **M** or **F9**. You should see bases and squads, and be able to open the command panel.
 
-Problems or questions: [open an issue](https://github.com/propst-design/ACActual/issues/new/choose) and
+Problems or questions: [open an issue](https://github.com/propst-design/ArmaCommanderReforger/issues/new/choose) and
 attach the log.
 
 ## Play a custom map with a friend

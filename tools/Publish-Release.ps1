@@ -82,7 +82,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host "Publishing $version to $repo ..."
-$notes = "Download ACActual-WithBBB.zip below, unzip it, and read 'READ ME FIRST.txt'.`nUpgrading from the old single-addon ZIP? Download and extract this complete package once; the old updater cannot install the new BBB dependency.`nFound a bug? [Report it here](https://github.com/$repo/issues/new/choose); the README lists what most needs multiplayer testing."
+$notes = "Download ACActual-WithBBB.zip below, unzip it, and read 'READ ME FIRST.txt'.`nUpgrading from the old single-addon ZIP? Download and extract this complete package once; the old updater cannot install the new BBB dependency.`nFound a bug? [Report it here](https://github.com/propst-design/ArmaCommanderReforger/issues/new/choose); the README lists what most needs multiplayer testing."
 & $gh release create $version $zip --repo $repo --title $version --notes $notes --latest
 if ($LASTEXITCODE -ne 0) { Fail "Release upload failed (see above)." }
 

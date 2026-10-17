@@ -34,7 +34,7 @@ map mod alone does not add an AC: Actual entry to the scenario list.
 
 Mission makers can create scenarios on other terrains with generated or hand-placed bases,
 custom factions and starting forces. Workbench setup and configuration guide:
-https://github.com/propst-design/ACActual/blob/main/MISSION-MAKING.md
+https://github.com/propst-design/ArmaCommanderReforger/blob/main/MISSION-MAKING.md
 
 On generated layouts, build a helipad before buying helicopters. Off-map air lift needs no pad.
 There are no victory conditions or saved matches; play for the fight and the territory.
@@ -84,6 +84,6 @@ not affiliated with or endorsed by Bohemia Interactive or the original authors.
 
 ## Issues and feedback
 
-Report bugs and issues to the GitHub repository: https://github.com/propst-design/ACActual/issues
+Report bugs and issues to the GitHub repository: https://github.com/propst-design/ArmaCommanderReforger/issues
 Please include what happened, the map and mod set, steps to reproduce it, and logs if available.
 Faction support requests and feedback are welcome there too.
