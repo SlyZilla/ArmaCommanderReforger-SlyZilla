@@ -393,6 +393,7 @@ class ACR_Manager : Managed
   // Setup phase: nothing runs until the host or an admin presses Start (ACR_Setup).
   if (!ACR_Setup.Started()) { ACR_Setup.Tick(); return; }
   int t = System.GetTickCount();
+  int tickStarted = t;
   if (!m_bHostOptionsApplied) ApplyHostOptions();
   ScanForSquads();
   ResolveCrewNames();
@@ -427,7 +428,7 @@ class ACR_Manager : Managed
   WatchEvictions();
   m_iStatusTick++;
   if (m_iStatusTick % 300 == 0) ACR_Report.LogAll();
-  bool statusDue = m_iStatusTick % 5 == 0;
+  int statusPhase = m_iStatusTick % 5;
   for (int i = m_Squads.Count() - 1; i >= 0; i--)
   {
    ACR_Squad squad = m_Squads[i];
@@ -446,7 +447,6 @@ class ACR_Manager : Managed
    {
     squad.Refresh();
     squad.Tactics(m_iAISkill, GetGame().GetWorld().GetWorldTime());
-    if (statusDue) squad.UpdateStatus(m_Logistics);
     continue;
    }
    // Where its vehicle is and whether it still stands, so a lost crew can be traced (2 Oct live).
@@ -457,12 +457,24 @@ class ACR_Manager : Managed
    squad.Dispose();
    m_Squads.RemoveOrdered(i);
   }
+  t = ACR_Perf.Lap("squads", t);
+  int statusCount;
+  // One stable fifth per second; discovery, tactics and removal still run every tick.
+  foreach (ACR_Squad statusSquad : m_Squads)
+  {
+   if (statusSquad.m_iStatusPhase != statusPhase) continue;
+   statusSquad.UpdateStatus(m_Logistics);
+   statusCount++;
+  }
+  ACR_Perf.CountStatus(statusCount);
+  t = ACR_Perf.Lap("status", t);
   Mortars().Tick();
   FireMissions().Tick();
-  t = ACR_Perf.Lap("squads", t);
+  t = ACR_Perf.Lap("fire", t);
   if (ACR_Perf.s_bChecks) foreach (ACR_Squad checked : m_Squads) checked.CheckOrderState();
   ACR_MapFeed.PublishAll(this);
   t = ACR_Perf.Lap("feed", t);
+  ACR_Perf.Lap("tick", tickStarted);
   ACR_Perf.EndTick();
  }
 

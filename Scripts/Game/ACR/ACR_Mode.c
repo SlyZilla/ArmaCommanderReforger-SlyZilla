@@ -30,6 +30,14 @@ class ACR_Mode : GenericEntity
  {
   if (!GetGame().InPlayMode()) return;
   s_Instance = this;
+  // Repeatable larger-battle profiling preset; ordinary matches retain their host options.
+  if (System.IsCLIParam("acrPerfScaleTest"))
+  {
+   ACR_Options.Set("acrThreat", "high");
+   ACR_Options.Set("acrStartRP", "500");
+   ACR_Options.Set("acrSoldierCap", "300");
+   ACR_Options.Set("acrUnitCap", "40");
+  }
   ACR_FactionSelection.Apply();
   ACR_Manager manager = ACR_Manager.Start();
   manager.m_bHostGameMaster = m_bHostGameMaster;
@@ -47,7 +55,7 @@ class ACR_Mode : GenericEntity
    m_bSummary = System.GetCLIParam("acrScenarioTest", flag) || System.IsCLIParam("acrSkirmishPlayTest");
    m_bSoak = System.GetCLIParam("acrSoakTest", flag);
    // -acrPerfTest: the soak battle for 3 minutes with tick timings in the log.
-   m_bPerf = System.GetCLIParam("acrPerfTest", flag);
+   m_bPerf = System.GetCLIParam("acrPerfTest", flag) || System.IsCLIParam("acrPerfScaleTest");
    if (m_bPerf) { m_bSoak = true; ACR_Perf.s_bOn = true; }
    // -acrEveronSoakTest: the 20-minute soak with tick timings (Everon at scale).
    if (System.IsCLIParam("acrEveronSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; }

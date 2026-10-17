@@ -79,6 +79,7 @@ class ACR_Squad : Managed
  int m_Commander;             // player id holding native command authority, 0 = none
  int m_PreviousGroup = -1;    // commander's own playable group before taking command
  bool m_PreviousDeleteIfEmpty;
+ int m_iStatusPhase; // stable registration phase; removals never shift other squads
  string m_Name;
  vector m_Home;               // position at registration; used by the test RALLY order
  AIWaypoint m_Waypoint;       // last waypoint we spawned, deleted when replaced
@@ -87,6 +88,7 @@ class ACR_Squad : Managed
  void ACR_Squad(SCR_AIGroup group, int number)
  {
   m_Group = group;
+  m_iStatusPhase = number % 5;
   m_Name = group.GetCustomName();
   if (m_Name.IsEmpty()) m_Name = SCR_GroupHelperUI.GetTranslatedGroupName(group);
   if (m_Name.IsEmpty()) m_Name = string.Format("Squad %1", number);
@@ -1111,7 +1113,14 @@ class ACR_Squad : Managed
    legs.Clear();
   }
   if (exactEnd) destination = clicked;
-  if (!anchor || IsMounted() || !BBB_Terrain.LandRoute(anchor.GetOrigin(), destination, legs))
+  bool landRoute;
+  if (anchor && !IsMounted())
+  {
+   int landStarted = System.GetTickCount();
+   landRoute = BBB_Terrain.LandRoute(anchor.GetOrigin(), destination, legs);
+   ACR_Perf.Lap("route.land", landStarted);
+  }
+  if (!landRoute)
   {
    if (prefab == WP_GARRISON) { Garrison(destination); return true; }
    if (prefab == WP_DEFEND) return Defend(destination);
