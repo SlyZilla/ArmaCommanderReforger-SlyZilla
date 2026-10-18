@@ -467,9 +467,9 @@ class ACR_MapFeed
    int stock = -1;
    if (base.m_bBuilt && base.m_sOwner == frame.m_sKey && base.m_FobSupply) stock = ACR_FobSupply.Stock(base.m_FobSupply);
    frame.m_BaseSupply.Insert(stock);
-   frame.m_BaseSupply.Insert(ACR_FobSupply.CAPACITY);
+   frame.m_BaseSupply.Insert(ACR_FobSupply.CapacityOf(base));
    int delivery = 0;
-   if (stock >= 0) delivery = Math.Ceil(base.m_fSupplyDeliveryLeft / 1000);
+   if (stock >= 0 && base.m_iSupplyDelivery > 0) delivery = Math.Max(1, Math.Ceil(base.m_fSupplyDeliveryLeft / 1000));
    frame.m_BaseSupply.Insert(delivery);
    sig += base.GetLabel() + "|" + base.m_sOwner + "|" + detail + "|" + flag.ToString() + ";";
    bytes += 12 + base.GetLabel().Length() + base.m_sOwner.Length() + detail.Length() + 4 * 8;

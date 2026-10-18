@@ -1396,7 +1396,7 @@ class ACR_AICommander : Managed
   ACR_Helipad pad = station.FreePad(m_sFaction, null);
   if (!pad) return false;
   ACR_Base base = pad.Base();
-  if (!base || !base.m_bAllowSpawn || base.m_bContested) return false;
+  if (!ACR_LogisticsRules.CanDeploy(base) || base.m_bContested) return false;
   foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
   {
    if (entry.m_iSupportHeli != 1 || entry.m_iRemaining <= 0) continue;
@@ -1475,7 +1475,7 @@ class ACR_AICommander : Managed
   float best = -1;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_sOwner != m_sFaction || !base.m_bAllowSpawn || base.m_bContested) continue;
+   if (base.m_sOwner != m_sFaction || !ACR_LogisticsRules.CanDeploy(base) || base.m_bContested) continue;
    // distance to the nearest non-owned base = how far behind the lines it is
    float nearestFront = 100000;
    foreach (ACR_Base other : ACR_Base.s_All)

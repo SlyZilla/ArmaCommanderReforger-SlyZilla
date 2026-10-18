@@ -100,8 +100,15 @@ Add these components to the game mode object. The Arland map has working example
   - **Helipad**: a pad for support helicopters and where bought helicopters appear, for the side's nearest base.
   - **Headquarters / Player Hub**: away from existing bases it becomes a forward base ("FOB 1"...) where
     units can be bought and reinforcements deploy; hidden from the enemy until found, no income.
-  AI squads that need ammo, repairs, fuel or healing also head for these. Service is slow and
-  free; the Reinforce button's paid instant vehicle service remains separate. Initial construction
+  - **Supply depot** (Supply Cache / Supply Storage): inside a friendly FOB's circle, increases
+    its capacity by 2,000 supplies. This bonus applies once per FOB, even with multiple depots.
+  AI squads that need ammo, repairs, fuel or healing also head for supplied service buildings.
+  By default, static service buildings require a friendly FOB in whose circle they stand and
+  consume its supplies; placing them outside the circle does not bypass that cost. Healing,
+  infantry ammunition, each 15% repair/fuel step cost 10 supplies; each turret magazine costs 5,
+  and a replacement disposable launcher costs 20. Service pauses while the FOB is contested.
+  The startup **Logistics settings** page can restore free field services. Mobile service trucks
+  retain their own stock system. Initial construction
   draws from construction-truck stock. A built FOB starts with an empty **1,000-supply** store
   (the vanilla command post's storage capacity). Select its map marker as commander and order
   **500 supplies for 20 RP**, delivered after **60 uncontested seconds**. One delivery at a time;
@@ -110,7 +117,30 @@ Add these components to the game mode object. The Arland map has working example
   it does not charge again. Destroying/dismantling the command post removes its store and loses any
   pending paid delivery; there is no refund. Built FOBs never provide free truck restocking, and paid
   stock cannot be loaded into trucks. Existing non-built friendly deployment bases retain truck
-  restocking. Supply-depot capacity upgrades and AI base/helipad building are not implemented.
+  restocking. Losing the last depot reduces capacity to 1,000 and loses excess stored stock;
+  a paid delivery that no longer fits waits until space is available. Depot bonuses never add
+  supplies themselves. AI base/helipad building is not implemented.
+
+  **RP reinforcement remains available at FOBs**, including with an empty supply store. In supplied
+  service mode, instant infantry healing/ammunition from the Reinforce action costs 3 RP per soldier
+  actually serviced; replacement soldiers still cost 3 RP each. Instant vehicle rearm/repair retains
+  its existing RP price. Supplied service buildings provide gradual, cheaper service and require the
+  matching building (hospital, ammo, maintenance, fuel); a supply depot provides storage only.
+
+### Deployment and reinforcement logistics
+
+Generated sites have explicit roles. HQs, captured military sites (including airfields) and built
+FOBs can deploy new squads/vehicles. Cities, towns, villages and settlements can send infantry
+replacements but cannot deploy new formations or provide instant vehicle service. Industry and
+landmarks remain income/territorial objectives. Replacements still walk from the nearest eligible
+friendly base when the squad is outside one. The existing enemy-within-300-m and contested-base
+checks remain; no encirclement or road-supply-line simulation is added.
+
+Authored bases default to `AUTHORED`, retaining their deployment behavior. Mission makers can assign
+`m_eLogisticsRole` and independently disable new-unit deployment with `m_bAllowSpawn` or infantry
+replacements with `m_bAllowReinforce`. Player respawn locations are not changed by formation-deployment
+policy. Hosts can override logistics on the startup screen before Start; header defaults and CLI
+flags also work through the normal options precedence.
 
 ### AI world and navmesh
 
@@ -369,7 +399,9 @@ A base is a point the sides can capture. Its position is the centre of the captu
 | `m_iValue` | 1 | RP it adds to its owner's income (shown on the map as `Name [value]`) |
 | `m_bIncome` | on | Produces income. Off = purely tactical point |
 | `m_bHidden` | off | Hidden from other sides until one of their units enters it |
-| `m_bAllowSpawn` | on | Bought units and reinforcements can deploy here (while owned and not contested) |
+| `m_bAllowSpawn` | on | Allows new-unit deployment, additionally filtered by logistics policy; also retains its existing player-respawn use |
+| `m_bAllowReinforce` | on | Allows RP infantry replacements, additionally filtered by reinforcement policy |
+| `m_eLogisticsRole` | `AUTHORED` (0) | `AUTHORED`, `HQ`, `MILITARY`, `SETTLEMENT`, `OBJECTIVE` (0–4); generated layouts assign these automatically. Authored preserves existing mission flags; select another role to opt into site restrictions |
 | `m_fRadius` | 50 | Capture radius in metres |
 
 **Income:** every 60 seconds, each side gets 5 RP plus the value of each income base it owns.
@@ -519,6 +551,12 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrGameMasterAll` | `-acrGameMasterAll` (0 or 1) |
 | `m_iAcrMarksmen` | `-acrMarksmen` (0 or 1) |
 | `m_iAcrSetup` | `-acrSetup` (0 or 1) |
+| `m_sAcrDeployment` | `-acrDeployment military` (default), `all`, `hq`; new formations at military/HQ/FOB, all spawn-enabled points, or HQ/FOB only |
+| `m_sAcrReinforcement` | `-acrReinforcement settlements` (default), `all`, `deployment`; infantry replacements at settlements plus deployment sites, all reinforcement-enabled points, or deployment sites only |
+| `m_sAcrFobServices` | `-acrFobServices supplies` (default) or `free`; automatic static service buildings draw FOB supplies or retain unlimited free service anywhere |
+| `m_iAcrDepotCapacity` | `-acrDepotCapacity 2000` default, 0–10000; one depot's extra FOB storage; zero disables the bonus |
+| `m_iAcrServiceSupplyCost` | `-acrServiceSupplyCost 10` default, 0–100; supply cost per service load (turret magazines half, disposable launchers double) |
+| `m_iAcrFobRPServiceCost` | `-acrFobRPServiceCost 3` default, 0–100; RP per soldier actually serviced instantly at a FOB in supplied mode; zero makes this fallback free |
 
 The header describes the scenario; it does not publish, package or copy the world. Workbench creates
 the `.meta` files beside the world and header. Keep them there and do not edit them. When you choose
@@ -658,8 +696,7 @@ mission makers, automated tests and server operators; players choose match setti
 - **No victory conditions**, by design: the match runs until the host ends it.
 - **The AI commander cannot fly bought aircraft.** Combat support and off-map air lift are
   script-flown; the AI can call air lifts for long moves and road detours.
-- **Player construction only:** AI base/helipad building and supply-depot storage upgrades are not
-  implemented. There is no save/resume system.
+- **Player construction only:** AI base/helipad building is not implemented. There is no save/resume system.
 - **Intel includes automatic base reports:** enemies within an owned base's radius plus 60 m
   are reported without line of sight. Reinforce also refuses enemies within 300 m even when unseen.
 - **PC controls:** keyboard/mouse is the tested control scheme; console/controller play is unverified.

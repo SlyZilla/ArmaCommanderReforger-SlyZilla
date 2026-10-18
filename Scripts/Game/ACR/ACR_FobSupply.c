@@ -43,6 +43,21 @@ class ACR_FobSupply
   return Math.Floor(container.GetResourceValue());
  }
 
+ static int CapacityOf(ACR_Base base)
+ {
+  if (!base) return 0;
+  SCR_ResourceContainer store = ACR_Logistics.SupplyContainer(base.m_FobSupply);
+  if (!store) return 0;
+  return store.GetMaxResourceValue();
+ }
+
+ static ACR_Base Nearby(string faction, vector position)
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_bBuilt && !base.m_bRetired && base.m_sOwner == faction && base.m_FobSupply && vector.DistanceXZ(position, base.GetOrigin()) <= base.m_fRadius) return base;
+  return null;
+ }
+
  static void Create(ACR_Base base)
  {
   if (!base || !base.m_bBuilt || base.m_FobSupply) return;
@@ -143,6 +158,9 @@ class ACR_FobSupply
   if (base.m_fSupplyDeliveryLeft > 0) return;
   SCR_ResourceContainer container = ACR_Logistics.SupplyContainer(base.m_FobSupply);
   if (!container) return;
+  // Capacity can shrink while a delivery is in transit. Hold the paid batch until
+  // room is made or a depot is rebuilt rather than silently destroying the delivery.
+  if (container.GetMaxResourceValue() - Stock(base.m_FobSupply) < base.m_iSupplyDelivery) return;
   container.SetResourceValue(Math.Min(container.GetMaxResourceValue(), Stock(base.m_FobSupply) + base.m_iSupplyDelivery));
   base.m_iSupplyDelivery = 0;
   PrintFormat("[ACR] FOB %1 received 500 paid construction supplies", base.m_sName);
@@ -150,11 +168,12 @@ class ACR_FobSupply
 
  static string Describe(ACR_Base base)
  {
-  string detail = string.Format("\nConstruction supplies: %1 / %2", Stock(base.m_FobSupply), CAPACITY);
+  string detail = string.Format("\nFOB supplies: %1 / %2", Stock(base.m_FobSupply), CapacityOf(base));
   if (base.m_iSupplyDelivery > 0)
   {
    string state = "";
    if (base.m_bContested) state = " (paused: contested)";
+   else if (base.m_fSupplyDeliveryLeft <= 0) state = " (waiting for storage space)";
    detail += string.Format("\nDelivery: %1 supplies, %2 s%3", base.m_iSupplyDelivery, Math.Ceil(base.m_fSupplyDeliveryLeft / 1000), state);
   }
   return detail;

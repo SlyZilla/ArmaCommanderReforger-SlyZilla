@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup"};
+  array<string> names = {"acrLayout", "acrSize", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost"};
   foreach (string name : names)
   {
    string value;
@@ -125,6 +125,19 @@ class ACR_MissionHeader : SCR_MissionHeader
  [Attribute("-1", UIWidgets.EditBox, "Setup screen before the match: 1 = the host or an admin picks options and presses Start (-acrSetup)")]
  int m_iAcrSetup;
 
+ [Attribute("", UIWidgets.EditBox, "New-unit deployment: military, all or hq (-acrDeployment)")]
+ string m_sAcrDeployment;
+ [Attribute("", UIWidgets.EditBox, "Infantry replacements: settlements, all or deployment (-acrReinforcement)")]
+ string m_sAcrReinforcement;
+ [Attribute("", UIWidgets.EditBox, "Automatic FOB services: supplies or free (-acrFobServices)")]
+ string m_sAcrFobServices;
+ [Attribute("-1", UIWidgets.EditBox, "One depot's FOB capacity bonus, 0 disables (-acrDepotCapacity)")]
+ int m_iAcrDepotCapacity;
+ [Attribute("-1", UIWidgets.EditBox, "Supplies per automatic FOB service load (-acrServiceSupplyCost)")]
+ int m_iAcrServiceSupplyCost;
+ [Attribute("-1", UIWidgets.EditBox, "RP per soldier actually healed/restocked instantly at FOB (-acrFobRPServiceCost)")]
+ int m_iAcrFobRPServiceCost;
+
  void Fill(map<string, string> values)
  {
   Text(values, "acrLayout", m_sAcrLayout);
@@ -146,6 +159,12 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrGameMasterAll", m_iAcrGameMasterAll);
   Number(values, "acrMarksmen", m_iAcrMarksmen);
   Number(values, "acrSetup", m_iAcrSetup);
+  Text(values, "acrDeployment", m_sAcrDeployment);
+  Text(values, "acrReinforcement", m_sAcrReinforcement);
+  Text(values, "acrFobServices", m_sAcrFobServices);
+  Number(values, "acrDepotCapacity", m_iAcrDepotCapacity);
+  Number(values, "acrServiceSupplyCost", m_iAcrServiceSupplyCost);
+  Number(values, "acrFobRPServiceCost", m_iAcrFobRPServiceCost);
  }
 
  protected static void Text(map<string, string> values, string name, string value)

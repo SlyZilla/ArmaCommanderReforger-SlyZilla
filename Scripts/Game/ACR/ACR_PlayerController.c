@@ -1239,7 +1239,7 @@ modded class SCR_PlayerController
   string details = m_ACR_GroupDetails[index];
   bool missing = details.Contains("missing");
   bool lowAmmo = details.Contains("| ammo ") && !details.Contains("| ammo 100%");
-  m_ACR_Panel.SetReinforce("Reinforce (3 RP per soldier, ammo in base)", missing || lowAmmo);
+  m_ACR_Panel.SetReinforce("Reinforce (3 RP/soldier; FOB instant service extra)", missing || lowAmmo);
  }
 
  void ACR_OnPanelAction(int action)

@@ -204,7 +204,7 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"west", "east", "layout", "seed", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared"};
+  array<string> keys = {"west", "east", "layout", "seed", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "depotcapacity", "servicecost", "rpservice"};
   foreach (string key : keys)
   {
    if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
@@ -235,6 +235,12 @@ class ACR_Setup
   if (key == "startrp") return "Starting RP";
   if (key == "income") return "Income";
   if (key == "shared") return "Shared command";
+  if (key == "deployment") return "New-unit deployment";
+  if (key == "reinforcement") return "Infantry replacements";
+  if (key == "fobservices") return "FOB service payment";
+  if (key == "depotcapacity") return "Depot storage bonus";
+  if (key == "servicecost") return "FOB supplies per service load";
+  if (key == "rpservice") return "FOB instant infantry service (RP)";
   return key;
  }
 
@@ -278,6 +284,12 @@ class ACR_Setup
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
   else if (key == "income") values = {"", "0.5", "1", "1.5", "2", "3"};
   else if (key == "shared") values = {"1", "0"};
+  else if (key == "deployment") values = {"military", "all", "hq"};
+  else if (key == "reinforcement") values = {"settlements", "all", "deployment"};
+  else if (key == "fobservices") values = {"supplies", "free"};
+  else if (key == "depotcapacity") values = {"0", "1000", "2000", "4000"};
+  else if (key == "servicecost") values = {"5", "10", "20"};
+  else if (key == "rpservice") values = {"0", "3", "5"};
   return values;
  }
 
@@ -290,6 +302,12 @@ class ACR_Setup
   if (key == "startrp") return "acrStartRP";
   if (key == "income") return "acrIncome";
   if (key == "shared") return "acrSharedCommand";
+  if (key == "deployment") return "acrDeployment";
+  if (key == "reinforcement") return "acrReinforcement";
+  if (key == "fobservices") return "acrFobServices";
+  if (key == "depotcapacity") return "acrDepotCapacity";
+  if (key == "servicecost") return "acrServiceSupplyCost";
+  if (key == "rpservice") return "acrFobRPServiceCost";
   return "";
  }
 
@@ -319,6 +337,15 @@ class ACR_Setup
   }
   if (!ACR_Options.Get(Option(key), value)) value = "";
   value.ToLower();
+  if (value == "")
+  {
+   if (key == "deployment") return "military";
+   if (key == "reinforcement") return "settlements";
+   if (key == "fobservices") return "supplies";
+   if (key == "depotcapacity") return "2000";
+   if (key == "servicecost") return "10";
+   if (key == "rpservice") return "3";
+  }
   if (key == "threat" && value == "") return "normal";
   if (key == "pricing" && value == "") return "";
   if (key == "ai" && value == "") return "";
@@ -330,6 +357,12 @@ class ACR_Setup
  {
   if (value == "")
   {
+   if (key == "deployment") return "military bases / HQs / FOBs (scenario default)";
+   if (key == "reinforcement") return "settlements + deployment bases (scenario default)";
+   if (key == "fobservices") return "supplies (scenario default)";
+   if (key == "depotcapacity") return "+2000 supplies (scenario default)";
+   if (key == "servicecost") return "10 supplies (scenario default)";
+   if (key == "rpservice") return "3 RP per serviced soldier (scenario default)";
    if (key == "seed") return "random (click to roll one)";
    if (key == "pricing" || key == "ai") return "scenario's choice";
    return "scenario default";
@@ -356,6 +389,12 @@ class ACR_Setup
    return ACR_FactionSelection.DisplayName(side) + " only";
   }
   if (key == "income") return "x" + value;
+  if (key == "deployment" && value == "military") return "military bases / HQs / FOBs";
+  if (key == "deployment" && value == "hq") return "HQs / FOBs only";
+  if (key == "deployment" && value == "all") return "all deployment-enabled points";
+  if (key == "reinforcement" && value == "settlements") return "settlements + deployment bases";
+  if (key == "reinforcement" && value == "deployment") return "deployment bases only";
+  if (key == "reinforcement" && value == "all") return "all reinforcement-enabled points";
   if (key == "shared")
   {
    if (value == "0") return "off";
@@ -706,9 +745,14 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  protected static const ResourceName LAYOUT_BUTTON = "{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout";
  protected ref map<SCR_ButtonBaseComponent, string> m_Keys = new map<SCR_ButtonBaseComponent, string>();
  protected Widget m_wRows;
+ protected bool m_bLogisticsPage;
+ protected string m_sRows;
+ protected string m_sInfo;
 
  void Fill(string rows, string info)
  {
+  m_sRows = rows;
+  m_sInfo = info;
   Widget root = GetRootWidget();
   if (!root) return;
   SetTitle("AC: Actual - match setup");
@@ -729,6 +773,8 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
    array<string> parts = {};
    line.Split("\t", parts, false);
    if (parts.Count() < 2) continue;
+   bool logistics = parts[0] == "deployment" || parts[0] == "reinforcement" || parts[0] == "fobservices" || parts[0] == "depotcapacity" || parts[0] == "servicecost" || parts[0] == "rpservice";
+   if (logistics != m_bLogisticsPage) continue;
    Widget widget = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, m_wRows);
    if (!widget) continue;
    AlignableSlot.SetPadding(widget, 2, 2, 2, 2);
@@ -738,12 +784,24 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
    button.m_OnClicked.Insert(OnRow);
    m_Keys.Set(button, parts[0]);
   }
+  Widget page = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, m_wRows);
+  if (!page) return;
+  SCR_ButtonTextComponent pageButton = SCR_ButtonTextComponent.FindButtonTextComponent(page);
+  if (pageButton)
+  {
+   string caption = "Logistics settings...";
+   if (m_bLogisticsPage) caption = "Back to match settings";
+   pageButton.SetText(caption);
+   pageButton.m_OnClicked.Insert(OnRow);
+   m_Keys.Set(pageButton, "logistics_page");
+  }
  }
 
  protected void OnRow(SCR_ButtonBaseComponent button)
  {
   string key;
   if (!m_Keys.Find(button, key)) return;
+  if (key == "logistics_page") { m_bLogisticsPage = !m_bLogisticsPage; Fill(m_sRows, m_sInfo); return; }
   if (key == "map") { ACR_SetupClient.OpenPreviewMap(); return; }
   ACR_SetupClient.Request(key);
  }

@@ -18,6 +18,10 @@ class ACR_Base : GenericEntity
  bool m_bHidden;
  [Attribute("1", UIWidgets.CheckBox, "Purchased units and reinforcements can deploy here")]
  bool m_bAllowSpawn;
+ [Attribute("1", UIWidgets.CheckBox, "Allows RP infantry replacements; separate from new-unit deployment")]
+ bool m_bAllowReinforce;
+ [Attribute("0", UIWidgets.ComboBox, "Logistics role: Authored preserves existing deployment flags", enums: ParamEnumArray.FromEnum(ACR_EBaseRole))]
+ ACR_EBaseRole m_eLogisticsRole;
  [Attribute("50", UIWidgets.EditBox, "Capture radius in metres")]
  float m_fRadius;
 

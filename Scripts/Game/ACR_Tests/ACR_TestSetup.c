@@ -5,7 +5,7 @@
 // Start applies them (threat high reaches the game, starting units spawn).
 class ACR_TestSetup
 {
- static const int CHECKS = 16;
+ static const int CHECKS = 20;
  protected static int s_iStartedAt = -1;
 
  static bool Wanted() { return System.IsCLIParam("acrSetupTest"); }
@@ -25,6 +25,29 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup: nothing starts before Start", ACR_Setup.Wanted() && !ACR_Setup.Started() && !ACR_Skirmish.Applied() && agents == 0, string.Format("wanted %1, started %2, layout applied %3, AI agents %4", ACR_Setup.Wanted(), ACR_Setup.Started(), ACR_Skirmish.Applied(), agents));
    string rows = ACR_Setup.Rows();
    ACR_TestRegress.Check("setup: the dialog rows list the options", rows.Contains("threat\tThreat: normal") && rows.Contains("ai\tAI commanders") && rows.Contains("shared\tShared command: on"), rows);
+   ACR_MissionHeader logisticsHeader = new ACR_MissionHeader();
+   logisticsHeader.m_sAcrDeployment = "military";
+   logisticsHeader.m_sAcrReinforcement = "deployment";
+   logisticsHeader.m_sAcrFobServices = "free";
+   logisticsHeader.m_iAcrDepotCapacity = 4000;
+   logisticsHeader.m_iAcrServiceSupplyCost = 20;
+   logisticsHeader.m_iAcrFobRPServiceCost = 5;
+   map<string, string> logisticsDefaults = new map<string, string>();
+   logisticsHeader.Fill(logisticsDefaults);
+   ACR_Options.UseHeaderForTest(logisticsDefaults);
+   ACR_TestRegress.Check("setup: logistics mission-header defaults resolve", ACR_LogisticsRules.DepotBonus() == 4000 && ACR_LogisticsRules.ServiceCost() == 20 && ACR_LogisticsRules.InstantServiceFee() == 5 && !ACR_LogisticsRules.SuppliedServices(), "");
+   ACR_TestRegress.Check("setup: mission header maps deployment policies", ACR_LogisticsRules.Choice("acrDeployment", "") == "military" && ACR_LogisticsRules.Choice("acrReinforcement", "") == "deployment", "");
+   ACR_Setup.Cycle("deployment");
+   string deployment;
+   ACR_Options.Get("acrDeployment", deployment);
+   ACR_TestRegress.Check("setup: startup deployment choice overrides mission header", deployment == "all" && ACR_Options.Source("acrDeployment") == "screen", deployment);
+   ACR_Options.Unset("acrDeployment");
+   ACR_Setup.Cycle("fobservices");
+   string services;
+   ACR_Options.Get("acrFobServices", services);
+   ACR_TestRegress.Check("setup: startup service choice overrides free header", services == "supplies" && ACR_LogisticsRules.SuppliedServices(), services);
+   ACR_Options.Unset("acrFobServices");
+   ACR_Options.UseHeaderForTest(null);
    string refused = ACR_Setup.Handle(9999, "threat");
    string refusedStart = ACR_Setup.Handle(9999, "start");
    ACR_TestRegress.Check("setup: a player who isn't host or admin can't change or start", refused.Contains("Only the host") && refusedStart.Contains("Only the host") && !ACR_Setup.Started(), refused);
@@ -259,7 +282,7 @@ class ACR_TestSetup
  // US is given every neutral base north of the split line (z > 6650); the reserve must sit at a
  // secure non-HQ base, not the Airbase HQ. Logs the five best candidates.
  // -acrSetupGenTest 1 (server, Kolguyev, ~40 s): the layout preview during setup (aca-f07).
- static const int GEN_CHECKS = 23;
+ static const int GEN_CHECKS = 25;
  protected static ref array<string> s_PreviewNames = {};
  static bool GenWanted() { return System.IsCLIParam("acrSetupGenTest"); }
  static void RunGen(int second)
@@ -298,6 +321,16 @@ class ACR_TestSetup
    int ownedHQs;
    foreach (ACR_Base hq : ACR_Base.s_All) if (hq.m_sOwner != "") ownedHQs++;
    ACR_TestRegress.Check("setup preview: two HQs owned after Start", ownedHQs == 2, string.Format("%1 owned", ownedHQs));
+   int assignedRoles, deploySites, reinforcementSites, settlements;
+   foreach (ACR_Base logistical : ACR_Base.s_All)
+   {
+    if (logistical.m_eLogisticsRole != ACR_EBaseRole.AUTHORED) assignedRoles++;
+    if (ACR_LogisticsRules.CanDeploy(logistical)) deploySites++;
+    if (ACR_LogisticsRules.CanReinforce(logistical)) reinforcementSites++;
+    if (logistical.m_eLogisticsRole == ACR_EBaseRole.SETTLEMENT) settlements++;
+   }
+   ACR_TestRegress.Check("generated logistics: every built site has an explicit role", assignedRoles == built.Count(), assignedRoles.ToString());
+   ACR_TestRegress.Check("generated logistics: settlements reinforce beyond military deployment sites", settlements > 0 && deploySites >= 2 && reinforcementSites > deploySites && deploySites < built.Count(), string.Format("deploy %1 reinforce %2 settlements %3 total %4", deploySites, reinforcementSites, settlements, built.Count()));
    ACR_Base moved;
    foreach (ACR_Base b : ACR_Base.s_All) if (b.m_sName == s_sMoved) moved = b;
    float off = -1;

@@ -985,12 +985,17 @@ class ACR_Generator
   base.m_bIncome = site.m_bIncome;
   base.m_bHidden = site.m_sKind == "landmark";
   base.m_bAllowSpawn = true;
+  base.m_bAllowReinforce = true;
+  base.m_eLogisticsRole = ACR_EBaseRole.OBJECTIVE;
+  if (site.m_sKind == "military" || site.m_sKind == "airport") base.m_eLogisticsRole = ACR_EBaseRole.MILITARY;
+  if (site.m_sKind == "city" || site.m_sKind == "town" || site.m_sKind == "village" || site.m_sKind == "settlement") base.m_eLogisticsRole = ACR_EBaseRole.SETTLEMENT;
   base.m_iGarrison = 0;
   base.m_sOwner = owner;
   base.m_sCapturer = "";
   base.m_fScore = 0;
   if (owner != "")
   {
+   base.m_eLogisticsRole = ACR_EBaseRole.HQ;
    base.m_bIncome = true;
    base.m_iValue = 2;
    base.m_iGarrison = 6;

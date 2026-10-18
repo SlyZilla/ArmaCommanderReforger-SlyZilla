@@ -11,6 +11,10 @@ Pending development changes target 0.5.5; the standalone BBB split is already re
 Development 0.5.5 adds paid FOB construction supplies: empty 1,000 capacity, 500 supplies for
 20 RP after 60 uncontested seconds, and construction from the FOB without a parked truck.
 Built FOBs no longer refill trucks for free. Live/multiplayer acceptance remains pending.
+Depots expand FOB storage to 3,000; service buildings consume its supplies. Generated settlements
+send infantry replacements; military sites/HQs/FOBs deploy new formations. RP reinforcement remains
+available. Startup Logistics settings let hosts choose deployment/replacement policies, free or
+supplied service, depot capacity and service costs; mission makers also have header/base controls.
 No faction mods are required for vanilla sides.
 
 ## Command and fight

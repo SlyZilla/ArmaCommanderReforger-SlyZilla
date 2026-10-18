@@ -156,7 +156,16 @@ class ACR_Logistics : Managed
 
  float StockOf(IEntity vehicle)
  {
-  if (IsPoint(vehicle)) return 1000;
+  if (IsPoint(vehicle))
+  {
+   ACR_Base fob = ServiceFob(vehicle);
+   if (!ACR_LogisticsRules.SuppliedServices()) return 1000;
+   if (!fob) return 0;
+   if (fob.m_bContested) return 0;
+   int price = ACR_LogisticsRules.ServiceCost();
+   if (price <= 0) return 1000;
+   return ACR_FobSupply.Stock(fob.m_FobSupply) / (float)price;
+  }
   int flags = ServiceOf(vehicle);
   if (flags == 0) return 0;
   float stock;
@@ -177,11 +186,23 @@ class ACR_Logistics : Managed
 
  bool Use(IEntity vehicle, float amount)
  {
-  if (IsPoint(vehicle)) return true;
+  if (IsPoint(vehicle))
+  {
+   ACR_Base fob = ServiceFob(vehicle);
+   if (!ACR_LogisticsRules.SuppliedServices()) return true;
+   if (!fob) return false;
+   return ACR_FobSupply.SpendBuild(fob.m_FobSupply, Math.Ceil(amount * ACR_LogisticsRules.ServiceCost()));
+  }
   float stock = StockOf(vehicle);
   if (stock < amount) return false;
   m_Stock.Set(vehicle, stock - amount);
   return true;
+ }
+
+ ACR_Base ServiceFob(IEntity station)
+ {
+  if (!station || !IsPoint(station) || !ACR_LogisticsRules.SuppliedServices()) return null;
+  return ACR_FobSupply.Nearby(m_PointFaction.Get(station), station.GetOrigin());
  }
 
  // ---------------------------------------------------------------- game supplies
@@ -609,7 +630,7 @@ class ACR_Logistics : Managed
   if (stock >= capacity) return;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_bBuilt || base.m_bRetired || base.m_bContested || base.m_sOwner != faction || !base.m_bAllowSpawn) continue;
+   if (base.m_bBuilt || base.m_bRetired || base.m_bContested || base.m_sOwner != faction || !ACR_LogisticsRules.CanDeploy(base)) continue;
    if (vector.DistanceXZ(base.GetOrigin(), station.GetOrigin()) > base.m_fRadius) continue;
    m_Stock.Set(station, Math.Min(capacity, stock + capacity * RESTOCK_PER_TICK));
    return;
@@ -623,7 +644,7 @@ class ACR_Logistics : Managed
   for (int i = 0; i < m_PointFlags.Count(); i++)
   {
    IEntity point = m_PointFlags.GetKey(i);
-   if (point && (m_PointFlags.GetElement(i) & service) != 0 && m_PointFaction.Get(point) == faction) result.Insert(point);
+   if (point && (m_PointFlags.GetElement(i) & service) != 0 && m_PointFaction.Get(point) == faction && StockOf(point) > 0) result.Insert(point);
   }
   foreach (IEntity station : m_ServiceVehicles)
   {

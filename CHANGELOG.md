@@ -4,6 +4,9 @@
 
 Development changes since the released 0.5.4. Live/multiplayer acceptance remains pending.
 
+- Supply depots expand FOB storage from 1,000 to 3,000 supplies, with one bonus per FOB. FOB hospital/ammo/repair/fuel buildings now consume local supplies; empty or contested FOBs cannot provide automatic service. RP reinforcement and instant vehicle service remain available, with a configurable RP fee for instant infantry service at FOBs.
+- Generated settlements can send infantry replacements, while new squads and vehicles deploy from HQs, military sites/airfields and FOBs. Authored missions retain existing deployment behavior unless configured otherwise. Added mission-maker controls and a startup Logistics page for deployment, infantry replacements, supplied/free services, depot capacity and service costs.
+
 - Reinforcement results now appear directly in the command-map panel for 12 seconds, including refusals caused by enemy troops within 300 m. A short burst of squad results is shown together instead of immediately replacing the first refusal.
 
 - Built FOBs start with an empty 1,000-supply construction store. Commanders can order 500 supplies for 20 RP with a 60-second delay that pauses while contested, then build from the FOB without keeping a construction truck there. Built FOBs no longer refill service trucks for free.

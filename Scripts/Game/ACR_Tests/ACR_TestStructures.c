@@ -22,6 +22,8 @@ class ACR_TestStructures
  static ACR_Base s_Fob;
  static float s_EmptyTruckStock;
  static IEntity s_RejectedBuild;
+ static IEntity s_Depot, s_ExtraDepot, s_FobFuel, s_FobVehicle;
+ static SCR_AIGroup s_RPServiceGroup;
 
  static float NativeCapacity(IEntity entity)
  {
@@ -147,6 +149,8 @@ class ACR_TestStructures
   ACR_Squad alpha = manager.FindSquadByGroup(h.m_Range.m_Group);
   if (tick == 1)
   {
+   // The original service fixtures are outside any FOB; test the optional legacy mode.
+   ACR_Options.Set("acrFobServices", "free");
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
    if (soviets) soviets.m_bAICommander = false;
    ACR_FactionSettings us = ACR_FactionSettings.Find("US");
@@ -233,6 +237,11 @@ class ACR_TestStructures
    if (fob)
    {
     CheckSupplies(manager, fob);
+    ACR_TestLogisticsRules.Run(manager, s_Base, fob, EntryIndex(manager, false));
+    s_Depot = Place("{94D9E9B690F98756}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SupplyCache_S_US_01.et", fob.GetOrigin() + Vector(20, 0, 0));
+    s_ExtraDepot = Place("{94D9E9B690F98756}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SupplyCache_S_US_01.et", fob.GetOrigin() + Vector(0, 0, 25));
+    s_FobFuel = Place(FUEL, fob.GetOrigin() + Vector(-16, 0, 0));
+    s_RPServiceGroup = SCR_AIGroup.Cast(Place("{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et", fob.GetOrigin() + Vector(0, 0, -18)));
     string bought = manager.PurchaseAt("US", EntryIndex(manager, false), fob);
     ACR_TestRegress.Check("structures: units can be bought at the forward base", bought.Contains("deploying at " + fob.m_sName), bought);
    }
@@ -254,7 +263,53 @@ class ACR_TestStructures
    SCR_ResourceConsumer consumer = supply.GetConsumer(EResourceGeneratorID.DEFAULT, EResourceType.SUPPLIES);
    string supplyDetail = "no default construction consumer";
    if (consumer) supplyDetail = string.Format("supplies %1 / %2", consumer.GetAggregatedResourceValue(), consumer.GetAggregatedMaxResourceValue());
-   ACR_TestRegress.Check("FOB: building UI sees paid stock after resource update", consumer && consumer.GetAggregatedResourceValue() == 1000 && consumer.GetAggregatedMaxResourceValue() == 1000, supplyDetail);
+   ACR_TestRegress.Check("FOB: building UI sees paid stock after resource update", consumer && consumer.GetAggregatedResourceValue() == 1000 && consumer.GetAggregatedMaxResourceValue() == 3000, supplyDetail);
+   ACR_TestRegress.Check("logistics: completed depot expands actual FOB capacity", ACR_FobSupply.CapacityOf(s_Fob) == 3000, ACR_FobSupply.CapacityOf(s_Fob).ToString());
+   ACR_TestRegress.Check("logistics: multiple depots do not stack storage bonuses", s_Depot && s_ExtraDepot && manager.m_Structures.CountActive(ACR_EStructure.DEPOT, "US") == 2 && ACR_FobSupply.CapacityOf(s_Fob) == 3000, "");
+   ACR_Options.Set("acrFobServices", "supplies");
+   SCR_ResourceContainer serviceStore = ACR_Logistics.SupplyContainer(s_Fob.m_FobSupply);
+   serviceStore.SetResourceValue(20);
+   ACR_TestRegress.Check("logistics: service charges actual FOB supplies", manager.m_Logistics.Use(s_FobFuel, 1) && ACR_FobSupply.Stock(s_Fob.m_FobSupply) == 10, "");
+   serviceStore.SetResourceValue(0);
+   ACR_TestRegress.Check("logistics: empty FOB refuses service", !manager.m_Logistics.Use(s_FobFuel, 1), "");
+   ACR_TestRegress.Check("logistics: service outside a FOB cannot bypass supply cost", !manager.m_Logistics.Use(s_Fuel, 1), "");
+   ACR_Squad rpSquad = manager.FindSquadByGroup(s_RPServiceGroup);
+   if (!rpSquad || !rpSquad.GetAnchor()) { ACR_TestRegress.Abort("structures", "RP service squad missing"); return; }
+   SCR_CharacterDamageManagerComponent rpWounds = SCR_CharacterDamageManagerComponent.Cast(rpSquad.GetAnchor().FindComponent(SCR_CharacterDamageManagerComponent));
+   if (rpWounds) rpWounds.GetDefaultHitZone().SetHealthScaled(0.5);
+   int rpBefore = manager.m_Bases.GetRP("US");
+   int instantServed = manager.m_Requisition.RestockAmmo(rpSquad, s_Fob);
+   ACR_TestRegress.Check("logistics: RP fallback heals with an empty supply store", instantServed > 0 && ACR_Logistics.Health(rpSquad.GetAnchor()) > 0.95 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) == 0, "");
+   ACR_TestRegress.Check("logistics: RP fallback charges only soldiers actually serviced", rpBefore - manager.m_Bases.GetRP("US") == instantServed * 3, "");
+   SCR_EntityHelper.DeleteEntityAndChildren(s_RPServiceGroup);
+   serviceStore.SetResourceValue(2500);
+   ACR_FobSupply.Order(manager, "US", s_Fob);
+   if (s_Depot) SCR_EntityHelper.DeleteEntityAndChildren(s_Depot);
+   if (s_ExtraDepot) SCR_EntityHelper.DeleteEntityAndChildren(s_ExtraDepot);
+   ACR_Options.Set("acrFobServices", "free");
+  }
+  if (tick == 23)
+  {
+   ACR_TestRegress.Check("logistics: depot loss restores capacity and removes excess stock", ACR_FobSupply.CapacityOf(s_Fob) == 1000 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) == 1000, "");
+   ACR_FobSupply.Advance(s_Fob, 60000);
+   ACR_TestRegress.Check("logistics: paid delivery waits for space after depot loss", s_Fob.m_iSupplyDelivery == 500 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) == 1000, "");
+   ACR_Logistics.SupplyContainer(s_Fob.m_FobSupply).SetResourceValue(0);
+   ACR_FobSupply.Advance(s_Fob, 0);
+   ACR_TestRegress.Check("logistics: held delivery arrives once storage is free", s_Fob.m_iSupplyDelivery == 0 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) == 500, "");
+   // Actual parked vehicle service, with finite supplies and no squad/player aboard.
+   ACR_Options.Set("acrFobServices", "supplies");
+   s_FobVehicle = Place(HUMVEE, s_Fob.GetOrigin() + Vector(-12, 0, 0));
+   ACR_Vehicles.SetOwner(s_FobVehicle, "US");
+   SCR_FuelManagerComponent fobTanks = SCR_FuelManagerComponent.Cast(s_FobVehicle.FindComponent(SCR_FuelManagerComponent));
+   if (fobTanks) fobTanks.SetTotalFuelPercentage(0.2);
+   ACR_Logistics.SupplyContainer(s_Fob.m_FobSupply).SetResourceValue(20);
+  }
+  if (tick == 48)
+  {
+   ACR_TestRegress.Check("logistics: native FOB fuel service consumes finite supply", ACR_Logistics.Fuel(s_FobVehicle) > 0.25 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) < 20, string.Format("fuel %1 stock %2", ACR_Logistics.Fuel(s_FobVehicle), ACR_FobSupply.Stock(s_Fob.m_FobSupply)));
+   ACR_TestRegress.Check("logistics: empty fuel store stops further service", ACR_Logistics.Fuel(s_FobVehicle) < 0.6 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) == 0, "");
+   if (s_FobFuel) SCR_EntityHelper.DeleteEntityAndChildren(s_FobFuel);
+   ACR_Options.Set("acrFobServices", "free");
   }
   if (tick > 8 && tick % 5 == 0)
    PrintFormat("[ACR] STRUCTURETEST t=%1 wounded %2 (%5 m from the hospital), humvee health %3 fuel %4", tick, ACR_Logistics.Health(s_Wounded), ACR_Logistics.Health(s_Humvee), ACR_Logistics.Fuel(s_Humvee), DistanceTo(s_Wounded, s_Hospital));
@@ -296,7 +351,7 @@ class ACR_TestStructures
    ACR_Helipad last = ACR_Helipad.s_All[ACR_Helipad.s_All.Count() - 1];
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
    ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
-   ACR_TestRegress.Complete("structures", 39);
+   ACR_TestRegress.Complete("structures", 51 + ACR_TestLogisticsRules.CHECKS);
   }
  }
 

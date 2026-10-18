@@ -5,12 +5,13 @@
 //  - Vehicle Maintenance: vehicles nearby are slowly repaired.
 //  - Ammo Storage: soldiers nearby get magazines/launchers, vehicles' guns are refilled.
 //  - Fuel Storage: vehicles nearby are slowly refuelled.
-//    (These four are free, unlimited service points in ACR_Logistics, which AI squads in need
-//    also walk to.)
+//    (These use local FOB supplies by default; the free-services option restores unlimited
+//    field points. AI squads in need also walk to points with available stock.)
 //  - Helipad: a pad for support helicopters, and where bought helicopters appear.
 //  - Headquarters / Player Hub: a forward base ("FOB n") where purchases and reinforcements
 //    deploy, unless it stands inside an existing base. Hidden from the enemy until found.
 // Built anywhere; owned by the builder's side. Removed when the structure is gone.
+// Supply depots inside a friendly FOB expand its storage once, without adding supplies.
 enum ACR_EStructure
 {
  NONE,
@@ -19,7 +20,8 @@ enum ACR_EStructure
  AMMO,
  FUEL,
  HELIPAD,
- HQ
+ HQ,
+ DEPOT
 }
 
 modded class SCR_CampaignBuildingCompositionComponent
@@ -126,6 +128,7 @@ class ACR_Structures : Managed
   if (name.Contains("fuelstorage")) return ACR_EStructure.FUEL;
   if (name.Contains("helipad_l")) return ACR_EStructure.HELIPAD;
   if (name.Contains("headquarters") || name.Contains("playerhub")) return ACR_EStructure.HQ;
+  if (name.Contains("supplycache_") || name.Contains("supplystorage_")) return ACR_EStructure.DEPOT;
   return ACR_EStructure.NONE;
  }
 
@@ -145,6 +148,7 @@ class ACR_Structures : Managed
    case ACR_EStructure.FUEL: return "fuel storage";
    case ACR_EStructure.HELIPAD: return "helipad";
    case ACR_EStructure.HQ: return "headquarters";
+   case ACR_EStructure.DEPOT: return "supply depot";
   }
   return "structure";
  }
@@ -241,6 +245,24 @@ class ACR_Structures : Managed
    if (composition.ACR_BuildRejected() || !composition.IsCompositionSpawned() || IsActive(composition)) continue;
    Activate(composition);
   }
+  foreach (ACR_Structure active : m_Active)
+   if (active.m_Fob) UpdateCapacity(active.m_Fob);
+ }
+
+ void UpdateCapacity(ACR_Base base)
+ {
+  bool depot;
+  foreach (ACR_Structure structure : m_Active)
+  {
+   if (!structure.m_Entity || !structure.m_Composition || structure.m_eKind != ACR_EStructure.DEPOT || structure.m_sFaction != base.m_sOwner) continue;
+   if (vector.DistanceXZ(structure.m_vPos, base.GetOrigin()) <= base.m_fRadius) depot = true;
+  }
+  int capacity = ACR_FobSupply.CAPACITY;
+  if (depot) capacity += ACR_LogisticsRules.DepotBonus();
+  SCR_ResourceContainer store = ACR_Logistics.SupplyContainer(base.m_FobSupply);
+  if (!store) return;
+  if (store.GetMaxResourceValue() != capacity) store.SetMaxResourceValue(capacity);
+  if (store.GetResourceValue() > capacity) store.SetResourceValue(capacity);
  }
 
  protected void Activate(SCR_CampaignBuildingCompositionComponent composition)
@@ -297,6 +319,7 @@ class ACR_Structures : Managed
   fob.m_bIncome = false;
   fob.m_bHidden = true;
   fob.m_bAllowSpawn = true;
+  fob.m_bAllowReinforce = true;
   fob.m_fRadius = FOB_RADIUS;
   fob.m_bBuilt = true;
   ACR_FobSupply.Create(fob);

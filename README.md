@@ -51,6 +51,11 @@ In the **0.5.5 development tree**, built FOBs start with an empty 1,000-supply c
 store. Select your FOB on the command map to order 500 supplies for 20 RP (60 seconds,
 paused while contested), then stand inside its circle and choose **Build at FOB**. A truck
 is no longer needed for subsequent construction. Built FOBs do not refill trucks for free.
+One supply depot expands a FOB to 3,000 capacity. Hospital, ammo, maintenance and fuel buildings
+use its supplies for automatic service; RP reinforcement remains available. Generated settlements
+send infantry replacements, while HQs, military sites and FOBs deploy new formations. The startup
+**Logistics settings** page lets hosts change these policies, capacity bonuses and service costs;
+mission makers can set defaults and per-base roles.
 Live and multiplayer acceptance of these controls is still pending.
 
 ## Legacy ZIP / development launchers

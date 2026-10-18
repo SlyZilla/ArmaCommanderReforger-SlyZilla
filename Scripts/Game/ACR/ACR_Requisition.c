@@ -63,7 +63,7 @@ class ACR_Requisition : Managed
   float bestDistance = float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_sOwner != factionKey || !base.m_bAllowSpawn || base.m_bContested) continue;
+   if (base.m_sOwner != factionKey || !ACR_LogisticsRules.CanReinforce(base) || base.m_bContested) continue;
    float distance = vector.Distance(base.GetOrigin(), position);
    if (distance >= bestDistance) continue;
    bestDistance = distance;
@@ -132,7 +132,7 @@ class ACR_Requisition : Managed
   ACR_RequisitionEntry entry = data.m_aRequisitions[entryIndex];
   if (entry.m_iRemaining <= 0) return entry.m_sName + ": none left";
   if (!base || base.m_sOwner != key) return "Deploy at one of your own bases";
-  if (!base.m_bAllowSpawn) return base.m_sName + " can't deploy units";
+  if (!ACR_LogisticsRules.CanDeploy(base)) return base.m_sName + " cannot deploy new units (use a military base, HQ or FOB)";
   if (base.m_bContested) return base.m_sName + " is under attack";
   if (OverSoldierCap(key)) return string.Format("Too many soldiers in the field (limit %1)", m_Manager.m_iSoldierCap);
   if (!m_Manager.m_Supports) m_Manager.m_Supports = new ACR_Supports(m_Manager);
@@ -509,6 +509,7 @@ class ACR_Requisition : Managed
   // A mortar team whose mortar was destroyed gets a new one with its reinforcements.
   ACR_MortarTeam mortar = m_Manager.Mortars().TeamOf(squad);
   bool newTube = mortar && mortar.m_bLost;
+  if (newTube && depot && !ACR_LogisticsRules.CanDeploy(depot)) return "A replacement mortar needs a military base, HQ or FOB";
   if (missing.IsEmpty() && newTube)
   {
    if (!m_Manager.m_Bases.Spend(key, ACR_Mortars.TUBE_COST)) return string.Format("Not enough RP for a new mortar (%1 needed)", ACR_Mortars.TUBE_COST);
@@ -519,7 +520,7 @@ class ACR_Requisition : Managed
   // Its vehicles inside the base are rearmed and repaired, priced by what's missing (Jacob, 2 Oct).
   array<IEntity> serviced = {};
   int vehicleCost;
-  if (depot)
+  if (depot && ACR_LogisticsRules.CanDeploy(depot))
   {
    SquadVehiclesIn(squad, depot, serviced);
    foreach (IEntity vehicle : serviced) vehicleCost += ServiceCost(vehicle);
@@ -527,6 +528,8 @@ class ACR_Requisition : Managed
   if (missing.IsEmpty())
   {
    if (!depot) return squad.GetName() + " is at full strength (ammo only inside a base that can deploy units)";
+   int instantCost = InstantRestockCost(squad, depot);
+   if (m_Manager.m_Bases.GetRP(key) < vehicleCost + instantCost) return "Not enough RP for instant service; use supplied FOB service buildings or replenish RP";
    if (vehicleCost > 0)
    {
     if (!m_Manager.m_Bases.Spend(key, vehicleCost)) return string.Format("Not enough RP to rearm and repair %1 (%2 needed)", squad.GetName(), vehicleCost);
@@ -544,11 +547,13 @@ class ACR_Requisition : Managed
   ACR_Base base = depot;
   if (!base) base = NearestSpawnBase(key, near);
   if (!base) return "No friendly base can send reinforcements";
+  if (newTube && !ACR_LogisticsRules.CanDeploy(base)) return "A replacement mortar needs a military base, HQ or FOB";
   // The soldier limit counts reinforcements too (soft threshold, as for buying).
   if (OverSoldierCap(key)) return string.Format("Too many soldiers in the field (limit %1)", m_Manager.m_iSoldierCap);
   int extras = vehicleCost;
   if (newTube) extras += ACR_Mortars.TUBE_COST;
   int most = missing.Count() * REINFORCE_COST_PER_SOLDIER + extras;
+  if (depot) most += InstantRestockCost(squad, depot);
   if (m_Manager.m_Bases.GetRP(key) < most) return string.Format("Not enough RP (%1 needed)", most);
   // Paid per soldier who actually joined (Jacob, 5 Oct; R01 review): spawn first, then
   // charge. Vehicle service and a new mortar are charged on their own.
@@ -653,20 +658,36 @@ class ACR_Requisition : Managed
   return served;
  }
 
- // A friendly, uncontested base that can deploy units, with the point inside its circle.
+ // A friendly, uncontested infantry-replacement base, with the point inside its circle.
  ACR_Base DeployBaseAt(string factionKey, vector position)
  {
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_sOwner != factionKey || !base.m_bAllowSpawn || base.m_bContested) continue;
+   if (base.m_sOwner != factionKey || !ACR_LogisticsRules.CanReinforce(base) || base.m_bContested) continue;
    if (vector.DistanceXZ(base.GetOrigin(), position) <= base.m_fRadius) return base;
   }
   return null;
  }
 
- // Wounds healed, magazines back up to each soldier's normal load and a new launcher for one who
- // threw a spent one away, for members standing inside the base circle (free: the
- // base's stores, not a truck's). Returns how many soldiers got something.
+ // Budget the optional instant FOB infantry-service fee before replacements/vehicle charges.
+ int InstantRestockCost(ACR_Squad squad, ACR_Base base)
+ {
+  if (!base || !base.m_bBuilt || !ACR_LogisticsRules.SuppliedServices()) return 0;
+  int count;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity soldier = agent.GetControlledEntity();
+   if (!soldier || !ACR_Respawn.IsAlive(soldier) || vector.DistanceXZ(soldier.GetOrigin(), base.GetOrigin()) > base.m_fRadius) continue;
+   SCR_CharacterDamageManagerComponent wounds = SCR_CharacterDamageManagerComponent.Cast(soldier.FindComponent(SCR_CharacterDamageManagerComponent));
+   if ((wounds && (wounds.GetHealthScaled() < 0.99 || wounds.IsBleeding())) || ACR_Logistics.SoldierMagazines(soldier) < squad.MagazineTarget(soldier) || (m_Manager.m_Launchers && m_Manager.m_Launchers.IsOwed(soldier))) count++;
+  }
+  return count * ACR_LogisticsRules.InstantServiceFee();
+ }
+
+ // Heal/restock inside a reinforcement base. Supplied-mode FOBs charge RP only
+ // for soldiers actually served; the manual action never needs automatic-service supplies.
  int RestockAmmo(ACR_Squad squad, ACR_Base base)
  {
   int served;
@@ -677,6 +698,10 @@ class ACR_Requisition : Managed
    IEntity soldier = agent.GetControlledEntity();
    if (!soldier || !ACR_Respawn.IsAlive(soldier)) continue;
    if (vector.DistanceXZ(soldier.GetOrigin(), base.GetOrigin()) > base.m_fRadius) continue;
+   int fee = 0;
+   if (base.m_bBuilt && ACR_LogisticsRules.SuppliedServices()) fee = ACR_LogisticsRules.InstantServiceFee();
+   string side = squad.GetFaction().GetFactionKey();
+   if (m_Manager.m_Bases.GetRP(side) < fee) continue;
    bool got;
    // ...and the wounded patched up (Jacob, 3 Oct: the crew wasn't healed).
    SCR_CharacterDamageManagerComponent wounds = SCR_CharacterDamageManagerComponent.Cast(soldier.FindComponent(SCR_CharacterDamageManagerComponent));
@@ -698,7 +723,11 @@ class ACR_Requisition : Managed
      got = true;
     }
    }
-   if (got) served++;
+   if (got)
+   {
+    if (fee > 0 && m_Manager.m_Bases.Spend(side, fee)) m_Manager.LogSpend(null, side, m_Manager.m_Bases.GetRP(side) + fee, "instant infantry service at " + base.m_sName);
+    served++;
+   }
   }
   return served;
  }
