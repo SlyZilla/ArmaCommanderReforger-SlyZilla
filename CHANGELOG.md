@@ -20,7 +20,7 @@ Development changes since the released 0.5.4. Live/multiplayer acceptance remain
 - Squad health, ammunition and vehicle-status scans are spread across five seconds, reducing simultaneous update spikes while keeping each squad on its existing refresh interval.
 
 - Generated-layout editing now updates moved CP names from nearby places, allows deleting non-HQ CPs before Start, and restores moves and deletions with Undo layout edits.
-- Map markers identify CP value and hidden sites after discovery; setup previews show site type and value with a clearer selection label. Base labels stay visible without hovering.
+- Map markers keep concise names, CP value and contested warnings visible; hover reveals full site details, including hidden status, in gameplay and setup previews. Fixed duplicate marker widgets and labels briefly appearing at the map corner.
 - Opening the command map keeps its pan and zoom instead of jumping to your soldier.
 - Medics and teammates deploy smoke cover toward enemy threats before advancing to treat exposed casualties.
 - Cargo passengers can dismount from a slowing ground vehicle under fire and continue toward their objective. Fighting-vehicle crews remain aboard to fight.

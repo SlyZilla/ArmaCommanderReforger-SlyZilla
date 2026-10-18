@@ -169,6 +169,8 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup map: one marker per planned base", planned > 0 && markers == planned, string.Format("%1 markers, %2 planned", markers, planned));
    ACR_TestRegress.Check("setup map: base captions visible without hovering", pc && pc.ACR_TestBaseCaptionsVisible(), "actual MarkerText widgets");
    ACR_TestRegress.Check("setup map: base captions remain visible after mouse leave", pc && pc.ACR_TestBaseCaptionsVisible(true), "vanilla mouse-leave callback");
+   ACR_TestRegress.Check("setup map: hover expands full details and leave restores compact text", pc && pc.ACR_TestBaseHover(), "actual enter/leave callbacks");
+   ACR_TestRegress.Check("setup map: repeated creation replaces and positions the widget", pc && pc.ACR_TestBaseRecreate(), "old root detached, new root at world projection");
    ACR_TestRegress.Check("setup map: the dialog stays hidden while the map is open", SCR_ConfigurableDialogUi.GetCurrentDialog() == null, "");
   }
   if (second == 20)
@@ -263,6 +265,7 @@ class ACR_TestSetup
     s_fRememberedMapZoom = remembered.GetCurrentZoom();
    }
    ACR_TestRegress.Check("setup map: gameplay base captions visible without hovering", pc && pc.ACR_TestBaseCaptionsVisible(), "after Start, actual MarkerText widgets");
+   ACR_TestRegress.Check("setup map: gameplay hover expands current base details", pc && pc.ACR_TestBaseHover(), "");
    GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
   }
   if (second == 70) GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
@@ -274,7 +277,7 @@ class ACR_TestSetup
    bool sameView = restored && restored.IsOpen() && s_fRememberedMapZoom > 0 && vector.DistanceXZ(s_vRememberedMapCenter, Vector(restoredX, 0, restoredZ)) < 5 && Math.AbsFloat(restored.GetCurrentZoom() - s_fRememberedMapZoom) < 0.001;
    ACR_TestRegress.Check("setup map: reopening gameplay map preserves pan and zoom", sameView, string.Format("centre %1 -> %2, zoom %3", s_vRememberedMapCenter, Vector(restoredX, 0, restoredZ), s_fRememberedMapZoom));
    ACR_TestRegress.Check("setup map: reopened gameplay restores visible base captions", pc && pc.ACR_TestBaseCaptionsVisible(true), "also after mouse leave");
-   ACR_TestRegress.Complete("setupmap", 19);
+   ACR_TestRegress.Complete("setupmap", 22);
   }
  }
 
@@ -475,7 +478,7 @@ class ACR_TestSetup
   ACR_TestRegress.Check("editor: undo restores deleted and moved CPs", ACR_Generator.MoveCount() == 0 && ACR_Setup.s_PreviewNames.Count() == count && ACR_Setup.s_PreviewNames.Contains(source.m_sName) && ACR_Setup.s_PreviewNames.Contains(target.m_sName), "all edits cleared");
   string high = SCR_PlayerController.ACR_BaseCaption("Depot", "Industry, 3 RP", true);
   string hidden = SCR_PlayerController.ACR_BaseCaption("Peak [1]", "Unclaimed | +1 RP | Hidden", false);
-  ACR_TestRegress.Check("editor: captions distinguish value, hidden sites and HQs", high.Contains("[CP III]") && high.Contains("Industry, 3 RP") && hidden.Contains("[HIDDEN]") && SCR_PlayerController.ACR_BaseCaption("HQ", "HQ (US), 2 RP", true).Contains("[HQ]"), high + " / " + hidden);
+  ACR_TestRegress.Check("editor: compact captions retain value and HQ without full details", high == "[CP III] Depot" && hidden == "[CP I] Peak" && SCR_PlayerController.ACR_BaseCaption("HQ", "HQ (US), 2 RP", true) == "[HQ] HQ", high + " / " + hidden);
  }
 
  static bool ReserveWanted() { return System.IsCLIParam("acrReserveTest"); }
@@ -500,6 +503,51 @@ class ACR_TestSetup
 // Inspect the actual native marker widget, not just the caption-producing string.
 modded class SCR_PlayerController
 {
+ bool ACR_TestBaseHover()
+ {
+  if (m_ACR_BaseMarkers.IsEmpty()) return false;
+  foreach (ACR_UnitMarker marker : m_ACR_BaseMarkers)
+  {
+   Widget root = marker.GetRootWidget();
+   if (!root) return false;
+   SCR_MapMarkerWidgetComponent component = marker.GetMarkerComponent();
+   TextWidget text = TextWidget.Cast(root.FindAnyWidget("MarkerText"));
+   if (!component || !text || marker.m_BaseHover == marker.m_BaseCaption) return false;
+   component.OnMouseEnter(root, 0, 0);
+   if (!text.IsVisible() || text.GetText() != marker.m_BaseHover) return false;
+   // A changed feed while hovering must retain the expanded view.
+   string saved = marker.m_BaseHover;
+   marker.m_BaseHover += "\nupdated";
+   marker.RefreshStyle();
+   bool updated = text.GetText() == marker.m_BaseHover;
+   marker.m_BaseHover = saved;
+   marker.RefreshStyle();
+   component.OnMouseLeave(root, null, 0, 0);
+   if (!updated || text.GetText() != marker.m_BaseCaption || !text.IsVisible()) return false;
+  }
+  return true;
+ }
+
+ bool ACR_TestBaseRecreate()
+ {
+  if (m_ACR_BaseMarkers.IsEmpty()) return false;
+  ACR_UnitMarker marker = m_ACR_BaseMarkers[0];
+  Widget oldRoot = marker.GetRootWidget();
+  if (!oldRoot) return false;
+  marker.OnCreateMarker(true);
+  Widget root = marker.GetRootWidget();
+  if (!root || root == oldRoot || oldRoot.GetParent()) return false;
+  int pos[2];
+  marker.GetWorldPos(pos);
+  marker.SetWorldPos(pos[0] + 120, pos[1] + 80);
+  int screenX, screenY;
+  SCR_MapEntity.GetMapInstance().WorldToScreen(pos[0] + 120, pos[1] + 80, screenX, screenY, true);
+  vector actual = FrameSlot.GetPos(root);
+  bool positioned = Math.AbsFloat(actual[0] - GetGame().GetWorkspace().DPIUnscale(screenX)) < 1 && Math.AbsFloat(actual[1] - GetGame().GetWorkspace().DPIUnscale(screenY)) < 1;
+  marker.SetWorldPos(pos[0], pos[1]);
+  return positioned;
+ }
+
  bool ACR_TestBaseCaptionsVisible(bool mouseLeave = false)
  {
   if (m_ACR_BaseMarkers.IsEmpty()) return false;

@@ -4,6 +4,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  RplId m_UnitId;
  string m_Label;
  string m_BaseCaption; // display only; requests retain the exact label
+ string m_BaseHover;
  int m_State;          // 0 AI, 1 player-controlled, 2 dead
  bool m_Original;      // the player's command unit
  bool m_bCommandUnit;  // persistent marker for a fellow commander, not a possession target
@@ -18,6 +19,11 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  ref SCR_MilitarySymbol m_GroupSymbol;
  override void OnCreateMarker(bool skipProfanityFilter = false)
  {
+  // Map-open and local insertion can both create this marker. Remove the old
+  // widget before replacing its reference, or its caption stays at the origin.
+  if (m_wRoot) m_wRoot.RemoveFromHierarchy();
+  m_wRoot = null;
+  m_MarkerWidgetComp = null;
   // Always update: units move into view without the map being panned.
   m_bTestVisibleFrame = false;
   m_sStyled = "-";
@@ -26,7 +32,14 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   m_Click = new ACR_MarkerClick();
   m_Click.m_Marker = this;
   m_wRoot.AddHandler(m_Click);
+  OnUpdate();
   RefreshStyle();
+ }
+ override void SetWorldPos(int posX, int posY)
+ {
+  super.SetWorldPos(posX, posY);
+  // Position immediately; persistent captions must never wait at (0, 0).
+  if (m_wRoot && m_MapEntity) OnUpdate();
  }
  void ACR_SetColor(Color color)
  {
@@ -38,9 +51,10 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (!m_MarkerWidgetComp) return;
   string shown = m_Label;
   if (m_BaseIndex >= 0) shown = m_BaseCaption;
-  string key = string.Format("%1|%2|%3|%4|%5", shown, m_State, m_Original, m_Selected, m_iSymbolKey);
+  string key = string.Format("%1|%2|%3|%4|%5|%6", shown, m_State, m_Original, m_Selected, m_iSymbolKey, m_BaseHover);
   if (key == m_sStyled) return;
   m_sStyled = key;
+  if (m_BaseIndex >= 0) m_MarkerWidgetComp.SetEventListening(true);
   m_MarkerWidgetComp.SetText(shown, true);
   m_MarkerWidgetComp.SetTextVisible(true);
   Color color = new Color(0.1, 0.65, 1, 1);
@@ -1786,8 +1800,11 @@ modded class SCR_PlayerController
   else if (detail.Contains("2 RP")) symbol = "[CP II] ";
   else if (detail.Contains("1 RP")) symbol = "[CP I] ";
   if (detail.StartsWith("HQ (")) symbol = "[HQ] ";
-  if (detail.Contains("Hidden")) symbol = "[HIDDEN] " + symbol;
-  if (preview) return symbol + label + " - " + detail;
+  // The income suffix is already represented by the compact CP value tag.
+  label.Replace(" [1]", "");
+  label.Replace(" [2]", "");
+  label.Replace(" [3]", "");
+  if (detail.Contains("CONTESTED")) symbol = "! " + symbol;
   return symbol + label;
  }
 
@@ -1816,6 +1833,9 @@ modded class SCR_PlayerController
    marker.m_Selected = m_ACR_SelectedBase == marker.m_Label;
    string detail = m_ACR_Data.m_BaseDetails[i];
    marker.m_BaseCaption = ACR_BaseCaption(marker.m_Label, detail, ACR_SetupClient.s_bActive);
+   string hoverDetail = detail;
+   hoverDetail.Replace(" | ", "\n");
+   marker.m_BaseHover = marker.m_Label + "\n" + hoverDetail;
    if (marker.m_Selected) marker.m_BaseCaption = "> " + marker.m_BaseCaption + " <";
    vector pos = m_ACR_Data.m_BasePositions[i];
    marker.SetWorldPos(pos[0], pos[2]);
