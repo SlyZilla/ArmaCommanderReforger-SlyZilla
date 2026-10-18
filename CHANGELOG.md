@@ -4,6 +4,8 @@
 
 Development changes since the released 0.5.4. Live/multiplayer acceptance remains pending.
 
+- Rare requisitions now scale their limited stock with threat even under stepped pricing: High quadruples rare stock, including four BTRs instead of one. Low reduces larger allocations with a minimum of one; rare-unit prices remain fixed.
+
 - Supply depots expand FOB storage from 1,000 to 3,000 supplies, with one bonus per FOB. FOB hospital/ammo/repair/fuel buildings now consume local supplies; empty or contested FOBs cannot provide automatic service. RP reinforcement and instant vehicle service remain available, with a configurable RP fee for instant infantry service at FOBs.
 - Generated settlements can send infantry replacements, while new squads and vehicles deploy from HQs, military sites/airfields and FOBs. Authored missions retain existing deployment behavior unless configured otherwise. Added mission-maker controls and a startup Logistics page for deployment, infantry replacements, supplied/free services, depot capacity and service costs.
 

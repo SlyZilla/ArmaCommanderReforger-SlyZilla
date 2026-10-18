@@ -65,7 +65,53 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 90; // 85 + generated access sampling/connectivity guards (5)
+ static void CheckThreatStock()
+ {
+  string previous;
+  ACR_Options.Get("acrThreat", previous);
+  bool wasScreen = ACR_Options.Source("acrThreat") == "screen";
+  array<string> levels = {"low", "normal", "high"};
+  array<int> armourStocks = {1, 3, 12};
+  array<int> teamStocks = {3, 6, 24};
+  foreach (int index, string level : levels)
+  {
+   ACR_Options.Set("acrThreat", level);
+   ACR_RequisitionEntry btr = new ACR_RequisitionEntry();
+   btr.Set("BTR", "", "BTR.et", 76, 1);
+   btr.m_bRare = true;
+   ACR_Pricing.Setup(btr, true);
+   int expectedBtr = 1;
+   if (level == "high") expectedBtr = 4;
+   ACR_RequisitionEntry armour = new ACR_RequisitionEntry();
+   armour.Set("Armour", "", "Armour.et", 80, 3);
+   armour.m_bRare = true;
+   ACR_Pricing.Setup(armour, true);
+   ACR_RequisitionEntry team = new ACR_RequisitionEntry();
+   team.Set("Mortar", "Team.et", "", 30, 6);
+   team.m_bRare = true;
+   ACR_Pricing.Setup(team, true);
+   ACR_RequisitionEntry ordinary = new ACR_RequisitionEntry();
+   ordinary.Set("Rifles", "Team.et", "", 20, 6);
+   ACR_Pricing.Setup(ordinary, true);
+   btr.m_iBought = 1;
+   ACR_Pricing.Reprice(btr);
+   bool correct = btr.m_iRemaining == expectedBtr && armour.m_iRemaining == armourStocks[index] && team.m_iRemaining == teamStocks[index];
+   bool priceFixed = !btr.m_bStepped && btr.m_iCost == 76 && !team.m_bStepped && team.m_iCost == 30;
+   bool unlimited = ordinary.m_bStepped && ACR_Pricing.Unlimited(ordinary.m_iRemaining);
+   ACR_Pricing.Setup(armour, false);
+   bool fixedStock = armour.m_iRemaining == armourStocks[index] && !armour.m_bStepped;
+   ACR_Pricing.Setup(ordinary, false);
+   int expectedOrdinary = teamStocks[index];
+   if (level == "high") expectedOrdinary = 12;
+   fixedStock = fixedStock && ordinary.m_iRemaining == expectedOrdinary;
+   Check("rare stock scales at " + level + " threat", correct && priceFixed && unlimited && fixedStock, string.Format("BTR %1, armour %2, team %3, fixed prices %4, ordinary unlimited %5", btr.m_iRemaining, armour.m_iRemaining, team.m_iRemaining, priceFixed, unlimited));
+  }
+  if (wasScreen) ACR_Options.Set("acrThreat", previous);
+  else ACR_Options.Unset("acrThreat");
+ }
+
+ // Checks a full run makes (Skip counts as made). Raise it with every new check.
+ static const int EXPECTED = 93; // 90 + finite rare stock at all three threat levels (3)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -633,6 +679,7 @@ class ACR_TestRegress
   // purchase raises that unit's price by the threat step; rare units keep a fixed stock.
   if (tick == 47)
   {
+   CheckThreatStock();
    ACR_FactionData usData = manager.m_Bases.GetFaction("US");
    ACR_Base depot;
    foreach (ACR_Base base : ACR_Base.s_All)
@@ -664,7 +711,7 @@ class ACR_TestRegress
     if (rare >= 0)
     {
      ACR_RequisitionEntry mortar = usData.m_aRequisitions[rare];
-     Check("stepped pricing: rare units keep a fixed stock and price", mortar.m_bRare && !mortar.m_bStepped && mortar.m_iRemaining + mortar.m_iBought == mortar.m_iStock && mortar.m_iCost == mortar.m_iBaseCost, string.Format("%1 stock %2 left %3", mortar.m_sName, mortar.m_iStock, mortar.m_iRemaining));
+     Check("stepped pricing: rare units keep a fixed stock and price", mortar.m_bRare && !mortar.m_bStepped && mortar.m_iRemaining + mortar.m_iBought == ACR_Manager.ThreatStock(mortar.m_iStock, false) && mortar.m_iCost == mortar.m_iBaseCost, string.Format("%1 stock %2 left %3", mortar.m_sName, mortar.m_iStock, mortar.m_iRemaining));
     }
     usData.m_iRP = 100;
    }

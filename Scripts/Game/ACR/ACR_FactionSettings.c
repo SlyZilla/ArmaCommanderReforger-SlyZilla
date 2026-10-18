@@ -682,8 +682,8 @@ class ACR_FactionCatalog
 // first contact). Stepped (default): ordinary units have no stock limit, but each side's
 // price for a unit climbs a step with every purchase of it and never comes back down; the
 // threat level sets the step (low +25%, normal +15%, high +8% of the base price). Rare units
-// (aircraft, armour, mortar teams, support helicopters) keep a fixed stock that threat
-// doesn't touch. Fixed stock: the old system, stock per match scaled by threat level.
+// (aircraft, armour, mortar teams, support helicopters) keep finite stock scaled by threat
+// at a fixed price. Fixed stock: the old system, every entry has threat-scaled stock.
 class ACR_Pricing
 {
  static const int UNLIMITED = 9999;
@@ -722,8 +722,12 @@ class ACR_Pricing
   entry.m_iBaseCost = entry.m_iCost;
   entry.m_bStepped = stepped && !entry.m_bRare;
   if (entry.m_bStepped) entry.m_iRemaining = UNLIMITED;
-  else if (stepped) entry.m_iRemaining = entry.m_iStock;
-  else entry.m_iRemaining = ACR_Manager.ThreatStock(entry.m_iStock, !entry.m_sVehicle.IsEmpty());
+  else
+  {
+   entry.m_iRemaining = ACR_Manager.ThreatStock(entry.m_iStock, !entry.m_sVehicle.IsEmpty());
+   // Rare units need a larger High-threat pool: four times base stock in either mode.
+   if (entry.m_bRare && ACR_Manager.ThreatOption() == 2) entry.m_iRemaining *= 2;
+  }
  }
 
  static int PriceAfter(int baseCost, int bought)

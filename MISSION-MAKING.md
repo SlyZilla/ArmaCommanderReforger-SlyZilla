@@ -246,7 +246,9 @@ stock. The AI commander never buys aircraft (it can't fly them) and buys unarmed
 **Prices (`m_ePricing`).** `STEPPED` (default): infantry, cars and trucks can be bought without limit, but
 each purchase makes that unit cost more for that side: +15% of the base price per purchase at normal
 threat, +25% at low, +8% at high. Rare units (aircraft, APCs and armour, mortar teams, support helicopters)
-keep their `m_iStock` at a fixed price, untouched by threat. `FIXED_STOCK`: the older system, every unit has
+keep finite stock at a fixed price, scaled by threat: High quadruples rare `m_iStock`; Low halves infantry
+stock and cuts vehicle stock to a third (rounded, minimum one). A BTR with base stock 1 offers 1 on
+Low/Normal and 4 on High. `FIXED_STOCK`: the older system, every unit has
 its `m_iStock` per match (scaled by threat level) at a fixed price. The host can override it with
 `-acrPricing`.
 
@@ -322,7 +324,7 @@ wait time for calling in support above.
 | `m_bEnabled` | Offer this support unit for requisition; on by default |
 | `m_sName` | Buy-list name (empty = current default) |
 | `m_iCost` | Purchase cost in RP (-1 = current default) |
-| `m_iStock` | Base purchases per match (-1 = current default; under fixed-stock pricing, threat scaling applies; stepped pricing keeps rare-unit stock fixed) |
+| `m_iStock` | Base purchases per match (-1 = current default; finite stock in either pricing mode is scaled by threat) |
 | `m_sGroupPrefab` | Observer team's base group (observer role) |
 | `m_sPrimaryPrefab` | Spotter character (observer) |
 | `m_sSecondaryPrefab` | Radio operator character (observer) |
@@ -644,7 +646,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrMarksmen 0` | Disable the automatic DMR carrier in full UA/Russian rifle squads (enabled by default; keeps squad size and support weapons) |
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
-| `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; fixed stock: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (fixed stock: double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
+| `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; finite stock in either mode: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (finite stock in either mode: rare units get quadruple base stock, other units double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
 | `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Hand-built worlds without a matching layout play in full; generated layouts support all three sizes |
 | `-acrLayout <name>` | Play this `ACR_Skirmish` layout (spaces may be written as `_`); overrides `-acrSize`. `-acrLayout generated` builds a layout from the map instead (see Generated layouts) |
 | `-acrSeed N` | Seed of a generated layout: the same seed, size and terrain data give the same plan within a version (before manual moves). Unset or 0 = a new random layout each match |
