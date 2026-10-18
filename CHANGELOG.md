@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.5.5 — unreleased
+## 0.5.6 — unreleased
+
+## 0.5.5 — released
 
 ### FOBs and logistics
 

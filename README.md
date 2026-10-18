@@ -19,7 +19,7 @@ documentation, existing issues and legacy ZIP downloads/updaters. File new bug
 reports and feature requests in this repository's issue tracker.
 
 This README covers the development checkout as well as the basics of playing.
-**0.5.4 is released on Workshop.** The pending development changes target **0.5.5**.
+**0.5.5 is released on Workshop.** Future changes belong under **0.5.6**.
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Playing from Workshop
@@ -43,11 +43,10 @@ Capture bases for RP, requisition squads and vehicles, and call mortar, artiller
 Construction trucks build service stations, forward deploy points and helipads. There are no victory
 conditions or saved matches. This development tree now requires the separate Better Battle Buddies
 addon (`BBB0261015000001`). Keep its checkout beside this one in Workbench/addons; source is in
-`propst-design/BetterBattleBuddies` (private). BBB 0.1.3 is released; ACA's documented
-0.5.4 Workshop build already uses the separate BBB dependency.
-Verify the exact BBB dependency before publishing ACA 0.5.5.
+[propst-design/BetterBattleBuddies](https://github.com/propst-design/BetterBattleBuddies).
+BBB 0.1.4 and ACA 0.5.5 are published.
 
-In the **0.5.5 development tree**, built FOBs start with an empty 1,000-supply construction
+In **0.5.5**, built FOBs start with an empty 1,000-supply construction
 store. Select your FOB on the command map to order 500 supplies for 20 RP (60 seconds,
 paused while contested), then stand inside its circle and choose **Build at FOB**. A truck
 is no longer needed for subsequent construction. Built FOBs do not refill trucks for free.
