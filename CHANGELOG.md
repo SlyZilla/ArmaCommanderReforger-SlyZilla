@@ -2,6 +2,12 @@
 
 ## 0.5.6 — unreleased
 
+### FOBs and logistics
+
+- Fixed FOB upgrades being invisible to joined players and destroyed radio antennas blocking replacement through the upgrade panel.
+- Prevented overlapping FOB construction orders from wasting truck supplies; blocked construction now refunds its reserved cargo.
+- Planted demolition charges keep their fuse when command changes hands or their attack plan ends.
+
 ## 0.5.5 — released
 
 ### FOBs and logistics

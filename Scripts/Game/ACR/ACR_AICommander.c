@@ -209,6 +209,7 @@ class ACR_SapperDemo : Managed
     m_DemoCharge = ACR_Manager.SpawnPrefab(chargePrefab, m_vChargePos);
     m_State = ACR_ESapperDemoState.FALLBACK;
     m_fFuseDeadline = now + FUSE_DURATION_MS;
+    if (m_Manager) m_Manager.RegisterDemolition(m_Attack);
 
     vector dir = sapperPos - hqPos;
     dir[1] = 0;

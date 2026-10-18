@@ -409,6 +409,7 @@ class ACR_Manager : Managed
   ACR_PlayerSide.Enforce();
   TickIntel();
   t = ACR_Perf.Lap("intel", t);
+  TickDemolitions(GetGame().GetWorld().GetWorldTime());
   TickAICommanders();
   t = ACR_Perf.Lap("aicmd", t);
   if (!m_Respawn) m_Respawn = new ACR_Respawn(this);
@@ -477,6 +478,27 @@ class ACR_Manager : Managed
   t = ACR_Perf.Lap("feed", t);
   ACR_Perf.Lap("tick", tickStarted);
   ACR_Perf.EndTick();
+ }
+
+ // A planted charge outlives its attack plan and the AI commander taking a break.
+ // Retain the attack too: the demolition controller holds only a weak reference to it.
+ protected ref array<ref ACR_AIAttack> m_PrimedDemolitions = {};
+
+ void RegisterDemolition(ACR_AIAttack attack)
+ {
+  if (!attack || !attack.m_SapperDemo || m_PrimedDemolitions.Contains(attack)) return;
+  if (attack.m_SapperDemo.State() == ACR_ESapperDemoState.FALLBACK) m_PrimedDemolitions.Insert(attack);
+ }
+
+ void TickDemolitions(float now)
+ {
+  for (int i = m_PrimedDemolitions.Count() - 1; i >= 0; i--)
+  {
+   ACR_AIAttack attack = m_PrimedDemolitions[i];
+   if (attack && attack.m_SapperDemo) attack.m_SapperDemo.Tick(now);
+   if (!attack || !attack.m_SapperDemo || attack.m_SapperDemo.State() != ACR_ESapperDemoState.FALLBACK || !attack.m_Target || attack.m_Target.m_bRetired)
+    m_PrimedDemolitions.RemoveOrdered(i);
+  }
  }
 
  // Any AI squad in the world, including ones spawned mid-game, is picked up

@@ -15,7 +15,7 @@
 
 class ACR_TestSapperDemo
 {
- static const int CHECKS = 12;
+ static const int CHECKS = 15;
 
  static void Run(ACR_Manager manager, ACR_Base fob, ACR_Squad alpha)
  {
@@ -116,6 +116,9 @@ class ACR_TestSapperDemo
    SCR_EntityHelper.DeleteEntityAndChildren(raidAttack.m_SapperDemo.DemoCharge());
   }
 
+  raidAttack.m_SapperDemo.SetStateForTest(ACR_ESapperDemoState.DETONATED);
+  manager.TickDemolitions(testNow);
+
   // 12. Detonate triggers explosion and retires enemy FOB
   EntitySpawnParams dummyParams = new EntitySpawnParams();
   dummyParams.TransformMode = ETransformMode.WORLD;
@@ -138,10 +141,51 @@ class ACR_TestSapperDemo
   bool detonatedAndRetired = (demoAttack.m_SapperDemo.State() == ACR_ESapperDemoState.DETONATED && demoTargetFob.m_bRetired && demoAttack.m_SapperDemo.IsDetonated());
   ACR_TestRegress.Check("sapper: Detonate triggers explosion and retires enemy FOB", detonatedAndRetired, string.Format("state=%1 retired=%2", demoAttack.m_SapperDemo.State(), demoTargetFob.m_bRetired));
 
+  // Plant an actual charge, then discard the AI plan by taking command.
+  ACR_AICommander handoffAI = new ACR_AICommander(manager, "USSR");
+  ACR_Base handoffTarget = ACR_Base.Cast(GetGame().SpawnEntity(ACR_Base, GetGame().GetWorld(), dummyParams));
+  handoffTarget.m_sOwner = "US";
+  handoffTarget.m_bBuilt = true;
+  ACR_AIAttack handoffRaid = new ACR_AIAttack();
+  handoffRaid.m_Target = handoffTarget;
+  handoffRaid.m_bFobRaid = true;
+  handoffRaid.m_bAssaulting = true;
+  handoffRaid.m_Squads.Insert(alpha);
+  handoffRaid.m_SapperDemo = new ACR_SapperDemo(manager, handoffAI, handoffRaid);
+  handoffAI.ACR_TestAdoptRaid(handoffRaid);
+  alpha.GetAnchor().SetOrigin(handoffTarget.GetOrigin() + Vector(2, 0, 2));
+  float fuseNow = GetGame().GetWorld().GetWorldTime();
+  handoffRaid.m_SapperDemo.Tick(fuseNow);
+  handoffRaid.m_SapperDemo.Tick(fuseNow + 4500);
+  IEntity planted = handoffRaid.m_SapperDemo.DemoCharge();
+  handoffAI.Tick(false);
+  alpha.GetAnchor().SetOrigin(originalAlphaPos);
+  manager.TickDemolitions(fuseNow + 16000);
+  ACR_TestRegress.Check("sapper: command handover preserves planted charge until fuse expires", planted && !handoffTarget.m_bRetired && handoffAI.ACR_TestRaidCount() == 0 && manager.ACR_TestPendingDemolitions() == 1, "");
+  // Capture must not stop a charge that has already been primed, either.
+  handoffTarget.m_sOwner = "USSR";
+  handoffRaid = null;
+  manager.TickDemolitions(fuseNow + 16500);
+  ACR_TestRegress.Check("sapper: orphaned fuse detonates after capture and plan removal", planted == null && handoffTarget.m_bRetired && manager.ACR_TestPendingDemolitions() == 0, "");
+  manager.TickDemolitions(fuseNow + 20000);
+  ACR_TestRegress.Check("sapper: completed fuse is removed and cannot detonate twice", manager.ACR_TestPendingDemolitions() == 0, "");
+  SCR_EntityHelper.DeleteEntityAndChildren(handoffTarget);
+
   // Restore alpha position and clean up
   alpha.GetAnchor().SetOrigin(originalAlphaPos);
   alpha.ClearOrders();
   demoTargetFob.Retire();
   SCR_EntityHelper.DeleteEntityAndChildren(demoTargetFob);
  }
+}
+
+modded class ACR_AICommander
+{
+ void ACR_TestAdoptRaid(ACR_AIAttack attack) { m_Attacks.Insert(attack); m_bActive = true; }
+ int ACR_TestRaidCount() { return m_Attacks.Count(); }
+}
+
+modded class ACR_Manager
+{
+ int ACR_TestPendingDemolitions() { return m_PrimedDemolitions.Count(); }
 }
