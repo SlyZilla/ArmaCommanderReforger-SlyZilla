@@ -27,7 +27,8 @@ enum ACR_EOrderState
  RETURN,     // a transport going home after a ride
  DISMOUNT,   // everyone getting out now
  COMMANDED,  // a player commands it through the game's own command menu
- DRIVEN      // its vehicle is driven by a player in the gunner seat
+ DRIVEN,     // its vehicle is driven by a player in the gunner seat
+ BUILD_FOB   // establishing a forward base
 }
 
 enum ACR_EMoveMode
@@ -515,6 +516,7 @@ class ACR_Squad : Managed
   if (label == "Getting in") return ACR_EOrderState.GET_IN;
   if (label == "Getting out") return ACR_EOrderState.GET_OUT;
   if (label == "Returning") return ACR_EOrderState.RETURN;
+  if (label.StartsWith("Establishing FOB")) return ACR_EOrderState.BUILD_FOB;
   return ACR_EOrderState.NONE;
  }
 
@@ -524,6 +526,7 @@ class ACR_Squad : Managed
  {
   ACR_EOrderState state = OrderState();
   string label = m_Order;
+  if (state == ACR_EOrderState.BUILD_FOB && label.StartsWith("Establishing FOB")) return;
   bool oldMoving = label == "Moving" || label == "Air lift: to the landing zone";
   bool oldFinished = oldMoving || label == "Assaulting" || label == "Suppressing" || label == "Getting in" || label == "Getting out";
   if ((state == ACR_EOrderState.MOVE) == oldMoving && FinishesOnArrival(state) == oldFinished) return;
@@ -545,6 +548,11 @@ class ACR_Squad : Managed
  int m_OrderKind;   // ACR_EOrderKind, for map symbology
  protected float m_fNextWaypointRecovery;
  protected int m_iWaypointRecoveries;
+ vector m_vFobSite;
+ float m_fFobBuildProgress;
+ float m_fFobLastTick;
+ IEntity m_ReservedTruck;
+ float m_fReservedLoads;
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -628,6 +636,7 @@ class ACR_Squad : Managed
  // Every new order: a fresh serial, and nobody (yet) to credit it to.
  protected void NewOrder()
  {
+  if (OrderState() == ACR_EOrderState.BUILD_FOB) CancelEstablishFob();
   m_CombatFlank.Cancel();
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
@@ -734,6 +743,176 @@ class ACR_Squad : Managed
   m_OrderKind = ACR_EOrderKind.DEFEND;
   return true;
  }
+
+ // Construction truck assigned to this squad or nearby (within 50 m)
+ IEntity ConstructionTruck()
+ {
+  IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  if (!vehicle) vehicle = ACR_Transport.VehicleOf(GetLeader());
+  if (vehicle && (ACR_Logistics.ServiceOf(vehicle) & ACR_EService.CONSTRUCTION) != 0 && ACR_Logistics.Health(vehicle) > 0) return vehicle;
+  IEntity anchor = GetAnchor();
+  if (anchor)
+  {
+   array<IEntity> vehicles = {};
+   ACR_Vehicles.All(vehicles);
+   foreach (IEntity candidate : vehicles)
+   {
+    if ((ACR_Logistics.ServiceOf(candidate) & ACR_EService.CONSTRUCTION) != 0 && ACR_Logistics.Health(candidate) > 0)
+    {
+     if (vector.DistanceXZ(candidate.GetOrigin(), anchor.GetOrigin()) <= 50) return candidate;
+    }
+   }
+  }
+  return null;
+ }
+
+ bool CanEstablishFob()
+ {
+  if (CountAlive() <= 0) return false;
+  IEntity truck = ConstructionTruck();
+  if (!truck) return false;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !manager.m_Logistics) return false;
+  return manager.m_Logistics.StockOf(truck) >= ACR_FobBuild.LOADS_RESERVED;
+ }
+
+ bool EstablishFob(vector site)
+ {
+  string refusal;
+  if (!ACR_FobBuild.CanOrder(this, refusal)) return false;
+  IEntity truck = ConstructionTruck();
+  if (!truck) return false;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !manager.m_Logistics) return false;
+
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+
+  if (!manager.m_Logistics.Use(truck, ACR_FobBuild.LOADS_RESERVED)) return false;
+
+  m_ReservedTruck = truck;
+  m_fReservedLoads = ACR_FobBuild.LOADS_RESERVED;
+  m_vFobSite = site;
+  m_fFobBuildProgress = 0.0;
+  m_fFobLastTick = GetGame().GetWorld().GetWorldTime();
+
+  ACR_FobBuild.FellTrees(site, ACR_FobBuild.FOOTPRINT_RADIUS);
+
+  SetOrder("Establishing FOB (0%)", ACR_EOrderState.BUILD_FOB);
+  m_OrderKind = ACR_EOrderKind.MOVE;
+  m_MoveTarget = site;
+  IssueWaypoint(WP_MOVE, site, 5.0);
+  PrintFormat("[ACR] SQUAD %1: establishing FOB at %2, reserved 500 supplies from %3", m_Name, site, truck);
+  return true;
+ }
+
+ void CancelEstablishFob()
+ {
+  if (m_fReservedLoads > 0 && m_ReservedTruck && ACR_Logistics.Health(m_ReservedTruck) > 0)
+  {
+   ACR_Manager manager = ACR_Manager.GetInstance();
+   if (manager && manager.m_Logistics)
+   {
+    manager.m_Logistics.AddStock(m_ReservedTruck, m_fReservedLoads);
+    PrintFormat("[ACR] SQUAD %1: cancelled FOB build, refunded %2 loads to truck", m_Name, m_fReservedLoads);
+   }
+  }
+  m_fReservedLoads = 0;
+  m_ReservedTruck = null;
+  m_fFobBuildProgress = 0;
+  if (OrderState() == ACR_EOrderState.BUILD_FOB)
+  {
+   ClearOrders();
+   SetOrder("Holding position", ACR_EOrderState.HOLD);
+  }
+ }
+
+ void TickEstablishFob(float now)
+ {
+  if (m_fFobLastTick <= 0) m_fFobLastTick = now;
+  float dt = (now - m_fFobLastTick) / 1000.0;
+  m_fFobLastTick = now;
+  if (dt <= 0) return;
+  if (dt > 5.0) dt = 1.0;
+
+  if (m_ReservedTruck && ACR_Logistics.Health(m_ReservedTruck) <= 0)
+  {
+   m_ReservedTruck = null;
+   m_fReservedLoads = 0;
+   PrintFormat("[ACR] SQUAD %1: construction truck destroyed during FOB build", m_Name);
+   Halt("Halted (truck lost)");
+   return;
+  }
+
+  if (CountAlive() <= 0)
+  {
+   CancelEstablishFob();
+   return;
+  }
+
+  bool engineerPresent = false;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), m_vFobSite) <= ACR_FobBuild.CP_RADIUS)
+   {
+    engineerPresent = true;
+    break;
+   }
+  }
+
+  string factionKey = "";
+  if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+  bool contested = ACR_FobBuild.IsContested(m_vFobSite, factionKey) || KnownEnemies(60) > 0;
+
+  int pct = (int)((m_fFobBuildProgress / ACR_FobBuild.BUILD_DURATION_S) * 100);
+  if (contested)
+  {
+   SetOrder(string.Format("Establishing FOB (%1%% - contested)", pct), ACR_EOrderState.BUILD_FOB);
+   return;
+  }
+
+  if (!engineerPresent)
+  {
+   SetOrder(string.Format("Establishing FOB (%1%% - waiting for engineer)", pct), ACR_EOrderState.BUILD_FOB);
+   return;
+  }
+
+  m_fFobBuildProgress += dt;
+  pct = Math.ClampInt((int)((m_fFobBuildProgress / ACR_FobBuild.BUILD_DURATION_S) * 100), 0, 100);
+  SetOrder(string.Format("Establishing FOB (%1%%)", pct), ACR_EOrderState.BUILD_FOB);
+
+  if (m_fFobBuildProgress >= ACR_FobBuild.BUILD_DURATION_S)
+  {
+   CompleteEstablishFob();
+  }
+ }
+
+ void CompleteEstablishFob()
+ {
+  m_fReservedLoads = 0;
+  m_ReservedTruck = null;
+  string factionKey = "";
+  if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+  ResourceName prefab = ACR_FobBuild.HqPrefabFor(factionKey);
+  IEntity hq = ACR_Manager.SpawnPrefab(prefab, m_vFobSite);
+  PrintFormat("[ACR] SQUAD %1: FOB established at %2 (entity=%3)", m_Name, m_vFobSite, hq != null);
+  ClearOrders();
+  SetOrder("Holding position", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  IssueWaypoint(WP_DEFEND, m_vFobSite, 20);
+ }
+
+ float FobBuildProgress() { return m_fFobBuildProgress; }
+ void SetFobBuildProgressForTest(float progress) { m_fFobBuildProgress = progress; }
+ IEntity FobReservedTruck() { return m_ReservedTruck; }
+ void SetFobReservedTruckForTest(IEntity truck) { m_ReservedTruck = truck; }
+ float FobReservedLoads() { return m_fReservedLoads; }
+ vector FobSite() { return m_vFobSite; }
 
  // Clear an objective: move in and fight through it (search and destroy).
  bool Assault(vector position)
@@ -943,6 +1122,11 @@ class ACR_Squad : Managed
  void Tactics(int skill, float now)
  {
   WatchCrew();
+  if (OrderState() == ACR_EOrderState.BUILD_FOB)
+  {
+   TickEstablishFob(now);
+   return;
+  }
   if (!m_Group || m_Commander != 0) return;
   array<AIAgent> agents = {};
   GetAgents(agents);
@@ -2186,6 +2370,7 @@ class ACR_Squad : Managed
 
  void Dispose()
  {
+  CancelEstablishFob();
   m_bUnsticking = false;
   if (m_UnstickListener) BBB_Unstick.Cancel(m_UnstickListener);
   m_Aside = null; // being removed: nothing to resume

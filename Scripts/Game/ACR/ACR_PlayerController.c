@@ -1226,6 +1226,7 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in (click Get in again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.LZ) hint = "Right-click the landing zone: they jump out when their ride sets down there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) hint = "Right-click the destination: a free truck nearby picks them up and drops them there";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) hint = "Right-click a clear site: establish forward base (click Establish FOB again to cancel)";
   else hint = "Right-click: move there";
   string title = m_ACR_Data.m_GroupNames[index];
   string detail = m_ACR_GroupDetails[index];
@@ -1248,6 +1249,7 @@ modded class SCR_PlayerController
   int modeAndFlags = m_ACR_GroupSymbols[index * 4 + 3];
   m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, modeAndFlags & 15, m_ACR_CursorMode, hint);
   m_ACR_Panel.SetGunner(friendly && (modeAndFlags & 16) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
+  m_ACR_Panel.SetEstablishFob(friendly && (modeAndFlags & 32) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
   // Also for a full squad low on ammo: inside a deploy base Reinforce restocks it
   // (the server says so when it isn't in one).
   string details = m_ACR_GroupDetails[index];
@@ -1297,6 +1299,10 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.REINFORCE: ACR_RequestSelected(ACR_ERequest.REINFORCE); return;
    case ACR_EPanelAction.FOB_SUPPLY: Rpc(ACR_FobServer, m_ACR_SelectedBase, false); return;
    case ACR_EPanelAction.FOB_BUILD: Rpc(ACR_FobServer, m_ACR_SelectedBase, true); return;
+   case ACR_EPanelAction.ESTABLISH_FOB:
+    if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+    else m_ACR_CursorMode = ACR_ECursorMode.ESTABLISH_FOB;
+    return;
    case ACR_EPanelAction.HALT: ACR_RequestSelected(ACR_ERequest.ORDER_HALT); return;
    case ACR_EPanelAction.FIRE_AT_WILL: ACR_RequestSelected(ACR_ERequest.ORDER_FIRE_AT_WILL); return;
    case ACR_EPanelAction.PING_LOOK: ACR_PickPing(ACR_EPing.LOOK); return;
@@ -1415,6 +1421,7 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) command = ACR_ERequest.ORDER_GET_IN;
   if (m_ACR_CursorMode == ACR_ECursorMode.LZ) command = ACR_ERequest.ORDER_SET_LZ;
   if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) command = ACR_ERequest.ORDER_RIDE;
+  if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) command = ACR_ERequest.ORDER_ESTABLISH_FOB;
   vector target = Vector(x, 0, z);
   // Right-click on a spotted enemy: hunt it down.
   if (m_ACR_CursorMode == ACR_ECursorMode.MOVE && !append)
