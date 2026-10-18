@@ -6,7 +6,7 @@
 
 class ACR_TestFobSlots
 {
-	static const int CHECKS = 21;
+	static const int CHECKS = 23;
 
 	static void Run(ACR_Manager manager, ACR_Base fob, ACR_Squad squad, IEntity truck)
 	{
@@ -157,6 +157,18 @@ class ACR_TestFobSlots
 
 		RplComponent relayReplication = RplComponent.Cast(slotRelay.m_Entity.FindComponent(RplComponent));
 		ACR_TestRegress.Check("fobslots: completed upgrade has a registered replication node", relayReplication && relayReplication.Id().IsValid() && Replication.FindItem(relayReplication.Id()) == relayReplication, "");
+
+		// An antenna can be destroyed while its composition root remains alive.
+		IEntity oldRelayRoot = slotRelay.m_Entity;
+		IEntity antenna = ACR_Structures.RelayAntenna(oldRelayRoot);
+		if (antenna) SCR_EntityHelper.DeleteEntityAndChildren(antenna);
+		ACR_FobSlots.Advance(fob, 1.0);
+		ACR_TestRegress.Check("fobslots: antenna child loss removes root and reopens relay slot", oldRelayRoot == null && slotRelay.m_Entity == null && slotRelay.m_eState == ACR_EFobSlotState.EMPTY, "");
+		store.SetResourceValue(500);
+		string rebuiltRelay = ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_RELAY, why);
+		ACR_FobSlots.Advance(fob, 30.0);
+		manager.m_Structures.ACR_TestForceTick();
+		ACR_TestRegress.Check("fobslots: destroyed antenna can be rebuilt through its slot", !rebuiltRelay.IsEmpty() && slotRelay.m_eState == ACR_EFobSlotState.BUILT && ACR_Structures.RelayAntenna(slotRelay.m_Entity) != null && manager.m_Structures.HasRelay(fob), why);
 
 		// 20. FOB cleanup removes spawned entities and resets slots
 		ACR_FobSlots.Cleanup(fob);

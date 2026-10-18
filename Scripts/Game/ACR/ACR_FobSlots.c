@@ -427,9 +427,16 @@ class ACR_FobSlots : Managed
 
 		foreach (ACR_FobSlot slot : base.m_aFobSlots)
 		{
-			if ((slot.m_eState == ACR_EFobSlotState.BUILT && !slot.m_Entity) || (slot.m_Entity && ACR_Logistics.Health(slot.m_Entity) <= 0))
+			bool relayLost = slot.m_eKind == ACR_EStructure.RELAY && slot.m_eState == ACR_EFobSlotState.BUILT && !ACR_Structures.RelayAntenna(slot.m_Entity);
+			if (relayLost || (slot.m_eState == ACR_EFobSlotState.BUILT && !slot.m_Entity) || (slot.m_Entity && ACR_Logistics.Health(slot.m_Entity) <= 0))
 			{
 				PrintFormat("[ACR] FOB %1: structure %2 destroyed, slot reset", base.m_sName, slot.m_sName);
+				if (slot.m_Entity)
+				{
+					SCR_CampaignBuildingCompositionComponent lostComp = SCR_CampaignBuildingCompositionComponent.Cast(slot.m_Entity.FindComponent(SCR_CampaignBuildingCompositionComponent));
+					if (lostComp) ACR_Structures.s_Registered.RemoveItem(lostComp);
+					SCR_EntityHelper.DeleteEntityAndChildren(slot.m_Entity);
+				}
 				slot.m_eState = ACR_EFobSlotState.EMPTY;
 				slot.m_Entity = null;
 				slot.m_sOwner = "";
