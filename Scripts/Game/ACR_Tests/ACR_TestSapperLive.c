@@ -1,6 +1,6 @@
 // ACR_TestSapperLive: an AI sapper plants, wires and fires a real vanilla charge at an enemy
 // FOB HQ over real ticks (animations, inventory moves and the detonator need frames).
-// Started from srv:structures at tick 50, stepped every tick until it ends (by tick 84).
+// Started from srv:structures at tick 50, stepped every tick until it ends (by tick 94).
 class ACR_TestSapperLive
 {
  static const int CHECKS = 5;
@@ -48,11 +48,11 @@ class ACR_TestSapperLive
    if (!body || !ACR_Respawn.IsAlive(body)) continue;
    float a = n * 50 * Math.DEG2RAD;
    // Outside the HQ's tents and sandbags (teleporting into them hurt or killed soldiers).
-   body.SetOrigin(ACR_Manager.Ground(hq.GetOrigin() + Vector(Math.Cos(a) * (12 + n), 0, Math.Sin(a) * (12 + n))));
+   body.SetOrigin(ACR_Manager.Ground(hq.GetOrigin() + Vector(Math.Cos(a) * (9 + n), 0, Math.Sin(a) * (9 + n))));
    n++;
   }
   alpha.m_iAITask = ACR_EAITask.ATTACK;
-  ACR_SapperDemo.s_fFuseMs = 6000;
+  ACR_SapperDemo.s_fFuseMs = 4000;
   ACR_AICommander attacker = new ACR_AICommander(manager, "US");
   s_Raid = new ACR_AIAttack();
   s_Raid.m_Target = s_Fob;
@@ -67,6 +67,17 @@ class ACR_TestSapperLive
   if (s_bDone || !s_Raid || !s_Raid.m_SapperDemo) return;
   ACR_SapperDemo demo = s_Raid.m_SapperDemo;
   demo.Tick(GetGame().GetWorld().GetWorldTime());
+  if (tick % 4 == 0)
+  {
+   IEntity hqNow = manager.m_Structures.HqEntityOf(s_Fob);
+   IEntity nearest;
+   if (hqNow) nearest = ACR_SapperDemo.PlanterFor(s_Alpha, hqNow.GetOrigin());
+   float gap = -1;
+   if (nearest) gap = vector.DistanceXZ(nearest.GetOrigin(), hqNow.GetOrigin());
+   int guards = 0;
+   if (hqNow) guards = ACR_SapperDemo.SoldiersNear(hqNow.GetOrigin(), "USSR", 30);
+   PrintFormat("[ACR] SAPPERTEST t=%1 state %2, nearest soldier %3 m from the HQ, defenders %4, order %5", tick, demo.State(), gap, guards, s_Alpha.m_Order);
+  }
   IEntity charge = demo.DemoCharge();
   if (demo.State() == ACR_ESapperDemoState.FALLBACK && !s_bArmedSeen)
   {
@@ -82,7 +93,7 @@ class ACR_TestSapperLive
   // The blast removes the charge; the demo notes it on its next tick.
   bool blown = demo.IsDetonated() || (!demo.FiredBy().IsEmpty() && !charge);
   bool ended = blown || demo.State() == ACR_ESapperDemoState.DETONATED || demo.State() == ACR_ESapperDemoState.FAILED || (demo.State() == ACR_ESapperDemoState.NONE && demo.IsDefused());
-  if (!ended && tick < 84) return;
+  if (!ended && tick < 94) return;
   s_bDone = true;
   manager.m_Structures.ACR_TestForceTick();
   PrintFormat("[ACR] SAPPERTEST end at tick %1: state %2, placed by %3, fired by %4, FOB lost %5 retired %6", tick, demo.State(), demo.PlacedBy(), demo.FiredBy(), s_Fob.m_bHqLost, s_Fob.m_bRetired);

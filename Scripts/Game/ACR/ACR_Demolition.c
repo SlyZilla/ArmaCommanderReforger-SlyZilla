@@ -6,7 +6,7 @@
 // AI sappers place and fire the same vanilla charges (ACR_SapperDemo), so both go through here.
 class ACR_Demolition
 {
- static const float DESTROY_RADIUS = 10.0;
+ static const float DESTROY_RADIUS = 11.0;  // HQ centre to charge (its footprint reaches ~8 m)
  static const float DEFENDER_RADIUS = 30.0;
 
  static const ResourceName CHARGE_WEST = "{33CBDE73AB48172A}Prefabs/Weapons/Explosives/DemoBlock_M112/DemoBlock_M112.et";

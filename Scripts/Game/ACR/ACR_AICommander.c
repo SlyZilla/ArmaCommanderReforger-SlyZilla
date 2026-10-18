@@ -27,7 +27,7 @@ enum ACR_ESapperDemoState
 // standing at the charge for 5 s. The blast destroys the HQ only (ACR_Demolition).
 class ACR_SapperDemo : Managed
 {
- static const float PLANT_RADIUS = 7.0;
+ static const float PLANT_RADIUS = 9.5;    // from the HQ centre: its tents and sandbags reach ~8 m
  static const float CLEAR_RADIUS = 30.0;      // no living defender this close to the HQ
  static const float DEFUSE_RADIUS = 3.0;
  static const float DEFUSE_MS = 5000.0;
@@ -40,6 +40,8 @@ class ACR_SapperDemo : Managed
  static const float RAISE_MS = 1500.0;        // blasting machine to hand
  static const float FIRE_MS = 4000.0;         // detonator animation before the scripted fallback
  static float s_fFuseMs = 45000.0;            // the defenders' window (tests shorten it)
+ static const float SAFE_DISTANCE = 30.0;     // he fires from this far from the charge
+ static const float SAFE_WAIT_MS = 15000.0;   // ... waiting at most this long past the window
 
  // Kept for old callers/tests: the charge prefabs (full prefabs with fuzes).
  static const ResourceName CHARGE_WEST = "{33CBDE73AB48172A}Prefabs/Weapons/Explosives/DemoBlock_M112/DemoBlock_M112.et";
@@ -294,6 +296,22 @@ class ACR_SapperDemo : Managed
   return started;
  }
 
+ // End any item animation still running (an arming animation can hold the item use open).
+ protected void FinishItemUse(bool standUp)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(m_Planter);
+  if (!character) return;
+  SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(character.GetCharacterController());
+  if (!controller) return;
+  controller.m_OnItemUseEndedInvoker.Remove(OnAnimationEnded);
+  if (controller.IsUsingItem())
+  {
+   CharacterAnimationComponent animation = character.GetAnimationComponent();
+   if (animation && animation.GetCommandHandler()) animation.GetCommandHandler().CancelItemUse();
+  }
+  if (standUp && controller.GetStance() != ECharacterStance.STAND) controller.SetStanceChange(ECharacterStanceChange.STANCECHANGE_TOERECTED);
+ }
+
  protected void OnAnimationEnded(IEntity item, bool successful, ItemUseParameters animParams)
  {
   m_bAnimDone = true;
@@ -345,6 +363,7 @@ class ACR_SapperDemo : Managed
  {
   SCR_ExplosiveChargeComponent chargeComp = ChargeComponent(m_DemoCharge);
   if (!chargeComp) return;
+  FinishItemUse(true);
   m_Detonator = FindKit(m_Planter, SCR_DetonatorGadgetComponent);
   SCR_DetonatorGadgetComponent detonator;
   if (m_Detonator) detonator = SCR_DetonatorGadgetComponent.Cast(m_Detonator.FindComponent(SCR_DetonatorGadgetComponent));
@@ -634,12 +653,15 @@ class ACR_SapperDemo : Managed
    m_State = ACR_ESapperDemoState.FAILED;
    return;
   }
+  // He fires from cover distance: 30 m, unless that takes more than 15 s past the window.
+  if (!m_bRaised && vector.DistanceXZ(m_Planter.GetOrigin(), m_DemoCharge.GetOrigin()) < SAFE_DISTANCE && now < m_fFuseDeadline + SAFE_WAIT_MS) return;
   if (!m_bRaised)
   {
    m_bRaised = true;
    m_fRaisedAt = now;
    // He stops, takes the blasting machine in hand, then squeezes it.
    if (m_SapperSquad) m_SapperSquad.Halt("Firing the charge");
+   FinishItemUse(false);
    SCR_GadgetManagerComponent gadgets = SCR_GadgetManagerComponent.GetGadgetManager(m_Planter);
    if (gadgets) gadgets.SetGadgetMode(m_Detonator, EGadgetMode.IN_HAND);
    return;

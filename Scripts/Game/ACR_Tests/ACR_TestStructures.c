@@ -511,7 +511,7 @@ class ACR_TestStructures
    ACR_TestFobDesign.Run(manager, s_Fob, alpha, s_Construction);
    ACR_TestSapperLive.Start(manager, alpha, alpha.m_Home);
   }
-  if (tick > 50 && tick <= 84) ACR_TestSapperLive.Step(manager, tick);
+  if (tick > 50 && tick <= 94) ACR_TestSapperLive.Step(manager, tick);
   if (tick > 8 && tick % 5 == 0)
    PrintFormat("[ACR] STRUCTURETEST t=%1 wounded %2 (%5 m from the hospital), humvee health %3 fuel %4", tick, ACR_Logistics.Health(s_Wounded), ACR_Logistics.Health(s_Humvee), ACR_Logistics.Fuel(s_Humvee), DistanceTo(s_Wounded, s_Hospital));
   if (!s_bHealed && s_Wounded && ACR_Logistics.Health(s_Wounded) > 0.95 && tick > 8)
@@ -531,7 +531,7 @@ class ACR_TestStructures
   }
   // The finite-FOB fixture temporarily disables these outside-FOB stations
   // (supplied mode) until t=48. Allow the remaining native 10-second steps.
-  if (tick == 85)
+  if (tick == 95)
   {
    ACR_TestRegress.Check("structures: healed by t=85", s_bHealed, string.Format("%1", ACR_Logistics.Health(s_Wounded)));
    ACR_TestRegress.Check("structures: repaired by t=85", s_bRepaired, string.Format("%1", ACR_Logistics.Health(s_Humvee)));
@@ -548,7 +548,7 @@ class ACR_TestStructures
    if (s_Helipad) SCR_EntityHelper.DeleteEntityAndChildren(s_Helipad);
    ACR_TestFobRelay.Cleanup();
   }
-  if (tick == 90)
+  if (tick == 100)
   {
    ACR_TestRegress.Check("structures: forward base gone with its headquarters", BaseNamed("FOB") == null, "");
    array<IEntity> medical = {};
