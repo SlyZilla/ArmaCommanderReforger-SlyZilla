@@ -201,7 +201,6 @@ class ACR_Requests : Managed
    case ACR_ERequest.ORDER_HUNT: return "hunting";
    case ACR_ERequest.ORDER_SET_LZ: return "unloading";
    case ACR_ERequest.ORDER_HALT: return "halted";
-   case ACR_ERequest.ORDER_ESTABLISH_FOB: return "establishing FOB";
   }
   return "moving";
  }
@@ -225,7 +224,7 @@ class ACR_Requests : Managed
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return outcome.Refuse("Only the commander can give map orders. Take command first.");
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return outcome.Refuse("That squad is not ready");
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB;
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON;
   // Reject nonsense coordinates from a client.
   if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !ACR_Manager.OnMap(point))) return outcome.Refuse("Order is too far away");
   // Map clicks made inside Game Master / build mode are not orders (the client checks too).
@@ -336,20 +335,6 @@ class ACR_Requests : Managed
    case ACR_ERequest.MODE_SILENT:
     squad.SetMode(ACR_EMoveMode.SILENT);
     return outcome.Accept(name + ": silent");
-   case ACR_ERequest.ORDER_ESTABLISH_FOB:
-   {
-    string canWhy;
-    if (!ACR_FobBuild.CanOrder(squad, canWhy)) return outcome.Refuse(name + ": " + canWhy);
-    vector validSite;
-    string siteWhy;
-    if (!ACR_FobBuild.ValidateSite(point, validSite, siteWhy)) return outcome.Refuse(name + ": " + siteWhy);
-    if (squad.EstablishFob(validSite))
-    {
-     PrintFormat("[ACR] ESTABLISH FOB player=%1 squad=%2 target=%3", pc.GetPlayerId(), name, validSite);
-     return outcome.Accept(name + ": establishing FOB");
-    }
-    return outcome.Refuse(name + ": unable to establish FOB");
-   }
    default:
     return outcome.Refuse("Unknown command");
   }

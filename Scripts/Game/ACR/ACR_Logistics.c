@@ -196,20 +196,7 @@ class ACR_Logistics : Managed
   float stock = StockOf(vehicle);
   if (stock < amount) return false;
   m_Stock.Set(vehicle, stock - amount);
-  int flags = ServiceOf(vehicle);
-  if (SCR_ResourceSystemHelper.IsGlobalResourceTypeEnabled() && flags != 0) WriteGameSupplies(vehicle, flags);
   return true;
- }
-
- void AddStock(IEntity vehicle, float amount)
- {
-  if (!vehicle || amount <= 0) return;
-  int flags = ServiceOf(vehicle);
-  if (flags == 0) return;
-  float cap = Capacity(flags);
-  float stock = StockOf(vehicle);
-  m_Stock.Set(vehicle, Math.Clamp(stock + amount, 0, cap));
-  if (SCR_ResourceSystemHelper.IsGlobalResourceTypeEnabled()) WriteGameSupplies(vehicle, flags);
  }
 
  ACR_Base ServiceFob(IEntity station)

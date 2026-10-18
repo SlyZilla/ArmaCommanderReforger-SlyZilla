@@ -26,8 +26,7 @@ enum ACR_ERequest
  ORDER_HALT,       // drop every order and stand still
  ORDER_GARRISON,   // move into the building at point and hold its windows (ACR_Garrison)
  QUEUE_GARRISON,   // ... garrison there after the current order
- ORDER_FIRE_AT_WILL, // toggle: observers call mortar fire on what they see, mortar teams fire on their own
- ORDER_ESTABLISH_FOB // establish a forward base at site
+ ORDER_FIRE_AT_WILL // toggle: observers call mortar fire on what they see, mortar teams fire on their own
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is

@@ -331,8 +331,7 @@ class ACR_MapFeed
    int mode = 0;
    if (squad) mode = squad.m_Mode;
    if (squad && ACR_GunnerDrive.SquadGunner(squad)) mode |= 16; // + flag: has an AI-manned turret
-   if (squad && squad.CanEstablishFob()) mode |= 32; // + flag: can establish FOB
-   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB)
+   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret)
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    frame.m_LeaderStates.Insert(state);
