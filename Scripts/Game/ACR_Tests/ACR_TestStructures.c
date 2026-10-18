@@ -497,6 +497,7 @@ class ACR_TestStructures
   {
    ACR_TestFobBuild.Run(manager, alpha, s_Construction);
    ACR_TestFobSlots.Run(manager, s_Fob, alpha, s_Construction);
+   ACR_TestSapperDemo.Run(manager, s_Fob, alpha);
   }
   if (tick > 8 && tick % 5 == 0)
    PrintFormat("[ACR] STRUCTURETEST t=%1 wounded %2 (%5 m from the hospital), humvee health %3 fuel %4", tick, ACR_Logistics.Health(s_Wounded), ACR_Logistics.Health(s_Humvee), ACR_Logistics.Fuel(s_Humvee), DistanceTo(s_Wounded, s_Hospital));
@@ -541,7 +542,7 @@ class ACR_TestStructures
    ACR_Helipad last = ACR_Helipad.s_All[ACR_Helipad.s_All.Count() - 1];
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
    ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
-   ACR_TestRegress.Complete("structures", 84 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS);
+   ACR_TestRegress.Complete("structures", 84 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS + ACR_TestSapperDemo.CHECKS);
   }
  }
 

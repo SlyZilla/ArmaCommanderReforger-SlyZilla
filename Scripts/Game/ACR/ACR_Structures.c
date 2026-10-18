@@ -375,6 +375,16 @@ class ACR_Structures : Managed
   return false;
  }
 
+ IEntity HqEntityOf(ACR_Base base)
+ {
+  if (!base || base.m_bRetired) return null;
+  foreach (ACR_Structure structure : m_Active)
+  {
+   if (structure.m_Fob == base && structure.m_Entity) return structure.m_Entity;
+  }
+  return null;
+ }
+
  protected void Activate(SCR_CampaignBuildingCompositionComponent composition)
  {
   if (!composition) return;

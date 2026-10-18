@@ -658,7 +658,7 @@ class ACR_Squad : Managed
   ClearPlans();
  }
 
- protected void ClearOrders()
+ void ClearOrders()
  {
   if (!m_Group) return;
   ACR_Garrison.Release(m_Group);
@@ -821,6 +821,7 @@ class ACR_Squad : Managed
   m_fReservedLoads = 0;
   m_ReservedTruck = null;
   m_fFobBuildProgress = 0;
+  if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
   if (OrderState() == ACR_EOrderState.BUILD_FOB)
   {
    ClearOrders();
@@ -902,6 +903,7 @@ class ACR_Squad : Managed
   IEntity hq = ACR_Manager.SpawnPrefab(prefab, m_vFobSite);
   PrintFormat("[ACR] SQUAD %1: FOB established at %2 (entity=%3)", m_Name, m_vFobSite, hq != null);
   ClearOrders();
+  if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   IssueWaypoint(WP_DEFEND, m_vFobSite, 20);

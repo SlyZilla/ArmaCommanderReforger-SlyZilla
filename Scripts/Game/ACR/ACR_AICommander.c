@@ -4,7 +4,261 @@ enum ACR_EAITask
  DEFEND,    // holding a threatened base
  ATTACK,    // part of a base attack
  POSTED,    // idle, moved up to a frontline base
- RESUPPLY   // on its way to an ammo / repair / fuel / medical vehicle
+ RESUPPLY,  // on its way to an ammo / repair / fuel / medical vehicle
+ BUILD_FOB  // establishing a forward base
+}
+
+enum ACR_ESapperDemoState
+{
+ NONE,
+ APPROACHING,
+ PLANTING,
+ FALLBACK,
+ DETONATED
+}
+
+// Combat AI sapper demolition assault on an enemy FOB HQ composition.
+class ACR_SapperDemo : Managed
+{
+ static const float APPROACH_RADIUS = 30.0;
+ static const float PLANT_RADIUS = 7.0;
+ static const float PLANT_DURATION_MS = 4000.0;
+ static const float FUSE_DURATION_MS = 12000.0;
+ static const float RETREAT_DISTANCE = 55.0;
+
+ static const ResourceName CHARGE_WEST = "{1CC0CBB56B9F7ADB}Prefabs/Weapons/Explosives/DemoBlock_M112/DemoBlock_M112.et";
+ static const ResourceName CHARGE_EAST = "{A50106D0A7A6A73F}Prefabs/Weapons/Explosives/DemoBlock_TSh400g/DemoBlock_TSh400g.et";
+
+ ACR_Manager m_Manager;
+ ACR_AICommander m_Commander;
+ ACR_AIAttack m_Attack;
+ ACR_ESapperDemoState m_State = ACR_ESapperDemoState.NONE;
+ float m_fPlantStart;
+ float m_fFuseDeadline;
+ IEntity m_DemoCharge;
+ ACR_Squad m_SapperSquad;
+ vector m_vChargePos;
+ vector m_vFallbackPos;
+ bool m_bDetonated;
+
+ void ACR_SapperDemo(ACR_Manager manager, ACR_AICommander commander, ACR_AIAttack attack)
+ {
+  m_Manager = manager;
+  m_Commander = commander;
+  m_Attack = attack;
+  m_State = ACR_ESapperDemoState.NONE;
+ }
+
+ ACR_ESapperDemoState State() { return m_State; }
+ void SetStateForTest(ACR_ESapperDemoState state) { m_State = state; }
+ IEntity DemoCharge() { return m_DemoCharge; }
+ bool IsDetonated() { return m_bDetonated; }
+ ACR_Squad SapperSquad() { return m_SapperSquad; }
+ vector FallbackPos() { return m_vFallbackPos; }
+ void SetPlantStartForTest(float time) { m_fPlantStart = time; }
+ void SetFuseDeadlineForTest(float time) { m_fFuseDeadline = time; }
+
+ static vector PositionOf(ACR_Squad squad)
+ {
+  if (!squad) return vector.Zero;
+  IEntity anchor = squad.GetAnchor();
+  if (anchor) return anchor.GetOrigin();
+  return vector.Zero;
+ }
+
+ static bool IsSapperSquad(ACR_Squad squad)
+ {
+  if (!squad || squad.CountAlive() <= 0) return false;
+  string name = squad.GetName();
+  name.ToLower();
+  if (name.Contains("sapper") || name.Contains("engineer") || name.Contains("demolition") || name.Contains("demo") || name.Contains("pioneer"))
+   return true;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   if (!agent) continue;
+   IEntity entity = agent.GetControlledEntity();
+   if (!entity) continue;
+   if (IsSapperEntity(entity)) return true;
+  }
+  return false;
+ }
+
+ static bool IsSapperEntity(IEntity entity)
+ {
+  if (!entity) return false;
+  ChimeraCharacter character = ChimeraCharacter.Cast(entity);
+  if (character && character.GetCharacterController() && character.GetCharacterController().IsDead()) return false;
+  EntityPrefabData data = entity.GetPrefabData();
+  if (data)
+  {
+   string pName = data.GetPrefabName();
+   pName.ToLower();
+   if (pName.Contains("sapper") || pName.Contains("engineer") || pName.Contains("demolition") || pName.Contains("demo") || pName.Contains("pioneer") || pName.Contains("miner"))
+    return true;
+  }
+  return false;
+ }
+
+ ACR_Squad FindSapperSquad()
+ {
+  if (!m_Attack || m_Attack.m_Squads.IsEmpty()) return null;
+  foreach (ACR_Squad squad : m_Attack.m_Squads)
+  {
+   if (squad && squad.CountAlive() > 0 && IsSapperSquad(squad)) return squad;
+  }
+  foreach (ACR_Squad squad : m_Attack.m_Squads)
+  {
+   if (squad && squad.CountAlive() > 0 && squad.IsCombatUnit()) return squad;
+  }
+  if (m_Attack.m_Squads.Count() > 0) return m_Attack.m_Squads[0];
+  return null;
+ }
+
+ IEntity TargetHqEntity()
+ {
+  if (!m_Attack || !m_Attack.m_Target || !m_Manager || !m_Manager.m_Structures) return null;
+  return m_Manager.m_Structures.HqEntityOf(m_Attack.m_Target);
+ }
+
+ vector TargetHqPosition()
+ {
+  IEntity hq = TargetHqEntity();
+  if (hq) return hq.GetOrigin();
+  if (m_Attack && m_Attack.m_Target) return m_Attack.m_Target.GetOrigin();
+  return vector.Zero;
+ }
+
+ void Tick(float now)
+ {
+  if (m_State == ACR_ESapperDemoState.DETONATED) return;
+  if (!m_Attack || !m_Attack.m_Target || m_Attack.m_Target.m_bRetired) return;
+
+  vector hqPos = TargetHqPosition();
+  if (hqPos == vector.Zero) return;
+
+  if (!m_SapperSquad || m_SapperSquad.CountAlive() <= 0)
+  {
+   m_SapperSquad = FindSapperSquad();
+   if (!m_SapperSquad) return;
+  }
+
+  vector sapperPos = PositionOf(m_SapperSquad);
+  float distToHq = vector.DistanceXZ(sapperPos, hqPos);
+
+  if (m_State == ACR_ESapperDemoState.NONE)
+  {
+   m_State = ACR_ESapperDemoState.APPROACHING;
+   m_SapperSquad.SetMode(ACR_EMoveMode.COMBAT);
+   m_SapperSquad.Assault(hqPos);
+   PrintFormat("[ACR] SAPPER %1: advancing to demolish enemy FOB %2 HQ at %3", m_SapperSquad.GetName(), m_Attack.m_Target.m_sName, hqPos);
+  }
+
+  if (m_State == ACR_ESapperDemoState.APPROACHING)
+  {
+   if (distToHq <= APPROACH_RADIUS)
+   {
+    m_SapperSquad.MoveTo(hqPos);
+   }
+   if (distToHq <= PLANT_RADIUS)
+   {
+    m_State = ACR_ESapperDemoState.PLANTING;
+    m_fPlantStart = now;
+    m_vChargePos = sapperPos;
+    m_SapperSquad.SetOrder("Planting demolition charges", ACR_EOrderState.HOLD);
+    PrintFormat("[ACR] SAPPER %1: planting demolition charges on enemy FOB %2 HQ (dist=%3m)", m_SapperSquad.GetName(), m_Attack.m_Target.m_sName, distToHq);
+   }
+   return;
+  }
+
+  if (m_State == ACR_ESapperDemoState.PLANTING)
+  {
+   if (distToHq > PLANT_RADIUS + 5.0)
+   {
+    m_SapperSquad.MoveTo(hqPos);
+    return;
+   }
+   if (now - m_fPlantStart >= PLANT_DURATION_MS)
+   {
+    ResourceName chargePrefab = CHARGE_WEST;
+    string fac = "";
+    if (m_Commander) fac = m_Commander.Faction();
+    if (!fac.IsEmpty() && !ACR_Supports.IsWestern(fac)) chargePrefab = CHARGE_EAST;
+
+    m_DemoCharge = ACR_Manager.SpawnPrefab(chargePrefab, m_vChargePos);
+    m_State = ACR_ESapperDemoState.FALLBACK;
+    m_fFuseDeadline = now + FUSE_DURATION_MS;
+
+    vector dir = sapperPos - hqPos;
+    dir[1] = 0;
+    if (dir.LengthSq() < 0.1) dir = Vector(1, 0, 0);
+    else dir.Normalize();
+
+    m_vFallbackPos = ACR_Manager.Ground(hqPos + dir * RETREAT_DISTANCE);
+
+    foreach (ACR_Squad squad : m_Attack.m_Squads)
+    {
+     if (!squad || squad.CountAlive() <= 0) continue;
+     squad.SetOrder("Clearing blast radius", ACR_EOrderState.MOVE);
+     squad.SetMode(ACR_EMoveMode.FAST);
+     squad.MoveTo(m_vFallbackPos);
+    }
+    PrintFormat("[ACR] SAPPER %1: charges primed (12s fuse)! Falling back %2m from %3", m_SapperSquad.GetName(), RETREAT_DISTANCE, hqPos);
+   }
+   return;
+  }
+
+  if (m_State == ACR_ESapperDemoState.FALLBACK)
+  {
+   if (now >= m_fFuseDeadline)
+   {
+    Detonate();
+   }
+   return;
+  }
+ }
+
+ void Detonate()
+ {
+  if (m_bDetonated) return;
+  m_bDetonated = true;
+  m_State = ACR_ESapperDemoState.DETONATED;
+
+  vector hqPos = TargetHqPosition();
+  IEntity hq = TargetHqEntity();
+
+  PrintFormat("[ACR] SAPPER: DEMOLITION CHARGE DETONATED at %1! Enemy FOB HQ destroyed.", hqPos);
+
+  if (m_Manager && m_Manager.m_Supports)
+  {
+   m_Manager.m_Supports.ExplodeAt(hqPos);
+  }
+
+  if (m_DemoCharge)
+  {
+   SCR_EntityHelper.DeleteEntityAndChildren(m_DemoCharge);
+   m_DemoCharge = null;
+  }
+
+  if (hq)
+  {
+   SCR_EntityHelper.DeleteEntityAndChildren(hq);
+  }
+
+  if (m_Attack && m_Attack.m_Target && !m_Attack.m_Target.m_bRetired)
+  {
+   m_Attack.m_Target.Retire();
+  }
+
+  if (m_Attack)
+  {
+   foreach (ACR_Squad squad : m_Attack.m_Squads)
+   {
+    if (squad) squad.m_iAITask = ACR_EAITask.FREE;
+   }
+  }
+ }
 }
 
 // One base attack: groups gather at a staging point, then assault together.
@@ -23,6 +277,8 @@ class ACR_AIAttack
  float m_fAssaultStart;              // world time the assault (or grab) began
  float m_fNextPush;                  // next time idle attackers are sent in again
  float m_fGrabSeconds;               // a grab's own time limit: the trip there plus slack (big maps)
+ bool m_bFobRaid;                    // demolition raid against an enemy forward operating base
+ ref ACR_SapperDemo m_SapperDemo;
 
  vector StagingOf(ACR_Squad squad)
  {
@@ -84,6 +340,7 @@ class ACR_AICommander : Managed
 
  ACR_Manager m_Manager;
  string m_sFaction;
+ string Faction() { return m_sFaction; }
  bool m_bActive;
  protected int m_iSeconds;
  protected ref array<ref ACR_AIAttack> m_Attacks = {};
@@ -134,6 +391,7 @@ class ACR_AICommander : Managed
   Recrew();
   t = ACR_Perf.Lap("ai.post", t);
   ManageLogistics();
+  ManageFobBuild();
   t = ACR_Perf.Lap("ai.logistics", t);
   Requisition();
   t = ACR_Perf.Lap("ai.buy", t);
@@ -609,6 +867,20 @@ class ACR_AICommander : Managed
     if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
     float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
     float score = cost * (vector.DistanceXZ(base.GetOrigin(), from) / 1000 + 0.1);
+    if (base.m_bBuilt)
+    {
+     score *= 0.35;
+     float frontDist = float.MAX;
+     foreach (ACR_Base ownBase : ACR_Base.s_All)
+     {
+      if (ownBase && !ownBase.m_bRetired && ownBase.m_sOwner == m_sFaction)
+      {
+       float d = vector.DistanceXZ(base.GetOrigin(), ownBase.GetOrigin());
+       if (d < frontDist) frontDist = d;
+      }
+     }
+     if (frontDist < 1200) score *= 0.6;
+    }
     int at = 0;
     while (at < scores.Count() && scores[at] <= score) at++;
     candidates.InsertAt(base, at);
@@ -619,6 +891,7 @@ class ACR_AICommander : Managed
   {
    float need = 1;
    if (!candidate.m_sOwner.IsEmpty()) need = Math.Max(10, DefenceOf(candidate) * ATTACK_RATIO * 0.65) + candidate.m_iGarrisonLeft;
+   if (candidate.m_bBuilt) need = Math.Max(8, DefenceOf(candidate) * 0.9 + candidate.m_iGarrisonLeft * 0.7);
    if (counterDue) need = need * 0.7; // strike before they dig in
    need = need * pressure;
    if (ACR_Manager.ThreatOption() == 2) need = need * 0.85; // High: launch a viable force sooner
@@ -636,9 +909,28 @@ class ACR_AICommander : Managed
    return; // Requisition() will add troops
   }
   SortByDistance(free, target.GetOrigin());
+  if (target.m_bBuilt)
+  {
+   for (int s = free.Count() - 1; s >= 0; s--)
+   {
+    if (ACR_SapperDemo.IsSapperSquad(free[s]))
+    {
+     ACR_Squad sapperSquad = free[s];
+     free.RemoveOrdered(s);
+     free.InsertAt(sapperSquad, 0);
+     break;
+    }
+   }
+  }
   ACR_AIAttack attack = new ACR_AIAttack();
   attack.m_Target = target;
   attack.m_bCounter = counterDue;
+  if (target.m_bBuilt)
+  {
+   attack.m_bFobRaid = true;
+   attack.m_SapperDemo = new ACR_SapperDemo(m_Manager, this, attack);
+   PrintFormat("[ACR] AI %1: targeted enemy forward base %2 for sapper demolition", m_sFaction, target.m_sName);
+  }
   int strength;
   // With troops to spare, send a margin above the bare minimum.
   float margin = 1;
@@ -1185,7 +1477,7 @@ class ACR_AICommander : Managed
     }
    }
    ACR_Base target = attack.m_Target;
-   bool won = target && target.m_sOwner == m_sFaction;
+   bool won = target && (target.m_sOwner == m_sFaction || target.m_bRetired);
    if (attack.m_bGrab && target && !target.m_sOwner.IsEmpty() && !won)
    {
     PrintFormat("[ACR] AI %1: %2 was taken first, grab cancelled", m_sFaction, target.m_sName);
@@ -1218,6 +1510,11 @@ class ACR_AICommander : Managed
    }
    if (attack.m_bAssaulting)
    {
+    if (attack.m_bFobRaid && attack.m_SapperDemo)
+    {
+     float now = GetGame().GetWorld().GetWorldTime();
+     attack.m_SapperDemo.Tick(now);
+    }
     PushAttackers(attack);
     // Base of fire keeps suppressing until the assault squads are on the
     // objective, then lifts fire and joins in.
@@ -1559,7 +1856,12 @@ class ACR_AICommander : Managed
     if (entry.m_iBaseCost > 0) weight = entry.m_iBaseCost;
     if (highThreat && !entry.m_sVehicle.IsEmpty()) weight *= 1.5;
     if (highThreat && m_sFaction == "RHS_AFRF" && IsRUArmorEntry(entry)) weight *= 2;
-    if (IsSpecialistTeam(entry))
+    bool isSapper = IsSapperEntry(entry);
+    if (isSapper && HasEnemyFob())
+    {
+     if (!OwnsLike(entry)) weight *= 3.0;
+    }
+    else if (IsSpecialistTeam(entry))
     {
      if (OwnsLike(entry)) continue;
      weight *= 0.3;
@@ -1591,6 +1893,28 @@ class ACR_AICommander : Managed
   string vehicle = FilePath.StripExtension(FilePath.StripPath(entry.m_sVehicle));
   vehicle.ToLower();
   return vehicle.Contains("btr70") || vehicle.Contains("brdm2");
+ }
+
+ static bool IsSapperEntry(ACR_RequisitionEntry entry)
+ {
+  if (!entry) return false;
+  string name = entry.m_sName;
+  name.ToLower();
+  if (name.Contains("sapper") || name.Contains("engineer")) return true;
+  string grp = entry.m_sGroup;
+  grp.ToLower();
+  if (grp.Contains("sapper") || grp.Contains("engineer")) return true;
+  return false;
+ }
+
+ bool HasEnemyFob()
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty()) continue;
+   if (base.m_bBuilt && Visible(base)) return true;
+  }
+  return false;
  }
 
  static bool IsSpecialistTeam(ACR_RequisitionEntry entry)
@@ -1721,6 +2045,7 @@ class ACR_AICommander : Managed
   {
    IEntity serviceVehicle = ACR_Transport.CrewedVehicle(idleCrew);
    if (!serviceVehicle || ACR_Logistics.ServiceOf(serviceVehicle) == 0 || idleCrew.HasPlayer() || m_ServiceJobs.Contains(idleCrew)) continue;
+   if (idleCrew.OrderState() == ACR_EOrderState.BUILD_FOB || idleCrew.m_iAITask == ACR_EAITask.BUILD_FOB) continue;
    ACR_Base goal = supplyPoint;
    if (logistics.StockPercent(serviceVehicle) < 25) goal = HomeBase();
    if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
@@ -1748,6 +2073,247 @@ class ACR_AICommander : Managed
   return best;
  }
 
+ // ---------------------------------------------------------------- FOB establishment (Stage 3)
+ static const float FOB_FRONT_DISTANCE = 1500;       // 1.5 km front gap requirement
+ static const float FOB_EXISTING_PROXIMITY = 1000;   // don't build within 1 km of existing friendly FOB
+ static const int FOB_RP_COMBAT_RESERVE = 30;        // RP reserve required when buying construction truck
+ static const float FOB_EVAL_INTERVAL_MS = 30000;    // evaluate every 30 seconds
+
+ protected ACR_Squad m_FobBuilder;
+ protected ACR_Squad m_FobEscort;
+ protected vector m_vFobTargetSite;
+ protected float m_fNextFobEval;
+
+ bool HasActiveFobProject()
+ {
+  if (m_FobBuilder)
+  {
+   if (m_FobBuilder.CountAlive() > 0 && m_FobBuilder.OrderState() == ACR_EOrderState.BUILD_FOB) return true;
+   m_FobBuilder = null;
+   m_FobEscort = null;
+  }
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   if (squad.OrderState() == ACR_EOrderState.BUILD_FOB || squad.m_iAITask == ACR_EAITask.BUILD_FOB) return true;
+  }
+  return false;
+ }
+
+ ACR_Base NearestDeployBase(ACR_Base fromBase)
+ {
+  if (!fromBase) return null;
+  ACR_Base best;
+  float bestDist = float.MAX;
+  foreach (ACR_Base candidate : ACR_Base.s_All)
+  {
+   if (candidate.m_sOwner != m_sFaction || candidate.m_bRetired || !ACR_LogisticsRules.CanDeploy(candidate)) continue;
+   float d = vector.DistanceXZ(fromBase.GetOrigin(), candidate.GetOrigin());
+   if (d < bestDist)
+   {
+    bestDist = d;
+    best = candidate;
+   }
+  }
+  return best;
+ }
+
+ ACR_Base NeedsFob()
+ {
+  array<ACR_Base> frontBases = {};
+  FrontlineBases(frontBases);
+  if (frontBases.IsEmpty()) return null;
+
+  foreach (ACR_Base front : frontBases)
+  {
+   if (!front) continue;
+   float nearestDeploy = float.MAX;
+   foreach (ACR_Base candidate : ACR_Base.s_All)
+   {
+    if (candidate.m_sOwner != m_sFaction || candidate.m_bRetired || !ACR_LogisticsRules.CanDeploy(candidate)) continue;
+    float d = vector.DistanceXZ(front.GetOrigin(), candidate.GetOrigin());
+    if (d < nearestDeploy) nearestDeploy = d;
+   }
+
+   if (nearestDeploy >= FOB_FRONT_DISTANCE)
+   {
+    bool hasCloseFob = false;
+    foreach (ACR_Base existingFob : ACR_Base.s_All)
+    {
+     if (existingFob.m_sOwner != m_sFaction || !existingFob.m_bBuilt || existingFob.m_bRetired) continue;
+     if (vector.DistanceXZ(front.GetOrigin(), existingFob.GetOrigin()) < FOB_EXISTING_PROXIMITY)
+     {
+      hasCloseFob = true;
+      break;
+     }
+    }
+    if (!hasCloseFob) return front;
+   }
+  }
+  return null;
+ }
+
+ bool FindFobSite(ACR_Base front, out vector site)
+ {
+  site = Vector(0, 0, 0);
+  if (!front) return false;
+  ACR_Base deployBase = NearestDeployBase(front);
+  vector dir;
+  if (deployBase)
+  {
+   dir = deployBase.GetOrigin() - front.GetOrigin();
+   dir[1] = 0;
+   if (dir.LengthSq() > 0.001) dir.Normalize();
+   else dir = Vector(0, 0, -1);
+  }
+  else
+  {
+   dir = Vector(0, 0, -1);
+  }
+
+  array<float> dists = {450.0, 550.0, 350.0, 650.0};
+  array<float> angles = {0.0, 25.0, -25.0, 50.0, -50.0};
+
+  foreach (float d : dists)
+  {
+   foreach (float a : angles)
+   {
+    float rad = a * Math.DEG2RAD;
+    float cosA = Math.Cos(rad);
+    float sinA = Math.Sin(rad);
+    vector rotatedDir = Vector(dir[0] * cosA - dir[2] * sinA, 0, dir[0] * sinA + dir[2] * cosA);
+    vector candidate = front.GetOrigin() + rotatedDir * d;
+    candidate[1] = GetGame().GetWorld().GetSurfaceY(candidate[0], candidate[2]);
+
+    vector validSpot;
+    string refusal;
+    if (!ACR_FobBuild.ValidateSite(candidate, validSpot, refusal)) continue;
+
+    bool safe = true;
+    foreach (ACR_Base b : ACR_Base.s_All)
+    {
+     if (b.m_sOwner != m_sFaction && !b.m_sOwner.IsEmpty() && !b.m_bRetired)
+     {
+      if (vector.DistanceXZ(b.GetOrigin(), validSpot) < 600.0)
+      {
+       safe = false;
+       break;
+      }
+     }
+    }
+    if (!safe || ACR_FobBuild.IsContested(validSpot, m_sFaction)) continue;
+
+    site = validSpot;
+    return true;
+   }
+  }
+  return false;
+ }
+
+ ACR_Squad FindConstructionSquad()
+ {
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  foreach (ACR_Squad squad : mine)
+  {
+   if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0) continue;
+   if (squad.m_iAITask == ACR_EAITask.ATTACK || squad.m_iAITask == ACR_EAITask.DEFEND) continue;
+   IEntity truck = squad.ConstructionTruck();
+   if (!truck || ACR_Logistics.Health(truck) <= 0) continue;
+   if (m_Manager.m_Logistics && m_Manager.m_Logistics.StockOf(truck) >= ACR_FobBuild.LOADS_RESERVED)
+    return squad;
+  }
+  return null;
+ }
+
+ bool BuyConstructionTruck(ACR_Base spawn)
+ {
+  if (!spawn) return false;
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  if (!data || !data.m_aRequisitions) return false;
+
+  int pick = -1;
+  foreach (int e, ACR_RequisitionEntry offer : data.m_aRequisitions)
+  {
+   if (offer.m_iRemaining <= 0 || offer.m_iCost > data.m_iRP || offer.m_sVehicle.IsEmpty()) continue;
+   if ((ACR_Logistics.ServiceOfName(offer.m_sVehicle) & ACR_EService.CONSTRUCTION) == 0) continue;
+   if (pick < 0 || offer.m_iCost < data.m_aRequisitions[pick].m_iCost) pick = e;
+  }
+  if (pick < 0) return false;
+
+  int cost = data.m_aRequisitions[pick].m_iCost;
+  if (data.m_iRP < cost + FOB_RP_COMBAT_RESERVE) return false;
+
+  string bought = m_Manager.PurchaseAt(m_sFaction, pick, spawn);
+  PrintFormat("[ACR] AI %1 requisition (FOB construction truck): %2", m_sFaction, bought);
+  return !bought.IsEmpty();
+ }
+
+ ACR_Squad FindEscortSquad(ACR_Squad builder)
+ {
+  array<ACR_Squad> free = {};
+  MySquads(free, true);
+  foreach (ACR_Squad squad : free)
+  {
+   if (!squad || squad == builder || squad.HasPlayer() || squad.CountAlive() <= 0) continue;
+   if (squad.IsCombatUnit()) return squad;
+  }
+  return null;
+ }
+
+ void ManageFobBuild()
+ {
+  if (HasActiveFobProject()) return;
+
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < m_fNextFobEval) return;
+  m_fNextFobEval = now + FOB_EVAL_INTERVAL_MS;
+
+  ACR_Base front = NeedsFob();
+  if (!front) return;
+
+  vector site;
+  if (!FindFobSite(front, site)) return;
+
+  ACR_Squad builder = FindConstructionSquad();
+  if (!builder)
+  {
+   ACR_Base spawn = NearestDeployBase(front);
+   if (!spawn) spawn = HomeBase();
+   BuyConstructionTruck(spawn);
+   return;
+  }
+
+  builder.m_iAITask = ACR_EAITask.BUILD_FOB;
+  if (!builder.EstablishFob(site))
+  {
+   builder.m_iAITask = ACR_EAITask.FREE;
+   return;
+  }
+
+  m_FobBuilder = builder;
+  m_vFobTargetSite = site;
+
+  ACR_Squad escort = FindEscortSquad(builder);
+  if (escort)
+  {
+   m_FobEscort = escort;
+   escort.m_iAITask = ACR_EAITask.DEFEND;
+   escort.SetMode(ACR_EMoveMode.FAST);
+   escort.RouteTo(site, ACR_Squad.WP_DEFEND, -1, "Escorting FOB construction", 0);
+   PrintFormat("[ACR] AI %1: %2 assigned as escort for FOB build at %3", m_sFaction, escort.GetName(), site);
+  }
+
+  PrintFormat("[ACR] AI %1: dispatched %2 to establish forward FOB near %3 at %4", m_sFaction, builder.GetName(), front.m_sName, site);
+ }
+
+ void SetFobEvalTimeForTest(float time) { m_fNextFobEval = time; }
+ ACR_Squad FobBuilder() { return m_FobBuilder; }
+ ACR_Squad FobEscort() { return m_FobEscort; }
+ vector FobTargetSite() { return m_vFobTargetSite; }
+ void SetFobBuilderForTest(ACR_Squad builder) { m_FobBuilder = builder; }
+ ACR_Base GetHomeBase() { return HomeBase(); }
+
  // ---------------------------------------------------------------- hand-over
 
  // A player took command: leave every squad as it is, but forget AI tasks.
@@ -1756,5 +2322,7 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : m_Manager.m_Squads)
    if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == m_sFaction) squad.m_iAITask = ACR_EAITask.FREE;
   m_Attacks.Clear();
+  m_FobBuilder = null;
+  m_FobEscort = null;
  }
 }
