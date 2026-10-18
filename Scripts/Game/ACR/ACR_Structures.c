@@ -81,6 +81,10 @@ modded class SCR_CampaignBuildingCompositionComponent
 		m_bACRBuildCharged = true;
 	}
 
+	protected string m_sACRFaction;
+	void ACR_SetFaction(string factionKey) { m_sACRFaction = factionKey; }
+	string ACR_Faction() { return m_sACRFaction; }
+
 	override void OnPostInit(IEntity owner)
 	{
 		super.OnPostInit(owner);
@@ -234,6 +238,7 @@ class ACR_Structures : Managed
  // The builder's side, else the side in the composition's name (..._US_..., ..._USSR_...).
  static string FactionOf(SCR_CampaignBuildingCompositionComponent composition)
  {
+  if (!composition.ACR_Faction().IsEmpty()) return composition.ACR_Faction();
   int builder = composition.GetBuilderId();
   if (builder > 0)
   {
@@ -267,15 +272,16 @@ class ACR_Structures : Managed
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextTick) return;
   m_fNextTick = now + TICK_MS;
+  foreach (ACR_Structure fobEntry : m_Active)
+  {
+   if (!fobEntry.m_Fob) continue;
+   ACR_FobSupply.Tick(fobEntry.m_Fob);
+   ACR_FobSlots.Tick(fobEntry.m_Fob);
+  }
   // Gone (dismantled, destroyed): undo.
   for (int i = m_Active.Count() - 1; i >= 0; i--)
   {
    ACR_Structure s = m_Active[i];
-   if (s.m_Fob)
-   {
-    ACR_FobSupply.Tick(s.m_Fob);
-    ACR_FobSlots.Tick(s.m_Fob);
-   }
    if (s.m_Composition && s.m_Entity) continue;
    Deactivate(s);
    m_Active.RemoveOrdered(i);

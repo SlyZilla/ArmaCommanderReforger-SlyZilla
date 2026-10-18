@@ -133,7 +133,26 @@ class ACR_SapperDemo : Managed
  void Tick(float now)
  {
   if (m_State == ACR_ESapperDemoState.DETONATED) return;
-  if (!m_Attack || !m_Attack.m_Target || m_Attack.m_Target.m_bRetired) return;
+  if (!m_Attack || !m_Attack.m_Target || m_Attack.m_Target.m_bRetired)
+  {
+   if (m_DemoCharge)
+   {
+    SCR_EntityHelper.DeleteEntityAndChildren(m_DemoCharge);
+    m_DemoCharge = null;
+   }
+   return;
+  }
+
+  if (m_State == ACR_ESapperDemoState.FALLBACK)
+  {
+   if (now >= m_fFuseDeadline)
+   {
+    Detonate();
+   }
+   return;
+  }
+
+  if (m_Commander && m_Attack.m_Target.m_sOwner == m_Commander.Faction()) return;
 
   vector hqPos = TargetHqPosition();
   if (hqPos == vector.Zero) return;
@@ -166,6 +185,7 @@ class ACR_SapperDemo : Managed
     m_State = ACR_ESapperDemoState.PLANTING;
     m_fPlantStart = now;
     m_vChargePos = sapperPos;
+    m_SapperSquad.ClearOrders();
     m_SapperSquad.SetOrder("Planting demolition charges", ACR_EOrderState.HOLD);
     PrintFormat("[ACR] SAPPER %1: planting demolition charges on enemy FOB %2 HQ (dist=%3m)", m_SapperSquad.GetName(), m_Attack.m_Target.m_sName, distToHq);
    }
@@ -205,15 +225,6 @@ class ACR_SapperDemo : Managed
      squad.MoveTo(m_vFallbackPos);
     }
     PrintFormat("[ACR] SAPPER %1: charges primed (12s fuse)! Falling back %2m from %3", m_SapperSquad.GetName(), RETREAT_DISTANCE, hqPos);
-   }
-   return;
-  }
-
-  if (m_State == ACR_ESapperDemoState.FALLBACK)
-  {
-   if (now >= m_fFuseDeadline)
-   {
-    Detonate();
    }
    return;
   }
@@ -375,6 +386,7 @@ class ACR_AICommander : Managed
   }
   if (!m_bActive) return;
   GatherIntel();
+  TickSapperDemos();
   m_iSeconds++;
   if (m_iSeconds % TICK_SECONDS != 1) return;
   int t = System.GetTickCount();
@@ -397,6 +409,19 @@ class ACR_AICommander : Managed
   Requisition();
   t = ACR_Perf.Lap("ai.buy", t);
   LogStatus();
+ }
+
+ protected void TickSapperDemos()
+ {
+  if (m_Attacks.IsEmpty()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   if (attack && attack.m_bAssaulting && attack.m_bFobRaid && attack.m_SapperDemo)
+   {
+    attack.m_SapperDemo.Tick(now);
+   }
+  }
  }
 
  protected ACR_FactionSettings Settings() { return ACR_FactionSettings.Find(m_sFaction); }
@@ -709,6 +734,7 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
    if (squad.m_iAITask != ACR_EAITask.DEFEND || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   if (squad == m_FobEscort && HasActiveFobProject()) continue;
    ACR_Base held = squad.m_AITarget;
    if (!held || held.m_sOwner != m_sFaction || ThreatTo(held) == 0) { squad.m_iAITask = ACR_EAITask.FREE; continue; }
    // A defence that is being overrun: the badly hurt get out rather than die in place.
@@ -983,6 +1009,7 @@ class ACR_AICommander : Managed
    int bestFire = 2;
    foreach (ACR_Squad fireCandidate : attack.m_Squads)
    {
+    if (ACR_SapperDemo.IsSapperSquad(fireCandidate)) continue;
     int firepower = fireCandidate.FirePower();
     if (firepower > bestFire) { bestFire = firepower; attack.m_Suppressor = fireCandidate; }
    }
@@ -1488,9 +1515,10 @@ class ACR_AICommander : Managed
    }
    int strength;
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
-   bool broken = attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * ABORT_RATIO;
-   bool stalled = !won && target && Stalled(attack);
-   if (!target || won || attack.m_Squads.IsEmpty() || broken || stalled)
+   bool fusePrimed = attack.m_SapperDemo && attack.m_SapperDemo.State() == ACR_ESapperDemoState.FALLBACK;
+   bool broken = !fusePrimed && attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * ABORT_RATIO;
+   bool stalled = !fusePrimed && !won && target && Stalled(attack);
+   if (!target || won || (attack.m_Squads.IsEmpty() && !fusePrimed) || broken || stalled)
    {
     string outcome = "failed";
     if (won) outcome = "won";
@@ -1511,11 +1539,18 @@ class ACR_AICommander : Managed
    }
    if (attack.m_bAssaulting)
    {
+    bool demoBusy = false;
     if (attack.m_bFobRaid && attack.m_SapperDemo)
     {
      float now = GetGame().GetWorld().GetWorldTime();
      attack.m_SapperDemo.Tick(now);
+     ACR_ESapperDemoState demoState = attack.m_SapperDemo.State();
+     if (demoState == ACR_ESapperDemoState.PLANTING || demoState == ACR_ESapperDemoState.FALLBACK || demoState == ACR_ESapperDemoState.DETONATED)
+     {
+      demoBusy = true;
+     }
     }
+    if (demoBusy) continue;
     PushAttackers(attack);
     // Base of fire keeps suppressing until the assault squads are on the
     // objective, then lifts fire and joins in.
@@ -2047,6 +2082,7 @@ class ACR_AICommander : Managed
    IEntity serviceVehicle = ACR_Transport.CrewedVehicle(idleCrew);
    if (!serviceVehicle || ACR_Logistics.ServiceOf(serviceVehicle) == 0 || idleCrew.HasPlayer() || m_ServiceJobs.Contains(idleCrew)) continue;
    if (idleCrew.OrderState() == ACR_EOrderState.BUILD_FOB || idleCrew.m_iAITask == ACR_EAITask.BUILD_FOB) continue;
+   if (IsAssistingFobUpgrade(idleCrew)) continue;
    ACR_Base goal = supplyPoint;
    if (logistics.StockPercent(serviceVehicle) < 25) goal = HomeBase();
    if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
@@ -2054,6 +2090,23 @@ class ACR_AICommander : Managed
    idleCrew.RouteTo(ACR_Manager.Ground(goal.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
    PrintFormat("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(ACR_Logistics.ServiceOf(serviceVehicle)));
   }
+ }
+
+ protected bool IsAssistingFobUpgrade(ACR_Squad squad)
+ {
+  if (!squad) return false;
+  if (squad.m_Order == "Assisting FOB upgrade construction" && squad.m_Group && squad.m_Group.GetCurrentWaypoint()) return true;
+  vector pos = PositionOf(squad);
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || !base.m_bBuilt || base.m_sOwner != m_sFaction || !base.m_aFobSlots) continue;
+   if (vector.DistanceXZ(pos, base.GetOrigin()) > base.m_fRadius) continue;
+   foreach (ACR_FobSlot slot : base.m_aFobSlots)
+   {
+    if (slot && slot.m_eState == ACR_EFobSlotState.BUILDING) return true;
+   }
+  }
+  return false;
  }
 
  // Our base nearest the front that isn't threatened: where service vehicles wait.
@@ -2091,6 +2144,10 @@ class ACR_AICommander : Managed
   {
    if (m_FobBuilder.CountAlive() > 0 && m_FobBuilder.OrderState() == ACR_EOrderState.BUILD_FOB) return true;
    m_FobBuilder = null;
+   if (m_FobEscort && m_FobEscort.m_iAITask == ACR_EAITask.DEFEND && !m_FobEscort.m_AITarget)
+   {
+    m_FobEscort.m_iAITask = ACR_EAITask.FREE;
+   }
    m_FobEscort = null;
   }
   foreach (ACR_Squad squad : m_Manager.m_Squads)
@@ -2364,7 +2421,11 @@ class ACR_AICommander : Managed
   int capacity = ACR_FobSupply.CapacityOf(base);
   if (capacity - stock < ACR_FobSupply.DELIVERY_AMOUNT) return false;
 
-  if (stock >= 500) return false;
+  int minNeeded = 500;
+  int nextTier = 0;
+  int nextSlot = BestUpgradeSlotFor(base, nextTier);
+  if (nextSlot >= 0) minNeeded = Math.Max(500, ACR_FobSlots.SlotCost(nextSlot, nextTier));
+  if (stock >= minNeeded) return false;
 
   if (data.m_iRP < ACR_FobSupply.DELIVERY_COST + FOB_RP_COMBAT_RESERVE) return false;
 
@@ -2394,7 +2455,7 @@ class ACR_AICommander : Managed
    if (slotIdx < 0 || slotIdx >= base.m_aFobSlots.Count()) continue;
    ACR_FobSlot slot = base.m_aFobSlots[slotIdx];
    if (!slot) continue;
-   if (slot.m_eState == ACR_EFobSlotState.EMPTY)
+   if (slot.m_eState == ACR_EFobSlotState.EMPTY || (slot.m_eState == ACR_EFobSlotState.BUILT && !ACR_FobSlots.IsBuiltForOwner(slot, m_sFaction)))
    {
     targetTier = 0;
     return slotIdx;
@@ -2403,21 +2464,21 @@ class ACR_AICommander : Managed
 
   // Tier 1 upgrades after base tiers are built
   ACR_FobSlot barracksSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_BARRACKS];
-  if (barracksSlot && barracksSlot.m_eState == ACR_EFobSlotState.BUILT && barracksSlot.m_iTier < 1)
+  if (barracksSlot && ACR_FobSlots.IsBuiltForOwner(barracksSlot, m_sFaction) && barracksSlot.m_iTier < 1)
   {
    targetTier = 1;
    return ACR_FobSlots.SLOT_BARRACKS;
   }
 
   ACR_FobSlot repairSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_REPAIR];
-  if (repairSlot && repairSlot.m_eState == ACR_EFobSlotState.BUILT && repairSlot.m_iTier < 1)
+  if (repairSlot && ACR_FobSlots.IsBuiltForOwner(repairSlot, m_sFaction) && repairSlot.m_iTier < 1)
   {
    targetTier = 1;
    return ACR_FobSlots.SLOT_REPAIR;
   }
 
   ACR_FobSlot heliSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_HELIPAD];
-  if (heliSlot && heliSlot.m_eState == ACR_EFobSlotState.EMPTY)
+  if (heliSlot && (heliSlot.m_eState == ACR_EFobSlotState.EMPTY || (heliSlot.m_eState == ACR_EFobSlotState.BUILT && !ACR_FobSlots.IsBuiltForOwner(heliSlot, m_sFaction))))
   {
    targetTier = 0;
    return ACR_FobSlots.SLOT_HELIPAD;
@@ -2459,13 +2520,14 @@ class ACR_AICommander : Managed
    if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0) continue;
    if (squad.m_iAITask == ACR_EAITask.ATTACK || squad.m_iAITask == ACR_EAITask.DEFEND || squad.m_iAITask == ACR_EAITask.BUILD_FOB) continue;
    IEntity truck = squad.ConstructionTruck();
-   if (!truck || ACR_Logistics.Health(truck) <= 0) continue;
+   bool hasTruck = truck && ACR_Logistics.Health(truck) > 0;
+   if (!hasTruck && !ACR_SapperDemo.IsSapperSquad(squad)) continue;
 
    float dist = vector.DistanceXZ(PositionOf(squad), base.GetOrigin());
    if (dist <= 500.0)
    {
     squad.SetMode(ACR_EMoveMode.FAST);
-    squad.RouteTo(base.GetOrigin(), ACR_Squad.WP_MOVE, -1, "Assisting FOB upgrade construction", 0);
+    squad.RouteTo(base.GetOrigin(), ACR_Squad.WP_MOVE, -1, "Assisting FOB upgrade construction", 0, true);
     PrintFormat("[ACR] AI %1: dispatched %2 to assist upgrade construction at %3", m_sFaction, squad.GetName(), base.m_sName);
     return;
    }

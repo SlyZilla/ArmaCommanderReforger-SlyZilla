@@ -483,12 +483,12 @@ class ACR_MapFeed
     if (stock >= 0 && base.m_aFobSlots && s < base.m_aFobSlots.Count())
     {
      ACR_FobSlot slot = base.m_aFobSlots[s];
-     if (slot.m_eState == ACR_EFobSlotState.BUILT)
+     if (ACR_FobSlots.IsBuiltForOwner(slot, base.m_sOwner))
      {
       if (slot.m_iTier == 0) slotState = 100;
       else slotState = 200;
      }
-     else if (slot.m_eState == ACR_EFobSlotState.BUILDING)
+     else if (slot.m_eState == ACR_EFobSlotState.BUILDING && (slot.m_sOwner.IsEmpty() || slot.m_sOwner == base.m_sOwner))
      {
       int pct = Math.ClampInt((int)((slot.m_fProgress / slot.m_fDuration) * 100), 0, 99);
       if (slot.m_iTargetTier == 0) slotState = pct;

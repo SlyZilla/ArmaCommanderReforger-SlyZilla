@@ -14,8 +14,8 @@ class ACR_FobBuild
 	static const int SUPPLIES_RESERVED = 500;
 
 	static const ResourceName HQ_US = "{16AF2FE47A6C297B}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Headquarters_S_Conflict_US_01.et";
-	static const ResourceName HQ_USSR = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Headquarters_S_Conflict_USSR_01.et";
-	static const ResourceName HQ_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Headquarters_S_Conflict_FIA_01.et";
+	static const ResourceName HQ_USSR = "{D70BF977E6D6300C}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Headquarters_S_Conflict_USSR_01.et";
+	static const ResourceName HQ_FIA = "{16E06E20F4641F8A}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Headquarters_S_Conflict_FIA_01.et";
 
 	static ResourceName HqPrefabFor(string factionKey)
 	{

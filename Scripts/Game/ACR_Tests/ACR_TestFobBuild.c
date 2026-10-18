@@ -79,8 +79,8 @@ class ACR_TestFobBuild
   float stockAfter = manager.m_Logistics.StockOf(truck);
   ACR_TestRegress.Check("fobbuild: EstablishFob reserves 20 loads and sets state", established && squad.OrderState() == ACR_EOrderState.BUILD_FOB && squad.FobReservedLoads() == 20 && Math.AbsFloat(stockBefore - stockAfter - 20) < 0.01, string.Format("established=%1 state=%2 reserved=%3 before=%4 after=%5", established, squad.OrderState(), squad.FobReservedLoads(), stockBefore, stockAfter));
 
-  // 12. CancelEstablishFob refunds 500 supplies to surviving truck
-  squad.CancelEstablishFob();
+  // 12. CancelEstablishFob and Halt() refund 500 supplies to surviving truck
+  squad.Halt("Holding");
   float stockRefunded = manager.m_Logistics.StockOf(truck);
   ACR_TestRegress.Check("fobbuild: CancelEstablishFob refunds 20 loads to truck", squad.OrderState() != ACR_EOrderState.BUILD_FOB && squad.FobReservedLoads() == 0 && Math.AbsFloat(stockRefunded - stockBefore) < 0.01, string.Format("state=%1 reserved=%2 refunded=%3 before=%4", squad.OrderState(), squad.FobReservedLoads(), stockRefunded, stockBefore));
 
@@ -111,7 +111,7 @@ class ACR_TestFobBuild
   // 16. IsContested detects enemies near site
   ACR_TestRegress.Check("fobbuild: IsContested detects clear site without enemies", !ACR_FobBuild.IsContested(clearSite, "US"), "");
 
-  // 17. CompleteEstablishFob spawns HQ and registers empty 1000 capacity FOB
+  // 17. CompleteEstablishFob spawns HQ and registers empty 1000 capacity FOB (and USSR/FIA HQ prefabs load validly)
   squad.SetFobBuildProgressForTest(90.0);
   if (leader) leader.SetOrigin(clearSite + Vector(5, 0, 0));
   squad.TickEstablishFob(now + 30000);
@@ -126,16 +126,20 @@ class ACR_TestFobBuild
     break;
    }
   }
-  bool fobOk = newFob && newFob.m_sOwner == "US" && newFob.m_bBuilt;
+  bool hqPrefabsValid = Resource.Load(ACR_FobBuild.HQ_US).IsValid() && Resource.Load(ACR_FobBuild.HQ_USSR).IsValid() && Resource.Load(ACR_FobBuild.HQ_FIA).IsValid();
+  bool fobOk = newFob && newFob.m_sOwner == "US" && newFob.m_bBuilt && hqPrefabsValid;
   ACR_TestRegress.Check("fobbuild: CompleteEstablishFob creates empty 1000 capacity FOB", fobOk, "");
 
-  // Restore truck, leader and clean up new FOB
+  // Restore truck, leader and clean up new FOB and its HQ entity
   if (leader) leader.SetOrigin(oldLeaderPos);
   truck.SetOrigin(truckPos);
   manager.m_Logistics.Use(truck, manager.m_Logistics.StockOf(truck));
   manager.m_Logistics.AddStock(truck, initialStock);
   if (newFob)
   {
+   IEntity hqEnt = manager.m_Structures.HqEntityOf(newFob);
+   if (hqEnt) SCR_EntityHelper.DeleteEntityAndChildren(hqEnt);
+   manager.m_Structures.ACR_TestForceTick();
    ACR_Base.s_All.RemoveItem(newFob);
    if (newFob.m_FobSupply) SCR_EntityHelper.DeleteEntityAndChildren(newFob.m_FobSupply);
    SCR_EntityHelper.DeleteEntityAndChildren(newFob);

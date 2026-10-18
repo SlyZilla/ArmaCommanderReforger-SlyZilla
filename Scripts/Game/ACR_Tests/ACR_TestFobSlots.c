@@ -122,7 +122,8 @@ class ACR_TestFobSlots
 		ACR_FobSlots.Advance(fob, 15.0); // 15*2 = 30s (Light duration)
 		manager.m_Structures.ACR_TestForceTick();
 		float repairRateT1 = ACR_Structures.RepairFraction(slotRepair.m_Entity);
-		bool maintT1Ok = (slotRepair.m_eState == ACR_EFobSlotState.BUILT && slotRepair.m_iTier == 0 && repairRateT1 == 0.15);
+		bool yawOk = slotRepair.m_Entity && Math.AbsFloat(slotRepair.m_Entity.GetYawPitchRoll()[0] - 45.0) < 1.0 && Math.AbsFloat(slotRepair.m_Entity.GetYawPitchRoll()[1]) < 1.0;
+		bool maintT1Ok = (slotRepair.m_eState == ACR_EFobSlotState.BUILT && slotRepair.m_iTier == 0 && repairRateT1 == 0.15 && yawOk);
 
 		string maintT2 = ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_REPAIR, why);
 		ACR_FobSlots.Advance(fob, 23.0); // 23*2 = 46s >= 45s (Heavy duration)

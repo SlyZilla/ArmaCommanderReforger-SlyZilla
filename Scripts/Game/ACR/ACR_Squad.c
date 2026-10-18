@@ -636,7 +636,7 @@ class ACR_Squad : Managed
  // Every new order: a fresh serial, and nobody (yet) to credit it to.
  protected void NewOrder()
  {
-  if (OrderState() == ACR_EOrderState.BUILD_FOB) CancelEstablishFob();
+  if (m_fReservedLoads > 0 || OrderState() == ACR_EOrderState.BUILD_FOB) CancelEstablishFob();
   m_CombatFlank.Cancel();
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
@@ -747,19 +747,37 @@ class ACR_Squad : Managed
  // Construction truck assigned to this squad or nearby (within 50 m)
  IEntity ConstructionTruck()
  {
+  if (m_ReservedTruck && (ACR_Logistics.ServiceOf(m_ReservedTruck) & ACR_EService.CONSTRUCTION) != 0 && ACR_Logistics.Health(m_ReservedTruck) > 0) return m_ReservedTruck;
   IEntity vehicle = ACR_Transport.CrewedVehicle(this);
   if (!vehicle) vehicle = ACR_Transport.VehicleOf(GetLeader());
   if (vehicle && (ACR_Logistics.ServiceOf(vehicle) & ACR_EService.CONSTRUCTION) != 0 && ACR_Logistics.Health(vehicle) > 0) return vehicle;
   IEntity anchor = GetAnchor();
   if (anchor)
   {
+   ACR_Manager manager = ACR_Manager.GetInstance();
    array<IEntity> vehicles = {};
    ACR_Vehicles.All(vehicles);
    foreach (IEntity candidate : vehicles)
    {
     if ((ACR_Logistics.ServiceOf(candidate) & ACR_EService.CONSTRUCTION) != 0 && ACR_Logistics.Health(candidate) > 0)
     {
-     if (vector.DistanceXZ(candidate.GetOrigin(), anchor.GetOrigin()) <= 50) return candidate;
+     if (vector.DistanceXZ(candidate.GetOrigin(), anchor.GetOrigin()) <= 50)
+     {
+      bool claimedByOther = false;
+      if (manager)
+      {
+       foreach (ACR_Squad other : manager.m_Squads)
+       {
+        if (!other || other == this) continue;
+        if (ACR_Transport.CrewedVehicle(other) == candidate || other.FobReservedTruck() == candidate)
+        {
+         claimedByOther = true;
+         break;
+        }
+       }
+      }
+      if (!claimedByOther) return candidate;
+     }
     }
    }
   }
@@ -768,7 +786,7 @@ class ACR_Squad : Managed
 
  bool CanEstablishFob()
  {
-  if (CountAlive() <= 0) return false;
+  if (CountAlive() <= 0 || OrderState() == ACR_EOrderState.BUILD_FOB) return false;
   IEntity truck = ConstructionTruck();
   if (!truck) return false;
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -841,6 +859,7 @@ class ACR_Squad : Managed
   {
    m_ReservedTruck = null;
    m_fReservedLoads = 0;
+   if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
    PrintFormat("[ACR] SQUAD %1: construction truck destroyed during FOB build", m_Name);
    Halt("Halted (truck lost)");
    return;
@@ -853,6 +872,10 @@ class ACR_Squad : Managed
   }
 
   bool engineerPresent = false;
+  if (m_ReservedTruck && ACR_Logistics.Health(m_ReservedTruck) > 0 && vector.DistanceXZ(m_ReservedTruck.GetOrigin(), m_vFobSite) <= ACR_FobBuild.CP_RADIUS)
+  {
+   engineerPresent = true;
+  }
   array<AIAgent> agents = {};
   GetAgents(agents);
   foreach (AIAgent agent : agents)
@@ -879,6 +902,10 @@ class ACR_Squad : Managed
 
   if (!engineerPresent)
   {
+   if (m_Group && !m_Group.GetCurrentWaypoint() && !HasPlayer())
+   {
+    IssueWaypoint(WP_MOVE, m_vFobSite, 5.0);
+   }
    SetOrder(string.Format("Establishing FOB (%1%% - waiting for engineer)", pct), ACR_EOrderState.BUILD_FOB);
    return;
   }
@@ -901,6 +928,16 @@ class ACR_Squad : Managed
   if (GetFaction()) factionKey = GetFaction().GetFactionKey();
   ResourceName prefab = ACR_FobBuild.HqPrefabFor(factionKey);
   IEntity hq = ACR_Manager.SpawnPrefab(prefab, m_vFobSite);
+  if (hq)
+  {
+   SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(hq.FindComponent(SCR_CampaignBuildingCompositionComponent));
+   if (comp)
+   {
+    comp.ACR_SetFaction(factionKey);
+    comp.ACR_MarkBuildCharged();
+    comp.ACR_SetCompositionSpawned(true);
+   }
+  }
   PrintFormat("[ACR] SQUAD %1: FOB established at %2 (entity=%3)", m_Name, m_vFobSite, hq != null);
   ClearOrders();
   if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
@@ -1668,7 +1705,7 @@ class ACR_Squad : Managed
  {
   string name = m_Name;
   name.ToLower();
-  if (name.Contains("logistic") || name.Contains("medic") || name.Contains("engineer") || name.Contains("supply") || name.Contains("sniper"))
+  if (name.Contains("logistic") || name.Contains("medic") || name.Contains("engineer") || name.Contains("sapper") || name.Contains("demolition") || name.Contains("pioneer") || name.Contains("supply") || name.Contains("sniper"))
    return 0;
   int value = CountAlive();
   IEntity vehicle = ACR_Transport.CrewedVehicle(this);

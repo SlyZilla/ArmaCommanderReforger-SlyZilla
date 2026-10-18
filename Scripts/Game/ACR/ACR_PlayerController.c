@@ -1232,6 +1232,10 @@ modded class SCR_PlayerController
    return;
   }
   bool friendly = index < m_ACR_Data.m_Commandable.Count() && m_ACR_Data.m_Commandable[index] == 1;
+  int modeAndFlags = m_ACR_GroupSymbols[index * 4 + 3];
+  bool canEstablishFob = friendly && (modeAndFlags & 32) != 0 && m_ACR_Data.m_Selected.Count() <= 1;
+  if (!canEstablishFob && m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB)
+   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   string hint;
   if (!friendly) hint = "Player group: not commandable";
   else if (!m_ACR_IsCommander) hint = "Take command to give orders";
@@ -1260,10 +1264,9 @@ modded class SCR_PlayerController
    detail = names + " | orders go to all (switch: first)";
   }
   if (friendly && m_ACR_IsCommander && m_ACR_CursorMode == ACR_ECursorMode.MOVE) hint += "  |  Shift+right-click: add waypoint  |  Ctrl+drag: select squads";
-  int modeAndFlags = m_ACR_GroupSymbols[index * 4 + 3];
   m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, modeAndFlags & 15, m_ACR_CursorMode, hint);
   m_ACR_Panel.SetGunner(friendly && (modeAndFlags & 16) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
-  m_ACR_Panel.SetEstablishFob(friendly && (modeAndFlags & 32) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
+  m_ACR_Panel.SetEstablishFob(canEstablishFob);
   // Also for a full squad low on ammo: inside a deploy base Reinforce restocks it
   // (the server says so when it isn't in one).
   string details = m_ACR_GroupDetails[index];

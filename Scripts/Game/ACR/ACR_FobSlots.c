@@ -25,6 +25,7 @@ class ACR_FobSlot : Managed
 	IEntity m_Entity;
 	int m_iTier;
 	int m_iTargetTier;
+	string m_sOwner;
 }
 
 class ACR_FobSlots : Managed
@@ -233,11 +234,31 @@ class ACR_FobSlots : Managed
 		return 30.0;
 	}
 
+	static bool IsBuiltForOwner(ACR_FobSlot slot, string owner)
+	{
+		if (!slot || slot.m_eState != ACR_EFobSlotState.BUILT) return false;
+		if (!slot.m_sOwner.IsEmpty() && slot.m_sOwner != owner) return false;
+		return true;
+	}
+
 	static bool HasEngineer(ACR_Base base)
 	{
 		if (!base) return false;
 		ACR_Manager manager = ACR_Manager.GetInstance();
 		if (!manager) return false;
+		array<IEntity> vehicles = {};
+		ACR_Vehicles.All(vehicles);
+		foreach (IEntity candidate : vehicles)
+		{
+			if (!candidate || ACR_Logistics.Health(candidate) <= 0) continue;
+			if ((ACR_Logistics.ServiceOf(candidate) & ACR_EService.CONSTRUCTION) == 0) continue;
+			if (vector.DistanceXZ(candidate.GetOrigin(), base.GetOrigin()) > base.m_fRadius) continue;
+			FactionAffiliationComponent aff = FactionAffiliationComponent.Cast(candidate.FindComponent(FactionAffiliationComponent));
+			if (aff && aff.GetAffiliatedFaction() && aff.GetAffiliatedFaction().GetFactionKey() == base.m_sOwner)
+			{
+				return true;
+			}
+		}
 		foreach (ACR_Squad squad : manager.m_Squads)
 		{
 			if (!squad || !squad.GetFaction()) continue;
@@ -250,7 +271,7 @@ class ACR_FobSlots : Managed
 					return true;
 				}
 			}
-			if (truck)
+			if (truck || ACR_SapperDemo.IsSapperSquad(squad))
 			{
 				array<AIAgent> agents = {};
 				squad.GetAgents(agents);
@@ -347,7 +368,7 @@ class ACR_FobSlots : Managed
 
 		ACR_FobSlot slot = base.m_aFobSlots[slotIndex];
 		int targetTier = 0;
-		if (slot.m_eState == ACR_EFobSlotState.BUILT)
+		if (IsBuiltForOwner(slot, key))
 		{
 			if (slot.m_iTier < MaxTier(slotIndex))
 			{
@@ -375,6 +396,7 @@ class ACR_FobSlots : Managed
 		}
 
 		slot.m_eState = ACR_EFobSlotState.BUILDING;
+		slot.m_sOwner = key;
 		slot.m_fProgress = 0;
 		slot.m_iTargetTier = targetTier;
 		slot.m_iCost = cost;
@@ -405,20 +427,39 @@ class ACR_FobSlots : Managed
 
 		foreach (ACR_FobSlot slot : base.m_aFobSlots)
 		{
-			if (slot.m_eState == ACR_EFobSlotState.BUILT)
+			if ((slot.m_eState == ACR_EFobSlotState.BUILT && !slot.m_Entity) || (slot.m_Entity && ACR_Logistics.Health(slot.m_Entity) <= 0))
 			{
-				if (!slot.m_Entity || ACR_Logistics.Health(slot.m_Entity) <= 0)
+				PrintFormat("[ACR] FOB %1: structure %2 destroyed, slot reset", base.m_sName, slot.m_sName);
+				slot.m_eState = ACR_EFobSlotState.EMPTY;
+				slot.m_Entity = null;
+				slot.m_sOwner = "";
+				slot.m_fProgress = 0;
+				slot.m_iTier = 0;
+				slot.m_iTargetTier = 0;
+				slot.m_iCost = SlotCost(slot.m_iSlotIndex, 0);
+				slot.m_sName = SlotName(slot.m_iSlotIndex, 0);
+				slot.m_fDuration = SlotDuration(slot.m_iSlotIndex, 0);
+				continue;
+			}
+			if (slot.m_eState == ACR_EFobSlotState.BUILDING && !slot.m_sOwner.IsEmpty() && slot.m_sOwner != base.m_sOwner)
+			{
+				if (slot.m_Entity && ACR_Logistics.Health(slot.m_Entity) > 0)
 				{
-					PrintFormat("[ACR] FOB %1: structure %2 destroyed, slot reset", base.m_sName, slot.m_sName);
+					slot.m_eState = ACR_EFobSlotState.BUILT;
+					slot.m_iTargetTier = slot.m_iTier;
+					slot.m_sName = SlotName(slot.m_iSlotIndex, slot.m_iTier);
+				}
+				else
+				{
 					slot.m_eState = ACR_EFobSlotState.EMPTY;
-					slot.m_Entity = null;
-					slot.m_fProgress = 0;
 					slot.m_iTier = 0;
 					slot.m_iTargetTier = 0;
+					slot.m_sOwner = "";
 					slot.m_iCost = SlotCost(slot.m_iSlotIndex, 0);
 					slot.m_sName = SlotName(slot.m_iSlotIndex, 0);
 					slot.m_fDuration = SlotDuration(slot.m_iSlotIndex, 0);
 				}
+				slot.m_fProgress = 0;
 			}
 		}
 
@@ -445,6 +486,7 @@ class ACR_FobSlots : Managed
 	static void CompleteUpgrade(ACR_Base base, ACR_FobSlot slot)
 	{
 		slot.m_eState = ACR_EFobSlotState.BUILT;
+		slot.m_sOwner = base.m_sOwner;
 		slot.m_fProgress = slot.m_fDuration;
 		slot.m_iTier = slot.m_iTargetTier;
 
@@ -458,17 +500,27 @@ class ACR_FobSlots : Managed
 
 		vector pos = base.GetOrigin() + slot.m_vOffset;
 		pos[1] = GetGame().GetWorld().GetSurfaceY(pos[0], pos[2]);
+		ACR_FobBuild.FellTrees(pos, 14.0);
 
 		ResourceName prefab = PrefabFor(slot.m_eKind, base.m_sOwner, slot.m_iTier);
-		IEntity ent = ACR_Manager.SpawnPrefab(prefab, pos);
+		IEntity ent = null;
+		Resource resource = Resource.Load(prefab);
+		if (resource.IsValid())
+		{
+			EntitySpawnParams spawnParams = new EntitySpawnParams();
+			spawnParams.TransformMode = ETransformMode.WORLD;
+			Math3D.AnglesToMatrix(Vector(slot.m_fAngleDeg, 0, 0), spawnParams.Transform);
+			spawnParams.Transform[3] = pos;
+			ent = GetGame().SpawnEntityPrefabLocal(resource, null, spawnParams);
+		}
 		if (ent)
 		{
-			vector angles = Vector(slot.m_fAngleDeg, 0, 0);
-			ent.SetAngles(angles);
+			ent.SetYawPitchRoll(Vector(slot.m_fAngleDeg, 0, 0));
 			slot.m_Entity = ent;
 			SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(ent.FindComponent(SCR_CampaignBuildingCompositionComponent));
 			if (comp)
 			{
+				comp.ACR_SetFaction(base.m_sOwner);
 				comp.ACR_SetFobProvider(base.m_FobSupply);
 				comp.ACR_MarkBuildCharged();
 				comp.ACR_SetCompositionSpawned(true);
@@ -483,7 +535,7 @@ class ACR_FobSlots : Managed
 		string text = "";
 		foreach (ACR_FobSlot slot : base.m_aFobSlots)
 		{
-			if (slot.m_eState == ACR_EFobSlotState.BUILT)
+			if (IsBuiltForOwner(slot, base.m_sOwner))
 			{
 				text += "\n  " + slot.m_sName + " (built)";
 			}
@@ -512,6 +564,7 @@ class ACR_FobSlots : Managed
 				slot.m_Entity = null;
 			}
 			slot.m_eState = ACR_EFobSlotState.EMPTY;
+			slot.m_sOwner = "";
 			slot.m_fProgress = 0;
 			slot.m_iTier = 0;
 			slot.m_iTargetTier = 0;
