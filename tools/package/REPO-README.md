@@ -6,7 +6,7 @@
 > **Install and update the mod through the in-game Workshop.** This repository is retained for historical documentation, existing issues and legacy ZIP downloads/updaters. GitHub ZIPs and external launchers are a legacy/development fallback and may lag behind Workshop.
 
 [![Game: Arma Reforger](https://img.shields.io/badge/Arma-Reforger-556b2f?style=flat-square)](https://reforger.armaplatform.com/)
-[![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#help-test-it)
+[![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#feedback)
 [![BBB required by the split release](https://img.shields.io/badge/Split_release-Requires_BBB-teal?style=flat-square)](#play-through-workshop)
 [![License: APL-SA](https://img.shields.io/badge/License-APL--SA-orange?style=flat-square)](LICENSE.md)
 
@@ -21,16 +21,15 @@ An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode
 
 Friends join through the game's multiplayer browser. **No external launcher or ZIP download is needed.**
 
-The current confirmed Workshop release is **ACA 0.5.5**, with **Better Battle Buddies 0.1.4**
+The current Workshop release is **ACA 0.5.5**, with **Better Battle Buddies 0.1.4**
 available separately on Workshop. Allow Workshop to install BBB when prompted.
 Legacy ZIP downloads may contain an older version; use Workshop for current releases.
-Features described here include development work; consult the installed version's change notes.
 
 ## What you can do
 
 - **Command and fight.** Give squads map orders, queue waypoints and hold buildings. Press F7 to take over a friendly AI soldier, then F8 to return to your commander.
 - **Build your force.** Capture bases for requisition points (RP), then buy infantry and crewed vehicles. An AI commander can lead either side.
-- **Bring support.** Use mortar teams, artillery and combat helicopters. Off-map squad air lift has passed automated transport/clearance tests; multiplayer acceptance remains open.
+- **Bring support.** Use mortar teams, artillery, combat helicopters and off-map squad air lift.
 - **Keep the front supplied.** Service trucks carry ammunition, fuel and medical supplies. Construction trucks build service stations, helipads and forward deploy points; AI base building is not implemented.
 - **Share command.** Several players can order the same side's squads, share an RP pool and coordinate with map/3D pings.
 - **Fight over what you know.** AI perception and player sight reveal contacts. Owned bases also report nearby enemies without line of sight; stale contacts fade from the map.
@@ -38,7 +37,7 @@ Features described here include development work; consult the installed version'
 ## Maps and setup
 
 Everon, Arland and Kolguyev are included. Everon has a hand-built full-island layout, north/south
-halves and three flashpoints; Arland is also the main automated test map. Generated whole-map,
+halves and three flashpoints; Arland also has a hand-built layout. Generated whole-map,
 half-map and flashpoint layouts use the terrain's named places. Kolguyev always generates its
 layout. Other terrains require an AC: Actual scenario setup; installing a map mod alone does not add
 one. There are no victory conditions or saved matches.
@@ -70,15 +69,10 @@ within three seconds to override a height/speed warning). W/A/S/D from a turret 
 with an AI driver. Backtick opens native squad orders while possessing a squad leader. Rebind mod
 keys under Settings > Controls > AC: Actual.
 
-## Help test it
+## Feedback
 
-Multiplayer has had friend playtests, but newer setup and generated-layout paths
-still need broader acceptance. Reports of working behavior are useful too:
-
-- Join during setup and after the match starts; check sides, spawning and the command map.
-- Share a side with another commander; check orders, pings and the common RP pool.
-- Play a generated layout; check capture points, travel and encounters.
-- Try a longer session; report stalled squads, vehicle trouble or slowdowns.
+Found a problem or have a suggestion? Use the main project's
+[issue tracker](https://github.com/propst-design/ArmaCommanderReforger/issues).
 
 ## Reporting bugs
 
@@ -126,8 +120,8 @@ Kolguyev. Read its **READ ME FIRST.txt** for Play/Host/Join instructions.
 These launchers choose only the map and optional mods before loading. Choose playable sides and
 match settings on the in-game startup screen, then press **Start**. Host connects first to control
 setup on its separate local server; that access does not transfer after disconnect. Published ZIPs
-self-update from GitHub. Optional faction mod paths are currently configured for the development
-PC (`E:\ArmaReforgerMods\addons`). They do not download those mods. Locally detected Workshop
+self-update from GitHub. ZIP launcher users may need to adjust addon search paths to match their installation.
+The launchers do not download optional mods. Locally detected Workshop
 copies of All-in-One Command Menu are automatically loaded, so joiners need that mod too.
 
 The paired ZIP contains both ArmaCommanderReforger and BetterBattleBuddies. Older single-addon ZIP users must download and extract it once; their updater cannot install BBB. Keep both folders together.

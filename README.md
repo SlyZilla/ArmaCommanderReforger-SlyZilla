@@ -1,7 +1,7 @@
 # Arma Commander Actual (AC: Actual)
 
 [![Game: Arma Reforger](https://img.shields.io/badge/Arma-Reforger-556b2f?style=flat-square)](https://reforger.armaplatform.com/)
-[![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#development-limits)
+[![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#maps-and-match-options)
 [![Requires Better Battle Buddies](https://img.shields.io/badge/Requires-Better_Battle_Buddies-teal?style=flat-square)](#maps-and-match-options)
 [![License: APL-SA](https://img.shields.io/badge/License-APL--SA-orange?style=flat-square)](LICENSE.md)
 
@@ -18,8 +18,7 @@ Install and update through the in-game Workshop for normal play. The older
 documentation, existing issues and legacy ZIP downloads/updaters. File new bug
 reports and feature requests in this repository's issue tracker.
 
-This README covers the development checkout as well as the basics of playing.
-**0.5.5 is released on Workshop.** Future changes belong under **0.5.6**.
+The current Workshop release is **0.5.5**.
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Playing from Workshop
@@ -33,7 +32,7 @@ logs if available).
 ## Maps and match options
 
 Everon, Arland and Kolguyev are included. Everon has a hand-built full-island layout, north/south
-halves and three flashpoints. Arland has a hand-built layout and is the main automated test map. All
+halves and three flashpoints. Arland also has a hand-built layout. All
 three support generated layouts; Kolguyev always generates its bases and HQs from named map
 locations. Generated layouts can be previewed, rerolled and adjusted by clicking a base and then its
 new position on the in-game setup map. Other terrains need an AC: Actual scenario setup; installing
@@ -41,10 +40,9 @@ a terrain alone does not add one.
 
 Capture bases for RP, requisition squads and vehicles, and call mortar, artillery and air support.
 Construction trucks build service stations, forward deploy points and helipads. There are no victory
-conditions or saved matches. This development tree now requires the separate Better Battle Buddies
-addon (`BBB0261015000001`). Keep its checkout beside this one in Workbench/addons; source is in
-[propst-design/BetterBattleBuddies](https://github.com/propst-design/BetterBattleBuddies).
-BBB 0.1.4 and ACA 0.5.5 are published.
+conditions or saved matches. AC: Actual requires
+[Better Battle Buddies](https://github.com/propst-design/BetterBattleBuddies), available
+separately on Workshop. Allow Workshop to install the dependency when prompted.
 
 In **0.5.5**, built FOBs start with an empty 1,000-supply construction
 store. Select your FOB on the command map to order 500 supplies for 20 RP (60 seconds,
@@ -61,7 +59,6 @@ mission makers can set defaults and per-base roles.
 Heavy maintenance bays repair 40% more per step than light bays for the same supplies. Completed
 small/large living quarters inside a friendly FOB add 11/19 defenders; multiple quarters stack,
 casualties persist, and losing quarters reduces capacity. Engineers do not automatically build blueprints.
-Jacob dismissed the outstanding live/multiplayer check for these controls on 17 Oct.
 
 ## Legacy ZIP / development launchers
 
@@ -84,9 +81,8 @@ multiplayer scenario instead. The ZIP does not include Host-Test-Range.cmd.
 
 The host setup menu can run vanilla US vs USSR, RHS US vs RHS Russia, RHS Russia vs Ukraine, or RHS
 US vs Ukraine. RHS and Ukraine Armed Forces RHS are optional; the launcher adds the required addon
-IDs when selected; it does not download those mods. The current ZIP/development launcher expects
-optional faction mods in `E:\ArmaReforgerMods\addons`; it is configured for the development PC, so
-other installations may need their addon search paths adjusted. Ukraine Armed Forces RHS replaces
+IDs when selected; it does not download those mods. ZIP launcher users may need to adjust addon
+search paths to match their installation. Ukraine Armed Forces RHS replaces
 the vanilla US faction for that session, so choose a pair containing **UA** to play it. ACE All in
 One is a separate optional toggle. Play/Host/Join also automatically load All-in-One Command Menu if
 its Workshop copy is found locally; it is a separate optional mod and joiners need it when the host
@@ -133,65 +129,21 @@ Intel comes from AI perception, player line of sight within 300 m, and automatic
 owned base's radius plus 60 m (no line-of-sight requirement). Contacts turn suspected after 30 s and
 expire after 90 s without an update. The AI commander uses its side's intel.
 
-Logs: automated tests write to `.local-game/logs/<date>/console.log`; normal play uses `Documents/My
-Games/ArmaReforger/logs`. Mod lines use `[ACR]` and `[BBB]`; ZIP-host server logs use
+Logs: normal play uses `Documents/My Games/ArmaReforger/logs`. Mod lines use
+`[ACR]` and `[BBB]`; ZIP-host server logs use
 `ArmaCommanderReforger/.local-server/logs`.
 
-## Code layout (`Scripts/Game`)
+## Making scenarios and contributing
 
-| File | Role |
-| --- | --- |
-| `ACR/ACR_Manager.c` | Core. Registers every AI squad automatically (including squads spawned mid-game), handles possession/return/order requests on the server, and handles local hotkeys |
-| `ACR/ACR_Squad.c` | One commandable squad: roster, designated leader, native command handoff, orders |
-| `ACR/ACR_CommandMenu.c` | Restricts the native command menu to possessed squad leaders and routes orders to their squad |
-| `ACR/ACR_GunnerDrive.c` | Gunner drives: server-side throttle/steer override while a player mans a turret with an AI driver |
-| `ACR/ACR_Supports.c` | Supports: virtual rocket strike and bomb run, script-flown gunship gun run / loiter; mortar calls go to ACR_Mortars |
-| `ACR/ACR_Mortars.c` | Mortar teams: set up / pack up, ground check, range, fire missions through the game's artillery AI |
-| `ACR/ACR_Respawn.c` | Command-unit respawn at the nearest owned base; possessed-soldier death handling |
-| `ACR/ACR_Transport.c` | Passenger squads, "vehicle is down" rule, queued LZ unloads |
-| `ACR/ACR_MapFeed.c` | Server-to-player map snapshots (soldiers, group leaders) |
-| `ACR/ACR_PlayerController.c` | Player RPCs, map markers, aimed possession |
-| `ACR/ACR_MapHandoff.c` | Cleans up map gadget, focus, input and view flags when you leave a body |
-| `ACR/ACR_TestRange.c` | Test scenario only: starts the manager and spawns Alpha 1 |
-| `ACR_Tests/ACR_TestHarness.c` | Optional automated runs (`-acrAutoTest 1`, `-acrCommandTest 1`, `-acrMapHandoffTest 1`) |
-
-Every AI group that is not a player group and has soldiers is registered as a squad. It
-belongs to its faction, and only players of that faction can possess or command it.
-
-Mission makers: see [MISSION-MAKING.md](MISSION-MAKING.md). Docs and past validation evidence are in `docs/`.
-
-## Working on the mod
-
-Start with [documentation](documentation), then the relevant sections of [documentation](documentation).
-The documentation covers architecture, engine constraints, validation, current work and
-release procedures. [MISSION-MAKING.md](MISSION-MAKING.md) explains how to build a
-scenario in your own addon so updates do not overwrite your work.
-
-Keep the BBB checkout beside this one under Workbench's `addons` directory.
-Production mode code lives under `Scripts/Game/ACR`; the code map above gives
-entry points. BBB owns the general AI systems in its separate addon.
-
-For maintainers on the shared Windows setup, **Mod-Release-Console.cmd** prepares
-checked ACA/BBB/AiO snapshots, opens the selected project and verifies downloaded
-content. Its details are in the documentation. **Publish-Release.cmd** is the separate
-legacy GitHub ZIP publisher. This file is the main source repository's GitHub README;
-`tools/package/REPO-README.md` maintains the legacy ACActual repository's page.
-
-### Development limits
-
-Off-map air lift has passed automated loaded-transport, clearance and terrain
-checks. Air-lift clearance/terrain following and RTS camera are the remaining live-check items;
-Jacob dismissed the rest of the existing backlog on 17 Oct. Keep custom changes in your own addon or a development
-copy without the release updater.
+See [MISSION-MAKING.md](MISSION-MAKING.md) to build scenarios in your own addon.
+Contributor guidance is in [documentation](documentation).
 
 ## Made with AI
 
 This project is openly vibecoded. Nearly all of the code, launchers and documentation
 were written by **Claude** (Anthropic's AI model, working in Claude Cowork), directed,
 designed and play-tested by **Jacob** ([propst-design](https://github.com/propst-design)).
-Since 5 Oct **Codex** (OpenAI's coding agent) has contributed part of the code and tests too,
-working in the same repository under Jacob's direction. Since 14 Oct **Antigravity**
-(Google's agentic coding environment, whichever model it runs) contributes as well.
+**Codex** (OpenAI) and **Antigravity** (Google) also contribute.
 Expect rough edges; bug reports with logs help a lot.
 
 Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.
