@@ -511,7 +511,7 @@ class ACR_FobSlots : Managed
 			spawnParams.TransformMode = ETransformMode.WORLD;
 			Math3D.AnglesToMatrix(Vector(slot.m_fAngleDeg, 0, 0), spawnParams.Transform);
 			spawnParams.Transform[3] = pos;
-			ent = GetGame().SpawnEntityPrefabLocal(resource, null, spawnParams);
+			ent = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
 		}
 		if (ent)
 		{

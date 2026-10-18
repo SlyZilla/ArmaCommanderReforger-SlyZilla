@@ -6,7 +6,7 @@
 
 class ACR_TestFobSlots
 {
-	static const int CHECKS = 20;
+	static const int CHECKS = 21;
 
 	static void Run(ACR_Manager manager, ACR_Base fob, ACR_Squad squad, IEntity truck)
 	{
@@ -154,6 +154,9 @@ class ACR_TestFobSlots
 		string desc = ACR_FobSlots.Describe(fob);
 		bool descOk = desc.Contains("Heavy Maintenance (built)") && desc.Contains("Barracks (Large) (built)");
 		ACR_TestRegress.Check("fobslots: description reflects built upgrades and tiers", descOk, desc);
+
+		RplComponent relayReplication = RplComponent.Cast(slotRelay.m_Entity.FindComponent(RplComponent));
+		ACR_TestRegress.Check("fobslots: completed upgrade has a registered replication node", relayReplication && relayReplication.Id().IsValid() && Replication.FindItem(relayReplication.Id()) == relayReplication, "");
 
 		// 20. FOB cleanup removes spawned entities and resets slots
 		ACR_FobSlots.Cleanup(fob);
