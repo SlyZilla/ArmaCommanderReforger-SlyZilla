@@ -23,6 +23,8 @@ enum ACR_EPanelAction
  GARRISON,
  FIRE_AT_WILL,
  TOGGLE_REPORT,
+ FOB_SUPPLY,
+ FOB_BUILD,
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -73,6 +75,9 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_DefendButton;
  protected SCR_ButtonTextComponent m_GarrisonButton;
  protected SCR_ButtonTextComponent m_ReinforceButton;
+ protected Widget m_FobSection;
+ protected SCR_ButtonTextComponent m_FobSupplyButton;
+ protected SCR_ButtonTextComponent m_FobBuildButton;
  protected SCR_ButtonTextComponent m_RequisitionButton;
  protected Widget m_RequisitionWidget;
  protected Widget m_RequisitionSection;
@@ -158,6 +163,9 @@ class ACR_CommandPanel : Managed
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
   m_GroupName = AddText(m_GroupSection, LAYOUT_HEADING, "");
   m_GroupDetail = AddText(m_GroupSection, LAYOUT_TEXT, "");
+  m_FobSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_GroupSection);
+  m_FobSupplyButton = AddButton(m_FobSection, "Order 500 supplies - 20 RP / 60 s", ACR_EPanelAction.FOB_SUPPLY);
+  m_FobBuildButton = AddButton(m_FobSection, "Build at FOB (stand inside its circle)", ACR_EPanelAction.FOB_BUILD);
   m_SwitchButton = AddButton(m_GroupSection, "Switch to squad", ACR_EPanelAction.SWITCH);
   m_SwitchWidget = m_LastButtonWidget;
   AddButton(m_GroupSection, "Take over gunner", ACR_EPanelAction.TAKE_GUNNER);
@@ -436,6 +444,7 @@ class ACR_CommandPanel : Managed
  // name empty = nothing selected
  void SetGroup(string name, string detail, bool friendly, bool isCommander, int mode, int cursorMode, string hint)
  {
+  if (m_FobSection) m_FobSection.SetVisible(false);
   if (!m_GroupSection) return;
   m_GroupSection.SetVisible(!name.IsEmpty());
   if (name.IsEmpty()) return;
@@ -590,6 +599,7 @@ class ACR_CommandPanel : Managed
  // A selected base: info only, no squad buttons.
  void SetBase(string name, string detail)
  {
+  if (m_FobSection) m_FobSection.SetVisible(false);
   if (!m_GroupSection) return;
   m_GroupSection.SetVisible(true);
   m_GroupName.SetText(name);
@@ -598,6 +608,13 @@ class ACR_CommandPanel : Managed
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
   if (m_Hint) m_Hint.SetText("");
+ }
+
+ void SetFob(bool visible, bool canOrder, bool canBuild)
+ {
+  if (m_FobSection) m_FobSection.SetVisible(visible);
+  if (m_FobSupplyButton) m_FobSupplyButton.SetEnabled(canOrder, false);
+  if (m_FobBuildButton) m_FobBuildButton.SetEnabled(canBuild, false);
  }
 
  void Destroy()

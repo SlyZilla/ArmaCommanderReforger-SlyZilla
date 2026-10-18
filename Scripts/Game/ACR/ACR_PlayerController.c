@@ -1153,6 +1153,15 @@ modded class SCR_PlayerController
    if (baseIndex >= 0)
    {
     m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], m_ACR_Data.m_BaseDetails[baseIndex]);
+    int supplyOffset = baseIndex * 3;
+    if (m_ACR_Data.m_BaseSupply.Count() > supplyOffset + 2)
+    {
+     int stock = m_ACR_Data.m_BaseSupply[supplyOffset];
+     int capacity = m_ACR_Data.m_BaseSupply[supplyOffset + 1];
+     int delivery = m_ACR_Data.m_BaseSupply[supplyOffset + 2];
+     bool ready = m_ACR_IsCommander && m_ACR_Data.m_BaseContested[baseIndex] == 0;
+     m_ACR_Panel.SetFob(stock >= 0, ready && capacity - stock >= ACR_FobSupply.DELIVERY_AMOUNT && delivery == 0 && m_ACR_RP >= ACR_FobSupply.DELIVERY_COST, ready && stock > 0);
+    }
     return;
    }
    m_ACR_SelectedBase = "";
@@ -1243,6 +1252,8 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.GET_OUT: ACR_RequestSelected(ACR_ERequest.ORDER_GET_OUT); return;
    case ACR_EPanelAction.UNLOAD: ACR_RequestSelected(ACR_ERequest.ORDER_UNLOAD); return;
    case ACR_EPanelAction.REINFORCE: ACR_RequestSelected(ACR_ERequest.REINFORCE); return;
+   case ACR_EPanelAction.FOB_SUPPLY: Rpc(ACR_FobServer, m_ACR_SelectedBase, false); return;
+   case ACR_EPanelAction.FOB_BUILD: Rpc(ACR_FobServer, m_ACR_SelectedBase, true); return;
    case ACR_EPanelAction.HALT: ACR_RequestSelected(ACR_ERequest.ORDER_HALT); return;
    case ACR_EPanelAction.FIRE_AT_WILL: ACR_RequestSelected(ACR_ERequest.ORDER_FIRE_AT_WILL); return;
    case ACR_EPanelAction.PING_LOOK: ACR_PickPing(ACR_EPing.LOOK); return;
@@ -1703,12 +1714,12 @@ modded class SCR_PlayerController
 
  protected string m_ACR_SelectedBase;
 
- void ACR_SendBases(array<vector> positions, array<string> names, array<string> owners, array<string> details, array<float> radii, array<int> contested)
+ void ACR_SendBases(array<vector> positions, array<string> names, array<string> owners, array<string> details, array<float> radii, array<int> contested, array<int> supplies)
  {
-  Rpc(ACR_BasesOwner, positions, names, owners, details, radii, contested);
+  Rpc(ACR_BasesOwner, positions, names, owners, details, radii, contested, supplies);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_BasesOwner(array<vector> positions, array<string> names, array<string> owners, array<string> details, array<float> radii, array<int> contested)
+ protected void ACR_BasesOwner(array<vector> positions, array<string> names, array<string> owners, array<string> details, array<float> radii, array<int> contested, array<int> supplies)
  {
   m_ACR_Data.m_BasePositions.Copy(positions);
   m_ACR_Data.m_BaseNames.Copy(names);
@@ -1716,6 +1727,17 @@ modded class SCR_PlayerController
   m_ACR_Data.m_BaseDetails.Copy(details);
   m_ACR_Data.m_BaseRadii.Copy(radii);
   m_ACR_Data.m_BaseContested.Copy(contested);
+  m_ACR_Data.m_BaseSupply.Copy(supplies);
+ }
+
+ protected float m_ACR_LastFobRequest = -1000;
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_FobServer(string label, bool build)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastFobRequest < 500) return;
+  m_ACR_LastFobRequest = now;
+  Rpc(ACR_FeedbackOwner, ACR_FobSupply.Request(this, label, build));
  }
 
  void ACR_SelectBase(string label)

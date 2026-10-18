@@ -4,6 +4,8 @@
 
 Development changes since the released 0.5.4. Live/multiplayer acceptance remains pending.
 
+- Built FOBs start with an empty 1,000-supply construction store. Commanders can order 500 supplies for 20 RP with a 60-second delay that pauses while contested, then build from the FOB without keeping a construction truck there. Built FOBs no longer refill service trucks for free.
+
 - Generated battlefields have fewer crowded objectives and fewer passive-income sites. Home-region income is protected; tactical points still support control and deployment. Starting funding and reinforcement prices are unchanged.
 - Generated HQ placement checks rear approaches and access around the opposing HQ. Approach checks now reject steep terrain and recognize roads and bridge decks over water.
 - Squad health, ammunition and vehicle-status scans are spread across five seconds, reducing simultaneous update spikes while keeping each squad on its existing refresh interval.

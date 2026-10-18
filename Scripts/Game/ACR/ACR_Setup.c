@@ -119,8 +119,9 @@ class ACR_Setup
   if (s_PreviewSent.Find(playerId, sent) && sent == s_sPreviewSig) return;
   s_PreviewSent.Set(playerId, s_sPreviewSig);
   array<int> contested = {};
+  array<int> supplies = {};
   foreach (string n : s_PreviewNames) contested.Insert(0);
-  pc.ACR_SendBases(s_PreviewPos, s_PreviewNames, s_PreviewOwners, s_PreviewDetails, s_PreviewRadii, contested);
+  pc.ACR_SendBases(s_PreviewPos, s_PreviewNames, s_PreviewOwners, s_PreviewDetails, s_PreviewRadii, contested, supplies);
  }
 
  // Tests: force the phase on or off.

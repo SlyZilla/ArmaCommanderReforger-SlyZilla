@@ -609,7 +609,7 @@ class ACR_Logistics : Managed
   if (stock >= capacity) return;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_sOwner != faction || !base.m_bAllowSpawn) continue;
+   if (base.m_bBuilt || base.m_bRetired || base.m_bContested || base.m_sOwner != faction || !base.m_bAllowSpawn) continue;
    if (vector.DistanceXZ(base.GetOrigin(), station.GetOrigin()) > base.m_fRadius) continue;
    m_Stock.Set(station, Math.Min(capacity, stock + capacity * RESTOCK_PER_TICK));
    return;

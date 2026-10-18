@@ -47,6 +47,12 @@ addon (`BBB0261015000001`). Keep its checkout beside this one in Workbench/addon
 0.5.4 Workshop build already uses the separate BBB dependency.
 Verify the exact BBB dependency before publishing ACA 0.5.5.
 
+In the **0.5.5 development tree**, built FOBs start with an empty 1,000-supply construction
+store. Select your FOB on the command map to order 500 supplies for 20 RP (60 seconds,
+paused while contested), then stand inside its circle and choose **Build at FOB**. A truck
+is no longer needed for subsequent construction. Built FOBs do not refill trucks for free.
+Live and multiplayer acceptance of these controls is still pending.
+
 ## Legacy ZIP / development launchers
 
 The release ZIP includes **Play-ACA.cmd**, **Host-ACA.cmd**, **Join-ACA.cmd** and a **READ ME

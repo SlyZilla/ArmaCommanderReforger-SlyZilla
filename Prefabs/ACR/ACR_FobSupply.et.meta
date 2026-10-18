@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A001007D}Prefabs/ACR/ACR_FobSupply.et"
+ Configurations {
+  ETResourceClass PC {
+  }
+  ETResourceClass HEADLESS : PC {
+  }
+ }
+}

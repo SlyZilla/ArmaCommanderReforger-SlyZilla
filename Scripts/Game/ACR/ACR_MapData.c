@@ -26,6 +26,7 @@ class ACR_MapData : Managed
  ref array<string> m_BaseDetails = {};
  ref array<float> m_BaseRadii = {};
  ref array<int> m_BaseContested = {};
+ ref array<int> m_BaseSupply = {};
  ref array<vector> m_ZonePositions = {};
  ref array<float> m_ZoneRadii = {};
  ref array<string> m_ZoneLabels = {};

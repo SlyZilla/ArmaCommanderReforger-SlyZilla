@@ -32,6 +32,11 @@ class ACR_Base : GenericEntity
  ref array<string> m_aDetectedBy = {};
  bool m_bBuilt;                     // a forward base made by a built HQ (ACR_Structures)
  bool m_bRetired;                   // its HQ is gone: no longer a base
+ IEntity m_FobSupply;               // replicated building provider; supplies are paid, never generated
+ int m_iSupplyDelivery;
+ float m_fSupplyDeliveryLeft;
+ float m_fSupplyDeliveryUpdated;
+ string m_sSupplyDeliveryFaction;
 
  // A built forward base whose HQ is gone: off the map and out of every base list.
  // Also used for bases left out of a skirmish layout (ACR_Skirmish).
@@ -39,6 +44,10 @@ class ACR_Base : GenericEntity
  {
   if (m_bRetired) return;
   m_bRetired = true;
+  m_iSupplyDelivery = 0;
+  m_fSupplyDeliveryLeft = 0;
+  if (m_FobSupply) SCR_EntityHelper.DeleteEntityAndChildren(m_FobSupply);
+  m_FobSupply = null;
   if (s_All) s_All.RemoveItem(this);
   if (m_GarrisonGroup) SCR_EntityHelper.DeleteEntityAndChildren(m_GarrisonGroup);
   PrintFormat("[ACR] BASE %1 retired (%2)", m_sName, why);

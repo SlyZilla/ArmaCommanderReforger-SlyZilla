@@ -101,10 +101,16 @@ Add these components to the game mode object. The Arland map has working example
   - **Headquarters / Player Hub**: away from existing bases it becomes a forward base ("FOB 1"...) where
     units can be bought and reinforcements deploy; hidden from the enemy until found, no income.
   AI squads that need ammo, repairs, fuel or healing also head for these. Service is slow and
-  free; the Reinforce button's paid instant vehicle service remains separate. Building costs
-  draw from construction-truck stock. A built command post does not yet provide a construction
-  supply pool, so further building still needs a stocked truck. The AI commander does not build
-  bases or helipads.
+  free; the Reinforce button's paid instant vehicle service remains separate. Initial construction
+  draws from construction-truck stock. A built FOB starts with an empty **1,000-supply** store
+  (the vanilla command post's storage capacity). Select its map marker as commander and order
+  **500 supplies for 20 RP**, delivered after **60 uncontested seconds**. One delivery at a time;
+  at least 500 free capacity is required. Standing inside the FOB's 40 m circle, choose **Build at
+  FOB** to use this stock without a truck. Supplies are charged when placing a blueprint; completing
+  it does not charge again. Destroying/dismantling the command post removes its store and loses any
+  pending paid delivery; there is no refund. Built FOBs never provide free truck restocking, and paid
+  stock cannot be loaded into trucks. Existing non-built friendly deployment bases retain truck
+  restocking. Supply-depot capacity upgrades and AI base/helipad building are not implemented.
 
 ### AI world and navmesh
 
@@ -652,8 +658,8 @@ mission makers, automated tests and server operators; players choose match setti
 - **No victory conditions**, by design: the match runs until the host ends it.
 - **The AI commander cannot fly bought aircraft.** Combat support and off-map air lift are
   script-flown; the AI can call air lifts for long moves and road detours.
-- **Player construction only:** AI base/helipad building and command-post construction supply
-  pools are not implemented. There is no save/resume system.
+- **Player construction only:** AI base/helipad building and supply-depot storage upgrades are not
+  implemented. There is no save/resume system.
 - **Intel includes automatic base reports:** enemies within an owned base's radius plus 60 m
   are reported without line of sight. Reinforce also refuses enemies within 300 m even when unseen.
 - **PC controls:** keyboard/mouse is the tested control scheme; console/controller play is unverified.

@@ -25,6 +25,29 @@ enum ACR_EStructure
 modded class SCR_CampaignBuildingCompositionComponent
 {
 	protected bool m_bACRBuildCharged;
+	protected bool m_bACRBuildRejected;
+
+	// Charge paid FOB stock when the blueprint is placed, before another player can
+	// spend it. Vanilla's plain game mode never charges the campaign budget itself.
+	void ACR_ChargeFobBuild()
+	{
+		IEntity newOwner = GetProviderEntity();
+		if (!Replication.IsServer() || m_bACRBuildCharged || m_bACRBuildRejected || !newOwner) return;
+		if (!ACR_FobProviderComponent.Cast(newOwner.FindComponent(ACR_FobProviderComponent))) return;
+		if (ACR_FobSupply.SpendBuild(newOwner, GetCompositionCost())) m_bACRBuildCharged = true;
+		else
+		{
+			m_bACRBuildRejected = true;
+			GetGame().GetCallqueue().CallLater(ACR_DeleteRejectedBuild, 0, false);
+		}
+	}
+
+	void ACR_DeleteRejectedBuild()
+	{
+		if (GetOwner()) SCR_EntityHelper.DeleteEntityAndChildren(GetOwner());
+	}
+
+	bool ACR_BuildRejected() { return m_bACRBuildRejected; }
 
 	override void OnPostInit(IEntity owner)
 	{
@@ -35,7 +58,12 @@ modded class SCR_CampaignBuildingCompositionComponent
 
 	void ACR_OnCompositionSpawned(bool spawned)
 	{
-		if (!spawned || m_bACRBuildCharged || !Replication.IsServer()) return;
+		if (!spawned || m_bACRBuildCharged || m_bACRBuildRejected || !Replication.IsServer()) return;
+		if (GetProviderEntity() && ACR_FobProviderComponent.Cast(GetProviderEntity().FindComponent(ACR_FobProviderComponent)))
+		{
+			ACR_ChargeFobBuild();
+			return;
+		}
 		if (ACR_Structures.ChargeBuild(this, GetProviderEntity())) m_bACRBuildCharged = true;
 	}
 
@@ -48,6 +76,17 @@ modded class SCR_CampaignBuildingCompositionComponent
 	{
 		SetProviderEntity(provider);
 	}
+}
+
+// Entering building mode also assigns providers to existing nearby compositions.
+// Charge new placements here so opening the menu cannot bill or delete existing buildings.
+modded class SCR_CampaignBuildingPlacingEditorComponent
+{
+ override protected void SetProviderAndBuilder(notnull SCR_CampaignBuildingCompositionComponent compositionComponent)
+ {
+  super.SetProviderAndBuilder(compositionComponent);
+  compositionComponent.ACR_ChargeFobBuild();
+ }
 }
 
 class ACR_Structure : Managed
@@ -190,6 +229,7 @@ class ACR_Structures : Managed
   for (int i = m_Active.Count() - 1; i >= 0; i--)
   {
    ACR_Structure s = m_Active[i];
+   if (s.m_Fob) ACR_FobSupply.Tick(s.m_Fob);
    if (s.m_Composition && s.m_Entity) continue;
    Deactivate(s);
    m_Active.RemoveOrdered(i);
@@ -198,7 +238,7 @@ class ACR_Structures : Managed
   {
    SCR_CampaignBuildingCompositionComponent composition = s_Registered[r];
    if (!composition || !composition.GetOwner()) { s_Registered.Remove(r); continue; }
-   if (!composition.IsCompositionSpawned() || IsActive(composition)) continue;
+   if (composition.ACR_BuildRejected() || !composition.IsCompositionSpawned() || IsActive(composition)) continue;
    Activate(composition);
   }
  }
@@ -259,6 +299,7 @@ class ACR_Structures : Managed
   fob.m_bAllowSpawn = true;
   fob.m_fRadius = FOB_RADIUS;
   fob.m_bBuilt = true;
+  ACR_FobSupply.Create(fob);
   return fob;
  }
 

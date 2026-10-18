@@ -19,6 +19,88 @@ class ACR_TestStructures
  static ACR_Base s_Base;
  static vector s_Yard;
  static bool s_bHealed, s_bRepaired, s_bRefuelled;
+ static ACR_Base s_Fob;
+ static float s_EmptyTruckStock;
+ static IEntity s_RejectedBuild;
+
+ static float NativeCapacity(IEntity entity)
+ {
+  if (!entity) return 0;
+  SCR_ResourceComponent component = SCR_ResourceComponent.Cast(entity.FindComponent(SCR_ResourceComponent));
+  SCR_ResourceContainer container;
+  if (component) container = component.GetContainer(EResourceType.SUPPLIES);
+  if (container && container.GetMaxResourceValue() > 0) return container.GetMaxResourceValue();
+  float total;
+  for (IEntity child = entity.GetChildren(); child; child = child.GetSibling()) total += NativeCapacity(child);
+  return total;
+ }
+
+ static void CheckSupplies(ACR_Manager manager, ACR_Base fob)
+ {
+  ACR_TestRegress.Check("FOB: native command post storage capacity", NativeCapacity(s_HQ) == 1000, NativeCapacity(s_HQ).ToString());
+  if (!fob || !fob.m_FobSupply) { ACR_TestRegress.Abort("structures", "FOB supply provider missing"); return; }
+  s_Fob = fob;
+  SCR_ResourceContainer store = ACR_Logistics.SupplyContainer(fob.m_FobSupply);
+  ACR_TestRegress.Check("FOB: starts empty with 1000 capacity", store && ACR_FobSupply.Stock(fob.m_FobSupply) == 0 && store.GetMaxResourceValue() == 1000, "");
+  ACR_FobProviderComponent provider = ACR_FobProviderComponent.Cast(fob.m_FobSupply.FindComponent(ACR_FobProviderComponent));
+  SCR_CampaignBuildingCompositionComponent hospital = SCR_CampaignBuildingCompositionComponent.Cast(s_Hospital.FindComponent(SCR_CampaignBuildingCompositionComponent));
+  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(s_Hospital.FindComponent(SCR_EditableEntityComponent));
+  array<ref SCR_EntityBudgetValue> budgets = {};
+  if (editable) editable.GetEntityBudgetCost(budgets, s_Hospital);
+  ACR_TestRegress.Check("FOB: empty store refuses real hospital budget", provider && !provider.IsThereEnoughBudgetToSpawn(budgets), "");
+  int rp = manager.m_Bases.GetRP("US");
+  ACR_FobSupply.Order(manager, "USSR", fob);
+  ACR_TestRegress.Check("FOB: enemy request cannot spend RP", manager.m_Bases.GetRP("US") == rp && fob.m_iSupplyDelivery == 0, "");
+  manager.m_Bases.GetFaction("US").m_iRP = 0;
+  ACR_FobSupply.Order(manager, "US", fob);
+  ACR_TestRegress.Check("FOB: unaffordable delivery refused", fob.m_iSupplyDelivery == 0, "");
+  manager.m_Bases.GetFaction("US").m_iRP = rp;
+  fob.m_bContested = true;
+  ACR_FobSupply.Order(manager, "US", fob);
+  ACR_TestRegress.Check("FOB: contested order refused without charge", manager.m_Bases.GetRP("US") == rp && fob.m_iSupplyDelivery == 0, "");
+  fob.m_bContested = false;
+  ACR_FobSupply.Order(manager, "US", fob);
+  ACR_FobSupply.Order(manager, "US", fob);
+  ACR_TestRegress.Check("FOB: one 500-supply delivery costs 20 RP once", manager.m_Bases.GetRP("US") == rp - 20 && fob.m_iSupplyDelivery == 500 && ACR_FobSupply.Stock(fob.m_FobSupply) == 0, "");
+  ACR_FobSupply.Advance(fob, 59000);
+  ACR_TestRegress.Check("FOB: delivery does not arrive early", ACR_FobSupply.Stock(fob.m_FobSupply) == 0 && fob.m_fSupplyDeliveryLeft == 1000, "");
+  fob.m_bContested = true;
+  ACR_FobSupply.Advance(fob, 120000);
+  ACR_TestRegress.Check("FOB: contest pauses delivery and building", fob.m_fSupplyDeliveryLeft == 1000 && !ACR_FobSupply.SpendBuild(fob.m_FobSupply, 1), "");
+  fob.m_bContested = false;
+  ACR_FobSupply.Advance(fob, 1000);
+  ACR_TestRegress.Check("FOB: delivery arrives after 60 uncontested seconds", ACR_FobSupply.Stock(fob.m_FobSupply) == 500 && fob.m_iSupplyDelivery == 0, "");
+  ACR_TestRegress.Check("FOB: funded store accepts real hospital budget", provider.IsThereEnoughBudgetToSpawn(budgets), "");
+  provider.ClearAccumulatedBudgetChanges();
+  // Real blueprint provider assignment consumes stock, completion never charges it again.
+  IEntity built = Place(REPAIR, fob.GetOrigin() + Vector(12, 0, 0));
+  SCR_CampaignBuildingCompositionComponent composition;
+  if (built) composition = SCR_CampaignBuildingCompositionComponent.Cast(built.FindComponent(SCR_CampaignBuildingCompositionComponent));
+  if (composition) { composition.SetProviderEntity(fob.m_FobSupply); composition.ACR_ChargeFobBuild(); composition.ACR_OnCompositionSpawned(true); composition.SetProviderEntity(fob.m_FobSupply); composition.ACR_ChargeFobBuild(); }
+  ACR_TestRegress.Check("FOB: real build paid once from store", composition && ACR_FobSupply.Stock(fob.m_FobSupply) == 500 - composition.GetCompositionCost(), "");
+  ACR_TestRegress.Check("FOB: cannot overspend store", !ACR_FobSupply.SpendBuild(fob.m_FobSupply, 2000), "");
+  store.SetResourceValue(0);
+  s_RejectedBuild = Place(FUEL, fob.GetOrigin() + Vector(-12, 0, 0));
+  SCR_CampaignBuildingCompositionComponent rejected;
+  if (s_RejectedBuild) rejected = SCR_CampaignBuildingCompositionComponent.Cast(s_RejectedBuild.FindComponent(SCR_CampaignBuildingCompositionComponent));
+  if (rejected) { rejected.SetProviderEntity(fob.m_FobSupply); rejected.ACR_ChargeFobBuild(); }
+  ACR_TestRegress.Check("FOB: unpaid real blueprint rejected before activation", rejected && rejected.ACR_BuildRejected() && ACR_FobSupply.Stock(fob.m_FobSupply) == 0, "");
+  store.SetResourceValue(1000);
+  SCR_CampaignBuildingCompositionComponent existing = SCR_CampaignBuildingCompositionComponent.Cast(s_Fuel.FindComponent(SCR_CampaignBuildingCompositionComponent));
+  if (existing) existing.SetProviderEntity(fob.m_FobSupply);
+  ACR_TestRegress.Check("FOB: associating existing buildings does not charge stock", existing && !existing.ACR_BuildRejected() && ACR_FobSupply.Stock(fob.m_FobSupply) == 1000, "");
+  if (existing) existing.SetProviderEntity(null);
+  int beforeFull = manager.m_Bases.GetRP("US");
+  ACR_FobSupply.Order(manager, "US", fob);
+  ACR_TestRegress.Check("FOB: full store refuses delivery without charge", manager.m_Bases.GetRP("US") == beforeFull && fob.m_iSupplyDelivery == 0, "");
+  SCR_ResourceConsumer loader = ACR_Logistics.SupplyContainer(s_Construction).GetComponent().GetConsumer(EResourceGeneratorID.VEHICLE_LOAD, EResourceType.SUPPLIES);
+  ACR_TestRegress.Check("FOB: paid store forbids native truck loading", loader && !store.IsAllowed(loader), "");
+  // An emptied truck inside the FOB must stay empty across real logistics ticks.
+  manager.m_Logistics.Use(s_Construction, manager.m_Logistics.StockOf(s_Construction));
+  s_Construction.SetOrigin(fob.GetOrigin() + Vector(0, 0, 18));
+  s_EmptyTruckStock = manager.m_Logistics.StockOf(s_Construction);
+  if (built) SCR_EntityHelper.DeleteEntityAndChildren(built);
+ }
 
  static IEntity Place(ResourceName prefab, vector at)
  {
@@ -90,7 +172,7 @@ class ACR_TestStructures
    foreach (AIAgent agent : agents)
    {
     IEntity soldier = agent.GetControlledEntity();
-    if (!soldier || soldier == alpha.GetAnchor()) continue;
+    if (!soldier) continue;
     SCR_CharacterDamageManagerComponent damage = SCR_CharacterDamageManagerComponent.Cast(soldier.FindComponent(SCR_CharacterDamageManagerComponent));
     if (!damage) continue;
     HitZone zone = damage.GetDefaultHitZone();
@@ -150,6 +232,7 @@ class ACR_TestStructures
    ACR_TestRegress.Check("structures: headquarters away from bases = a forward base", fob && fob.m_sOwner == "US" && fob.m_bAllowSpawn, "");
    if (fob)
    {
+    CheckSupplies(manager, fob);
     string bought = manager.PurchaseAt("US", EntryIndex(manager, false), fob);
     ACR_TestRegress.Check("structures: units can be bought at the forward base", bought.Contains("deploying at " + fob.m_sName), bought);
    }
@@ -162,6 +245,16 @@ class ACR_TestStructures
     GetGame().GetCallqueue().CallLater(CheckHeliOnPad, 3000, false, pad);
    }
    else Print("[ACR] STRUCTURETEST no helicopter in the US buy list");
+  }
+  if (tick == 18)
+  {
+   ACR_TestRegress.Check("FOB: rejected blueprint removed", s_RejectedBuild == null, "");
+   ACR_TestRegress.Check("FOB: no free truck refill during real logistics ticks", s_Construction && manager.m_Logistics.StockOf(s_Construction) == s_EmptyTruckStock && ACR_Logistics.GameSupplies(s_Construction) == 0, string.Format("stock %1 / game %2", manager.m_Logistics.StockOf(s_Construction), ACR_Logistics.GameSupplies(s_Construction)));
+   SCR_ResourceComponent supply = SCR_ResourceComponent.Cast(s_Fob.m_FobSupply.FindComponent(SCR_ResourceComponent));
+   SCR_ResourceConsumer consumer = supply.GetConsumer(EResourceGeneratorID.DEFAULT, EResourceType.SUPPLIES);
+   string supplyDetail = "no default construction consumer";
+   if (consumer) supplyDetail = string.Format("supplies %1 / %2", consumer.GetAggregatedResourceValue(), consumer.GetAggregatedMaxResourceValue());
+   ACR_TestRegress.Check("FOB: building UI sees paid stock after resource update", consumer && consumer.GetAggregatedResourceValue() == 1000 && consumer.GetAggregatedMaxResourceValue() == 1000, supplyDetail);
   }
   if (tick > 8 && tick % 5 == 0)
    PrintFormat("[ACR] STRUCTURETEST t=%1 wounded %2 (%5 m from the hospital), humvee health %3 fuel %4", tick, ACR_Logistics.Health(s_Wounded), ACR_Logistics.Health(s_Humvee), ACR_Logistics.Fuel(s_Humvee), DistanceTo(s_Wounded, s_Hospital));
@@ -185,6 +278,11 @@ class ACR_TestStructures
    ACR_TestRegress.Check("structures: healed by t=75", s_bHealed, string.Format("%1", ACR_Logistics.Health(s_Wounded)));
    ACR_TestRegress.Check("structures: repaired by t=75", s_bRepaired, string.Format("%1", ACR_Logistics.Health(s_Humvee)));
    ACR_TestRegress.Check("structures: refuelled by t=75", s_bRefuelled, string.Format("%1", ACR_Logistics.Fuel(s_Humvee)));
+   SCR_ResourceContainer pendingStore = ACR_Logistics.SupplyContainer(s_Fob.m_FobSupply);
+   if (pendingStore) pendingStore.SetResourceValue(500);
+   int beforeLoss = manager.m_Bases.GetRP("US");
+   ACR_FobSupply.Order(manager, "US", s_Fob);
+   ACR_TestRegress.Check("FOB: paid delivery pending when CP destroyed", s_Fob.m_iSupplyDelivery == 500 && manager.m_Bases.GetRP("US") == beforeLoss - 20, "");
    if (s_HQ) SCR_EntityHelper.DeleteEntityAndChildren(s_HQ);
    if (s_Hospital) SCR_EntityHelper.DeleteEntityAndChildren(s_Hospital);
    if (s_Helipad) SCR_EntityHelper.DeleteEntityAndChildren(s_Helipad);
@@ -197,7 +295,8 @@ class ACR_TestStructures
    ACR_TestRegress.Check("structures: no medical point once the hospital is gone", medical.IsEmpty(), string.Format("%1", medical.Count()));
    ACR_Helipad last = ACR_Helipad.s_All[ACR_Helipad.s_All.Count() - 1];
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
-   ACR_TestRegress.Complete("structures");
+   ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
+   ACR_TestRegress.Complete("structures", 39);
   }
  }
 

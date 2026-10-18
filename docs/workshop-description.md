@@ -8,6 +8,9 @@ command with friends. An unofficial, openly vibecoded Reforger port of Arma 3's 
 
 ACA 0.5.4 is released and requires the separate Better Battle Buddies (BBB) addon.
 Pending development changes target 0.5.5; the standalone BBB split is already released.
+Development 0.5.5 adds paid FOB construction supplies: empty 1,000 capacity, 500 supplies for
+20 RP after 60 uncontested seconds, and construction from the FOB without a parked truck.
+Built FOBs no longer refill trucks for free. Live/multiplayer acceptance remains pending.
 No faction mods are required for vanilla sides.
 
 ## Command and fight
