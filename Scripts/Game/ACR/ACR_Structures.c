@@ -283,7 +283,7 @@ class ACR_Structures : Managed
   for (int r = s_Registered.Count() - 1; r >= 0; r--)
   {
    SCR_CampaignBuildingCompositionComponent composition = s_Registered[r];
-   if (!composition || !composition.GetOwner()) { s_Registered.Remove(r); continue; }
+   if (!composition || !composition.GetOwner()) { s_Registered.RemoveOrdered(r); continue; }
    if (composition.ACR_BuildRejected() || !composition.IsCompositionSpawned() || IsActive(composition)) continue;
    Activate(composition);
   }
@@ -377,18 +377,21 @@ class ACR_Structures : Managed
 
  protected void Activate(SCR_CampaignBuildingCompositionComponent composition)
  {
+  if (!composition) return;
+  IEntity owner = composition.GetOwner();
+  if (!owner) return;
   ACR_Structure s = new ACR_Structure();
   s.m_Composition = composition;
-  s.m_Entity = composition.GetOwner();
+  s.m_Entity = owner;
   s.m_eKind = KindOf(s.m_Entity);
   s.m_sFaction = FactionOf(composition);
   s.m_vPos = s.m_Entity.GetOrigin();
-  m_Active.Insert(s);
   if (s.m_sFaction.IsEmpty())
   {
    PrintFormat("[ACR] STRUCTURE %1 at %2: no side, ignored", KindName(s.m_eKind), s.m_vPos);
    return;
   }
+  m_Active.Insert(s);
   int service = ServiceOf(s.m_eKind);
   if (service != 0)
   {

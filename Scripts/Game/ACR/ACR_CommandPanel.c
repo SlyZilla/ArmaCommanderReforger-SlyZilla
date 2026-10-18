@@ -662,7 +662,8 @@ class ACR_CommandPanel : Managed
   bool anyBuilding = false;
   for (int b = 0; b < slotStates.Count(); b++)
   {
-   if (slotStates[b] > 0 && slotStates[b] < 100)
+   int st = slotStates[b];
+   if ((st > 0 && st < 100) || (st > 100 && st < 200))
    {
     anyBuilding = true;
     break;
@@ -679,20 +680,56 @@ class ACR_CommandPanel : Managed
     continue;
    }
    int state = slotStates[i];
-   int cost = ACR_FobSlots.SlotCost(i);
-   string slotName = ACR_FobSlots.SlotName(i);
-   if (state == 100)
+   bool maxed = false;
+   int currentTier = 0;
+   int nextTier = 0;
+   if (state == 200)
    {
-    btn.SetText(string.Format("%1 [Built]", slotName));
-    btn.SetEnabled(false, false);
+    maxed = true;
+    currentTier = 1;
    }
-   else if (state > 0 && state < 100)
+   else if (state > 100 && state < 200)
    {
-    btn.SetText(string.Format("%1 (%2%%)", slotName, state));
-    btn.SetEnabled(false, false);
+    currentTier = 0;
+    nextTier = 1;
+   }
+   else if (state == 100)
+   {
+    currentTier = 0;
+    if (ACR_FobSlots.MaxTier(i) > 0) nextTier = 1;
+    else maxed = true;
    }
    else
    {
+    currentTier = 0;
+    nextTier = 0;
+   }
+
+   if (maxed)
+   {
+    string slotName = ACR_FobSlots.SlotName(i, currentTier);
+    btn.SetText(string.Format("%1 [Built]", slotName));
+    btn.SetEnabled(false, false);
+   }
+   else if ((state > 0 && state < 100) || (state > 100 && state < 200))
+   {
+    string slotName = ACR_FobSlots.SlotName(i, nextTier);
+    int pct = state % 100;
+    btn.SetText(string.Format("%1 (%2%%)", slotName, pct));
+    btn.SetEnabled(false, false);
+   }
+   else if (state == 100)
+   {
+    string slotName = ACR_FobSlots.SlotName(i, nextTier);
+    int cost = ACR_FobSlots.SlotCost(i, nextTier);
+    btn.SetText(string.Format("Upgrade %1 [%2 sup]", slotName, cost));
+    bool enabled = ready && !anyBuilding && stock >= cost;
+    btn.SetEnabled(enabled, false);
+   }
+   else
+   {
+    string slotName = ACR_FobSlots.SlotName(i, 0);
+    int cost = ACR_FobSlots.SlotCost(i, 0);
     btn.SetText(string.Format("%1 [%2 sup]", slotName, cost));
     bool enabled = ready && !anyBuilding && stock >= cost;
     btn.SetEnabled(enabled, false);

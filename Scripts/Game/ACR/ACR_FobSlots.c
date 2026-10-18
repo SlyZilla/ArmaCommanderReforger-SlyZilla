@@ -23,6 +23,8 @@ class ACR_FobSlot : Managed
 	ACR_EFobSlotState m_eState;
 	float m_fProgress;
 	IEntity m_Entity;
+	int m_iTier;
+	int m_iTargetTier;
 }
 
 class ACR_FobSlots : Managed
@@ -38,48 +40,56 @@ class ACR_FobSlots : Managed
 	static const int SLOT_DEPOT = 7;
 
 	static const ResourceName HOSPITAL_US = "{D0281DAF0B131743}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_Conflict_US_01.et";
-	static const ResourceName HOSPITAL_USSR = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_Conflict_USSR_01.et";
-	static const ResourceName HOSPITAL_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_Conflict_FIA_01.et";
+	static const ResourceName HOSPITAL_USSR = "{505F78512FE8B697}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_Conflict_USSR_01.et";
+	static const ResourceName HOSPITAL_FIA = "{71FF67164192F291}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_FIA_01.et";
 
-	static const ResourceName REPAIR_US = "{7AD06D9CF2672AC5}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_US_01.et";
-	static const ResourceName REPAIR_USSR = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_USSR_01.et";
-	static const ResourceName REPAIR_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_FIA_01.et";
+	static const ResourceName REPAIR_S_US = "{A0FEA3E718F5B605}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_VehicleMaintenance_S_Conflict_US_01.et";
+	static const ResourceName REPAIR_S_USSR = "{5ACECF41C167567D}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_VehicleMaintenance_S_Conflict_USSR_01.et";
+	static const ResourceName REPAIR_S_FIA = "{DA1AF79DD1C79E83}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_VehicleMaintenance_S_FIA_01.et";
+
+	static const ResourceName REPAIR_M_US = "{7AD06D9CF2672AC5}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_US_01.et";
+	static const ResourceName REPAIR_M_USSR = "{6676FBB212B337D6}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_USSR_01.et";
+	static const ResourceName REPAIR_M_FIA = "{DA1AF79DD1C79E83}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_VehicleMaintenance_S_FIA_01.et";
 
 	static const ResourceName AMMO_US = "{1BED8F81D2FA2137}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_AmmoStorage_S_US_01.et";
-	static const ResourceName AMMO_USSR = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_AmmoStorage_S_USSR_01.et";
-	static const ResourceName AMMO_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_AmmoStorage_S_FIA_01.et";
+	static const ResourceName AMMO_USSR = "{CD9004C6229D900B}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_AmmoStorage_S_USSR_01.et";
+	static const ResourceName AMMO_FIA = "{CDE540ACD9415078}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_AmmoStorage_S_FIA_01.et";
 
 	static const ResourceName FUEL_US = "{6D2A35DA74224780}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_FuelStorage_S_US_01.et";
-	static const ResourceName FUEL_USSR = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_FuelStorage_S_USSR_01.et";
-	static const ResourceName FUEL_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_FuelStorage_S_FIA_01.et";
+	static const ResourceName FUEL_USSR = "{C2D040BB21F15A20}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_FuelStorage_S_USSR_01.et";
+	static const ResourceName FUEL_FIA = "{B6CF358D07FFC99F}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_FuelStorage_S_FIA_01.et";
 
 	static const ResourceName HELIPAD_US = "{D3DDB76548C16BDB}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_Helipad_L_Conflict_US_01.et";
-	static const ResourceName HELIPAD_USSR = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_Helipad_L_Conflict_USSR_01.et";
-	static const ResourceName HELIPAD_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_Helipad_L_Conflict_FIA_01.et";
+	static const ResourceName HELIPAD_USSR = "{C4114DAE8FDCE080}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_Helipad_L_Conflict_USSR_01.et";
+	static const ResourceName HELIPAD_FIA = "{D3DDB76548C16BDB}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_Helipad_L_Conflict_US_01.et";
 
 	static const ResourceName RELAY_US = "{F7DC8BB193BCAF44}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Antenna_S_US_01.et";
 	static const ResourceName RELAY_USSR = "{0E9BAF79B9D47993}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Antenna_S_USSR_01.et";
-	static const ResourceName RELAY_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Antenna_S_FIA_01.et";
+	static const ResourceName RELAY_FIA = "{C731CC083B954825}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Antenna_S_FIA_01.et";
 
-	static const ResourceName BARRACKS_US = "{DB7F01C68EACBEC0}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_LivingArea_S_US_01.et";
-	static const ResourceName BARRACKS_USSR = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_LivingArea_S_USSR_01.et";
-	static const ResourceName BARRACKS_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_LivingArea_S_FIA_01.et";
+	static const ResourceName BARRACKS_S_US = "{DB7F01C68EACBEC0}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_LivingArea_S_US_01.et";
+	static const ResourceName BARRACKS_S_USSR = "{BE3988DF6E3CD0B2}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_LivingArea_S_USSR_01.et";
+	static const ResourceName BARRACKS_S_FIA = "{7394E0251880F29A}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_LivingArea_S_FIA_01.et";
+
+	static const ResourceName BARRACKS_L_US = "{74B740B56C82C0CF}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_LivingArea_L_US_01.et";
+	static const ResourceName BARRACKS_L_USSR = "{85E7D977EFAC11CB}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_LivingArea_L_USSR_01.et";
+	static const ResourceName BARRACKS_L_FIA = "{7394E0251880F29A}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_LivingArea_S_FIA_01.et";
 
 	static const ResourceName DEPOT_US = "{94D9E9B690F98756}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SupplyCache_S_US_01.et";
-	static const ResourceName DEPOT_USSR = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SupplyCache_S_USSR_01.et";
-	static const ResourceName DEPOT_FIA = "PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SupplyCache_S_FIA_01.et";
+	static const ResourceName DEPOT_USSR = "{EB63BCC0AA844B17}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SupplyCache_S_USSR_01.et";
+	static const ResourceName DEPOT_FIA = "{E8B6339148792C0E}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SupplyCache_S_FIA_01.et";
 
 	static void InitSlots(ACR_Base fob)
 	{
 		if (!fob) return;
 		fob.m_aFobSlots = {};
 		fob.m_aFobSlots.Insert(CreateSlot(0, ACR_EStructure.HOSPITAL, "Field Hospital", 250, 40.0, Vector(0, 0, 18), 0));
-		fob.m_aFobSlots.Insert(CreateSlot(1, ACR_EStructure.REPAIR, "Vehicle Repair", 300, 45.0, Vector(15, 0, 15), 45));
+		fob.m_aFobSlots.Insert(CreateSlot(1, ACR_EStructure.REPAIR, "Light Maintenance", 150, 30.0, Vector(15, 0, 15), 45));
 		fob.m_aFobSlots.Insert(CreateSlot(2, ACR_EStructure.AMMO, "Ammo Storage", 325, 30.0, Vector(18, 0, 0), 90));
 		fob.m_aFobSlots.Insert(CreateSlot(3, ACR_EStructure.FUEL, "Fuel Storage", 50, 30.0, Vector(15, 0, -15), 135));
 		fob.m_aFobSlots.Insert(CreateSlot(4, ACR_EStructure.HELIPAD, "Helipad", 750, 45.0, Vector(0, 0, -22), 180));
 		fob.m_aFobSlots.Insert(CreateSlot(5, ACR_EStructure.RELAY, "Radio Relay", 250, 30.0, Vector(-15, 0, -15), 225));
-		fob.m_aFobSlots.Insert(CreateSlot(6, ACR_EStructure.BARRACKS, "Barracks", 275, 40.0, Vector(-18, 0, 0), 270));
+		fob.m_aFobSlots.Insert(CreateSlot(6, ACR_EStructure.BARRACKS, "Barracks (Small)", 275, 35.0, Vector(-18, 0, 0), 270));
 		fob.m_aFobSlots.Insert(CreateSlot(7, ACR_EStructure.DEPOT, "Supply Depot", 175, 30.0, Vector(-15, 0, 15), 315));
 	}
 
@@ -96,10 +106,12 @@ class ACR_FobSlots : Managed
 		slot.m_eState = ACR_EFobSlotState.EMPTY;
 		slot.m_fProgress = 0;
 		slot.m_Entity = null;
+		slot.m_iTier = 0;
+		slot.m_iTargetTier = 0;
 		return slot;
 	}
 
-	static ResourceName PrefabFor(ACR_EStructure kind, string factionKey)
+	static ResourceName PrefabFor(ACR_EStructure kind, string factionKey, int tier = 0)
 	{
 		bool isEast = false;
 		if (factionKey == "USSR" || factionKey == "RHS_AFRF") isEast = true;
@@ -112,9 +124,15 @@ class ACR_FobSlots : Managed
 				if (isFia) return HOSPITAL_FIA;
 				return HOSPITAL_US;
 			case ACR_EStructure.REPAIR:
-				if (isEast) return REPAIR_USSR;
-				if (isFia) return REPAIR_FIA;
-				return REPAIR_US;
+				if (tier > 0)
+				{
+					if (isEast) return REPAIR_M_USSR;
+					if (isFia) return REPAIR_M_FIA;
+					return REPAIR_M_US;
+				}
+				if (isEast) return REPAIR_S_USSR;
+				if (isFia) return REPAIR_S_FIA;
+				return REPAIR_S_US;
 			case ACR_EStructure.AMMO:
 				if (isEast) return AMMO_USSR;
 				if (isFia) return AMMO_FIA;
@@ -132,9 +150,15 @@ class ACR_FobSlots : Managed
 				if (isFia) return RELAY_FIA;
 				return RELAY_US;
 			case ACR_EStructure.BARRACKS:
-				if (isEast) return BARRACKS_USSR;
-				if (isFia) return BARRACKS_FIA;
-				return BARRACKS_US;
+				if (tier > 0)
+				{
+					if (isEast) return BARRACKS_L_USSR;
+					if (isFia) return BARRACKS_L_FIA;
+					return BARRACKS_L_US;
+				}
+				if (isEast) return BARRACKS_S_USSR;
+				if (isFia) return BARRACKS_S_FIA;
+				return BARRACKS_S_US;
 			case ACR_EStructure.DEPOT:
 				if (isEast) return DEPOT_USSR;
 				if (isFia) return DEPOT_FIA;
@@ -143,49 +167,67 @@ class ACR_FobSlots : Managed
 		return "";
 	}
 
-	static string SlotName(int index)
+	static int MaxTier(int index)
+	{
+		if (index == SLOT_REPAIR || index == SLOT_BARRACKS) return 1;
+		return 0;
+	}
+
+	static string SlotName(int index, int tier = 0)
 	{
 		switch (index)
 		{
 			case 0: return "Field Hospital";
-			case 1: return "Vehicle Repair";
+			case 1:
+				if (tier > 0) return "Heavy Maintenance";
+				return "Light Maintenance";
 			case 2: return "Ammo Storage";
 			case 3: return "Fuel Storage";
 			case 4: return "Helipad";
 			case 5: return "Radio Relay";
-			case 6: return "Barracks";
+			case 6:
+				if (tier > 0) return "Barracks (Large)";
+				return "Barracks (Small)";
 			case 7: return "Supply Depot";
 		}
 		return "Slot";
 	}
 
-	static int SlotCost(int index)
+	static int SlotCost(int index, int tier = 0)
 	{
 		switch (index)
 		{
 			case 0: return 250;
-			case 1: return 300;
+			case 1:
+				if (tier > 0) return 150;
+				return 150;
 			case 2: return 325;
 			case 3: return 50;
 			case 4: return 750;
 			case 5: return 250;
-			case 6: return 275;
+			case 6:
+				if (tier > 0) return 200;
+				return 275;
 			case 7: return 175;
 		}
 		return 200;
 	}
 
-	static float SlotDuration(int index)
+	static float SlotDuration(int index, int tier = 0)
 	{
 		switch (index)
 		{
 			case 0: return 40.0;
-			case 1: return 45.0;
+			case 1:
+				if (tier > 0) return 45.0;
+				return 30.0;
 			case 2: return 30.0;
 			case 3: return 30.0;
 			case 4: return 45.0;
 			case 5: return 30.0;
-			case 6: return 40.0;
+			case 6:
+				if (tier > 0) return 45.0;
+				return 35.0;
 			case 7: return 30.0;
 		}
 		return 30.0;
@@ -304,20 +346,29 @@ class ACR_FobSlots : Managed
 		}
 
 		ACR_FobSlot slot = base.m_aFobSlots[slotIndex];
+		int targetTier = 0;
 		if (slot.m_eState == ACR_EFobSlotState.BUILT)
 		{
-			refusal = string.Format("%1 is already built", slot.m_sName);
-			return "";
+			if (slot.m_iTier < MaxTier(slotIndex))
+			{
+				targetTier = slot.m_iTier + 1;
+			}
+			else
+			{
+				refusal = string.Format("%1 is already built", slot.m_sName);
+				return "";
+			}
 		}
 
+		int cost = SlotCost(slotIndex, targetTier);
 		int stock = ACR_FobSupply.Stock(base.m_FobSupply);
-		if (stock < slot.m_iCost)
+		if (stock < cost)
 		{
-			refusal = string.Format("Needs %1 supplies (FOB has %2)", slot.m_iCost, stock);
+			refusal = string.Format("Needs %1 supplies (FOB has %2)", cost, stock);
 			return "";
 		}
 
-		if (!ACR_FobSupply.SpendBuild(base.m_FobSupply, slot.m_iCost))
+		if (!ACR_FobSupply.SpendBuild(base.m_FobSupply, cost))
 		{
 			refusal = "Failed to deduct supplies";
 			return "";
@@ -325,8 +376,11 @@ class ACR_FobSlots : Managed
 
 		slot.m_eState = ACR_EFobSlotState.BUILDING;
 		slot.m_fProgress = 0;
-		slot.m_Entity = null;
-		PrintFormat("[ACR] FOB %1: started upgrade %2 (cost=%3, duration=%4 s)", base.m_sName, slot.m_sName, slot.m_iCost, (int)slot.m_fDuration);
+		slot.m_iTargetTier = targetTier;
+		slot.m_iCost = cost;
+		slot.m_fDuration = SlotDuration(slotIndex, targetTier);
+		slot.m_sName = SlotName(slotIndex, targetTier);
+		PrintFormat("[ACR] FOB %1: started upgrade %2 tier %3 (cost=%4, duration=%5 s)", base.m_sName, slot.m_sName, targetTier, slot.m_iCost, (int)slot.m_fDuration);
 		return string.Format("Started building %1", slot.m_sName);
 	}
 
@@ -359,6 +413,11 @@ class ACR_FobSlots : Managed
 					slot.m_eState = ACR_EFobSlotState.EMPTY;
 					slot.m_Entity = null;
 					slot.m_fProgress = 0;
+					slot.m_iTier = 0;
+					slot.m_iTargetTier = 0;
+					slot.m_iCost = SlotCost(slot.m_iSlotIndex, 0);
+					slot.m_sName = SlotName(slot.m_iSlotIndex, 0);
+					slot.m_fDuration = SlotDuration(slot.m_iSlotIndex, 0);
 				}
 			}
 		}
@@ -387,11 +446,20 @@ class ACR_FobSlots : Managed
 	{
 		slot.m_eState = ACR_EFobSlotState.BUILT;
 		slot.m_fProgress = slot.m_fDuration;
+		slot.m_iTier = slot.m_iTargetTier;
+
+		if (slot.m_Entity)
+		{
+			SCR_CampaignBuildingCompositionComponent oldComp = SCR_CampaignBuildingCompositionComponent.Cast(slot.m_Entity.FindComponent(SCR_CampaignBuildingCompositionComponent));
+			if (oldComp) ACR_Structures.s_Registered.RemoveItem(oldComp);
+			SCR_EntityHelper.DeleteEntityAndChildren(slot.m_Entity);
+			slot.m_Entity = null;
+		}
 
 		vector pos = base.GetOrigin() + slot.m_vOffset;
 		pos[1] = GetGame().GetWorld().GetSurfaceY(pos[0], pos[2]);
 
-		ResourceName prefab = PrefabFor(slot.m_eKind, base.m_sOwner);
+		ResourceName prefab = PrefabFor(slot.m_eKind, base.m_sOwner, slot.m_iTier);
 		IEntity ent = ACR_Manager.SpawnPrefab(prefab, pos);
 		if (ent)
 		{
@@ -406,7 +474,7 @@ class ACR_FobSlots : Managed
 				comp.ACR_SetCompositionSpawned(true);
 			}
 		}
-		PrintFormat("[ACR] FOB %1: completed upgrade %2 at %3 (entity=%4)", base.m_sName, slot.m_sName, pos, ent != null);
+		PrintFormat("[ACR] FOB %1: completed upgrade %2 (tier %3) at %4 (entity=%5)", base.m_sName, slot.m_sName, slot.m_iTier, pos, ent != null);
 	}
 
 	static string Describe(ACR_Base base)
@@ -438,11 +506,18 @@ class ACR_FobSlots : Managed
 		{
 			if (slot.m_Entity)
 			{
+				SCR_CampaignBuildingCompositionComponent oldComp = SCR_CampaignBuildingCompositionComponent.Cast(slot.m_Entity.FindComponent(SCR_CampaignBuildingCompositionComponent));
+				if (oldComp) ACR_Structures.s_Registered.RemoveItem(oldComp);
 				SCR_EntityHelper.DeleteEntityAndChildren(slot.m_Entity);
 				slot.m_Entity = null;
 			}
 			slot.m_eState = ACR_EFobSlotState.EMPTY;
 			slot.m_fProgress = 0;
+			slot.m_iTier = 0;
+			slot.m_iTargetTier = 0;
+			slot.m_iCost = SlotCost(slot.m_iSlotIndex, 0);
+			slot.m_sName = SlotName(slot.m_iSlotIndex, 0);
+			slot.m_fDuration = SlotDuration(slot.m_iSlotIndex, 0);
 		}
 	}
 }

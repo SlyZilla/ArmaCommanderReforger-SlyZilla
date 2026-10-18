@@ -6,7 +6,7 @@
 
 class ACR_TestFobSlots
 {
-	static const int CHECKS = 18;
+	static const int CHECKS = 20;
 
 	static void Run(ACR_Manager manager, ACR_Base fob, ACR_Squad squad, IEntity truck)
 	{
@@ -24,12 +24,12 @@ class ACR_TestFobSlots
 		if (slotsConfigOk)
 		{
 			if (ACR_FobSlots.SlotCost(0) != 250 || ACR_FobSlots.SlotDuration(0) != 40.0) slotsConfigOk = false;
-			if (ACR_FobSlots.SlotCost(1) != 300 || ACR_FobSlots.SlotDuration(1) != 45.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(1, 0) != 150 || ACR_FobSlots.SlotCost(1, 1) != 150) slotsConfigOk = false;
 			if (ACR_FobSlots.SlotCost(2) != 325 || ACR_FobSlots.SlotDuration(2) != 30.0) slotsConfigOk = false;
 			if (ACR_FobSlots.SlotCost(3) != 50 || ACR_FobSlots.SlotDuration(3) != 30.0) slotsConfigOk = false;
 			if (ACR_FobSlots.SlotCost(4) != 750 || ACR_FobSlots.SlotDuration(4) != 45.0) slotsConfigOk = false;
 			if (ACR_FobSlots.SlotCost(5) != 250 || ACR_FobSlots.SlotDuration(5) != 30.0) slotsConfigOk = false;
-			if (ACR_FobSlots.SlotCost(6) != 275 || ACR_FobSlots.SlotDuration(6) != 40.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(6, 0) != 275 || ACR_FobSlots.SlotCost(6, 1) != 200) slotsConfigOk = false;
 			if (ACR_FobSlots.SlotCost(7) != 175 || ACR_FobSlots.SlotDuration(7) != 30.0) slotsConfigOk = false;
 		}
 		ACR_TestRegress.Check("fobslots: 8 preset slots initialized with correct costs and durations", slotsConfigOk, "");
@@ -90,7 +90,7 @@ class ACR_TestFobSlots
 		bool relayActive = manager.m_Structures.HasRelay(fob);
 		ACR_TestRegress.Check("fobslots: completed composition activates in ACR_Structures", relayActive, "");
 
-		// 14. OrderUpgrade refuses already built slot
+		// 14. OrderUpgrade refuses already built single-tier slot
 		ACR_TestRegress.Check("fobslots: OrderUpgrade refuses already built slot", ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_RELAY, why) == "" && why.Contains("already built"), why);
 
 		// 15. Work crew builds next upgrade once previous completes
@@ -106,20 +106,57 @@ class ACR_TestFobSlots
 		// 16. Destroyed structure resets slot state to EMPTY
 		if (slotDepot.m_Entity)
 		{
+			SCR_CampaignBuildingCompositionComponent oldComp = SCR_CampaignBuildingCompositionComponent.Cast(slotDepot.m_Entity.FindComponent(SCR_CampaignBuildingCompositionComponent));
+			if (oldComp) ACR_Structures.s_Registered.RemoveItem(oldComp);
 			SCR_EntityHelper.DeleteEntityAndChildren(slotDepot.m_Entity);
 			slotDepot.m_Entity = null;
 		}
 		ACR_FobSlots.Advance(fob, 1.0);
-		bool resetOk = (slotDepot.m_eState == ACR_EFobSlotState.EMPTY && slotDepot.m_fProgress == 0);
+		bool resetOk = (slotDepot.m_eState == ACR_EFobSlotState.EMPTY && slotDepot.m_fProgress == 0 && slotDepot.m_iTier == 0);
 		ACR_TestRegress.Check("fobslots: destroyed structure resets slot state to EMPTY", resetOk, "");
 
-		// 17. Description reflects built upgrades
-		string desc = ACR_FobSlots.Describe(fob);
-		ACR_TestRegress.Check("fobslots: description reflects built upgrades", desc.Contains("Radio Relay (built)"), desc);
+		// 17. Tiered upgrade for maintenance: Light (150) -> Heavy (150)
+		if (store) store.SetResourceValue(400);
+		string maintT1 = ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_REPAIR, why);
+		ACR_FobSlot slotRepair = fob.m_aFobSlots[ACR_FobSlots.SLOT_REPAIR];
+		ACR_FobSlots.Advance(fob, 15.0); // 15*2 = 30s (Light duration)
+		manager.m_Structures.ACR_TestForceTick();
+		float repairRateT1 = ACR_Structures.RepairFraction(slotRepair.m_Entity);
+		bool maintT1Ok = (slotRepair.m_eState == ACR_EFobSlotState.BUILT && slotRepair.m_iTier == 0 && repairRateT1 == 0.15);
 
-		// 18. FOB cleanup removes spawned entities and resets slots
+		string maintT2 = ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_REPAIR, why);
+		ACR_FobSlots.Advance(fob, 23.0); // 23*2 = 46s >= 45s (Heavy duration)
+		manager.m_Structures.ACR_TestForceTick();
+		float repairRateT2 = ACR_Structures.RepairFraction(slotRepair.m_Entity);
+		bool maintT2Ok = (slotRepair.m_eState == ACR_EFobSlotState.BUILT && slotRepair.m_iTier == 1 && repairRateT2 == 0.21);
+		bool maintMaxRefused = (ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_REPAIR, why) == "" && why.Contains("already built"));
+		ACR_TestRegress.Check("fobslots: tiered maintenance builds light (15%) then upgrades to heavy (21%)", maintT1Ok && maintT2Ok && maintMaxRefused, "");
+
+		// 18. Tiered upgrade for barracks: Small (275, +11) -> Large (200, +19)
+		if (store) store.SetResourceValue(500);
+		string barrT1 = ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_BARRACKS, why);
+		ACR_FobSlot slotBarracks = fob.m_aFobSlots[ACR_FobSlots.SLOT_BARRACKS];
+		ACR_FobSlots.Advance(fob, 18.0); // 18*2 = 36s >= 35s (Small duration)
+		manager.m_Structures.ACR_TestForceTick();
+		int defendersT1 = ACR_Structures.HousingDefenders(slotBarracks.m_Entity);
+		bool barrT1Ok = (slotBarracks.m_eState == ACR_EFobSlotState.BUILT && slotBarracks.m_iTier == 0 && defendersT1 == 11);
+
+		string barrT2 = ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_BARRACKS, why);
+		ACR_FobSlots.Advance(fob, 23.0); // 23*2 = 46s >= 45s (Large duration)
+		manager.m_Structures.ACR_TestForceTick();
+		int defendersT2 = ACR_Structures.HousingDefenders(slotBarracks.m_Entity);
+		bool barrT2Ok = (slotBarracks.m_eState == ACR_EFobSlotState.BUILT && slotBarracks.m_iTier == 1 && defendersT2 == 19);
+		bool barrMaxRefused = (ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_BARRACKS, why) == "" && why.Contains("already built"));
+		ACR_TestRegress.Check("fobslots: tiered barracks builds small (+11) then upgrades to large (+19)", barrT1Ok && barrT2Ok && barrMaxRefused, "");
+
+		// 19. Description reflects built upgrades and tiers
+		string desc = ACR_FobSlots.Describe(fob);
+		bool descOk = desc.Contains("Heavy Maintenance (built)") && desc.Contains("Barracks (Large) (built)");
+		ACR_TestRegress.Check("fobslots: description reflects built upgrades and tiers", descOk, desc);
+
+		// 20. FOB cleanup removes spawned entities and resets slots
 		ACR_FobSlots.Cleanup(fob);
-		bool cleanOk = (slotRelay.m_eState == ACR_EFobSlotState.EMPTY && slotRelay.m_Entity == null);
+		bool cleanOk = (slotRelay.m_eState == ACR_EFobSlotState.EMPTY && slotRelay.m_Entity == null && slotRepair.m_Entity == null && slotBarracks.m_Entity == null && slotRepair.m_iTier == 0);
 		ACR_TestRegress.Check("fobslots: FOB cleanup removes spawned entities and resets slots", cleanOk, "");
 
 		// Restore truck position
