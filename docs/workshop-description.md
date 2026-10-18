@@ -10,7 +10,10 @@ ACA 0.5.4 is released and requires the separate Better Battle Buddies (BBB) addo
 Pending development changes target 0.5.5; the standalone BBB split is already released.
 Development 0.5.5 adds paid FOB construction supplies: empty 1,000 capacity, 500 supplies for
 20 RP after 60 uncontested seconds, and construction from the FOB without a parked truck.
-Built FOBs no longer refill trucks for free. Live/multiplayer acceptance remains pending.
+Built FOBs no longer refill trucks for free.
+FOB deployment and RP reinforcement now require a completed friendly radio relay inside the FOB.
+Removing it disables both until rebuilt; construction, deliveries and supplied services continue.
+Mission makers/hosts can disable the relay requirement in Logistics settings.
 Depots expand FOB storage to 3,000; service buildings consume its supplies. Generated settlements
 send infantry replacements; military sites/HQs/FOBs deploy new formations. RP reinforcement remains
 available. Startup Logistics settings let hosts choose deployment/replacement policies, free or

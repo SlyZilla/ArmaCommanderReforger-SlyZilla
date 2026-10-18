@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost"};
+  array<string> names = {"acrLayout", "acrSize", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost"};
   foreach (string name : names)
   {
    string value;
@@ -131,6 +131,8 @@ class ACR_MissionHeader : SCR_MissionHeader
  string m_sAcrReinforcement;
  [Attribute("", UIWidgets.EditBox, "Automatic FOB services: supplies or free (-acrFobServices)")]
  string m_sAcrFobServices;
+ [Attribute("-1", UIWidgets.EditBox, "FOBs require a completed friendly radio relay for deployment/RP reinforcement: 1 default, 0 disables (-acrFobRelay)")]
+ int m_iAcrFobRelay;
  [Attribute("-1", UIWidgets.EditBox, "One depot's FOB capacity bonus, 0 disables (-acrDepotCapacity)")]
  int m_iAcrDepotCapacity;
  [Attribute("-1", UIWidgets.EditBox, "Supplies per automatic FOB service load (-acrServiceSupplyCost)")]
@@ -162,6 +164,7 @@ class ACR_MissionHeader : SCR_MissionHeader
   Text(values, "acrDeployment", m_sAcrDeployment);
   Text(values, "acrReinforcement", m_sAcrReinforcement);
   Text(values, "acrFobServices", m_sAcrFobServices);
+  Number(values, "acrFobRelay", m_iAcrFobRelay);
   Number(values, "acrDepotCapacity", m_iAcrDepotCapacity);
   Number(values, "acrServiceSupplyCost", m_iAcrServiceSupplyCost);
   Number(values, "acrFobRPServiceCost", m_iAcrFobRPServiceCost);

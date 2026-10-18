@@ -21,7 +21,8 @@ enum ACR_EStructure
  FUEL,
  HELIPAD,
  HQ,
- DEPOT
+ DEPOT,
+ RELAY
 }
 
 modded class SCR_CampaignBuildingCompositionComponent
@@ -146,6 +147,7 @@ class ACR_Structures : Managed
   if (name.Contains("helipad_l")) return ACR_EStructure.HELIPAD;
   if (name.Contains("headquarters") || name.Contains("playerhub")) return ACR_EStructure.HQ;
   if (name.Contains("supplycache_") || name.Contains("supplystorage_")) return ACR_EStructure.DEPOT;
+  if (name.Contains("antenna_s_")) return ACR_EStructure.RELAY;
   return ACR_EStructure.NONE;
  }
 
@@ -166,6 +168,7 @@ class ACR_Structures : Managed
    case ACR_EStructure.HELIPAD: return "helipad";
    case ACR_EStructure.HQ: return "headquarters";
    case ACR_EStructure.DEPOT: return "supply depot";
+   case ACR_EStructure.RELAY: return "radio relay";
   }
   return "structure";
  }
@@ -280,6 +283,33 @@ class ACR_Structures : Managed
   if (!store) return;
   if (store.GetMaxResourceValue() != capacity) store.SetMaxResourceValue(capacity);
   if (store.GetResourceValue() > capacity) store.SetResourceValue(capacity);
+ }
+
+ // A completed relay composition must still contain its working antenna.
+ // Read live entities so removal/movement closes the gate before the next tick.
+ static IEntity RelayAntenna(IEntity entity)
+ {
+  if (!entity || ACR_Logistics.Health(entity) <= 0) return null;
+  if (entity.FindComponent(ScriptedRadioComponent)) return entity;
+  for (IEntity child = entity.GetChildren(); child; child = child.GetSibling())
+  {
+   IEntity antenna = RelayAntenna(child);
+   if (antenna) return antenna;
+  }
+  return null;
+ }
+
+ bool HasRelay(ACR_Base base)
+ {
+  if (!base || base.m_bRetired) return false;
+  foreach (ACR_Structure structure : m_Active)
+  {
+   if (structure.m_eKind != ACR_EStructure.RELAY || structure.m_sFaction != base.m_sOwner) continue;
+   if (!structure.m_Entity || !structure.m_Composition || structure.m_Composition.ACR_BuildRejected() || !structure.m_Composition.IsCompositionSpawned()) continue;
+   if (vector.DistanceXZ(structure.m_Entity.GetOrigin(), base.GetOrigin()) > base.m_fRadius) continue;
+   if (RelayAntenna(structure.m_Entity)) return true;
+  }
+  return false;
  }
 
  protected void Activate(SCR_CampaignBuildingCompositionComponent composition)

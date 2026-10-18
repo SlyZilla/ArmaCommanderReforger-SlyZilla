@@ -132,6 +132,7 @@ class ACR_Requisition : Managed
   ACR_RequisitionEntry entry = data.m_aRequisitions[entryIndex];
   if (entry.m_iRemaining <= 0) return entry.m_sName + ": none left";
   if (!base || base.m_sOwner != key) return "Deploy at one of your own bases";
+  if (ACR_LogisticsRules.RelayBlocked(base)) return base.m_sName + " needs a completed friendly radio relay inside its circle before deploying new units";
   if (!ACR_LogisticsRules.CanDeploy(base)) return base.m_sName + " cannot deploy new units (use a military base, HQ or FOB)";
   if (base.m_bContested) return base.m_sName + " is under attack";
   if (OverSoldierCap(key)) return string.Format("Too many soldiers in the field (limit %1)", m_Manager.m_iSoldierCap);
@@ -504,6 +505,8 @@ class ACR_Requisition : Managed
   // No reinforcing in contact (Jacob, 4 Oct): nothing while enemy troops are within 300 m.
   string contact = InContact(squad);
   if (contact != "") return contact;
+  ACR_Base localFob = ACR_FobSupply.Nearby(key, near);
+  if (ACR_LogisticsRules.RelayBlocked(localFob)) return localFob.m_sName + " needs a completed friendly radio relay inside its circle before RP reinforcement";
   // Inside a base that can deploy units, the squad also gets its ammo back.
   ACR_Base depot = DeployBaseAt(key, near);
   // A mortar team whose mortar was destroyed gets a new one with its reinforcements.
@@ -690,6 +693,7 @@ class ACR_Requisition : Managed
  // for soldiers actually served; the manual action never needs automatic-service supplies.
  int RestockAmmo(ACR_Squad squad, ACR_Base base)
  {
+  if (ACR_LogisticsRules.RelayBlocked(base)) return 0;
   int served;
   array<AIAgent> agents = {};
   squad.GetAgents(agents);

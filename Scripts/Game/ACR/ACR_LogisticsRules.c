@@ -29,6 +29,7 @@ class ACR_LogisticsRules
  static bool CanDeploy(ACR_Base base)
  {
   if (!base || base.m_bRetired || !base.m_bAllowSpawn) return false;
+  if (RelayBlocked(base)) return false;
   string policy = Choice("acrDeployment", "military");
   if (policy == "all") return true;
   if (base.m_bBuilt || IsHQ(base)) return true;
@@ -50,6 +51,7 @@ class ACR_LogisticsRules
  static bool CanReinforce(ACR_Base base)
  {
   if (!base || base.m_bRetired || !base.m_bAllowReinforce) return false;
+  if (RelayBlocked(base)) return false;
   string policy = Choice("acrReinforcement", "settlements");
   if (policy == "all") return true;
   if (policy == "deployment") return CanDeploy(base);
@@ -57,6 +59,13 @@ class ACR_LogisticsRules
  }
 
  static bool SuppliedServices() { return Choice("acrFobServices", "supplies") != "free"; }
+ static bool RequireRelay() { return Choice("acrFobRelay", "1") != "0"; }
+ static bool RelayBlocked(ACR_Base base)
+ {
+  if (!base || !base.m_bBuilt || !RequireRelay()) return false;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  return !manager || !manager.m_Structures || !manager.m_Structures.HasRelay(base);
+ }
  static int DepotBonus() { return Number("acrDepotCapacity", 2000, 10000); }
  static int ServiceCost() { return Number("acrServiceSupplyCost", 10, 100); }
  static int InstantServiceFee() { return Number("acrFobRPServiceCost", 3, 100); }

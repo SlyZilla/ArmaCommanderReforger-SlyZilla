@@ -394,6 +394,7 @@ class ACR_BaseSystem : Managed
   string text = string.Format("%1 | garrison %2", owner, base.m_iGarrisonLeft);
   if (ACR_LogisticsRules.CanDeploy(base)) text += " | deploy new units";
   if (ACR_LogisticsRules.CanReinforce(base)) text += " | infantry replacements";
+  if (ACR_LogisticsRules.RelayBlocked(base)) text += " | RADIO RELAY REQUIRED: deployment / RP reinforcement offline";
   if (base.m_bIncome) text += string.Format(" | +%1 RP", base.m_iValue);
   else text += " | no income";
   if (base.m_bContested) text += " | CONTESTED";

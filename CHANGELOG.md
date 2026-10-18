@@ -2,7 +2,9 @@
 
 ## 0.5.5 — unreleased
 
-Development changes since the released 0.5.4. Live/multiplayer acceptance remains pending.
+Development changes since the released 0.5.4. Outstanding live checks: air-lift clearance and RTS camera; the other existing checks were dismissed by Jacob.
+
+- Built FOBs now require a completed friendly radio relay inside their circle for new-unit deployment and RP reinforcement, including AI purchases. Removing the relay disables both until rebuilt; construction, deliveries and supply-paid services continue. Mission makers and hosts can disable the requirement through the mission header, command line or startup Logistics settings. Captured military bases and village reinforcement retain their existing rules.
 
 - Fixed paid FOB deliveries filling a separate store while the CP stayed empty. Construction and services now use the CP's native supply container; its engineering table opens the funded build menu with service buildings and supply depots available. Paid stock remains unavailable for truck loading.
 

@@ -204,7 +204,7 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"west", "east", "layout", "seed", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "depotcapacity", "servicecost", "rpservice"};
+  array<string> keys = {"west", "east", "layout", "seed", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice"};
   foreach (string key : keys)
   {
    if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
@@ -238,6 +238,7 @@ class ACR_Setup
   if (key == "deployment") return "New-unit deployment";
   if (key == "reinforcement") return "Infantry replacements";
   if (key == "fobservices") return "FOB service payment";
+  if (key == "fobrelay") return "FOB radio relay required";
   if (key == "depotcapacity") return "Depot storage bonus";
   if (key == "servicecost") return "FOB supplies per service load";
   if (key == "rpservice") return "FOB instant infantry service (RP)";
@@ -287,6 +288,7 @@ class ACR_Setup
   else if (key == "deployment") values = {"military", "all", "hq"};
   else if (key == "reinforcement") values = {"settlements", "all", "deployment"};
   else if (key == "fobservices") values = {"supplies", "free"};
+  else if (key == "fobrelay") values = {"1", "0"};
   else if (key == "depotcapacity") values = {"0", "1000", "2000", "4000"};
   else if (key == "servicecost") values = {"5", "10", "20"};
   else if (key == "rpservice") values = {"0", "3", "5"};
@@ -305,6 +307,7 @@ class ACR_Setup
   if (key == "deployment") return "acrDeployment";
   if (key == "reinforcement") return "acrReinforcement";
   if (key == "fobservices") return "acrFobServices";
+  if (key == "fobrelay") return "acrFobRelay";
   if (key == "depotcapacity") return "acrDepotCapacity";
   if (key == "servicecost") return "acrServiceSupplyCost";
   if (key == "rpservice") return "acrFobRPServiceCost";
@@ -342,6 +345,7 @@ class ACR_Setup
    if (key == "deployment") return "military";
    if (key == "reinforcement") return "settlements";
    if (key == "fobservices") return "supplies";
+   if (key == "fobrelay") return "1";
    if (key == "depotcapacity") return "2000";
    if (key == "servicecost") return "10";
    if (key == "rpservice") return "3";
@@ -360,6 +364,7 @@ class ACR_Setup
    if (key == "deployment") return "military bases / HQs / FOBs (scenario default)";
    if (key == "reinforcement") return "settlements + deployment bases (scenario default)";
    if (key == "fobservices") return "supplies (scenario default)";
+   if (key == "fobrelay") return "on (scenario default)";
    if (key == "depotcapacity") return "+2000 supplies (scenario default)";
    if (key == "servicecost") return "10 supplies (scenario default)";
    if (key == "rpservice") return "3 RP per serviced soldier (scenario default)";
@@ -395,7 +400,7 @@ class ACR_Setup
   if (key == "reinforcement" && value == "settlements") return "settlements + deployment bases";
   if (key == "reinforcement" && value == "deployment") return "deployment bases only";
   if (key == "reinforcement" && value == "all") return "all reinforcement-enabled points";
-  if (key == "shared")
+  if (key == "shared" || key == "fobrelay")
   {
    if (value == "0") return "off";
    return "on";
@@ -773,7 +778,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
    array<string> parts = {};
    line.Split("\t", parts, false);
    if (parts.Count() < 2) continue;
-   bool logistics = parts[0] == "deployment" || parts[0] == "reinforcement" || parts[0] == "fobservices" || parts[0] == "depotcapacity" || parts[0] == "servicecost" || parts[0] == "rpservice";
+   bool logistics = parts[0] == "deployment" || parts[0] == "reinforcement" || parts[0] == "fobservices" || parts[0] == "fobrelay" || parts[0] == "depotcapacity" || parts[0] == "servicecost" || parts[0] == "rpservice";
    if (logistics != m_bLogisticsPage) continue;
    Widget widget = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, m_wRows);
    if (!widget) continue;

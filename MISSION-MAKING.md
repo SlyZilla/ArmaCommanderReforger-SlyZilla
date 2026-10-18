@@ -99,7 +99,10 @@ Add these components to the game mode object. The Arland map has working example
   - **Ammo Storage**: soldiers within 25 m get magazines and launchers back; vehicle guns are refilled.
   - **Helipad**: a pad for support helicopters and where bought helicopters appear, for the side's nearest base.
   - **Headquarters / Player Hub**: away from existing bases it becomes a forward base ("FOB 1"...) where
-    units can be bought and reinforcements deploy; hidden from the enemy until found, no income.
+    units can be bought and reinforcements deploy once a radio relay is built; hidden from the enemy until found, no income.
+  - **Radio relay** (small Antenna service composition): a completed friendly relay inside the
+    FOB's circle enables new-unit deployment and RP reinforcement. The native relay costs 250
+    construction supplies. Its blueprint, the CP's built-in radio and enemy/outside relays do not count.
   - **Supply depot** (Supply Cache / Supply Storage): inside a friendly FOB's circle, increases
     its capacity by 2,000 supplies. This bonus applies once per FOB, even with multiple depots.
   AI squads that need ammo, repairs, fuel or healing also head for supplied service buildings.
@@ -123,7 +126,7 @@ Add these components to the game mode object. The Arland map has working example
   a paid delivery that no longer fits waits until space is available. Depot bonuses never add
   supplies themselves. AI base/helipad building is not implemented.
 
-  **RP reinforcement remains available at FOBs**, including with an empty supply store. In supplied
+  **RP reinforcement remains available at relay-equipped FOBs**, including with an empty supply store. In supplied
   service mode, instant infantry healing/ammunition from the Reinforce action costs 3 RP per soldier
   actually serviced; replacement soldiers still cost 3 RP each. Instant vehicle rearm/repair retains
   its existing RP price. Supplied service buildings provide gradual, cheaper service and require the
@@ -132,7 +135,13 @@ Add these components to the game mode object. The Arland map has working example
 ### Deployment and reinforcement logistics
 
 Generated sites have explicit roles. HQs, captured military sites (including airfields) and built
-FOBs can deploy new squads/vehicles. Cities, towns, villages and settlements can send infantry
+FOBs with a completed friendly radio relay can deploy new squads/vehicles. Losing the relay disables
+FOB deployment and RP reinforcement until it is rebuilt. Construction, paid deliveries and automatic
+supply-paid services continue without it. The same eligibility applies to AI purchases; AI construction
+remains future work. Captured military bases and villages retain their existing rules. The relay gate
+applies even under the all-points policies; disable it separately with `m_iAcrFobRelay = 0`,
+`-acrFobRelay 0`, or **FOB radio relay required: off** in startup Logistics settings.
+Cities, towns, villages and settlements can send infantry
 replacements but cannot deploy new formations or provide instant vehicle service. Industry and
 landmarks remain income/territorial objectives. Replacements still walk from the nearest eligible
 friendly base when the squad is outside one. The existing enemy-within-300-m and contested-base
@@ -558,6 +567,7 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_sAcrDeployment` | `-acrDeployment military` (default), `all`, `hq`; new formations at military/HQ/FOB, all spawn-enabled points, or HQ/FOB only |
 | `m_sAcrReinforcement` | `-acrReinforcement settlements` (default), `all`, `deployment`; infantry replacements at settlements plus deployment sites, all reinforcement-enabled points, or deployment sites only |
 | `m_sAcrFobServices` | `-acrFobServices supplies` (default) or `free`; automatic static service buildings draw FOB supplies or retain unlimited free service anywhere |
+| `m_iAcrFobRelay` | `-acrFobRelay 1` (default) or `0`; require a completed friendly radio relay within a built FOB for new-unit deployment and RP reinforcement; separate from player respawn |
 | `m_iAcrDepotCapacity` | `-acrDepotCapacity 2000` default, 0–10000; one depot's extra FOB storage; zero disables the bonus |
 | `m_iAcrServiceSupplyCost` | `-acrServiceSupplyCost 10` default, 0–100; supply cost per service load (turret magazines half, disposable launchers double) |
 | `m_iAcrFobRPServiceCost` | `-acrFobRPServiceCost 3` default, 0–100; RP per soldier actually serviced instantly at a FOB in supplied mode; zero makes this fallback free |

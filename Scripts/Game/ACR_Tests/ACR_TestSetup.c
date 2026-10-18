@@ -5,7 +5,7 @@
 // Start applies them (threat high reaches the game, starting units spawn).
 class ACR_TestSetup
 {
- static const int CHECKS = 20;
+ static const int CHECKS = 22;
  protected static int s_iStartedAt = -1;
 
  static bool Wanted() { return System.IsCLIParam("acrSetupTest"); }
@@ -32,9 +32,14 @@ class ACR_TestSetup
    logisticsHeader.m_iAcrDepotCapacity = 4000;
    logisticsHeader.m_iAcrServiceSupplyCost = 20;
    logisticsHeader.m_iAcrFobRPServiceCost = 5;
+   logisticsHeader.m_iAcrFobRelay = 0;
    map<string, string> logisticsDefaults = new map<string, string>();
    logisticsHeader.Fill(logisticsDefaults);
    ACR_Options.UseHeaderForTest(logisticsDefaults);
+   ACR_TestRegress.Check("setup: mission header can disable FOB relay requirement", !ACR_LogisticsRules.RequireRelay() && ACR_Setup.Current("fobrelay") == "0", "");
+   ACR_Setup.Cycle("fobrelay");
+   ACR_TestRegress.Check("setup: relay startup choice overrides mission header", ACR_LogisticsRules.RequireRelay() && ACR_Options.Source("acrFobRelay") == "screen" && ACR_Setup.Rows().Contains("fobrelay\t"), "");
+   ACR_Options.Unset("acrFobRelay");
    ACR_TestRegress.Check("setup: logistics mission-header defaults resolve", ACR_LogisticsRules.DepotBonus() == 4000 && ACR_LogisticsRules.ServiceCost() == 20 && ACR_LogisticsRules.InstantServiceFee() == 5 && !ACR_LogisticsRules.SuppliedServices(), "");
    ACR_TestRegress.Check("setup: mission header maps deployment policies", ACR_LogisticsRules.Choice("acrDeployment", "") == "military" && ACR_LogisticsRules.Choice("acrReinforcement", "") == "deployment", "");
    ACR_Setup.Cycle("deployment");

@@ -79,6 +79,7 @@ class ACR_TestStructures
   CheckCatalog(provider, FUEL);
   CheckCatalog(provider, AMMO);
   CheckCatalog(provider, HELIPAD);
+  CheckCatalog(provider, ACR_TestFobRelay.RELAY);
   CheckCatalog(provider, "{94D9E9B690F98756}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SupplyCache_S_US_01.et");
   SCR_CampaignBuildingCompositionComponent hospital = SCR_CampaignBuildingCompositionComponent.Cast(s_Hospital.FindComponent(SCR_CampaignBuildingCompositionComponent));
   SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(s_Hospital.FindComponent(SCR_EditableEntityComponent));
@@ -256,6 +257,7 @@ class ACR_TestStructures
     if (!InsideABase(candidate, 60) && !BBB_Terrain.IsWaterAt(candidate)) { hqSpot = candidate; break; }
    }
    s_HQ = Place(HQ, hqSpot);
+   ACR_TestFobRelay.Spawn(hqSpot);
   }
   if (tick == 8)
   {
@@ -318,11 +320,13 @@ class ACR_TestStructures
    if (!rpSquad || !rpSquad.GetAnchor()) { ACR_TestRegress.Abort("structures", "RP service squad missing"); return; }
    SCR_CharacterDamageManagerComponent rpWounds = SCR_CharacterDamageManagerComponent.Cast(rpSquad.GetAnchor().FindComponent(SCR_CharacterDamageManagerComponent));
    if (rpWounds) rpWounds.GetDefaultHitZone().SetHealthScaled(0.5);
+   ACR_TestFobRelay.Guards(manager, s_Fob, rpSquad, EntryIndex(manager, false));
    int rpBefore = manager.m_Bases.GetRP("US");
    int instantServed = manager.m_Requisition.RestockAmmo(rpSquad, s_Fob);
    ACR_TestRegress.Check("logistics: RP fallback heals with an empty supply store", instantServed > 0 && ACR_Logistics.Health(rpSquad.GetAnchor()) > 0.95 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) == 0, "");
    ACR_TestRegress.Check("logistics: RP fallback charges only soldiers actually serviced", rpBefore - manager.m_Bases.GetRP("US") == instantServed * 3, "");
    SCR_EntityHelper.DeleteEntityAndChildren(s_RPServiceGroup);
+   ACR_TestFobRelay.RemoveAntenna(s_Fob);
    serviceStore.SetResourceValue(2500);
    ACR_FobSupply.Order(manager, "US", s_Fob);
    if (s_Depot) SCR_EntityHelper.DeleteEntityAndChildren(s_Depot);
@@ -337,6 +341,7 @@ class ACR_TestStructures
    ACR_Logistics.SupplyContainer(s_Fob.m_FobSupply).SetResourceValue(0);
    ACR_FobSupply.Advance(s_Fob, 0);
    ACR_TestRegress.Check("logistics: held delivery arrives once storage is free", s_Fob.m_iSupplyDelivery == 0 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) == 500, "");
+   ACR_TestFobRelay.Rebuild(manager, s_Fob, s_FobFuel);
    // Actual parked vehicle service, with finite supplies and no squad/player aboard.
    ACR_Options.Set("acrFobServices", "supplies");
    s_FobVehicle = Place(HUMVEE, s_Fob.GetOrigin() + Vector(-12, 0, 0));
@@ -345,6 +350,7 @@ class ACR_TestStructures
    if (fobTanks) fobTanks.SetTotalFuelPercentage(0.2);
    ACR_Logistics.SupplyContainer(s_Fob.m_FobSupply).SetResourceValue(20);
   }
+  if (tick == 28) ACR_TestFobRelay.CheckRebuilt(s_Fob);
   if (tick == 48)
   {
    ACR_TestRegress.Check("logistics: native FOB fuel service consumes finite supply", ACR_Logistics.Fuel(s_FobVehicle) > 0.25 && ACR_FobSupply.Stock(s_Fob.m_FobSupply) < 20, string.Format("fuel %1 stock %2", ACR_Logistics.Fuel(s_FobVehicle), ACR_FobSupply.Stock(s_Fob.m_FobSupply)));
@@ -384,6 +390,7 @@ class ACR_TestStructures
    if (s_HQ) SCR_EntityHelper.DeleteEntityAndChildren(s_HQ);
    if (s_Hospital) SCR_EntityHelper.DeleteEntityAndChildren(s_Hospital);
    if (s_Helipad) SCR_EntityHelper.DeleteEntityAndChildren(s_Helipad);
+   ACR_TestFobRelay.Cleanup();
   }
   if (tick == 90)
   {
@@ -394,7 +401,7 @@ class ACR_TestStructures
    ACR_Helipad last = ACR_Helipad.s_All[ACR_Helipad.s_All.Count() - 1];
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
    ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
-   ACR_TestRegress.Complete("structures", 61 + ACR_TestLogisticsRules.CHECKS);
+   ACR_TestRegress.Complete("structures", 62 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS);
   }
  }
 
