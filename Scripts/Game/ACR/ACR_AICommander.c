@@ -392,6 +392,7 @@ class ACR_AICommander : Managed
   t = ACR_Perf.Lap("ai.post", t);
   ManageLogistics();
   ManageFobBuild();
+  ManageFobUpgrades();
   t = ACR_Perf.Lap("ai.logistics", t);
   Requisition();
   t = ACR_Perf.Lap("ai.buy", t);
@@ -2305,6 +2306,170 @@ class ACR_AICommander : Managed
   }
 
   PrintFormat("[ACR] AI %1: dispatched %2 to establish forward FOB near %3 at %4", m_sFaction, builder.GetName(), front.m_sName, site);
+ }
+
+ static const float FOB_UPGRADE_EVAL_INTERVAL_MS = 15000;
+ protected float m_fNextFobUpgradeEval;
+
+ void SetFobUpgradeEvalTimeForTest(float time) { m_fNextFobUpgradeEval = time; }
+
+ void ManageFobUpgrades()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < m_fNextFobUpgradeEval) return;
+  m_fNextFobUpgradeEval = now + FOB_UPGRADE_EVAL_INTERVAL_MS;
+
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  if (!data) return;
+
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || !base.m_bBuilt || base.m_sOwner != m_sFaction || !base.m_FobSupply) continue;
+   if (base.m_bContested || ACR_FobBuild.IsContested(base.GetOrigin(), m_sFaction)) continue;
+
+   // 1. Supply replenishment check
+   OrderFobSupplies(base, data);
+
+   // 2. Upgrade check & engineer acceleration
+   if (!base.m_aFobSlots) ACR_FobSlots.InitSlots(base);
+   bool isBuilding = false;
+   foreach (ACR_FobSlot slot : base.m_aFobSlots)
+   {
+    if (slot && slot.m_eState == ACR_EFobSlotState.BUILDING)
+    {
+     isBuilding = true;
+     break;
+    }
+   }
+
+   if (isBuilding)
+   {
+    AssistFobConstruction(base);
+   }
+   else
+   {
+    int stock = ACR_FobSupply.Stock(base.m_FobSupply);
+    OrderFobUpgrade(base, stock);
+   }
+  }
+ }
+
+ bool OrderFobSupplies(ACR_Base base, ACR_FactionData data)
+ {
+  if (!base || !base.m_FobSupply || !data) return false;
+  if (base.m_iSupplyDelivery > 0) return false;
+  if (base.m_bContested || ACR_FobBuild.IsContested(base.GetOrigin(), m_sFaction)) return false;
+
+  int stock = ACR_FobSupply.Stock(base.m_FobSupply);
+  int capacity = ACR_FobSupply.CapacityOf(base);
+  if (capacity - stock < ACR_FobSupply.DELIVERY_AMOUNT) return false;
+
+  if (stock >= 500) return false;
+
+  if (data.m_iRP < ACR_FobSupply.DELIVERY_COST + FOB_RP_COMBAT_RESERVE) return false;
+
+  string result = ACR_FobSupply.Order(m_Manager, m_sFaction, base);
+  PrintFormat("[ACR] AI %1 ordered supplies for %2: %3", m_sFaction, base.m_sName, result);
+  return base.m_iSupplyDelivery > 0;
+ }
+
+ int BestUpgradeSlotFor(ACR_Base base, out int targetTier)
+ {
+  targetTier = 0;
+  if (!base) return -1;
+  if (!base.m_aFobSlots) ACR_FobSlots.InitSlots(base);
+
+  array<int> priorities = {
+   ACR_FobSlots.SLOT_RELAY,
+   ACR_FobSlots.SLOT_BARRACKS,
+   ACR_FobSlots.SLOT_REPAIR,
+   ACR_FobSlots.SLOT_FUEL,
+   ACR_FobSlots.SLOT_HOSPITAL,
+   ACR_FobSlots.SLOT_DEPOT,
+   ACR_FobSlots.SLOT_AMMO
+  };
+
+  foreach (int slotIdx : priorities)
+  {
+   if (slotIdx < 0 || slotIdx >= base.m_aFobSlots.Count()) continue;
+   ACR_FobSlot slot = base.m_aFobSlots[slotIdx];
+   if (!slot) continue;
+   if (slot.m_eState == ACR_EFobSlotState.EMPTY)
+   {
+    targetTier = 0;
+    return slotIdx;
+   }
+  }
+
+  // Tier 1 upgrades after base tiers are built
+  ACR_FobSlot barracksSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_BARRACKS];
+  if (barracksSlot && barracksSlot.m_eState == ACR_EFobSlotState.BUILT && barracksSlot.m_iTier < 1)
+  {
+   targetTier = 1;
+   return ACR_FobSlots.SLOT_BARRACKS;
+  }
+
+  ACR_FobSlot repairSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_REPAIR];
+  if (repairSlot && repairSlot.m_eState == ACR_EFobSlotState.BUILT && repairSlot.m_iTier < 1)
+  {
+   targetTier = 1;
+   return ACR_FobSlots.SLOT_REPAIR;
+  }
+
+  ACR_FobSlot heliSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_HELIPAD];
+  if (heliSlot && heliSlot.m_eState == ACR_EFobSlotState.EMPTY)
+  {
+   targetTier = 0;
+   return ACR_FobSlots.SLOT_HELIPAD;
+  }
+
+  return -1;
+ }
+
+ bool OrderFobUpgrade(ACR_Base base, int stock)
+ {
+  if (!base) return false;
+  if (!base.m_aFobSlots) ACR_FobSlots.InitSlots(base);
+
+  int targetTier = 0;
+  int pickSlot = BestUpgradeSlotFor(base, targetTier);
+  if (pickSlot < 0) return false;
+
+  int cost = ACR_FobSlots.SlotCost(pickSlot, targetTier);
+  if (stock < cost) return false;
+
+  string refusal;
+  string outcome = ACR_FobSlots.OrderUpgradeBase(m_Manager, m_sFaction, base, pickSlot, refusal);
+  if (!outcome.IsEmpty())
+  {
+   PrintFormat("[ACR] AI %1: ordered FOB %2 upgrade %3 (tier %4)", m_sFaction, base.m_sName, ACR_FobSlots.SlotName(pickSlot, targetTier), targetTier);
+   return true;
+  }
+  return false;
+ }
+
+ void AssistFobConstruction(ACR_Base base)
+ {
+  if (!base || ACR_FobSlots.HasEngineer(base)) return;
+
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  foreach (ACR_Squad squad : mine)
+  {
+   if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0) continue;
+   if (squad.m_iAITask == ACR_EAITask.ATTACK || squad.m_iAITask == ACR_EAITask.DEFEND || squad.m_iAITask == ACR_EAITask.BUILD_FOB) continue;
+   IEntity truck = squad.ConstructionTruck();
+   if (!truck || ACR_Logistics.Health(truck) <= 0) continue;
+
+   float dist = vector.DistanceXZ(PositionOf(squad), base.GetOrigin());
+   if (dist <= 500.0)
+   {
+    squad.SetMode(ACR_EMoveMode.FAST);
+    squad.RouteTo(base.GetOrigin(), ACR_Squad.WP_MOVE, -1, "Assisting FOB upgrade construction", 0);
+    PrintFormat("[ACR] AI %1: dispatched %2 to assist upgrade construction at %3", m_sFaction, squad.GetName(), base.m_sName);
+    return;
+   }
+  }
  }
 
  void SetFobEvalTimeForTest(float time) { m_fNextFobEval = time; }
