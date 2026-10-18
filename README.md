@@ -174,8 +174,8 @@ entry points. BBB owns the general AI systems in its separate addon.
 For maintainers on the shared Windows setup, **Mod-Release-Console.cmd** prepares
 checked ACA/BBB/AiO snapshots, opens the selected project and verifies downloaded
 content. Its details are in the documentation. **Publish-Release.cmd** is the separate
-legacy GitHub ZIP publisher. The public GitHub README is maintained in
-`tools/package/REPO-README.md`; this file is the main source repository's guide.
+legacy GitHub ZIP publisher. This file is the main source repository's GitHub README;
+`tools/package/REPO-README.md` maintains the legacy ACActual repository's page.
 
 ### Development limits
 

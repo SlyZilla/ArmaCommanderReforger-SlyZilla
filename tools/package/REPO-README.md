@@ -21,9 +21,9 @@ An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode
 
 Friends join through the game's multiplayer browser. **No external launcher or ZIP download is needed.**
 
-Release status in the local development records: **0.5.3 was published; 0.5.4 is prepared**.
-The prepared split release requires Better Battle Buddies (BBB), available separately on Workshop;
-allow Workshop to install the dependency when prompted. ACA 0.5.3 bundles the earlier AI code.
+The current confirmed Workshop release is **ACA 0.5.5**, with **Better Battle Buddies 0.1.4**
+available separately on Workshop. Allow Workshop to install BBB when prompted.
+Legacy ZIP downloads may contain an older version; use Workshop for current releases.
 Features described here include development work; consult the installed version's change notes.
 
 ## What you can do
