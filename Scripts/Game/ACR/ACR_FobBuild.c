@@ -60,7 +60,7 @@ class ACR_FobBuild
 		return true;
 	}
 
-	static bool CheckSpot(vector spot, out string reason)
+	static bool CheckSpot(vector spot, out string reason, ACR_Squad ignoreBuilder = null)
 	{
 		if (!ACR_Manager.OnMap(spot))
 		{
@@ -113,6 +113,34 @@ class ACR_FobBuild
 			if (dist <= base.m_fRadius + MIN_BASE_DISTANCE)
 			{
 				reason = string.Format("Too close to %1", base.m_sName);
+				return false;
+			}
+		}
+
+		// Reserve the full base circle before the HQ exists. Completion ignores only itself.
+		ACR_Manager manager = ACR_Manager.GetInstance();
+		if (manager)
+		{
+			foreach (ACR_Squad builder : manager.m_Squads)
+			{
+				if (!builder || builder == ignoreBuilder || builder.OrderState() != ACR_EOrderState.BUILD_FOB || builder.FobReservedLoads() <= 0) continue;
+				if (vector.DistanceXZ(builder.FobSite(), spot) <= CP_RADIUS * 2)
+				{
+					reason = "Too close to a FOB construction site";
+					return false;
+				}
+			}
+		}
+
+		// A completed HQ can wait for the structures tick before it becomes a base.
+		foreach (SCR_CampaignBuildingCompositionComponent composition : ACR_Structures.s_Registered)
+		{
+			if (!composition || !composition.IsCompositionSpawned() || composition.ACR_BuildRejected()) continue;
+			IEntity hq = composition.GetOwner();
+			if (!hq || ACR_Structures.KindOf(hq) != ACR_EStructure.HQ) continue;
+			if (vector.DistanceXZ(hq.GetOrigin(), spot) <= CP_RADIUS * 2)
+			{
+				reason = "Too close to an existing headquarters";
 				return false;
 			}
 		}

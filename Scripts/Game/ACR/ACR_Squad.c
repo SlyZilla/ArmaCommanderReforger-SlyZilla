@@ -798,6 +798,7 @@ class ACR_Squad : Managed
  {
   string refusal;
   if (!ACR_FobBuild.CanOrder(this, refusal)) return false;
+  if (!ACR_FobBuild.CheckSpot(site, refusal)) return false;
   IEntity truck = ConstructionTruck();
   if (!truck) return false;
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -922,12 +923,24 @@ class ACR_Squad : Managed
 
  void CompleteEstablishFob()
  {
-  m_fReservedLoads = 0;
-  m_ReservedTruck = null;
+  string refusal;
+  if (!ACR_FobBuild.CheckSpot(m_vFobSite, refusal, this))
+  {
+   PrintFormat("[ACR] SQUAD %1: FOB site no longer clear: %2", m_Name, refusal);
+   CancelEstablishFob();
+   return;
+  }
   string factionKey = "";
   if (GetFaction()) factionKey = GetFaction().GetFactionKey();
   ResourceName prefab = ACR_FobBuild.HqPrefabFor(factionKey);
   IEntity hq = ACR_Manager.SpawnPrefab(prefab, m_vFobSite);
+  if (!hq)
+  {
+   CancelEstablishFob();
+   return;
+  }
+  m_fReservedLoads = 0;
+  m_ReservedTruck = null;
   if (hq)
   {
    SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(hq.FindComponent(SCR_CampaignBuildingCompositionComponent));

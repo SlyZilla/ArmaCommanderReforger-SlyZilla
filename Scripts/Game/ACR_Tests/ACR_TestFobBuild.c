@@ -5,7 +5,7 @@
 
 class ACR_TestFobBuild
 {
- static const int CHECKS = 17;
+ static const int CHECKS = 22;
  static const ResourceName TRUCK = "{2D74C39A650A3030}Prefabs/Vehicles/Wheeled/M923A1/M923A1_engineer.et";
 
  static void Run(ACR_Manager manager, ACR_Squad squad, IEntity truck)
@@ -79,10 +79,34 @@ class ACR_TestFobBuild
   float stockAfter = manager.m_Logistics.StockOf(truck);
   ACR_TestRegress.Check("fobbuild: EstablishFob reserves 20 loads and sets state", established && squad.OrderState() == ACR_EOrderState.BUILD_FOB && squad.FobReservedLoads() == 20 && Math.AbsFloat(stockBefore - stockAfter - 20) < 0.01, string.Format("established=%1 state=%2 reserved=%3 before=%4 after=%5", established, squad.OrderState(), squad.FobReservedLoads(), stockBefore, stockAfter));
 
+  ACR_TestRegress.Check("fobbuild: pending site reserves the full FOB circle", !ACR_FobBuild.CheckSpot(clearSite, why) && why.Contains("construction site"), why);
+  IEntity otherTruck = ACR_Manager.SpawnPrefab(TRUCK, anchorPos + Vector(20, 0, 0));
+  ACR_Squad otherBuilder = new ACR_Squad(squad.m_Group, 999);
+  float otherStock = manager.m_Logistics.StockOf(otherTruck);
+  bool otherCanBuild = ACR_FobBuild.CanOrder(otherBuilder, why);
+  bool duplicate = otherBuilder.EstablishFob(clearSite);
+  ACR_TestRegress.Check("fobbuild: second order at reserved site spends no supplies", otherTruck && otherCanBuild && !duplicate && manager.m_Logistics.StockOf(otherTruck) == otherStock && otherBuilder.FobReservedLoads() == 0, "");
+  if (otherTruck) SCR_EntityHelper.DeleteEntityAndChildren(otherTruck);
+
   // 12. CancelEstablishFob and Halt() refund 500 supplies to surviving truck
   squad.Halt("Holding");
   float stockRefunded = manager.m_Logistics.StockOf(truck);
   ACR_TestRegress.Check("fobbuild: CancelEstablishFob refunds 20 loads to truck", squad.OrderState() != ACR_EOrderState.BUILD_FOB && squad.FobReservedLoads() == 0 && Math.AbsFloat(stockRefunded - stockBefore) < 0.01, string.Format("state=%1 reserved=%2 refunded=%3 before=%4", squad.OrderState(), squad.FobReservedLoads(), stockRefunded, stockBefore));
+
+  ACR_TestRegress.Check("fobbuild: cancellation releases construction site", ACR_FobBuild.CheckSpot(clearSite, why), why);
+
+  squad.EstablishFob(clearSite);
+  EntitySpawnParams blockerParams = new EntitySpawnParams();
+  blockerParams.TransformMode = ETransformMode.WORLD;
+  blockerParams.Transform[3] = clearSite;
+  ACR_Base blocker = ACR_Base.Cast(GetGame().SpawnEntity(ACR_Base, GetGame().GetWorld(), blockerParams));
+  squad.CompleteEstablishFob();
+  ACR_TestRegress.Check("fobbuild: completion rechecks site and refunds blocked build", blocker && squad.OrderState() != ACR_EOrderState.BUILD_FOB && squad.FobReservedLoads() == 0 && Math.AbsFloat(manager.m_Logistics.StockOf(truck) - stockBefore) < 0.01, "");
+  if (blocker)
+  {
+   blocker.Retire("overlap fixture complete");
+   SCR_EntityHelper.DeleteEntityAndChildren(blocker);
+  }
 
   // 13. Destroyed truck loses cargo without refund
   squad.EstablishFob(clearSite);
@@ -90,8 +114,9 @@ class ACR_TestFobBuild
   squad.CancelEstablishFob();
   ACR_TestRegress.Check("fobbuild: destroyed truck does not crash on cancel", squad.OrderState() != ACR_EOrderState.BUILD_FOB && squad.FobReservedLoads() == 0, "");
 
-  // Re-establish for progress testing
-  squad.EstablishFob(clearSite);
+  // Replace the deliberately lost cargo before starting a real progress test.
+  manager.m_Logistics.AddStock(truck, 20);
+  bool progressOrdered = squad.EstablishFob(clearSite);
   float now = GetGame().GetWorld().GetWorldTime();
 
   // 14. TickEstablishFob advances build progress when engineer alive within CP radius
@@ -100,7 +125,7 @@ class ACR_TestFobBuild
   if (leader) oldLeaderPos = leader.GetOrigin();
   if (leader) leader.SetOrigin(clearSite + Vector(10, 0, 0));
   squad.TickEstablishFob(now + 10000);
-  ACR_TestRegress.Check("fobbuild: progress advances with engineer inside CP radius", squad.FobBuildProgress() > 0, squad.FobBuildProgress().ToString());
+  ACR_TestRegress.Check("fobbuild: progress advances with engineer inside CP radius", progressOrdered && squad.FobBuildProgress() > 0, squad.FobBuildProgress().ToString());
 
   // 15. TickEstablishFob pauses progress when engineer is out of CP radius
   float prog = squad.FobBuildProgress();
@@ -116,6 +141,7 @@ class ACR_TestFobBuild
   if (leader) leader.SetOrigin(clearSite + Vector(5, 0, 0));
   squad.TickEstablishFob(now + 30000);
   ACR_Base newFob = null;
+  ACR_TestRegress.Check("fobbuild: completed HQ reserves site before structures activation", !ACR_FobBuild.CheckSpot(clearSite, why) && why.Contains("headquarters"), why);
   // Trigger activation of new composition
   manager.m_Structures.ACR_TestForceTick();
   foreach (ACR_Base b : ACR_Base.s_All)
