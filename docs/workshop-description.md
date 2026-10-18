@@ -13,14 +13,11 @@ Requires the separate Better Battle Buddies (BBB) addon. No faction mods are nee
   uncontested seconds. Build from the CP without keeping a construction truck there.
 - A completed friendly radio relay enables FOB deployment and RP reinforcement. Losing it disables
   both until rebuilt; construction, deliveries and supply-paid services continue.
-- One depot expands storage to 3,000. Hospital, ammo, maintenance and fuel buildings consume local
-  supplies. Paid stock cannot be loaded into trucks; built FOBs do not refill trucks for free.
+- One depot expands storage to 3,000. Service buildings consume local supplies; heavy bays repair
+  40% more per step. Living quarters add garrison defenders. Paid stock cannot refill trucks.
 - Generated settlements send infantry replacements; military sites, HQs and relay-equipped FOBs
   deploy new formations. RP reinforcement remains available at eligible sites.
-- Startup Logistics settings control deployment, replacements, the relay requirement, service
-  payment, storage and costs. Mission makers also have header and per-base controls.
-- Clearer reinforcement refusal messages, compact map captions with details on hover, and improved
-  generated layouts, terrain access, rare-unit stock and helicopter clearance.
+- Clearer reinforcement feedback, compact map captions, better layouts, rare stock and lift clearance.
 
 ## Command and fight
 
@@ -35,17 +32,24 @@ Requires the separate Better Battle Buddies (BBB) addon. No faction mods are nee
 
 Choose an AC: Actual scenario in Scenarios or Host. Before Start, the host/admin selects sides,
 battlefield, threat, prices, AI commanders, caps, starting RP, income and logistics options.
-Friends joining during setup wait for the host. No external launcher is needed.
+Joiners wait for the host. No external launcher needed.
 
 Everon includes a hand-built island layout, halves and flashpoints. Procedural layouts generate
 bases and HQs from named locations: preview, reroll the seed, or move bases before Start.
-Kolguyev always uses a generated layout. Other terrains need an AC: Actual scenario setup;
-installing a map mod alone does not add a scenario. Mission-maker guide:
-https://github.com/propst-design/ArmaCommanderReforger/blob/main/MISSION-MAKING.md
+Kolguyev uses generated layouts. Other terrains need an AC: Actual scenario setup.
 
 On generated layouts, build a helipad before buying helicopters. Off-map air lift needs no pad.
 There are no victory conditions or saved matches. Intel includes automatic enemy reports within
 an owned base's radius plus 60 m, without line of sight. Air-lift clearance remains a live-check item.
+
+## Mission makers: make it your battlefield
+
+This mod has been designed to be easy to make missions for. Start from a shipped scenario, choose
+hand-placed bases or a generated layout, and tune factions, requisitions, supports and logistics
+in Workbench. Keep your scenario in your own addon with AC: Actual as a dependency.
+
+New mission makers are welcome. The GitHub guide walks through setup, settings, testing and sharing:
+https://github.com/propst-design/ArmaCommanderReforger/blob/main/MISSION-MAKING.md
 
 ## Controls
 
@@ -62,7 +66,7 @@ Rebind keys in Settings > Controls > AC: Actual. Tested on PC; console/controlle
 
 Our maps list US, USSR and FIA, RHS US/Russia when RHS is loaded, and UA through Ukraine Armed
 Forces RHS. RHS and UA are optional, hand-fitted faction mods. Joiners need the server's mod set.
-Other factions need a map entry and standard Game Master catalogs; expect mixed kit or fallbacks.
+Other factions need map entries and GM catalogs; expect mixed kit or fallbacks.
 ACE All in One and the optional All-in-One Command Menu have been used in development.
 Expect rough edges.
 

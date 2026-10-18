@@ -1,11 +1,16 @@
 # Make an AC: Actual map
 
-This guide shows how to set up AC: Actual on a different map, test your changes, and play a custom
-map with a friend. It also lists the settings you can change in Workbench.
+AC: Actual is designed to be easy to make missions for. You can adapt a shipped scenario, build a
+hand-placed battlefield or let the mode generate a layout on a suitable terrain. Most setup uses
+World Editor settings and the mission header; you do not need to write scripts to get started.
+
+This guide takes you from your own addon to a playable scenario, then covers the settings,
+logistics, testing and sharing. Start with [Quick start: copy Arland](#quick-start-copy-arland)
+for an authored layout, or its generated-layout alternative for a procedural battlefield.
 
 > AC: Actual is an alpha. Arland is the main automated test map; Everon is the main large-map
 > playtest terrain. Kolguyev uses generated layouts. New maps, faction combinations and multiplayer
-> setup paths still need playtesting. Development ACA now depends on standalone BBB (`BBB0261015000001`); keep its checkout beside ACA. Publish BBB before dependent ACA/scenario releases. Mod log lines use `[ACR]` (the included AI systems also use `[BBB]`).
+> setup paths still need playtesting. AC: Actual requires standalone BBB (`BBB0261015000001`); install both in Workbench. Source developers keep the checkouts side by side. Custom scenarios also need their terrain dependencies. Mod log lines use `[ACR]` (the included AI systems also use `[BBB]`).
 
 ## Contents
 

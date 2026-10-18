@@ -2,6 +2,7 @@
 
 ## 0.5.5 — unreleased
 
+- Added a dedicated Workshop invitation for mission makers, linking the setup and sharing guide on GitHub.
 Development changes since the released 0.5.4. Outstanding live checks: air-lift clearance and RTS camera; the other existing checks were dismissed by Jacob.
 
 - Heavy maintenance bays repair 40% more per service step than light bays, with the same supply cost, range and interval. Completed small/large living quarters inside a friendly FOB add 11/19 garrison defenders, proportional to their 275/475-supply construction costs. Multiple quarters stack; casualties persist, and losing quarters reduces garrison capacity.
