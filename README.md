@@ -136,7 +136,6 @@ Logs: normal play uses `Documents/My Games/ArmaReforger/logs`. Mod lines use
 ## Making scenarios and contributing
 
 See [MISSION-MAKING.md](MISSION-MAKING.md) to build scenarios in your own addon.
-Contributor guidance is in [documentation](documentation).
 
 ## Made with AI
 
