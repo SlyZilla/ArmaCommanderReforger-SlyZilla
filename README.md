@@ -56,7 +56,7 @@ use its supplies for automatic service; RP reinforcement remains available. Gene
 send infantry replacements, while HQs, military sites and FOBs deploy new formations. The startup
 **Logistics settings** page lets hosts change these policies, capacity bonuses and service costs;
 mission makers can set defaults and per-base roles.
-Live and multiplayer acceptance of these controls is still pending.
+Jacob dismissed the outstanding live/multiplayer check for these controls on 17 Oct.
 
 ## Legacy ZIP / development launchers
 
@@ -175,8 +175,8 @@ legacy GitHub ZIP publisher. The public GitHub README is maintained in
 ### Development limits
 
 Off-map air lift has passed automated loaded-transport, clearance and terrain
-checks. Broader live and multiplayer acceptance remains open. Generated-layout editing has automated coverage; visual and multiplayer
-acceptance remain open. Keep custom changes in your own addon or a development
+checks. Air-lift clearance/terrain following and RTS camera are the remaining live-check items;
+Jacob dismissed the rest of the existing backlog on 17 Oct. Keep custom changes in your own addon or a development
 copy without the release updater.
 
 ## Made with AI
