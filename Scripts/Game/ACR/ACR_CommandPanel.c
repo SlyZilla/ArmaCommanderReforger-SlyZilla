@@ -29,7 +29,8 @@ enum ACR_EPanelAction
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
- SUPPORT_ENTRY = 200     // + entry index
+ SUPPORT_ENTRY = 200,     // + entry index
+ FOB_UPGRADE = 300        // + slot index (below 350)
 }
 
 enum ACR_ECursorMode
@@ -81,6 +82,9 @@ class ACR_CommandPanel : Managed
  protected Widget m_FobSection;
  protected SCR_ButtonTextComponent m_FobSupplyButton;
  protected SCR_ButtonTextComponent m_FobBuildButton;
+ protected Widget m_FobUpgradesLayout;
+ protected ref array<SCR_ButtonTextComponent> m_aFobUpgradeButtons = {};
+ protected ref array<Widget> m_aFobUpgradeWidgets = {};
  protected SCR_ButtonTextComponent m_RequisitionButton;
  protected Widget m_RequisitionWidget;
  protected Widget m_RequisitionSection;
@@ -173,6 +177,14 @@ class ACR_CommandPanel : Managed
   m_FobSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_GroupSection);
   m_FobSupplyButton = AddButton(m_FobSection, "Order 500 supplies - 20 RP / 60 s", ACR_EPanelAction.FOB_SUPPLY);
   m_FobBuildButton = AddButton(m_FobSection, "Build at FOB (stand inside its circle)", ACR_EPanelAction.FOB_BUILD);
+  m_FobUpgradesLayout = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_FobSection);
+  AddText(m_FobUpgradesLayout, LAYOUT_TEXT, "FOB Upgrades");
+  for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
+  {
+   SCR_ButtonTextComponent upgradeBtn = AddButton(m_FobUpgradesLayout, ACR_FobSlots.SlotName(s), ACR_EPanelAction.FOB_UPGRADE + s);
+   m_aFobUpgradeButtons.Insert(upgradeBtn);
+   m_aFobUpgradeWidgets.Insert(m_LastButtonWidget);
+  }
   m_SwitchButton = AddButton(m_GroupSection, "Switch to squad", ACR_EPanelAction.SWITCH);
   m_SwitchWidget = m_LastButtonWidget;
   AddButton(m_GroupSection, "Take over gunner", ACR_EPanelAction.TAKE_GUNNER);
@@ -634,11 +646,58 @@ class ACR_CommandPanel : Managed
   if (m_Hint) m_Hint.SetText("");
  }
 
- void SetFob(bool visible, bool canOrder, bool canBuild)
+ void SetFob(bool visible, bool canOrder, bool canBuild, array<int> slotStates = null, int stock = 0, bool ready = false)
  {
   if (m_FobSection) m_FobSection.SetVisible(visible);
   if (m_FobSupplyButton) m_FobSupplyButton.SetEnabled(canOrder, false);
   if (m_FobBuildButton) m_FobBuildButton.SetEnabled(canBuild, false);
+  if (!m_FobUpgradesLayout) return;
+  if (!visible || !slotStates)
+  {
+   m_FobUpgradesLayout.SetVisible(false);
+   return;
+  }
+  m_FobUpgradesLayout.SetVisible(true);
+
+  bool anyBuilding = false;
+  for (int b = 0; b < slotStates.Count(); b++)
+  {
+   if (slotStates[b] > 0 && slotStates[b] < 100)
+   {
+    anyBuilding = true;
+    break;
+   }
+  }
+
+  for (int i = 0; i < m_aFobUpgradeButtons.Count(); i++)
+  {
+   SCR_ButtonTextComponent btn = m_aFobUpgradeButtons[i];
+   if (!btn) continue;
+   if (i >= slotStates.Count())
+   {
+    btn.SetEnabled(false, false);
+    continue;
+   }
+   int state = slotStates[i];
+   int cost = ACR_FobSlots.SlotCost(i);
+   string slotName = ACR_FobSlots.SlotName(i);
+   if (state == 100)
+   {
+    btn.SetText(string.Format("%1 [Built]", slotName));
+    btn.SetEnabled(false, false);
+   }
+   else if (state > 0 && state < 100)
+   {
+    btn.SetText(string.Format("%1 (%2%%)", slotName, state));
+    btn.SetEnabled(false, false);
+   }
+   else
+   {
+    btn.SetText(string.Format("%1 [%2 sup]", slotName, cost));
+    bool enabled = ready && !anyBuilding && stock >= cost;
+    btn.SetEnabled(enabled, false);
+   }
+  }
  }
 
  void SetEstablishFob(bool visible)

@@ -71,6 +71,16 @@ modded class SCR_CampaignBuildingCompositionComponent
 
 	bool ACR_BuildRejected() { return m_bACRBuildRejected; }
 
+	void ACR_SetCompositionSpawned(bool spawned)
+	{
+		m_bCompositionIsSpawned = spawned;
+	}
+
+	void ACR_MarkBuildCharged()
+	{
+		m_bACRBuildCharged = true;
+	}
+
 	override void OnPostInit(IEntity owner)
 	{
 		super.OnPostInit(owner);
@@ -261,7 +271,11 @@ class ACR_Structures : Managed
   for (int i = m_Active.Count() - 1; i >= 0; i--)
   {
    ACR_Structure s = m_Active[i];
-   if (s.m_Fob) ACR_FobSupply.Tick(s.m_Fob);
+   if (s.m_Fob)
+   {
+    ACR_FobSupply.Tick(s.m_Fob);
+    ACR_FobSlots.Tick(s.m_Fob);
+   }
    if (s.m_Composition && s.m_Entity) continue;
    Deactivate(s);
    m_Active.RemoveOrdered(i);
@@ -419,6 +433,7 @@ class ACR_Structures : Managed
   fob.m_fRadius = FOB_RADIUS;
   fob.m_bBuilt = true;
   ACR_FobSupply.Create(fob, s.m_Entity);
+  ACR_FobSlots.InitSlots(fob);
   return fob;
  }
 

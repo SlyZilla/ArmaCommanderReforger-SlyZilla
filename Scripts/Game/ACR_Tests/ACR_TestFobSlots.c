@@ -1,0 +1,129 @@
+// ACR_TestFobSlots: Regression tests for Stage 2 FOB preset upgrade slots & panel.
+// Checks: 8 preset slot configurations (cost, duration, layout), OrderUpgrade validation,
+// local supply deduction, contest pausing, established work crew 1x speed, engineer 2x speedup,
+// completion spawning composition, registration & activation in ACR_Structures,
+// already-built refusal, sequential building, destruction reset, and FOB cleanup.
+
+class ACR_TestFobSlots
+{
+	static const int CHECKS = 18;
+
+	static void Run(ACR_Manager manager, ACR_Base fob, ACR_Squad squad, IEntity truck)
+	{
+		if (!manager || !fob || !squad || !truck)
+		{
+			ACR_TestRegress.Abort("structures", "FOB slots test fixture missing");
+			return;
+		}
+
+		string why;
+		vector truckPos = truck.GetOrigin();
+
+		// 1. Verify 8 preset slots configuration
+		ACR_FobSlots.InitSlots(fob);
+		bool slotsConfigOk = (fob.m_aFobSlots && fob.m_aFobSlots.Count() == ACR_FobSlots.SLOT_COUNT);
+		if (slotsConfigOk)
+		{
+			if (ACR_FobSlots.SlotCost(0) != 250 || ACR_FobSlots.SlotDuration(0) != 40.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(1) != 350 || ACR_FobSlots.SlotDuration(1) != 45.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(2) != 200 || ACR_FobSlots.SlotDuration(2) != 30.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(3) != 200 || ACR_FobSlots.SlotDuration(3) != 30.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(4) != 300 || ACR_FobSlots.SlotDuration(4) != 45.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(5) != 250 || ACR_FobSlots.SlotDuration(5) != 30.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(6) != 275 || ACR_FobSlots.SlotDuration(6) != 40.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(7) != 200 || ACR_FobSlots.SlotDuration(7) != 30.0) slotsConfigOk = false;
+		}
+		ACR_TestRegress.Check("fobslots: 8 preset slots initialized with correct costs and durations", slotsConfigOk, "");
+
+		// 2. OrderUpgrade refuses non-FOB base
+		ACR_Base ordinaryBase = ACR_Base.s_All[0];
+		ACR_TestRegress.Check("fobslots: OrderUpgrade refuses non-FOB base", ACR_FobSlots.OrderUpgradeBase(manager, "US", ordinaryBase, 0, why) == "" && why.Contains("Invalid FOB"), why);
+
+		// 3. OrderUpgrade refuses enemy FOB
+		ACR_TestRegress.Check("fobslots: OrderUpgrade refuses enemy FOB", ACR_FobSlots.OrderUpgradeBase(manager, "USSR", fob, 0, why) == "" && why.Contains("another faction"), why);
+
+		// 4. OrderUpgrade refuses contested FOB
+		fob.m_bContested = true;
+		ACR_TestRegress.Check("fobslots: OrderUpgrade refuses contested FOB", ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, 0, why) == "" && why.Contains("contested"), why);
+		fob.m_bContested = false;
+
+		// 5. OrderUpgrade refuses invalid slot index
+		ACR_TestRegress.Check("fobslots: OrderUpgrade refuses invalid slot index", ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, 99, why) == "" && why.Contains("Invalid upgrade slot"), why);
+
+		// 6. OrderUpgrade refuses insufficient supplies
+		SCR_ResourceContainer store = ACR_Logistics.SupplyContainer(fob.m_FobSupply);
+		if (store) store.SetResourceValue(100);
+		ACR_TestRegress.Check("fobslots: OrderUpgrade refuses insufficient supplies", ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, 0, why) == "" && why.Contains("Needs 250 supplies"), why);
+
+		// 7. OrderUpgrade accepts valid order and deducts supplies
+		if (store) store.SetResourceValue(500);
+		string result = ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_RELAY, why);
+		ACR_FobSlot slotRelay = fob.m_aFobSlots[ACR_FobSlots.SLOT_RELAY];
+		bool orderOk = (result.Contains("Radio Relay") && store.GetResourceValue() == 250 && slotRelay.m_eState == ACR_EFobSlotState.BUILDING);
+		ACR_TestRegress.Check("fobslots: OrderUpgrade accepts valid order and deducts supplies", orderOk, result);
+
+		// 8. OrderUpgrade refuses second upgrade while one is building
+		ACR_TestRegress.Check("fobslots: OrderUpgrade refuses second upgrade while one is building", ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_AMMO, why) == "" && why.Contains("Already building"), why);
+
+		// 9. Contest pauses build progression
+		fob.m_bContested = true;
+		ACR_FobSlots.Advance(fob, 10.0);
+		ACR_TestRegress.Check("fobslots: contest pauses build progression", slotRelay.m_fProgress == 0, slotRelay.m_fProgress.ToString());
+		fob.m_bContested = false;
+
+		// 10. Established work crew advances build progress at standard (1x) rate
+		truck.SetOrigin(fob.GetOrigin() + Vector(300, 0, 0));
+		ACR_FobSlots.Advance(fob, 10.0);
+		ACR_TestRegress.Check("fobslots: established work crew builds upgrade at 1x speed", slotRelay.m_fProgress == 10.0, slotRelay.m_fProgress.ToString());
+
+		// 11. Engineer present speeds up build progress at 2x speed
+		truck.SetOrigin(fob.GetOrigin() + Vector(10, 0, 0));
+		ACR_FobSlots.Advance(fob, 5.0);
+		ACR_TestRegress.Check("fobslots: engineer present speeds up build progress at 2x speed", slotRelay.m_fProgress == 20.0, slotRelay.m_fProgress.ToString());
+
+		// 12. Upgrade completion transitions to BUILT and spawns composition
+		ACR_FobSlots.Advance(fob, 5.0); // 20 + 5*2 = 30s (full duration)
+		bool completeOk = (slotRelay.m_eState == ACR_EFobSlotState.BUILT && slotRelay.m_Entity != null);
+		ACR_TestRegress.Check("fobslots: upgrade completion transitions to BUILT and spawns composition", completeOk, "");
+
+		// 13. Completed composition activates in ACR_Structures
+		manager.m_Structures.ACR_TestForceTick();
+		bool relayActive = manager.m_Structures.HasRelay(fob);
+		ACR_TestRegress.Check("fobslots: completed composition activates in ACR_Structures", relayActive, "");
+
+		// 14. OrderUpgrade refuses already built slot
+		ACR_TestRegress.Check("fobslots: OrderUpgrade refuses already built slot", ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_RELAY, why) == "" && why.Contains("already built"), why);
+
+		// 15. Work crew builds next upgrade once previous completes
+		if (store) store.SetResourceValue(300);
+		result = ACR_FobSlots.OrderUpgradeBase(manager, "US", fob, ACR_FobSlots.SLOT_DEPOT, why);
+		ACR_FobSlot slotDepot = fob.m_aFobSlots[ACR_FobSlots.SLOT_DEPOT];
+		bool depotOrdered = (result.Contains("Supply Depot") && slotDepot.m_eState == ACR_EFobSlotState.BUILDING);
+		ACR_FobSlots.Advance(fob, 15.0); // 15*2 = 30s (full duration)
+		manager.m_Structures.ACR_TestForceTick();
+		bool depotActive = (slotDepot.m_eState == ACR_EFobSlotState.BUILT && ACR_FobSupply.CapacityOf(fob) == 3000);
+		ACR_TestRegress.Check("fobslots: work crew builds next upgrade and depot expands capacity", depotOrdered && depotActive, "");
+
+		// 16. Destroyed structure resets slot state to EMPTY
+		if (slotDepot.m_Entity)
+		{
+			SCR_EntityHelper.DeleteEntityAndChildren(slotDepot.m_Entity);
+			slotDepot.m_Entity = null;
+		}
+		ACR_FobSlots.Advance(fob, 1.0);
+		bool resetOk = (slotDepot.m_eState == ACR_EFobSlotState.EMPTY && slotDepot.m_fProgress == 0);
+		ACR_TestRegress.Check("fobslots: destroyed structure resets slot state to EMPTY", resetOk, "");
+
+		// 17. Description reflects built upgrades
+		string desc = ACR_FobSlots.Describe(fob);
+		ACR_TestRegress.Check("fobslots: description reflects built upgrades", desc.Contains("Radio Relay (built)"), desc);
+
+		// 18. FOB cleanup removes spawned entities and resets slots
+		ACR_FobSlots.Cleanup(fob);
+		bool cleanOk = (slotRelay.m_eState == ACR_EFobSlotState.EMPTY && slotRelay.m_Entity == null);
+		ACR_TestRegress.Check("fobslots: FOB cleanup removes spawned entities and resets slots", cleanOk, "");
+
+		// Restore truck position
+		truck.SetOrigin(truckPos);
+	}
+}

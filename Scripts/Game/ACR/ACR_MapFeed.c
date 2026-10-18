@@ -456,7 +456,11 @@ class ACR_MapFeed
   {
    if (!base.IsVisibleTo(frame.m_sKey)) continue;
    string detail = manager.m_Bases.Describe(base);
-   if (base.m_bBuilt && base.m_sOwner == frame.m_sKey) detail += ACR_FobSupply.Describe(base);
+   if (base.m_bBuilt && base.m_sOwner == frame.m_sKey)
+   {
+    detail += ACR_FobSupply.Describe(base);
+    detail += ACR_FobSlots.Describe(base);
+   }
    frame.m_BasePos.Insert(base.GetOrigin());
    frame.m_BaseNames.Insert(base.GetLabel());
    frame.m_BaseOwners.Insert(base.m_sOwner);
@@ -472,8 +476,25 @@ class ACR_MapFeed
    int delivery = 0;
    if (stock >= 0 && base.m_iSupplyDelivery > 0) delivery = Math.Max(1, Math.Ceil(base.m_fSupplyDeliveryLeft / 1000));
    frame.m_BaseSupply.Insert(delivery);
-   sig += base.GetLabel() + "|" + base.m_sOwner + "|" + detail + "|" + flag.ToString() + ";";
-   bytes += 12 + base.GetLabel().Length() + base.m_sOwner.Length() + detail.Length() + 4 * 8;
+   string slotSig = "";
+   for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
+   {
+    int slotState = -1;
+    if (stock >= 0 && base.m_aFobSlots && s < base.m_aFobSlots.Count())
+    {
+     ACR_FobSlot slot = base.m_aFobSlots[s];
+     if (slot.m_eState == ACR_EFobSlotState.BUILT) slotState = 100;
+     else if (slot.m_eState == ACR_EFobSlotState.BUILDING)
+     {
+      slotState = Math.ClampInt((int)((slot.m_fProgress / slot.m_fDuration) * 100), 0, 99);
+     }
+     else slotState = 0;
+    }
+    frame.m_BaseSupply.Insert(slotState);
+    slotSig += slotState.ToString() + ",";
+   }
+   sig += base.GetLabel() + "|" + base.m_sOwner + "|" + detail + "|" + flag.ToString() + "|" + slotSig + ";";
+   bytes += 12 + base.GetLabel().Length() + base.m_sOwner.Length() + detail.Length() + 4 * (8 + ACR_FobSlots.SLOT_COUNT);
   }
   frame.m_sBasesSig = sig;
   frame.m_Bytes.Set("bases", bytes + 28);

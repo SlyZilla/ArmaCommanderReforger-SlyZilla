@@ -1196,8 +1196,22 @@ modded class SCR_PlayerController
    if (baseIndex >= 0)
    {
     m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], m_ACR_Data.m_BaseDetails[baseIndex]);
-    int supplyOffset = baseIndex * 3;
-    if (m_ACR_Data.m_BaseSupply.Count() > supplyOffset + 2)
+    int stride = 3 + ACR_FobSlots.SLOT_COUNT;
+    int supplyOffset = baseIndex * stride;
+    if (m_ACR_Data.m_BaseSupply.Count() >= supplyOffset + stride)
+    {
+     int stock = m_ACR_Data.m_BaseSupply[supplyOffset];
+     int capacity = m_ACR_Data.m_BaseSupply[supplyOffset + 1];
+     int delivery = m_ACR_Data.m_BaseSupply[supplyOffset + 2];
+     bool ready = m_ACR_IsCommander && m_ACR_Data.m_BaseContested[baseIndex] == 0;
+     array<int> slotStates = {};
+     for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
+     {
+      slotStates.Insert(m_ACR_Data.m_BaseSupply[supplyOffset + 3 + s]);
+     }
+     m_ACR_Panel.SetFob(stock >= 0, ready && capacity - stock >= ACR_FobSupply.DELIVERY_AMOUNT && delivery == 0 && m_ACR_RP >= ACR_FobSupply.DELIVERY_COST, ready && stock > 0, slotStates, stock, ready);
+    }
+    else if (m_ACR_Data.m_BaseSupply.Count() > supplyOffset + 2)
     {
      int stock = m_ACR_Data.m_BaseSupply[supplyOffset];
      int capacity = m_ACR_Data.m_BaseSupply[supplyOffset + 1];
@@ -1328,6 +1342,12 @@ modded class SCR_PlayerController
   if (action >= ACR_EPanelAction.DEBUG_ACTION && action < ACR_EPanelAction.REQUISITION_ENTRY)
   {
    ACR_RequestDebug(action - ACR_EPanelAction.DEBUG_ACTION);
+   return;
+  }
+  if (action >= ACR_EPanelAction.FOB_UPGRADE && action < ACR_EPanelAction.FOB_UPGRADE + ACR_FobSlots.SLOT_COUNT)
+  {
+   int slot = action - ACR_EPanelAction.FOB_UPGRADE;
+   ACR_RequestFobUpgrade(m_ACR_SelectedBase, slot);
    return;
   }
   if (action >= ACR_EPanelAction.SUPPORT_ENTRY)
@@ -1796,6 +1816,32 @@ modded class SCR_PlayerController
   m_ACR_SelectedGroup = RplId.Invalid();
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   m_ACR_SelectedBase = label;
+ }
+
+ string ACR_SelectedBase() { return m_ACR_SelectedBase; }
+
+ void ACR_RequestFobUpgrade(string baseLabel, int slotIndex)
+ {
+  Rpc(ACR_FobUpgradeServer, baseLabel, slotIndex);
+ }
+
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_FobUpgradeServer(string baseLabel, int slotIndex)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastFobRequest < 500) return;
+  m_ACR_LastFobRequest = now;
+  string refusal;
+  string result = ACR_FobSlots.OrderUpgrade(manager, this, baseLabel, slotIndex, refusal);
+  if (!refusal.IsEmpty()) Rpc(ACR_FeedbackOwner, refusal);
+  else if (!result.IsEmpty()) Rpc(ACR_FeedbackOwner, result);
+ }
+
+ void ACR_TestFobUpgrade(string baseLabel, int slotIndex)
+ {
+  Rpc(ACR_FobUpgradeServer, baseLabel, slotIndex);
  }
 
 
