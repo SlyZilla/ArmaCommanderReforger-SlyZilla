@@ -113,7 +113,9 @@ Add these components to the game mode object. The Arland map has working example
   (the vanilla command post's storage capacity). Select its map marker as commander and order
   **500 supplies for 20 RP**, delivered after **60 uncontested seconds**. One delivery at a time;
   at least 500 free capacity is required. Standing inside the FOB's 40 m circle, choose **Build at
-  FOB** to use this stock without a truck. Supplies are charged when placing a blueprint; completing
+  FOB** to use this stock without a truck. Deliveries fill the CP's native physical storage; its
+  engineering table opens the same paid build menu, including service buildings and supply depots.
+  Construction and automatic services share this one balance. Supplies are charged when placing a blueprint; completing
   it does not charge again. Destroying/dismantling the command post removes its store and loses any
   pending paid delivery; there is no refund. Built FOBs never provide free truck restocking, and paid
   stock cannot be loaded into trucks. Existing non-built friendly deployment bases retain truck

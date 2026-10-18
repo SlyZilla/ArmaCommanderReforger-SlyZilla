@@ -212,6 +212,8 @@ class ACR_Logistics : Managed
  static SCR_ResourceContainer SupplyContainer(IEntity vehicle)
  {
   if (!vehicle) return null;
+  ACR_FobProviderComponent fob = ACR_FobProviderComponent.Cast(vehicle.FindComponent(ACR_FobProviderComponent));
+  if (fob) return ACR_FobSupply.CommandPostStore(fob.CommandPost());
   SCR_ResourceComponent resources = SCR_ResourceComponent.Cast(vehicle.FindComponent(SCR_ResourceComponent));
   if (resources)
   {

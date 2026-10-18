@@ -4,6 +4,8 @@
 
 Development changes since the released 0.5.4. Live/multiplayer acceptance remains pending.
 
+- Fixed paid FOB deliveries filling a separate store while the CP stayed empty. Construction and services now use the CP's native supply container; its engineering table opens the funded build menu with service buildings and supply depots available. Paid stock remains unavailable for truck loading.
+
 - Rare requisitions now scale their limited stock with threat even under stepped pricing: High quadruples rare stock, including four BTRs instead of one. Low reduces larger allocations with a minimum of one; rare-unit prices remain fixed.
 
 - Supply depots expand FOB storage from 1,000 to 3,000 supplies, with one bonus per FOB. FOB hospital/ammo/repair/fuel buildings now consume local supplies; empty or contested FOBs cannot provide automatic service. RP reinforcement and instant vehicle service remain available, with a configurable RP fee for instant infantry service at FOBs.

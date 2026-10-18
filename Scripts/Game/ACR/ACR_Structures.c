@@ -26,6 +26,23 @@ enum ACR_EStructure
 
 modded class SCR_CampaignBuildingCompositionComponent
 {
+ [RplProp()]
+ protected RplId m_ACRFobProvider = RplId.Invalid();
+
+ void ACR_SetFobProvider(IEntity provider)
+ {
+  RplComponent component = RplComponent.Cast(provider.FindComponent(RplComponent));
+  if (component) m_ACRFobProvider = component.Id();
+  Replication.BumpMe();
+ }
+
+ IEntity ACR_FobProvider()
+ {
+  RplComponent component = RplComponent.Cast(Replication.FindItem(m_ACRFobProvider));
+  if (component) return component.GetEntity();
+  return null;
+ }
+
 	protected bool m_bACRBuildCharged;
 	protected bool m_bACRBuildRejected;
 
@@ -322,7 +339,7 @@ class ACR_Structures : Managed
   fob.m_bAllowReinforce = true;
   fob.m_fRadius = FOB_RADIUS;
   fob.m_bBuilt = true;
-  ACR_FobSupply.Create(fob);
+  ACR_FobSupply.Create(fob, s.m_Entity);
   return fob;
  }
 

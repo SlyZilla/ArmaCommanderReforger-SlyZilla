@@ -1,8 +1,52 @@
-// Paid construction supplies. A separate SELF-only resource container feeds the building
-// interface without exposing paid stock to truck loading or vanilla passive generation.
+// Paid construction supplies live in the CP's native storage. A replicated editor
+// adapter exposes that single balance without permitting truck extraction.
 class ACR_FobProviderComponentClass : SCR_CampaignBuildingProviderComponentClass {}
 class ACR_FobProviderComponent : SCR_CampaignBuildingProviderComponent
 {
+ [RplProp(onRplName: "ACR_LinkStore")]
+ protected RplId m_ACRCommandPost = RplId.Invalid();
+
+ IEntity CommandPost()
+ {
+  RplComponent component = RplComponent.Cast(Replication.FindItem(m_ACRCommandPost));
+  if (component) return component.GetEntity();
+  return null;
+ }
+
+ void BindCommandPost(IEntity commandPost)
+ {
+  RplComponent component = RplComponent.Cast(commandPost.FindComponent(RplComponent));
+  if (!component) return;
+  m_ACRCommandPost = component.Id();
+  Replication.BumpMe();
+  ACR_LinkStore();
+ }
+
+ void ACR_LinkStore()
+ {
+  SCR_ResourceContainer store = ACR_FobSupply.CommandPostStore(CommandPost());
+  SCR_ResourceComponent resource = GetResourceComponent();
+  SCR_ResourceConsumer consumer;
+  if (resource) consumer = resource.GetConsumer(EResourceGeneratorID.DEFAULT, EResourceType.SUPPLIES);
+  if (!store || !consumer)
+  {
+   GetGame().GetCallqueue().CallLater(ACR_LinkStore, 250, false);
+   return;
+  }
+  consumer.RegisterContainerForced(store);
+ }
+
+ override void OnPostInit(IEntity owner)
+ {
+  super.OnPostInit(owner);
+  if (GetGame().InPlayMode() && !Replication.IsServer()) ACR_LinkStore();
+ }
+
+ void ~ACR_FobProviderComponent()
+ {
+  GetGame().GetCallqueue().Remove(ACR_LinkStore);
+ }
+
  [RplProp()]
  protected bool m_bBlocked;
 
@@ -36,6 +80,33 @@ class ACR_FobSupply
  static const int DELIVERY_COST = 20;
  static const float DELIVERY_MS = 60000;
 
+ // The CP's real native storage is the only balance. The map provider is an
+ // editor adapter, not a second bank of supplies.
+ static SCR_ResourceContainer CommandPostStore(IEntity entity)
+ {
+  if (!entity) return null;
+  SCR_ResourceComponent resource = SCR_ResourceComponent.Cast(entity.FindComponent(SCR_ResourceComponent));
+  SCR_ResourceContainer store;
+  if (resource) store = resource.GetContainer(EResourceType.SUPPLIES);
+  if (store && store.GetMaxResourceValue() > 0) return store;
+  for (IEntity child = entity.GetChildren(); child; child = child.GetSibling())
+  {
+   SCR_ResourceContainer found = CommandPostStore(child);
+   if (found) return found;
+  }
+  return null;
+ }
+
+ static IEntity EditorProvider(IEntity entity)
+ {
+  for (IEntity ancestor = entity; ancestor; ancestor = ancestor.GetParent())
+  {
+   SCR_CampaignBuildingCompositionComponent composition = SCR_CampaignBuildingCompositionComponent.Cast(ancestor.FindComponent(SCR_CampaignBuildingCompositionComponent));
+   if (composition && composition.ACR_FobProvider()) return composition.ACR_FobProvider();
+  }
+  return entity;
+ }
+
  static int Stock(IEntity provider)
  {
   SCR_ResourceContainer container = ACR_Logistics.SupplyContainer(provider);
@@ -58,13 +129,28 @@ class ACR_FobSupply
   return null;
  }
 
- static void Create(ACR_Base base)
+ static void Create(ACR_Base base, IEntity commandPost)
  {
   if (!base || !base.m_bBuilt || base.m_FobSupply) return;
   base.m_FobSupply = ACR_Manager.SpawnPrefab(PROVIDER, base.GetOrigin());
   if (!base.m_FobSupply) return;
   SCR_FactionAffiliationComponent faction = SCR_FactionAffiliationComponent.Cast(base.m_FobSupply.FindComponent(SCR_FactionAffiliationComponent));
   if (faction) faction.SetAffiliatedFaction(base.GetOwnerFaction());
+  ACR_FobProviderComponent provider = ACR_FobProviderComponent.Cast(base.m_FobSupply.FindComponent(ACR_FobProviderComponent));
+  SCR_CampaignBuildingCompositionComponent composition = SCR_CampaignBuildingCompositionComponent.Cast(commandPost.FindComponent(SCR_CampaignBuildingCompositionComponent));
+  if (composition) composition.ACR_SetFobProvider(base.m_FobSupply);
+  // A newly erected CP cannot bootstrap supplies from its native prefab.
+  SCR_ResourceContainer store = CommandPostStore(commandPost);
+  if (store)
+  {
+   store.SetResourceValue(0);
+   store.SetResourceGain(0);
+   // Native consumers can have discovered the completed CP before our next
+   // structures tick. Revoke those cached links when adopting its storage.
+   foreach (SCR_ResourceInteractor interactor : store.GetLinkedInteractorsCopy())
+    if (interactor && !SCR_ResourceEncapsulator.Cast(interactor)) interactor.UnregisterContainer(store);
+  }
+  if (provider) provider.BindCommandPost(commandPost);
  }
 
  static ACR_Base AtProvider(IEntity provider)
@@ -177,5 +263,60 @@ class ACR_FobSupply
    detail += string.Format("\nDelivery: %1 supplies, %2 s%3", base.m_iSupplyDelivery, Math.Ceil(base.m_fSupplyDeliveryLeft / 1000), state);
   }
   return detail;
+ }
+}
+
+// Both the physical CP interaction and the map action enter the same paid editor.
+modded class SCR_CampaignBuildingManagerComponent
+{
+ override void EnterEditorMode(int playerID, notnull IEntity provider, bool userActionActivationOnly = false, bool userActionUsed = false, bool useAllAvailableProviders = false)
+ {
+  IEntity actual = ACR_FobSupply.EditorProvider(provider);
+  super.EnterEditorMode(playerID, actual, userActionActivationOnly, userActionUsed, useAllAvailableProviders);
+ }
+}
+
+// CP stock remains native/replicated and visible, but cannot be extracted by
+// trucks, arsenals or vanilla generators. Only its paid construction adapter
+// may connect; ACR services debit the same container explicitly.
+modded class SCR_ResourceContainer
+{
+ override bool IsAllowed(notnull SCR_ResourceInteractor interactor)
+ {
+  IEntity provider = ACR_FobSupply.EditorProvider(GetOwner());
+  if (provider != GetOwner() && provider && provider.FindComponent(ACR_FobProviderComponent))
+   return interactor.GetOwner() == provider && SCR_ResourceConsumer.Cast(interactor) != null;
+  return super.IsAllowed(interactor);
+ }
+}
+
+// The physical engineering table's supply counter should show the paid store
+// even though vanilla's military-base consumer cannot find a campaign base here.
+modded class SCR_CampaignBuildingProviderComponent
+{
+ override SCR_ResourceComponent GetResourceComponent()
+ {
+  IEntity actual = ACR_FobSupply.EditorProvider(GetOwner());
+  if (actual != GetOwner()) return SCR_ResourceComponent.Cast(actual.FindComponent(SCR_ResourceComponent));
+  return super.GetResourceComponent();
+ }
+}
+
+modded class SCR_CampaignBuildingStartUserAction
+{
+ override bool GetActionNameScript(out string outName)
+ {
+  IEntity actual = ACR_FobSupply.EditorProvider(GetOwner());
+  if (actual != GetOwner())
+  {
+   SCR_ResourceComponent resource = SCR_ResourceComponent.Cast(actual.FindComponent(SCR_ResourceComponent));
+   if (resource != m_ResourceComponent)
+   {
+    m_ResourceSubscriptionHandleConsumer = null;
+    m_ResourceConsumer = null;
+    m_ResourceComponent = resource;
+   }
+  }
+  return super.GetActionNameScript(outName);
  }
 }
