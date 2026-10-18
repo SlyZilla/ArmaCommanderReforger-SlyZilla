@@ -205,6 +205,12 @@ modded class SCR_PlayerController
   m_ACR_ReinforceFeedbackCount++;
   m_ACR_ReinforceFeedbackAt = now;
  }
+ // Server: a hint for this player (e.g. a refused dismantle).
+ void ACR_Feedback(string message)
+ {
+  Rpc(ACR_FeedbackOwner, message);
+ }
+
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
  protected void ACR_FeedbackOwner(string message)
  {

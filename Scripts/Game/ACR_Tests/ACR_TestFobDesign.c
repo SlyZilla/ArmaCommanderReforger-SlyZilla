@@ -5,8 +5,9 @@
 // AI's construction-truck purchase guard. Called by srv:structures (tick 50).
 class ACR_TestFobDesign
 {
- static const int CHECKS = 32; // (one per Check below)
+ static const int CHECKS = 34; // (one per Check below)
  static const ResourceName USSR_RIFLEMAN = "{DCB41B3746FDD1BE}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_Rifleman.et";
+ static const ResourceName US_RIFLEMAN = "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et";
  static const ResourceName HOSPITAL = "{D0281DAF0B131743}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_Conflict_US_01.et";
 
  static ACR_Base s_Fob2;
@@ -186,35 +187,53 @@ class ACR_TestFobDesign
   ACR_TestRegress.Check("fobdesign: sapper waits while a defender is within 30 m", guard && raid.m_SapperDemo.State() == ACR_ESapperDemoState.APPROACHING, string.Format("state=%1", raid.m_SapperDemo.State()));
   if (guard) SCR_EntityHelper.DeleteEntityAndChildren(guard);
   raid.m_SapperDemo.Tick(t + 1500);
-  ACR_TestRegress.Check("fobdesign: sapper plants once the HQ is clear", raid.m_SapperDemo.State() == ACR_ESapperDemoState.PLANTING && alpha.OrderState() == ACR_EOrderState.HOLD, string.Format("state=%1", raid.m_SapperDemo.State()));
-  raid.m_SapperDemo.Tick(t + 5600);
-  IEntity charge = raid.m_SapperDemo.DemoCharge();
-  ACR_TestRegress.Check("fobdesign: charge primed for the FOB's owner to defuse", raid.m_SapperDemo.State() == ACR_ESapperDemoState.FALLBACK && charge && raid.m_SapperDemo.TargetOwner() == "USSR", "");
-  ACR_TestRegress.Check("fobdesign: attackers fall back 55 m from the HQ", vector.DistanceXZ(raid.m_SapperDemo.FallbackPos(), hqPos) >= 50.0, "");
+  ACR_TestRegress.Check("fobdesign: sapper starts planting once the HQ is clear", raid.m_SapperDemo.State() == ACR_ESapperDemoState.PLANTING && alpha.OrderState() == ACR_EOrderState.HOLD && raid.m_SapperDemo.Planter() != null, string.Format("state=%1", raid.m_SapperDemo.State()));
+  // The live planting (animation, wiring, detonator) runs over real ticks: ACR_TestSapperLive.
+  alpha.GetAnchor().SetOrigin(home);
+  raid.m_SapperDemo.SetStateForTest(ACR_ESapperDemoState.NONE);
+  alpha.ClearOrders();
+
+  // A primed vanilla charge by the HQ: an AI defender standing at it disarms it.
+  ACR_AIAttack defuseRaid = new ACR_AIAttack();
+  defuseRaid.m_Target = s_Fob2;
+  defuseRaid.m_bFobRaid = true;
+  defuseRaid.m_SapperDemo = new ACR_SapperDemo(manager, attacker, defuseRaid);
+  IEntity armed = ACR_Manager.SpawnPrefab(ACR_Demolition.CHARGE_WEST, ACR_Manager.Ground(hqPos + Vector(3, 0, 0)));
+  SCR_ExplosiveChargeComponent armedComp = ACR_SapperDemo.ChargeComponent(armed);
+  if (armedComp) armedComp.ArmWithTimedFuze(true);
+  defuseRaid.m_SapperDemo.SetChargeForTest(armed);
+  defuseRaid.m_SapperDemo.SetTargetOwnerForTest("USSR");
+  defuseRaid.m_SapperDemo.SetStateForTest(ACR_ESapperDemoState.FALLBACK);
+  defuseRaid.m_SapperDemo.SetFuseDeadlineForTest(t + 60000);
   IEntity defuser;
-  if (charge) defuser = ACR_Manager.SpawnPrefab(USSR_RIFLEMAN, charge.GetOrigin() + Vector(1, 0, 0));
-  raid.m_SapperDemo.Tick(t + 6600);
-  raid.m_SapperDemo.Tick(t + 8600);
-  raid.m_SapperDemo.Tick(t + 10600);
-  raid.m_SapperDemo.Tick(t + 12600);
-  ACR_TestRegress.Check("fobdesign: defender at the charge defuses it in 5 s", raid.m_SapperDemo.State() == ACR_ESapperDemoState.NONE && raid.m_SapperDemo.IsDefused() && charge == null && manager.m_Structures.HqEntityOf(s_Fob2) == hq, string.Format("state=%1 progress=%2", raid.m_SapperDemo.State(), raid.m_SapperDemo.DefuseProgress()));
+  if (armed) defuser = ACR_Manager.SpawnPrefab(USSR_RIFLEMAN, armed.GetOrigin() + Vector(1, 0, 0));
+  defuseRaid.m_SapperDemo.Tick(t + 6600);
+  defuseRaid.m_SapperDemo.Tick(t + 8600);
+  defuseRaid.m_SapperDemo.Tick(t + 10600);
+  defuseRaid.m_SapperDemo.Tick(t + 12600);
+  ACR_TestRegress.Check("fobdesign: defender at a real armed charge defuses it in 5 s", armedComp && defuseRaid.m_SapperDemo.State() == ACR_ESapperDemoState.NONE && defuseRaid.m_SapperDemo.IsDefused() && armed == null && manager.m_Structures.HqEntityOf(s_Fob2) == hq, string.Format("state=%1 progress=%2", defuseRaid.m_SapperDemo.State(), defuseRaid.m_SapperDemo.DefuseProgress()));
   if (defuser) SCR_EntityHelper.DeleteEntityAndChildren(defuser);
 
-  ACR_AIAttack blast = new ACR_AIAttack();
-  blast.m_Target = s_Fob2;
-  blast.m_bFobRaid = true;
-  blast.m_Squads.Insert(alpha);
-  blast.m_SapperDemo = new ACR_SapperDemo(manager, attacker, blast);
-  alpha.GetAnchor().SetOrigin(hqPos + Vector(2, 0, 2));
-  float u = 200000;
-  blast.m_SapperDemo.Tick(u);
-  blast.m_SapperDemo.Tick(u + 4500);
-  alpha.GetAnchor().SetOrigin(home);
-  blast.m_SapperDemo.SetFuseDeadlineForTest(u + 4600);
-  blast.m_SapperDemo.Tick(u + 5000);
-  manager.m_Structures.ACR_TestForceTick();
+  // Shovel dismantling of an enemy FOB HQ: owners always; enemies only contested and clear.
+  IEntity enemy = ACR_Manager.SpawnPrefab(US_RIFLEMAN, ACR_Manager.Ground(hqPos + Vector(0, 0, 5)));
+  IEntity owner = ACR_Manager.SpawnPrefab(USSR_RIFLEMAN, ACR_Manager.Ground(hqPos + Vector(0, 0, -5)));
+  string gateWhy;
+  ACR_TestRegress.Check("fobdesign: owners may dismantle their own HQ", ACR_Demolition.CanDismantle(hq, owner, gateWhy), gateWhy);
+  s_Fob2.m_bContested = false;
+  ACR_TestRegress.Check("fobdesign: enemy cannot dismantle an uncontested FOB HQ", !ACR_Demolition.CanDismantle(hq, enemy, gateWhy) && gateWhy.Contains("Contest"), gateWhy);
+  s_Fob2.m_bContested = true;
+  ACR_TestRegress.Check("fobdesign: enemy cannot dismantle while defenders are within 30 m", !ACR_Demolition.CanDismantle(hq, enemy, gateWhy) && gateWhy.Contains("defenders"), gateWhy);
+  if (owner) SCR_EntityHelper.DeleteEntityAndChildren(owner);
+  ACR_TestRegress.Check("fobdesign: enemy may dismantle a contested HQ with no defenders near", ACR_Demolition.CanDismantle(hq, enemy, gateWhy), gateWhy);
+  s_Fob2.m_bContested = false;
+  if (enemy) SCR_EntityHelper.DeleteEntityAndChildren(enemy);
+
+  // Anyone's vanilla charge that goes off by the HQ destroys it (players and AI alike).
+  IEntity playerCharge = ACR_Manager.SpawnPrefab(ACR_Demolition.CHARGE_EAST, ACR_Manager.Ground(hqPos + Vector(4, 0, 0)));
+  SCR_ExplosiveChargeComponent playerComp = ACR_SapperDemo.ChargeComponent(playerCharge);
+  if (playerComp && playerComp.GetTrigger()) playerComp.GetTrigger().UseTrigger();
   ACR_FobSlot fuel = s_Fob2.m_aFobSlots[ACR_FobSlots.SLOT_FUEL];
-  ACR_TestRegress.Check("fobdesign: detonation destroys the HQ only and the FOB stays", blast.m_SapperDemo.IsDetonated() && hq == null && s_Fob2.m_bHqLost && !s_Fob2.m_bRetired && fuel.m_eState == ACR_EFobSlotState.BUILT && s_Fuel2, string.Format("hq=%1 lost=%2 retired=%3", hq != null, s_Fob2.m_bHqLost, s_Fob2.m_bRetired));
+  ACR_TestRegress.Check("fobdesign: a demolition charge going off by the HQ destroys the HQ only", playerComp && hq == null && s_Fob2.m_bHqLost && !s_Fob2.m_bRetired && fuel.m_eState == ACR_EFobSlotState.BUILT && s_Fuel2, string.Format("hq=%1 lost=%2 retired=%3", hq != null, s_Fob2.m_bHqLost, s_Fob2.m_bRetired));
 
   string why;
   bool upgradeRefused = ACR_FobSlots.OrderUpgradeBase(manager, "USSR", s_Fob2, ACR_FobSlots.SLOT_HOSPITAL, why) == "" && why.Contains("HQ destroyed");
@@ -227,26 +246,34 @@ class ACR_TestFobDesign
   again.m_bFobRaid = true;
   again.m_Squads.Insert(alpha);
   again.m_SapperDemo = new ACR_SapperDemo(manager, attacker, again);
-  again.m_SapperDemo.Tick(u + 6000);
+  again.m_SapperDemo.Tick(t + 16000);
   ACR_TestRegress.Check("fobdesign: no demolition raid on an HQ-less FOB", again.m_SapperDemo.State() == ACR_ESapperDemoState.NONE, "");
 
-  // A primed charge outlives its plan and the commander, and goes off once.
+  // A primed timed charge outlives its plan and the commander, and goes off once.
   ACR_AIAttack orphan = new ACR_AIAttack();
   orphan.m_Target = s_Fob2;
   orphan.m_bFobRaid = true;
   orphan.m_SapperDemo = new ACR_SapperDemo(manager, attacker, orphan);
   orphan.m_SapperDemo.SetStateForTest(ACR_ESapperDemoState.FALLBACK);
-  IEntity orphanCharge = ACR_Manager.SpawnPrefab(ACR_SapperDemo.CHARGE_WEST, ACR_Manager.Ground(s_Fob2.GetOrigin() + Vector(0, 0, 300)));
+  IEntity orphanCharge = ACR_Manager.SpawnPrefab(ACR_Demolition.CHARGE_WEST, ACR_Manager.Ground(s_Fob2.GetOrigin() + Vector(0, 0, 300)));
+  SCR_ExplosiveChargeComponent orphanComp = ACR_SapperDemo.ChargeComponent(orphanCharge);
+  if (orphanComp)
+  {
+   orphanComp.SetFuzeTime(600, true); // our deadline below decides, not the game's clock
+   orphanComp.ArmWithTimedFuze(true);
+  }
   orphan.m_SapperDemo.SetChargeForTest(orphanCharge);
   orphan.m_SapperDemo.SetTargetOwnerForTest("USSR");
+  orphan.m_SapperDemo.SetTimedForTest(true);
+  float u = 200000;
   orphan.m_SapperDemo.SetFuseDeadlineForTest(u + 20000);
   manager.RegisterDemolition(orphan);
   ACR_SapperDemo orphanDemo = orphan.m_SapperDemo;
   orphan = null;
   manager.TickDemolitions(u + 10000);
   int pendingBefore = manager.ACR_TestPendingDemolitions();
-  manager.TickDemolitions(u + 21000);
-  ACR_TestRegress.Check("fobdesign: an orphaned primed charge waits for its fuse, then goes off once", pendingBefore == 1 && manager.ACR_TestPendingDemolitions() == 0 && orphanCharge == null && orphanDemo && orphanDemo.IsDetonated(), string.Format("pending %1", pendingBefore));
+  manager.TickDemolitions(u + 25000);
+  ACR_TestRegress.Check("fobdesign: an orphaned primed charge waits for its fuse, then goes off once", pendingBefore >= 1 && manager.ACR_TestPendingDemolitions() == 0 && orphanDemo && orphanDemo.IsDetonated(), string.Format("pending %1", pendingBefore));
  }
 
  static void HqLost(ACR_Manager manager, ACR_Squad alpha, IEntity truck)

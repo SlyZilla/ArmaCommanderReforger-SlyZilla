@@ -487,7 +487,7 @@ class ACR_Manager : Managed
  void RegisterDemolition(ACR_AIAttack attack)
  {
   if (!attack || !attack.m_SapperDemo || m_PrimedDemolitions.Contains(attack)) return;
-  if (attack.m_SapperDemo.State() == ACR_ESapperDemoState.FALLBACK) m_PrimedDemolitions.Insert(attack);
+  if (attack.m_SapperDemo.InProgress()) m_PrimedDemolitions.Insert(attack);
  }
 
  void TickDemolitions(float now)
@@ -503,7 +503,7 @@ class ACR_Manager : Managed
     ACR_AICommander defender = AICommanderFor(attack.m_SapperDemo.TargetOwner());
     if (defender && IsAIInCommand(attack.m_SapperDemo.TargetOwner()) && attack.m_SapperDemo.DemoCharge()) defender.RespondToCharge(attack.m_SapperDemo.DemoCharge().GetOrigin());
    }
-   if (!attack || !attack.m_SapperDemo || attack.m_SapperDemo.State() != ACR_ESapperDemoState.FALLBACK || !attack.m_Target || attack.m_Target.m_bRetired)
+   if (!attack || !attack.m_SapperDemo || !attack.m_SapperDemo.InProgress() || !attack.m_Target || attack.m_Target.m_bRetired)
     m_PrimedDemolitions.RemoveOrdered(i);
   }
  }

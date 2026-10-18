@@ -9,7 +9,9 @@
 - Each upgrade spot is checked on its own. A blocked spot shows as blocked in the panel, and a matching building already inside the FOB counts as that upgrade.
 - FIA heavy maintenance and large barracks keep the small buildings (FIA has no larger models) but give the full upgrade effect.
 - The AI commander now builds FOBs when its front is far from a deployment base, upgrades them, orders supplies while keeping an RP reserve, and rebuilds lost headquarters.
-- AI sappers can raid enemy FOBs. They plant only once no defender is within 30 m of the headquarters. Defenders can defuse a charge by standing next to it for 5 seconds during its 45-second fuse; AI defenders are sent to do this. A detonation destroys only the headquarters.
+- AI sappers can raid enemy FOBs. Once no defender is within 30 m of the headquarters, a sapper crouches, sets a real demolition charge with the game's own animations, wires it to his blasting machine and falls back, then fires it 45 seconds later. Defenders can disarm the charge with the normal Disarm action; AI defenders are sent to stand at it. The blast destroys only the headquarters.
+- Players can destroy an enemy FOB headquarters too: any M112 or TSh-400 charge that goes off within 10 m of it does the job, on a timer or a detonator.
+- Dismantling an enemy FOB headquarters with a shovel now needs the FOB contested and no defenders within 30 m.
 - A FOB whose headquarters is destroyed goes offline: no deployment, reinforcement, services, deliveries or upgrades. Its buildings remain, and can be captured with the FOB. An Establish FOB order inside it rebuilds the headquarters and brings it back online.
 - Capturing a FOB now transfers its buildings and upgrades to the new owner.
 

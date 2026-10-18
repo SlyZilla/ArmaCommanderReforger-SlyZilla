@@ -418,6 +418,21 @@ class ACR_Structures : Managed
   return true;
  }
 
+ // Active HQ compositions within a radius of a point.
+ void HqsNear(vector position, float radius, notnull array<IEntity> found)
+ {
+  found.Clear();
+  foreach (ACR_Structure s : m_Active)
+   if (s.m_Entity && s.m_eKind == ACR_EStructure.HQ && vector.DistanceXZ(s.m_Entity.GetOrigin(), position) <= radius) found.Insert(s.m_Entity);
+ }
+
+ // Re-run the structures tick now (a demolition should take effect at once).
+ void ACR_ForceTick()
+ {
+  m_fNextTick = 0;
+  Tick();
+ }
+
  ACR_Structure FindStructure(IEntity root)
  {
   foreach (ACR_Structure s : m_Active) if (s.m_Entity == root) return s;
