@@ -32,6 +32,7 @@ class ACR_Base : GenericEntity
  string m_sCapturer;                // neutral base: faction currently taking it
  bool m_bContested;
  int m_iGarrisonLeft;               // soldiers still in reserve (virtual while not deployed)
+ int m_iHousingGarrison;            // capacity supplied by completed friendly FOB barracks
  SCR_AIGroup m_GarrisonGroup;       // spawned only while enemies are near
  ref array<string> m_aDetectedBy = {};
  bool m_bBuilt;                     // a forward base made by a built HQ (ACR_Structures)

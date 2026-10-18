@@ -271,6 +271,7 @@ class ACR_BaseSystem : Managed
   base.m_sCapturer = "";
   base.m_fScore = 100;
   base.m_bContested = false;
+  if (manager.m_Structures) manager.m_Structures.UpdateHousing(base);
   // Like the original: the new owner gets half the original garrison.
   base.m_iGarrisonLeft = Math.Ceil(base.m_iGarrison * 0.5);
   if (!base.m_aDetectedBy.Contains(factionKey)) base.m_aDetectedBy.Insert(factionKey);
@@ -281,6 +282,56 @@ class ACR_BaseSystem : Managed
  }
 
  // ================================================================ garrisons
+
+ // Housing grants defenders once on completion, including during an attack.
+ // Losing housing reduces capacity and recalls only excess surviving AI guards.
+ void ResizeGarrison(ACR_Base base, int change)
+ {
+  base.m_iGarrison = Math.Max(0, base.m_iGarrison + change);
+  int alive = base.m_iGarrisonLeft;
+  if (base.m_GarrisonGroup) alive = CountAlive(base.m_GarrisonGroup);
+  int wanted = Math.Min(base.m_iGarrison, alive + Math.Max(0, change));
+  base.m_iGarrisonLeft = wanted;
+  SCR_AIGroup group = base.m_GarrisonGroup;
+  if (!group) return;
+  if (wanted > alive)
+  {
+   array<ResourceName> pool = GetFaction(base.m_sOwner).m_aGarrison;
+   if (pool.IsEmpty()) return;
+   for (int i = alive; i < wanted; i++) AddGarrisonSoldier(base, group, pool);
+  }
+  else if (wanted < alive)
+  {
+   array<AIAgent> agents = {};
+   group.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity soldier = agent.GetControlledEntity();
+    if (alive <= wanted) break;
+    if (!soldier || !ACR_Respawn.IsAlive(soldier) || ACR_Squad.FindController(soldier)) continue;
+    SCR_EntityHelper.DeleteEntityAndChildren(soldier);
+    alive--;
+   }
+  }
+ }
+
+ protected void AddGarrisonSoldier(ACR_Base base, SCR_AIGroup group, array<ResourceName> pool)
+ {
+  float spread = Math.Min(base.m_fRadius * 0.6, 25);
+  vector offset = Vector(Math.RandomFloat(-spread, spread), 0, Math.RandomFloat(-spread, spread));
+  vector spot = ACR_Manager.Ground(base.GetOrigin() + offset);
+  vector free;
+  if (SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 5, 0.6, 2)) spot = ACR_Manager.Ground(free);
+  IEntity soldier = ACR_Manager.SpawnPrefab(pool.GetRandomElement(), spot);
+  if (!soldier) return;
+  if (!group.AddAIEntityToGroup(soldier))
+  {
+   SCR_EntityHelper.DeleteEntityAndChildren(soldier);
+   return;
+  }
+  FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(soldier.FindComponent(FactionAffiliationComponent));
+  if (affiliation) affiliation.SetAffiliatedFactionByKey(base.m_sOwner);
+ }
 
  protected void UpdateGarrison(ACR_Manager manager, ACR_Base base, bool enemyNear, bool enemyInRange)
  {
@@ -326,19 +377,8 @@ class ACR_BaseSystem : Managed
   m_GarrisonGroups.Insert(group); // before any soldier joins, so it is never registered as a squad
   group.SetDeleteWhenEmpty(false); // we delete it ourselves; otherwise it vanishes mid-fight and respawns
   group.SetCustomName(base.m_sName + " garrison", 0);
-  float spread = Math.Min(base.m_fRadius * 0.6, 25);
   for (int i = 0; i < base.m_iGarrisonLeft; i++)
-  {
-   vector offset = Vector(Math.RandomFloat(-spread, spread), 0, Math.RandomFloat(-spread, spread));
-   vector spot = ACR_Manager.Ground(center + offset);
-   vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 5, 0.6, 2)) spot = ACR_Manager.Ground(free);
-   IEntity soldier = ACR_Manager.SpawnPrefab(pool.GetRandomElement(), spot);
-   if (!soldier) continue;
-   if (!group.AddAIEntityToGroup(soldier)) PrintFormat("[ACR] Garrison soldier %1 could not join its group", i);
-   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(soldier.FindComponent(FactionAffiliationComponent));
-   if (affiliation) affiliation.SetAffiliatedFactionByKey(base.m_sOwner);
-  }
+   AddGarrisonSoldier(base, group, pool);
   ACR_Squad.KeepSimulated(group);
   base.m_GarrisonGroup = group;
   // The base's buildings get posts at their windows; the soldiers start on them (the

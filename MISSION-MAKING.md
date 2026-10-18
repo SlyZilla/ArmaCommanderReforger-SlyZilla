@@ -132,6 +132,14 @@ Add these components to the game mode object. The Arland map has working example
   its existing RP price. Supplied service buildings provide gradual, cheaper service and require the
   matching building (hospital, ammo, maintenance, fuel); a supply depot provides storage only.
 
+  Heavy maintenance bays repair 21% per 10-second service step versus light bays' 15%, with the
+  same range and supply cost. Completed friendly living quarters inside a built FOB add 11
+  defenders for the small (275-supply) variant or 19 for the large (475-supply) variant. Multiple
+  quarters stack. Defenders join the normal garrison system, deploying when enemies approach and
+  keeping casualties when packed away. Quarters grant defenders once; losing quarters lowers
+  capacity and recalls excess AI guards. Captured enemy quarters give no bonus. Engineers do not
+  automatically complete player blueprints; players still use the shovel/build interaction.
+
 ### Deployment and reinforcement logistics
 
 Generated sites have explicit roles. HQs, captured military sites (including airfields) and built

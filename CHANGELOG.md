@@ -4,6 +4,8 @@
 
 Development changes since the released 0.5.4. Outstanding live checks: air-lift clearance and RTS camera; the other existing checks were dismissed by Jacob.
 
+- Heavy maintenance bays repair 40% more per service step than light bays, with the same supply cost, range and interval. Completed small/large living quarters inside a friendly FOB add 11/19 garrison defenders, proportional to their 275/475-supply construction costs. Multiple quarters stack; casualties persist, and losing quarters reduces garrison capacity.
+
 - Built FOBs now require a completed friendly radio relay inside their circle for new-unit deployment and RP reinforcement, including AI purchases. Removing the relay disables both until rebuilt; construction, deliveries and supply-paid services continue. Mission makers and hosts can disable the requirement through the mission header, command line or startup Logistics settings. Captured military bases and village reinforcement retain their existing rules.
 
 - Fixed paid FOB deliveries filling a separate store while the CP stayed empty. Construction and services now use the CP's native supply container; its engineering table opens the funded build menu with service buildings and supply depots available. Paid stock remains unavailable for truck loading.

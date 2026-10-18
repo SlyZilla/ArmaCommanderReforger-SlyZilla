@@ -5,6 +5,11 @@
 // be bought; removing the structures undoes it.
 class ACR_TestStructures
 {
+ static const ResourceName QUARTERS_SMALL = "{DB7F01C68EACBEC0}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_LivingArea_S_US_01.et";
+ static const ResourceName QUARTERS_LARGE = "{74B740B56C82C0CF}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatLarge/E_LivingArea_L_US_01.et";
+ static const ResourceName REPAIR_LIGHT = "{A0FEA3E718F5B605}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_VehicleMaintenance_S_Conflict_US_01.et";
+ static IEntity s_QuartersSmall, s_QuartersLarge, s_RepairLight;
+ static ACR_Base s_GuardBase;
  static const ResourceName HOSPITAL = "{D0281DAF0B131743}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_Conflict_US_01.et";
  static const ResourceName REPAIR = "{7AD06D9CF2672AC5}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_VehicleMaintenance_M_Conflict_US_01.et";
  static const ResourceName FUEL = "{6D2A35DA74224780}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_FuelStorage_S_US_01.et";
@@ -24,6 +29,100 @@ class ACR_TestStructures
  static IEntity s_RejectedBuild;
  static IEntity s_Depot, s_ExtraDepot, s_FobFuel, s_FobVehicle;
  static SCR_AIGroup s_RPServiceGroup;
+
+ static void CheckHousingAndRepair(ACR_Manager manager)
+ {
+  ACR_Base fob = s_Fob;
+  ACR_FobProviderComponent provider = ACR_FobProviderComponent.Cast(fob.m_FobSupply.FindComponent(ACR_FobProviderComponent));
+  CheckCatalog(provider, QUARTERS_SMALL);
+  CheckCatalog(provider, QUARTERS_LARGE);
+  ACR_TestRegress.Check("housing: outside quarters give no defenders", s_QuartersSmall && s_QuartersLarge && fob.m_iGarrison == 0, "");
+  SCR_CampaignBuildingCompositionComponent small = SCR_CampaignBuildingCompositionComponent.Cast(s_QuartersSmall.FindComponent(SCR_CampaignBuildingCompositionComponent));
+  SCR_CampaignBuildingCompositionComponent large = SCR_CampaignBuildingCompositionComponent.Cast(s_QuartersLarge.FindComponent(SCR_CampaignBuildingCompositionComponent));
+  ACR_TestRegress.Check("housing: native costs are 275 and 475 supplies", small.ACR_CompositionCost() == 275 && large.ACR_CompositionCost() == 475, "");
+  s_QuartersSmall.SetOrigin(fob.GetOrigin() + Vector(0, 0, 15));
+  small.ACR_TestRelayCompletion(false);
+  manager.m_Structures.UpdateHousing(fob);
+  ACR_TestRegress.Check("housing: unfinished quarters give no defenders", fob.m_iGarrison == 0 && fob.m_iGarrisonLeft == 0, "");
+  small.ACR_TestRelayCompletion(true);
+  manager.m_Structures.UpdateHousing(fob);
+  ACR_TestRegress.Check("housing: small quarters add eleven defenders", fob.m_iGarrison == 11 && fob.m_iGarrisonLeft == 11, "");
+  s_QuartersLarge.SetOrigin(fob.GetOrigin() + Vector(0, 0, -15));
+  manager.m_Structures.UpdateHousing(fob);
+  ACR_TestRegress.Check("housing: large quarters add nineteen defenders", fob.m_iGarrison == 30 && fob.m_iGarrisonLeft == 30, "");
+  manager.m_Structures.UpdateHousing(fob);
+  ACR_TestRegress.Check("housing: repeated updates never duplicate defenders", fob.m_iGarrison == 30 && fob.m_iGarrisonLeft == 30, "");
+  fob.m_iGarrisonLeft = 23;
+  manager.m_Structures.UpdateHousing(fob);
+  ACR_TestRegress.Check("housing: surviving quarters do not replenish casualties", fob.m_iGarrisonLeft == 23, "");
+  manager.m_Bases.DebugCapture(manager, fob, "USSR");
+  ACR_TestRegress.Check("housing: capture removes enemy housing bonus", fob.m_iGarrison == 0 && fob.m_iGarrisonLeft == 0, "");
+  manager.m_Bases.DebugCapture(manager, fob, "US");
+  ACR_TestRegress.Check("housing: recapture uses normal half-garrison rule", fob.m_iGarrison == 30 && fob.m_iGarrisonLeft == 15, "");
+  SCR_EntityHelper.DeleteEntityAndChildren(s_QuartersLarge);
+  manager.m_Structures.UpdateHousing(fob);
+  ACR_TestRegress.Check("housing: losing large quarters clamps survivors to eleven", fob.m_iGarrison == 11 && fob.m_iGarrisonLeft == 11, "");
+  SCR_EntityHelper.DeleteEntityAndChildren(s_QuartersSmall);
+  manager.m_Structures.UpdateHousing(fob);
+  ACR_TestRegress.Check("housing: losing all quarters removes the garrison", fob.m_iGarrison == 0 && fob.m_iGarrisonLeft == 0, "");
+
+  // Exercise the real repair and spending path on one vehicle, with identical damage.
+  IEntity vehicle = Place(HUMVEE, fob.GetOrigin() + Vector(0, 0, 60));
+  SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(vehicle.FindComponent(SCR_DamageManagerComponent));
+  SCR_ResourceContainer store = ACR_Logistics.SupplyContainer(fob.m_FobSupply);
+  vector repairOrigin = s_Repair.GetOrigin();
+  s_Repair.SetOrigin(fob.GetOrigin() + Vector(12, 0, 0));
+  s_RepairLight.SetOrigin(fob.GetOrigin() + Vector(-12, 0, 0));
+  ACR_Options.Set("acrFobServices", "supplies");
+  damage.FullHeal();
+  damage.SetHealthScaled(0.2);
+  store.SetResourceValue(10);
+  manager.m_Logistics.ACR_TestRepairStep(s_RepairLight, vehicle, 10000000);
+  float lightGain = damage.GetHealthScaled() - 0.2;
+  int lightCost = 10 - store.GetResourceValue();
+  damage.FullHeal();
+  damage.SetHealthScaled(0.2);
+  store.SetResourceValue(10);
+  manager.m_Logistics.ACR_TestRepairStep(s_Repair, vehicle, 10000000);
+  float heavyGain = damage.GetHealthScaled() - 0.2;
+  ACR_TestRegress.Check("repair: heavy bay delivers forty percent more repair", lightGain > 0 && Math.AbsFloat(heavyGain - lightGain * 1.4) < 0.005, string.Format("light %1 heavy %2", lightGain, heavyGain));
+  ACR_TestRegress.Check("repair: light and heavy steps both cost ten supplies", lightCost == 10 && store.GetResourceValue() == 0, "");
+  store.SetResourceValue(10);
+  float health = damage.GetHealthScaled();
+  manager.m_Logistics.ACR_TestRepairStep(s_RepairLight, vehicle, 10005000);
+  manager.m_Logistics.ACR_TestRepairStep(s_Repair, vehicle, 10005000);
+  ACR_TestRegress.Check("repair: both bays retain ten second cooldown", damage.GetHealthScaled() == health && store.GetResourceValue() == 10, "");
+  store.SetResourceValue(0);
+  manager.m_Logistics.ACR_TestRepairStep(s_Repair, vehicle, 10020000);
+  ACR_TestRegress.Check("repair: heavy bay cannot repair without supplies", damage.GetHealthScaled() == health, "");
+  store.SetResourceValue(1000);
+  ACR_Options.Set("acrFobServices", "free");
+  s_Repair.SetOrigin(repairOrigin);
+  SCR_EntityHelper.DeleteEntityAndChildren(s_RepairLight);
+  SCR_EntityHelper.DeleteEntityAndChildren(vehicle);
+  EntitySpawnParams parameters = new EntitySpawnParams();
+  parameters.TransformMode = ETransformMode.WORLD;
+  parameters.Transform[3] = ACR_Manager.Ground(fob.GetOrigin() + Vector(80, 0, 0));
+  s_GuardBase = ACR_Base.Cast(GetGame().SpawnEntity(ACR_Base, GetGame().GetWorld(), parameters));
+  // Isolate the live-group fixture from automatic packing/capture ticks.
+  ACR_Base.s_All.RemoveItem(s_GuardBase);
+  s_GuardBase.m_sOwner = "US";
+  s_GuardBase.m_sName = "Housing test garrison";
+  s_GuardBase.m_fRadius = 40;
+  s_GuardBase.m_iGarrison = 11;
+  s_GuardBase.m_iGarrisonLeft = 11;
+  manager.m_Bases.ACR_TestSpawnGuards(s_GuardBase);
+ }
+
+ static int GuardCount()
+ {
+  int count;
+  array<AIAgent> agents = {};
+  if (s_GuardBase.m_GarrisonGroup) s_GuardBase.m_GarrisonGroup.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+   if (ACR_Respawn.IsAlive(agent.GetControlledEntity())) count++;
+  return count;
+ }
 
  static IEntity EngineeringTable(IEntity entity)
  {
@@ -257,6 +356,9 @@ class ACR_TestStructures
     if (!InsideABase(candidate, 60) && !BBB_Terrain.IsWaterAt(candidate)) { hqSpot = candidate; break; }
    }
    s_HQ = Place(HQ, hqSpot);
+   s_QuartersSmall = Place(QUARTERS_SMALL, hqSpot + Vector(90, 0, 0));
+   s_QuartersLarge = Place(QUARTERS_LARGE, hqSpot + Vector(-90, 0, 0));
+   s_RepairLight = Place(REPAIR_LIGHT, hqSpot + Vector(0, 0, 90));
    ACR_TestFobRelay.Spawn(hqSpot);
   }
   if (tick == 8)
@@ -297,6 +399,39 @@ class ACR_TestStructures
     GetGame().GetCallqueue().CallLater(CheckHeliOnPad, 3000, false, pad);
    }
    else Print("[ACR] STRUCTURETEST no helicopter in the US buy list");
+  }
+  if (tick == 12) CheckHousingAndRepair(manager);
+  if (tick > 12 && tick < 26) ACR_Base.s_All.RemoveItem(s_GuardBase);
+  if (tick == 16)
+  {
+   ACR_TestRegress.Check("housing: eleven real defenders deploy", GuardCount() == 11, GuardCount().ToString());
+   manager.m_Bases.ResizeGarrison(s_GuardBase, 19);
+  }
+  if (tick == 20)
+  {
+   ACR_TestRegress.Check("housing: live garrison gains nineteen real defenders", GuardCount() == 30, GuardCount().ToString());
+   array<AIAgent> guards = {};
+   s_GuardBase.m_GarrisonGroup.GetAgents(guards);
+   foreach (AIAgent guard : guards)
+   {
+    if (!ACR_Respawn.IsAlive(guard.GetControlledEntity())) continue;
+    SCR_EntityHelper.DeleteEntityAndChildren(guard.GetControlledEntity());
+    break;
+   }
+  }
+  if (tick == 22)
+  {
+   manager.m_Bases.ResizeGarrison(s_GuardBase, 0);
+   ACR_TestRegress.Check("housing: live casualties persist without replenishment", GuardCount() == 29 && s_GuardBase.m_iGarrisonLeft == 29, GuardCount().ToString());
+   manager.m_Bases.ResizeGarrison(s_GuardBase, -19);
+  }
+  if (tick == 26)
+  {
+   ACR_TestRegress.Check("housing: capacity loss recalls excess real defenders", GuardCount() == 11 && s_GuardBase.m_iGarrison == 11, GuardCount().ToString());
+   manager.m_Bases.ACR_TestPackGuards(s_GuardBase);
+   ACR_TestRegress.Check("housing: packing preserves surviving defenders", !s_GuardBase.m_GarrisonGroup && s_GuardBase.m_iGarrisonLeft == 11, "");
+   s_GuardBase.Retire("fixture complete");
+   SCR_EntityHelper.DeleteEntityAndChildren(s_GuardBase);
   }
   if (tick == 18)
   {
@@ -401,7 +536,7 @@ class ACR_TestStructures
    ACR_Helipad last = ACR_Helipad.s_All[ACR_Helipad.s_All.Count() - 1];
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
    ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
-   ACR_TestRegress.Complete("structures", 62 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS);
+   ACR_TestRegress.Complete("structures", 84 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS);
   }
  }
 
@@ -417,4 +552,18 @@ class ACR_TestStructures
   }
   ACR_TestRegress.Check("structures: the bought helicopter appeared on the built helipad", best < 4, string.Format("%1 m", best));
  }
+}
+
+modded class ACR_Logistics
+{
+ void ACR_TestRepairStep(IEntity station, IEntity vehicle, float now)
+ {
+  ServeVehicle(station, ACR_EService.REPAIR, vehicle, now);
+ }
+}
+
+modded class ACR_BaseSystem
+{
+ void ACR_TestSpawnGuards(ACR_Base base) { SpawnGarrison(base); }
+ void ACR_TestPackGuards(ACR_Base base) { DespawnGarrison(base, true); }
 }

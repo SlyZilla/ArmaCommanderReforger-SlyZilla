@@ -59,6 +59,9 @@ use its supplies for automatic service; RP reinforcement remains available. Gene
 send infantry replacements, while HQs, military sites and FOBs deploy new formations. The startup
 **Logistics settings** page lets hosts change these policies, capacity bonuses and service costs;
 mission makers can set defaults and per-base roles.
+Heavy maintenance bays repair 40% more per step than light bays for the same supplies. Completed
+small/large living quarters inside a friendly FOB add 11/19 defenders; multiple quarters stack,
+casualties persist, and losing quarters reduces capacity. Engineers do not automatically build blueprints.
 Jacob dismissed the outstanding live/multiplayer check for these controls on 17 Oct.
 
 ## Legacy ZIP / development launchers

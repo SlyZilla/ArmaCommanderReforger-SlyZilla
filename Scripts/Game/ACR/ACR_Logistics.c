@@ -50,7 +50,7 @@ class ACR_Logistics : Managed
  protected static ref map<ResourceName, int> s_ServiceCache = new map<ResourceName, int>();
 
  // Service points: built structures (ACR_Structures: field hospital, vehicle maintenance, ammo
- // and fuel storage). Free and unlimited, but slow: soldiers are served after POINT_DWELL_MS in
+ // and fuel storage). Supplied from the FOB by default; soldiers are served after POINT_DWELL_MS in
  // range (then every POINT_SOLDIER_MS), vehicles one step every POINT_VEHICLE_MS.
  static const float POINT_DWELL_MS = 20000;
  static const float POINT_SOLDIER_MS = 30000;
@@ -612,8 +612,9 @@ class ACR_Logistics : Managed
    SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(vehicle.FindComponent(SCR_DamageManagerComponent));
    if (damage && !damage.IsDestroyed() && damage.GetHealthScaled() < 0.99 && Use(station, 1))
    {
-    damage.HealHitZones(damage.GetMaxHealth() * 0.15);
-    damage.SetHealthScaled(Math.Min(1, damage.GetHealthScaled() + 0.15));
+    float repair = ACR_Structures.RepairFraction(station);
+    damage.HealHitZones(damage.GetMaxHealth() * repair);
+    damage.SetHealthScaled(Math.Min(1, damage.GetHealthScaled() + repair));
    }
   }
   if ((flags & ACR_EService.FUEL) != 0)

@@ -2,7 +2,7 @@
 // Compositions built with a construction truck (the game's free-roam building) register here
 // once finished; what they do depends on the composition:
 //  - Field Hospital: soldiers of its side nearby are healed (after a short stay).
-//  - Vehicle Maintenance: vehicles nearby are slowly repaired.
+//  - Vehicle Maintenance: vehicles nearby are slowly repaired; heavy bays repair 40% more.
 //  - Ammo Storage: soldiers nearby get magazines/launchers, vehicles' guns are refilled.
 //  - Fuel Storage: vehicles nearby are slowly refuelled.
 //    (These use local FOB supplies by default; the free-services option restores unlimited
@@ -12,6 +12,7 @@
 //    deploy, unless it stands inside an existing base. Hidden from the enemy until found.
 // Built anywhere; owned by the builder's side. Removed when the structure is gone.
 // Supply depots inside a friendly FOB expand its storage once, without adding supplies.
+// Living quarters inside a friendly FOB add 11/19 garrison defenders (small/large).
 enum ACR_EStructure
 {
  NONE,
@@ -22,7 +23,8 @@ enum ACR_EStructure
  HELIPAD,
  HQ,
  DEPOT,
- RELAY
+ RELAY,
+ BARRACKS
 }
 
 modded class SCR_CampaignBuildingCompositionComponent
@@ -148,6 +150,7 @@ class ACR_Structures : Managed
   if (name.Contains("headquarters") || name.Contains("playerhub")) return ACR_EStructure.HQ;
   if (name.Contains("supplycache_") || name.Contains("supplystorage_")) return ACR_EStructure.DEPOT;
   if (name.Contains("antenna_s_")) return ACR_EStructure.RELAY;
+  if (name.Contains("livingarea_") || name.Contains("barracks")) return ACR_EStructure.BARRACKS;
   return ACR_EStructure.NONE;
  }
 
@@ -169,6 +172,7 @@ class ACR_Structures : Managed
    case ACR_EStructure.HQ: return "headquarters";
    case ACR_EStructure.DEPOT: return "supply depot";
    case ACR_EStructure.RELAY: return "radio relay";
+   case ACR_EStructure.BARRACKS: return "barracks";
   }
   return "structure";
  }
@@ -266,7 +270,48 @@ class ACR_Structures : Managed
    Activate(composition);
   }
   foreach (ACR_Structure active : m_Active)
-   if (active.m_Fob) UpdateCapacity(active.m_Fob);
+  {
+   if (!active.m_Fob) continue;
+   UpdateCapacity(active.m_Fob);
+   UpdateHousing(active.m_Fob);
+  }
+ }
+
+ // Reconcile capacity changes only: surviving housing never refills casualties.
+ // Recount after registration so housing completed before the CP also works.
+ void UpdateHousing(ACR_Base base)
+ {
+  if (!base || !base.m_bBuilt || base.m_bRetired) return;
+  int bonus;
+  foreach (ACR_Structure structure : m_Active)
+  {
+   if (structure.m_eKind != ACR_EStructure.BARRACKS || structure.m_sFaction != base.m_sOwner) continue;
+   if (!structure.m_Entity || !structure.m_Composition || structure.m_Composition.ACR_BuildRejected() || !structure.m_Composition.IsCompositionSpawned()) continue;
+   if (vector.DistanceXZ(structure.m_Entity.GetOrigin(), base.GetOrigin()) <= base.m_fRadius) bonus += HousingDefenders(structure.m_Entity);
+  }
+  int change = bonus - base.m_iHousingGarrison;
+  if (change == 0) return;
+  m_Manager.m_Bases.ResizeGarrison(base, change);
+  base.m_iHousingGarrison = bonus;
+ }
+
+ static int HousingDefenders(IEntity housing)
+ {
+  if (!housing || !housing.GetPrefabData()) return 0;
+  string name = housing.GetPrefabData().GetPrefabName();
+  name.ToLower();
+  // Native living quarters cost 275 / 475: one defender per 25 supplies.
+  if (name.Contains("livingarea_l_")) return 19;
+  return 11;
+ }
+
+ static float RepairFraction(IEntity station)
+ {
+  if (!station || !station.GetPrefabData()) return 0.15;
+  string name = station.GetPrefabData().GetPrefabName();
+  name.ToLower();
+  if (name.Contains("vehiclemaintenance_m_") || name.Contains("vehiclemaintenance_l_")) return 0.21;
+  return 0.15;
  }
 
  void UpdateCapacity(ACR_Base base)
