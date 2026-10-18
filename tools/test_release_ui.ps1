@@ -21,6 +21,7 @@ try {
  $script:publishInfoCalls = 0
  $script:changeAfterReview = $false
  $script:processingResult = 'Addon processing successful'
+ $script:recorded = @()
  function Get-Process { [CmdletBinding()] param([string]$Name) }
  function Find-BaseGameAddons { return (Join-Path $fixtureRoot 'Game/addons') }
  function Set-Clipboard { param([string]$Value) $script:copied = $Value }
@@ -28,6 +29,7 @@ try {
  function Invoke-Guard {
   param([string[]]$Arguments)
   if ($Arguments[0] -eq 'check') { return $script:projectPath }
+  if ($Arguments[0] -eq 'record-publication') { $script:recorded += ,$Arguments; return '{}' }
   $version = '0.1.2'
   if ($Arguments[0] -eq 'publish-info') {
    $script:publishInfoCalls++
@@ -52,11 +54,13 @@ try {
  if ($script:launches[0].cwd -ne (Split-Path $script:WorkbenchPath -Parent)) { throw 'Wrong Workbench launch directory.' }
  Open-CheckedProject -Mod BBB -PublishUpdate
  if ($script:launches.Count -ne 1) { throw 'Cancelled review started a publisher.' }
+ if ($script:recorded.Count -ne 0) { throw 'Open/cancellation recorded a publication.' }
  $script:answer = 'PUBLISH BBB 0.1.2'
  Open-CheckedProject -Mod BBB -PublishUpdate
  $publishArgs = $script:launches[1].args
  if ($publishArgs -notmatch '-publishAddonVersion 0.1.2' -or !$publishArgs.Contains('-publishAddonChangeNoteFile "' + $script:notePath + '"')) { throw 'CLI version/notes file arguments are wrong.' }
  if (!(Test-Path -LiteralPath (Join-Path $script:consoleState 'BBB-publication.json'))) { throw 'Confirmed mock upload did not record its log.' }
+ if ($script:recorded.Count -ne 1 -or $script:recorded[0][0] -ne 'record-publication' -or $script:recorded[0][3] -ne '0.1.2') { throw 'Confirmed upload did not record its exact version in source history.' }
  $script:publishInfoCalls = 0
  $script:changeAfterReview = $true
  $blocked = $false
@@ -67,6 +71,7 @@ try {
  $failed = $false
  try { Open-CheckedProject -Mod BBB -PublishUpdate } catch { $failed = $_.Exception.Message -match 'processing result could not be confirmed' }
  if (!$failed) { throw 'Backend processing failure was incorrectly reported as publication success.' }
+ if ($script:recorded.Count -ne 1) { throw 'Failed upload recorded a publication.' }
  Write-Output 'Release UI PASS: clipboard/manual mode, working directory, cancellation, CLI note file/version, upload/processing log, changed-release refusal, processing failure. No real processes/uploads.'
 } finally {
  try { Stop-Transcript | Out-Null } catch { }

@@ -68,6 +68,55 @@ class GuardTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertTrue(first.is_dir())
 
+    def test_publication_records_evidence_and_opens_next_version(self):
+        parent = self.mark_checked('BBB')
+        result = self.console.record_publication('BBB', '0.1.0', 'Owner confirmed', parent)
+        entry = result['releases'][0]
+        self.assertEqual(entry['sourceCommit'], run_git(self.bbb, 'rev-parse', 'HEAD'))
+        text = (self.bbb / 'CHANGELOG.md').read_text(encoding='utf-8')
+        self.assertIn('## 0.1.1 — unreleased', text)
+        self.assertIn('## 0.1.0 — released', text)
+        self.assertEqual(result, self.console.record_publication('BBB', '0.1.0', 'Repeated confirmation'))
+        with self.assertRaisesRegex(Blocked, 'already published'):
+            self.console.require_new_version('BBB', '0.1.0')
+        self.console.require_new_version('BBB', '0.1.1')
+
+    def test_published_notes_are_locked_and_empty_next_version_cannot_ship(self):
+        self.console.record_publication('BBB', '0.1.0', 'Owner confirmed')
+        self.commit(self.bbb)
+        with self.assertRaisesRegex(Blocked, 'reviewed release bullets'):
+            self.console.stage('BBB')
+        # ACA may still validate the unchanged, already-published dependency.
+        self.console.stage('BBB', dependency_only=True)
+        path = self.bbb / 'CHANGELOG.md'
+        path.write_text(path.read_text(encoding='utf-8').replace('Reviewed fixture release.', 'New gameplay under old version.'), encoding='utf-8')
+        self.commit(self.bbb)
+        with self.assertRaisesRegex(Blocked, 'Published release notes changed'):
+            self.console.stage('BBB')
+
+    def test_recording_older_release_preserves_existing_next_notes(self):
+        path = self.bbb / 'CHANGELOG.md'
+        path.write_text('# Changelog\n\n## 0.1.1 — unreleased\n\n- New behavior.\n\n## 0.1.0\n\n- Old behavior.\n', encoding='utf-8')
+        self.console.record_publication('BBB', '0.1.0', 'Owner confirmed')
+        self.assertTrue(path.read_text(encoding='utf-8').startswith('# Changelog\n\n## 0.1.1'))
+        self.assertIn('- New behavior.', path.read_text(encoding='utf-8'))
+        self.commit(self.bbb)
+        self.console.stage('BBB')
+
+    def test_publication_candidate_version_mismatch_does_not_write_history(self):
+        parent = self.mark_checked('BBB')
+        with self.assertRaisesRegex(Blocked, 'candidate/version mismatch'):
+            self.console.record_publication('AIO', '0.1.0', 'Owner confirmed', parent)
+        self.assertFalse((self.console.source('AIO') / 'WORKSHOP-RELEASES.json').exists())
+
+    def test_publication_cannot_attribute_changed_notes_to_uploaded_candidate(self):
+        parent = self.mark_checked('BBB')
+        path = self.bbb / 'CHANGELOG.md'
+        path.write_text(path.read_text().replace('Reviewed fixture release.', 'Changed after upload.'))
+        with self.assertRaisesRegex(Blocked, 'Source notes differ'):
+            self.console.record_publication('BBB', '0.1.0', 'Upload confirmed', parent)
+        self.assertFalse((self.bbb / 'WORKSHOP-RELEASES.json').exists())
+
     def test_dirty_source_refused(self):
         (self.bbb / 'README.md').write_text('unsaved')
         with self.assertRaisesRegex(Blocked, 'unsaved source'):

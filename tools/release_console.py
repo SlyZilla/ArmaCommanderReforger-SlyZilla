@@ -1,4 +1,4 @@
-"""Local release guard. Never uploads, deletes old releases, or edits development files."""
+"""Local release guard. Never uploads or deletes releases. Records confirmed publication in source."""
 from pathlib import Path
 import argparse
 import contextlib
@@ -60,13 +60,21 @@ def no_links(path):
             raise Blocked(f'Linked path refused: {part}')
 
 
-def latest_release_notes(source):
+def latest_release_notes(source, dependency_only=False):
     path = source / 'CHANGELOG.md'
     no_links(path)
     if not path.is_file():
         raise Blocked(f'{source.name}: add and commit CHANGELOG.md before preparing a release.')
     text = path.read_text(encoding='utf-8-sig').replace('\r\n', '\n')
+    ledger = source / 'WORKSHOP-RELEASES.json'
+    if ledger.is_file():
+        releases = read_json(ledger)['releases']
+        for release in releases:
+            if release.get('notesSha256') and release['notesSha256'] != notes_digest(text, release['version']):
+                raise Blocked('Published release notes changed. Put new changes under the next version; preserve published history.')
     sections = list(re.finditer(r'^##\s+(.+)$', text, re.M))
+    if dependency_only and len(sections) > 1 and not text[sections[0].end():sections[1].start()].strip():
+        sections = sections[1:]
     if not sections:
         raise Blocked('CHANGELOG.md needs a top release heading: ## 0.1.0')
     heading = sections[0]
@@ -78,6 +86,13 @@ def latest_release_notes(source):
         raise Blocked('The latest changelog needs reviewed release bullets without placeholders.')
     version = version[1]
     return version, f'{version}\n\n{body}\n'
+
+
+def notes_digest(text, version):
+    section = re.search(r'^##\s+' + re.escape(version) + r'(?:\s[^\n]*)?\n(.*?)(?=^##\s|\Z)', text, re.M | re.S)
+    if not section:
+        raise Blocked(f'Missing published changelog section {version}.')
+    return hashlib.sha256(section[1].strip().encode('utf-8')).hexdigest()
 
 
 class Console:
@@ -96,12 +111,62 @@ class Console:
     def pointer(self, mod):
         return self.state / (mod + '.json')
 
-    def stage(self, mod):
+    def release_history(self, mod):
+        path = self.source(mod) / 'WORKSHOP-RELEASES.json'
+        return read_json(path) if path.is_file() else dict(mod=mod, releases=[])
+
+    def require_new_version(self, mod, version):
+        releases = self.release_history(mod)['releases']
+        if releases and tuple(map(int, version.split('.'))) <= max(tuple(map(int, r['version'].split('.'))) for r in releases):
+            raise Blocked(f'{mod} {version} is already published. New changes need the next version.')
+
+    def record_publication(self, mod, version, evidence, candidate=None):
+        """Record confirmed publication in source; never uploads or commits."""
+        if not re.fullmatch(r'\d+\.\d+\.\d+', version) or not evidence.strip():
+            raise Blocked('A numeric version and publication evidence are required.')
+        source = self.source(mod)
+        history = self.release_history(mod)
+        if any(r['version'] == version for r in history['releases']):
+            return history  # Idempotent; never overwrite original evidence.
+        self.require_new_version(mod, version)
+        changelog = source / 'CHANGELOG.md'
+        text = changelog.read_text(encoding='utf-8-sig').replace('\r\n', '\n')
+        for release in history['releases']:
+            if release.get('notesSha256') != notes_digest(text, release['version']):
+                raise Blocked('Published release notes changed. Preserve published history.')
+        match = re.search(r'^##\s+' + re.escape(version) + r'(?:\s[^\n]*)?$', text, re.M)
+        if not match:
+            raise Blocked('Record the confirmed version in CHANGELOG.md before recording publication.')
+        entry = dict(version=version, confirmedAt=dt.datetime.now(dt.timezone.utc).isoformat(),
+                     evidence=evidence, notesSha256=notes_digest(text, version))
+        if candidate:
+            manifest = self.verify_manifest(candidate, current=False)
+            if manifest['mod'] != mod or manifest['releaseVersion'] != version:
+                raise Blocked('Publication candidate/version mismatch.')
+            candidate_text = (Path(candidate) / 'CHANGELOG.md').read_text(encoding='utf-8-sig').replace('\r\n', '\n')
+            if notes_digest(candidate_text, version) != entry['notesSha256']:
+                raise Blocked('Source notes differ from the published candidate. Reconcile before recording publication.')
+            entry.update(sourceCommit=manifest['commit'],
+                         candidate=Path(candidate).absolute().relative_to(self.output.parent).as_posix())
+        # Validate everything before writing. An interrupted operation can be repeated safely.
+        text = text[:match.start()] + f'## {version} — released' + text[match.end():]
+        first = re.search(r'^##\s+', text, re.M)
+        if first.start() == match.start():
+            major, minor, patch = map(int, version.split('.'))
+            text = text[:first.start()] + f'## {major}.{minor}.{patch + 1} — unreleased\n\n' + text[first.start():]
+        changelog.write_bytes(text.encode('utf-8'))
+        history['releases'].append(entry)
+        write_json(source / 'WORKSHOP-RELEASES.json', history)
+        return history
+
+    def stage(self, mod, dependency_only=False):
         spec = SPECS[mod]
         source = self.source(mod)
         sha = clean_commit(source)
         no_links(source)
-        version, change_note = latest_release_notes(source)
+        version, change_note = latest_release_notes(source, dependency_only=dependency_only)
+        if not dependency_only:
+            self.require_new_version(mod, version)
         reviewed = git(source, 'log', '-1', '--format=%H', '--', 'CHANGELOG.md')
         if not reviewed:
             raise Blocked('Commit CHANGELOG.md before preparing a release.')
@@ -235,7 +300,7 @@ class Console:
     def prepare(self, mod):
         dependency = None
         if mod == 'ACA':
-            dependency = self.stage('BBB')
+            dependency = self.stage('BBB', dependency_only=True)
             self.smoke(dependency)
         parent = self.stage(mod)
         self.smoke(parent, dependency)
@@ -244,6 +309,7 @@ class Console:
     def notes_info(self, mod):
         parent = self.checked(mod)
         manifest = read_json(parent / 'WORKSHOP-BUILD.json')
+        self.require_new_version(mod, manifest['releaseVersion'])
         return dict(mod=mod, version=manifest['releaseVersion'],
                     project=str(Path(manifest['addonRoot']) / 'addon.gproj'),
                     changelogFile=str(parent / 'WORKSHOP-CHANGELOG.txt'))
@@ -348,13 +414,18 @@ class Console:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'check', 'status', 'installed', 'notes', 'publish-info'])
+    parser.add_argument('action', choices=['prepare', 'check', 'status', 'installed', 'notes', 'publish-info', 'record-publication'])
     parser.add_argument('mod', choices=SPECS, nargs='?')
     parser.add_argument('--installed-root', type=Path, default=Path('E:/ArmaReforgerMods/addons'))
+    parser.add_argument('--version')
+    parser.add_argument('--evidence')
+    parser.add_argument('--candidate', type=Path)
     options = parser.parse_args()
     console = Console()
     if options.action == 'status':
         for mod in SPECS:
+            releases = console.release_history(mod)['releases']
+            print(f'{mod}: published ' + (', '.join(r['version'] for r in releases) or 'not recorded'))
             try:
                 parent = console.checked(mod)
                 print(f'{mod}: CHECKED {read_json(parent / "WORKSHOP-BUILD.json")["commit"][:12]}')
@@ -363,6 +434,11 @@ def main():
         return
     if not options.mod:
         parser.error('Choose a mod.')
+    if options.action == 'record-publication':
+        if not options.version or not options.evidence:
+            parser.error('record-publication requires --version and --evidence.')
+        print(json.dumps(console.record_publication(options.mod, options.version, options.evidence, options.candidate)))
+        return
     if options.action in ['notes', 'publish-info']:
         info = console.publish_info(options.mod, options.installed_root) if options.action == 'publish-info' else console.notes_info(options.mod)
         print(json.dumps(info))

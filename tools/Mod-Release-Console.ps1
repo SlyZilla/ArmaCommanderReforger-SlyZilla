@@ -61,7 +61,7 @@ function Open-CheckedProject {
   Write-Host "Opening checked $Mod $($notes.version): $project" -ForegroundColor Green
   Write-Host 'Its changelog is copied. In Publish Project, click Change notes and press Ctrl+V.'
   Write-Host "Use version $($notes.version); review page settings before uploading."
-  Write-Host 'After upload, download the Workshop update and use option 6 to verify it.'
+  Write-Host 'After confirmed publication, use option 8 to record it, then download and use option 6.'
   Start-Process -FilePath $script:WorkbenchPath -WorkingDirectory (Split-Path $script:WorkbenchPath -Parent) -ArgumentList $launchArgs
   return
  }
@@ -87,6 +87,8 @@ function Open-CheckedProject {
  $body = Get-Content -LiteralPath $log.FullName -Raw
  if (!$body.Replace('\','/').Contains($project.Replace('\','/')) -or $body -notmatch 'Project uploaded successfully' -or $body -notmatch 'Addon processing successful') { throw 'Upload/processing result could not be confirmed. Check Workbench before retrying; an upload may have occurred.' }
  @{ mod=$Mod; version=$notes.version; publication='CLI upload confirmed in Workbench log'; log=$log.FullName; installedVerification='pending' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $consoleState ($Mod + '-publication.json')) -Encoding UTF8
+ $relativeLog = 'logs/' + $log.FullName.Substring($logsRoot.Length).TrimStart('\').Replace('\','/')
+ Invoke-Guard @('record-publication', $Mod, '--version', $notes.version, '--candidate', (Split-Path (Split-Path $project -Parent) -Parent), '--evidence', ('Workbench upload and processing success: ' + $relativeLog)) | Out-Null
  Write-Host "Uploaded $Mod $($notes.version). Download its Workshop update, then use option 6." -ForegroundColor Green
 }
 if ($NoMenu) { return }
@@ -103,6 +105,7 @@ while ($true) {
  Write-Host '5  Open checked AiO release for Workshop upload'
  Write-Host '6  Verify a downloaded Workshop update'
  Write-Host '7  Publish a checked update with automatic version/changelog (review first)'
+ Write-Host '8  Record a confirmed manual Workshop publication and start the next version'
  Write-Host '0  Exit'
  $choice = Read-Host 'Choose'
  try {
@@ -122,6 +125,14 @@ while ($true) {
     $mod = (Read-Host 'Which mod to update: ACA, BBB, or AIO').ToUpperInvariant()
     if ($mod -notin @('ACA','BBB','AIO')) { throw 'Choose ACA, BBB, or AIO.' }
     Open-CheckedProject -Mod $mod -PublishUpdate
+   }
+   '8' {
+    $mod = (Read-Host 'Published mod: ACA, BBB, or AIO').ToUpperInvariant()
+    if ($mod -notin @('ACA','BBB','AIO')) { throw 'Choose ACA, BBB, or AIO.' }
+    $version = Read-Host 'Confirmed published version'
+    $evidence = Read-Host 'Publication confirmation (for example, Workshop page or owner confirmation)'
+    Invoke-Guard @('record-publication', $mod, '--version', $version, '--evidence', $evidence) | Out-Host
+    Write-Host 'Publication recorded in source; next version opened. Ask the coding agent to review and commit the records.'
    }
    default { Write-Host 'Choose one of the listed numbers.' }
   }

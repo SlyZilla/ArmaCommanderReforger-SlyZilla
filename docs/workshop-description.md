@@ -6,8 +6,8 @@ Command squads from the map, then take over a friendly AI soldier and fight alon
 Capture territory across Arland, Everon and Kolguyev, solo against AI commanders or sharing
 command with friends. An unofficial, openly vibecoded Reforger port of Arma 3's Arma Commander.
 
-This description covers the prepared 0.5.4 split release, which requires Better Battle Buddies
-(BBB). The last documented published ACA build is 0.5.3, with the earlier AI code bundled.
+ACA 0.5.4 is released and requires the separate Better Battle Buddies (BBB) addon.
+Pending development changes target 0.5.5; the standalone BBB split is already released.
 No faction mods are required for vanilla sides.
 
 ## Command and fight

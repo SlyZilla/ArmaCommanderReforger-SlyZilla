@@ -19,8 +19,8 @@ documentation, existing issues and legacy ZIP downloads/updaters. File new bug
 reports and feature requests in this repository's issue tracker.
 
 This README covers the development checkout as well as the basics of playing.
-The changelog lists **0.5.4 as prepared** and **0.5.3 as previously published**;
-development features are not proof of a Workshop update. See [CHANGELOG.md](CHANGELOG.md).
+**0.5.4 is released on Workshop.** The pending development changes target **0.5.5**.
+See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Playing from Workshop
 
@@ -44,8 +44,8 @@ Construction trucks build service stations, forward deploy points and helipads. 
 conditions or saved matches. This development tree now requires the separate Better Battle Buddies
 addon (`BBB0261015000001`). Keep its checkout beside this one in Workbench/addons; source is in
 `propst-design/BetterBattleBuddies` (private). BBB 0.1.3 is released; ACA's documented
-0.5.3 Workshop build still bundles the older AI code. The separate dependency belongs
-to the prepared split release. Verify the exact BBB dependency before publishing ACA.
+0.5.4 Workshop build already uses the separate BBB dependency.
+Verify the exact BBB dependency before publishing ACA 0.5.5.
 
 ## Legacy ZIP / development launchers
 
