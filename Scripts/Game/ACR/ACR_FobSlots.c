@@ -74,13 +74,13 @@ class ACR_FobSlots : Managed
 		if (!fob) return;
 		fob.m_aFobSlots = {};
 		fob.m_aFobSlots.Insert(CreateSlot(0, ACR_EStructure.HOSPITAL, "Field Hospital", 250, 40.0, Vector(0, 0, 18), 0));
-		fob.m_aFobSlots.Insert(CreateSlot(1, ACR_EStructure.REPAIR, "Vehicle Repair", 350, 45.0, Vector(15, 0, 15), 45));
-		fob.m_aFobSlots.Insert(CreateSlot(2, ACR_EStructure.AMMO, "Ammo Storage", 200, 30.0, Vector(18, 0, 0), 90));
-		fob.m_aFobSlots.Insert(CreateSlot(3, ACR_EStructure.FUEL, "Fuel Storage", 200, 30.0, Vector(15, 0, -15), 135));
-		fob.m_aFobSlots.Insert(CreateSlot(4, ACR_EStructure.HELIPAD, "Helipad", 300, 45.0, Vector(0, 0, -22), 180));
+		fob.m_aFobSlots.Insert(CreateSlot(1, ACR_EStructure.REPAIR, "Vehicle Repair", 300, 45.0, Vector(15, 0, 15), 45));
+		fob.m_aFobSlots.Insert(CreateSlot(2, ACR_EStructure.AMMO, "Ammo Storage", 325, 30.0, Vector(18, 0, 0), 90));
+		fob.m_aFobSlots.Insert(CreateSlot(3, ACR_EStructure.FUEL, "Fuel Storage", 50, 30.0, Vector(15, 0, -15), 135));
+		fob.m_aFobSlots.Insert(CreateSlot(4, ACR_EStructure.HELIPAD, "Helipad", 750, 45.0, Vector(0, 0, -22), 180));
 		fob.m_aFobSlots.Insert(CreateSlot(5, ACR_EStructure.RELAY, "Radio Relay", 250, 30.0, Vector(-15, 0, -15), 225));
 		fob.m_aFobSlots.Insert(CreateSlot(6, ACR_EStructure.BARRACKS, "Barracks", 275, 40.0, Vector(-18, 0, 0), 270));
-		fob.m_aFobSlots.Insert(CreateSlot(7, ACR_EStructure.DEPOT, "Supply Depot", 200, 30.0, Vector(-15, 0, 15), 315));
+		fob.m_aFobSlots.Insert(CreateSlot(7, ACR_EStructure.DEPOT, "Supply Depot", 175, 30.0, Vector(-15, 0, 15), 315));
 	}
 
 	protected static ACR_FobSlot CreateSlot(int index, ACR_EStructure kind, string name, int cost, float duration, vector offset, float angle)
@@ -164,13 +164,13 @@ class ACR_FobSlots : Managed
 		switch (index)
 		{
 			case 0: return 250;
-			case 1: return 350;
-			case 2: return 200;
-			case 3: return 200;
-			case 4: return 300;
+			case 1: return 300;
+			case 2: return 325;
+			case 3: return 50;
+			case 4: return 750;
 			case 5: return 250;
 			case 6: return 275;
-			case 7: return 200;
+			case 7: return 175;
 		}
 		return 200;
 	}

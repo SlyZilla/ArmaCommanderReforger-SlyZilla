@@ -20,18 +20,17 @@ class ACR_TestFobSlots
 		vector truckPos = truck.GetOrigin();
 
 		// 1. Verify 8 preset slots configuration
-		ACR_FobSlots.InitSlots(fob);
 		bool slotsConfigOk = (fob.m_aFobSlots && fob.m_aFobSlots.Count() == ACR_FobSlots.SLOT_COUNT);
 		if (slotsConfigOk)
 		{
 			if (ACR_FobSlots.SlotCost(0) != 250 || ACR_FobSlots.SlotDuration(0) != 40.0) slotsConfigOk = false;
-			if (ACR_FobSlots.SlotCost(1) != 350 || ACR_FobSlots.SlotDuration(1) != 45.0) slotsConfigOk = false;
-			if (ACR_FobSlots.SlotCost(2) != 200 || ACR_FobSlots.SlotDuration(2) != 30.0) slotsConfigOk = false;
-			if (ACR_FobSlots.SlotCost(3) != 200 || ACR_FobSlots.SlotDuration(3) != 30.0) slotsConfigOk = false;
-			if (ACR_FobSlots.SlotCost(4) != 300 || ACR_FobSlots.SlotDuration(4) != 45.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(1) != 300 || ACR_FobSlots.SlotDuration(1) != 45.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(2) != 325 || ACR_FobSlots.SlotDuration(2) != 30.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(3) != 50 || ACR_FobSlots.SlotDuration(3) != 30.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(4) != 750 || ACR_FobSlots.SlotDuration(4) != 45.0) slotsConfigOk = false;
 			if (ACR_FobSlots.SlotCost(5) != 250 || ACR_FobSlots.SlotDuration(5) != 30.0) slotsConfigOk = false;
 			if (ACR_FobSlots.SlotCost(6) != 275 || ACR_FobSlots.SlotDuration(6) != 40.0) slotsConfigOk = false;
-			if (ACR_FobSlots.SlotCost(7) != 200 || ACR_FobSlots.SlotDuration(7) != 30.0) slotsConfigOk = false;
+			if (ACR_FobSlots.SlotCost(7) != 175 || ACR_FobSlots.SlotDuration(7) != 30.0) slotsConfigOk = false;
 		}
 		ACR_TestRegress.Check("fobslots: 8 preset slots initialized with correct costs and durations", slotsConfigOk, "");
 
