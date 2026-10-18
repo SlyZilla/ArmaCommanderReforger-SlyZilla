@@ -238,7 +238,11 @@ class ACR_Structures : Managed
   name.Split("_", parts, true);
   FactionManager factions = GetGame().GetFactionManager();
   foreach (string part : parts)
+  {
+   if (part == "US") return ACR_FactionSelection.West();
+   if (part == "USSR") return ACR_FactionSelection.East();
    if (factions && factions.GetFactionByKey(part)) return part;
+  }
   return "";
  }
 

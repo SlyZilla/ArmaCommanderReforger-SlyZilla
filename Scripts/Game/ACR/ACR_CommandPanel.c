@@ -25,6 +25,7 @@ enum ACR_EPanelAction
  TOGGLE_REPORT,
  FOB_SUPPLY,
  FOB_BUILD,
+ ESTABLISH_FOB,
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -38,7 +39,8 @@ enum ACR_ECursorMode
  GET_IN,
  LZ,
  RIDE,
- GARRISON
+ GARRISON,
+ ESTABLISH_FOB
 }
 
 // Arma Commander side panel on the fullscreen map. Built from script out of the
@@ -94,6 +96,8 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_GetInButton;
  protected SCR_ButtonTextComponent m_LZButton;
  protected SCR_ButtonTextComponent m_RideButton;
+ protected SCR_ButtonTextComponent m_EstablishFobButton;
+ protected Widget m_EstablishFobWidget;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
  protected Widget m_DebugRoot;
@@ -196,6 +200,9 @@ class ACR_CommandPanel : Managed
   m_LZButton = AddButton(orders3, "Unload at LZ", ACR_EPanelAction.SET_LZ, true);
   AddButton(orders3, "Fire at will", ACR_EPanelAction.FIRE_AT_WILL, true);
   m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
+  m_EstablishFobButton = AddButton(m_OrderSection, "Establish FOB", ACR_EPanelAction.ESTABLISH_FOB);
+  m_EstablishFobWidget = m_LastButtonWidget;
+  if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
   CreateFeed(parent);
@@ -489,6 +496,11 @@ class ACR_CommandPanel : Managed
    if (cursorMode == ACR_ECursorMode.RIDE) m_RideButton.SetText("[Ride]");
    else m_RideButton.SetText("Ride");
   }
+  if (m_EstablishFobButton)
+  {
+   if (cursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_EstablishFobButton.SetText("[Establish FOB]");
+   else m_EstablishFobButton.SetText("Establish FOB");
+  }
   if (m_Hint) m_Hint.SetText(hint);
  }
 
@@ -617,6 +629,7 @@ class ACR_CommandPanel : Managed
   m_GroupDetail.SetText(detail);
   if (m_SwitchWidget) m_SwitchWidget.SetVisible(false);
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
+  if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
   if (m_Hint) m_Hint.SetText("");
  }
@@ -626,6 +639,11 @@ class ACR_CommandPanel : Managed
   if (m_FobSection) m_FobSection.SetVisible(visible);
   if (m_FobSupplyButton) m_FobSupplyButton.SetEnabled(canOrder, false);
   if (m_FobBuildButton) m_FobBuildButton.SetEnabled(canBuild, false);
+ }
+
+ void SetEstablishFob(bool visible)
+ {
+  if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(visible);
  }
 
  void Destroy()
