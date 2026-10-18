@@ -17,14 +17,20 @@ enum ACR_ESapperDemoState
  DETONATED
 }
 
-// Combat AI sapper demolition assault on an enemy FOB HQ composition.
+// Combat AI sapper demolition of an enemy FOB HQ (Jacob, 18 Oct): sappers plant only once no
+// defender is within 30 m of the HQ; defenders defuse by standing at the charge for 5 s.
+// A detonation destroys the HQ only: the FOB goes offline, its upgrades stay and can be captured.
 class ACR_SapperDemo : Managed
 {
- static const float APPROACH_RADIUS = 30.0;
  static const float PLANT_RADIUS = 7.0;
+ static const float CLEAR_RADIUS = 30.0;      // no living defender this close to the HQ
  static const float PLANT_DURATION_MS = 4000.0;
- static const float FUSE_DURATION_MS = 12000.0;
+ static const float FUSE_DURATION_MS = 45000.0;
+ static const float DEFUSE_RADIUS = 3.0;
+ static const float DEFUSE_MS = 5000.0;
+ static const float BLAST_REACH = 15.0;       // the charge must still be this close to the HQ
  static const float RETREAT_DISTANCE = 55.0;
+ static const float RETRY_MS = 30000.0;       // after a defusal
 
  static const ResourceName CHARGE_WEST = "{1CC0CBB56B9F7ADB}Prefabs/Weapons/Explosives/DemoBlock_M112/DemoBlock_M112.et";
  static const ResourceName CHARGE_EAST = "{A50106D0A7A6A73F}Prefabs/Weapons/Explosives/DemoBlock_TSh400g/DemoBlock_TSh400g.et";
@@ -40,6 +46,12 @@ class ACR_SapperDemo : Managed
  vector m_vChargePos;
  vector m_vFallbackPos;
  bool m_bDetonated;
+ bool m_bDefused;
+ string m_sTargetOwner;
+ float m_fDefuseProgress;
+ float m_fLastTick;
+ float m_fRetryAt;
+ bool m_bDefendersCalled;
 
  void ACR_SapperDemo(ACR_Manager manager, ACR_AICommander commander, ACR_AIAttack attack)
  {
@@ -53,10 +65,18 @@ class ACR_SapperDemo : Managed
  void SetStateForTest(ACR_ESapperDemoState state) { m_State = state; }
  IEntity DemoCharge() { return m_DemoCharge; }
  bool IsDetonated() { return m_bDetonated; }
+ bool IsDefused() { return m_bDefused; }
  ACR_Squad SapperSquad() { return m_SapperSquad; }
  vector FallbackPos() { return m_vFallbackPos; }
+ vector ChargePos() { return m_vChargePos; }
+ string TargetOwner() { return m_sTargetOwner; }
+ float DefuseProgress() { return m_fDefuseProgress; }
  void SetPlantStartForTest(float time) { m_fPlantStart = time; }
  void SetFuseDeadlineForTest(float time) { m_fFuseDeadline = time; }
+ bool DefendersCalled() { return m_bDefendersCalled; }
+ void SetChargeForTest(IEntity charge) { m_DemoCharge = charge; if (charge) m_vChargePos = charge.GetOrigin(); }
+ void SetTargetOwnerForTest(string owner) { m_sTargetOwner = owner; }
+ void MarkDefendersCalled() { m_bDefendersCalled = true; }
 
  static vector PositionOf(ACR_Squad squad)
  {
@@ -101,6 +121,26 @@ class ACR_SapperDemo : Managed
   return false;
  }
 
+ // Living soldiers of a side (AI or players) within a radius.
+ protected static string s_sCountFaction;
+ protected static int s_iCounted;
+ static int SoldiersNear(vector position, string faction, float radius)
+ {
+  if (faction.IsEmpty()) return 0;
+  s_sCountFaction = faction;
+  s_iCounted = 0;
+  GetGame().GetWorld().QueryEntitiesBySphere(position, radius, CountSoldier, null, EQueryEntitiesFlags.DYNAMIC);
+  return s_iCounted;
+ }
+
+ protected static bool CountSoldier(IEntity e)
+ {
+  if (!ChimeraCharacter.Cast(e) || !ACR_Respawn.IsAlive(e)) return true;
+  FactionAffiliationComponent aff = FactionAffiliationComponent.Cast(e.FindComponent(FactionAffiliationComponent));
+  if (aff && aff.GetAffiliatedFaction() && aff.GetAffiliatedFaction().GetFactionKey() == s_sCountFaction) s_iCounted++;
+  return true;
+ }
+
  ACR_Squad FindSapperSquad()
  {
   if (!m_Attack || m_Attack.m_Squads.IsEmpty()) return null;
@@ -122,40 +162,30 @@ class ACR_SapperDemo : Managed
   return m_Manager.m_Structures.HqEntityOf(m_Attack.m_Target);
  }
 
- vector TargetHqPosition()
- {
-  IEntity hq = TargetHqEntity();
-  if (hq) return hq.GetOrigin();
-  if (m_Attack && m_Attack.m_Target) return m_Attack.m_Target.GetOrigin();
-  return vector.Zero;
- }
-
  void Tick(float now)
  {
+  float elapsed = 0;
+  if (m_fLastTick > 0) elapsed = Math.Max(0, now - m_fLastTick);
+  m_fLastTick = now;
   if (m_State == ACR_ESapperDemoState.DETONATED) return;
   if (!m_Attack || !m_Attack.m_Target || m_Attack.m_Target.m_bRetired)
   {
-   if (m_DemoCharge)
-   {
-    SCR_EntityHelper.DeleteEntityAndChildren(m_DemoCharge);
-    m_DemoCharge = null;
-   }
+   RemoveCharge();
    return;
   }
 
   if (m_State == ACR_ESapperDemoState.FALLBACK)
   {
-   if (now >= m_fFuseDeadline)
-   {
-    Detonate();
-   }
+   TickFuse(now, elapsed);
    return;
   }
 
   if (m_Commander && m_Attack.m_Target.m_sOwner == m_Commander.Faction()) return;
-
-  vector hqPos = TargetHqPosition();
-  if (hqPos == vector.Zero) return;
+  // No HQ (already destroyed): the raid becomes an ordinary capture.
+  IEntity hq = TargetHqEntity();
+  if (!hq || now < m_fRetryAt) return;
+  vector hqPos = hq.GetOrigin();
+  string owner = m_Attack.m_Target.m_sOwner;
 
   if (!m_SapperSquad || m_SapperSquad.CountAlive() <= 0)
   {
@@ -165,6 +195,7 @@ class ACR_SapperDemo : Managed
 
   vector sapperPos = PositionOf(m_SapperSquad);
   float distToHq = vector.DistanceXZ(sapperPos, hqPos);
+  int defenders = SoldiersNear(hqPos, owner, CLEAR_RADIUS);
 
   if (m_State == ACR_ESapperDemoState.NONE)
   {
@@ -176,59 +207,113 @@ class ACR_SapperDemo : Managed
 
   if (m_State == ACR_ESapperDemoState.APPROACHING)
   {
-   if (distToHq <= APPROACH_RADIUS)
+   // Clear the defenders first; only then walk up to the HQ and plant.
+   if (defenders > 0) return;
+   if (distToHq > PLANT_RADIUS)
    {
-    m_SapperSquad.MoveTo(hqPos);
+    if (distToHq <= CLEAR_RADIUS) m_SapperSquad.MoveTo(hqPos);
+    return;
    }
-   if (distToHq <= PLANT_RADIUS)
-   {
-    m_State = ACR_ESapperDemoState.PLANTING;
-    m_fPlantStart = now;
-    m_vChargePos = sapperPos;
-    m_SapperSquad.ClearOrders();
-    m_SapperSquad.SetOrder("Planting demolition charges", ACR_EOrderState.HOLD);
-    PrintFormat("[ACR] SAPPER %1: planting demolition charges on enemy FOB %2 HQ (dist=%3m)", m_SapperSquad.GetName(), m_Attack.m_Target.m_sName, distToHq);
-   }
+   m_State = ACR_ESapperDemoState.PLANTING;
+   m_fPlantStart = now;
+   m_vChargePos = sapperPos;
+   m_SapperSquad.ClearOrders();
+   m_SapperSquad.SetOrder("Planting demolition charges", ACR_EOrderState.HOLD);
+   PrintFormat("[ACR] SAPPER %1: planting demolition charges on enemy FOB %2 HQ (dist=%3m)", m_SapperSquad.GetName(), m_Attack.m_Target.m_sName, distToHq);
    return;
   }
 
   if (m_State == ACR_ESapperDemoState.PLANTING)
   {
+   if (defenders > 0)
+   {
+    PrintFormat("[ACR] SAPPER %1: planting interrupted by defenders at %2", m_SapperSquad.GetName(), m_Attack.m_Target.m_sName);
+    m_State = ACR_ESapperDemoState.APPROACHING;
+    m_SapperSquad.Assault(hqPos);
+    return;
+   }
    if (distToHq > PLANT_RADIUS + 5.0)
    {
     m_SapperSquad.MoveTo(hqPos);
     return;
    }
-   if (now - m_fPlantStart >= PLANT_DURATION_MS)
+   if (now - m_fPlantStart < PLANT_DURATION_MS) return;
+   ResourceName chargePrefab = CHARGE_WEST;
+   string fac = "";
+   if (m_Commander) fac = m_Commander.Faction();
+   if (!fac.IsEmpty() && !ACR_Supports.IsWestern(fac)) chargePrefab = CHARGE_EAST;
+
+   m_DemoCharge = ACR_Manager.SpawnPrefab(chargePrefab, m_vChargePos);
+   m_State = ACR_ESapperDemoState.FALLBACK;
+   m_fFuseDeadline = now + FUSE_DURATION_MS;
+   m_fDefuseProgress = 0;
+   m_bDefendersCalled = false;
+   m_sTargetOwner = owner;
+   if (m_Manager)
    {
-    ResourceName chargePrefab = CHARGE_WEST;
-    string fac = "";
-    if (m_Commander) fac = m_Commander.Faction();
-    if (!fac.IsEmpty() && !ACR_Supports.IsWestern(fac)) chargePrefab = CHARGE_EAST;
-
-    m_DemoCharge = ACR_Manager.SpawnPrefab(chargePrefab, m_vChargePos);
-    m_State = ACR_ESapperDemoState.FALLBACK;
-    m_fFuseDeadline = now + FUSE_DURATION_MS;
-    if (m_Manager) m_Manager.RegisterDemolition(m_Attack);
-
-    vector dir = sapperPos - hqPos;
-    dir[1] = 0;
-    if (dir.LengthSq() < 0.1) dir = Vector(1, 0, 0);
-    else dir.Normalize();
-
-    m_vFallbackPos = ACR_Manager.Ground(hqPos + dir * RETREAT_DISTANCE);
-
-    foreach (ACR_Squad squad : m_Attack.m_Squads)
-    {
-     if (!squad || squad.CountAlive() <= 0) continue;
-     squad.SetOrder("Clearing blast radius", ACR_EOrderState.MOVE);
-     squad.SetMode(ACR_EMoveMode.FAST);
-     squad.MoveTo(m_vFallbackPos);
-    }
-    PrintFormat("[ACR] SAPPER %1: charges primed (12s fuse)! Falling back %2m from %3", m_SapperSquad.GetName(), RETREAT_DISTANCE, hqPos);
+    m_Manager.RegisterDemolition(m_Attack);
+    m_Manager.NotifyFaction(owner, string.Format("Demolition charge on the %1 HQ: stand at it for 5 s to defuse (%2 s fuse)", m_Attack.m_Target.m_sName, (int)(FUSE_DURATION_MS / 1000)));
    }
+
+   vector dir = sapperPos - hqPos;
+   dir[1] = 0;
+   if (dir.LengthSq() < 0.1) dir = Vector(1, 0, 0);
+   else dir.Normalize();
+   m_vFallbackPos = ACR_Manager.Ground(hqPos + dir * RETREAT_DISTANCE);
+
+   foreach (ACR_Squad squad : m_Attack.m_Squads)
+   {
+    if (!squad || squad.CountAlive() <= 0) continue;
+    squad.SetOrder("Clearing blast radius", ACR_EOrderState.MOVE);
+    squad.SetMode(ACR_EMoveMode.FAST);
+    squad.MoveTo(m_vFallbackPos);
+   }
+   PrintFormat("[ACR] SAPPER %1: charges primed (%2 s fuse)! Falling back %3m from %4", m_SapperSquad.GetName(), (int)(FUSE_DURATION_MS / 1000), RETREAT_DISTANCE, hqPos);
+  }
+ }
+
+ // Primed: a defender at the charge for 5 s defuses it; otherwise it goes off at the deadline.
+ void TickFuse(float now, float elapsed)
+ {
+  if (m_State != ACR_ESapperDemoState.FALLBACK) return;
+  if (!m_DemoCharge)
+  {
+   Defuse("the charge was removed");
    return;
   }
+  vector chargePos = m_DemoCharge.GetOrigin();
+  if (SoldiersNear(chargePos, m_sTargetOwner, DEFUSE_RADIUS) > 0)
+  {
+   m_fDefuseProgress += Math.Min(elapsed, 2000);
+   if (m_fDefuseProgress >= DEFUSE_MS)
+   {
+    Defuse("defused by defenders");
+    return;
+   }
+  }
+  else m_fDefuseProgress = 0;
+  if (now >= m_fFuseDeadline) Detonate();
+ }
+
+ void Defuse(string why)
+ {
+  if (m_State != ACR_ESapperDemoState.FALLBACK) return;
+  RemoveCharge();
+  m_bDefused = true;
+  m_State = ACR_ESapperDemoState.NONE;
+  m_fDefuseProgress = 0;
+  m_fRetryAt = m_fLastTick + RETRY_MS;
+  string name = "FOB";
+  if (m_Attack && m_Attack.m_Target) name = m_Attack.m_Target.m_sName;
+  PrintFormat("[ACR] SAPPER: charge at %1 neutralised (%2)", name, why);
+  if (m_Manager) m_Manager.NotifyFaction(m_sTargetOwner, string.Format("Demolition charge at %1 defused", name));
+  if (m_Manager && m_Commander) m_Manager.NotifyFaction(m_Commander.Faction(), string.Format("Our charge at %1 was defused", name));
+ }
+
+ protected void RemoveCharge()
+ {
+  if (m_DemoCharge) SCR_EntityHelper.DeleteEntityAndChildren(m_DemoCharge);
+  m_DemoCharge = null;
  }
 
  void Detonate()
@@ -237,39 +322,23 @@ class ACR_SapperDemo : Managed
   m_bDetonated = true;
   m_State = ACR_ESapperDemoState.DETONATED;
 
-  vector hqPos = TargetHqPosition();
+  vector blastPos = m_vChargePos;
+  if (m_DemoCharge) blastPos = m_DemoCharge.GetOrigin();
   IEntity hq = TargetHqEntity();
+  string name = "FOB";
+  if (m_Attack && m_Attack.m_Target) name = m_Attack.m_Target.m_sName;
 
-  PrintFormat("[ACR] SAPPER: DEMOLITION CHARGE DETONATED at %1! Enemy FOB HQ destroyed.", hqPos);
+  if (m_Manager && m_Manager.m_Supports) m_Manager.m_Supports.ExplodeAt(blastPos);
+  RemoveCharge();
 
-  if (m_Manager && m_Manager.m_Supports)
+  // The HQ only: the FOB goes offline (structures tick), upgrades stay and can be captured.
+  if (hq && vector.DistanceXZ(hq.GetOrigin(), blastPos) <= BLAST_REACH)
   {
-   m_Manager.m_Supports.ExplodeAt(hqPos);
-  }
-
-  if (m_DemoCharge)
-  {
-   SCR_EntityHelper.DeleteEntityAndChildren(m_DemoCharge);
-   m_DemoCharge = null;
-  }
-
-  if (hq)
-  {
+   PrintFormat("[ACR] SAPPER: demolition charge destroyed the %1 HQ at %2", name, hq.GetOrigin());
    SCR_EntityHelper.DeleteEntityAndChildren(hq);
+   if (m_Manager) m_Manager.NotifyFaction(m_sTargetOwner, string.Format("%1 HQ destroyed by demolition: FOB offline until rebuilt", name));
   }
-
-  if (m_Attack && m_Attack.m_Target && !m_Attack.m_Target.m_bRetired)
-  {
-   m_Attack.m_Target.Retire();
-  }
-
-  if (m_Attack)
-  {
-   foreach (ACR_Squad squad : m_Attack.m_Squads)
-   {
-    if (squad) squad.m_iAITask = ACR_EAITask.FREE;
-   }
-  }
+  else PrintFormat("[ACR] SAPPER: demolition charge went off away from the %1 HQ", name);
  }
 }
 
@@ -1546,7 +1615,8 @@ class ACR_AICommander : Managed
      float now = GetGame().GetWorld().GetWorldTime();
      attack.m_SapperDemo.Tick(now);
      ACR_ESapperDemoState demoState = attack.m_SapperDemo.State();
-     if (demoState == ACR_ESapperDemoState.PLANTING || demoState == ACR_ESapperDemoState.FALLBACK || demoState == ACR_ESapperDemoState.DETONATED)
+     // Planting or fused: hold the attackers back. After the blast the attack takes the FOB.
+     if (demoState == ACR_ESapperDemoState.PLANTING || demoState == ACR_ESapperDemoState.FALLBACK)
      {
       demoBusy = true;
      }
@@ -2134,16 +2204,29 @@ class ACR_AICommander : Managed
  static const int FOB_RP_COMBAT_RESERVE = 30;        // RP reserve required when buying construction truck
  static const float FOB_EVAL_INTERVAL_MS = 30000;    // evaluate every 30 seconds
 
+ static const float FOB_TRUCK_RETRY_MS = 300000;    // at most one construction truck purchase per 5 min
+ static const float FOB_SITE_AVOID_MS = 600000;     // an abandoned site is skipped for 10 min
+ static const float FOB_SITE_AVOID_RADIUS = 150;
+ static const float FOB_SITE_RETRY_MS = 300000;     // after a failed site search
+
  protected ACR_Squad m_FobBuilder;
  protected ACR_Squad m_FobEscort;
  protected vector m_vFobTargetSite;
  protected float m_fNextFobEval;
+ protected float m_fFobTruckBoughtAt = -FOB_TRUCK_RETRY_MS;
+ protected ref array<vector> m_aAvoidSites = {};
+ protected ref array<float> m_aAvoidUntil = {};
 
  bool HasActiveFobProject()
  {
   if (m_FobBuilder)
   {
    if (m_FobBuilder.CountAlive() > 0 && m_FobBuilder.OrderState() == ACR_EOrderState.BUILD_FOB) return true;
+   // Given up (3 min without progress) or wiped out short of completion: avoid that site for a while.
+   bool finished = false;
+   foreach (ACR_Base built : ACR_Base.s_All)
+    if (built && built.m_bBuilt && !built.m_bRetired && vector.DistanceXZ(built.GetOrigin(), m_vFobTargetSite) < 20) finished = true;
+   if (!finished) AvoidSite(m_vFobTargetSite);
    m_FobBuilder = null;
    if (m_FobEscort && m_FobEscort.m_iAITask == ACR_EAITask.DEFEND && !m_FobEscort.m_AITarget)
    {
@@ -2230,8 +2313,8 @@ class ACR_AICommander : Managed
    dir = Vector(0, 0, -1);
   }
 
-  array<float> dists = {450.0, 550.0, 350.0, 650.0};
-  array<float> angles = {0.0, 25.0, -25.0, 50.0, -50.0};
+  array<float> dists = {450.0, 550.0, 350.0, 650.0, 750.0};
+  array<float> angles = {0.0, 25.0, -25.0, 50.0, -50.0, 75.0, -75.0};
 
   foreach (float d : dists)
   {
@@ -2244,9 +2327,10 @@ class ACR_AICommander : Managed
     vector candidate = front.GetOrigin() + rotatedDir * d;
     candidate[1] = GetGame().GetWorld().GetSurfaceY(candidate[0], candidate[2]);
 
+    if (Avoided(candidate)) continue;
     vector validSpot;
     string refusal;
-    if (!ACR_FobBuild.ValidateSite(candidate, validSpot, refusal)) continue;
+    if (!ACR_FobBuild.ValidateSite(candidate, validSpot, refusal, "", 20)) continue;
 
     bool safe = true;
     foreach (ACR_Base b : ACR_Base.s_All)
@@ -2275,8 +2359,8 @@ class ACR_AICommander : Managed
   MySquads(mine, false);
   foreach (ACR_Squad squad : mine)
   {
-   if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0) continue;
-   if (squad.m_iAITask == ACR_EAITask.ATTACK || squad.m_iAITask == ACR_EAITask.DEFEND) continue;
+   if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0 || squad == m_FobEscort) continue;
+   if (squad.m_iAITask == ACR_EAITask.ATTACK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
    IEntity truck = squad.ConstructionTruck();
    if (!truck || ACR_Logistics.Health(truck) <= 0) continue;
    if (m_Manager.m_Logistics && m_Manager.m_Logistics.StockOf(truck) >= ACR_FobBuild.LOADS_RESERVED)
@@ -2285,9 +2369,27 @@ class ACR_AICommander : Managed
   return null;
  }
 
+ // Any of our construction trucks still alive with a full 500-supply load.
+ bool HasLoadedConstructionTruck()
+ {
+  array<IEntity> vehicles = {};
+  ACR_Vehicles.All(vehicles);
+  foreach (IEntity vehicle : vehicles)
+  {
+   if (!vehicle || ACR_Logistics.Health(vehicle) <= 0 || (ACR_Logistics.ServiceOf(vehicle) & ACR_EService.CONSTRUCTION) == 0) continue;
+   FactionAffiliationComponent aff = FactionAffiliationComponent.Cast(vehicle.FindComponent(FactionAffiliationComponent));
+   if (!aff || !aff.GetAffiliatedFaction() || aff.GetAffiliatedFaction().GetFactionKey() != m_sFaction) continue;
+   if (m_Manager.m_Logistics && m_Manager.m_Logistics.StockOf(vehicle) >= ACR_FobBuild.LOADS_RESERVED) return true;
+  }
+  return false;
+ }
+
  bool BuyConstructionTruck(ACR_Base spawn)
  {
   if (!spawn) return false;
+  // One purchase at a time: a truck already out there (crew still forming up, or parked) waits.
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_fFobTruckBoughtAt < FOB_TRUCK_RETRY_MS || HasLoadedConstructionTruck()) return false;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   if (!data || !data.m_aRequisitions) return false;
 
@@ -2305,6 +2407,7 @@ class ACR_AICommander : Managed
 
   string bought = m_Manager.PurchaseAt(m_sFaction, pick, spawn);
   PrintFormat("[ACR] AI %1 requisition (FOB construction truck): %2", m_sFaction, bought);
+  if (!bought.IsEmpty()) m_fFobTruckBoughtAt = now;
   return !bought.IsEmpty();
  }
 
@@ -2328,11 +2431,22 @@ class ACR_AICommander : Managed
   if (now < m_fNextFobEval) return;
   m_fNextFobEval = now + FOB_EVAL_INTERVAL_MS;
 
-  ACR_Base front = NeedsFob();
-  if (!front) return;
-
+  // Rebuild a destroyed HQ before planning anything new.
   vector site;
-  if (!FindFobSite(front, site)) return;
+  ACR_Base front = HqLostFob();
+  if (front) site = front.GetOrigin();
+  else
+  {
+   front = NeedsFob();
+   if (!front) return;
+   if (!FindFobSite(front, site))
+   {
+    // Site searches are expensive (HQ and eight upgrade spots per candidate): back off.
+    m_fNextFobEval = now + FOB_SITE_RETRY_MS;
+    PrintFormat("[ACR] AI %1: no clear FOB site near %2, next look in 5 minutes", m_sFaction, front.m_sName);
+    return;
+   }
+  }
 
   ACR_Squad builder = FindConstructionSquad();
   if (!builder)
@@ -2366,6 +2480,65 @@ class ACR_AICommander : Managed
   PrintFormat("[ACR] AI %1: dispatched %2 to establish forward FOB near %3 at %4", m_sFaction, builder.GetName(), front.m_sName, site);
  }
 
+ // Our own FOB whose HQ is gone, quiet enough to rebuild.
+ ACR_Base HqLostFob()
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || !base.m_bBuilt || base.m_bRetired || !base.m_bHqLost || base.m_sOwner != m_sFaction) continue;
+   if (base.m_bContested || ACR_FobBuild.IsContested(base.GetOrigin(), m_sFaction) || Avoided(base.GetOrigin())) continue;
+   return base;
+  }
+  return null;
+ }
+
+ void AvoidSite(vector site)
+ {
+  m_aAvoidSites.Insert(site);
+  m_aAvoidUntil.Insert(GetGame().GetWorld().GetWorldTime() + FOB_SITE_AVOID_MS);
+  PrintFormat("[ACR] AI %1: FOB site %2 abandoned, avoiding it for 10 minutes", m_sFaction, site);
+ }
+
+ bool Avoided(vector site)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  for (int i = m_aAvoidSites.Count() - 1; i >= 0; i--)
+  {
+   if (now >= m_aAvoidUntil[i])
+   {
+    m_aAvoidSites.RemoveOrdered(i);
+    m_aAvoidUntil.RemoveOrdered(i);
+    continue;
+   }
+   if (vector.DistanceXZ(m_aAvoidSites[i], site) < FOB_SITE_AVOID_RADIUS) return true;
+  }
+  return false;
+ }
+
+ // A demolition charge on one of our FOBs: the nearest squad runs to defuse it.
+ bool RespondToCharge(vector chargePos)
+ {
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  ACR_Squad best;
+  float bestDist = 500;
+  foreach (ACR_Squad squad : mine)
+  {
+   if (!squad || squad.CountAlive() <= 0 || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
+   float d = vector.DistanceXZ(PositionOf(squad), chargePos);
+   if (d < bestDist)
+   {
+    bestDist = d;
+    best = squad;
+   }
+  }
+  if (!best) return false;
+  best.SetMode(ACR_EMoveMode.FAST);
+  best.MoveTo(chargePos);
+  PrintFormat("[ACR] AI %1: %2 sent to defuse a demolition charge at %3 (%4 m)", m_sFaction, best.GetName(), chargePos, (int)bestDist);
+  return true;
+ }
+
  static const float FOB_UPGRADE_EVAL_INTERVAL_MS = 15000;
  protected float m_fNextFobUpgradeEval;
 
@@ -2382,7 +2555,7 @@ class ACR_AICommander : Managed
 
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (!base || base.m_bRetired || !base.m_bBuilt || base.m_sOwner != m_sFaction || !base.m_FobSupply) continue;
+   if (!base || base.m_bRetired || !base.m_bBuilt || base.m_bHqLost || base.m_sOwner != m_sFaction || !base.m_FobSupply) continue;
    if (base.m_bContested || ACR_FobBuild.IsContested(base.GetOrigin(), m_sFaction)) continue;
 
    // 1. Supply replenishment check
@@ -2455,7 +2628,7 @@ class ACR_AICommander : Managed
   {
    if (slotIdx < 0 || slotIdx >= base.m_aFobSlots.Count()) continue;
    ACR_FobSlot slot = base.m_aFobSlots[slotIdx];
-   if (!slot) continue;
+   if (!slot || slot.m_bBlocked) continue; // its spot is blocked: skip it
    if (slot.m_eState == ACR_EFobSlotState.EMPTY || (slot.m_eState == ACR_EFobSlotState.BUILT && !ACR_FobSlots.IsBuiltForOwner(slot, m_sFaction)))
    {
     targetTier = 0;
@@ -2465,21 +2638,21 @@ class ACR_AICommander : Managed
 
   // Tier 1 upgrades after base tiers are built
   ACR_FobSlot barracksSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_BARRACKS];
-  if (barracksSlot && ACR_FobSlots.IsBuiltForOwner(barracksSlot, m_sFaction) && barracksSlot.m_iTier < 1)
+  if (barracksSlot && !barracksSlot.m_bBlocked && ACR_FobSlots.IsBuiltForOwner(barracksSlot, m_sFaction) && barracksSlot.m_iTier < 1)
   {
    targetTier = 1;
    return ACR_FobSlots.SLOT_BARRACKS;
   }
 
   ACR_FobSlot repairSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_REPAIR];
-  if (repairSlot && ACR_FobSlots.IsBuiltForOwner(repairSlot, m_sFaction) && repairSlot.m_iTier < 1)
+  if (repairSlot && !repairSlot.m_bBlocked && ACR_FobSlots.IsBuiltForOwner(repairSlot, m_sFaction) && repairSlot.m_iTier < 1)
   {
    targetTier = 1;
    return ACR_FobSlots.SLOT_REPAIR;
   }
 
   ACR_FobSlot heliSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_HELIPAD];
-  if (heliSlot && (heliSlot.m_eState == ACR_EFobSlotState.EMPTY || (heliSlot.m_eState == ACR_EFobSlotState.BUILT && !ACR_FobSlots.IsBuiltForOwner(heliSlot, m_sFaction))))
+  if (heliSlot && !heliSlot.m_bBlocked && (heliSlot.m_eState == ACR_EFobSlotState.EMPTY || (heliSlot.m_eState == ACR_EFobSlotState.BUILT && !ACR_FobSlots.IsBuiltForOwner(heliSlot, m_sFaction))))
   {
    targetTier = 0;
    return ACR_FobSlots.SLOT_HELIPAD;
@@ -2510,9 +2683,9 @@ class ACR_AICommander : Managed
   return false;
  }
 
- void AssistFobConstruction(ACR_Base base)
+ ACR_Squad AssistFobConstruction(ACR_Base base)
  {
-  if (!base || ACR_FobSlots.HasEngineer(base)) return;
+  if (!base || ACR_FobSlots.HasEngineer(base)) return null;
 
   array<ACR_Squad> mine = {};
   MySquads(mine, false);
@@ -2530,9 +2703,10 @@ class ACR_AICommander : Managed
     squad.SetMode(ACR_EMoveMode.FAST);
     squad.RouteTo(base.GetOrigin(), ACR_Squad.WP_MOVE, -1, "Assisting FOB upgrade construction", 0, true);
     PrintFormat("[ACR] AI %1: dispatched %2 to assist upgrade construction at %3", m_sFaction, squad.GetName(), base.m_sName);
-    return;
+    return squad;
    }
   }
+  return null;
  }
 
  void SetFobEvalTimeForTest(float time) { m_fNextFobEval = time; }

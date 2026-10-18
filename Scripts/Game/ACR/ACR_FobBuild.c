@@ -1,17 +1,19 @@
 // C&C-style forward base building (Stage 1; Roadmap Item 7).
-// Validates FOB placement footprints, fells trees, manages construction truck
-// supply reservation, build timer progression, and scripts HQ composition spawning.
+// Validates FOB sites (HQ footprint plus the preset upgrade spots), fells trees, manages the
+// construction truck's 500-supply reservation, and scripts the HQ composition.
+// An Establish FOB order inside your own FOB whose HQ was destroyed rebuilds that HQ.
 class ACR_FobBuild
 {
-	static const float FOOTPRINT_RADIUS = 30.0;
-	static const float CP_RADIUS = 40.0;
-	static const float SLOPE_MAX_RISE = 3.0;
-	static const float MIN_ROAD_DISTANCE = 22.0;
-	static const float MIN_BASE_DISTANCE = 40.0;
+	static const float HQ_RADIUS = 11.0;            // HQ composition footprint
+	static const float CP_RADIUS = 40.0;            // FOB circle: engineers count inside it
+	static const float FOB_SPACING = 120.0;         // centre to centre: upgrade spots never overlap
+	static const float MIN_BASE_DISTANCE = 40.0;    // clear of other bases' circles
 	static const float SEARCH_RADIUS = 50.0;
 	static const float BUILD_DURATION_S = 90.0;
 	static const float LOADS_RESERVED = 20.0;
 	static const int SUPPLIES_RESERVED = 500;
+	static const int MIN_CLEAR_SLOTS = 5;           // of 8, including the radio relay
+	static const vector PARKING_OFFSET = "18 0 6";  // truck stand-off clear of the HQ and every slot
 
 	static const ResourceName HQ_US = "{16AF2FE47A6C297B}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Headquarters_S_Conflict_US_01.et";
 	static const ResourceName HQ_USSR = "{D70BF977E6D6300C}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_Headquarters_S_Conflict_USSR_01.et";
@@ -22,6 +24,11 @@ class ACR_FobBuild
 		if (factionKey == "USSR" || factionKey == "RHS_AFRF") return HQ_USSR;
 		if (factionKey == "FIA") return HQ_FIA;
 		return HQ_US;
+	}
+
+	static vector ParkingSpot(vector site)
+	{
+		return ACR_Manager.Ground(site + PARKING_OFFSET);
 	}
 
 	static bool CanOrder(ACR_Squad squad, out string refusal)
@@ -60,71 +67,137 @@ class ACR_FobBuild
 		return true;
 	}
 
+	// Your own built FOB whose HQ is gone, containing the spot (rebuild target).
+	static ACR_Base HqLostFobAt(vector spot, string faction)
+	{
+		if (faction.IsEmpty()) return null;
+		foreach (ACR_Base base : ACR_Base.s_All)
+		{
+			if (!base || !base.m_bBuilt || base.m_bRetired || !base.m_bHqLost || base.m_sOwner != faction) continue;
+			if (vector.DistanceXZ(base.GetOrigin(), spot) <= base.m_fRadius) return base;
+		}
+		return null;
+	}
+
+	// One circular footprint: map bounds, water, slope, roads, buildings and walls,
+	// other compositions (built or blueprint), and trees when they cannot be felled.
+	static bool FootprintClear(vector spot, float radius, array<IEntity> ignore, out string reason)
+	{
+		reason = "";
+		if (!ACR_Manager.OnMap(spot))
+		{
+			reason = "out of world bounds";
+			return false;
+		}
+		BaseWorld world = GetGame().GetWorld();
+		float centerY = world.GetSurfaceY(spot[0], spot[2]);
+		float minY = centerY;
+		float maxY = centerY;
+		if (BBB_Terrain.IsWaterAt(spot))
+		{
+			reason = "in water";
+			return false;
+		}
+		for (int i = 0; i < 12; i++)
+		{
+			float angle = i * 30 * Math.DEG2RAD;
+			float ca = Math.Cos(angle);
+			float sa = Math.Sin(angle);
+			vector rim = spot + Vector(ca * radius, 0, sa * radius);
+			if (BBB_Terrain.IsWaterAt(rim))
+			{
+				reason = "touches water";
+				return false;
+			}
+			float yOuter = world.GetSurfaceY(rim[0], rim[2]);
+			float yMid = world.GetSurfaceY(spot[0] + ca * radius * 0.5, spot[2] + sa * radius * 0.5);
+			minY = Math.Min(minY, Math.Min(yOuter, yMid));
+			maxY = Math.Max(maxY, Math.Max(yOuter, yMid));
+		}
+		float maxRise = Math.Max(1.5, radius * 0.12);
+		if (maxY - minY > maxRise)
+		{
+			reason = string.Format("too steep (%1 m rise)", (int)(maxY - minY + 0.5));
+			return false;
+		}
+
+		ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+		if (aiWorld && aiWorld.GetRoadNetworkManager())
+		{
+			BaseRoad road;
+			float roadDist;
+			aiWorld.GetRoadNetworkManager().GetClosestRoad(spot, road, roadDist);
+			if (road && roadDist - road.GetWidth() * 0.5 < radius + 1.0)
+			{
+				reason = "on a road";
+				return false;
+			}
+		}
+
+		s_Ignore = ignore;
+		s_Obstacles.Clear();
+		world.QueryEntitiesBySphere(spot, radius, CollectObstacle, null, EQueryEntitiesFlags.STATIC);
+		bool blocked = !s_Obstacles.IsEmpty();
+		s_Obstacles.Clear();
+		s_Ignore = null;
+		if (blocked)
+		{
+			reason = "buildings or walls in the way";
+			return false;
+		}
+
+		IEntity composition = ACR_Structures.CompositionOverlapping(spot, radius, ignore);
+		if (composition)
+		{
+			reason = string.Format("%1 in the way", ACR_Structures.KindName(ACR_Structures.KindOf(composition)));
+			return false;
+		}
+
+		if (!CanFellTrees() && CountTrees(spot, radius * 0.8) > 0)
+		{
+			reason = "trees in the way";
+			return false;
+		}
+		return true;
+	}
+
+	// A FOB site: the HQ footprint must be clear and enough upgrade spots usable.
 	static bool CheckSpot(vector spot, out string reason, ACR_Squad ignoreBuilder = null)
 	{
+		reason = "";
+		spot[1] = GetGame().GetWorld().GetSurfaceY(spot[0], spot[2]);
 		if (!ACR_Manager.OnMap(spot))
 		{
 			reason = "Out of world bounds";
 			return false;
 		}
-
-		// Water check: center and footprint perimeter
 		if (BBB_Terrain.IsWaterAt(spot))
 		{
 			reason = "Site is in water";
 			return false;
 		}
-		for (int i = 0; i < 16; i++)
-		{
-			float angle = i * 22.5 * Math.DEG2RAD;
-			vector p = spot + Vector(Math.Cos(angle) * FOOTPRINT_RADIUS, 0, Math.Sin(angle) * FOOTPRINT_RADIUS);
-			if (BBB_Terrain.IsWaterAt(p))
-			{
-				reason = "Site touches water";
-				return false;
-			}
-		}
 
-		// Slope check: elevation rise <= 3.0 m across the 30 m footprint
-		float centerY = GetGame().GetWorld().GetSurfaceY(spot[0], spot[2]);
-		float minY = centerY;
-		float maxY = centerY;
-		for (int j = 0; j < 16; j++)
-		{
-			float a = j * 22.5 * Math.DEG2RAD;
-			float yOuter = GetGame().GetWorld().GetSurfaceY(spot[0] + Math.Cos(a) * FOOTPRINT_RADIUS, spot[2] + Math.Sin(a) * FOOTPRINT_RADIUS);
-			if (yOuter < minY) minY = yOuter;
-			if (yOuter > maxY) maxY = yOuter;
-			float yMid = GetGame().GetWorld().GetSurfaceY(spot[0] + Math.Cos(a) * (FOOTPRINT_RADIUS * 0.5), spot[2] + Math.Sin(a) * (FOOTPRINT_RADIUS * 0.5));
-			if (yMid < minY) minY = yMid;
-			if (yMid > maxY) maxY = yMid;
-		}
-		if ((maxY - minY) > SLOPE_MAX_RISE)
-		{
-			reason = string.Format("Terrain too steep (slope %1 m > %2 m)", (int)(maxY - minY + 0.5), (int)SLOPE_MAX_RISE);
-			return false;
-		}
-
-		// Base proximity check: clear of existing bases within radius + 40 m
 		foreach (ACR_Base base : ACR_Base.s_All)
 		{
 			if (!base || base.m_bRetired) continue;
 			float dist = vector.DistanceXZ(base.GetOrigin(), spot);
-			if (dist <= base.m_fRadius + MIN_BASE_DISTANCE)
+			float needed = base.m_fRadius + MIN_BASE_DISTANCE;
+			if (base.m_bBuilt) needed = Math.Max(needed, FOB_SPACING);
+			if (dist <= needed)
 			{
 				reason = string.Format("Too close to %1", base.m_sName);
 				return false;
 			}
 		}
 
-		// Reserve the full base circle before the HQ exists. Completion ignores only itself.
+		// Reserve the whole layout before the HQ exists. Completion ignores only itself.
 		ACR_Manager manager = ACR_Manager.GetInstance();
 		if (manager)
 		{
 			foreach (ACR_Squad builder : manager.m_Squads)
 			{
 				if (!builder || builder == ignoreBuilder || builder.OrderState() != ACR_EOrderState.BUILD_FOB || builder.FobReservedLoads() <= 0) continue;
-				if (vector.DistanceXZ(builder.FobSite(), spot) <= CP_RADIUS * 2)
+				if (vector.DistanceXZ(builder.FobSite(), spot) <= FOB_SPACING)
 				{
 					reason = "Too close to a FOB construction site";
 					return false;
@@ -138,46 +211,60 @@ class ACR_FobBuild
 			if (!composition || !composition.IsCompositionSpawned() || composition.ACR_BuildRejected()) continue;
 			IEntity hq = composition.GetOwner();
 			if (!hq || ACR_Structures.KindOf(hq) != ACR_EStructure.HQ) continue;
-			if (vector.DistanceXZ(hq.GetOrigin(), spot) <= CP_RADIUS * 2)
+			if (vector.DistanceXZ(hq.GetOrigin(), spot) <= FOB_SPACING)
 			{
 				reason = "Too close to an existing headquarters";
 				return false;
 			}
 		}
 
-		// Road network clearance: require road edge clearance >= 22 m
-		ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
-		if (aiWorld && aiWorld.GetRoadNetworkManager())
+		string hqWhy;
+		if (!FootprintClear(spot, HQ_RADIUS, null, hqWhy))
 		{
-			BaseRoad road;
-			float roadDist;
-			aiWorld.GetRoadNetworkManager().GetClosestRoad(spot, road, roadDist);
-			if (road)
-			{
-				float halfWidth = road.GetWidth() * 0.5;
-				if (roadDist - halfWidth < MIN_ROAD_DISTANCE)
-				{
-					reason = "Too close to a road";
-					return false;
-				}
-			}
-		}
-
-		// Obstacle check: buildings, walls, and compositions
-		s_Obstacles.Clear();
-		GetGame().GetWorld().QueryEntitiesBySphere(spot, FOOTPRINT_RADIUS, CollectObstacle, null, EQueryEntitiesFlags.STATIC);
-		if (!s_Obstacles.IsEmpty())
-		{
-			reason = "Blocked by existing buildings or walls";
-			s_Obstacles.Clear();
+			reason = "HQ spot: " + hqWhy;
 			return false;
 		}
 
+		// Smart slots: count usable upgrade spots; the relay is required for deployment.
+		int clear = 0;
+		string firstWhy = "";
+		string relayWhy = "";
+		for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
+		{
+			string slotWhy;
+			if (ACR_FobSlots.SlotSpotClear(spot, s, 0, null, slotWhy))
+			{
+				clear++;
+				continue;
+			}
+			if (s == ACR_FobSlots.SLOT_RELAY) relayWhy = slotWhy;
+			if (firstWhy.IsEmpty()) firstWhy = string.Format("%1 %2", ACR_FobSlots.SlotName(s), slotWhy);
+			if (s - clear + 1 > ACR_FobSlots.SLOT_COUNT - MIN_CLEAR_SLOTS) break; // can no longer reach the minimum
+		}
+		if (!relayWhy.IsEmpty())
+		{
+			reason = "No room for the radio relay: " + relayWhy;
+			return false;
+		}
+		if (clear < MIN_CLEAR_SLOTS)
+		{
+			reason = string.Format("Too few clear upgrade spots (%1)", firstWhy);
+			return false;
+		}
 		return true;
 	}
 
-	static bool ValidateSite(vector clicked, out vector validSpot, out string refusal)
+	// maxRing: search rings of 10 m out to this distance (the AI uses a smaller search).
+	static bool ValidateSite(vector clicked, out vector validSpot, out string refusal, string faction = "", float maxRing = SEARCH_RADIUS)
 	{
+		ACR_Base lost = HqLostFobAt(clicked, faction);
+		if (lost)
+		{
+			validSpot = lost.GetOrigin();
+			refusal = "";
+			return true;
+		}
+
 		clicked[1] = GetGame().GetWorld().GetSurfaceY(clicked[0], clicked[2]);
 		if (CheckSpot(clicked, refusal))
 		{
@@ -185,8 +272,7 @@ class ACR_FobBuild
 			return true;
 		}
 
-		// Search outward in concentric rings up to SEARCH_RADIUS (~50 m)
-		for (float r = 10.0; r <= SEARCH_RADIUS; r += 10.0)
+		for (float r = 10.0; r <= maxRing; r += 10.0)
 		{
 			int steps = 8 + (int)(r * 0.2);
 			for (int i = 0; i < steps; i++)
@@ -202,24 +288,47 @@ class ACR_FobBuild
 				}
 			}
 		}
-
 		return false;
 	}
 
-	static void FellTrees(vector center, float radius)
+	// Trees need the vanilla destruction sync manager to fall on every machine.
+	static bool CanFellTrees()
 	{
-		s_Foliage.Clear();
-		GetGame().GetWorld().QueryEntitiesBySphere(center, radius, CollectFoliage, null, EQueryEntitiesFlags.ALL);
-		foreach (IEntity e : s_Foliage)
+#ifdef ENABLE_DESTRUCTION
+		return SCR_DestructibleTreesSynchManager.instance != null;
+#else
+		return false;
+#endif
+	}
+
+	static int CountTrees(vector center, float radius)
+	{
+		s_Trees.Clear();
+		GetGame().GetWorld().QueryEntitiesBySphere(center, radius, CollectTree, null, EQueryEntitiesFlags.STATIC);
+		int count = s_Trees.Count();
+		s_Trees.Clear();
+		return count;
+	}
+
+	// Fell standing trees in a footprint (replicated by the vanilla tree sync manager).
+	static int FellTrees(vector center, float radius)
+	{
+		if (!Replication.IsServer() || !CanFellTrees()) return 0;
+		int felled;
+		s_Trees.Clear();
+		GetGame().GetWorld().QueryEntitiesBySphere(center, radius, CollectTree, null, EQueryEntitiesFlags.STATIC);
+#ifdef ENABLE_DESTRUCTION
+		foreach (IEntity e : s_Trees)
 		{
-			if (!e) continue;
-			SCR_DestructibleEntity dest = SCR_DestructibleEntity.Cast(e);
-			if (dest && !SCR_DestructibleBuildingEntity.Cast(e))
-			{
-				dest.ForceKill_S();
-			}
+			SCR_DestructibleTreeV2 tree = SCR_DestructibleTreeV2.Cast(e);
+			if (!tree || tree.GetIsDestroyed()) continue;
+			tree.SetToDestroy();
+			felled++;
 		}
-		s_Foliage.Clear();
+#endif
+		s_Trees.Clear();
+		if (felled > 0) PrintFormat("[ACR] FOB: felled %1 trees at %2 (radius %3 m)", felled, center, (int)radius);
+		return felled;
 	}
 
 	static bool IsContested(vector site, string faction)
@@ -235,27 +344,31 @@ class ACR_FobBuild
 		return false;
 	}
 
+	protected static array<IEntity> s_Ignore;
 	protected static ref array<IEntity> s_Obstacles = {};
 	protected static bool CollectObstacle(IEntity e)
 	{
 		if (!e || e.GetParent()) return true;
+		if (s_Ignore && s_Ignore.Contains(e)) return true;
 		if (SCR_DestructibleBuildingEntity.Cast(e) || BaseBuilding.Cast(e) || WallGeneratorEntity.Cast(e))
-		{
 			s_Obstacles.Insert(e);
-			return true;
-		}
-		if (SCR_CampaignBuildingCompositionComponent.Cast(e.FindComponent(SCR_CampaignBuildingCompositionComponent)))
-		{
-			s_Obstacles.Insert(e);
-			return true;
-		}
 		return true;
 	}
 
-	protected static ref array<IEntity> s_Foliage = {};
-	protected static bool CollectFoliage(IEntity e)
+	protected static ref array<IEntity> s_Trees = {};
+	// Bushes and saplings under 4 m are left alone (the compositions simply cover them).
+	static const float TREE_MIN_HEIGHT = 4.0;
+	protected static bool CollectTree(IEntity e)
 	{
-		if (e) s_Foliage.Insert(e);
+		if (!Tree.Cast(e)) return true;
+		vector mins, maxs;
+		e.GetBounds(mins, maxs);
+		if (maxs[1] - mins[1] < TREE_MIN_HEIGHT) return true;
+#ifdef ENABLE_DESTRUCTION
+		SCR_DestructibleTreeV2 tree = SCR_DestructibleTreeV2.Cast(e);
+		if (tree && tree.GetIsDestroyed()) return true;
+#endif
+		s_Trees.Insert(e);
 		return true;
 	}
 }

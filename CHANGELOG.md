@@ -2,11 +2,25 @@
 
 ## 0.5.6 — unreleased
 
-### FOBs and logistics
+### Forward bases (FOBs)
+
+- Engineers can establish forward bases: select a squad with a construction truck carrying 500 supplies, choose Establish FOB and right-click a clear site. The site check covers the headquarters and the upgrade spots around it, and searches up to 50 m for a better spot. Building takes 90 seconds with the squad on site. Cancelling refunds the supplies to the truck; losing the truck loses them. Builders keep fighting while they work, and give up with a refund after three minutes without progress.
+- A built FOB has eight upgrade spots around its headquarters: field hospital, maintenance (light, then heavy), ammo storage, fuel storage, helipad, radio relay, barracks (small, then large) and supply depot. Order upgrades from the FOB panel. They cost the FOB's own supplies and finish faster with engineers nearby. Work pauses while the FOB is contested. Vehicles parked on a finished spot hold it until they move.
+- Each upgrade spot is checked on its own. A blocked spot shows as blocked in the panel, and a matching building already inside the FOB counts as that upgrade.
+- FIA heavy maintenance and large barracks keep the small buildings (FIA has no larger models) but give the full upgrade effect.
+- The AI commander now builds FOBs when its front is far from a deployment base, upgrades them, orders supplies while keeping an RP reserve, and rebuilds lost headquarters.
+- AI sappers can raid enemy FOBs. They plant only once no defender is within 30 m of the headquarters. Defenders can defuse a charge by standing next to it for 5 seconds during its 45-second fuse; AI defenders are sent to do this. A detonation destroys only the headquarters.
+- A FOB whose headquarters is destroyed goes offline: no deployment, reinforcement, services, deliveries or upgrades. Its buildings remain, and can be captured with the FOB. An Establish FOB order inside it rebuilds the headquarters and brings it back online.
+- Capturing a FOB now transfers its buildings and upgrades to the new owner.
+
+### Fixes
 
 - Fixed FOB upgrades being invisible to joined players and destroyed radio antennas blocking replacement through the upgrade panel.
 - Prevented overlapping FOB construction orders from wasting truck supplies; blocked construction now refunds its reserved cargo.
 - Planted demolition charges keep their fuse when command changes hands or their attack plan ends.
+- Fixed the headquarters spawning on top of the construction truck; trucks now park clear of the base layout.
+- The AI commander no longer buys repeated construction trucks while one is already on its way.
+- Buildings without a side no longer repeat a log message every two seconds.
 
 ## 0.5.5 — released
 

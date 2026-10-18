@@ -1203,13 +1203,17 @@ modded class SCR_PlayerController
      int stock = m_ACR_Data.m_BaseSupply[supplyOffset];
      int capacity = m_ACR_Data.m_BaseSupply[supplyOffset + 1];
      int delivery = m_ACR_Data.m_BaseSupply[supplyOffset + 2];
-     bool ready = m_ACR_IsCommander && m_ACR_Data.m_BaseContested[baseIndex] == 0;
+     // delivery -1: the FOB's HQ is destroyed and it is offline until rebuilt.
+     bool ready = m_ACR_IsCommander && m_ACR_Data.m_BaseContested[baseIndex] == 0 && delivery >= 0;
+     string factionKey = "";
+     Faction myFaction = SCR_FactionManager.SGetPlayerFaction(GetPlayerId());
+     if (myFaction) factionKey = myFaction.GetFactionKey();
      array<int> slotStates = {};
      for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
      {
       slotStates.Insert(m_ACR_Data.m_BaseSupply[supplyOffset + 3 + s]);
      }
-     m_ACR_Panel.SetFob(stock >= 0, ready && capacity - stock >= ACR_FobSupply.DELIVERY_AMOUNT && delivery == 0 && m_ACR_RP >= ACR_FobSupply.DELIVERY_COST, ready && stock > 0, slotStates, stock, ready);
+     m_ACR_Panel.SetFob(stock >= 0, ready && capacity - stock >= ACR_FobSupply.DELIVERY_AMOUNT && delivery == 0 && m_ACR_RP >= ACR_FobSupply.DELIVERY_COST, ready && stock > 0, slotStates, stock, ready, factionKey);
     }
     else if (m_ACR_Data.m_BaseSupply.Count() > supplyOffset + 2)
     {

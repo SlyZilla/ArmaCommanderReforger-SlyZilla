@@ -51,14 +51,20 @@ class ACR_TestFobBuild
 
   // 8. CheckSpot accepts valid clear spot
   vector clearSite;
-  for (int i = 0; i < 24; i++)
+  bool siteFound = false;
+  for (int ring = 0; ring < 4 && !siteFound; ring++)
   {
-   float angle = i * 15 * Math.DEG2RAD;
-   vector candidate = ACR_Manager.Ground(anchorPos + Vector(Math.Cos(angle) * 220, 0, Math.Sin(angle) * 220));
-   if (ACR_FobBuild.CheckSpot(candidate, why))
+   for (int i = 0; i < 24; i++)
    {
-    clearSite = candidate;
-    break;
+    float angle = i * 15 * Math.DEG2RAD;
+    float ringDist = 220 + ring * 90;
+    vector candidate = ACR_Manager.Ground(anchorPos + Vector(Math.Cos(angle) * ringDist, 0, Math.Sin(angle) * ringDist));
+    if (ACR_FobBuild.CheckSpot(candidate, why))
+    {
+     clearSite = candidate;
+     siteFound = true;
+     break;
+    }
    }
   }
   ACR_TestRegress.Check("fobbuild: CheckSpot accepts clear distant terrain", !clearSite.ToString().IsEmpty() && ACR_FobBuild.CheckSpot(clearSite, why), why);
@@ -66,12 +72,34 @@ class ACR_TestFobBuild
   // 9. ValidateSite finds a spot within 50m search
   vector edgeBase = anyBase.GetOrigin() + Vector(anyBase.m_fRadius + 30, 0, 0);
   vector foundSpot;
+  int searchStart = System.GetTickCount();
   bool snapped = ACR_FobBuild.ValidateSite(edgeBase, foundSpot, why);
+  int searchMs = System.GetTickCount() - searchStart;
+  vector badSpot;
+  string badWhy;
+  searchStart = System.GetTickCount();
+  ACR_FobBuild.ValidateSite(Vector(0, -50, 0), badSpot, badWhy);
+  PrintFormat("[ACR] PERF fob site search: %1 ms (found %2), worst case (all refused) %3 ms", searchMs, snapped, System.GetTickCount() - searchStart);
+  ACR_AICommander planner = new ACR_AICommander(manager, "US");
+  vector aiSite;
+  searchStart = System.GetTickCount();
+  bool aiFound = planner.FindFobSite(anyBase, aiSite);
+  PrintFormat("[ACR] PERF AI fob site search behind %1: %2 ms (found %3)", anyBase.m_sName, System.GetTickCount() - searchStart, aiFound);
   ACR_TestRegress.Check("fobbuild: ValidateSite finds valid spot within 50m search", snapped && vector.DistanceXZ(foundSpot, edgeBase) <= 50, why);
 
-  // 10. FellTrees spike clears foliage without throwing
-  ACR_FobBuild.FellTrees(clearSite, 30);
-  ACR_TestRegress.Check("fobbuild: FellTrees clears vegetation in footprint", true, "");
+  // 10. FellTrees fells the real trees in a footprint (vanilla tree sync manager).
+  vector woods;
+  int standing = 0;
+  for (int t = 0; t < 72 && standing == 0; t++)
+  {
+   float treeAngle = t * 20 * Math.DEG2RAD;
+   float treeDist = 150 + (t / 18) * 120;
+   woods = ACR_Manager.Ground(anchorPos + Vector(Math.Cos(treeAngle) * treeDist, 0, Math.Sin(treeAngle) * treeDist));
+   standing = ACR_FobBuild.CountTrees(woods, 12);
+  }
+  PrintFormat("[ACR] FOBTEST trees: can fell %1, %2 standing near %3", ACR_FobBuild.CanFellTrees(), standing, woods);
+  if (!ACR_FobBuild.CanFellTrees() || standing == 0) ACR_TestRegress.Skip("fobbuild: FellTrees fells every standing tree in a footprint", "no tree sync manager or no trees near the test squad");
+  else ACR_TestRegress.Check("fobbuild: FellTrees fells every standing tree in a footprint", ACR_FobBuild.FellTrees(woods, 12) == standing, standing.ToString());
 
   // 11. EstablishFob reserves 500 truck supplies and sets BUILD_FOB state
   float stockBefore = manager.m_Logistics.StockOf(truck);
@@ -175,6 +203,16 @@ class ACR_TestFobBuild
 
 modded class ACR_Structures
 {
+ void ACR_TestSetFaction(IEntity root, string faction)
+ {
+  ACR_Structure s = FindStructure(root);
+  if (!s) return;
+  s.m_sFaction = faction;
+  if (s.m_Composition) s.m_Composition.ACR_SetFaction(faction);
+  int service = ServiceOf(s.m_eKind);
+  if (service != 0 && m_Manager.m_Logistics) m_Manager.m_Logistics.AddPoint(s.m_Entity, service, faction);
+ }
+
  void ACR_TestForceTick()
  {
   m_fNextTick = 0;

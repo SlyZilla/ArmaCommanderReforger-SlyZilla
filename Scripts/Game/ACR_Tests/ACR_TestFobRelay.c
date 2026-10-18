@@ -52,6 +52,11 @@ class ACR_TestFobRelay
   ACR_TestRegress.Check("relay: completion restores deployment and RP reinforcement", ACR_LogisticsRules.CanDeploy(fob) && ACR_LogisticsRules.CanReinforce(fob), "");
  }
 
+ static void RestoreEnemySide(ACR_Manager manager)
+ {
+  if (s_Enemy) manager.m_Structures.ACR_TestSetFaction(s_Enemy, "USSR");
+ }
+
  static void RemoveAntenna(ACR_Base fob)
  {
   IEntity antenna = ACR_Structures.RelayAntenna(s_Relay);

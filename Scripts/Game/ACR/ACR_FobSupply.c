@@ -125,7 +125,7 @@ class ACR_FobSupply
  static ACR_Base Nearby(string faction, vector position)
  {
   foreach (ACR_Base base : ACR_Base.s_All)
-   if (base.m_bBuilt && !base.m_bRetired && base.m_sOwner == faction && base.m_FobSupply && vector.DistanceXZ(position, base.GetOrigin()) <= base.m_fRadius) return base;
+   if (base.FobOnline() && base.m_sOwner == faction && base.m_FobSupply && vector.DistanceXZ(position, base.GetOrigin()) <= base.m_fRadius) return base;
   return null;
  }
 
@@ -136,6 +136,13 @@ class ACR_FobSupply
   if (!base.m_FobSupply) return;
   SCR_FactionAffiliationComponent faction = SCR_FactionAffiliationComponent.Cast(base.m_FobSupply.FindComponent(SCR_FactionAffiliationComponent));
   if (faction) faction.SetAffiliatedFaction(base.GetOwnerFaction());
+  Bind(base, commandPost);
+ }
+
+ // Link a (re)built command post to the FOB's existing provider and its stock.
+ static void Bind(ACR_Base base, IEntity commandPost)
+ {
+  if (!base || !base.m_FobSupply || !commandPost) return;
   ACR_FobProviderComponent provider = ACR_FobProviderComponent.Cast(base.m_FobSupply.FindComponent(ACR_FobProviderComponent));
   SCR_CampaignBuildingCompositionComponent composition = SCR_CampaignBuildingCompositionComponent.Cast(commandPost.FindComponent(SCR_CampaignBuildingCompositionComponent));
   if (composition) composition.ACR_SetFobProvider(base.m_FobSupply);
@@ -165,7 +172,7 @@ class ACR_FobSupply
  {
   if (!Replication.IsServer() || cost < 0) return false;
   ACR_Base base = AtProvider(provider);
-  if (!base || base.m_bContested) return false;
+  if (!base || base.m_bContested || base.m_bHqLost) return false;
   SCR_ResourceContainer container = ACR_Logistics.SupplyContainer(provider);
   if (!container || Stock(provider) < cost) return false;
   container.SetResourceValue(Stock(provider) - cost);
@@ -186,6 +193,7 @@ class ACR_FobSupply
   string key = faction.GetFactionKey();
   ACR_Base base = manager.m_Requisition.FindSpawnBase(key, label);
   if (!base || !base.m_bBuilt || base.m_bRetired || !base.m_FobSupply) return "Select one of your built FOBs";
+  if (base.m_bHqLost) return "FOB HQ destroyed: rebuild it with an Establish FOB order";
   if (base.m_bContested) return "FOB is contested";
   if (!build)
   {
@@ -205,6 +213,7 @@ class ACR_FobSupply
  static string Order(ACR_Manager manager, string key, ACR_Base base)
  {
   if (!Replication.IsServer() || !manager || !base || base.m_bRetired || !ACR_Base.s_All.Contains(base) || !base.m_bBuilt || base.m_sOwner != key || !base.m_FobSupply) return "Select one of your built FOBs";
+  if (base.m_bHqLost) return "FOB HQ destroyed: rebuild it with an Establish FOB order";
   if (base.m_bContested) return "FOB is contested";
   if (base.m_iSupplyDelivery > 0) return "A supply delivery is already on order";
   SCR_ResourceContainer container = ACR_Logistics.SupplyContainer(base.m_FobSupply);
@@ -238,8 +247,8 @@ class ACR_FobSupply
    base.m_fSupplyDeliveryLeft = 0;
   }
   ACR_FobProviderComponent provider = ACR_FobProviderComponent.Cast(base.m_FobSupply.FindComponent(ACR_FobProviderComponent));
-  if (provider) provider.SetBlocked(base.m_bContested);
-  if (base.m_iSupplyDelivery <= 0 || base.m_bContested) return;
+  if (provider) provider.SetBlocked(base.m_bContested || base.m_bHqLost);
+  if (base.m_iSupplyDelivery <= 0 || base.m_bContested || base.m_bHqLost) return;
   base.m_fSupplyDeliveryLeft = Math.Max(0, base.m_fSupplyDeliveryLeft - Math.Max(0, elapsed));
   if (base.m_fSupplyDeliveryLeft > 0) return;
   SCR_ResourceContainer container = ACR_Logistics.SupplyContainer(base.m_FobSupply);
@@ -255,6 +264,7 @@ class ACR_FobSupply
  static string Describe(ACR_Base base)
  {
   string detail = string.Format("\nFOB supplies: %1 / %2", Stock(base.m_FobSupply), CapacityOf(base));
+  if (base.m_bHqLost) detail += "\nHQ DESTROYED: offline until an Establish FOB order rebuilds it";
   if (base.m_iSupplyDelivery > 0)
   {
    string state = "";

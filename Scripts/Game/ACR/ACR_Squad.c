@@ -553,6 +553,12 @@ class ACR_Squad : Managed
  float m_fFobLastTick;
  IEntity m_ReservedTruck;
  float m_fReservedLoads;
+ float m_fFobLastProgress;     // world ms of the last build progress (3 min without it: give up)
+ bool m_bFobSiteCleared;       // trees felled once work starts
+ ACR_Base m_FobRestore;        // HQ-less FOB whose HQ this order rebuilds
+ vector m_vFobGaveUpSite;      // last abandoned site (AI commander avoids it for a while)
+ float m_fFobGaveUpAt;
+ static const float FOB_GIVE_UP_MS = 180000;
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -798,7 +804,11 @@ class ACR_Squad : Managed
  {
   string refusal;
   if (!ACR_FobBuild.CanOrder(this, refusal)) return false;
-  if (!ACR_FobBuild.CheckSpot(site, refusal)) return false;
+  string factionKey = "";
+  if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+  ACR_Base restore = ACR_FobBuild.HqLostFobAt(site, factionKey);
+  if (restore) site = restore.GetOrigin();
+  else if (!ACR_FobBuild.CheckSpot(site, refusal)) return false;
   IEntity truck = ConstructionTruck();
   if (!truck) return false;
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -815,14 +825,17 @@ class ACR_Squad : Managed
   m_vFobSite = site;
   m_fFobBuildProgress = 0.0;
   m_fFobLastTick = GetGame().GetWorld().GetWorldTime();
-
-  ACR_FobBuild.FellTrees(site, ACR_FobBuild.FOOTPRINT_RADIUS);
+  m_fFobLastProgress = m_fFobLastTick;
+  m_bFobSiteCleared = false;
+  m_FobRestore = restore;
 
   SetOrder("Establishing FOB (0%)", ACR_EOrderState.BUILD_FOB);
   m_OrderKind = ACR_EOrderKind.MOVE;
-  m_MoveTarget = site;
-  IssueWaypoint(WP_MOVE, site, 5.0);
-  PrintFormat("[ACR] SQUAD %1: establishing FOB at %2, reserved 500 supplies from %3", m_Name, site, truck);
+  // Park clear of the HQ and every upgrade spot (the HQ used to spawn on the truck).
+  m_MoveTarget = ACR_FobBuild.ParkingSpot(site);
+  IssueWaypoint(WP_MOVE, m_MoveTarget, 5.0);
+  if (restore) PrintFormat("[ACR] SQUAD %1: rebuilding the HQ of %2, reserved 500 supplies from %3", m_Name, restore.m_sName, truck);
+  else PrintFormat("[ACR] SQUAD %1: establishing FOB at %2, reserved 500 supplies from %3", m_Name, site, truck);
   return true;
  }
 
@@ -840,6 +853,7 @@ class ACR_Squad : Managed
   m_fReservedLoads = 0;
   m_ReservedTruck = null;
   m_fFobBuildProgress = 0;
+  m_FobRestore = null;
   if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
   if (OrderState() == ACR_EOrderState.BUILD_FOB)
   {
@@ -895,6 +909,21 @@ class ACR_Squad : Managed
   bool contested = ACR_FobBuild.IsContested(m_vFobSite, factionKey) || KnownEnemies(60) > 0;
 
   int pct = (int)((m_fFobBuildProgress / ACR_FobBuild.BUILD_DURATION_S) * 100);
+  // Three minutes without progress (fighting, stuck, no engineer): give up and refund.
+  if (now - m_fFobLastProgress >= FOB_GIVE_UP_MS)
+  {
+   PrintFormat("[ACR] SQUAD %1: FOB build at %2 abandoned after 3 minutes without progress", m_Name, m_vFobSite);
+   m_vFobGaveUpSite = m_vFobSite;
+   m_fFobGaveUpAt = now;
+   CancelEstablishFob();
+   return;
+  }
+  if (m_FobRestore && (m_FobRestore.m_bRetired || !m_FobRestore.m_bHqLost || m_FobRestore.m_sOwner != factionKey))
+  {
+   PrintFormat("[ACR] SQUAD %1: HQ rebuild cancelled (the FOB changed)", m_Name);
+   CancelEstablishFob();
+   return;
+  }
   if (contested)
   {
    SetOrder(string.Format("Establishing FOB (%1%% - contested)", pct), ACR_EOrderState.BUILD_FOB);
@@ -905,12 +934,24 @@ class ACR_Squad : Managed
   {
    if (m_Group && !m_Group.GetCurrentWaypoint() && !HasPlayer())
    {
-    IssueWaypoint(WP_MOVE, m_vFobSite, 5.0);
+    IssueWaypoint(WP_MOVE, ACR_FobBuild.ParkingSpot(m_vFobSite), 5.0);
    }
    SetOrder(string.Format("Establishing FOB (%1%% - waiting for engineer)", pct), ACR_EOrderState.BUILD_FOB);
    return;
   }
 
+  if (m_fFobBuildProgress >= ACR_FobBuild.BUILD_DURATION_S && ACR_FobSlots.VehicleOnSpot(m_vFobSite, ACR_FobBuild.HQ_RADIUS))
+  {
+   SetOrder("Establishing FOB (move vehicles off the HQ spot)", ACR_EOrderState.BUILD_FOB);
+   return;
+  }
+
+  if (!m_bFobSiteCleared)
+  {
+   m_bFobSiteCleared = true;
+   ACR_FobBuild.FellTrees(m_vFobSite, ACR_FobBuild.HQ_RADIUS);
+  }
+  m_fFobLastProgress = now;
   m_fFobBuildProgress += dt;
   pct = Math.ClampInt((int)((m_fFobBuildProgress / ACR_FobBuild.BUILD_DURATION_S) * 100), 0, 100);
   SetOrder(string.Format("Establishing FOB (%1%%)", pct), ACR_EOrderState.BUILD_FOB);
@@ -924,7 +965,7 @@ class ACR_Squad : Managed
  void CompleteEstablishFob()
  {
   string refusal;
-  if (!ACR_FobBuild.CheckSpot(m_vFobSite, refusal, this))
+  if (!m_FobRestore && !ACR_FobBuild.CheckSpot(m_vFobSite, refusal, this))
   {
    PrintFormat("[ACR] SQUAD %1: FOB site no longer clear: %2", m_Name, refusal);
    CancelEstablishFob();
@@ -941,6 +982,7 @@ class ACR_Squad : Managed
   }
   m_fReservedLoads = 0;
   m_ReservedTruck = null;
+  m_FobRestore = null;
   if (hq)
   {
    SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(hq.FindComponent(SCR_CampaignBuildingCompositionComponent));
@@ -960,6 +1002,8 @@ class ACR_Squad : Managed
  }
 
  float FobBuildProgress() { return m_fFobBuildProgress; }
+ void SetFobLastProgressForTest(float time) { m_fFobLastProgress = time; }
+ ACR_Base FobRestore() { return m_FobRestore; }
  void SetFobBuildProgressForTest(float progress) { m_fFobBuildProgress = progress; }
  IEntity FobReservedTruck() { return m_ReservedTruck; }
  void SetFobReservedTruckForTest(IEntity truck) { m_ReservedTruck = truck; }
@@ -1174,11 +1218,8 @@ class ACR_Squad : Managed
  void Tactics(int skill, float now)
  {
   WatchCrew();
-  if (OrderState() == ACR_EOrderState.BUILD_FOB)
-  {
-   TickEstablishFob(now);
-   return;
-  }
+  // A builder fights normally (Jacob, 18 Oct); its progress pauses while in contact.
+  if (OrderState() == ACR_EOrderState.BUILD_FOB) TickEstablishFob(now);
   if (!m_Group || m_Commander != 0) return;
   array<AIAgent> agents = {};
   GetAgents(agents);

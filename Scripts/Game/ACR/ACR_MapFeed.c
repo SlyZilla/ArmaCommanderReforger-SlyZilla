@@ -475,27 +475,13 @@ class ACR_MapFeed
    frame.m_BaseSupply.Insert(ACR_FobSupply.CapacityOf(base));
    int delivery = 0;
    if (stock >= 0 && base.m_iSupplyDelivery > 0) delivery = Math.Max(1, Math.Ceil(base.m_fSupplyDeliveryLeft / 1000));
+   if (stock >= 0 && base.m_bHqLost) delivery = -1; // HQ destroyed: the panel offers nothing
    frame.m_BaseSupply.Insert(delivery);
    string slotSig = "";
    for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
    {
     int slotState = -1;
-    if (stock >= 0 && base.m_aFobSlots && s < base.m_aFobSlots.Count())
-    {
-     ACR_FobSlot slot = base.m_aFobSlots[s];
-     if (ACR_FobSlots.IsBuiltForOwner(slot, base.m_sOwner))
-     {
-      if (slot.m_iTier == 0) slotState = 100;
-      else slotState = 200;
-     }
-     else if (slot.m_eState == ACR_EFobSlotState.BUILDING && (slot.m_sOwner.IsEmpty() || slot.m_sOwner == base.m_sOwner))
-     {
-      int pct = Math.ClampInt((int)((slot.m_fProgress / slot.m_fDuration) * 100), 0, 99);
-      if (slot.m_iTargetTier == 0) slotState = pct;
-      else slotState = 100 + pct;
-     }
-     else slotState = 0;
-    }
+    if (stock >= 0) slotState = ACR_FobSlots.FeedState(base, s);
     frame.m_BaseSupply.Insert(slotState);
     slotSig += slotState.ToString() + ",";
    }

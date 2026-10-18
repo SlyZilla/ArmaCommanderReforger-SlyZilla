@@ -646,7 +646,10 @@ class ACR_CommandPanel : Managed
   if (m_Hint) m_Hint.SetText("");
  }
 
- void SetFob(bool visible, bool canOrder, bool canBuild, array<int> slotStates = null, int stock = 0, bool ready = false)
+ // Slot states (ACR_FobSlots.FeedState): -1 none; 0 empty; 1 empty, spot blocked;
+ // 10..109 building tier 0; 110..209 building tier 1; 300/301 built tier 0 (301 = next tier
+ // blocked); 400 built tier 1.
+ void SetFob(bool visible, bool canOrder, bool canBuild, array<int> slotStates = null, int stock = 0, bool ready = false, string factionKey = "")
  {
   if (m_FobSection) m_FobSection.SetVisible(visible);
   if (m_FobSupplyButton) m_FobSupplyButton.SetEnabled(canOrder, false);
@@ -660,10 +663,9 @@ class ACR_CommandPanel : Managed
   m_FobUpgradesLayout.SetVisible(true);
 
   bool anyBuilding = false;
-  for (int b = 0; b < slotStates.Count(); b++)
+  foreach (int st : slotStates)
   {
-   int st = slotStates[b];
-   if ((st > 0 && st < 100) || (st > 100 && st < 200))
+   if (st >= 10 && st < 210)
    {
     anyBuilding = true;
     break;
@@ -674,66 +676,53 @@ class ACR_CommandPanel : Managed
   {
    SCR_ButtonTextComponent btn = m_aFobUpgradeButtons[i];
    if (!btn) continue;
-   if (i >= slotStates.Count())
+   if (i >= slotStates.Count() || slotStates[i] < 0)
    {
     btn.SetEnabled(false, false);
     continue;
    }
    int state = slotStates[i];
-   bool maxed = false;
-   int currentTier = 0;
-   int nextTier = 0;
-   if (state == 200)
+   string label;
+   bool enabled = false;
+   if (state >= 400 || (state >= 300 && ACR_FobSlots.MaxTier(i) == 0))
    {
-    maxed = true;
-    currentTier = 1;
+    int builtTier = 0;
+    if (state >= 400) builtTier = 1;
+    label = string.Format("%1 [Built]", ACR_FobSlots.SlotName(i, builtTier, factionKey));
    }
-   else if (state > 100 && state < 200)
+   else if (state == 301)
    {
-    currentTier = 0;
-    nextTier = 1;
+    label = string.Format("Upgrade %1 [spot blocked]", ACR_FobSlots.SlotName(i, 1, factionKey));
    }
-   else if (state == 100)
+   else if (state >= 300)
    {
-    currentTier = 0;
-    if (ACR_FobSlots.MaxTier(i) > 0) nextTier = 1;
-    else maxed = true;
+    int upCost = ACR_FobSlots.SlotCost(i, 1);
+    label = string.Format("Upgrade %1 [%2 sup]", ACR_FobSlots.SlotName(i, 1, factionKey), upCost);
+    enabled = ready && !anyBuilding && stock >= upCost;
    }
-   else
+   else if (state >= 10)
    {
-    currentTier = 0;
-    nextTier = 0;
+    int buildTier = 0;
+    int pct = state - 10;
+    if (state >= 110)
+    {
+     buildTier = 1;
+     pct = state - 110;
+    }
+    label = string.Format("%1 (%2%%)", ACR_FobSlots.SlotName(i, buildTier, factionKey), pct);
    }
-
-   if (maxed)
+   else if (state == 1)
    {
-    string slotName = ACR_FobSlots.SlotName(i, currentTier);
-    btn.SetText(string.Format("%1 [Built]", slotName));
-    btn.SetEnabled(false, false);
-   }
-   else if ((state > 0 && state < 100) || (state > 100 && state < 200))
-   {
-    string slotName = ACR_FobSlots.SlotName(i, nextTier);
-    int pct = state % 100;
-    btn.SetText(string.Format("%1 (%2%%)", slotName, pct));
-    btn.SetEnabled(false, false);
-   }
-   else if (state == 100)
-   {
-    string slotName = ACR_FobSlots.SlotName(i, nextTier);
-    int cost = ACR_FobSlots.SlotCost(i, nextTier);
-    btn.SetText(string.Format("Upgrade %1 [%2 sup]", slotName, cost));
-    bool enabled = ready && !anyBuilding && stock >= cost;
-    btn.SetEnabled(enabled, false);
+    label = string.Format("%1 [spot blocked]", ACR_FobSlots.SlotName(i, 0, factionKey));
    }
    else
    {
-    string slotName = ACR_FobSlots.SlotName(i, 0);
     int cost = ACR_FobSlots.SlotCost(i, 0);
-    btn.SetText(string.Format("%1 [%2 sup]", slotName, cost));
-    bool enabled = ready && !anyBuilding && stock >= cost;
-    btn.SetEnabled(enabled, false);
+    label = string.Format("%1 [%2 sup]", ACR_FobSlots.SlotName(i, 0, factionKey), cost);
+    enabled = ready && !anyBuilding && stock >= cost;
    }
+   btn.SetText(label);
+   btn.SetEnabled(enabled, false);
   }
  }
 

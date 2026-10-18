@@ -44,6 +44,24 @@ class ACR_Base : GenericEntity
  string m_sSupplyDeliveryFaction;
  ref array<ref ACR_FobSlot> m_aFobSlots;
  float m_fFobSlotsLastTick;
+ bool m_bHqLost;                    // built FOB whose HQ was destroyed: offline, capturable, rebuildable
+
+ // A built FOB keeps its upgrades when its HQ is destroyed (Jacob, 18 Oct): no deployment,
+ // reinforcement, services, deliveries or upgrades until an Establish FOB order rebuilds the HQ.
+ void MarkHqLost(string why = "its HQ was destroyed")
+ {
+  if (m_bRetired || !m_bBuilt || m_bHqLost) return;
+  m_bHqLost = true;
+  m_iSupplyDelivery = 0;
+  m_fSupplyDeliveryLeft = 0;
+  PrintFormat("[ACR] BASE %1 offline (%2)", m_sName, why);
+ }
+
+ // A built FOB that can deploy, serve and build (not retired, HQ standing).
+ bool FobOnline()
+ {
+  return m_bBuilt && !m_bRetired && !m_bHqLost;
+ }
 
  // A built forward base whose HQ is gone: off the map and out of every base list.
  // Also used for bases left out of a skirmish layout (ACR_Skirmish).

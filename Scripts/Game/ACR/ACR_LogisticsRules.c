@@ -62,6 +62,7 @@ class ACR_LogisticsRules
  static bool RequireRelay() { return Choice("acrFobRelay", "1") != "0"; }
  static bool RelayBlocked(ACR_Base base)
  {
+  if (base && base.m_bBuilt && base.m_bHqLost) return true;
   if (!base || !base.m_bBuilt || !RequireRelay()) return false;
   ACR_Manager manager = ACR_Manager.GetInstance();
   return !manager || !manager.m_Structures || !manager.m_Structures.HasRelay(base);

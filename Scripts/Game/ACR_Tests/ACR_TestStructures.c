@@ -59,6 +59,8 @@ class ACR_TestStructures
   ACR_TestRegress.Check("housing: capture removes enemy housing bonus", fob.m_iGarrison == 0 && fob.m_iGarrisonLeft == 0, "");
   manager.m_Bases.DebugCapture(manager, fob, "US");
   ACR_TestRegress.Check("housing: recapture uses normal half-garrison rule", fob.m_iGarrison == 30 && fob.m_iGarrisonLeft == 15, "");
+  // Captures hand the FOB's buildings over; put the relay fixture's enemy antenna back.
+  ACR_TestFobRelay.RestoreEnemySide(manager);
   SCR_EntityHelper.DeleteEntityAndChildren(s_QuartersLarge);
   manager.m_Structures.UpdateHousing(fob);
   ACR_TestRegress.Check("housing: losing large quarters clamps survivors to eleven", fob.m_iGarrison == 11 && fob.m_iGarrisonLeft == 11, "");
@@ -495,10 +497,18 @@ class ACR_TestStructures
   }
   if (tick == 50)
   {
+   // The relay fixtures stand inside FOB 1 and would count as its relay slot (smart slots).
+   ACR_TestFobRelay.Cleanup();
+   ACR_FobSlots.Cleanup(s_Fob);
+   manager.m_Structures.ACR_TestForceTick();
    ACR_TestFobBuild.Run(manager, alpha, s_Construction);
+   // Legacy slot fixtures sit on unprepared test terrain: spot checks have their own test.
+   ACR_FobSlots.s_bSkipSpotChecksForTest = true;
    ACR_TestFobSlots.Run(manager, s_Fob, alpha, s_Construction);
    ACR_TestFobUpgrades.Run(manager, s_Fob, alpha, s_Construction);
+   ACR_FobSlots.s_bSkipSpotChecksForTest = false;
    ACR_TestSapperDemo.Run(manager, s_Fob, alpha);
+   ACR_TestFobDesign.Run(manager, s_Fob, alpha, s_Construction);
   }
   if (tick > 8 && tick % 5 == 0)
    PrintFormat("[ACR] STRUCTURETEST t=%1 wounded %2 (%5 m from the hospital), humvee health %3 fuel %4", tick, ACR_Logistics.Health(s_Wounded), ACR_Logistics.Health(s_Humvee), ACR_Logistics.Fuel(s_Humvee), DistanceTo(s_Wounded, s_Hospital));
@@ -529,6 +539,8 @@ class ACR_TestStructures
    int beforeLoss = manager.m_Bases.GetRP("US");
    ACR_FobSupply.Order(manager, "US", s_Fob);
    ACR_TestRegress.Check("FOB: paid delivery pending when CP destroyed", s_Fob.m_iSupplyDelivery == 500 && manager.m_Bases.GetRP("US") == beforeLoss - 20, "");
+   // FOB 1's upgrades would keep it standing without its HQ: clear them first.
+   ACR_FobSlots.Cleanup(s_Fob);
    if (s_HQ) SCR_EntityHelper.DeleteEntityAndChildren(s_HQ);
    if (s_Hospital) SCR_EntityHelper.DeleteEntityAndChildren(s_Hospital);
    if (s_Helipad) SCR_EntityHelper.DeleteEntityAndChildren(s_Helipad);
@@ -543,7 +555,7 @@ class ACR_TestStructures
    ACR_Helipad last = ACR_Helipad.s_All[ACR_Helipad.s_All.Count() - 1];
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
    ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
-   ACR_TestRegress.Complete("structures", 84 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS + ACR_TestFobUpgrades.CHECKS + ACR_TestSapperDemo.CHECKS);
+   ACR_TestRegress.Complete("structures", 84 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS + ACR_TestFobUpgrades.CHECKS + ACR_TestSapperDemo.CHECKS + ACR_TestFobDesign.CHECKS);
   }
  }
 

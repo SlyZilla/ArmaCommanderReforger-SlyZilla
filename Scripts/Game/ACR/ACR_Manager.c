@@ -496,6 +496,13 @@ class ACR_Manager : Managed
   {
    ACR_AIAttack attack = m_PrimedDemolitions[i];
    if (attack && attack.m_SapperDemo) attack.m_SapperDemo.Tick(now);
+   // The defending side's AI commander sends its nearest squad to defuse.
+   if (attack && attack.m_SapperDemo && attack.m_SapperDemo.State() == ACR_ESapperDemoState.FALLBACK && !attack.m_SapperDemo.DefendersCalled())
+   {
+    attack.m_SapperDemo.MarkDefendersCalled();
+    ACR_AICommander defender = AICommanderFor(attack.m_SapperDemo.TargetOwner());
+    if (defender && IsAIInCommand(attack.m_SapperDemo.TargetOwner()) && attack.m_SapperDemo.DemoCharge()) defender.RespondToCharge(attack.m_SapperDemo.DemoCharge().GetOrigin());
+   }
    if (!attack || !attack.m_SapperDemo || attack.m_SapperDemo.State() != ACR_ESapperDemoState.FALLBACK || !attack.m_Target || attack.m_Target.m_bRetired)
     m_PrimedDemolitions.RemoveOrdered(i);
   }

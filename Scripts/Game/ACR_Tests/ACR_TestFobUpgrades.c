@@ -67,8 +67,9 @@ class ACR_TestFobUpgrades
   truck.SetOrigin(fob.GetOrigin() + Vector(200, 0, 0));
   alpha.GetAnchor().SetOrigin(fob.GetOrigin() + Vector(200, 0, 0));
   alpha.Halt("Holding position");
-  ai.AssistFobConstruction(fob);
-  bool assisted = (alpha.OrderState() == ACR_EOrderState.MOVE);
+  // Any engineer or truck squad within 500 m may be the nearest one picked.
+  ACR_Squad assistant = ai.AssistFobConstruction(fob);
+  bool assisted = assistant && assistant.OrderState() == ACR_EOrderState.MOVE;
   ACR_TestRegress.Check("fobupgrades: AssistFobConstruction dispatches nearby engineer squad", assisted, "");
   alpha.Halt("Holding position");
 

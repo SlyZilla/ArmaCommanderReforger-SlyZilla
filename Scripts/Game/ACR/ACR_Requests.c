@@ -342,7 +342,9 @@ class ACR_Requests : Managed
     if (!ACR_FobBuild.CanOrder(squad, canWhy)) return outcome.Refuse(name + ": " + canWhy);
     vector validSite;
     string siteWhy;
-    if (!ACR_FobBuild.ValidateSite(point, validSite, siteWhy)) return outcome.Refuse(name + ": " + siteWhy);
+    string fobFaction = "";
+    if (squad.GetFaction()) fobFaction = squad.GetFaction().GetFactionKey();
+    if (!ACR_FobBuild.ValidateSite(point, validSite, siteWhy, fobFaction)) return outcome.Refuse(name + ": " + siteWhy);
     if (squad.EstablishFob(validSite))
     {
      PrintFormat("[ACR] ESTABLISH FOB player=%1 squad=%2 target=%3", pc.GetPlayerId(), name, validSite);

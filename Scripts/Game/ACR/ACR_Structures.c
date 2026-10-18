@@ -85,6 +85,12 @@ modded class SCR_CampaignBuildingCompositionComponent
 	void ACR_SetFaction(string factionKey) { m_sACRFaction = factionKey; }
 	string ACR_Faction() { return m_sACRFaction; }
 
+	// FOB upgrade tier (server). FIA has no large living area or medium maintenance bay:
+	// its tier-1 upgrades keep the small composition but give the tier-1 effect.
+	protected int m_iACRTier;
+	void ACR_SetTier(int tier) { m_iACRTier = tier; }
+	int ACR_Tier() { return m_iACRTier; }
+
 	override void OnPostInit(IEntity owner)
 	{
 		super.OnPostInit(owner);
@@ -134,6 +140,7 @@ class ACR_Structure : Managed
  ACR_Helipad m_Pad;
  ACR_Base m_Fob;
  IEntity m_Entity;
+ ref array<IEntity> m_aMajorParts = {}; // destructible sub-compositions (tents, shelters)
 }
 
 class ACR_Structures : Managed
@@ -145,6 +152,7 @@ class ACR_Structures : Managed
 
  protected ACR_Manager m_Manager;
  protected ref array<ref ACR_Structure> m_Active = {};
+ protected ref array<SCR_CampaignBuildingCompositionComponent> m_Ignored = {}; // sideless: logged once
  protected float m_fNextTick;
 
  void ACR_Structures(ACR_Manager manager)
@@ -272,11 +280,23 @@ class ACR_Structures : Managed
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextTick) return;
   m_fNextTick = now + TICK_MS;
-  foreach (ACR_Structure fobEntry : m_Active)
+  // Every built FOB ticks, including one whose HQ is gone (its upgrades stay).
+  array<ACR_Base> fobs = {};
+  foreach (ACR_Base candidate : ACR_Base.s_All)
+   if (candidate && candidate.m_bBuilt && !candidate.m_bRetired) fobs.Insert(candidate);
+  foreach (ACR_Base fobTick : fobs)
   {
-   if (!fobEntry.m_Fob) continue;
-   ACR_FobSupply.Tick(fobEntry.m_Fob);
-   ACR_FobSlots.Tick(fobEntry.m_Fob);
+   ACR_FobSupply.Tick(fobTick);
+   ACR_FobSlots.Tick(fobTick);
+  }
+  // Wrecked (every destructible tent/shelter destroyed): remove it so it can be rebuilt.
+  foreach (ACR_Structure wreck : m_Active)
+  {
+   if (!wreck.m_Entity || !IsWrecked(wreck)) continue;
+   PrintFormat("[ACR] STRUCTURE %1 %2 at %3 destroyed", wreck.m_sFaction, KindName(wreck.m_eKind), wreck.m_vPos);
+   IEntity wreckRoot = wreck.m_Entity;
+   wreck.m_Entity = null;
+   SCR_EntityHelper.DeleteEntityAndChildren(wreckRoot);
   }
   // Gone (dismantled, destroyed): undo.
   for (int i = m_Active.Count() - 1; i >= 0; i--)
@@ -290,15 +310,136 @@ class ACR_Structures : Managed
   {
    SCR_CampaignBuildingCompositionComponent composition = s_Registered[r];
    if (!composition || !composition.GetOwner()) { s_Registered.RemoveOrdered(r); continue; }
-   if (composition.ACR_BuildRejected() || !composition.IsCompositionSpawned() || IsActive(composition)) continue;
+   if (composition.ACR_BuildRejected() || !composition.IsCompositionSpawned() || IsActive(composition) || m_Ignored.Contains(composition)) continue;
    Activate(composition);
   }
-  foreach (ACR_Structure active : m_Active)
+  for (int g = m_Ignored.Count() - 1; g >= 0; g--)
+   if (!m_Ignored[g] || !m_Ignored[g].GetOwner()) m_Ignored.Remove(g);
+  foreach (ACR_Base fob : fobs)
   {
-   if (!active.m_Fob) continue;
-   UpdateCapacity(active.m_Fob);
-   UpdateHousing(active.m_Fob);
+   if (fob.m_bRetired) continue;
+   UpdateCapacity(fob);
+   UpdateHousing(fob);
+   // An HQ-less FOB with nothing of its owner's left standing is gone for good.
+   if (fob.m_bHqLost && !HasStructuresAt(fob) && !ACR_FobSlots.AnyBuilding(fob)) fob.Retire("its HQ and buildings are gone");
   }
+ }
+
+ // Any active structure of the FOB owner inside its circle.
+ bool HasStructuresAt(ACR_Base base)
+ {
+  if (!base) return false;
+  foreach (ACR_Structure s : m_Active)
+   if (s.m_Entity && s.m_sFaction == base.m_sOwner && vector.DistanceXZ(s.m_vPos, base.GetOrigin()) <= base.m_fRadius) return true;
+  return false;
+ }
+
+ // Active compositions of a kind and side inside a base circle.
+ void StructuresAt(ACR_Base base, ACR_EStructure kind, string faction, notnull array<IEntity> found)
+ {
+  found.Clear();
+  if (!base) return;
+  foreach (ACR_Structure s : m_Active)
+  {
+   if (!s.m_Entity || s.m_eKind != kind || s.m_sFaction != faction) continue;
+   if (vector.DistanceXZ(s.m_vPos, base.GetOrigin()) <= base.m_fRadius) found.Insert(s.m_Entity);
+  }
+ }
+
+ // Approximate footprint radius (metres) of a vanilla composition kind and tier.
+ static float KindRadius(ACR_EStructure kind, int tier = 0)
+ {
+  switch (kind)
+  {
+   case ACR_EStructure.HOSPITAL: return 14;
+   case ACR_EStructure.REPAIR:
+    if (tier > 0) return 17;
+    return 8;
+   case ACR_EStructure.AMMO: return 8;
+   case ACR_EStructure.FUEL: return 8;
+   case ACR_EStructure.HELIPAD: return 21;
+   case ACR_EStructure.HQ: return 10;
+   case ACR_EStructure.DEPOT: return 9;
+   case ACR_EStructure.RELAY: return 8;
+   case ACR_EStructure.BARRACKS:
+    if (tier > 0) return 22;
+    return 10;
+  }
+  return 8;
+ }
+
+ // A registered composition (built or a pending blueprint) whose footprint overlaps the circle,
+ // other than those listed in ignore.
+ static IEntity CompositionOverlapping(vector position, float radius, array<IEntity> ignore = null)
+ {
+  foreach (SCR_CampaignBuildingCompositionComponent composition : s_Registered)
+  {
+   if (!composition || composition.ACR_BuildRejected()) continue;
+   IEntity root = composition.GetOwner();
+   if (!root || (ignore && ignore.Contains(root))) continue;
+   ACR_EStructure kind = KindOf(root);
+   if (vector.DistanceXZ(root.GetOrigin(), position) < radius + KindRadius(kind, TierOf(root))) return root;
+  }
+  return null;
+ }
+
+ // Destructible sub-compositions directly under the root: the tents and shelters that make it.
+ static void MajorParts(IEntity root, notnull array<IEntity> parts)
+ {
+  parts.Clear();
+  if (!root) return;
+  for (IEntity child = root.GetChildren(); child; child = child.GetSibling())
+  {
+   if (!child.GetPrefabData()) continue;
+   string name = child.GetPrefabData().GetPrefabName();
+   if (!name.Contains("/SubCompositions/")) continue;
+   if (!SCR_DestructionMultiPhaseComponent.Cast(child.FindComponent(SCR_DestructionMultiPhaseComponent)) && !DamageManagerComponent.Cast(child.FindComponent(DamageManagerComponent))) continue;
+   parts.Insert(child);
+  }
+ }
+
+ static bool PartDestroyed(IEntity part)
+ {
+  if (!part) return true;
+  SCR_DestructionMultiPhaseComponent phases = SCR_DestructionMultiPhaseComponent.Cast(part.FindComponent(SCR_DestructionMultiPhaseComponent));
+  if (phases && phases.GetDestroyed()) return true;
+  DamageManagerComponent damage = DamageManagerComponent.Cast(part.FindComponent(DamageManagerComponent));
+  return damage && damage.IsDestroyed();
+ }
+
+ // Every major part destroyed (a composition without any never counts as wrecked).
+ static bool IsWrecked(ACR_Structure s)
+ {
+  if (!s || !s.m_Entity) return false;
+  if (ACR_Logistics.Health(s.m_Entity) <= 0) return true;
+  if (s.m_aMajorParts.IsEmpty()) return false;
+  foreach (IEntity part : s.m_aMajorParts)
+   if (!PartDestroyed(part)) return false;
+  return true;
+ }
+
+ ACR_Structure FindStructure(IEntity root)
+ {
+  foreach (ACR_Structure s : m_Active) if (s.m_Entity == root) return s;
+  return null;
+ }
+
+ // A captured FOB's buildings change hands with it.
+ void TransferFob(ACR_Base base, string faction)
+ {
+  if (!base || !base.m_bBuilt) return;
+  foreach (ACR_Structure s : m_Active)
+  {
+   if (!s.m_Entity || vector.DistanceXZ(s.m_vPos, base.GetOrigin()) > base.m_fRadius) continue;
+   if (s.m_sFaction == faction) continue;
+   s.m_sFaction = faction;
+   if (s.m_Composition) s.m_Composition.ACR_SetFaction(faction);
+   int service = ServiceOf(s.m_eKind);
+   if (service != 0 && m_Manager.m_Logistics) m_Manager.m_Logistics.AddPoint(s.m_Entity, service, faction);
+   if (s.m_Pad) s.m_Pad.m_sFaction = faction;
+  }
+  ACR_FobSlots.TransferOwner(base, faction);
+  PrintFormat("[ACR] FOB %1 buildings now belong to %2", base.m_sName, faction);
  }
 
  // Reconcile capacity changes only: surviving housing never refills casualties.
@@ -322,20 +463,28 @@ class ACR_Structures : Managed
  static int HousingDefenders(IEntity housing)
  {
   if (!housing || !housing.GetPrefabData()) return 0;
-  string name = housing.GetPrefabData().GetPrefabName();
-  name.ToLower();
+  if (TierOf(housing) >= 1) return 19;
   // Native living quarters cost 275 / 475: one defender per 25 supplies.
-  if (name.Contains("livingarea_l_")) return 19;
   return 11;
  }
 
  static float RepairFraction(IEntity station)
  {
   if (!station || !station.GetPrefabData()) return 0.15;
-  string name = station.GetPrefabData().GetPrefabName();
-  name.ToLower();
-  if (name.Contains("vehiclemaintenance_m_") || name.Contains("vehiclemaintenance_l_")) return 0.21;
+  if (TierOf(station) >= 1) return 0.21;
   return 0.15;
+ }
+
+ // Tier of a living area / maintenance composition: large/medium prefabs, or a tier set by a FOB slot.
+ static int TierOf(IEntity composition)
+ {
+  if (!composition || !composition.GetPrefabData()) return 0;
+  SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(composition.FindComponent(SCR_CampaignBuildingCompositionComponent));
+  if (comp && comp.ACR_Tier() >= 1) return 1;
+  string name = composition.GetPrefabData().GetPrefabName();
+  name.ToLower();
+  if (name.Contains("livingarea_l_") || name.Contains("vehiclemaintenance_m_") || name.Contains("vehiclemaintenance_l_")) return 1;
+  return 0;
  }
 
  void UpdateCapacity(ACR_Base base)
@@ -405,8 +554,10 @@ class ACR_Structures : Managed
   if (s.m_sFaction.IsEmpty())
   {
    PrintFormat("[ACR] STRUCTURE %1 at %2: no side, ignored", KindName(s.m_eKind), s.m_vPos);
+   m_Ignored.Insert(composition);
    return;
   }
+  MajorParts(owner, s.m_aMajorParts);
   m_Active.Insert(s);
   int service = ServiceOf(s.m_eKind);
   if (service != 0)
@@ -422,11 +573,31 @@ class ACR_Structures : Managed
    s.m_Pad = ACR_Helipad.Cast(GetGame().SpawnEntity(ACR_Helipad, GetGame().GetWorld(), parameters));
    if (s.m_Pad) s.m_Pad.m_sFaction = s.m_sFaction;
   }
-  if (s.m_eKind == ACR_EStructure.HQ) s.m_Fob = MakeFob(s);
+  if (s.m_eKind == ACR_EStructure.HQ)
+  {
+   s.m_Fob = RestoreFob(s);
+   if (!s.m_Fob) s.m_Fob = MakeFob(s);
+  }
   string where = "";
   if (s.m_Fob) where = " = " + s.m_Fob.m_sName;
   else if (s.m_Pad && s.m_Pad.Base()) where = " (pad of " + s.m_Pad.Base().m_sName + ")";
-  PrintFormat("[ACR] STRUCTURE %1 %2 built at %3%4", s.m_sFaction, KindName(s.m_eKind), s.m_vPos, where);
+  PrintFormat("[ACR] STRUCTURE %1 %2 built at %3%4 (%5 destructible parts)", s.m_sFaction, KindName(s.m_eKind), s.m_vPos, where, s.m_aMajorParts.Count());
+ }
+
+ // A new HQ at the centre of its side's HQ-less FOB brings that FOB back online.
+ protected ACR_Base RestoreFob(ACR_Structure s)
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || !base.m_bBuilt || base.m_bRetired || !base.m_bHqLost || base.m_sOwner != s.m_sFaction) continue;
+   if (vector.DistanceXZ(base.GetOrigin(), s.m_vPos) > FOB_RADIUS * 0.5) continue;
+   base.m_bHqLost = false;
+   if (!base.m_FobSupply) ACR_FobSupply.Create(base, s.m_Entity);
+   else ACR_FobSupply.Bind(base, s.m_Entity);
+   PrintFormat("[ACR] BASE %1 back online (HQ rebuilt)", base.m_sName);
+   return base;
+  }
+  return null;
  }
 
  protected ACR_Base MakeFob(ACR_Structure s)
@@ -461,7 +632,8 @@ class ACR_Structures : Managed
   if (m_Manager.m_Logistics && s.m_Entity) m_Manager.m_Logistics.RemovePoint(s.m_Entity);
   if (m_Manager.m_Logistics) m_Manager.m_Logistics.PrunePoints();
   if (s.m_Pad) s.m_Pad.m_bGone = true;
-  if (s.m_Fob) s.m_Fob.Retire();
+  // The FOB outlives its HQ while its upgrades stand (retired in Tick once nothing is left).
+  if (s.m_Fob) s.m_Fob.MarkHqLost();
   PrintFormat("[ACR] STRUCTURE %1 %2 at %3 is gone", s.m_sFaction, KindName(s.m_eKind), s.m_vPos);
  }
 
