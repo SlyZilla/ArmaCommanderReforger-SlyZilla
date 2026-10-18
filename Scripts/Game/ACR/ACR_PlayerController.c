@@ -163,7 +163,33 @@ modded class SCR_PlayerController
   m_ACR_CommandsInWindow++;
   if (m_ACR_CommandsInWindow > 24) return;
   string message = manager.HandleRequest(this, command, targetId, point);
-  Rpc(ACR_FeedbackOwner, message);
+  if (command == ACR_ERequest.REINFORCE) Rpc(ACR_ReinforceFeedbackOwner, message);
+  else Rpc(ACR_FeedbackOwner, message);
+ }
+
+ protected string m_ACR_ReinforceFeedback;
+ protected float m_ACR_ReinforceFeedbackAt = -10000;
+ protected int m_ACR_ReinforceFeedbackCount;
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_ReinforceFeedbackOwner(string message)
+ {
+  ACR_FeedbackOwner(message);
+  float now = GetGame().GetWorld().GetWorldTime();
+  // A multi-selection sends one request per squad. Preserve a few results together
+  // so a later successful squad cannot immediately erase an earlier refusal.
+  if (now - m_ACR_ReinforceFeedbackAt > 1000)
+  {
+   m_ACR_ReinforceFeedback = "";
+   m_ACR_ReinforceFeedbackCount = 0;
+  }
+  if (m_ACR_ReinforceFeedbackCount < 3)
+  {
+   if (!m_ACR_ReinforceFeedback.IsEmpty()) m_ACR_ReinforceFeedback += "\n";
+   m_ACR_ReinforceFeedback += message;
+  }
+  else if (m_ACR_ReinforceFeedbackCount == 3) m_ACR_ReinforceFeedback += "\nFurther squad results are in the game log.";
+  m_ACR_ReinforceFeedbackCount++;
+  m_ACR_ReinforceFeedbackAt = now;
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
  protected void ACR_FeedbackOwner(string message)
@@ -1110,6 +1136,9 @@ modded class SCR_PlayerController
  protected void ACR_UpdatePanel()
  {
   if (!m_ACR_Panel) return;
+  string reinforceFeedback = "";
+  if (GetGame().GetWorld().GetWorldTime() - m_ACR_ReinforceFeedbackAt < 12000) reinforceFeedback = m_ACR_ReinforceFeedback;
+  m_ACR_Panel.SetReinforceFeedback(reinforceFeedback);
   m_ACR_Panel.SetDebug(m_ACR_DebugAllowed, m_ACR_DebugOpen, m_ACR_DebugStatus, m_ACR_SelectedBase);
   bool canTake = !m_ACR_IsCommander && (m_ACR_SharedCommand || m_ACR_CommandText == "Command: AI");
   m_ACR_Panel.SetCommand(m_ACR_CommandText, m_ACR_IsCommander, canTake);

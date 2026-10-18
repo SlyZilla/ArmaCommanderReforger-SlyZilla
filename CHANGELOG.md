@@ -4,6 +4,8 @@
 
 Development changes since the released 0.5.4. Live/multiplayer acceptance remains pending.
 
+- Reinforcement results now appear directly in the command-map panel for 12 seconds, including refusals caused by enemy troops within 300 m. A short burst of squad results is shown together instead of immediately replacing the first refusal.
+
 - Built FOBs start with an empty 1,000-supply construction store. Commanders can order 500 supplies for 20 RP with a 60-second delay that pauses while contested, then build from the FOB without keeping a construction truck there. Built FOBs no longer refill service trucks for free.
 
 - Generated battlefields have fewer crowded objectives and fewer passive-income sites. Home-region income is protected; tactical points still support control and deployment. Starting funding and reinforcement prices are unchanged.

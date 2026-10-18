@@ -58,6 +58,7 @@ class ACR_CommandPanel : Managed
  protected string m_sFeedShown = "-";
  protected Widget m_Content;
  protected TextWidget m_Status;
+ protected TextWidget m_ReinforceFeedback;
  protected TextWidget m_Economy;
  protected TextWidget m_Roster;
  protected Widget m_PickerRoot;
@@ -129,6 +130,8 @@ class ACR_CommandPanel : Managed
   AddText(m_Content, LAYOUT_HEADING, "AC: ACTUAL");
   m_Economy = AddText(m_Content, LAYOUT_TEXT, "");
   m_Status = AddText(m_Content, LAYOUT_TEXT, "");
+  m_ReinforceFeedback = AddText(m_Content, LAYOUT_TEXT, "");
+  if (m_ReinforceFeedback) m_ReinforceFeedback.SetVisible(false);
   m_Roster = AddText(m_Content, LAYOUT_TEXT, "");
   if (m_Roster) m_Roster.SetVisible(false);
   m_CommandButton = AddButton(m_Content, "Take command", ACR_EPanelAction.TOGGLE_COMMAND);
@@ -589,6 +592,14 @@ class ACR_CommandPanel : Managed
   if (!m_ReinforceButton) return;
   m_ReinforceButton.SetText(text);
   m_ReinforceButton.SetEnabled(enabled, false);
+ }
+
+ // Owner-only server results stay on the map instead of relying on an in-world hint.
+ void SetReinforceFeedback(string message)
+ {
+  if (!m_ReinforceFeedback) return;
+  m_ReinforceFeedback.SetText(message);
+  m_ReinforceFeedback.SetVisible(!message.IsEmpty());
  }
 
  void SetEconomy(string text)
