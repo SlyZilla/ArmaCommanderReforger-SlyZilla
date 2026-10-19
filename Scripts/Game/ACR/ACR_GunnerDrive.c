@@ -51,6 +51,16 @@ class ACR_GunnerDrive
  static bool s_bParkDriverAI = true;
  static bool s_bSlipClutch = false;
  static bool s_bOwnGearbox = true;
+ static bool s_bHillStart = true; // hill start, lugging down-shift and hold (test switches it off for a before/after run)
+ static const float HILL_START_SPEED = 3;       // m/s: slip the clutch below this until the engine is in its torque band
+ static const float HILL_START_MIN_CLUTCH = 0.2;
+ static const float HOLD_AFTER_DOWNSHIFT_MS = 6000;
+ static const float HILL_PITCH = 5;          // degrees nose-up in the direction of travel
+ static const float HILL_HOLD_MS = 2500;
+ float m_fHillMovingAt;
+ static const float ROLLBACK_BRAKE_SPEED = 2.5; // m/s the wrong way before the brake comes on
+ float m_LastDownshift = -100000;
+ static int s_iShifts; // test: shifts made
  // The vehicle's controller keeps feeding the (parked) driver seat's empty input into
  // the simulation every physics step: throttle and steering went to 0 on every other
  // step, so the wheels stuttered and the vehicle crawled. Unhooking the driver seat
@@ -181,6 +191,14 @@ class ACR_GunnerDrive
   return CarControllerComponent.Cast(m_Vehicle.FindComponent(CarControllerComponent));
  }
 
+ // Nose up in the direction the keys drive (W forwards, S backwards).
+ bool Uphill()
+ {
+  float travel = 1;
+  if (m_Throttle < 0) travel = -1;
+  return m_Vehicle.GetYawPitchRoll()[1] * travel > HILL_PITCH;
+ }
+
  // Forward speed in m/s (negative = rolling backwards).
  float ForwardSpeed()
  {
@@ -257,16 +275,20 @@ class ACR_GunnerDrive
   float brake = 0;
   if (m_Throttle > 0)
   {
-   if (speed < -1) brake = 1;                   // still rolling back: stop first
+   // Still rolling back fast: stop first. Creeping back on a hill start keeps the
+   // throttle (braking there cut it every other frame: the Humvee slid back at 1 m/s).
+   if (speed < -ROLLBACK_BRAKE_SPEED) brake = 1;
    else
    {
     if (gear <= neutral) Shift(sim, neutral + 1, now, true);
+    // Pull away in first, not whatever gear it stopped in (it set off up a hill in 2nd).
+    else if (s_bHillStart && gear > neutral + 1 && Math.AbsFloat(speed) < 1) Shift(sim, neutral + 1, now, true);
     throttle = m_Throttle * m_fThrottleRamp;
    }
   }
   else if (m_Throttle < 0)
   {
-   if (speed > 1) brake = 1;                    // still rolling forward: stop first
+   if (speed > ROLLBACK_BRAKE_SPEED) brake = 1; // still rolling forward fast: stop first
    else
    {
     if (gear >= neutral) Shift(sim, neutral - 1, now, true);
@@ -276,6 +298,21 @@ class ACR_GunnerDrive
   // Keys released: coast like a real driver lifting off (braking at once made every
   // tap of W and every A/D on its own feel like a stuck handbrake); hold only once slow.
   else if (Math.AbsFloat(speed) < 1.5) brake = 1;
+
+  // Hill start (Jacob 19 Oct): pulling away uphill, hold the brake while the engine
+  // revs into its torque band (at most HILL_HOLD_MS per stop), and brake any roll-back
+  // while the throttle stays on. Without it the slipping clutch let the Humvee slide
+  // 7 m back down a 31 % road before it bit.
+  if (s_bHillStart && throttle > 0)
+  {
+   float travel = 1;
+   if (m_Throttle < 0) travel = -1;
+   float along = speed * travel;
+   bool uphill = Uphill();
+   if (along >= 0.5 || !uphill) m_fHillMovingAt = now;
+   if (uphill && along < -0.3) brake = 1;
+   else if (uphill && along < 0.5 && sim.EngineGetRPM() < sim.EngineGetRPMPeakTorque() * 0.85 && now - m_fHillMovingAt < HILL_HOLD_MS) brake = 1;
+  }
 
   // Simple automatic gearbox with a slipping clutch, like a torque converter: with
   // the clutch locked the engine was dragged down to 1000-1500 rpm, far below its
@@ -302,14 +339,31 @@ class ACR_GunnerDrive
    // steering or climbing: play-tests stayed in first at the limiter (~30 km/h).
    // The gap leaves room for the next gear's ratio (1st->2nd drops rpm to ~0.6x),
    // so it doesn't hunt between gears.
-   if (settled && driven > sim.EngineGetRPMPeakPower() * 0.65 && gear < sim.GearboxGearsCount() - 1) Shift(sim, gear + 1, now, true);
-   // Down only while the clutch is coupled (engine and drivetrain agree): right after
-   // an up-shift the drivetrain rpm reads low until the clutch bites, and shifting
-   // back down on that made it hunt between gears.
-   else if (settled && driven < peakTorque * 0.6 && Math.AbsFloat(rpm - driven) < 250 && gear > neutral + 1) Shift(sim, gear - 1, now, true);
+   // Climbing (Jacob 19 Oct, Kolguyev): 2nd couldn't hold the speed 1st reached, so it
+   // hunted 1-2-1 all the way up. After a down-shift for lugging, stay in the lower
+   // gear a while unless the engine nears the limiter.
+   float peakPower = sim.EngineGetRPMPeakPower();
+   bool heldDown = s_bHillStart && now - m_LastDownshift < HOLD_AFTER_DOWNSHIFT_MS && driven < peakPower * 0.9;
+   if (settled && !heldDown && driven > peakPower * 0.65 && gear < sim.GearboxGearsCount() - 1) Shift(sim, gear + 1, now, true);
+   // Down while the clutch is coupled (engine and drivetrain agree): right after an
+   // up-shift the drivetrain rpm reads low until the clutch bites, and shifting back
+   // down on that made it hunt. A clutch still slipping 3 s after the shift is no
+   // longer that: it is lugging up a hill, so shift down anyway.
+   else if (settled && driven < peakTorque * 0.6 && gear > neutral + 1 && (Math.AbsFloat(rpm - driven) < 250 || (s_bHillStart && now - m_LastShift > 3000)))
+   {
+    Shift(sim, gear - 1, now, true);
+    m_LastDownshift = now;
+   }
   }
   if (s_bSlipClutch && throttle > 0 && peakTorque > idle)
    clutch = Math.Min(m_fClutch, Math.Clamp((rpm - idle) / (peakTorque - idle), 0.25, 1));
+  // Hill start (Jacob 19 Oct: a slope the vehicle can do forwards it only managed in
+  // reverse). Pulling away uphill the gearbox's clutch held the engine at idle under
+  // full throttle (650 rpm, no torque), and only reverse's lower gearing got it moving.
+  // Slipping the clutch while slow lets the engine rev into its torque band first.
+  // Uphill only: on the flat it cost about a second pulling away.
+  else if (s_bHillStart && throttle > 0 && Uphill() && Math.AbsFloat(speed) < HILL_START_SPEED && peakTorque > idle && rpm < peakTorque)
+   clutch = Math.Min(m_fClutch, Math.Clamp((rpm - idle) / (peakTorque - idle), HILL_START_MIN_CLUTCH, 1));
   m_SetClutch = clutch;
 
   if (!s_bFixedOnly)
@@ -382,6 +436,7 @@ class ACR_GunnerDrive
   if (System.IsCLIParam("acrGunnerTest")) PrintFormat("[ACR] GUNNER shift %1 -> %2 rpm=%3 peakPower=%4 peakTorque=%5 max=%6", sim.GetGear(), gear, (int)sim.EngineGetRPM(), (int)sim.EngineGetRPMPeakPower(), (int)sim.EngineGetRPMPeakTorque(), (int)sim.EngineGetRPMMax());
   sim.SetGear(gear);
   m_LastShift = now;
+  s_iShifts++;
  }
 
  void End()

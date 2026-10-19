@@ -39,6 +39,7 @@ modded class ACR_TestHooks
   // -acrGenerateTest / -acrGenerateEveronTest: the scenario generator (ACR_TestGenerate).
   if (System.IsCLIParam("acrLiftClearanceTest")) ACR_TestLiftClearance.Run(seconds);
   if (System.IsCLIParam("acrLzBenchTest")) ACR_TestLzBench.Run(seconds);
+  if (System.IsCLIParam("acrSlopesTest")) ACR_TestSlopes.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
  }
