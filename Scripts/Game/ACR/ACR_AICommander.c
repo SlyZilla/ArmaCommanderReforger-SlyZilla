@@ -1709,6 +1709,8 @@ class ACR_AICommander : Managed
  // Air lift (aca-f22 part 2): long moves (~2 km+ or long road detours) when the flight path is clear of known enemies.
  static const float RIDE_DISTANCE = 900;
  static const float AIRLIFT_DISTANCE = 2000;
+ static const float AIRLIFT_RETRY_MS = 60000;   // after a refused AI air lift
+ protected float m_fNextAirLiftTry;
  static const float AIRLIFT_ENEMY_CLEARANCE = 350;
 
  static float DistanceToSegment(vector p, vector a, vector b)
@@ -1766,6 +1768,20 @@ class ACR_AICommander : Managed
   float distance = vector.DistanceXZ(from, destination);
   if (distance < ACR_AirLift.MIN_DISTANCE) return false;
 
+  // Cheap checks before the road route and landing zone searches (Jacob 18 Oct: freezes).
+  int supportIdx = SupportIndex(ACR_ESupportType.AIR_LIFT);
+  if (supportIdx < 0) return false;
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  if (!data) return false;
+  ACR_SupportEntry entry = data.m_aSupports[supportIdx];
+  if (!entry || !entry.m_bEnabled) return false;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < entry.m_fReadyAt) return false;
+  if (now < m_fNextAirLiftTry) return false;
+  int cost = entry.CostFor(true);
+  if (data.m_iRP < cost + SUPPORT_RESERVE) return false;
+  if (squad.KnownEnemies(300) > 0) return false;
+
   bool isLong = distance >= AIRLIFT_DISTANCE;
   bool isDetour = false;
   if (!isLong && distance >= RIDE_DISTANCE)
@@ -1790,19 +1806,6 @@ class ACR_AICommander : Managed
   }
   if (!isLong && !isDetour) return false;
 
-  if (squad.KnownEnemies(300) > 0) return false;
-
-  int supportIdx = SupportIndex(ACR_ESupportType.AIR_LIFT);
-  if (supportIdx < 0) return false;
-  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
-  if (!data) return false;
-  ACR_SupportEntry entry = data.m_aSupports[supportIdx];
-  if (!entry || !entry.m_bEnabled) return false;
-  float now = GetGame().GetWorld().GetWorldTime();
-  if (now < entry.m_fReadyAt) return false;
-  int cost = entry.CostFor(true);
-  if (data.m_iRP < cost + SUPPORT_RESERVE) return false;
-
   vector targetLZ = destination;
   if (dropShort > 0)
   {
@@ -1818,7 +1821,13 @@ class ACR_AICommander : Managed
   if (!FlightPathClear(from, targetLZ)) return false;
 
   string result = m_Manager.m_Supports.Call(m_sFaction, supportIdx, targetLZ, true, -1, squad, prefab, destination, radius, order, kind);
-  if (!ACR_AirLift.Busy(squad)) return false;
+  if (!ACR_AirLift.Busy(squad))
+  {
+   // Refused (usually no landing spot): don't search again for every other long move.
+   m_fNextAirLiftTry = now + AIRLIFT_RETRY_MS;
+   PrintFormat("[ACR] AI %1: no air lift for %2 (%3), next try in %4 s", m_sFaction, squad.GetName(), result, (int)(AIRLIFT_RETRY_MS / 1000));
+   return false;
+  }
   PrintFormat("[ACR] AI %1: air lift for %2 to %3 (%4 m): %5", m_sFaction, squad.GetName(), ACR_Manager.Grid(destination), (int)distance, result);
   return true;
  }

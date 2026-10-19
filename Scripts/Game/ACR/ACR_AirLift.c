@@ -19,12 +19,26 @@ class ACR_LandingZone
  static const float MAX_RISE = 2.5;   // m between the highest and lowest ground in the footprint
  static const float SPACING = 40;     // m between two helicopters' spots
  static const float RING_STEP = 20;
+ static int s_iChecks;                // spots examined (benchmark)
+ static int s_iRejTree, s_iRejRay, s_iRejGround, s_iRejBox; // benchmark: where spots were refused
 
  // Up to count spots, nearest the centre first. Returns how many were found.
+ // Searches that found nothing, remembered for a while (Jacob 18 Oct: a failed search over flat
+ // forest took up to 4.7 s and the AI commander repeated it for every long move).
+ static ref map<string, float> s_Failed = new map<string, float>();
+ static const float FAILED_MEMORY_MS = 120000;
+
+ static const int SEARCH_BUDGET_MS = 120; // a search gives up after this (it runs inside one server tick)
+
  static int Find(vector center, float maxRadius, int count, notnull array<vector> spots)
  {
   spots.Clear();
-  for (float ring = 0; ring <= maxRadius && spots.Count() < count; ring += RING_STEP)
+  int started = System.GetTickCount();
+  float now = GetGame().GetWorld().GetWorldTime();
+  string key = string.Format("%1:%2:%3:%4", (int)(center[0] / 10), (int)(center[2] / 10), (int)maxRadius, count);
+  float failedAt;
+  if (s_Failed.Find(key, failedAt) && now - failedAt < FAILED_MEMORY_MS) return 0;
+  for (float ring = 0; ring <= maxRadius && spots.Count() < count && System.GetTickCount() - started <= SEARCH_BUDGET_MS; ring += RING_STEP)
   {
    int steps = 1;
    if (ring > 0)
@@ -38,20 +52,75 @@ class ACR_LandingZone
     vector spot = Vector(center[0] + Math.Cos(angle) * ring, 0, center[2] + Math.Sin(angle) * ring);
     bool apart = true;
     foreach (vector taken : spots) if (vector.DistanceXZ(taken, spot) < SPACING) apart = false;
+    if (System.GetTickCount() - started > SEARCH_BUDGET_MS) break;
     if (!apart || !Clear(spot)) continue;
     spot[1] = GetGame().GetWorld().GetSurfaceY(spot[0], spot[2]);
     spots.Insert(spot);
    }
+  }
+  if (spots.IsEmpty())
+  {
+   if (s_Failed.Count() > 500) s_Failed.Clear();
+   s_Failed.Set(key, now);
   }
   return spots.Count();
  }
 
  // Sample the ground separately from obstacles. A continuous box sweep catches narrow
  // trunks, poles and overhanging branches that the old spaced pencil rays missed.
+ protected static vector s_vTreeProbe;
+ protected static bool s_bTreeHit;
+ protected static bool BlockingTree(IEntity e)
+ {
+  if (!Tree.Cast(e)) return true;
+  if (vector.DistanceXZ(e.GetOrigin(), s_vTreeProbe) > CLEAR_RADIUS - 1) return true;
+  vector mins, maxs;
+  e.GetBounds(mins, maxs);
+  if (maxs[1] - mins[1] < 3) return true;
+#ifdef ENABLE_DESTRUCTION
+  SCR_DestructibleTreeV2 tree = SCR_DestructibleTreeV2.Cast(e);
+  if (tree && tree.GetIsDestroyed()) return true;
+#endif
+  s_bTreeHit = true;
+  return false;
+ }
+
  static bool Clear(vector spot)
  {
+  s_iChecks++;
   if (!ACR_Manager.OnMap(spot)) return false;
   BaseWorld world = GetGame().GetWorld();
+  float floorY = world.GetSurfaceY(spot[0], spot[2]);
+  if (floorY < BBB_Terrain.SEA_LEVEL) return false;
+  // Cheapest rejection in woods: a standing tree inside the footprint (its trunk would stop
+  // the swept box below). The query stops at the first one.
+  s_vTreeProbe = spot;
+  s_bTreeHit = false;
+  world.QueryEntitiesBySphere(Vector(spot[0], floorY + 2, spot[2]), CLEAR_RADIUS, BlockingTree, null, EQueryEntitiesFlags.STATIC);
+  if (s_bTreeHit) { s_iRejTree++; return false; }
+  // Cheap first: thin vertical rays inside the swept volume. Anything they hit, the box would
+  // hit too, and in a forest one of them nearly always finds a tree before the costly sweep
+  // (Jacob 18 Oct: failed searches over flat forest took up to 4.7 s).
+  TraceParam ray = new TraceParam();
+  ray.Flags = TraceFlags.ENTS;
+  for (int r = 0; r < 17; r++)
+  {
+   float px = spot[0];
+   float pz = spot[2];
+   if (r > 0)
+   {
+    float ringR = 9;
+    int k = r - 1;
+    if (k >= 8) k -= 8;
+    float a = Math.PI2 * k / 8.0;
+    if (r > 8) { ringR = CLEAR_RADIUS - 1; a += 0.39; }
+    px += Math.Cos(a) * ringR;
+    pz += Math.Sin(a) * ringR;
+   }
+   ray.Start = Vector(px, floorY + 52, pz);
+   ray.End = Vector(px, floorY + 0.4, pz);
+   if (world.TraceMove(ray, null) < 1) { s_iRejRay++; return false; }
+  }
   float low = 100000;
   float high = -100000;
   for (float dx = -CLEAR_RADIUS; dx <= CLEAR_RADIUS; dx += 2)
@@ -59,23 +128,22 @@ class ACR_LandingZone
    for (float dz = -CLEAR_RADIUS; dz <= CLEAR_RADIUS; dz += 2)
    {
     if (dx * dx + dz * dz > CLEAR_RADIUS * CLEAR_RADIUS) continue;
-    float x = spot[0] + dx;
-    float z = spot[2] + dz;
-    if (BBB_Terrain.IsWater(x, z)) return false;
-    float ground = world.GetSurfaceY(x, z);
+    float ground = world.GetSurfaceY(spot[0] + dx, spot[2] + dz);
+    if (ground < BBB_Terrain.SEA_LEVEL) { s_iRejGround++; return false; }
     low = Math.Min(low, ground);
     high = Math.Max(high, ground);
-    if (high - low > MAX_RISE) return false;
+    if (high - low > MAX_RISE) { s_iRejGround++; return false; }
    }
   }
-  float floorY = world.GetSurfaceY(spot[0], spot[2]);
   TraceBox clearance = new TraceBox();
   clearance.Mins = Vector(-CLEAR_RADIUS, 0.4, -CLEAR_RADIUS);
   clearance.Maxs = Vector(CLEAR_RADIUS, 12, CLEAR_RADIUS);
   clearance.Start = Vector(spot[0], floorY + 40, spot[2]);
   clearance.End = Vector(spot[0], floorY, spot[2]);
   clearance.Flags = TraceFlags.ENTS;
-  return world.TraceMove(clearance, null) >= 1;
+  bool clear = world.TraceMove(clearance, null) >= 1;
+  if (!clear) s_iRejBox++;
+  return clear;
  }
 }
 
