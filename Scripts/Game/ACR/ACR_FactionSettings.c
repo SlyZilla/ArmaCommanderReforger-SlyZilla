@@ -213,9 +213,24 @@ class ACR_FactionCatalog
 {
  // Resolve explicit mission-maker mappings first. Otherwise find a faction catalog
  // prefab with the same role/name suffix, which covers RHS group variants.
+ // Results are cached (Jacob 18 Oct, Kolguyev with RHS: the mortar range ring resolved its shell
+ // through a full catalog scan about four times a second, logging a fallback line each time).
+ static ref map<string, ResourceName> s_Resolved = new map<string, ResourceName>();
+ static void ForgetResolved() { s_Resolved.Clear(); }
+
  static ResourceName ResolvePrefab(string factionKey, ResourceName source, EEntityCatalogType type)
  {
   if (source.IsEmpty()) return source;
+  string key = string.Format("%1|%2|%3", factionKey, type, source);
+  ResourceName cached;
+  if (s_Resolved.Find(key, cached)) return cached;
+  ResourceName resolved = ResolveUncached(factionKey, source, type);
+  s_Resolved.Set(key, resolved);
+  return resolved;
+ }
+
+ protected static ResourceName ResolveUncached(string factionKey, ResourceName source, EEntityCatalogType type)
+ {
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
   if (settings && settings.m_aPrefabMappings)
    foreach (ACR_PrefabMapping mapping : settings.m_aPrefabMappings)
