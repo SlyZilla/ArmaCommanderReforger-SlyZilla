@@ -1580,6 +1580,7 @@ class ACR_Squad : Managed
  protected bool m_bRegrouping;
  protected float m_fRegroupSince;
  protected float m_fNextRegroup;
+ void HoldRegroupForTest(float until) { m_fNextRegroup = until; m_bRegrouping = false; }
  protected ref ACR_OrderSnapshot m_Regroup; // the order resumed once regrouped
 
  // Middle of the living members on foot (where a strung-out squad meets up).

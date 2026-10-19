@@ -295,7 +295,8 @@ class ACR_TestStructures
    if (us) us.m_bAICommander = false;
   }
   if (tick <= 10 && (!alpha || !alpha.GetAnchor())) return;
-  if (!alpha) return;
+  // The live sapper's cook-off may take Alpha with it; the final checks need no Alpha.
+  if (!alpha && tick <= 94) return;
   if (tick == 3)
   {
    float best = float.MAX;
@@ -508,7 +509,9 @@ class ACR_TestStructures
    ACR_TestFobUpgrades.Run(manager, s_Fob, alpha, s_Construction);
    ACR_FobSlots.s_bSkipSpotChecksForTest = false;
    ACR_TestSapperDemo.Run(manager, s_Fob, alpha);
+   ACR_Supports.s_bCookOffOff = true; // its charges go off next to the other fixtures
    ACR_TestFobDesign.Run(manager, s_Fob, alpha, s_Construction);
+   ACR_Supports.s_bCookOffOff = false;
    ACR_TestSapperLive.Start(manager, alpha, alpha.m_Home);
   }
   if (tick > 50 && tick <= 94) ACR_TestSapperLive.Step(manager, tick);
@@ -557,6 +560,7 @@ class ACR_TestStructures
    ACR_Helipad last = ACR_Helipad.s_All[ACR_Helipad.s_All.Count() - 1];
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
    ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
+   ACR_TestSapperLive.Final();
    ACR_TestRegress.Complete("structures", 84 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS + ACR_TestFobUpgrades.CHECKS + ACR_TestSapperDemo.CHECKS + ACR_TestFobDesign.CHECKS + ACR_TestSapperLive.CHECKS);
   }
  }

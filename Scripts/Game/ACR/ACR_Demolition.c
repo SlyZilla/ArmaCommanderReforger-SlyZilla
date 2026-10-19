@@ -52,7 +52,10 @@ class ACR_Demolition
    if (fob) name = fob.m_sName + " HQ";
    PrintFormat("[ACR] DEMOLITION charge at %1 destroyed %2 (%3 m away)", position, name, (int)vector.Distance(position, hq.GetOrigin()));
    if (fob) manager.NotifyFaction(fob.m_sOwner, string.Format("%1 destroyed by demolition: FOB offline until rebuilt", name));
+   vector centre = hq.GetOrigin();
    SCR_EntityHelper.DeleteEntityAndChildren(hq);
+   if (!manager.m_Supports) manager.m_Supports = new ACR_Supports(manager);
+   manager.m_Supports.CookOff(centre); // the tent goes up (Jacob, 18 Oct)
    destroyed++;
   }
   if (destroyed > 0) manager.m_Structures.ACR_ForceTick();

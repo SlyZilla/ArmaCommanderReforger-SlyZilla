@@ -40,7 +40,7 @@ class ACR_SapperDemo : Managed
  static const float RAISE_MS = 1500.0;        // blasting machine to hand
  static const float FIRE_MS = 4000.0;         // detonator animation before the scripted fallback
  static float s_fFuseMs = 45000.0;            // the defenders' window (tests shorten it)
- static const float SAFE_DISTANCE = 30.0;     // he fires from this far from the charge
+ static const float SAFE_DISTANCE = 35.0;     // his squad is this far from the charge when he fires (the HQ cooks off)
  static const float SAFE_WAIT_MS = 15000.0;   // ... waiting at most this long past the window
 
  // Kept for old callers/tests: the charge prefabs (full prefabs with fuzes).
@@ -653,12 +653,14 @@ class ACR_SapperDemo : Managed
    m_State = ACR_ESapperDemoState.FAILED;
    return;
   }
-  // He fires from cover distance: 30 m, unless that takes more than 15 s past the window.
-  if (!m_bRaised && vector.DistanceXZ(m_Planter.GetOrigin(), m_DemoCharge.GetOrigin()) < SAFE_DISTANCE && now < m_fFuseDeadline + SAFE_WAIT_MS) return;
+  // He fires once he and his squadmates who can move are SAFE_DISTANCE out, unless that takes
+  // more than 15 s past the window.
+  if (!m_bRaised && SquadInDanger(m_DemoCharge.GetOrigin()) && now < m_fFuseDeadline + SAFE_WAIT_MS) return;
   if (!m_bRaised)
   {
    m_bRaised = true;
    m_fRaisedAt = now;
+   PrintFormat("[ACR] SAPPER %1: firing from %2 m (squad clear: %3)", m_Attack.m_Target.m_sName, (int)vector.DistanceXZ(m_Planter.GetOrigin(), m_DemoCharge.GetOrigin()), !SquadInDanger(m_DemoCharge.GetOrigin()));
    // He stops, takes the blasting machine in hand, then squeezes it.
    if (m_SapperSquad) m_SapperSquad.Halt("Firing the charge");
    FinishItemUse(false);
@@ -672,6 +674,25 @@ class ACR_SapperDemo : Managed
   m_iFireTry = 1;
   m_sFiredBy = "detonator";
   detonator.ActivateAction(m_Planter);
+ }
+
+ // Is the planter, or a conscious soldier of his squad, still within SAFE_DISTANCE of the charge?
+ protected bool SquadInDanger(vector charge)
+ {
+  if (m_Planter && vector.DistanceXZ(m_Planter.GetOrigin(), charge) < SAFE_DISTANCE) return true;
+  if (!m_SapperSquad) return false;
+  array<AIAgent> agents = {};
+  m_SapperSquad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   if (!agent) continue;
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!body || !ACR_Respawn.IsAlive(body) || IsPlayerBody(body)) continue;
+   CharacterControllerComponent controller = body.GetCharacterController();
+   if (controller && controller.IsUnconscious()) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), charge) < SAFE_DISTANCE) return true;
+  }
+  return false;
  }
 
  protected string DetonatorState()

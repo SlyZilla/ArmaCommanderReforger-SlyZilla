@@ -2005,6 +2005,52 @@ class ACR_Supports : Managed
   if (GetGame().GetPlayerController()) PlayBlast(impact); // a hosting player hears it too
  }
 
+ // FOB HQ cook-off (Jacob, 18 Oct: a bigger blast when a demolished HQ goes up): one heavy
+ // blast (the bomb run's, with its scripted lethality) shortly after the charge, then
+ // COOKOFF_SECONDARIES medium blasts (vanilla Medium TNT: its own small damage radius) at
+ // random spots round the tent over the next few seconds, as stored ammunition and fuel go.
+ static const ResourceName COOKOFF_SECONDARY = "{564D57EA34A75775}Prefabs/Weapons/Warheads/Explosions/Explosion_Tnt_Medium.et";
+ static const ResourceName COOKOFF_SOUND = "{B9347A5498317F65}Sounds/Particles/Logistics/Explosion/TNT/Particles_Explosions_TNT_Medium.acp";
+ static int COOKOFF_MAIN_MS = 700;
+ static int COOKOFF_SECONDARIES = 4;
+ static int COOKOFF_FIRST_MS = 1800;
+ static int COOKOFF_LAST_MS = 7500;
+ static float COOKOFF_SPREAD = 7;
+ static int s_iCookOffs; // tests: cook-offs started
+ static int s_iSecondaries; // tests: secondary blasts gone off
+ static bool s_bCookOffOff; // tests: fixtures next to other test subjects
+
+ // Returns the time (ms) until the last blast.
+ int CookOff(vector at)
+ {
+  if (s_bCookOffOff) return 0;
+  s_iCookOffs++;
+  PrintFormat("[ACR] DEMOLITION cook-off at %1: main blast in %2 ms, %3 secondaries", at, COOKOFF_MAIN_MS, COOKOFF_SECONDARIES);
+  GetGame().GetCallqueue().CallLater(Explode, COOKOFF_MAIN_MS, false, at);
+  int last = COOKOFF_MAIN_MS;
+  for (int i = 0; i < COOKOFF_SECONDARIES; i++)
+  {
+   float angle = Math.RandomFloat(0, Math.PI2);
+   float dist = Math.RandomFloat(2, COOKOFF_SPREAD);
+   vector spot = at + Vector(Math.Cos(angle) * dist, 0, Math.Sin(angle) * dist);
+   int delay = Math.RandomIntInclusive(COOKOFF_FIRST_MS, COOKOFF_LAST_MS);
+   if (delay > last) last = delay;
+   GetGame().GetCallqueue().CallLater(Secondary, delay, false, spot);
+  }
+  return last;
+ }
+
+ protected void Secondary(vector at)
+ {
+  s_iSecondaries++;
+  at[1] = GetGame().GetWorld().GetSurfaceY(at[0], at[2]) + 0.5;
+  IEntity blast = SpawnLocal(COOKOFF_SECONDARY, at, vector.Zero);
+  PrintFormat("[ACR] DEMOLITION secondary blast at %1 spawned=%2", at, blast != null);
+  SCR_BaseGameMode mode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+  if (mode) mode.ACR_BroadcastExplosionOf(at, COOKOFF_SECONDARY, COOKOFF_SOUND);
+  if (GetGame().GetPlayerController()) PlaySound(COOKOFF_SOUND, at);
+ }
+
  // Spawns a rocket/shell pointing at the target; it is launched next frame on the
  // server and every client (projectiles are simulated locally everywhere).
  // Like the game's own weapons, each machine fires its own local projectile: the
@@ -2175,12 +2221,17 @@ class ACR_Supports : Managed
  // Plays the large blast at a point, independent of any entity (clients only).
  static bool PlayBlast(vector at)
  {
+  return PlaySound(BOMB_SOUND, at);
+ }
+
+ static bool PlaySound(ResourceName sound, vector at)
+ {
   // Straight through the audio system (the sound manager route stayed silent in the
   // 1 Oct live test); the sound graph reads distance and surroundings itself.
   vector mat[4];
   Math3D.MatrixIdentity4(mat);
   mat[3] = at;
-  AudioHandle handle = AudioSystem.PlayEvent(BOMB_SOUND, "SOUND_EXPLOSION", mat);
+  AudioHandle handle = AudioSystem.PlayEvent(sound, "SOUND_EXPLOSION", mat);
   bool ok = handle != AudioHandle.Invalid;
   PrintFormat("[ACR] SUPPORT blast sound at %1 played=%2", at, ok);
   return ok;
@@ -2366,6 +2417,19 @@ modded class SCR_BaseGameMode
  void ACR_BroadcastExplosion(vector at)
  {
   Rpc(ACR_RpcExplosion, at);
+ }
+ // Any explosion prefab and its sound (FOB cook-off secondaries).
+ void ACR_BroadcastExplosionOf(vector at, ResourceName prefab, ResourceName sound)
+ {
+  Rpc(ACR_RpcExplosionOf, at, prefab, sound);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
+ protected void ACR_RpcExplosionOf(vector at, ResourceName prefab, ResourceName sound)
+ {
+  if (Replication.IsServer()) return;
+  IEntity effect = ACR_Supports.SpawnLocal(prefab, at, vector.Zero);
+  bool played = ACR_Supports.PlaySound(sound, at);
+  PrintFormat("[ACR] SUPPORT explosion RPC received at=%1 prefab=%2 effect=%3 sound=%4", at, prefab, effect != null, played);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
  protected void ACR_RpcExplosion(vector at)
