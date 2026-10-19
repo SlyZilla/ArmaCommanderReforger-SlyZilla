@@ -649,6 +649,7 @@ class ACR_Squad : Managed
   m_iGarrisonReissues = 0;
   m_iWaypointRecoveries = 0;
   m_fNextWaypointRecovery = 0;
+  m_bRecoveryLast = false;
   m_iOrderSerial++;
   m_iOrderedBy = 0;
   m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
@@ -1256,6 +1257,7 @@ class ACR_Squad : Managed
   FollowRoute();
   Cohesion(now, contact);
   RecoverMovementWaypoint(now);
+  ReportUnreachable();
   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
   // (not after a Halt: m_Waypoint is gone then, and the old order must not come back)
   if (m_bForced && movingOrder && contact && m_Waypoint && !IsMounted() && !m_bRegrouping)
@@ -1562,8 +1564,55 @@ class ACR_Squad : Managed
   if (now < m_fNextWaypointRecovery || m_iWaypointRecoveries >= 4) return;
   m_fNextWaypointRecovery = now + 10000;
   m_iWaypointRecoveries++;
-  IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, m_bForced);
-  PrintFormat("[ACR] MOVE %1: waypoint disappeared before arrival; recovery %2/4", m_Name, m_iWaypointRecoveries);
+  // Jacob 18 Oct: orders were dropped after four identical reissues to a spot the
+  // engine could not path to. The first retry repeats the order (a transient drop);
+  // later ones aim for the nearest walkable point round it, searching wider each time.
+  vector target = m_MoveTarget;
+  string how = "same spot";
+  if (m_iWaypointRecoveries >= 2)
+  {
+   vector reachable;
+   if (ReachableNear(m_MoveTarget, 5 + 15 * (m_iWaypointRecoveries - 2), reachable))
+   {
+    how = string.Format("nearest walkable point, %1 m off", (int)vector.DistanceXZ(reachable, m_MoveTarget));
+    target = reachable;
+    m_MoveTarget = reachable;
+   }
+  }
+  IssueWaypoint(m_sOrderPrefab, target, m_fOrderRadius, m_bForced);
+  PrintFormat("[ACR] MOVE %1: waypoint disappeared before arrival; recovery %2/4 (%3)", m_Name, m_iWaypointRecoveries, how);
+  if (m_iWaypointRecoveries >= 4) m_bRecoveryLast = true;
+ }
+
+ // Said once when the last recovery also fails, so an order is never dropped silently.
+ protected bool m_bRecoveryLast;
+ protected void ReportUnreachable()
+ {
+  if (!m_bRecoveryLast || !m_Group || m_Group.GetCurrentWaypoint() || !MovementStillPending()) return;
+  if (GetGame().GetWorld().GetWorldTime() < m_fNextWaypointRecovery) return;
+  m_bRecoveryLast = false;
+  string message = string.Format("%1 can't reach %2, holding", m_Name, ACR_Manager.Grid(m_MoveTarget));
+  PrintFormat("[ACR] MOVE %1: gave up after 4 recoveries at %2", m_Name, m_MoveTarget);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager && m_iOrderedBy > 0) manager.Notify(m_iOrderedBy, message);
+  Halt("Holding (unreachable)");
+ }
+
+ // The nearest point on the soldiers' navmesh within radius of 'at' (infantry only).
+ protected bool ReachableNear(vector at, float radius, out vector result)
+ {
+  if (IsMounted()) return false;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   AIPathfindingComponent pathing = AIPathfindingComponent.Cast(agent.FindComponent(AIPathfindingComponent));
+   if (!pathing) continue;
+   NavmeshWorldComponent mesh = pathing.GetNavmeshComponent();
+   if (mesh && !mesh.IsTileLoaded(at)) mesh.LoadTileIn(at);
+   return pathing.GetClosestPositionOnNavmesh(at, Vector(radius, 10, radius), result);
+  }
+  return false;
  }
 
  // ---------------------------------------------------------------- cohesion
@@ -1665,9 +1714,14 @@ class ACR_Squad : Managed
  // AI passengers carry on on foot (7 Oct live: drivers walked away from vehicles that
  // only needed another way round, and the AI re-crewed them into the same spot).
  // Only an unarmed vehicle stopped under fire is abandoned.
- static const float STALL_SECONDS = 8;
- static const float STALL_SECONDS_FIGHTING = 25; // armed and in contact: the gunner may be busy, give it longer
+ // Jacob 18 Oct (Kolguyev): 60 back-ups for 12 departures. AI drivers take several seconds
+ // to pull away and stop short of their waypoint, so 8 s / 15 m (15 Oct) fired on healthy
+ // vehicles; back to 15 s / 40 m. Under fire, unarmed: 3 s stays.
+ static const float STALL_SECONDS = 15;
+ static float s_fStallSeconds = STALL_SECONDS; // test hook: srv:stall shortens it so its enemy team arrives after the soft truck has given up
+ static const float STALL_SECONDS_FIGHTING = 40; // armed and in contact: the gunner may be busy, give it longer
  static const float STALL_SECONDS_HELPLESS = 3;  // under fire with no gunner
+ static const float STALL_ARRIVED = 40;          // closer than this to the target counts as there
  static const int UNSTICK_TRIES = 2;
  static const int REROUTE_TRIES = 1;
 
@@ -1802,7 +1856,7 @@ class ACR_Squad : Managed
    array<AIWaypoint> waypoints = {};
    m_Group.GetWaypoints(waypoints);
    bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
-   wantsToMove = !waypoints.IsEmpty() && movingOrder && vector.DistanceXZ(vehicle.GetOrigin(), m_MoveTarget) > 15;
+   wantsToMove = !waypoints.IsEmpty() && movingOrder && vector.DistanceXZ(vehicle.GetOrigin(), m_MoveTarget) > STALL_ARRIVED;
   }
   if (!wantsToMove || vehicle != m_StallVehicle || (speed > 1.0 && vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5))
   {
@@ -1833,7 +1887,7 @@ class ACR_Squad : Managed
   }
 
   if (underFire && !fightingVehicle && stalled >= STALL_SECONDS_HELPLESS) { Bail(vehicle, "stopped under fire, unarmed", false); return; }
-  float limit = STALL_SECONDS;
+  float limit = s_fStallSeconds;
   if (underFire || armed) limit = STALL_SECONDS_FIGHTING;
   if (stalled < limit) return;
   if (m_iUnsticks >= UNSTICK_TRIES)

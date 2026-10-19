@@ -270,6 +270,8 @@ class ACR_TestVehicles : Managed
    // On the test server nobody holds US command: keep its AI from re-tasking the trucks.
    ACR_FactionSettings us = ACR_FactionSettings.Find("US");
    if (us) us.m_bAICommander = false;
+   // The soft truck's give-up sequence must finish before the enemy team walks into range.
+   ACR_Squad.s_fStallSeconds = 8;
   }
   ResourceName gunTruck = "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et";
   if (h.m_Ticks == 5)
