@@ -23,6 +23,10 @@ class ACR_Debug : Managed
 
  static string EnemyOf(string factionKey)
  {
+  // The match's two sides first: s_All lists every faction the world has, played or not
+  // (20 Oct: UA vs RHS Russia, "+RP enemy" went to the idle USSR entry).
+  if (factionKey == ACR_FactionSelection.West()) return ACR_FactionSelection.East();
+  if (factionKey == ACR_FactionSelection.East()) return ACR_FactionSelection.West();
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
    if (settings.m_sFaction != factionKey) return settings.m_sFaction;
   foreach (ACR_Base base : ACR_Base.s_All)
