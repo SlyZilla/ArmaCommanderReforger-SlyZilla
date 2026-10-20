@@ -777,6 +777,7 @@ class ACR_AIAttack
  bool m_bAssaulting;
  float m_fStageDeadline;
  ACR_Squad m_Suppressor;             // support-by-fire squad
+ float m_fFireBaseMoveSince;         // world time the base of fire started moving up to a firing spot
  int m_iStartStrength;
  bool m_bCounter;
  bool m_bGrab;                       // quick grab of an empty base (doesn't count against the attack limit)
@@ -826,6 +827,10 @@ class ACR_AICommander : Managed
  static float GRAB_TIMEOUT = 480;             // s  (the test harness shortens these)
  static const float STALLED_COOLDOWN = 300;   // s before the same base is tried again
  static const float PUSH_INTERVAL = 120;      // s between re-issuing assault orders
+ static const float FIRE_BASE_RANGE = 500;    // m: the base of fire shoots only this close to a seen enemy
+ static const float FIRE_BASE_STANDOFF = 300; // m: how far short of them it moves up when too far or blind
+ static const float FIRE_BASE_MAX_S = 240;    // s of supporting fire before it joins the assault anyway
+ static const float FIRE_BASE_MOVE_S = 120;   // s to reach a firing spot before it joins instead
  static const float RETREAT_COOLDOWN_MS = 60000;
  // A reserve riding or regrouping is on its way: re-posting it would cancel that (20 Oct
  // live: a regrouping reserve was re-posted every 15 s for 15 min and never arrived).
@@ -2027,6 +2032,73 @@ class ACR_AICommander : Managed
   return false;
  }
 
+ // Base of fire (Jacob, 20 Oct: a squad stood suppressing an empty base centre for 10 min).
+ // It fires only at an enemy this side has seen at the objective (intel, 90 s memory), from
+ // within FIRE_BASE_RANGE with clear terrain between. Too far or blind: it moves up to a
+ // spot short of the enemy. It joins the assault when nobody is seen there, nobody is left
+ // to cover, it can't reach a firing spot in time, or after FIRE_BASE_MAX_S.
+ protected void UpdateFireBase(ACR_AIAttack attack)
+ {
+  ACR_Squad fire = attack.m_Suppressor;
+  ACR_Base target = attack.m_Target;
+  if (!fire || !target) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  bool covering = false;
+  foreach (ACR_Squad other : attack.m_Squads)
+   if (other != fire && other.Strength() > 0) covering = true;
+  vector seenAt;
+  ACR_Squad enemy = EnemyNear(target.GetOrigin(), target.m_fRadius + 40, seenAt);
+  if (!covering) { LiftFire(attack, "nobody left to cover"); return; }
+  if (!enemy) { LiftFire(attack, "no enemy seen at the objective"); return; }
+  if (attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > FIRE_BASE_MAX_S * 1000) { LiftFire(attack, "time up"); return; }
+  vector from = PositionOf(fire);
+  float distance = vector.DistanceXZ(from, seenAt);
+  if (distance <= FIRE_BASE_RANGE && FireLine(from, seenAt))
+  {
+   attack.m_fFireBaseMoveSince = 0;
+   fire.Suppress(seenAt);
+   return;
+  }
+  float stand = Math.Min(FIRE_BASE_STANDOFF, distance - 100);
+  if (stand < 120) { LiftFire(attack, "no firing spot"); return; }
+  if (attack.m_fFireBaseMoveSince <= 0) attack.m_fFireBaseMoveSince = now;
+  if (now - attack.m_fFireBaseMoveSince > FIRE_BASE_MOVE_S * 1000) { LiftFire(attack, "no firing spot found in time"); return; }
+  vector back = from - seenAt;
+  back[1] = 0;
+  back.Normalize();
+  vector spot = seenAt + back * stand;
+  spot[1] = GetGame().GetWorld().GetSurfaceY(spot[0], spot[2]);
+  if (fire.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(fire.m_MoveTarget, spot) < 40) return;
+  fire.MoveTo(spot);
+  PrintFormat("[ACR] AI %1: %2 (base of fire) moves up to %3 m from the enemy at %4: %5", m_sFaction, fire.GetName(), Math.Round(stand), target.m_sName, spot);
+ }
+
+ protected void LiftFire(ACR_AIAttack attack, string reason)
+ {
+  ACR_Squad fire = attack.m_Suppressor;
+  if (!fire || !attack.m_Target) return;
+  fire.SetMode(ACR_EMoveMode.COMBAT);
+  fire.Assault(attack.m_Target.GetOrigin());
+  PrintFormat("[ACR] AI %1: %2 lifts fire and joins the assault on %3 (%4)", m_sFaction, fire.GetName(), attack.m_Target.m_sName, reason);
+  attack.m_Suppressor = null;
+ }
+
+ // Eye height to just above the aim point with only terrain in the way (trees and
+ // houses are what suppressive fire is for). The last 30 m don't count: the enemy
+ // may sit in a dip or behind a crest at the objective itself.
+ static bool FireLine(vector from, vector aim)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  if (!world) return false;
+  TraceParam trace = new TraceParam();
+  trace.Start = from + Vector(0, 1.6, 0);
+  trace.End = aim + Vector(0, 1.5, 0);
+  trace.Flags = TraceFlags.WORLD;
+  float fraction = world.TraceMove(trace, null);
+  float length = vector.Distance(trace.Start, trace.End);
+  return fraction >= 1 || (1 - fraction) * length <= 30;
+ }
+
  // True when an assault or grab has gone on too long without taking the base.
  protected bool Stalled(ACR_AIAttack attack)
  {
@@ -2208,14 +2280,8 @@ class ACR_AICommander : Managed
      bool closeIn = false;
      foreach (ACR_Squad assaulter : attack.m_Squads)
       if (assaulter != attack.m_Suppressor && vector.DistanceXZ(PositionOf(assaulter), target.GetOrigin()) < target.m_fRadius + 60) closeIn = true;
-     if (closeIn)
-     {
-      attack.m_Suppressor.SetMode(ACR_EMoveMode.COMBAT);
-      attack.m_Suppressor.Assault(target.GetOrigin());
-      PrintFormat("[ACR] AI %1: %2 lifts fire and joins the assault on %3", m_sFaction, attack.m_Suppressor.GetName(), target.m_sName);
-      attack.m_Suppressor = null;
-     }
-     else attack.m_Suppressor.Suppress(target.GetOrigin());
+     if (closeIn) LiftFire(attack, "assault on the objective");
+     else UpdateFireBase(attack);
     }
     continue;
    }
@@ -2242,9 +2308,9 @@ class ACR_AICommander : Managed
     foreach (ACR_Squad squad : attack.m_Squads)
     {
      squad.SetMode(ACR_EMoveMode.COMBAT);
-     if (squad == attack.m_Suppressor) squad.Suppress(target.GetOrigin());
-     else squad.Assault(target.GetOrigin());
+     if (squad != attack.m_Suppressor) squad.Assault(target.GetOrigin());
     }
+    if (attack.m_Suppressor) UpdateFireBase(attack);
     string suppressor = "none";
     if (attack.m_Suppressor) suppressor = attack.m_Suppressor.GetName();
     PrintFormat("[ACR] AI %1: assaulting %2 from %3 directions, base of fire: %4", m_sFaction, target.m_sName, attack.m_Squads.Count(), suppressor);
