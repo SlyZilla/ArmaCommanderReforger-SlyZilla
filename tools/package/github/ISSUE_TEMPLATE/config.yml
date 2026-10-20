@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+- name: Report bugs or suggest ideas in Discord
+  url: https://discord.gg/WK8xGSztB
+  about: No GitHub account needed. Use issues for bugs and suggestions for ideas; choose AC Actual.
