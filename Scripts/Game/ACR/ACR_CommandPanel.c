@@ -179,8 +179,9 @@ class ACR_CommandPanel : Managed
   m_FobBuildButton = AddButton(m_FobSection, "Build at FOB (stand inside its circle)", ACR_EPanelAction.FOB_BUILD);
   m_FobUpgradesLayout = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_FobSection);
   AddText(m_FobUpgradesLayout, LAYOUT_TEXT, "FOB Upgrades");
-  for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
+  for (int s = 0; s < ACR_FobSlots.UPGRADE_COUNT; s++)
   {
+   if (s == ACR_FobSlots.SLOT_DEFENCES) AddText(m_FobUpgradesLayout, LAYOUT_TEXT, "FOB Defences");
    SCR_ButtonTextComponent upgradeBtn = AddButton(m_FobUpgradesLayout, ACR_FobSlots.SlotName(s), ACR_EPanelAction.FOB_UPGRADE + s);
    m_aFobUpgradeButtons.Insert(upgradeBtn);
    m_aFobUpgradeWidgets.Insert(m_LastButtonWidget);
@@ -646,9 +647,7 @@ class ACR_CommandPanel : Managed
   if (m_Hint) m_Hint.SetText("");
  }
 
- // Slot states (ACR_FobSlots.FeedState): -1 none; 0 empty; 1 empty, spot blocked;
- // 10..109 building tier 0; 110..209 building tier 1; 300/301 built tier 0 (301 = next tier
- // blocked); 400 built tier 1.
+ // Upgrade states: ACR_FobSlots.FeedState (decoded with FeedBuilding / FeedBuilt).
  void SetFob(bool visible, bool canOrder, bool canBuild, array<int> slotStates = null, int stock = 0, bool ready = false, string factionKey = "")
  {
   if (m_FobSection) m_FobSection.SetVisible(visible);
@@ -663,9 +662,12 @@ class ACR_CommandPanel : Managed
   m_FobUpgradesLayout.SetVisible(true);
 
   bool anyBuilding = false;
+  int tier;
+  int pct;
+  bool nextBlocked;
   foreach (int st : slotStates)
   {
-   if (st >= 10 && st < 210)
+   if (ACR_FobSlots.FeedBuilding(st, tier, pct))
    {
     anyBuilding = true;
     break;
@@ -684,32 +686,26 @@ class ACR_CommandPanel : Managed
    int state = slotStates[i];
    string label;
    bool enabled = false;
-   if (state >= 400 || (state >= 300 && ACR_FobSlots.MaxTier(i) == 0))
+   if (ACR_FobSlots.FeedBuilt(state, tier, nextBlocked))
    {
-    int builtTier = 0;
-    if (state >= 400) builtTier = 1;
-    label = string.Format("%1 [Built]", ACR_FobSlots.SlotName(i, builtTier, factionKey));
-   }
-   else if (state == 301)
-   {
-    label = string.Format("Upgrade %1 [spot blocked]", ACR_FobSlots.SlotName(i, 1, factionKey));
-   }
-   else if (state >= 300)
-   {
-    int upCost = ACR_FobSlots.SlotCost(i, 1);
-    label = string.Format("Upgrade %1 [%2 sup]", ACR_FobSlots.SlotName(i, 1, factionKey), upCost);
-    enabled = ready && !anyBuilding && stock >= upCost;
-   }
-   else if (state >= 10)
-   {
-    int buildTier = 0;
-    int pct = state - 10;
-    if (state >= 110)
+    if (tier >= ACR_FobSlots.MaxTier(i))
     {
-     buildTier = 1;
-     pct = state - 110;
+     label = string.Format("%1 [Built]", ACR_FobSlots.SlotName(i, tier, factionKey));
     }
-    label = string.Format("%1 (%2%%)", ACR_FobSlots.SlotName(i, buildTier, factionKey), pct);
+    else if (nextBlocked)
+    {
+     label = string.Format("Upgrade %1 [spot blocked]", ACR_FobSlots.SlotName(i, tier + 1, factionKey));
+    }
+    else
+    {
+     int upCost = ACR_FobSlots.SlotCost(i, tier + 1);
+     label = string.Format("Upgrade %1 [%2 sup]", ACR_FobSlots.SlotName(i, tier + 1, factionKey), upCost);
+     enabled = ready && !anyBuilding && stock >= upCost;
+    }
+   }
+   else if (ACR_FobSlots.FeedBuilding(state, tier, pct))
+   {
+    label = string.Format("%1 (%2%%)", ACR_FobSlots.SlotName(i, tier, factionKey), pct);
    }
    else if (state == 1)
    {

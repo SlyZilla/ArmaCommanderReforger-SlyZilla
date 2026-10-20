@@ -114,7 +114,11 @@ class ACR_TestFobUpgrades
   fob.m_aFobSlots[ACR_FobSlots.SLOT_HOSPITAL].m_eState = ACR_EFobSlotState.BUILT;
   fob.m_aFobSlots[ACR_FobSlots.SLOT_DEPOT].m_eState = ACR_EFobSlotState.BUILT;
   fob.m_aFobSlots[ACR_FobSlots.SLOT_AMMO].m_eState = ACR_EFobSlotState.BUILT;
+  // Defences I comes between the base buildings and the tier-1 ones (ACR_TestFobDefences).
+  ACR_FobSlot defences = ACR_FobSlots.Defences(fob);
+  defences.m_eState = ACR_EFobSlotState.BUILT;
   nextPick = ai.BestUpgradeSlotFor(fob, targetTier);
+  defences.m_eState = ACR_EFobSlotState.EMPTY;
   ACR_TestRegress.Check("fobupgrades: after base tiers built, next priority is Barracks tier 1 (Large)", nextPick == ACR_FobSlots.SLOT_BARRACKS && targetTier == 1, string.Format("pick=%1 tier=%2", nextPick, targetTier));
 
   // 11. OrderFobSupplies refuses when RP < 20 + 30 (reserve gate)

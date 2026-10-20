@@ -31,6 +31,7 @@ class ACR_FobSlot : Managed
 	string m_sBlockedReason;
 	float m_fNextSpotCheck;
 	bool m_bAwaitingClear;    // finished, waiting for vehicles to leave the spot
+	ref array<IEntity> m_aPieces; // defences only: the piece on each spot (ACR_FobDefences)
 }
 
 class ACR_FobSlots : Managed
@@ -44,6 +45,8 @@ class ACR_FobSlots : Managed
 	static const int SLOT_RELAY = 5;
 	static const int SLOT_BARRACKS = 6;
 	static const int SLOT_DEPOT = 7;
+	static const int SLOT_DEFENCES = 8;  // the defences upgrade (ACR_FobDefences), outside m_aFobSlots
+	static const int UPGRADE_COUNT = 9;  // building slots plus defences: panel rows and feed entries
 
 	static const ResourceName HOSPITAL_US = "{D0281DAF0B131743}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_Conflict_US_01.et";
 	static const ResourceName HOSPITAL_USSR = "{505F78512FE8B697}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatMedium/E_FieldHospital_M_Conflict_USSR_01.et";
@@ -126,6 +129,7 @@ class ACR_FobSlots : Managed
 			case SLOT_RELAY: return ACR_EStructure.RELAY;
 			case SLOT_BARRACKS: return ACR_EStructure.BARRACKS;
 			case SLOT_DEPOT: return ACR_EStructure.DEPOT;
+			case SLOT_DEFENCES: return ACR_EStructure.DEFENCES;
 		}
 		return ACR_EStructure.NONE;
 	}
@@ -148,6 +152,49 @@ class ACR_FobSlots : Managed
 		fob.m_aFobSlots = {};
 		for (int i = 0; i < SLOT_COUNT; i++)
 			fob.m_aFobSlots.Insert(CreateSlot(i, KindAt(i), SlotName(i, 0, fob.m_sOwner), SlotCost(i, 0), SlotDuration(i, 0), SlotOffset(i), SlotYaw(i)));
+		if (!fob.m_FobDefences) fob.m_FobDefences = ACR_FobDefences.Create();
+	}
+
+	static ACR_FobSlot Defences(ACR_Base base)
+	{
+		if (!base) return null;
+		if (!base.m_FobDefences) base.m_FobDefences = ACR_FobDefences.Create();
+		return base.m_FobDefences;
+	}
+
+	// A building slot (0-7) or the defences upgrade (SLOT_DEFENCES).
+	static ACR_FobSlot SlotAt(ACR_Base base, int index)
+	{
+		if (!base) return null;
+		if (index == SLOT_DEFENCES) return Defences(base);
+		if (!base.m_aFobSlots) InitSlots(base);
+		if (index < 0 || index >= base.m_aFobSlots.Count()) return null;
+		return base.m_aFobSlots[index];
+	}
+
+	// Every upgrade of a FOB: the building slots, then the defences.
+	static void Upgrades(ACR_Base base, notnull array<ACR_FobSlot> upgrades)
+	{
+		upgrades.Clear();
+		if (!base) return;
+		if (base.m_aFobSlots)
+		{
+			foreach (ACR_FobSlot slot : base.m_aFobSlots) upgrades.Insert(slot);
+		}
+		if (base.m_FobDefences) upgrades.Insert(base.m_FobDefences);
+	}
+
+	static bool IsDefences(ACR_FobSlot slot)
+	{
+		return slot && slot.m_iSlotIndex == SLOT_DEFENCES;
+	}
+
+	// Something of the slot still stands: its building, or any defence piece.
+	static bool HasStanding(ACR_FobSlot slot)
+	{
+		if (!slot) return false;
+		if (IsDefences(slot)) return ACR_FobDefences.Standing(slot) > 0;
+		return slot.m_Entity && ACR_Logistics.Health(slot.m_Entity) > 0;
 	}
 
 	protected static ACR_FobSlot CreateSlot(int index, ACR_EStructure kind, string name, int cost, float duration, vector offset, float angle)
@@ -233,6 +280,7 @@ class ACR_FobSlots : Managed
 
 	static int MaxTier(int index)
 	{
+		if (index == SLOT_DEFENCES) return 2;
 		if (index == SLOT_REPAIR || index == SLOT_BARRACKS) return 1;
 		return 0;
 	}
@@ -260,6 +308,7 @@ class ACR_FobSlots : Managed
 				if (tier > 0) return "Barracks (Large)";
 				return "Barracks (Small)";
 			case 7: return "Supply Depot";
+			case SLOT_DEFENCES: return ACR_FobDefences.TierName(tier);
 		}
 		return "Slot";
 	}
@@ -280,6 +329,7 @@ class ACR_FobSlots : Managed
 				if (tier > 0) return 200;
 				return 275;
 			case 7: return 175;
+			case SLOT_DEFENCES: return ACR_FobDefences.Cost(tier);
 		}
 		return 200;
 	}
@@ -300,6 +350,7 @@ class ACR_FobSlots : Managed
 				if (tier > 0) return 45.0;
 				return 35.0;
 			case 7: return 30.0;
+			case SLOT_DEFENCES: return ACR_FobDefences.Duration(tier);
 		}
 		return 30.0;
 	}
@@ -426,6 +477,7 @@ class ACR_FobSlots : Managed
 
 	static bool CheckSlot(ACR_Base base, ACR_FobSlot slot, int tier, out string reason)
 	{
+		if (IsDefences(slot)) return ACR_FobDefences.CheckTier(base, slot, tier, reason);
 		array<IEntity> ignore = {};
 		IgnoreFor(base, slot, ignore);
 		return SlotSpotClear(base.GetOrigin(), slot.m_iSlotIndex, tier, ignore, reason);
@@ -441,14 +493,22 @@ class ACR_FobSlots : Managed
 
 	static bool AnyBuilding(ACR_Base base)
 	{
-		if (!base || !base.m_aFobSlots) return false;
-		foreach (ACR_FobSlot slot : base.m_aFobSlots)
-			if (slot.m_eState == ACR_EFobSlotState.BUILDING) return true;
-		return false;
+		return BuildingSlot(base) != null;
+	}
+
+	// The upgrade under construction (one at a time per FOB, defences included).
+	static ACR_FobSlot BuildingSlot(ACR_Base base)
+	{
+		array<ACR_FobSlot> upgrades = {};
+		Upgrades(base, upgrades);
+		foreach (ACR_FobSlot slot : upgrades)
+			if (slot.m_eState == ACR_EFobSlotState.BUILDING) return slot;
+		return null;
 	}
 
 	protected static void ResetSlot(ACR_FobSlot slot)
 	{
+		if (IsDefences(slot)) ACR_FobDefences.Clear(slot);
 		slot.m_eState = ACR_EFobSlotState.EMPTY;
 		slot.m_Entity = null;
 		slot.m_sOwner = "";
@@ -500,6 +560,12 @@ class ACR_FobSlots : Managed
 			slot.m_sOwner = faction;
 			slot.m_sName = SlotName(slot.m_iSlotIndex, slot.m_iTier, faction);
 		}
+		ACR_FobSlot defences = base.m_FobDefences;
+		if (defences && defences.m_eState == ACR_EFobSlotState.BUILT && HasStanding(defences))
+		{
+			defences.m_sOwner = faction;
+			ACR_FobDefences.TransferOwner(defences, faction);
+		}
 	}
 
 	static string OrderUpgradeBase(ACR_Manager manager, string key, ACR_Base base, int slotIndex, out string refusal)
@@ -525,23 +591,20 @@ class ACR_FobSlots : Managed
 			refusal = "FOB is contested";
 			return "";
 		}
-		if (!base.m_aFobSlots) InitSlots(base);
-		if (slotIndex < 0 || slotIndex >= base.m_aFobSlots.Count())
+		ACR_FobSlot slot = SlotAt(base, slotIndex);
+		if (!slot)
 		{
 			refusal = "Invalid upgrade slot";
 			return "";
 		}
 
-		foreach (ACR_FobSlot s : base.m_aFobSlots)
+		ACR_FobSlot busy = BuildingSlot(base);
+		if (busy)
 		{
-			if (s.m_eState == ACR_EFobSlotState.BUILDING)
-			{
-				refusal = string.Format("Already building %1", s.m_sName);
-				return "";
-			}
+			refusal = string.Format("Already building %1", busy.m_sName);
+			return "";
 		}
 
-		ACR_FobSlot slot = base.m_aFobSlots[slotIndex];
 		int targetTier = 0;
 		if (IsBuiltForOwner(slot, key))
 		{
@@ -610,7 +673,9 @@ class ACR_FobSlots : Managed
 	static void RefreshSpots(ACR_Base base, float now)
 	{
 		if (!base || !base.m_aFobSlots || base.m_bRetired) return;
-		foreach (ACR_FobSlot slot : base.m_aFobSlots)
+		array<ACR_FobSlot> upgrades = {};
+		Upgrades(base, upgrades);
+		foreach (ACR_FobSlot slot : upgrades)
 		{
 			if (now < slot.m_fNextSpotCheck) continue;
 			slot.m_fNextSpotCheck = now + 10000;
@@ -629,16 +694,36 @@ class ACR_FobSlots : Managed
 		}
 	}
 
+	// A building slot whose building was destroyed, dismantled or lost its antenna.
+	static bool SlotLost(ACR_FobSlot slot)
+	{
+		bool relayLost = slot.m_eKind == ACR_EStructure.RELAY && slot.m_eState == ACR_EFobSlotState.BUILT && !ACR_Structures.RelayAntenna(slot.m_Entity);
+		bool builtGone = slot.m_eState == ACR_EFobSlotState.BUILT && !slot.m_Entity;
+		bool baseGone = slot.m_eState == ACR_EFobSlotState.BUILDING && slot.m_iTargetTier > 0 && !slot.m_Entity;
+		return relayLost || builtGone || baseGone || (slot.m_Entity && ACR_Logistics.Health(slot.m_Entity) <= 0);
+	}
+
 	static void Advance(ACR_Base base, float dt)
 	{
 		if (!base || !base.m_bBuilt || base.m_bRetired || !base.m_aFobSlots) return;
 
-		foreach (ACR_FobSlot slot : base.m_aFobSlots)
+		array<ACR_FobSlot> upgrades = {};
+		Upgrades(base, upgrades);
+		foreach (ACR_FobSlot slot : upgrades)
 		{
-			bool relayLost = slot.m_eKind == ACR_EStructure.RELAY && slot.m_eState == ACR_EFobSlotState.BUILT && !ACR_Structures.RelayAntenna(slot.m_Entity);
-			bool builtGone = slot.m_eState == ACR_EFobSlotState.BUILT && !slot.m_Entity;
-			bool baseGone = slot.m_eState == ACR_EFobSlotState.BUILDING && slot.m_iTargetTier > 0 && !slot.m_Entity;
-			if (relayLost || builtGone || baseGone || (slot.m_Entity && ACR_Logistics.Health(slot.m_Entity) <= 0))
+			if (IsDefences(slot))
+			{
+				// Defences are lost with their last piece.
+				ACR_FobDefences.Prune(slot);
+				bool hasTier = slot.m_eState == ACR_EFobSlotState.BUILT || (slot.m_eState == ACR_EFobSlotState.BUILDING && slot.m_iTargetTier > 0);
+				if (hasTier && !HasStanding(slot))
+				{
+					PrintFormat("[ACR] FOB %1: every defence position is gone, defences reset", base.m_sName);
+					ResetSlot(slot);
+					continue;
+				}
+			}
+			else if (SlotLost(slot))
 			{
 				PrintFormat("[ACR] FOB %1: structure %2 destroyed, slot reset", base.m_sName, slot.m_sName);
 				if (slot.m_Entity)
@@ -653,7 +738,7 @@ class ACR_FobSlots : Managed
 			if (slot.m_eState == ACR_EFobSlotState.BUILDING && !slot.m_sOwner.IsEmpty() && slot.m_sOwner != base.m_sOwner)
 			{
 				// Captured mid-build: the work is lost, a finished lower tier stays.
-				if (slot.m_Entity && ACR_Logistics.Health(slot.m_Entity) > 0)
+				if (HasStanding(slot))
 				{
 					slot.m_eState = ACR_EFobSlotState.BUILT;
 					slot.m_iTargetTier = slot.m_iTier;
@@ -674,7 +759,7 @@ class ACR_FobSlots : Managed
 		float speedMult = 1.0;
 		if (hasEngineer) speedMult = 2.0;
 
-		foreach (ACR_FobSlot s : base.m_aFobSlots)
+		foreach (ACR_FobSlot s : upgrades)
 		{
 			if (s.m_eState != ACR_EFobSlotState.BUILDING) continue;
 			if (s.m_fProgress < s.m_fDuration) s.m_fProgress += dt * speedMult;
@@ -698,9 +783,10 @@ class ACR_FobSlots : Managed
 
 	static void TryComplete(ACR_Base base, ACR_FobSlot slot)
 	{
-		vector pos = SlotPosition(base.GetOrigin(), slot.m_iSlotIndex);
-		float radius = SlotRadius(slot.m_iSlotIndex, slot.m_iTargetTier);
-		if (VehicleOnSpot(pos, radius))
+		bool vehicleOn;
+		if (IsDefences(slot)) vehicleOn = ACR_FobDefences.VehicleOnSpots(base, slot.m_iTargetTier);
+		else vehicleOn = VehicleOnSpot(SlotPosition(base.GetOrigin(), slot.m_iSlotIndex), SlotRadius(slot.m_iSlotIndex, slot.m_iTargetTier));
+		if (vehicleOn)
 		{
 			if (!slot.m_bAwaitingClear) PrintFormat("[ACR] FOB %1: %2 finished, waiting for vehicles to clear its spot", base.m_sName, slot.m_sName);
 			slot.m_bAwaitingClear = true;
@@ -716,7 +802,7 @@ class ACR_FobSlots : Managed
 			PrintFormat("[ACR] FOB %1: %2 spot blocked at completion (%3), %4 supplies refunded", base.m_sName, slot.m_sName, why, slot.m_iCost);
 			slot.m_bBlocked = true;
 			slot.m_sBlockedReason = why;
-			if (slot.m_Entity)
+			if (HasStanding(slot))
 			{
 				slot.m_eState = ACR_EFobSlotState.BUILT;
 				slot.m_iTargetTier = slot.m_iTier;
@@ -738,6 +824,13 @@ class ACR_FobSlots : Managed
 		slot.m_bAdopted = false;
 		slot.m_bAwaitingClear = false;
 
+		if (IsDefences(slot))
+		{
+			slot.m_sName = SlotName(slot.m_iSlotIndex, slot.m_iTier, base.m_sOwner);
+			ACR_FobDefences.Complete(base, slot);
+			return;
+		}
+
 		if (slot.m_Entity)
 		{
 			SCR_CampaignBuildingCompositionComponent oldComp = SCR_CampaignBuildingCompositionComponent.Cast(slot.m_Entity.FindComponent(SCR_CampaignBuildingCompositionComponent));
@@ -749,55 +842,101 @@ class ACR_FobSlots : Managed
 		vector pos = SlotPosition(base.GetOrigin(), slot.m_iSlotIndex);
 		ACR_FobBuild.FellTrees(pos, SlotRadius(slot.m_iSlotIndex, slot.m_iTier));
 
-		ResourceName prefab = PrefabFor(slot.m_eKind, base.m_sOwner, slot.m_iTier);
+		IEntity ent = SpawnComposition(PrefabFor(slot.m_eKind, base.m_sOwner, slot.m_iTier), pos, slot.m_fAngleDeg, base, slot.m_iTier);
+		if (ent) slot.m_Entity = ent;
+		PrintFormat("[ACR] FOB %1: completed upgrade %2 (tier %3) at %4 (entity=%5)", base.m_sName, slot.m_sName, slot.m_iTier, pos, ent != null);
+	}
+
+	// A finished upgrade composition, already paid for, owned by the FOB's side.
+	static IEntity SpawnComposition(ResourceName prefab, vector pos, float yaw, ACR_Base base, int tier)
+	{
+		if (prefab.IsEmpty()) return null;
 		IEntity ent = null;
 		Resource resource = Resource.Load(prefab);
 		if (resource.IsValid())
 		{
 			EntitySpawnParams spawnParams = new EntitySpawnParams();
 			spawnParams.TransformMode = ETransformMode.WORLD;
-			Math3D.AnglesToMatrix(Vector(slot.m_fAngleDeg, 0, 0), spawnParams.Transform);
+			Math3D.AnglesToMatrix(Vector(yaw, 0, 0), spawnParams.Transform);
 			spawnParams.Transform[3] = pos;
 			ent = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
 		}
-		if (ent)
+		if (!ent) return null;
+		ent.SetYawPitchRoll(Vector(yaw, 0, 0));
+		SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(ent.FindComponent(SCR_CampaignBuildingCompositionComponent));
+		if (comp)
 		{
-			ent.SetYawPitchRoll(Vector(slot.m_fAngleDeg, 0, 0));
-			slot.m_Entity = ent;
-			SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(ent.FindComponent(SCR_CampaignBuildingCompositionComponent));
-			if (comp)
-			{
-				comp.ACR_SetFaction(base.m_sOwner);
-				comp.ACR_SetTier(slot.m_iTier);
-				comp.ACR_SetFobProvider(base.m_FobSupply);
-				comp.ACR_MarkBuildCharged();
-				comp.ACR_SetCompositionSpawned(true);
-			}
+			comp.ACR_SetFaction(base.m_sOwner);
+			comp.ACR_SetTier(tier);
+			comp.ACR_SetFobProvider(base.m_FobSupply);
+			comp.ACR_MarkBuildCharged();
+			comp.ACR_SetCompositionSpawned(true);
 		}
-		PrintFormat("[ACR] FOB %1: completed upgrade %2 (tier %3) at %4 (entity=%5)", base.m_sName, slot.m_sName, slot.m_iTier, pos, ent != null);
+		return ent;
 	}
 
-	// Panel encoding (one int per slot): -1 none; 0 empty; 1 empty, spot blocked;
-	// 10..109 building tier 0 (10 + %); 110..209 building tier 1; 300 built tier 0
-	// (301 = next tier's spot blocked); 400 built tier 1.
+	// Panel encoding (one int per upgrade): -1 none; 0 empty; 1 empty, spot blocked;
+	// 10..109 building tier 0 (10 + %); 110..209 building tier 1; 500..599 building tier 2;
+	// 300 built tier 0 (301 = next tier's spot blocked); 400 built tier 1 (401 likewise);
+	// 600 built tier 2.
 	static int FeedState(ACR_Base base, int index)
 	{
-		if (!base || !base.m_aFobSlots || index < 0 || index >= base.m_aFobSlots.Count()) return -1;
-		ACR_FobSlot slot = base.m_aFobSlots[index];
+		if (!base || !base.m_aFobSlots) return -1;
+		ACR_FobSlot slot = SlotAt(base, index);
+		if (!slot) return -1;
 		if (IsBuiltForOwner(slot, base.m_sOwner))
 		{
-			if (slot.m_iTier > 0) return 400;
-			if (slot.m_bBlocked && MaxTier(index) > 0) return 301;
-			return 300;
+			int built = 300 + 100 * slot.m_iTier;
+			if (slot.m_iTier >= 2) built = 600;
+			if (slot.m_bBlocked && slot.m_iTier < MaxTier(index)) built++;
+			return built;
 		}
 		if (slot.m_eState == ACR_EFobSlotState.BUILDING && (slot.m_sOwner.IsEmpty() || slot.m_sOwner == base.m_sOwner))
 		{
 			int pct = Math.ClampInt((int)((slot.m_fProgress / slot.m_fDuration) * 100), 0, 99);
-			if (slot.m_iTargetTier == 0) return 10 + pct;
-			return 110 + pct;
+			if (slot.m_iTargetTier >= 2) return 500 + pct;
+			if (slot.m_iTargetTier == 1) return 110 + pct;
+			return 10 + pct;
 		}
 		if (slot.m_bBlocked) return 1;
 		return 0;
+	}
+
+	// Panel decoding of FeedState: a building upgrade's tier and percent.
+	static bool FeedBuilding(int state, out int tier, out int pct)
+	{
+		tier = 0;
+		pct = 0;
+		if (state >= 10 && state < 110)
+		{
+			pct = state - 10;
+			return true;
+		}
+		if (state >= 110 && state < 210)
+		{
+			tier = 1;
+			pct = state - 110;
+			return true;
+		}
+		if (state >= 500 && state < 600)
+		{
+			tier = 2;
+			pct = state - 500;
+			return true;
+		}
+		return false;
+	}
+
+	// Panel decoding of FeedState: a built upgrade's tier, and whether its next tier is blocked.
+	static bool FeedBuilt(int state, out int tier, out bool nextBlocked)
+	{
+		tier = 0;
+		nextBlocked = false;
+		if (state < 300 || (state >= 500 && state < 600) || state > 600) return false;
+		if (state >= 600) tier = 2;
+		else if (state >= 400) tier = 1;
+		if (state == 301 || state == 401) nextBlocked = true;
+		return true;
 	}
 
 	static string Describe(ACR_Base base)
@@ -805,9 +944,15 @@ class ACR_FobSlots : Managed
 		if (!base || !base.m_aFobSlots) return "";
 		string text = "";
 		bool paused = base.m_bContested || base.m_bHqLost || ACR_FobBuild.IsContested(base.GetOrigin(), base.m_sOwner);
-		foreach (ACR_FobSlot slot : base.m_aFobSlots)
+		array<ACR_FobSlot> upgrades = {};
+		Upgrades(base, upgrades);
+		foreach (ACR_FobSlot slot : upgrades)
 		{
-			if (IsBuiltForOwner(slot, base.m_sOwner))
+			if (IsBuiltForOwner(slot, base.m_sOwner) && IsDefences(slot))
+			{
+				text += string.Format("\n  %1 (%2 positions)", slot.m_sName, ACR_FobDefences.Standing(slot));
+			}
+			else if (IsBuiltForOwner(slot, base.m_sOwner))
 			{
 				text += "\n  " + slot.m_sName + " (built)";
 			}
@@ -831,7 +976,9 @@ class ACR_FobSlots : Managed
 	static void Cleanup(ACR_Base base)
 	{
 		if (!base || !base.m_aFobSlots) return;
-		foreach (ACR_FobSlot slot : base.m_aFobSlots)
+		array<ACR_FobSlot> upgrades = {};
+		Upgrades(base, upgrades);
+		foreach (ACR_FobSlot slot : upgrades)
 		{
 			if (slot.m_Entity)
 			{

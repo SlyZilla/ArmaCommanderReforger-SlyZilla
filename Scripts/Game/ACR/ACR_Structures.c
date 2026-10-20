@@ -24,7 +24,8 @@ enum ACR_EStructure
  HQ,
  DEPOT,
  RELAY,
- BARRACKS
+ BARRACKS,
+ DEFENCES
 }
 
 modded class SCR_CampaignBuildingCompositionComponent
@@ -173,6 +174,7 @@ class ACR_Structures : Managed
   if (name.Contains("supplycache_") || name.Contains("supplystorage_")) return ACR_EStructure.DEPOT;
   if (name.Contains("antenna_s_")) return ACR_EStructure.RELAY;
   if (name.Contains("livingarea_") || name.Contains("barracks")) return ACR_EStructure.BARRACKS;
+  if (name.Contains("sandbagposition_s_") || name.Contains("machinegunnest_") || name.Contains("bunker_s_") || name.Contains("guardtower_s_")) return ACR_EStructure.DEFENCES;
   return ACR_EStructure.NONE;
  }
 
@@ -195,6 +197,7 @@ class ACR_Structures : Managed
    case ACR_EStructure.DEPOT: return "supply depot";
    case ACR_EStructure.RELAY: return "radio relay";
    case ACR_EStructure.BARRACKS: return "barracks";
+   case ACR_EStructure.DEFENCES: return "fortification";
   }
   return "structure";
  }
@@ -364,6 +367,7 @@ class ACR_Structures : Managed
    case ACR_EStructure.BARRACKS:
     if (tier > 0) return 22;
     return 10;
+   case ACR_EStructure.DEFENCES: return ACR_FobDefences.PIECE_RADIUS;
   }
   return 8;
  }

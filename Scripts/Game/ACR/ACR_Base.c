@@ -43,6 +43,7 @@ class ACR_Base : GenericEntity
  float m_fSupplyDeliveryUpdated;
  string m_sSupplyDeliveryFaction;
  ref array<ref ACR_FobSlot> m_aFobSlots;
+ ref ACR_FobSlot m_FobDefences;     // the defences upgrade (ACR_FobDefences)
  float m_fFobSlotsLastTick;
  bool m_bHqLost;                    // built FOB whose HQ was destroyed: offline, capturable, rebuildable
 

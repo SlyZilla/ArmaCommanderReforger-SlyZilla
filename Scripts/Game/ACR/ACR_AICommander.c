@@ -2984,10 +2984,7 @@ class ACR_AICommander : Managed
   {
    if (!base || base.m_bRetired || !base.m_bBuilt || base.m_sOwner != m_sFaction || !base.m_aFobSlots) continue;
    if (vector.DistanceXZ(pos, base.GetOrigin()) > base.m_fRadius) continue;
-   foreach (ACR_FobSlot slot : base.m_aFobSlots)
-   {
-    if (slot && slot.m_eState == ACR_EFobSlotState.BUILDING) return true;
-   }
+   if (ACR_FobSlots.AnyBuilding(base)) return true;
   }
   return false;
  }
@@ -3380,17 +3377,7 @@ class ACR_AICommander : Managed
 
    // 2. Upgrade check & engineer acceleration
    if (!base.m_aFobSlots) ACR_FobSlots.InitSlots(base);
-   bool isBuilding = false;
-   foreach (ACR_FobSlot slot : base.m_aFobSlots)
-   {
-    if (slot && slot.m_eState == ACR_EFobSlotState.BUILDING)
-    {
-     isBuilding = true;
-     break;
-    }
-   }
-
-   if (isBuilding)
+   if (ACR_FobSlots.AnyBuilding(base))
    {
     AssistFobConstruction(base);
    }
@@ -3425,56 +3412,49 @@ class ACR_AICommander : Managed
   return base.m_iSupplyDelivery > 0;
  }
 
+ // The AI's FOB build order: the base buildings, Defences I, the tier-1 buildings,
+ // Defences II, the helipad, then Defences III. Blocked spots are skipped.
  int BestUpgradeSlotFor(ACR_Base base, out int targetTier)
  {
   targetTier = 0;
   if (!base) return -1;
   if (!base.m_aFobSlots) ACR_FobSlots.InitSlots(base);
 
-  array<int> priorities = {
-   ACR_FobSlots.SLOT_RELAY,
-   ACR_FobSlots.SLOT_BARRACKS,
-   ACR_FobSlots.SLOT_REPAIR,
-   ACR_FobSlots.SLOT_FUEL,
-   ACR_FobSlots.SLOT_HOSPITAL,
-   ACR_FobSlots.SLOT_DEPOT,
-   ACR_FobSlots.SLOT_AMMO
+  array<int> order = {
+   ACR_FobSlots.SLOT_RELAY, 0,
+   ACR_FobSlots.SLOT_BARRACKS, 0,
+   ACR_FobSlots.SLOT_REPAIR, 0,
+   ACR_FobSlots.SLOT_FUEL, 0,
+   ACR_FobSlots.SLOT_HOSPITAL, 0,
+   ACR_FobSlots.SLOT_DEPOT, 0,
+   ACR_FobSlots.SLOT_AMMO, 0,
+   ACR_FobSlots.SLOT_DEFENCES, 0,
+   ACR_FobSlots.SLOT_BARRACKS, 1,
+   ACR_FobSlots.SLOT_REPAIR, 1,
+   ACR_FobSlots.SLOT_DEFENCES, 1,
+   ACR_FobSlots.SLOT_HELIPAD, 0,
+   ACR_FobSlots.SLOT_DEFENCES, 2
   };
 
-  foreach (int slotIdx : priorities)
+  for (int i = 0; i + 1 < order.Count(); i += 2)
   {
-   if (slotIdx < 0 || slotIdx >= base.m_aFobSlots.Count()) continue;
-   ACR_FobSlot slot = base.m_aFobSlots[slotIdx];
+   int slotIdx = order[i];
+   int tier = order[i + 1];
+   ACR_FobSlot slot = ACR_FobSlots.SlotAt(base, slotIdx);
    if (!slot || slot.m_bBlocked) continue; // its spot is blocked: skip it
-   if (slot.m_eState == ACR_EFobSlotState.EMPTY || (slot.m_eState == ACR_EFobSlotState.BUILT && !ACR_FobSlots.IsBuiltForOwner(slot, m_sFaction)))
+   bool mine = ACR_FobSlots.IsBuiltForOwner(slot, m_sFaction);
+   bool empty = slot.m_eState == ACR_EFobSlotState.EMPTY || (slot.m_eState == ACR_EFobSlotState.BUILT && !mine);
+   if (tier == 0 && empty)
    {
     targetTier = 0;
     return slotIdx;
    }
+   if (tier > 0 && mine && slot.m_iTier == tier - 1)
+   {
+    targetTier = tier;
+    return slotIdx;
+   }
   }
-
-  // Tier 1 upgrades after base tiers are built
-  ACR_FobSlot barracksSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_BARRACKS];
-  if (barracksSlot && !barracksSlot.m_bBlocked && ACR_FobSlots.IsBuiltForOwner(barracksSlot, m_sFaction) && barracksSlot.m_iTier < 1)
-  {
-   targetTier = 1;
-   return ACR_FobSlots.SLOT_BARRACKS;
-  }
-
-  ACR_FobSlot repairSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_REPAIR];
-  if (repairSlot && !repairSlot.m_bBlocked && ACR_FobSlots.IsBuiltForOwner(repairSlot, m_sFaction) && repairSlot.m_iTier < 1)
-  {
-   targetTier = 1;
-   return ACR_FobSlots.SLOT_REPAIR;
-  }
-
-  ACR_FobSlot heliSlot = base.m_aFobSlots[ACR_FobSlots.SLOT_HELIPAD];
-  if (heliSlot && !heliSlot.m_bBlocked && (heliSlot.m_eState == ACR_EFobSlotState.EMPTY || (heliSlot.m_eState == ACR_EFobSlotState.BUILT && !ACR_FobSlots.IsBuiltForOwner(heliSlot, m_sFaction))))
-  {
-   targetTier = 0;
-   return ACR_FobSlots.SLOT_HELIPAD;
-  }
-
   return -1;
  }
 

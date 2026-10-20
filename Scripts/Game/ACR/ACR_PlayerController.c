@@ -1202,7 +1202,7 @@ modded class SCR_PlayerController
    if (baseIndex >= 0)
    {
     m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], m_ACR_Data.m_BaseDetails[baseIndex]);
-    int stride = 3 + ACR_FobSlots.SLOT_COUNT;
+    int stride = 3 + ACR_FobSlots.UPGRADE_COUNT;
     int supplyOffset = baseIndex * stride;
     if (m_ACR_Data.m_BaseSupply.Count() >= supplyOffset + stride)
     {
@@ -1215,7 +1215,7 @@ modded class SCR_PlayerController
      Faction myFaction = SCR_FactionManager.SGetPlayerFaction(GetPlayerId());
      if (myFaction) factionKey = myFaction.GetFactionKey();
      array<int> slotStates = {};
-     for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
+     for (int s = 0; s < ACR_FobSlots.UPGRADE_COUNT; s++)
      {
       slotStates.Insert(m_ACR_Data.m_BaseSupply[supplyOffset + 3 + s]);
      }
@@ -1357,7 +1357,7 @@ modded class SCR_PlayerController
    ACR_RequestDebug(action - ACR_EPanelAction.DEBUG_ACTION);
    return;
   }
-  if (action >= ACR_EPanelAction.FOB_UPGRADE && action < ACR_EPanelAction.FOB_UPGRADE + ACR_FobSlots.SLOT_COUNT)
+  if (action >= ACR_EPanelAction.FOB_UPGRADE && action < ACR_EPanelAction.FOB_UPGRADE + ACR_FobSlots.UPGRADE_COUNT)
   {
    int slot = action - ACR_EPanelAction.FOB_UPGRADE;
    ACR_RequestFobUpgrade(m_ACR_SelectedBase, slot);

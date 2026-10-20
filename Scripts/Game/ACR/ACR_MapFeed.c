@@ -478,7 +478,7 @@ class ACR_MapFeed
    if (stock >= 0 && base.m_bHqLost) delivery = -1; // HQ destroyed: the panel offers nothing
    frame.m_BaseSupply.Insert(delivery);
    string slotSig = "";
-   for (int s = 0; s < ACR_FobSlots.SLOT_COUNT; s++)
+   for (int s = 0; s < ACR_FobSlots.UPGRADE_COUNT; s++)
    {
     int slotState = -1;
     if (stock >= 0) slotState = ACR_FobSlots.FeedState(base, s);
@@ -486,7 +486,7 @@ class ACR_MapFeed
     slotSig += slotState.ToString() + ",";
    }
    sig += base.GetLabel() + "|" + base.m_sOwner + "|" + detail + "|" + flag.ToString() + "|" + slotSig + ";";
-   bytes += 12 + base.GetLabel().Length() + base.m_sOwner.Length() + detail.Length() + 4 * (8 + ACR_FobSlots.SLOT_COUNT);
+   bytes += 12 + base.GetLabel().Length() + base.m_sOwner.Length() + detail.Length() + 4 * (8 + ACR_FobSlots.UPGRADE_COUNT);
   }
   frame.m_sBasesSig = sig;
   frame.m_Bytes.Set("bases", bytes + 28);
