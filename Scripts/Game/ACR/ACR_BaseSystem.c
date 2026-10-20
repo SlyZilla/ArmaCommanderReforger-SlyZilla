@@ -189,8 +189,14 @@ class ACR_BaseSystem : Managed
     inside.Set(key, count + 1);
     if (!base.m_aDetectedBy.Contains(key))
     {
-     base.m_aDetectedBy.Insert(key);
-     if (base.m_bHidden && key != base.m_sOwner) manager.NotifyFaction(key, string.Format("Enemy base discovered: %1", base.m_sName));
+     ACR_Intel finder;
+     if (base.m_bBuilt && base.m_bHidden && key != base.m_sOwner) finder = manager.IntelFor(key);
+     if (finder) finder.FobFound(base, "", GetGame().GetWorld().GetWorldTime());
+     else
+     {
+      base.m_aDetectedBy.Insert(key);
+      if (base.m_bHidden && key != base.m_sOwner) manager.NotifyFaction(key, string.Format("Enemy base discovered: %1", base.m_sName));
+     }
     }
    }
    if (!base.m_sOwner.IsEmpty() && key != base.m_sOwner)

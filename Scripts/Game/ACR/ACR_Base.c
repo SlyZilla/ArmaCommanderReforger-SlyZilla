@@ -56,6 +56,9 @@ class ACR_Base : GenericEntity
   m_iSupplyDelivery = 0;
   m_fSupplyDeliveryLeft = 0;
   PrintFormat("[ACR] BASE %1 offline (%2)", m_sName, why);
+  ACR_SideStats stats = ACR_Report.Of(m_sOwner);
+  if (stats) stats.m_iFobsLost++;
+  ACR_Intel.FobEvent(this, m_sName + " offline: HQ lost, an Establish FOB order rebuilds it", m_sName + " HQ lost");
  }
 
  // A built FOB that can deploy, serve and build (not retired, HQ standing).
@@ -78,6 +81,7 @@ class ACR_Base : GenericEntity
   if (s_All) s_All.RemoveItem(this);
   if (m_GarrisonGroup) SCR_EntityHelper.DeleteEntityAndChildren(m_GarrisonGroup);
   PrintFormat("[ACR] BASE %1 retired (%2)", m_sName, why);
+  if (m_bBuilt) ACR_Intel.FobEvent(this, m_sName + " is gone: nothing of it is left standing", m_sName + " gone");
  }
 
  void ACR_Base(IEntitySource src, IEntity parent)

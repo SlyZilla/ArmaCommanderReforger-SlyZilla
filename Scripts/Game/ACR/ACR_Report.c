@@ -1,7 +1,8 @@
 // After-action report (5 Oct; roadmap item 6). The server keeps a running tally per side: own
 // soldiers and vehicles lost, enemy soldiers and vehicles killed (by whoever the game credits:
 // soldiers, vehicle gunners, mortar crews; bombs and the battery have no shooter and count only
-// as losses), bases won and lost, RP earned and spent, and a short timeline of the big moments.
+// as losses), bases won and lost, FOBs built and HQs lost, RP earned and spent, and a short
+// timeline of the big moments (FOB events included).
 // Each player sees his side's report in the map panel ("Report"), updated every few seconds.
 // No victory conditions: it is a report, not a scoreboard that ends anything.
 class ACR_SideStats : Managed
@@ -16,6 +17,8 @@ class ACR_SideStats : Managed
  int m_iRPSpent;
  int m_iSquadsBought;
  int m_iSupports;
+ int m_iFobsBuilt;
+ int m_iFobsLost;     // FOB HQs lost (destroyed, demolished, dismantled)
  ref array<string> m_aTimeline = {};
 }
 
@@ -105,6 +108,7 @@ class ACR_Report
   if (!s) return "";
   string text = ACR_FactionSelection.DisplayName(key) + " report\n" + string.Format("Time %1\nSoldiers lost %2, enemy killed %3\nVehicles lost %4, enemy vehicles destroyed %5\nBases won %6, lost %7\nRP earned %8, spent %9",
    Clock(), s.m_iLost, s.m_iKills, s.m_iVehiclesLost, s.m_iVehicleKills, s.m_iBasesWon, s.m_iBasesLost, s.m_iRPEarned, s.m_iRPSpent);
+  if (s.m_iFobsBuilt > 0 || s.m_iFobsLost > 0) text += string.Format("\nFOBs built %1, HQs lost %2", s.m_iFobsBuilt, s.m_iFobsLost);
   if (!s.m_aTimeline.IsEmpty())
   {
    text += "\n";

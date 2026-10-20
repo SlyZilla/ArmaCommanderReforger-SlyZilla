@@ -61,6 +61,9 @@ class ACR_Intel : Managed
  static const float VEHICLE_MEMORY_MS = 600000;   // last known spot kept 10 min
  ref map<IEntity, vector> m_VehicleAt = new map<IEntity, vector>();
  ref map<IEntity, float> m_VehicleSeen = new map<IEntity, float>();
+ // Enemy FOBs are hidden until found: by walking into one (ACR_BaseSystem) or by seeing its HQ.
+ static const float FOB_SIGHT = 250;      // m from the HQ, with a clear view
+ static const int FOB_TRACES = 8;         // line-of-sight checks per FOB per pass
 
  void ACR_Intel(ACR_Manager manager, string faction)
  {
@@ -154,6 +157,7 @@ class ACR_Intel : Managed
   // 3. Our players' eyes (every 2 s): enemies in range with a clear line of sight.
   if (m_iTicks % 2 == 0) PlayerSightings(players, now);
   else TrackVehicles(players, now);
+  if (m_iTicks % 4 == 1) SpotFobs(players, now);
   // Forget the stale and the dead.
   array<IEntity> stale = {};
   foreach (IEntity enemy, float when : m_SeenTime)
@@ -286,6 +290,76 @@ class ACR_Intel : Managed
   }
  }
 
+ // Hidden enemy FOBs whose HQ one of ours (AI squads, players) can see from FOB_SIGHT.
+ protected void SpotFobs(array<int> players, float now)
+ {
+  array<ACR_Base> hidden = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base && base.m_bBuilt && !base.m_bRetired && !base.m_sOwner.IsEmpty() && base.m_sOwner != m_sFaction && !base.IsVisibleTo(m_sFaction)) hidden.Insert(base);
+  if (hidden.IsEmpty()) return;
+  array<IEntity> eyes = {};
+  array<string> names = {};
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (!body || !ACR_Respawn.IsAlive(body)) continue;
+    eyes.Insert(body);
+    names.Insert(squad.GetName());
+   }
+  }
+  foreach (int id : players)
+  {
+   IEntity player = GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
+   if (!player || !ACR_Respawn.IsAlive(player) || FactionKeyOf(player) != m_sFaction) continue;
+   eyes.Insert(player);
+   names.Insert(GetGame().GetPlayerManager().GetPlayerName(id));
+  }
+  foreach (ACR_Base fob : hidden)
+  {
+   int traces = 0;
+   foreach (int e, IEntity eye : eyes)
+   {
+    if (vector.DistanceXZ(eye.GetOrigin(), fob.GetOrigin()) > FOB_SIGHT) continue;
+    if (traces >= FOB_TRACES) break;
+    traces++;
+    if (!SeesSpot(eye, fob.GetOrigin() + Vector(0, 2, 0), 15)) continue;
+    FobFound(fob, names[e], now);
+    break;
+   }
+  }
+ }
+
+ // An enemy FOB becomes known to this side: on the map, in the feed, on the radio and in the report.
+ void FobFound(ACR_Base fob, string spotter, float now)
+ {
+  if (!fob || fob.m_aDetectedBy.Contains(m_sFaction)) return;
+  // Worded before it is known, so the place named is not the FOB itself.
+  string place = Place(fob.GetOrigin());
+  string relative = Relative(fob.GetOrigin());
+  fob.m_aDetectedBy.Insert(m_sFaction);
+  if (spotter.IsEmpty()) spotter = "Scouts";
+  AddFeed(now, string.Format("%1: enemy %2 found %3", spotter, fob.m_sName, place));
+  QueueRadio(string.Format("%1: enemy FOB spotted, %2.", spotter, relative));
+  ACR_Report.Event(m_sFaction, "found enemy " + fob.m_sName);
+  m_Manager.NotifyFaction(m_sFaction, string.Format("Enemy base discovered: %1", fob.m_sName));
+ }
+
+ // A change to one of our own FOBs, for its side's feed and report (established, HQ lost...).
+ static void FobEvent(ACR_Base fob, string line, string timeline)
+ {
+  if (!fob || fob.m_sOwner.IsEmpty() || !Replication.IsServer()) return;
+  ACR_Report.Event(fob.m_sOwner, timeline);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  ACR_Intel intel = manager.IntelFor(fob.m_sOwner);
+  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), line);
+ }
+
  protected static IEntity s_TraceIgnore;
  protected static IEntity s_TraceIgnoreVehicle;
  protected static IEntity s_TraceTarget;
@@ -319,6 +393,23 @@ class ACR_Intel : Managed
   if (!hit) return false;
   IEntity root = hit.GetRootParent();
   return hit == target || root == target || (ACR_Transport.VehicleOf(target) && root == ACR_Transport.VehicleOf(target));
+ }
+
+ // Eye to a point, stopped by terrain, buildings and vegetation, except within slack metres of
+ // the point (what stands there, e.g. an HQ tent, does not hide itself).
+ static bool SeesSpot(IEntity eye, vector spot, float slack)
+ {
+  TraceParam trace = new TraceParam();
+  trace.Start = eye.GetOrigin() + Vector(0, 1.6, 0);
+  trace.End = spot;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  s_TraceIgnore = eye;
+  s_TraceIgnoreVehicle = ACR_Transport.VehicleOf(eye);
+  float fraction = GetGame().GetWorld().TraceMove(trace, IgnoreOwn);
+  s_TraceIgnore = null;
+  s_TraceIgnoreVehicle = null;
+  float length = vector.Distance(trace.Start, spot);
+  return fraction * length >= length - slack;
  }
 
  // One contact per enemy squad (newest sighting of any member), plus lone

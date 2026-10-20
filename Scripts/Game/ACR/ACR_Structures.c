@@ -614,6 +614,7 @@ class ACR_Structures : Managed
    if (!base.m_FobSupply) ACR_FobSupply.Create(base, s.m_Entity);
    else ACR_FobSupply.Bind(base, s.m_Entity);
    PrintFormat("[ACR] BASE %1 back online (HQ rebuilt)", base.m_sName);
+   ACR_Intel.FobEvent(base, base.m_sName + " back online: HQ rebuilt", base.m_sName + " HQ rebuilt");
    return base;
   }
   return null;
@@ -623,6 +624,10 @@ class ACR_Structures : Managed
  {
   foreach (ACR_Base base : ACR_Base.s_All)
    if (vector.DistanceXZ(base.GetOrigin(), s.m_vPos) <= base.m_fRadius + FOB_RADIUS) return null; // inside a base already
+  // Worded before the FOB exists, so the place named is not the FOB itself.
+  string place = "";
+  ACR_Intel intel = m_Manager.IntelFor(s.m_sFaction);
+  if (intel) place = " " + intel.Place(s.m_vPos);
   EntitySpawnParams parameters = new EntitySpawnParams();
   parameters.TransformMode = ETransformMode.WORLD;
   parameters.Transform[3] = s.m_vPos;
@@ -643,6 +648,9 @@ class ACR_Structures : Managed
   fob.m_bBuilt = true;
   ACR_FobSupply.Create(fob, s.m_Entity);
   ACR_FobSlots.InitSlots(fob);
+  ACR_SideStats stats = ACR_Report.Of(fob.m_sOwner);
+  if (stats) stats.m_iFobsBuilt++;
+  ACR_Intel.FobEvent(fob, fob.m_sName + " established" + place, "established " + fob.m_sName);
   return fob;
  }
 
