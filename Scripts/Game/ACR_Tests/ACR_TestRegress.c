@@ -974,7 +974,7 @@ class ACR_TestRegress
   {
    Check("aircraft hull hits never train armour learning", false, "missing aircraft/crew/magazine/truck fixture");
    Check("aircraft and exposed crew ignore an existing useless-round verdict", false, "missing fixture");
-   Check("ground vehicles retain armour learning and fire holds", false, "missing fixture");
+   Check("unarmoured ground vehicles never train armour learning or hold fire", false, "missing fixture");
    Check("aircraft and seated crew cannot create group gunshot suppression contacts", false, "missing fixture");
    Check("gunner drill rejects airborne sectors and keeps ground sectors", false, "missing fixture");
    return;
@@ -994,9 +994,11 @@ class ACR_TestRegress
   string ammo = BBB_Armour.Round(BBB_Armour.Key(magazine.GetAmmoType(0)));
   BBB_Armour.s_Stats.Set(BBB_Armour.PrefabKey(helicopter) + "|" + ammo, learned);
   Check("aircraft and exposed crew ignore an existing useless-round verdict", !BBB_Armour.UselessEntity(helicopter, magazine) && !BBB_Armour.UselessEntity(occupant, magazine));
+  // BBB 20 Oct: only medium/heavy armour is judged (a UAZ gunner was left unshot).
   for (int k = 0; k < BBB_Armour.s_iMinHits; k++) BBB_Armour.OnVehicleHit(s_ArsenalTruck, hit);
+  bool truckUntrained = BBB_Armour.HitsOn(BBB_Armour.PrefabKey(s_ArsenalTruck)) == 0;
   BBB_Armour.s_Stats.Set(BBB_Armour.PrefabKey(s_ArsenalTruck) + "|" + ammo, learned);
-  Check("ground vehicles retain armour learning and fire holds", BBB_Armour.HitsOn(BBB_Armour.PrefabKey(s_ArsenalTruck)) >= BBB_Armour.s_iMinHits && BBB_Armour.UselessEntity(s_ArsenalTruck, magazine));
+  Check("unarmoured ground vehicles never train armour learning or hold fire", !BBB_Armour.Armoured(s_ArsenalTruck) && truckUntrained && !BBB_Armour.UselessEntity(s_ArsenalTruck, magazine));
   BBB_Armour.s_Stats = savedStats;
   BBB_Armour.s_bLearn = savedLearn;
   Check("aircraft and seated crew cannot create group gunshot suppression contacts", BBB_SuppressionSafety.AircraftSource(helicopter) && BBB_SuppressionSafety.AircraftSource(occupant) && !BBB_SuppressionSafety.AircraftSource(s_ArsenalTruck));
