@@ -33,7 +33,7 @@ function Show-HostSetup([switch]$Solo) {
   if ($Solo) { $name = 'play-settings.txt' }
   $file = Join-Path $PSScriptRoot $name
   # Only pre-load choices belong here. Ignore old saved match settings.
-  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no' }
+  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; FireManeuver = 'no'; CombatManeuver = 'no' }
   if (Test-Path -LiteralPath $file) {
     foreach ($line in Get-Content -LiteralPath $file) {
       $kv = $line.Split('=', 2)
@@ -46,6 +46,8 @@ function Show-HostSetup([switch]$Solo) {
   if ($worlds -notcontains $s.World) { $s.World = $worlds[0] }
   if (@('vanilla', 'ru_us', 'ru_ua', 'us_ua') -notcontains $s.Factions) { $s.Factions = 'vanilla' }
   if (@('yes', 'no') -notcontains $s.ACE) { $s.ACE = 'no' }
+  if (@('yes', 'no') -notcontains $s.FireManeuver) { $s.FireManeuver = 'no' }
+  if (@('yes', 'no') -notcontains $s.CombatManeuver) { $s.CombatManeuver = 'no' }
   while ($true) {
     $mapName = [IO.Path]::GetFileNameWithoutExtension($s.World) -replace '^ACR_', ''
     Write-Host ''
@@ -55,6 +57,8 @@ function Show-HostSetup([switch]$Solo) {
     Write-Host (' 1  Map                     ' + $mapName)
     Write-Host (' 2  Faction mods            ' + (Get-PairLabel $s.Factions))
     Write-Host (' 3  ACE All in One          ' + $s.ACE)
+    Write-Host (' 4  BBB fire maneuver       ' + $s.FireManeuver + '   (experimental, for play-testing)')
+    Write-Host (' 5  BBB combat maneuver     ' + $s.CombatManeuver + '   (experimental, for play-testing)')
     Write-Host 'Choose the playable sides, battlefield and match settings in game, then press Start.' -ForegroundColor DarkGray
     Write-Host 'Faction mods must be loaded now; UA replaces vanilla US while loaded.' -ForegroundColor DarkGray
     if (!$Solo) { Write-Host 'Connect before friends: the first connection controls setup; access does not transfer after disconnect.' -ForegroundColor Yellow }
@@ -64,7 +68,9 @@ function Show-HostSetup([switch]$Solo) {
       '1' { if ($worlds.Count -gt 1) { $i = [array]::IndexOf($worlds, $s.World); $s.World = $worlds[($i + 1) % $worlds.Count] } else { Write-Host 'Only one map is available.' -ForegroundColor Yellow } }
       '2' { $pairs = @('vanilla', 'ru_us', 'ru_ua', 'us_ua'); $i = [array]::IndexOf($pairs, $s.Factions); $s.Factions = $pairs[($i + 1) % $pairs.Count] }
       '3' { if ($s.ACE -eq 'yes') { $s.ACE = 'no' } else { $s.ACE = 'yes' } }
-      default { Write-Host 'Type 1, 2 or 3, or press Enter to launch.' -ForegroundColor Yellow }
+      '4' { if ($s.FireManeuver -eq 'yes') { $s.FireManeuver = 'no' } else { $s.FireManeuver = 'yes' } }
+      '5' { if ($s.CombatManeuver -eq 'yes') { $s.CombatManeuver = 'no' } else { $s.CombatManeuver = 'yes' } }
+      default { Write-Host 'Type a number from 1 to 5, or press Enter to launch.' -ForegroundColor Yellow }
     }
   }
   $s.Keys | ForEach-Object { $_ + '=' + $s[$_] } | Set-Content -LiteralPath $file
@@ -73,6 +79,9 @@ function Show-HostSetup([switch]$Solo) {
   # This launcher starts a separate local server. Its owner connects first.
   # Use the existing opt-in authority rule, without changing dedicated-server defaults.
   if (!$Solo) { $extra += ' -acrFirstPlayerHost 1' }
+  # Off-by-default BBB features awaiting live acceptance (the AI runs where these args go).
+  if ($s.FireManeuver -eq 'yes') { $extra += ' -bbbFireManeuver 1' }
+  if ($s.CombatManeuver -eq 'yes') { $extra += ' -bbbCombatManeuver 1' }
   return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE); Factions = $s.Factions; ACE = $s.ACE }
 }
 
