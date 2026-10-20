@@ -127,6 +127,8 @@ class ACR_TestHarness : Managed
   harness.m_Mode = mode;
   PrintFormat("[ACR] Test harness mode=%1", mode);
   ACR_Perf.s_bChecks = true;
+  // Garrison counts in the fixtures assume no FOB patrol; ACR_TestFobPatrol switches it on.
+  ACR_BaseSystem.s_bNoFobPatrols = true;
   return harness;
  }
 

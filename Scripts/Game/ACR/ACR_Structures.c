@@ -477,6 +477,7 @@ class ACR_Structures : Managed
   if (change == 0) return;
   m_Manager.m_Bases.ResizeGarrison(base, change);
   base.m_iHousingGarrison = bonus;
+  PrintFormat("[ACR] FOB %1 housing: %2 defenders (garrison %3, %4 in reserve until enemies come within %5 m)", base.m_sName, bonus, base.m_iGarrison, base.m_iGarrisonLeft, (int)ACR_BaseSystem.SPAWN_RANGE);
  }
 
  static int HousingDefenders(IEntity housing)

@@ -34,6 +34,9 @@ class ACR_Base : GenericEntity
  int m_iGarrisonLeft;               // soldiers still in reserve (virtual while not deployed)
  int m_iHousingGarrison;            // capacity supplied by completed friendly FOB barracks
  SCR_AIGroup m_GarrisonGroup;       // spawned only while enemies are near
+ SCR_AIGroup m_PatrolGroup;         // FOB with barracks: a few of the garrison walk the perimeter
+ int m_iPatrolLeg;
+ float m_fPatrolRefill;
  ref array<string> m_aDetectedBy = {};
  bool m_bBuilt;                     // a forward base made by a built HQ (ACR_Structures)
  bool m_bRetired;                   // its HQ is gone: no longer a base
@@ -80,6 +83,7 @@ class ACR_Base : GenericEntity
   m_FobSupply = null;
   if (s_All) s_All.RemoveItem(this);
   if (m_GarrisonGroup) SCR_EntityHelper.DeleteEntityAndChildren(m_GarrisonGroup);
+  if (m_PatrolGroup) SCR_EntityHelper.DeleteEntityAndChildren(m_PatrolGroup);
   PrintFormat("[ACR] BASE %1 retired (%2)", m_sName, why);
   if (m_bBuilt) ACR_Intel.FobEvent(this, m_sName + " is gone: nothing of it is left standing", m_sName + " gone");
  }

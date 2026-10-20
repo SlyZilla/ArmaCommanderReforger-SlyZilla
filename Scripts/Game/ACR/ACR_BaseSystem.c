@@ -209,6 +209,7 @@ class ACR_BaseSystem : Managed
   UpdateCapture(manager, base, inside);
   if (enemyApproaching && !base.m_GarrisonGroup && base.m_iGarrisonLeft > 0) ACR_Garrison.Prepare(center, GarrisonArea(base));
   UpdateGarrison(manager, base, enemyNear, enemyInRange);
+  UpdatePatrol(base);
  }
 
  // Buildings this far from a base's centre are garrisoned by its own soldiers.
@@ -274,6 +275,7 @@ class ACR_BaseSystem : Managed
  {
   string previous = base.m_sOwner;
   DespawnGarrison(base, false);
+  DespawnPatrol(base, false);
   base.m_sOwner = factionKey;
   base.m_sCapturer = "";
   base.m_fScore = 100;
@@ -433,6 +435,103 @@ class ACR_BaseSystem : Managed
   SCR_EntityHelper.DeleteEntityAndChildren(group);
   base.m_GarrisonGroup = null;
   PrintFormat("[ACR] Garrison packed up at %1: %2 in reserve", base.m_sName, base.m_iGarrisonLeft);
+ }
+
+ // ================================================================ FOB patrols
+
+ // A FOB with barracks keeps 2 (small) or 4 (large) of its garrison walking the perimeter
+ // (Jacob, 20 Oct); the rest stay in reserve until enemies come near, as at every base.
+ // Patrol soldiers leave the reserve while out and return to it when the patrol stands down.
+ static const float PATROL_RING = 45;
+ static const int PATROL_POINTS = 6;
+ static const float PATROL_REFILL_MS = 60000; // one replacement from the reserve this often
+ static bool s_bNoFobPatrols;                  // tests whose fixtures need an empty FOB
+
+ static int PatrolSize(ACR_Base base)
+ {
+  if (s_bNoFobPatrols || !base || !base.FobOnline() || base.m_sOwner.IsEmpty() || base.m_iHousingGarrison <= 0) return 0;
+  if (base.m_iHousingGarrison >= 19) return 4;
+  return 2;
+ }
+
+ void UpdatePatrol(ACR_Base base)
+ {
+  int size = PatrolSize(base);
+  SCR_AIGroup group = base.m_PatrolGroup;
+  if (group)
+  {
+   int alive = CountAlive(group);
+   if (size == 0 || alive > size) { DespawnPatrol(base, true); return; }
+   ACR_Squad.KeepSimulated(group);
+   float now = GetGame().GetWorld().GetWorldTime();
+   // Losses are replaced one at a time from the reserve, never mid-fight.
+   if (alive < size && base.m_iGarrisonLeft > 0 && !base.m_GarrisonGroup && now >= base.m_fPatrolRefill)
+   {
+    array<ResourceName> pool = GetFaction(base.m_sOwner).m_aGarrison;
+    if (!pool.IsEmpty())
+    {
+     AddGarrisonSoldier(base, group, pool);
+     base.m_iGarrisonLeft--;
+    }
+    base.m_fPatrolRefill = now + PATROL_REFILL_MS;
+   }
+   if (!group.GetCurrentWaypoint()) NextPatrolLeg(base, group);
+   return;
+  }
+  if (size == 0 || base.m_iGarrisonLeft <= 0 || base.m_GarrisonGroup) return;
+  SpawnPatrol(base, Math.Min(size, base.m_iGarrisonLeft));
+ }
+
+ protected void SpawnPatrol(ACR_Base base, int count)
+ {
+  array<ResourceName> pool = GetFaction(base.m_sOwner).m_aGarrison;
+  if (pool.IsEmpty()) return;
+  SCR_AIGroup.IgnoreSpawning(true);
+  SCR_AIGroup group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(GROUP_BASE, base.GetOrigin()));
+  SCR_AIGroup.IgnoreSpawning(false);
+  if (!group) return;
+  group.SetMaxUnitsToSpawn(0);
+  m_GarrisonGroups.Insert(group); // before any soldier joins, so it is never registered as a squad
+  group.SetDeleteWhenEmpty(false);
+  group.SetCustomName(base.m_sName + " patrol", 0);
+  for (int i = 0; i < count; i++) AddGarrisonSoldier(base, group, pool);
+  base.m_iGarrisonLeft -= count;
+  ACR_Squad.KeepSimulated(group);
+  base.m_PatrolGroup = group;
+  base.m_fPatrolRefill = GetGame().GetWorld().GetWorldTime() + PATROL_REFILL_MS;
+  NextPatrolLeg(base, group);
+  PrintFormat("[ACR] Patrol out at %1: %2 soldiers, %3 in reserve", base.m_sName, count, base.m_iGarrisonLeft);
+ }
+
+ // Round the FOB, one point at a time (PATROL_POINTS on a PATROL_RING circle).
+ protected void NextPatrolLeg(ACR_Base base, SCR_AIGroup group)
+ {
+  base.m_iPatrolLeg = (base.m_iPatrolLeg + 1) % PATROL_POINTS;
+  float rad = 360.0 / PATROL_POINTS * base.m_iPatrolLeg * Math.DEG2RAD;
+  vector point = ACR_Manager.Ground(base.GetOrigin() + Vector(Math.Sin(rad) * PATROL_RING, 0, Math.Cos(rad) * PATROL_RING));
+  AIWaypoint leg = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(Resource.Load(ACR_Squad.WP_MOVE), null, SpawnParams(point)));
+  if (!leg) return;
+  leg.SetCompletionRadius(8);
+  group.AddWaypoint(leg);
+ }
+
+ // keepSurvivors: they return to the reserve (stand down) vs lost with the base (capture).
+ void DespawnPatrol(ACR_Base base, bool keepSurvivors)
+ {
+  SCR_AIGroup group = base.m_PatrolGroup;
+  if (!group) return;
+  if (keepSurvivors) base.m_iGarrisonLeft = Math.Min(base.m_iGarrison, base.m_iGarrisonLeft + CountAlive(group));
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity soldier = agent.GetControlledEntity();
+   if (soldier && !ACR_Squad.FindController(soldier)) SCR_EntityHelper.DeleteEntityAndChildren(soldier);
+  }
+  m_GarrisonGroups.RemoveItem(group);
+  SCR_EntityHelper.DeleteEntityAndChildren(group);
+  base.m_PatrolGroup = null;
+  PrintFormat("[ACR] Patrol stood down at %1: %2 in reserve", base.m_sName, base.m_iGarrisonLeft);
  }
 
  // One line for the command panel.
