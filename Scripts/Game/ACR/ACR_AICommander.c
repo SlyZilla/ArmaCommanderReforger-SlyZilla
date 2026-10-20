@@ -2308,9 +2308,13 @@ class ACR_AICommander : Managed
   for (int m = mine.Count() - 1; m >= 0; m--)
    if (!mine[m].IsCombatUnit()) mine.RemoveOrdered(m);
   if (mine.Count() >= cap) return;
-  // Deploy at the own spawn base furthest from the fighting.
+  // Deploy at the own spawn base furthest from the fighting, unless a built FOB
+  // can deploy and is safe: that is what it was built for, so the FOB nearest
+  // the front wins.
   ACR_Base spawn;
+  ACR_Base fob;
   float best = -1;
+  float bestFob = 100000;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (base.m_sOwner != m_sFaction || !ACR_LogisticsRules.CanDeploy(base) || base.m_bContested) continue;
@@ -2319,8 +2323,10 @@ class ACR_AICommander : Managed
    foreach (ACR_Base other : ACR_Base.s_All)
     if (other.m_sOwner != m_sFaction) nearestFront = Math.Min(nearestFront, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
    if (ThreatTo(base) > 0) nearestFront = 0;
+   else if (base.m_bBuilt && nearestFront < bestFob) { bestFob = nearestFront; fob = base; }
    if (nearestFront > best) { best = nearestFront; spawn = base; }
   }
+  if (fob) spawn = fob;
   if (!spawn) return;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   // A service truck for a need nobody can meet (squads low on ammo, a wrecked
