@@ -33,7 +33,7 @@ function Show-HostSetup([switch]$Solo) {
   if ($Solo) { $name = 'play-settings.txt' }
   $file = Join-Path $PSScriptRoot $name
   # Only pre-load choices belong here. Ignore old saved match settings.
-  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; FireManeuver = 'no'; CombatManeuver = 'no' }
+  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; FireManeuver = 'no'; CombatManeuver = 'no'; CrewTurnout = 'no'; DriverAlign = 'no' }
   if (Test-Path -LiteralPath $file) {
     foreach ($line in Get-Content -LiteralPath $file) {
       $kv = $line.Split('=', 2)
@@ -48,6 +48,8 @@ function Show-HostSetup([switch]$Solo) {
   if (@('yes', 'no') -notcontains $s.ACE) { $s.ACE = 'no' }
   if (@('yes', 'no') -notcontains $s.FireManeuver) { $s.FireManeuver = 'no' }
   if (@('yes', 'no') -notcontains $s.CombatManeuver) { $s.CombatManeuver = 'no' }
+  if (@('yes', 'no') -notcontains $s.CrewTurnout) { $s.CrewTurnout = 'no' }
+  if (@('yes', 'no') -notcontains $s.DriverAlign) { $s.DriverAlign = 'no' }
   while ($true) {
     $mapName = [IO.Path]::GetFileNameWithoutExtension($s.World) -replace '^ACR_', ''
     Write-Host ''
@@ -59,6 +61,8 @@ function Show-HostSetup([switch]$Solo) {
     Write-Host (' 3  ACE All in One          ' + $s.ACE)
     Write-Host (' 4  BBB fire maneuver       ' + $s.FireManeuver + '   (experimental, for play-testing)')
     Write-Host (' 5  BBB combat maneuver     ' + $s.CombatManeuver + '   (experimental, for play-testing)')
+    Write-Host (' 6  BBB crew turnout        ' + $s.CrewTurnout + '   (experimental, for play-testing)')
+    Write-Host (' 7  BBB driver alignment    ' + $s.DriverAlign + '   (experimental, for play-testing)')
     Write-Host 'Choose the playable sides, battlefield and match settings in game, then press Start.' -ForegroundColor DarkGray
     Write-Host 'Faction mods must be loaded now; UA replaces vanilla US while loaded.' -ForegroundColor DarkGray
     if (!$Solo) { Write-Host 'Connect before friends: the first connection controls setup; access does not transfer after disconnect.' -ForegroundColor Yellow }
@@ -70,7 +74,9 @@ function Show-HostSetup([switch]$Solo) {
       '3' { if ($s.ACE -eq 'yes') { $s.ACE = 'no' } else { $s.ACE = 'yes' } }
       '4' { if ($s.FireManeuver -eq 'yes') { $s.FireManeuver = 'no' } else { $s.FireManeuver = 'yes' } }
       '5' { if ($s.CombatManeuver -eq 'yes') { $s.CombatManeuver = 'no' } else { $s.CombatManeuver = 'yes' } }
-      default { Write-Host 'Type a number from 1 to 5, or press Enter to launch.' -ForegroundColor Yellow }
+      '6' { if ($s.CrewTurnout -eq 'yes') { $s.CrewTurnout = 'no' } else { $s.CrewTurnout = 'yes' } }
+      '7' { if ($s.DriverAlign -eq 'yes') { $s.DriverAlign = 'no' } else { $s.DriverAlign = 'yes' } }
+      default { Write-Host 'Type a number from 1 to 7, or press Enter to launch.' -ForegroundColor Yellow }
     }
   }
   $s.Keys | ForEach-Object { $_ + '=' + $s[$_] } | Set-Content -LiteralPath $file
@@ -82,6 +88,8 @@ function Show-HostSetup([switch]$Solo) {
   # Off-by-default BBB features awaiting live acceptance (the AI runs where these args go).
   if ($s.FireManeuver -eq 'yes') { $extra += ' -bbbFireManeuver 1' }
   if ($s.CombatManeuver -eq 'yes') { $extra += ' -bbbCombatManeuver 1' }
+  if ($s.CrewTurnout -eq 'yes') { $extra += ' -bbbCrewTurnout 1' }
+  if ($s.DriverAlign -eq 'yes') { $extra += ' -bbbDriverAlign 1' }
   return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE); Factions = $s.Factions; ACE = $s.ACE }
 }
 
