@@ -81,7 +81,9 @@ class ACR_FobBuild
 
 	// One circular footprint: map bounds, water, slope, roads, buildings and walls,
 	// other compositions (built or blueprint), and trees when they cannot be felled.
-	static bool FootprintClear(vector spot, float radius, array<IEntity> ignore, out string reason)
+	// ignoreTrees: place over trees that cannot be felled (FOB defences clip through vegetation).
+	// maxRise: allowed terrain rise across the footprint (0 = the default for its size).
+	static bool FootprintClear(vector spot, float radius, array<IEntity> ignore, out string reason, bool ignoreTrees = false, float maxRise = 0)
 	{
 		reason = "";
 		if (!ACR_Manager.OnMap(spot))
@@ -114,8 +116,9 @@ class ACR_FobBuild
 			minY = Math.Min(minY, Math.Min(yOuter, yMid));
 			maxY = Math.Max(maxY, Math.Max(yOuter, yMid));
 		}
-		float maxRise = Math.Max(1.5, radius * 0.12);
-		if (maxY - minY > maxRise)
+		float allowedRise = maxRise;
+		if (allowedRise <= 0) allowedRise = Math.Max(1.5, radius * 0.12);
+		if (maxY - minY > allowedRise)
 		{
 			reason = string.Format("too steep (%1 m rise)", (int)(maxY - minY + 0.5));
 			return false;
@@ -153,7 +156,7 @@ class ACR_FobBuild
 			return false;
 		}
 
-		if (!CanFellTrees() && CountTrees(spot, radius * 0.8) > 0)
+		if (!ignoreTrees && !CanFellTrees() && CountTrees(spot, radius * 0.8) > 0)
 		{
 			reason = "trees in the way";
 			return false;

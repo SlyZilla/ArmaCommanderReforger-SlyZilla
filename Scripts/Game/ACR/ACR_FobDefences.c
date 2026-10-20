@@ -5,7 +5,8 @@
 //   Defences I:   sandbag positions at the 4 post spots.
 //   Defences II:  machine-gun nests at the 3 nest spots (the sandbags stay).
 //   Defences III: the posts become bunkers and guard towers (FIA: bunkers).
-// A spot that is blocked is skipped; a tier needs at least one of its spots. The upgrade is
+// A blocked spot tries points beside it (FindSpot), then is skipped; a tier needs at least one
+// of its spots. Trees never block a piece and slopes up to MAX_RISE are fine. The upgrade is
 // lost when every piece is gone. ACR_FobSlots dispatches here for SLOT_DEFENCES.
 
 class ACR_FobDefences : Managed
@@ -14,6 +15,7 @@ class ACR_FobDefences : Managed
 	static const int POST_COUNT = 4;    // spots 0-3: sandbag positions, later bunkers/towers
 	static const float RING = 50.0;
 	static const float PIECE_RADIUS = 6.0;
+	static const float MAX_RISE = 4.0;  // m across a piece's 12 m footprint (buildings: 1.5)
 
 	static const ResourceName SANDBAGS_US = "{B8138FFE79F61D33}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SandbagPosition_S_US_01.et";
 	static const ResourceName SANDBAGS_USSR = "{9BC88E502B836DBF}PrefabsEditable/Auto/Compositions/Slotted/SlotFlatSmall/E_SandbagPosition_S_USSR_01.et";
@@ -62,8 +64,14 @@ class ACR_FobDefences : Managed
 	// Each piece faces outwards (their weapons and firing ports point along +Z).
 	static float SpotYaw(int spot)
 	{
-		float yaw = SpotBearing(spot);
-		if (yaw > 180) yaw -= 360;
+		return BearingYaw(SpotBearing(spot));
+	}
+
+	static float BearingYaw(float bearing)
+	{
+		float yaw = bearing;
+		while (yaw > 180) yaw -= 360;
+		while (yaw <= -180) yaw += 360;
 		return yaw;
 	}
 
@@ -158,11 +166,53 @@ class ACR_FobDefences : Managed
 
 	static bool SpotClear(ACR_Base base, ACR_FobSlot slot, int spot, out string reason)
 	{
+		vector pos;
+		float yaw;
+		return FindSpot(base, slot, spot, pos, yaw, reason);
+	}
+
+	// Where a spot's piece goes: where its current piece stands, else the spot itself or the
+	// first clear point beside it (along the ring, then a little further out; never inwards,
+	// where the building footprints are). Bought defences go in even where they clip trees
+	// and bushes, and tolerate a steeper rise than buildings (Jacob, 20 Oct).
+	static bool FindSpot(ACR_Base base, ACR_FobSlot slot, int spot, out vector pos, out float yaw, out string reason)
+	{
 		reason = "";
-		if (ACR_FobSlots.s_bSkipSpotChecksForTest) return true;
+		vector center = base.GetOrigin();
+		IEntity old;
+		if (slot && slot.m_aPieces && spot < slot.m_aPieces.Count()) old = slot.m_aPieces[spot];
+		if (old)
+		{
+			pos = old.GetOrigin();
+			vector dir = pos - center;
+			yaw = BearingYaw(Math.Atan2(dir[0], dir[2]) * Math.RAD2DEG);
+			return true;
+		}
 		array<IEntity> ignore = {};
 		IgnoreFor(base, slot, ignore);
-		return ACR_FobBuild.FootprintClear(SpotPosition(base.GetOrigin(), spot), PIECE_RADIUS, ignore, reason);
+		array<float> rings = {RING, RING + 7};
+		array<float> shifts = {0, 8, -8, 16, -16};
+		foreach (float ring : rings)
+		{
+			foreach (float shift : shifts)
+			{
+				float bearing = SpotBearing(spot) + shift;
+				float rad = bearing * Math.DEG2RAD;
+				vector candidate = center + Vector(Math.Sin(rad) * ring, 0, Math.Cos(rad) * ring);
+				candidate[1] = GetGame().GetWorld().GetSurfaceY(candidate[0], candidate[2]);
+				string why;
+				if (!ACR_FobSlots.s_bSkipSpotChecksForTest && !ACR_FobBuild.FootprintClear(candidate, PIECE_RADIUS, ignore, why, true, MAX_RISE))
+				{
+					if (reason.IsEmpty()) reason = why;
+					continue;
+				}
+				pos = candidate;
+				yaw = BearingYaw(bearing);
+				reason = "";
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// A tier can be built when at least one of its spots is clear.
@@ -237,16 +287,17 @@ class ACR_FobDefences : Managed
 		{
 			if (!SpotChangesAt(spot, slot.m_iTier)) continue;
 			string why;
-			if (!SpotClear(base, slot, spot, why))
+			vector pos;
+			float yaw;
+			if (!FindSpot(base, slot, spot, pos, yaw, why))
 			{
 				skipped++;
 				PrintFormat("[ACR] FOB %1: defence spot %2 skipped (%3)", base.m_sName, spot, why);
 				continue;
 			}
 			RemovePiece(slot, spot);
-			vector pos = SpotPosition(base.GetOrigin(), spot);
 			ACR_FobBuild.FellTrees(pos, PIECE_RADIUS);
-			IEntity piece = ACR_FobSlots.SpawnComposition(PrefabFor(spot, base.m_sOwner, slot.m_iTier), pos, SpotYaw(spot), base, slot.m_iTier);
+			IEntity piece = ACR_FobSlots.SpawnComposition(PrefabFor(spot, base.m_sOwner, slot.m_iTier), pos, yaw, base, slot.m_iTier);
 			slot.m_aPieces[spot] = piece;
 			if (piece) placed++;
 		}
