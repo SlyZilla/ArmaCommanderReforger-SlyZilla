@@ -66,6 +66,11 @@ class ACR_BBBHooks : BBB_Hooks
   return SquadOf(group) != null;
  }
 
+ override bool AllowMorale(SCR_AIGroup group)
+ {
+  return SquadOf(group) == null;
+ }
+
  override void OnLitter(IEntity item)
  {
   if (m_Manager.m_Cleanup) m_Manager.m_Cleanup.AddLitter(item);

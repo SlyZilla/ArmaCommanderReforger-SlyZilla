@@ -110,3 +110,4 @@ perfscaleeveron|-acrPerfScaleTest 1|260|Worlds/ACR_Everon.ent
 lzbench|-acrLzBenchTest 1|90|Worlds/ACR_Kolguyev.ent
 perfkolguyev|-acrPerfTest 1|260|Worlds/ACR_Kolguyev.ent
 slopes|-acrSlopesTest 1|260|Worlds/ACR_Kolguyev.ent
+bbbfeatureaudit|-acrBbbFeatureAuditTest 1|200|Worlds/BBB_TestArland.ent
