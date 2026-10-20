@@ -859,6 +859,7 @@ class ACR_AICommander : Managed
  protected ACR_Base m_CounterTarget;
  protected ref map<ACR_Base, float> m_StalledUntil = new map<ACR_Base, float>();
  protected ref map<ACR_Squad, float> m_RetreatingUntil = new map<ACR_Squad, float>();
+ protected ref map<ACR_Squad, float> m_ReinforceRetryAt = new map<ACR_Squad, float>();
  protected int m_iSaveForEntry = -1;
  protected int m_iLastSavedLog = -1;
  protected float m_fNextStatus;
@@ -1737,6 +1738,9 @@ class ACR_AICommander : Managed
  static const float RESERVE_MIN_FRONT = 600;
  static const float RESERVE_IDEAL_FRONT = 1200;
  static const float RESERVE_MAX_PULL = 1800;
+ static const int SAVE_MIN_UNITS = 4;            // save RP for a pricier unit only with this many fighting units out
+ static const float FOB_DEPLOY_MIN_FRONT = 500;  // m: a built FOB closer to an enemy/neutral base than this isn't a deploy point
+ static const float REINFORCE_RETRY_MS = 120000; // a squad whose AI reinforce failed waits this long before another try
  protected ACR_Base m_ReserveBase;
  protected ACR_Squad m_ReserveSquad;
 
@@ -2460,10 +2464,17 @@ class ACR_AICommander : Managed
   ACR_Squad best;
   int bestScore = -1;
   int bestCost = 0;
+  float now = GetGame().GetWorld().GetWorldTime();
   foreach (ACR_Squad squad : all)
   {
    if (!squad || squad.HasPlayer() || squad.m_bMortar || squad.Aircraft() || ACR_Transport.CrewedVehicle(squad)) continue;
    if (InAssault(squad)) continue;
+   float retryAt;
+   if (m_ReinforceRetryAt.Find(squad, retryAt))
+   {
+    if (now < retryAt) continue;
+    m_ReinforceRetryAt.Remove(squad);
+   }
    array<ResourceName> missing = {};
    squad.GetMissing(missing);
    if (missing.IsEmpty()) continue;
@@ -2480,22 +2491,35 @@ class ACR_AICommander : Managed
     if (d < nearestDist) { nearestDist = d; nearBase = base; }
    }
    if (!nearBase) continue;
-   if (!remnant && nearestDist > nearBase.m_fRadius + 150) continue;
-   if (remnant && nearestDist > nearBase.m_fRadius + 250)
+   // Only inside the circle: there the replacements come from this base and
+   // the squad gets its ammo too. Remnants walk in; others wait until they pass by.
+   if (nearestDist > nearBase.m_fRadius)
    {
-    if (!squad.m_Group || !squad.m_Group.GetCurrentWaypoint())
+    if (remnant && (!squad.m_Group || !squad.m_Group.GetCurrentWaypoint()))
      squad.RouteTo(ACR_Manager.Ground(nearBase.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
     continue;
    }
+   if (ACR_LogisticsRules.RelayBlocked(ACR_FobSupply.Nearby(m_sFaction, PositionOf(squad)))) continue;
+   // Same price ReinforceSquad checks: replacements plus a FOB's instant restock fee.
    int cost = missing.Count() * ACR_Requisition.REINFORCE_COST_PER_SOLDIER;
+   ACR_Base depot = m_Manager.m_Requisition.DeployBaseAt(m_sFaction, PositionOf(squad));
+   if (depot) cost += m_Manager.m_Requisition.InstantRestockCost(squad, depot);
    if (data.m_iRP - keep < cost) continue;
    int score = missing.Count() * 10;
    if (remnant) score += 100;
-   if (nearestDist <= nearBase.m_fRadius) score += 25;
    if (score > bestScore) { bestScore = score; best = squad; bestCost = cost; }
   }
   if (!best) return false;
+  // ReinforceSquad charges only for soldiers who actually joined.
+  int rpBefore = m_Manager.m_Bases.GetRP(m_sFaction);
   string outcome = m_Manager.m_Requisition.ReinforceSquad(null, best);
+  if (m_Manager.m_Bases.GetRP(m_sFaction) >= rpBefore)
+  {
+   // Nothing joined: don't pick the same squad again every tick.
+   m_ReinforceRetryAt.Set(best, now + REINFORCE_RETRY_MS);
+   PrintFormat("[ACR] AI %1 reinforce failed, retry in %2 s: %3", m_sFaction, (int)(REINFORCE_RETRY_MS / 1000), outcome);
+   return false;
+  }
   PrintFormat("[ACR] AI %1 reinforce: %2", m_sFaction, outcome);
   return true;
  }
@@ -2518,7 +2542,8 @@ class ACR_AICommander : Managed
    if (!mine[m].IsCombatUnit()) mine.RemoveOrdered(m);
   if (mine.Count() >= cap) return;
   // Deploy at the own spawn base furthest from the fighting, unless a built FOB
-  // can deploy and is safe: that is what it was built for, so the FOB nearest
+  // can deploy and is safe (no threat, at least FOB_DEPLOY_MIN_FRONT from the
+  // nearest other base): that is what it was built for, so the FOB nearest
   // the front wins.
   ACR_Base spawn;
   ACR_Base fob;
@@ -2532,7 +2557,7 @@ class ACR_AICommander : Managed
    foreach (ACR_Base other : ACR_Base.s_All)
     if (other.m_sOwner != m_sFaction) nearestFront = Math.Min(nearestFront, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
    if (ThreatTo(base) > 0) nearestFront = 0;
-   else if (base.m_bBuilt && nearestFront < bestFob) { bestFob = nearestFront; fob = base; }
+   else if (base.m_bBuilt && nearestFront >= FOB_DEPLOY_MIN_FRONT && nearestFront < bestFob) { bestFob = nearestFront; fob = base; }
    if (nearestFront > best) { best = nearestFront; spawn = base; }
   }
   if (fob) spawn = fob;
@@ -2610,9 +2635,10 @@ class ACR_AICommander : Managed
    }
   }
   int budget = data.m_iRP - keep;
+  // Save up for a pricier unit only with a working force in the field; short of
+  // troops, or when troops are urgent, buy what is affordable now.
   int saveMax = Math.Max(budget, 85);
-  if (mine.Count() < 2) saveMax = Math.Max(budget, 24);
-  else if (urgent && !highThreat) saveMax = Math.Max(budget, 42);
+  if (mine.Count() < SAVE_MIN_UNITS || (urgent && !highThreat)) saveMax = budget;
   if (m_iSaveForEntry >= 0 && m_iSaveForEntry < data.m_aRequisitions.Count())
   {
    ACR_RequisitionEntry savedEntry = data.m_aRequisitions[m_iSaveForEntry];
@@ -2673,6 +2699,8 @@ class ACR_AICommander : Managed
      if (!entry.m_sVehicle.IsEmpty()) weight *= 0.5;
      // A low-threat war is mostly fought on foot.
      if (!entry.m_sVehicle.IsEmpty() && ACR_Manager.ThreatOption() == 0) weight *= 0.4;
+     // Price-weighting favours dear units; halve those not yet affordable so saving stays the exception.
+     if (entry.m_iCost > budget) weight *= 0.5;
      options.Insert(i);
      weights.Insert(weight);
      total += weight;
@@ -3444,6 +3472,7 @@ class ACR_AICommander : Managed
    if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == m_sFaction) squad.m_iAITask = ACR_EAITask.FREE;
   m_Attacks.Clear();
   m_RetreatingUntil.Clear();
+  m_ReinforceRetryAt.Clear();
   m_ReserveSquad = null;
   m_iSaveForEntry = -1;
   m_iLastSavedLog = -1;
