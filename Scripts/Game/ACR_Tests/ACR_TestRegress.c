@@ -111,7 +111,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 95; // 90 + finite rare stock at all three threat levels (3) + unconscious contest (2)
+ static const int EXPECTED = 97; // 90 + finite rare stock at all three threat levels (3) + unconscious contest (2) + regroup loop (2)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -763,6 +763,12 @@ class ACR_TestRegress
    AirLiftAICheck(manager);
    Check("air lift accelerates gently and brakes at a bounded rate", Math.AbsFloat(ACR_HeliRun.ApproachSpeed(0, 55, 1) - 1.5) < 0.01 && Math.AbsFloat(ACR_HeliRun.ApproachSpeed(55, 0, 1) - 52) < 0.01 && ACR_HeliRun.ApproachSpeed(1, 0, 1) == 0);
    Check("air lift slows for climb time and holds below a nearby ridge", ACR_HeliRun.ClimbSafeSpeed(200, 100) < 9 && ACR_HeliRun.ClimbSafeSpeed(20, 100) == 0 && ACR_HeliRun.ClimbSafeSpeed(1000, 0) == ACR_HeliRun.SPEED_RUN);
+   // Jacob 20 Oct (Kolguyev): a reserve was ordered on and called back to regroup every 15 s.
+   float regroupNow = GetGame().GetWorld().GetWorldTime();
+   bravo.StartRegroupForTest();
+   bravo.MoveTo(bravo.m_MoveTarget);
+   Check("an order that cuts a regroup short starts the regroup cooldown", !bravo.RegroupingForTest() && bravo.NextRegroupForTest() >= regroupNow + ACR_Squad.REGROUP_FAILED_COOLDOWN_MS - 1000, string.Format("next regroup in %1 s", Math.Round((bravo.NextRegroupForTest() - regroupNow) / 1000)));
+   Check("no regroup right after a new order; a regrouping reserve counts as moving", !ACR_Squad.OrderSettled(1000, 0) && ACR_Squad.OrderSettled(ACR_Squad.ORDER_SETTLE_MS, 0) && ACR_AICommander.ReserveMoving(ACR_EOrderState.REGROUP) && !ACR_AICommander.ReserveMoving(ACR_EOrderState.DEFEND), "settle and en-route rules");
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }

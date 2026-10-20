@@ -653,6 +653,14 @@ class ACR_Squad : Managed
   m_iOrderSerial++;
   m_iOrderedBy = 0;
   m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
+  // A new order cut a regroup short: no new regroup for a while, or an order re-issued
+  // on a timer and a regroup take turns for good (20 Oct live: a reserve stood at the
+  // same door for 15 min, ordered on and called back every 15 s).
+  if (m_bRegrouping)
+  {
+   m_fNextRegroup = m_fOrderedAt + REGROUP_FAILED_COOLDOWN_MS;
+   PrintFormat("[ACR] TACTICS %1: regroup cut short by a new order", m_Name);
+  }
  }
 
  // Drop every queued order and stand still (gunner drives, the Halt button).
@@ -1089,7 +1097,7 @@ class ACR_Squad : Managed
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (character && character.IsInVehicle())
    {
-    if (ACR_Transport.SeatOf(character) == ECompartmentType.CARGO) return true;
+    if (ACR_Transport.Passenger(character)) return true;
    }
   }
   return false;
@@ -1626,11 +1634,16 @@ class ACR_Squad : Managed
  static const float REGROUP_TIMEOUT_MS = 60000;
  static const float REGROUP_COOLDOWN_MS = 60000;
  static const float REGROUP_FAILED_COOLDOWN_MS = 150000; // didn't close up: don't stop-start every minute
+ static const float ORDER_SETTLE_MS = 20000; // a new order gets this long before a regroup can stop it
 
  protected bool m_bRegrouping;
  protected float m_fRegroupSince;
  protected float m_fNextRegroup;
  void HoldRegroupForTest(float until) { m_fNextRegroup = until; m_bRegrouping = false; }
+ void StartRegroupForTest() { m_bRegrouping = true; }
+ bool RegroupingForTest() { return m_bRegrouping; }
+ float NextRegroupForTest() { return m_fNextRegroup; }
+ static bool OrderSettled(float now, float orderedAt) { return now - orderedAt >= ORDER_SETTLE_MS; }
  protected ref ACR_OrderSnapshot m_Regroup; // the order resumed once regrouped
 
  // Middle of the living members on foot (where a strung-out squad meets up).
@@ -1682,7 +1695,7 @@ class ACR_Squad : Managed
    PrintFormat("[ACR] TACTICS %1: regrouped (%2 s), moving on", m_Name, (int)((now - m_fRegroupSince) / 1000));
    return;
   }
-  if (contact || now < m_fNextRegroup || !m_Group || HasPlayer() || IsMounted()) return;
+  if (contact || now < m_fNextRegroup || !OrderSettled(now, m_fOrderedAt) || !m_Group || HasPlayer() || IsMounted()) return;
   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
   if (!movingOrder) return;
   array<AIWaypoint> waypoints = {};
@@ -1789,7 +1802,7 @@ class ACR_Squad : Managed
   if (!vehicle)
   {
    IEntity leader = GetLeader();
-   if (leader && ACR_Transport.SeatOf(leader) != ECompartmentType.CARGO) vehicle = ACR_Transport.VehicleOf(leader);
+   if (leader && !ACR_Transport.Passenger(leader)) vehicle = ACR_Transport.VehicleOf(leader);
   }
   if (vehicle && vehicle.FindComponent(VehicleHelicopterSimulation)) return vehicle;
   return null;

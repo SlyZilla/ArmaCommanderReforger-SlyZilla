@@ -827,6 +827,9 @@ class ACR_AICommander : Managed
  static const float STALLED_COOLDOWN = 300;   // s before the same base is tried again
  static const float PUSH_INTERVAL = 120;      // s between re-issuing assault orders
  static const float RETREAT_COOLDOWN_MS = 60000;
+ // A reserve riding or regrouping is on its way: re-posting it would cancel that (20 Oct
+ // live: a regrouping reserve was re-posted every 15 s for 15 min and never arrived).
+ static bool ReserveMoving(ACR_EOrderState state) { return state == ACR_EOrderState.RIDE || state == ACR_EOrderState.REGROUP; }
  static const float REINFORCE_ATTACK_DISTANCE = 1400;
  static const float REINFORCE_ATTACK_MOUNTED = 2200;
  // Initiative: with no attack launched for a while, the commander accepts
@@ -1416,7 +1419,7 @@ class ACR_AICommander : Managed
     {
      m_ReserveSquad = reserve;
      free.RemoveItem(reserve);
-     bool enRoute = reserve.m_iAITask == ACR_EAITask.POSTED && (ACR_AirLift.Busy(reserve) || reserve.OrderState() == ACR_EOrderState.RIDE || (reserve.m_Group && reserve.m_Group.GetCurrentWaypoint() && vector.DistanceXZ(reserve.m_MoveTarget, home.GetOrigin()) <= home.m_fRadius + 150));
+     bool enRoute = reserve.m_iAITask == ACR_EAITask.POSTED && (ACR_AirLift.Busy(reserve) || ReserveMoving(reserve.OrderState()) || (reserve.m_Group && reserve.m_Group.GetCurrentWaypoint() && vector.DistanceXZ(reserve.m_MoveTarget, home.GetOrigin()) <= home.m_fRadius + 150));
      if (reserve.m_iAITask != ACR_EAITask.POSTED || (!enRoute && vector.DistanceXZ(PositionOf(reserve), home.GetOrigin()) > 150))
      {
       reserve.m_iAITask = ACR_EAITask.POSTED;
