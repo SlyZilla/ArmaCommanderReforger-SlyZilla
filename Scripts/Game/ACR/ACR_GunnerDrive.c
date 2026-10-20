@@ -162,6 +162,9 @@ class ACR_GunnerDrive
    ai.DeactivateAI();
    m_AIWasOn = true;
   }
+  // Parked mid-honk (at a soldier in its way), the AI never lets go of the horn.
+  CharacterInputContext input = m_Driver.GetCharacterController().GetInputContext();
+  if (input && input.GetVehicleHorn() != 0) input.SetVehicleHorn(0);
   // The vehicle has its own AI (it does the actual driving for an AI driver). Left on,
   // it keeps braking and centring the wheel against the gunner's input every frame:
   // that felt like a stuck handbrake, worst when turning.
