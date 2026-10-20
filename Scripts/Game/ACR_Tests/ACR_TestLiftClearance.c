@@ -30,11 +30,11 @@ class ACR_ClearanceTestHeli : ACR_LiftHeli
   Place(vector.Zero, 0, 0);
  }
  bool Approach(ACR_Supports supports, vector zone, float dt, float now) { return FlyToSpot(supports, zone, dt, now); }
- bool CanMoveAt(vector from, vector to)
+ bool CanMoveAt(vector from, vector to, bool vertical = false)
  {
   m_fBodyYaw = -90;
   IgnoreFlightOccupants();
-  return RotorMoveClear(from, to);
+  return RotorMoveClear(from, to, vertical);
  }
 }
 
@@ -48,6 +48,7 @@ class ACR_TestLiftClearance
  static float s_fDistance;
  static vector s_From, s_Dir, s_Zone;
  static IEntity s_Obstacle;
+ static IEntity s_Soldier;
  static bool s_bFlying;
  static bool s_bFinished;
  static bool s_bLanding, s_bLanded;
@@ -73,6 +74,21 @@ class ACR_TestLiftClearance
    ACR_TestRegress.Check("landing volume clears after obstacle removal", ACR_LandingZone.Clear(s_Zone));
    vector openFrom = s_Zone + Vector(0, 15, 0);
    ACR_TestRegress.Check("tail movement guard clears after obstacle removal", !s_Helis.IsEmpty() && s_Helis[0].CanMoveAt(openFrom, openFrom + Vector(1, 0, 0)));
+   // Jacob 19 Oct: a lift hovered 1 m up because its squad stood under the tail. Nose -X,
+   // so the tail box is centred 11 m toward +X; the soldier stands there.
+   s_Soldier = ACR_Manager.SpawnPrefab(ACR_TestFobDesign.US_RIFLEMAN, ACR_Manager.Ground(s_Zone + Vector(11, 0, 0)));
+   if (s_Soldier)
+   {
+    vector mins, maxs;
+    s_Soldier.GetWorldBounds(mins, maxs);
+    // Heli origin 0.3 m above the soldier's feet: the tail box (from 1 m above the origin)
+    // then reaches down to 1.3 m, well into a standing soldier (about 1.8 m).
+    vector touchFrom = Vector(s_Zone[0], s_Soldier.GetOrigin()[1] + 0.3, s_Zone[2]);
+    ACR_TestRegress.Check("fixture soldier reaches into the tail box", maxs[1] > touchFrom[1] + 1, string.Format("soldier top %1, tail box bottom %2", maxs[1], touchFrom[1] + 1));
+    ACR_TestRegress.Check("soldier under the tail does not stop the touchdown", !s_Helis.IsEmpty() && s_Helis[0].CanMoveAt(touchFrom, touchFrom - Vector(0, 0.5, 0), true));
+    SCR_EntityHelper.DeleteEntityAndChildren(s_Soldier);
+   }
+   else ACR_TestRegress.Check("fixture soldier spawned", false);
   }
   if (second == 30 && s_Helis.Count() == 2)
   {
@@ -102,7 +118,7 @@ class ACR_TestLiftClearance
    ACR_TestRegress.Check("final braking reaches the landing center and touches down", s_bLanded);
    ACR_TestRegress.Check("vertical landing leaves rotors and drivetrain undamaged", s_fMaxDamage < 0.01, s_fMaxDamage.ToString());
    foreach (ACR_ClearanceTestHeli cleanup : s_Helis) cleanup.Finish();
-   ACR_TestRegress.Complete("liftclearance", 11);
+   ACR_TestRegress.Complete("liftclearance", 13);
   }
  }
 

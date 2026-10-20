@@ -491,23 +491,36 @@ class ACR_HeliRun : ACR_SupportRun
    if (seat.GetOccupant()) m_aFlightIgnore.Insert(seat.GetOccupant());
  }
 
+ // Soldiers never block the rotor envelope (Jacob 19 Oct: a lift hovered 1 m up for 70 s
+ // because its squad stood under the tail box, so they never got the get-in order).
+ protected bool RotorTraceFilter(notnull IEntity e, vector start = "0 0 0", vector dir = "0 0 0")
+ {
+  for (IEntity part = e; part; part = part.GetParent())
+   if (ChimeraCharacter.Cast(part)) return false;
+  return true;
+ }
+
  // Last movement check, including vertical takeoff and descent. Prediction can be
  // stale when another vehicle moves in; never advance the rotor envelope through it.
- protected bool RotorMoveClear(vector from, vector to)
+ // vertical: straight up or down over a landing spot, whose ground was checked when it was
+ // picked (up to 2.5 m of rise): terrain is left out, or a slope under the tail stops it short.
+ protected bool RotorMoveClear(vector from, vector to, bool vertical)
  {
+  TraceFlags flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  if (vertical) flags = TraceFlags.ENTS;
   TraceBox rotor = new TraceBox();
   rotor.Mins = Vector(-12, 2.5, -12);
   rotor.Maxs = Vector(12, 10, 12);
   rotor.Start = from;
   rotor.End = to;
   rotor.ExcludeArray = m_aFlightIgnore;
-  rotor.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  rotor.Flags = flags;
   BaseWorld world = GetGame().GetWorld();
-  if (world.TraceMove(rotor, null) < 1) return false;
+  if (world.TraceMove(rotor, RotorTraceFilter) < 1) return false;
   // A movement trace can permit an overlap already present at its start. Check
   // the destination volume too, including when a moving obstacle entered it.
   rotor.Start = to;
-  if (world.TracePosition(rotor, null) < 0) return false;
+  if (world.TracePosition(rotor, RotorTraceFilter) < 0) return false;
   // The long, narrow tail extends beyond the main disk. Enclose its rotated bounds
   // in a world-aligned box rather than using a full rotor-width square at tail height.
   TraceBox tail = new TraceBox();
@@ -520,20 +533,20 @@ class ACR_HeliRun : ACR_SupportRun
   tail.Start = from + tailCenter;
   tail.End = to + tailCenter;
   tail.ExcludeArray = m_aFlightIgnore;
-  tail.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
-  if (world.TraceMove(tail, null) < 1) return false;
+  tail.Flags = flags;
+  if (world.TraceMove(tail, RotorTraceFilter) < 1) return false;
   tail.Start = tail.End;
-  return world.TracePosition(tail, null) >= 0;
+  return world.TracePosition(tail, RotorTraceFilter) >= 0;
  }
 
- protected void GuardFlightMove(vector previous)
+ protected void GuardFlightMove(vector previous, bool vertical = false)
  {
   IgnoreFlightOccupants();
-  if (RotorMoveClear(previous, m_Pos)) return;
+  if (RotorMoveClear(previous, m_Pos, vertical)) return;
   // An upward escape may still be clear even when forward movement is blocked.
   vector escape = previous;
   escape[1] = Math.Max(previous[1], m_Pos[1]);
-  if (escape[1] > previous[1] && RotorMoveClear(previous, escape)) m_Pos = escape;
+  if (escape[1] > previous[1] && RotorMoveClear(previous, escape, vertical)) m_Pos = escape;
   else
   {
    m_Pos = previous;
@@ -708,7 +721,7 @@ class ACR_HeliRun : ACR_SupportRun
   float wantYaw = Math.Atan2(m_Dir[0], m_Dir[2]) * Math.RAD2DEG;
   m_fYaw = Wrap(m_fYaw + Math.Clamp(Wrap(wantYaw - m_fYaw), -15 * dt, 15 * dt));
   m_fBodyYaw = m_fYaw;
-  GuardFlightMove(previous);
+  GuardFlightMove(previous, true);
   vector velocity = vector.Zero;
   if (dt > 0) velocity = (m_Pos - previous) * (1 / dt);
   Place(velocity, 0, 0);
@@ -809,7 +822,7 @@ class ACR_HeliRun : ACR_SupportRun
    vector away = Separation(supports);
    if (away != vector.Zero) m_Pos = m_Pos + away * (2 * dt);
   }
-  GuardFlightMove(previous);
+  GuardFlightMove(previous, d < 1);
   float pitch = -Math.Clamp(m_fSpeed * 0.1, 0, 6);
   if (m_fSpeed < before - 0.05 && m_fSpeed > 3) pitch = 5; // flaring
   m_fRoll += (0 - m_fRoll) * Math.Min(1, dt * 2);
