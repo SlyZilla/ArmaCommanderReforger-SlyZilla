@@ -820,12 +820,15 @@ class ACR_AICommander : Managed
  // An assault that hasn't taken the base by now is called off (it would
  // otherwise hold the attack slot forever). A foothold inside the base ring
  // buys it more time. Grabs of empty bases get less.
- static float ASSAULT_TIMEOUT = 1200;         // s, nobody of ours inside the ring
- static float ASSAULT_HARD_TIMEOUT = 1800;    // s, even with a foothold
+ static float ASSAULT_TIMEOUT = 600;          // s, nobody of ours inside the ring
+ static float ASSAULT_HARD_TIMEOUT = 900;     // s, even with a foothold
  static bool s_bGrabByDistance = true;          // off in tests that shorten GRAB_TIMEOUT
  static float GRAB_TIMEOUT = 480;             // s  (the test harness shortens these)
  static const float STALLED_COOLDOWN = 300;   // s before the same base is tried again
  static const float PUSH_INTERVAL = 120;      // s between re-issuing assault orders
+ static const float RETREAT_COOLDOWN_MS = 60000;
+ static const float REINFORCE_ATTACK_DISTANCE = 1400;
+ static const float REINFORCE_ATTACK_MOUNTED = 2200;
  // Initiative: with no attack launched for a while, the commander accepts
  // worse odds (down to 65% of the usual strength) and commits its reserve,
  // so two AI sides don't sit facing each other forever.
@@ -855,6 +858,9 @@ class ACR_AICommander : Managed
  protected ref map<ACR_Base, string> m_LastOwner = new map<ACR_Base, string>();
  protected ACR_Base m_CounterTarget;
  protected ref map<ACR_Base, float> m_StalledUntil = new map<ACR_Base, float>();
+ protected ref map<ACR_Squad, float> m_RetreatingUntil = new map<ACR_Squad, float>();
+ protected int m_iSaveForEntry = -1;
+ protected int m_iLastSavedLog = -1;
  protected float m_fNextStatus;
  protected float m_fCounterUntil;
  static const float RETREAT_RATIO = 0.4;   // a squad below 40% in contact falls back
@@ -923,6 +929,24 @@ class ACR_AICommander : Managed
 
  // ---------------------------------------------------------------- helpers
 
+ protected bool IsRetreating(ACR_Squad squad)
+ {
+  float until;
+  if (!m_RetreatingUntil.Find(squad, until)) return false;
+  if (GetGame().GetWorld().GetWorldTime() >= until)
+  {
+   m_RetreatingUntil.Remove(squad);
+   return false;
+  }
+  ACR_Base safe = NearestOwnBase(PositionOf(squad));
+  if (safe && ThreatTo(safe) == 0 && vector.DistanceXZ(PositionOf(squad), safe.GetOrigin()) <= safe.m_fRadius && squad.KnownEnemies(300) == 0 && squad.StrengthRatio() >= RETREAT_RATIO && (squad.m_iAmmoPct < 0 || squad.m_iAmmoPct >= OUT_OF_AMMO))
+  {
+   m_RetreatingUntil.Remove(squad);
+   return false;
+  }
+  return true;
+ }
+
  protected void MySquads(array<ACR_Squad> result, bool freeOnly)
  {
   result.Clear();
@@ -935,6 +959,7 @@ class ACR_AICommander : Managed
    if (ACR_AirLift.Busy(squad)) continue; // flown somewhere: leave it until it has landed
    if (freeOnly && squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED) continue;
    if (freeOnly && !squad.IsCombatUnit()) continue; // lone drivers, unarmed crews: kept out of the fighting
+   if (freeOnly && IsRetreating(squad)) continue; // just broke contact: let it fall back instead of re-tasking at once
    result.Insert(squad);
   }
  }
@@ -1281,6 +1306,79 @@ class ACR_AICommander : Managed
 
  // ---------------------------------------------------------------- 3. attacks
 
+ static bool IsSupportTeam(ACR_Squad squad)
+ {
+  if (!squad || squad.FirePower() == 0) return true;
+  string name = squad.GetName();
+  name.ToLower();
+  array<string> words = {"observer", "recon", "scout", "spotter", "medic", "sniper", "sapper", "engineer", "logistic", "supply", "radio", "hq"};
+  foreach (string word : words)
+   if (name.Contains(word)) return true;
+  return false;
+ }
+
+ protected float NearestFreeDistance(array<ACR_Squad> free, vector point)
+ {
+  float best = float.MAX;
+  foreach (ACR_Squad squad : free)
+   best = Math.Min(best, vector.DistanceXZ(PositionOf(squad), point));
+  return best;
+ }
+
+ protected void ReinforceAttacks(array<ACR_Squad> free)
+ {
+  if (free.IsEmpty()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   if (free.IsEmpty()) break;
+   ACR_Base target = attack.m_Target;
+   if (!target || attack.m_bGrab || target.m_sOwner == m_sFaction || target.m_bRetired) continue;
+   if (attack.m_SapperDemo && attack.m_SapperDemo.InProgress()) continue;
+   int strength;
+   foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
+   float need = Math.Max(10, DefenceOf(target) * ATTACK_RATIO * 0.65) + target.m_iGarrisonLeft;
+   if (target.m_bBuilt) need = Math.Max(8, DefenceOf(target) * 0.9 + target.m_iGarrisonLeft * 0.7);
+   if (attack.m_bAssaulting && attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > 90000) need *= 1.35;
+   if (strength >= need * 1.15) continue;
+   SortByDistance(free, target.GetOrigin());
+   int k = 0;
+   while (k < free.Count() && strength < need * 1.25)
+   {
+    ACR_Squad squad = free[k];
+    float dist = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
+    float maxDist = REINFORCE_ATTACK_DISTANCE;
+    if (squad.IsMounted()) maxDist = REINFORCE_ATTACK_MOUNTED;
+    if (dist > REINFORCE_ATTACK_MOUNTED) break;
+    if (dist > maxDist) { k++; continue; }
+    vector dir = PositionOf(squad) - target.GetOrigin();
+    dir[1] = 0;
+    if (dir.LengthSq() > 0.001) dir.Normalize();
+    else dir = Vector(0, 0, 1);
+    vector stage = ACR_Manager.Ground(target.GetOrigin() + dir * (target.m_fRadius + STAGING_DISTANCE));
+    StagingPoint(target, dir, target.m_fRadius + STAGING_DISTANCE, stage);
+    attack.m_Squads.Insert(squad);
+    attack.m_aStaging.Insert(stage);
+    strength += squad.Strength();
+    if (strength > attack.m_iStartStrength) attack.m_iStartStrength = strength;
+    squad.m_iAITask = ACR_EAITask.ATTACK;
+    squad.m_AITarget = target;
+    if (attack.m_bAssaulting)
+    {
+     squad.SetMode(ACR_EMoveMode.COMBAT);
+     squad.Assault(target.GetOrigin());
+    }
+    else
+    {
+     squad.SetMode(ACR_EMoveMode.FAST);
+     Travel(squad, stage, false, 0);
+    }
+    free.RemoveOrdered(k);
+    PrintFormat("[ACR] AI %1: %2 reinforces the attack on %3 (%4/%5)", m_sFaction, squad.GetName(), target.m_sName, strength, (int)need);
+   }
+  }
+ }
+
  protected void AssignAttacks()
  {
   ACR_FactionSettings settings = Settings();
@@ -1299,14 +1397,31 @@ class ACR_AICommander : Managed
    if (home)
    {
     SortByDistance(free, home.GetOrigin());
-    ACR_Squad reserve = free[0];
-    free.RemoveOrdered(0);
-    if (reserve.m_iAITask != ACR_EAITask.POSTED || vector.DistanceXZ(PositionOf(reserve), home.GetOrigin()) > 150)
+    ACR_Squad reserve;
+    if (m_ReserveSquad && free.Contains(m_ReserveSquad) && vector.DistanceXZ(PositionOf(m_ReserveSquad), home.GetOrigin()) <= RESERVE_MAX_PULL && !IsSupportTeam(m_ReserveSquad))
+     reserve = m_ReserveSquad;
+    if (!reserve)
     {
-     reserve.m_iAITask = ACR_EAITask.POSTED;
-     reserve.SetMode(ACR_EMoveMode.COMBAT);
-     Travel(reserve, home.GetOrigin(), true, 0);
-     PrintFormat("[ACR] AI %1: %2 held in reserve at %3", m_sFaction, reserve.GetName(), home.m_sName);
+     foreach (ACR_Squad candidateReserve : free)
+     {
+      if (vector.DistanceXZ(PositionOf(candidateReserve), home.GetOrigin()) > RESERVE_MAX_PULL) break;
+      if (!IsSupportTeam(candidateReserve)) { reserve = candidateReserve; break; }
+     }
+    }
+    if (!reserve && vector.DistanceXZ(PositionOf(free[0]), home.GetOrigin()) <= RESERVE_MAX_PULL)
+     reserve = free[0];
+    if (reserve)
+    {
+     m_ReserveSquad = reserve;
+     free.RemoveItem(reserve);
+     bool enRoute = reserve.m_iAITask == ACR_EAITask.POSTED && (ACR_AirLift.Busy(reserve) || reserve.OrderState() == ACR_EOrderState.RIDE || (reserve.m_Group && reserve.m_Group.GetCurrentWaypoint() && vector.DistanceXZ(reserve.m_MoveTarget, home.GetOrigin()) <= home.m_fRadius + 150));
+     if (reserve.m_iAITask != ACR_EAITask.POSTED || (!enRoute && vector.DistanceXZ(PositionOf(reserve), home.GetOrigin()) > 150))
+     {
+      reserve.m_iAITask = ACR_EAITask.POSTED;
+      reserve.SetMode(ACR_EMoveMode.COMBAT);
+      Travel(reserve, home.GetOrigin(), true, 0);
+      PrintFormat("[ACR] AI %1: %2 held in reserve at %3", m_sFaction, reserve.GetName(), home.m_sName);
+     }
     }
    }
   }
@@ -1363,6 +1478,7 @@ class ACR_AICommander : Managed
    grabs++;
    PrintFormat("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime);
   }
+  ReinforceAttacks(free);
   if (free.IsEmpty()) return;
   // Plenty of idle troops: open more fronts (one more per 4 free squads, up to 3 more).
   maxAttacks += Math.Min(3, free.Count() / 4);
@@ -1388,7 +1504,10 @@ class ACR_AICommander : Managed
    {
     if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
     float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
-    float score = cost * (vector.DistanceXZ(base.GetOrigin(), from) / 1000 + 0.1);
+    float dist = NearestFreeDistance(free, base.GetOrigin());
+    float score = cost * (dist / 1000 + 0.1);
+    if (base.m_bContested || (DefenceOf(base) <= UNKNOWN_DEFENCE + 2 && dist < 1200))
+     score *= 0.65;
     if (base.m_bBuilt)
     {
      score *= 0.35;
@@ -1431,6 +1550,7 @@ class ACR_AICommander : Managed
    return; // Requisition() will add troops
   }
   SortByDistance(free, target.GetOrigin());
+  from = PositionOf(free[0]);
   if (target.m_bBuilt)
   {
    for (int s = free.Count() - 1; s >= 0; s--)
@@ -1504,7 +1624,7 @@ class ACR_AICommander : Managed
    int bestFire = 2;
    foreach (ACR_Squad fireCandidate : attack.m_Squads)
    {
-    if (ACR_SapperDemo.IsSapperSquad(fireCandidate)) continue;
+    if (ACR_SapperDemo.IsSapperSquad(fireCandidate) || IsSupportTeam(fireCandidate)) continue;
     int firepower = fireCandidate.FirePower();
     if (firepower > bestFire) { bestFire = firepower; attack.m_Suppressor = fireCandidate; }
    }
@@ -1576,6 +1696,7 @@ class ACR_AICommander : Managed
  string ForceAttack(ACR_Base target)
  {
   if (!m_bActive) return string.Format("%1 AI commander isn't in command (a player commands it, or it's held or off)", m_sFaction);
+  m_RetreatingUntil.Clear();
   array<ACR_Squad> free = {};
   MySquads(free, true);
   if (free.IsEmpty()) return string.Format("%1 AI has no free squads to attack with", m_sFaction);
@@ -1615,7 +1736,9 @@ class ACR_AICommander : Managed
  // Falls back to HomeBase (the HQ) when nothing else qualifies.
  static const float RESERVE_MIN_FRONT = 600;
  static const float RESERVE_IDEAL_FRONT = 1200;
+ static const float RESERVE_MAX_PULL = 1800;
  protected ACR_Base m_ReserveBase;
+ protected ACR_Squad m_ReserveSquad;
 
  bool ReserveFits(ACR_Base base)
  {
@@ -1657,7 +1780,7 @@ class ACR_AICommander : Managed
    if (!ReserveFits(base)) continue;
    float front = FrontDistance(base);
    float score = base.m_iValue * 150 + base.m_fRadius - Math.Max(0, front - RESERVE_IDEAL_FRONT) * 0.25;
-   if (base == m_ReserveBase) score += 100;
+   if (base == m_ReserveBase) score += 250;
    if (score > bestScore) { bestScore = score; best = base; }
   }
   if (!best) best = HomeBase();
@@ -1879,6 +2002,8 @@ class ACR_AICommander : Managed
  {
   ACR_Base refuge = NearestOwnBase(PositionOf(squad), except);
   squad.m_iAITask = ACR_EAITask.FREE;
+  if (m_ReserveSquad == squad) m_ReserveSquad = null;
+  m_RetreatingUntil.Set(squad, GetGame().GetWorld().GetWorldTime() + RETREAT_COOLDOWN_MS);
   squad.SetMode(ACR_EMoveMode.FAST);
   // On foot, round any water; no waiting for a truck under fire.
   if (refuge) squad.RouteTo(ACR_Manager.Ground(refuge.GetOrigin()), ACR_Squad.WP_DEFEND, 15, "Falling back", 1);
@@ -1902,6 +2027,17 @@ class ACR_AICommander : Managed
   if (attack.m_bGrab && !s_bGrabByDistance) return seconds > GRAB_TIMEOUT;
   if (attack.m_bGrab) return seconds > Math.Max(GRAB_TIMEOUT, attack.m_fGrabSeconds);
   if (seconds > ASSAULT_HARD_TIMEOUT) return true;
+  if (seconds > ASSAULT_TIMEOUT * 0.5 && attack.m_Target && !attack.m_Target.m_bContested)
+  {
+   bool nearPerimeter = false;
+   int currentStrength = 0;
+   foreach (ACR_Squad member : attack.m_Squads)
+   {
+    currentStrength += member.Strength();
+    if (vector.DistanceXZ(PositionOf(member), attack.m_Target.GetOrigin()) < attack.m_Target.m_fRadius + 100) nearPerimeter = true;
+   }
+   if (!nearPerimeter && currentStrength < DefenceOf(attack.m_Target)) return true;
+  }
   if (seconds <= ASSAULT_TIMEOUT) return false;
   foreach (ACR_Squad squad : attack.m_Squads)
    if (vector.DistanceXZ(PositionOf(squad), attack.m_Target.GetOrigin()) < attack.m_Target.m_fRadius) return false;
@@ -2294,6 +2430,76 @@ class ACR_AICommander : Managed
 
  // ---------------------------------------------------------------- 5. requisition
 
+ protected int FullSizeOf(ACR_Squad squad)
+ {
+  if (!squad) return 0;
+  array<ResourceName> missing = {};
+  squad.GetMissing(missing);
+  return squad.CountAlive() + missing.Count();
+ }
+
+ static bool IsSmallTeamEntry(ACR_RequisitionEntry entry)
+ {
+  if (!entry || !entry.m_sVehicle.IsEmpty() || entry.m_bMortarTeam) return false;
+  int baseCost = entry.m_iBaseCost;
+  if (baseCost <= 0) baseCost = entry.m_iCost;
+  if (baseCost <= 9) return true;
+  string name = entry.m_sName;
+  name.ToLower();
+  if (name.Contains("squad") || name.Contains("section") || name.Contains("platoon") || name.Contains("fire team") || name.Contains("fireteam")) return false;
+  return name.Contains("team");
+ }
+
+ // Refill depleted infantry squads out of contact (especially 1-man remnants that
+ // dropped out of combat status) instead of leaving them idle and buying 2-man teams.
+ protected bool ReinforceDepleted(ACR_FactionData data, int keep)
+ {
+  if (!data || !m_Manager.m_Requisition || m_Manager.m_Requisition.OverSoldierCap(m_sFaction)) return false;
+  array<ACR_Squad> all = {};
+  MySquads(all, false);
+  ACR_Squad best;
+  int bestScore = -1;
+  int bestCost = 0;
+  foreach (ACR_Squad squad : all)
+  {
+   if (!squad || squad.HasPlayer() || squad.m_bMortar || squad.Aircraft() || ACR_Transport.CrewedVehicle(squad)) continue;
+   if (InAssault(squad)) continue;
+   array<ResourceName> missing = {};
+   squad.GetMissing(missing);
+   if (missing.IsEmpty()) continue;
+   bool remnant = !squad.IsCombatUnit();
+   if (!remnant && squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.DEFEND) continue;
+   if (!remnant && squad.StrengthRatio() > 0.65) continue;
+   if (m_Manager.m_Requisition.InContact(squad) != "") continue;
+   ACR_Base nearBase;
+   float nearestDist = float.MAX;
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (base.m_sOwner != m_sFaction || !ACR_LogisticsRules.CanReinforce(base) || base.m_bContested) continue;
+    float d = vector.DistanceXZ(PositionOf(squad), base.GetOrigin());
+    if (d < nearestDist) { nearestDist = d; nearBase = base; }
+   }
+   if (!nearBase) continue;
+   if (!remnant && nearestDist > nearBase.m_fRadius + 150) continue;
+   if (remnant && nearestDist > nearBase.m_fRadius + 250)
+   {
+    if (!squad.m_Group || !squad.m_Group.GetCurrentWaypoint())
+     squad.RouteTo(ACR_Manager.Ground(nearBase.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
+    continue;
+   }
+   int cost = missing.Count() * ACR_Requisition.REINFORCE_COST_PER_SOLDIER;
+   if (data.m_iRP - keep < cost) continue;
+   int score = missing.Count() * 10;
+   if (remnant) score += 100;
+   if (nearestDist <= nearBase.m_fRadius) score += 25;
+   if (score > bestScore) { bestScore = score; best = squad; bestCost = cost; }
+  }
+  if (!best) return false;
+  string outcome = m_Manager.m_Requisition.ReinforceSquad(null, best);
+  PrintFormat("[ACR] AI %1 reinforce: %2", m_sFaction, outcome);
+  return true;
+ }
+
  protected void Requisition()
  {
   ACR_FactionSettings settings = Settings();
@@ -2302,6 +2508,9 @@ class ACR_AICommander : Managed
   // Money piling up: field a few more squads rather than sit on it.
   int banked = m_Manager.m_Bases.GetRP(m_sFaction);
   if (banked > 150) cap += Math.Min(4, (banked - 100) / 50);
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  if (!data) return;
+  ReinforceDepleted(data, SupportBudget());
   array<ACR_Squad> mine = {};
   MySquads(mine, false);
   // Only fighting units count against the cap (trucks and lone drivers don't).
@@ -2328,7 +2537,6 @@ class ACR_AICommander : Managed
   }
   if (fob) spawn = fob;
   if (!spawn) return;
-  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   // A service truck for a need nobody can meet (squads low on ammo, a wrecked
   // BRDM...), one of each kind at a time.
   if (m_Manager.m_Logistics)
@@ -2369,6 +2577,7 @@ class ACR_AICommander : Managed
   // Keep a fire-support budget unless troops are needed more.
   int keep = 0;
   bool highThreat = ACR_Manager.ThreatOption() == 2;
+  bool urgent = UrgentTroops(mine.Count(), cap);
   if (highThreat)
   {
    // High intensity should field its fire support even while the infantry pool
@@ -2378,59 +2587,121 @@ class ACR_AICommander : Managed
    if (BuyMortarTeam(spawn, data)) return;
    if (BuyHelicopter(data)) return;
   }
-  else if (!UrgentTroops(mine.Count(), cap))
+  else if (!urgent)
   {
    keep = SupportBudget();
    if (BuyMortarTeam(spawn, data)) return;
    if (BuyHelicopter(data)) return;
   }
+  int smallTeams, lineSquads, vehicles;
+  foreach (ACR_Squad existing : mine)
+  {
+   if (ACR_Transport.CrewedVehicle(existing)) vehicles++;
+   else if (FullSizeOf(existing) <= 3) smallTeams++;
+   else lineSquads++;
+  }
+  bool hasLineOffer = false;
+  foreach (ACR_RequisitionEntry checkOffer : data.m_aRequisitions)
+  {
+   if (checkOffer.m_iRemaining > 0 && checkOffer.m_sVehicle.IsEmpty() && !checkOffer.m_bMortarTeam && !IsSmallTeamEntry(checkOffer) && !IsSpecialistTeam(checkOffer))
+   {
+    hasLineOffer = true;
+    break;
+   }
+  }
+  int budget = data.m_iRP - keep;
+  int saveMax = Math.Max(budget, 85);
+  if (mine.Count() < 2) saveMax = Math.Max(budget, 24);
+  else if (urgent && !highThreat) saveMax = Math.Max(budget, 42);
+  if (m_iSaveForEntry >= 0 && m_iSaveForEntry < data.m_aRequisitions.Count())
+  {
+   ACR_RequisitionEntry savedEntry = data.m_aRequisitions[m_iSaveForEntry];
+   if (savedEntry.m_iRemaining <= 0 || savedEntry.m_iCost > saveMax || (mine.Count() < 2 && savedEntry.m_iCost > budget))
+    m_iSaveForEntry = -1;
+   else if (savedEntry.m_iCost > budget)
+    return;
+  }
+  else m_iSaveForEntry = -1;
+
   for (int n = 0; n < 2 && mine.Count() + n < cap; n++)
   {
-   array<int> options = {};
-   array<float> weights = {};
-   float total;
-   foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
+   budget = data.m_iRP - keep;
+   int pick = -1;
+   if (m_iSaveForEntry >= 0 && m_iSaveForEntry < data.m_aRequisitions.Count() && data.m_aRequisitions[m_iSaveForEntry].m_iRemaining > 0 && data.m_aRequisitions[m_iSaveForEntry].m_iCost <= budget)
    {
-    if (entry.m_iRemaining <= 0 || entry.m_iCost > data.m_iRP - keep) continue;
-    if (entry.m_bMortarTeam) continue; // bought on its own (BuyMortarTeam)
-    // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
-    if (entry.m_bAircraft || entry.m_sVehicle.Contains("/Helicopters/") || entry.m_sVehicle.Contains("/Planes/")) continue;
-    // Nor service vehicles (bought on need) or unarmed cars (nothing to fight with).
-    if (IsServiceVehicle(entry)) continue;
-    if (!entry.m_sVehicle.IsEmpty() && !entry.m_bArmed) continue;
-    // Weigh by the base price: a unit whose stepped price has climbed isn't worth more.
-    float weight = entry.m_iCost;
-    if (entry.m_iBaseCost > 0) weight = entry.m_iBaseCost;
-    if (highThreat && !entry.m_sVehicle.IsEmpty()) weight *= 1.5;
-    if (highThreat && m_sFaction == "RHS_AFRF" && IsRUArmorEntry(entry)) weight *= 2;
-    bool isSapper = IsSapperEntry(entry);
-    if (isSapper && HasEnemyFob())
-    {
-     if (!OwnsLike(entry)) weight *= 3.0;
-    }
-    else if (IsSpecialistTeam(entry))
-    {
-     if (OwnsLike(entry)) continue;
-     weight *= 0.3;
-    }
-    // Keep infantry the backbone.
-    if (!entry.m_sVehicle.IsEmpty()) weight *= 0.5;
-    // A low-threat war is mostly fought on foot.
-    if (!entry.m_sVehicle.IsEmpty() && ACR_Manager.ThreatOption() == 0) weight *= 0.4;
-    options.Insert(i);
-    weights.Insert(weight);
-    total += weight;
+    pick = m_iSaveForEntry;
+    m_iSaveForEntry = -1;
+    m_iLastSavedLog = -1;
    }
-   if (options.IsEmpty()) return;
-   float roll = Math.RandomFloat(0, total);
-   int pick = options[options.Count() - 1];
-   foreach (int k, float w : weights)
+   else
    {
-    roll -= w;
-    if (roll <= 0) { pick = options[k]; break; }
+    array<int> options = {};
+    array<float> weights = {};
+    float total;
+    foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
+    {
+     if (entry.m_iRemaining <= 0 || entry.m_iCost > saveMax) continue;
+     if (mine.Count() < 2 && entry.m_iCost > budget) continue;
+     if (entry.m_bMortarTeam) continue; // bought on its own (BuyMortarTeam)
+     // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
+     if (entry.m_bAircraft || entry.m_sVehicle.Contains("/Helicopters/") || entry.m_sVehicle.Contains("/Planes/")) continue;
+     // Nor service vehicles (bought on need) or unarmed cars (nothing to fight with).
+     if (IsServiceVehicle(entry)) continue;
+     if (!entry.m_sVehicle.IsEmpty() && !entry.m_bArmed) continue;
+     bool isSapper = IsSapperEntry(entry);
+     bool smallTeam = IsSmallTeamEntry(entry);
+     if (smallTeam && !(isSapper && HasEnemyFob()) && hasLineOffer && smallTeams >= 2 && smallTeams * 2 >= lineSquads)
+      continue;
+     // Weigh by the base price: a unit whose stepped price has climbed isn't worth more.
+     float weight = entry.m_iCost;
+     if (entry.m_iBaseCost > 0) weight = entry.m_iBaseCost;
+     if (entry.m_sVehicle.IsEmpty() && !smallTeam && !IsSpecialistTeam(entry)) weight *= 1.8;
+     else if (smallTeam && !(isSapper && HasEnemyFob())) weight *= 0.35;
+     if (highThreat && !entry.m_sVehicle.IsEmpty()) weight *= 1.5;
+     if (highThreat && m_sFaction == "RHS_AFRF" && IsRUArmorEntry(entry)) weight *= 2;
+     if (!entry.m_sVehicle.IsEmpty() && vehicles == 0 && mine.Count() >= 3) weight *= 1.6;
+     if (isSapper && HasEnemyFob())
+     {
+      if (!OwnsLike(entry)) weight *= 3.0;
+     }
+     else if (IsSpecialistTeam(entry))
+     {
+      if (OwnsLike(entry)) continue;
+      weight *= 0.3;
+     }
+     // Keep infantry the backbone.
+     if (!entry.m_sVehicle.IsEmpty()) weight *= 0.5;
+     // A low-threat war is mostly fought on foot.
+     if (!entry.m_sVehicle.IsEmpty() && ACR_Manager.ThreatOption() == 0) weight *= 0.4;
+     options.Insert(i);
+     weights.Insert(weight);
+     total += weight;
+    }
+    if (options.IsEmpty()) return;
+    float roll = Math.RandomFloat(0, total);
+    pick = options[options.Count() - 1];
+    foreach (int k, float w : weights)
+    {
+     roll -= w;
+     if (roll <= 0) { pick = options[k]; break; }
+    }
+   }
+   ACR_RequisitionEntry chosen = data.m_aRequisitions[pick];
+   if (chosen.m_iCost > data.m_iRP - keep)
+   {
+    m_iSaveForEntry = pick;
+    if (m_iLastSavedLog != pick)
+    {
+     m_iLastSavedLog = pick;
+     PrintFormat("[ACR] AI %1 saving RP for %2 (%3/%4 RP)", m_sFaction, chosen.m_sName, Math.Max(0, data.m_iRP - keep), chosen.m_iCost);
+    }
+    return;
    }
    string result = m_Manager.PurchaseAt(m_sFaction, pick, spawn);
    PrintFormat("[ACR] AI %1 requisition: %2", m_sFaction, result);
+   if (!chosen.m_sVehicle.IsEmpty()) vehicles++;
+   else if (IsSmallTeamEntry(chosen)) smallTeams++;
+   else lineSquads++;
   }
  }
 
@@ -2466,9 +2737,11 @@ class ACR_AICommander : Managed
 
  static bool IsSpecialistTeam(ACR_RequisitionEntry entry)
  {
+  if (!entry) return false;
+  if (entry.m_bObserverTeam) return true;
   string name = entry.m_sName;
   name.ToLower();
-  array<string> words = {"engineer", "sapper", "medic", "logistic", "supply", "recon", "sniper", "hq", "radio"};
+  array<string> words = {"engineer", "sapper", "medic", "logistic", "supply", "recon", "sniper", "hq", "radio", "observer", "scout", "spotter"};
   foreach (string word : words)
    if (name.Contains(word)) return true;
   return false;
@@ -2591,15 +2864,16 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad idleCrew : mine)
   {
    IEntity serviceVehicle = ACR_Transport.CrewedVehicle(idleCrew);
-   if (!serviceVehicle || ACR_Logistics.ServiceOf(serviceVehicle) == 0 || idleCrew.HasPlayer() || m_ServiceJobs.Contains(idleCrew)) continue;
+   int serviceMask = ACR_Logistics.ServiceOf(serviceVehicle) & ~ACR_EService.CONSTRUCTION;
+   if (!serviceVehicle || serviceMask == 0 || idleCrew.HasPlayer() || m_ServiceJobs.Contains(idleCrew)) continue;
    if (idleCrew.OrderState() == ACR_EOrderState.BUILD_FOB || idleCrew.m_iAITask == ACR_EAITask.BUILD_FOB) continue;
    if (IsAssistingFobUpgrade(idleCrew)) continue;
    ACR_Base goal = supplyPoint;
    if (logistics.StockPercent(serviceVehicle) < 25) goal = HomeBase();
    if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
-   if (idleCrew.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(idleCrew.m_MoveTarget, goal.GetOrigin()) < goal.m_fRadius) continue;
+   if (idleCrew.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(idleCrew.m_MoveTarget, goal.GetOrigin()) < goal.m_fRadius + 80) continue;
    idleCrew.RouteTo(ACR_Manager.Ground(goal.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
-   PrintFormat("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(ACR_Logistics.ServiceOf(serviceVehicle)));
+   PrintFormat("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(serviceMask));
   }
  }
 
@@ -2620,6 +2894,8 @@ class ACR_AICommander : Managed
   return false;
  }
 
+ protected ACR_Base m_SupplyPoint;
+
  // Our base nearest the front that isn't threatened: where service vehicles wait.
  protected ACR_Base SupplyPoint()
  {
@@ -2632,9 +2908,12 @@ class ACR_AICommander : Managed
    foreach (ACR_Base other : ACR_Base.s_All)
     if (other.m_sOwner != m_sFaction && Visible(other)) front = Math.Min(front, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
    if (front < 500) continue; // too close to the enemy to park trucks
-   if (front < bestFront) { bestFront = front; best = base; }
+   float score = front;
+   if (base == m_SupplyPoint) score -= 450; // stay put unless another safe base is much closer to the front
+   if (score < bestFront) { bestFront = score; best = base; }
   }
   if (!best) best = HomeBase();
+  m_SupplyPoint = best;
   return best;
  }
 
@@ -3164,6 +3443,10 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : m_Manager.m_Squads)
    if (squad.GetFaction() && squad.GetFaction().GetFactionKey() == m_sFaction) squad.m_iAITask = ACR_EAITask.FREE;
   m_Attacks.Clear();
+  m_RetreatingUntil.Clear();
+  m_ReserveSquad = null;
+  m_iSaveForEntry = -1;
+  m_iLastSavedLog = -1;
   m_FobBuilder = null;
   m_FobEscort = null;
  }
