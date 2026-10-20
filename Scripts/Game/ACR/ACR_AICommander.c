@@ -1351,7 +1351,8 @@ class ACR_AICommander : Managed
     float maxDist = REINFORCE_ATTACK_DISTANCE;
     if (squad.IsMounted()) maxDist = REINFORCE_ATTACK_MOUNTED;
     if (dist > REINFORCE_ATTACK_MOUNTED) break;
-    if (dist > maxDist) { k++; continue; }
+    // Observers, medics, snipers and other support teams don't join an assault.
+    if (dist > maxDist || IsSupportTeam(squad)) { k++; continue; }
     vector dir = PositionOf(squad) - target.GetOrigin();
     dir[1] = 0;
     if (dir.LengthSq() > 0.001) dir.Normalize();
