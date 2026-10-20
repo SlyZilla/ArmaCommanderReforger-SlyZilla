@@ -7,7 +7,7 @@
     "game": {
         "name": "ACR hidden test server",
         "password": "",
-        "passwordAdmin": "",
+        "passwordAdmin": "1",
         "scenarioId": "{mission}",
         "maxPlayers": 4,
         "visible": false,

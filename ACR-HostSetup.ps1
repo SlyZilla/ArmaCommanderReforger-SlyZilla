@@ -85,6 +85,8 @@ function Show-HostSetup([switch]$Solo) {
   # This launcher starts a separate local server. Its owner connects first.
   # Use the existing opt-in authority rule, without changing dedicated-server defaults.
   if (!$Solo) { $extra += ' -acrFirstPlayerHost 1' }
+  # Dev copies only (a git checkout, never a release): chat "/login 1" makes you admin.
+  if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git')) { $extra += ' -acrAdminPassword 1' }
   # Off-by-default BBB features awaiting live acceptance (the AI runs where these args go).
   if ($s.FireManeuver -eq 'yes') { $extra += ' -bbbFireManeuver 1' }
   if ($s.CombatManeuver -eq 'yes') { $extra += ' -bbbCombatManeuver 1' }

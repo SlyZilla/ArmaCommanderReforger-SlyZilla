@@ -183,7 +183,7 @@ function Invoke-ServerTest($id, $preset, $config) {
     # Placeholders: {world} {mission} {profile} {addonsDir} {config}.
     $mission = Get-TestMissionId $world
     $argsFile = Join-Path $PSScriptRoot 'testserver-args.txt'
-    $template = '-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend'
+    $template = '-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend -acrAdminPassword 1'
     if ($mission -and (Test-Path -LiteralPath $argsFile)) {
         $line = Get-Content -LiteralPath $argsFile | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' } | Select-Object -First 1
         if ($line) { $template = $line.Trim() }

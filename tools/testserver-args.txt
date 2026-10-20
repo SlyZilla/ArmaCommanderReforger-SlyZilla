@@ -1,6 +1,7 @@
 # Start line for the hidden test server (first non-# line; re-read on every srv: request).
+# -acrAdminPassword 1: type "/login 1" in chat for admin (ACR_DevAdmin.c).
 # Placeholders: {world} {mission} {profile} {addonsDir} {config} (= the profile's copy of testserver.json).
 # Port: -bindPort/-bindIP/-gameConfig are all ignored in -server mode (always 2001, tried 2 Oct).
 # -config honours bindPort but can't be combined with -addons, and doesn't mount our unpacked
 # mod from -addonsDir (even with -addonsForceLocal): "Unable to read the mission header".
--server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend
+-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend -acrAdminPassword 1
