@@ -209,3 +209,21 @@ modded class BaseCompartmentSlot
   return crewman;
  }
 }
+
+// LAV-style commander seats are CARGO slots wired to a commander sight turret
+// (AutoConnectToTurret), so a crew spawned for PILOT + TURRET left the LAV without its
+// commander (Jacob, 20 Oct). Bought vehicles also get those seats filled, in the same group.
+modded class SCR_BaseCompartmentManagerComponent
+{
+ override protected bool InitiateSpawnDefaultOccupants(notnull array<ECompartmentType> compartmentTypes)
+ {
+  bool started = super.InitiateSpawnDefaultOccupants(compartmentTypes);
+  if (!started || !m_aCompartmentsToSpawnDefaultOccupant || !compartmentTypes.Contains(ECompartmentType.TURRET)) return started;
+  if (ACR_Vehicles.BoughtBy(GetOwner()).IsEmpty()) return started;
+  array<BaseCompartmentSlot> cargo = {};
+  GetFreeCompartmentsOfType(cargo, ECompartmentType.CARGO, true);
+  foreach (BaseCompartmentSlot seat : cargo)
+   if (ACR_Transport.CommanderSeat(seat) && !m_aCompartmentsToSpawnDefaultOccupant.Contains(seat)) m_aCompartmentsToSpawnDefaultOccupant.Insert(seat);
+  return started;
+ }
+}

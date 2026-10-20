@@ -6,6 +6,22 @@ class ACR_Transport
 
  static IEntity VehicleOf(IEntity body) { return BBB_Transport.VehicleOf(body); }
  static ECompartmentType SeatOf(IEntity body) { return BBB_Transport.SeatOf(body); }
+
+ // A commander seat: the engine calls it CARGO, but it's wired to a commander sight
+ // turret (LAV-25). Its occupant is crew, not a passenger.
+ static bool CommanderSeat(BaseCompartmentSlot slot)
+ {
+  return slot && slot.GetType() == ECompartmentType.CARGO && !slot.GetAutoConnectTurret().IsEmpty();
+ }
+
+ // Riding in the back (a cargo seat that isn't a commander seat).
+ static bool Passenger(IEntity body)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(body);
+  if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent()) return false;
+  BaseCompartmentSlot slot = character.GetCompartmentAccessComponent().GetCompartment();
+  return slot && slot.GetType() == ECompartmentType.CARGO && !CommanderSeat(slot);
+ }
  static bool Settled(IEntity vehicle, out float height, out float speed) { return BBB_Transport.Settled(vehicle, height, speed); }
 
  // Squads with soldiers in the passenger (cargo) seats of this vehicle.
@@ -19,7 +35,7 @@ class ACR_Transport
    foreach (AIAgent agent : agents)
    {
     IEntity body = agent.GetControlledEntity();
-    if (VehicleOf(body) == vehicle && SeatOf(body) == ECompartmentType.CARGO)
+    if (VehicleOf(body) == vehicle && Passenger(body))
     {
      result.Insert(squad);
      break;
@@ -37,7 +53,7 @@ class ACR_Transport
   {
    IEntity body = agent.GetControlledEntity();
    IEntity vehicle = VehicleOf(body);
-   if (vehicle && SeatOf(body) != ECompartmentType.CARGO) return vehicle;
+   if (vehicle && !Passenger(body)) return vehicle;
   }
   return null;
  }
