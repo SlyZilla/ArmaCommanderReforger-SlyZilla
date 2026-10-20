@@ -111,7 +111,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 93; // 90 + finite rare stock at all three threat levels (3)
+ static const int EXPECTED = 95; // 90 + finite rare stock at all three threat levels (3) + unconscious contest (2)
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -752,6 +752,10 @@ class ACR_TestRegress
    }
    Check("helicopter crew stays seated after a refused move", crewmen > 0 && seated == crewmen, string.Format("%1 of %2 seated", seated, crewmen));
   }
+  // Jacob 19 Oct: an unconscious enemy doesn't contest a base (nobody finishes them off).
+  if (tick == 6) UnconsciousPlant();
+  if (tick == 7) UnconsciousForce();
+  if (tick == 11) UnconsciousCheck();
   if (tick == 60)
   {
    BoardingCheck(manager);
@@ -762,6 +766,35 @@ class ACR_TestRegress
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
+ }
+
+ static IEntity s_Unconscious;
+ static ACR_Base s_UnconsciousBase;
+ static void UnconsciousPlant()
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_sOwner == "US" && !base.m_bContested && !base.m_GarrisonGroup) { s_UnconsciousBase = base; break; }
+  if (!s_UnconsciousBase) return;
+  vector at = ACR_Manager.Ground(s_UnconsciousBase.GetOrigin() + Vector(s_UnconsciousBase.m_fRadius * 0.5, 0, 0));
+  s_Unconscious = ACR_Manager.SpawnPrefab(ACR_TestFobDesign.USSR_RIFLEMAN, at);
+  UnconsciousForce(); // at once, before a base tick sees him awake (tick 7 retries)
+ }
+ static void UnconsciousForce()
+ {
+  ChimeraCharacter man = ChimeraCharacter.Cast(s_Unconscious);
+  if (!man) return;
+  SCR_CharacterDamageManagerComponent damage = SCR_CharacterDamageManagerComponent.Cast(man.GetDamageManager());
+  if (damage) damage.ForceUnconsciousness(0);
+ }
+ static void UnconsciousCheck()
+ {
+  ChimeraCharacter man = ChimeraCharacter.Cast(s_Unconscious);
+  bool down = man && man.GetCharacterController().IsUnconscious() && !man.GetCharacterController().IsDead();
+  Check("fixture enemy inside a US base is unconscious", down && s_UnconsciousBase != null, string.Format("base %1, unconscious %2", s_UnconsciousBase != null, down));
+  bool contested = !s_UnconsciousBase || s_UnconsciousBase.m_bContested;
+  bool fob = s_Unconscious && ACR_FobBuild.Awake(s_Unconscious);
+  Check("unconscious enemy doesn't contest the base", down && !contested && !fob, string.Format("contested %1, counts for FOB %2", contested, fob));
+  if (s_Unconscious) SCR_EntityHelper.DeleteEntityAndChildren(s_Unconscious);
  }
 
  static void RecoveryChecks(ACR_Manager manager, IEntity truck)

@@ -331,17 +331,38 @@ class ACR_FobBuild
 		return felled;
 	}
 
+	// An enemy squad with a conscious soldier near the site (its leader, or any member while
+	// the leader is down: the unconscious don't contest).
 	static bool IsContested(vector site, string faction)
 	{
 		ACR_Manager manager = ACR_Manager.GetInstance();
 		if (!manager) return false;
+		array<AIAgent> agents = {};
 		foreach (ACR_Squad squad : manager.m_Squads)
 		{
 			if (!squad || !squad.GetFaction() || squad.GetFaction().GetFactionKey() == faction) continue;
 			IEntity anchor = squad.GetAnchor();
-			if (anchor && vector.DistanceXZ(anchor.GetOrigin(), site) <= CP_RADIUS + 10) return true;
+			if (!anchor) continue;
+			if (Awake(anchor))
+			{
+				if (vector.DistanceXZ(anchor.GetOrigin(), site) <= CP_RADIUS + 10) return true;
+				continue;
+			}
+			squad.GetAgents(agents);
+			foreach (AIAgent agent : agents)
+			{
+				IEntity member = agent.GetControlledEntity();
+				if (member && Awake(member) && vector.DistanceXZ(member.GetOrigin(), site) <= CP_RADIUS + 10) return true;
+			}
 		}
 		return false;
+	}
+
+	static bool Awake(IEntity entity)
+	{
+		ChimeraCharacter character = ChimeraCharacter.Cast(entity);
+		if (!character || !character.GetCharacterController()) return false;
+		return !character.GetCharacterController().IsDead() && !character.GetCharacterController().IsUnconscious();
 	}
 
 	protected static array<IEntity> s_Ignore;

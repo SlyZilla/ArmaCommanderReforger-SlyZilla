@@ -907,7 +907,7 @@ class ACR_Squad : Managed
 
   string factionKey = "";
   if (GetFaction()) factionKey = GetFaction().GetFactionKey();
-  bool contested = ACR_FobBuild.IsContested(m_vFobSite, factionKey) || KnownEnemies(60) > 0;
+  bool contested = ACR_FobBuild.IsContested(m_vFobSite, factionKey) || KnownEnemies(60, true) > 0;
 
   int pct = (int)((m_fFobBuildProgress / ACR_FobBuild.BUILD_DURATION_S) * 100);
   // Three minutes without progress (fighting, stuck, no engineer): give up and refund.
@@ -1036,7 +1036,8 @@ class ACR_Squad : Managed
  }
 
  // Living enemies this squad knows about within radius of it.
- int KnownEnemies(float radius)
+ // awakeOnly: leave out the unconscious (they don't contest a FOB site).
+ int KnownEnemies(float radius, bool awakeOnly = false)
  {
   if (!m_Group) return 0;
   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(m_Group.FindComponent(SCR_AIGroupUtilityComponent));
@@ -1045,7 +1046,7 @@ class ACR_Squad : Managed
   int count;
   foreach (IEntity enemy : utility.m_Perception.m_aTargetEntities)
   {
-   if (!ACR_Respawn.IsAlive(enemy)) continue;
+   if (!ACR_Respawn.IsAlive(enemy) || (awakeOnly && !ACR_FobBuild.Awake(enemy))) continue;
    if (vector.DistanceXZ(enemy.GetOrigin(), anchor.GetOrigin()) <= radius) count++;
   }
   return count;
