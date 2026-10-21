@@ -687,6 +687,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
 | `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual Play and Host launchers pass `-acrSetup 1` and leave match settings to this screen |
 | `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default for ordinary dedicated servers; Host-ACA enables it for its separate local server, so the launching host must connect before friends. Configured admins remain trusted, and authority does not transfer after the first player disconnects |
+| `-acrAdminPassword <password>` | Chat login for servers without a `-config` file (such as local test servers): a player who types `/login <password>` in chat becomes admin for the session, which unlocks the host tools. Off without the option; use a private password and don't share it in logs or screenshots |
 
 ## Designing a good map
 
