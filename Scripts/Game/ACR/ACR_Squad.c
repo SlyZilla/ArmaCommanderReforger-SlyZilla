@@ -220,7 +220,7 @@ class ACR_Squad : Managed
 
  IEntity GetAnchor()
  {
-  IEntity leader = GetLeader();
+  IEntity leader = GetConsciousLeader();
   if (leader) return leader;
   if (!m_Group) return null;
   return m_Group.GetLeaderEntity();
@@ -252,6 +252,29 @@ class ACR_Squad : Managed
    if (m_Group) m_Leader = m_Group.GetLeaderEntity();
   }
   return m_Leader;
+ }
+
+ static bool IsConscious(IEntity entity)
+ {
+  if (!ACR_Respawn.IsAlive(entity)) return false;
+  return !ChimeraCharacter.Cast(entity).GetCharacterController().IsUnconscious();
+ }
+
+ // The squad's reference point: the leader, or while an AI leader is knocked out (he
+ // can't walk, so measuring the squad from his body reads as strung out) the first
+ // member who is awake. A player leader stays the reference.
+ IEntity GetConsciousLeader()
+ {
+  IEntity leader = GetLeader();
+  if (!leader || IsConscious(leader) || FindController(leader) || !m_Group) return leader;
+  array<AIAgent> agents = {};
+  m_Group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (IsConscious(body)) return body;
+  }
+  return leader;
  }
 
  bool IsLeader(SCR_PlayerController pc)
@@ -309,7 +332,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
-   if (!body || body.GetCharacterController().IsDead() || FindController(body)) continue;
+   if (!body || !IsConscious(body) || FindController(body)) continue;
    if (!next || body == GetLeader()) next = agent;
   }
   if (next && next != m_Group.GetLeaderAgent()) m_Group.SetNewLeader(next);
@@ -1656,7 +1679,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    IEntity body = agent.GetControlledEntity();
-   if (!body || !ACR_Respawn.IsAlive(body) || ACR_Transport.VehicleOf(body)) continue;
+   if (!body || !IsConscious(body) || ACR_Transport.VehicleOf(body)) continue;
    sum = sum + body.GetOrigin();
    n++;
   }
@@ -1668,7 +1691,7 @@ class ACR_Squad : Managed
  // Living members on foot farther than this from the leader.
  int Stragglers(float radius)
  {
-  IEntity leader = GetLeader();
+  IEntity leader = GetConsciousLeader();
   if (!leader) return 0;
   int count;
   array<AIAgent> agents = {};
@@ -1676,7 +1699,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    IEntity body = agent.GetControlledEntity();
-   if (!body || body == leader || !ACR_Respawn.IsAlive(body) || ACR_Transport.VehicleOf(body)) continue;
+   if (!body || body == leader || !IsConscious(body) || ACR_Transport.VehicleOf(body)) continue;
    if (vector.DistanceXZ(body.GetOrigin(), leader.GetOrigin()) > radius) count++;
   }
   return count;
@@ -1700,9 +1723,10 @@ class ACR_Squad : Managed
   if (!movingOrder) return;
   array<AIWaypoint> waypoints = {};
   m_Group.GetWaypoints(waypoints);
-  IEntity leader = GetLeader();
+  IEntity leader = GetConsciousLeader();
   if (waypoints.IsEmpty() || !leader || vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget) < 200) return;
-  int alive = CountAlive();
+  // The knocked-out can't walk to a regroup point: count only those awake.
+  int alive = CountConscious();
   if (alive < 3) return;
   int behind = Stragglers(STRAGGLER_DISTANCE);
   if (behind * 3 < alive) return;
@@ -2198,6 +2222,16 @@ class ACR_Squad : Managed
   IssueWaypoint(WP_DEFEND, anchor.GetOrigin(), 20);
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
+ }
+
+ int CountConscious()
+ {
+  int awake;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+   if (IsConscious(agent.GetControlledEntity())) awake++;
+  return awake;
  }
 
  int CountAlive()
