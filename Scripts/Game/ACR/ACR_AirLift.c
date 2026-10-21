@@ -66,6 +66,32 @@ class ACR_LandingZone
   return spots.Count();
  }
 
+ // One more spot at least SPACING from those already in spots, within maxRadius of center, with
+ // its own time budget (Jacob 20 Oct: a 9-man squad got one helicopter because one end of the
+ // lift had a single clear spot in the first search). True when one was added.
+ static bool Another(vector center, float maxRadius, notnull array<vector> spots)
+ {
+  int started = System.GetTickCount();
+  for (float ring = 0; ring <= maxRadius && System.GetTickCount() - started <= SEARCH_BUDGET_MS; ring += RING_STEP)
+  {
+   int steps = 1;
+   if (ring > 0) steps = Math.Max(8, (int)(ring * Math.PI2 / 25.0));
+   for (int i = 0; i < steps; i++)
+   {
+    if (System.GetTickCount() - started > SEARCH_BUDGET_MS) return false;
+    float angle = Math.PI2 * i / steps;
+    vector spot = Vector(center[0] + Math.Cos(angle) * ring, 0, center[2] + Math.Sin(angle) * ring);
+    bool apart = true;
+    foreach (vector taken : spots) if (vector.DistanceXZ(taken, spot) < SPACING) apart = false;
+    if (!apart || !Clear(spot)) continue;
+    spot[1] = GetGame().GetWorld().GetSurfaceY(spot[0], spot[2]);
+    spots.Insert(spot);
+    return true;
+   }
+  }
+  return false;
+ }
+
  // Sample the ground separately from obstacles. A continuous box sweep catches narrow
  // trunks, poles and overhanging branches that the old spaced pencil rays missed.
  protected static vector s_vTreeProbe;
@@ -291,6 +317,7 @@ class ACR_AirLift : ACR_SupportRun
  static const float MIN_DISTANCE = 400;     // m: closer than this, walking is about as quick
  static const float PICKUP_SEARCH = 250;    // m round the squad for a clear landing spot
  static const float DROP_SEARCH = 200;      // m round the clicked point
+ static const float SECOND_SPOT_SEARCH = 300; // m round the first spot when a second helicopter has none
  static const float BOARD_RANGE = 8;        // m: a soldier this close climbs in
  static const float NEAR_RANGE = 40;        // m: placed in after NEAR_BOARD_MS on the ground
  static const float FORCE_RANGE = 400;      // m: placed in after FORCE_BOARD_MS
@@ -422,7 +449,14 @@ class ACR_AirLift : ACR_SupportRun
   ResourceName prefab = supports.TransportHelicopterFor(m_sFaction);
   if (!SpawnHeli(supports, prefab, 0, now)) return false;
   int seats = m_Helis[0].CargoSeats();
-  if (seats < Alive(m_Squad) && m_Pickups.Count() > 1 && m_Drops.Count() > 1) SpawnHeli(supports, prefab, 1, now);
+  if (seats < Alive(m_Squad))
+  {
+   // A second helicopter needs its own spot at both ends: look wider round the first one.
+   if (m_Pickups.Count() < 2) ACR_LandingZone.Another(m_Pickups[0], SECOND_SPOT_SEARCH, m_Pickups);
+   if (m_Drops.Count() < 2) ACR_LandingZone.Another(m_Drops[0], SECOND_SPOT_SEARCH, m_Drops);
+   if (m_Pickups.Count() > 1 && m_Drops.Count() > 1) SpawnHeli(supports, prefab, 1, now);
+   if (m_Helis.Count() < 2) PrintFormat("[ACR] AIRLIFT %1: no second helicopter (pickup spots %2, drop spots %3)", m_sSquadName, m_Pickups.Count(), m_Drops.Count());
+  }
   PrintFormat("[ACR] AIRLIFT %1: %2 cargo seats per helicopter, %3 helicopter(s)", m_sSquadName, seats, m_Helis.Count());
   return true;
  }

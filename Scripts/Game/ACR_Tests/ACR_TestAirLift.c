@@ -164,6 +164,35 @@ class ACR_TestAirLift
   foreach (IEntity crewman : s_Crew) if (crewman) left++;
   ACR_TestRegress.Check("airlift: helicopters and crews gone afterwards", left == 0 && s_Helis.Count() > 0, string.Format("%1 of %2 helicopters/crew left", left, s_Helis.Count() + s_Crew.Count()));
   ACR_TestRegress.Check("airlift: rotors and drivetrain undamaged throughout", s_fMaxDamage < 0.01, s_fMaxDamage.ToString());
-  ACR_TestRegress.Complete("airlift", CHECKS);
+  int expected = CHECKS;
+  if (System.IsCLIParam("acrAirLiftTwoTest")) expected += 3;
+  ACR_TestRegress.Complete("airlift", expected);
+ }
+}
+
+// Reproduce a first search that found only one real landing spot at each end.
+// The production fallback must find both missing spots and then fly the squad.
+modded class ACR_AirLift
+{
+ override bool Begin(ACR_Supports supports, float now)
+ {
+  if (!System.IsCLIParam("acrAirLiftTwoTest")) return super.Begin(supports, now);
+  while (m_Pickups.Count() > 1) m_Pickups.RemoveOrdered(1);
+  while (m_Drops.Count() > 1) m_Drops.RemoveOrdered(1);
+  ACR_TestRegress.Check("airlift: fallback starts with one spot at both ends", m_Pickups.Count() == 1 && m_Drops.Count() == 1, "native first spots retained");
+  array<vector> confined = {m_Pickups[0]};
+  bool added = ACR_LandingZone.Another(m_Pickups[0], 0, confined);
+  ACR_TestRegress.Check("airlift: fallback refuses overlapping spots", !added && confined.Count() == 1, "zero-radius search cannot fit another rotor disk");
+  bool begun = super.Begin(supports, now);
+  bool safe = begun && m_Pickups.Count() == 2 && m_Drops.Count() == 2 && m_Helis.Count() == 2;
+  if (safe)
+  {
+   float pickupGap = vector.DistanceXZ(m_Pickups[0], m_Pickups[1]);
+   float dropGap = vector.DistanceXZ(m_Drops[0], m_Drops[1]);
+   safe = pickupGap >= ACR_LandingZone.SPACING && pickupGap <= SECOND_SPOT_SEARCH && dropGap >= ACR_LandingZone.SPACING && dropGap <= SECOND_SPOT_SEARCH;
+   safe = safe && ACR_LandingZone.Clear(m_Pickups[1]) && ACR_LandingZone.Clear(m_Drops[1]);
+  }
+  ACR_TestRegress.Check("airlift: fallback supplies two safe spaced landing pairs", safe, string.Format("pickups=%1 drops=%2 carriers=%3", m_Pickups.Count(), m_Drops.Count(), m_Helis.Count()));
+  return begun;
  }
 }
