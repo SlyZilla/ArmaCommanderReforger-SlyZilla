@@ -30,8 +30,8 @@ Take the fight forward. Build a base behind your advance, keep it supplied and d
 
 - Air lifts search farther for a second landing spot when a squad needs two helicopters. Helicopters bank through turns and change pitch more smoothly; landing checks no longer treat nearby soldiers as rotor-blocking obstacles.
 - Improved gunner-drive hill starts and recovery from stalled or unreachable vehicle orders.
-- Vehicle gunners keep fighting when their driver is lost: a stopped vehicle with a working, loaded gun keeps its gunner, and only passengers get out. Fixes soldiers climbing onto a parked vehicle's gun and straight back out, and crews abandoning working armed vehicles.
-- Fixed FOB upgrades being invisible to joined players, destroyed antennas blocking relay replacement, overlapping construction wasting supplies and headquarters spawning over the construction truck. Blocked completions refund reserved supplies. Building or removing FOB structures now requests a local pathfinding update.
+- Gunners stay on a stopped vehicle's working, loaded gun when its driver is lost under fire; passenger squads can still dismount. Fixed soldiers repeatedly mounting and abandoning parked guns.
+- Fixed FOB upgrades being invisible to joined players, destroyed antennas blocking relay replacement, overlapping construction wasting supplies and headquarters spawning over the construction truck. Blocked completions refund reserved supplies. FOB construction and removal now update nearby AI navigation.
 - Planted demolition fuses survive command handovers and cancelled attack plans.
 - Squads use an awake soldier as their reference when the leader is unconscious. Unconscious soldiers no longer hold, contest or spot bases, or block FOB construction. Fixed reserve squads repeatedly abandoning their regroup order.
 - LAV commander positions count as crew and stay aboard during passenger dismounts. RHS rifles with folded backup sights now raise them when no optic is fitted.
