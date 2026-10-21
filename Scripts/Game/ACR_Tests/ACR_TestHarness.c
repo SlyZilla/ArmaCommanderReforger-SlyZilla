@@ -59,6 +59,7 @@ class ACR_TestHarness : Managed
  static const int MODE_FLANK = 47;
  static const int MODE_AIRLIFT = 48;
  static const int MODE_ATTACKPLAN = 49;
+ static const int MODE_DRIVELESSGUN = 50;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -112,6 +113,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrOrganTest", flag)) mode = MODE_ORGAN;
   if (System.GetCLIParam("acrFlankTest", flag)) mode = MODE_FLANK;
   if (System.GetCLIParam("acrAttackPlanTest", flag)) mode = MODE_ATTACKPLAN;
+  if (System.GetCLIParam("acrDrivelessGunTest", flag)) mode = MODE_DRIVELESSGUN;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -218,6 +220,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_ORGAN) { ACR_TestOrgan.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FLANK) { ACR_TestFlank.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ATTACKPLAN) { ACR_TestAttackPlan.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_DRIVELESSGUN) { ACR_TestDrivelessGun.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

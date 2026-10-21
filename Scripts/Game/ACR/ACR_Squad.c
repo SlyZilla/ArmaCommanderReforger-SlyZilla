@@ -1807,6 +1807,24 @@ class ACR_Squad : Managed
   return false;
  }
 
+ protected IEntity m_DriverlessGun;
+
+ // A living squad member in a turret of this vehicle whose gun still has ammunition.
+ bool HasArmedGunner(IEntity vehicle)
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!body || !ACR_Respawn.IsAlive(body) || body.GetCharacterController().IsUnconscious()) continue;
+   if (ACR_Transport.VehicleOf(body) != vehicle || ACR_Transport.SeatOf(body) != ECompartmentType.TURRET) continue;
+   CompartmentAccessComponent access = body.GetCompartmentAccessComponent();
+   if (access && BBB_VehicleHelpers.TurretHasAmmo(access.GetCompartment())) return true;
+  }
+  return false;
+ }
+
  static bool HasTurret(IEntity vehicle)
  {
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
@@ -1881,10 +1899,30 @@ class ACR_Squad : Managed
   {
    if (speed < 2.0)
    {
+    // A gunner with ammo keeps a stopped gun in the fight (20 Oct Everon: a man on a
+    // parked HMMWV M2 was pulled out every second, BTR and M1025 crews abandoned
+    // working guns when the driver fell). Only other squads riding along get out.
+    if (HasArmedGunner(vehicle))
+    {
+     if (m_DriverlessGun != vehicle)
+     {
+      m_DriverlessGun = vehicle;
+      PrintFormat("[ACR] DRIVE %1: no driver under fire, gunner keeps fighting", m_Name);
+     }
+     if (manager)
+     {
+      array<ACR_Squad> cargo = {};
+      ACR_Transport.PassengerSquads(manager, vehicle, cargo);
+      foreach (ACR_Squad rider : cargo)
+       if (rider != this && !rider.HasPlayer() && rider.OrderState() != ACR_EOrderState.DISMOUNT) rider.DismountNow();
+     }
+     return;
+    }
     Bail(vehicle, "driver lost under fire", true);
     return;
    }
   }
+  m_DriverlessGun = null;
 
   bool eligible = driver != null && ACR_Respawn.IsAlive(driver) && IsMember(driver) && FindController(driver) == 0;
   if (eligible && manager && manager.IsGunnerDriven(vehicle)) eligible = false;
