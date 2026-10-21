@@ -266,7 +266,7 @@ class ACR_FobDefences : Managed
 		if (!piece) return;
 		SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(piece.FindComponent(SCR_CampaignBuildingCompositionComponent));
 		if (comp) ACR_Structures.s_Registered.RemoveItem(comp);
-		SCR_EntityHelper.DeleteEntityAndChildren(piece);
+		ACR_Navmesh.DeleteStructure(piece);
 	}
 
 	static void Clear(ACR_FobSlot slot)

@@ -133,11 +133,18 @@ class ACR_TestFobDefences
 		bool locked = ACR_FobSlots.OrderUpgradeBase(manager, key, s_Fob, ACR_FobSlots.SLOT_HOSPITAL, lockWhy) == "" && lockWhy.Contains("Already building");
 		ACR_TestRegress.Check("fobdefences: a building slot waits while defences are built", locked, lockWhy);
 
+		int queuedBefore = ACR_Navmesh.s_iQueued;
 		bool built = Finish(manager);
 		bool posts = PieceIs(0, "sandbagposition") && PieceIs(3, "sandbagposition") && !s_Fob.m_FobDefences.m_aPieces[4];
 		ACR_Structure record = manager.m_Structures.Find(defences.m_aPieces[0]);
 		bool registered = record && record.m_eKind == ACR_EStructure.DEFENCES && record.m_sFaction == key;
 		ACR_TestRegress.Check("fobdefences: Defences I places 4 sandbag positions, registered for its side", built && posts && ACR_FobDefences.Standing(defences) == 4 && registered && ACR_FobSlots.FeedState(s_Fob, ACR_FobSlots.SLOT_DEFENCES) == 300, string.Format("built=%1 standing=%2 registered=%3", built, ACR_FobDefences.Standing(defences), registered));
+
+		array<ref Tuple2<vector, vector>> areas = {};
+		array<bool> redoRoads = {};
+		bool onLayer = defences.m_aPieces[0] && ACR_Navmesh.Collect(defences.m_aPieces[0], areas, redoRoads);
+		int queued = ACR_Navmesh.s_iQueued - queuedBefore;
+		ACR_TestRegress.Check("fobdefences: placed pieces queue a navmesh rebuild round their bounds", onLayer && queued >= 4, string.Format("areas=%1 queued=%2", areas.Count(), queued));
 
 		float yawDelta = Math.AbsFloat(defences.m_aPieces[1].GetYawPitchRoll()[0] - ACR_FobDefences.SpotYaw(1));
 		ACR_TestRegress.Check("fobdefences: pieces face outwards", yawDelta < 1 || yawDelta > 359, yawDelta.ToString());

@@ -730,7 +730,7 @@ class ACR_FobSlots : Managed
 				{
 					SCR_CampaignBuildingCompositionComponent lostComp = SCR_CampaignBuildingCompositionComponent.Cast(slot.m_Entity.FindComponent(SCR_CampaignBuildingCompositionComponent));
 					if (lostComp) ACR_Structures.s_Registered.RemoveItem(lostComp);
-					SCR_EntityHelper.DeleteEntityAndChildren(slot.m_Entity);
+					ACR_Navmesh.DeleteStructure(slot.m_Entity);
 				}
 				ResetSlot(slot);
 				continue;
@@ -835,7 +835,7 @@ class ACR_FobSlots : Managed
 		{
 			SCR_CampaignBuildingCompositionComponent oldComp = SCR_CampaignBuildingCompositionComponent.Cast(slot.m_Entity.FindComponent(SCR_CampaignBuildingCompositionComponent));
 			if (oldComp) ACR_Structures.s_Registered.RemoveItem(oldComp);
-			SCR_EntityHelper.DeleteEntityAndChildren(slot.m_Entity);
+			ACR_Navmesh.DeleteStructure(slot.m_Entity);
 			slot.m_Entity = null;
 		}
 
@@ -872,6 +872,7 @@ class ACR_FobSlots : Managed
 			comp.ACR_MarkBuildCharged();
 			comp.ACR_SetCompositionSpawned(true);
 		}
+		ACR_Navmesh.RebuildAfterSpawn(ent);
 		return ent;
 	}
 
@@ -984,7 +985,7 @@ class ACR_FobSlots : Managed
 			{
 				SCR_CampaignBuildingCompositionComponent oldComp = SCR_CampaignBuildingCompositionComponent.Cast(slot.m_Entity.FindComponent(SCR_CampaignBuildingCompositionComponent));
 				if (oldComp) ACR_Structures.s_Registered.RemoveItem(oldComp);
-				SCR_EntityHelper.DeleteEntityAndChildren(slot.m_Entity);
+				ACR_Navmesh.DeleteStructure(slot.m_Entity);
 				slot.m_Entity = null;
 			}
 			ResetSlot(slot);

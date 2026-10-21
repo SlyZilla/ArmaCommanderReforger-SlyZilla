@@ -101,6 +101,7 @@ modded class SCR_CampaignBuildingCompositionComponent
 
 	void ACR_OnCompositionSpawned(bool spawned)
 	{
+		if (spawned && !m_bACRBuildRejected && Replication.IsServer()) ACR_Navmesh.RebuildAfterSpawn(GetOwner());
 		if (!spawned || m_bACRBuildCharged || m_bACRBuildRejected || !Replication.IsServer()) return;
 		if (GetProviderEntity() && ACR_FobProviderComponent.Cast(GetProviderEntity().FindComponent(ACR_FobProviderComponent)))
 		{
@@ -299,7 +300,7 @@ class ACR_Structures : Managed
    PrintFormat("[ACR] STRUCTURE %1 %2 at %3 destroyed", wreck.m_sFaction, KindName(wreck.m_eKind), wreck.m_vPos);
    IEntity wreckRoot = wreck.m_Entity;
    wreck.m_Entity = null;
-   SCR_EntityHelper.DeleteEntityAndChildren(wreckRoot);
+   ACR_Navmesh.DeleteStructure(wreckRoot);
   }
   // Gone (dismantled, destroyed): undo.
   for (int i = m_Active.Count() - 1; i >= 0; i--)
