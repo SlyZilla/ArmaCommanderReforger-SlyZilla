@@ -61,6 +61,28 @@ class GuardTests(unittest.TestCase):
         write_json(self.console.pointer(mod), {'candidate': str(parent)})
         return parent
 
+    def test_bbb_runtime_tree_ships_without_test_fixtures(self):
+        runtime = self.bbb / 'Prefabs/BBB/FireHandheldFlare.bt'
+        runtime.parent.mkdir(parents=True, exist_ok=True)
+        runtime.write_text('BehaviorTree { Name "handheld flare fixture" }\n')
+        meta = Path(str(runtime) + '.meta')
+        meta.write_text('MetaFileClass { Name "{BBB0F1A200000001}Prefabs/BBB/FireHandheldFlare.bt" }\n')
+        test_script = self.bbb / 'Scripts/Game/BBB_Tests/BBB_FlareTest.c'
+        test_script.parent.mkdir(parents=True, exist_ok=True)
+        test_script.write_text('class BBB_FlareTest {}\n')
+        test_prefab = self.bbb / 'Prefabs/BBB_Tests/FlareFixture.et'
+        test_prefab.parent.mkdir(parents=True, exist_ok=True)
+        test_prefab.write_text('GenericEntity {}\n')
+        changelog = self.bbb / 'CHANGELOG.md'
+        changelog.write_text(changelog.read_text() + '- Reviewed flare fixture.\n')
+        self.commit(self.bbb)
+        parent = self.console.stage('BBB')
+        payload = parent / SPECS['BBB']['folder']
+        self.assertEqual((payload / runtime.relative_to(self.bbb)).read_bytes(), runtime.read_bytes())
+        self.assertEqual((payload / meta.relative_to(self.bbb)).read_bytes(), meta.read_bytes())
+        self.assertFalse((payload / test_script.relative_to(self.bbb)).exists())
+        self.assertFalse((payload / test_prefab.relative_to(self.bbb)).exists())
+
     def test_fresh_candidate_and_unique_rebuild(self):
         first = self.mark_checked('BBB')
         self.assertEqual(first, self.console.checked('BBB'))

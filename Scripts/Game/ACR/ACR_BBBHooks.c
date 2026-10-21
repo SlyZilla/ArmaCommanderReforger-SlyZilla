@@ -66,6 +66,16 @@ class ACR_BBBHooks : BBB_Hooks
   return SquadOf(group) != null;
  }
 
+ // Illumination is allowed for autonomous combat squads, never player command,
+ // quiet travel, transport, regroup or a host-owned flanking maneuver.
+ override bool AllowFlares(SCR_AIGroup group)
+ {
+  ACR_Squad squad = SquadOf(group);
+  if (!squad) return true;
+  if (squad.m_Commander != 0 || squad.m_Mode != ACR_EMoveMode.COMBAT || squad.m_CombatFlank.Active()) return false;
+  ACR_EOrderState state = squad.OrderState();
+  return state == ACR_EOrderState.DEFEND || state == ACR_EOrderState.ASSAULT || state == ACR_EOrderState.SUPPRESS || state == ACR_EOrderState.HUNT;
+ }
  override bool AllowMorale(SCR_AIGroup group)
  {
   return SquadOf(group) == null;
