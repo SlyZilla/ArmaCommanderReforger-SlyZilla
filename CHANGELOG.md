@@ -2,41 +2,43 @@
 
 ## 0.5.6 — unreleased
 
-### Forward bases (FOBs)
+Take the fight forward. Build a base behind your advance, keep it supplied and defend it against an AI commander that can build, reinforce and raid too.
 
-- Engineers can establish forward bases: select a squad with a construction truck carrying 500 supplies, choose Establish FOB and right-click a clear site. The site check covers the headquarters and the upgrade spots around it, and searches up to 50 m for a better spot. Building takes 90 seconds with the squad on site. Cancelling refunds the supplies to the truck; losing the truck loses them. Builders keep fighting while they work, and give up with a refund after three minutes without progress.
-- A built FOB has eight upgrade spots around its headquarters: field hospital, maintenance (light, then heavy), ammo storage, fuel storage, helipad, radio relay, barracks (small, then large) and supply depot. Order upgrades from the FOB panel. They cost the FOB's own supplies and finish faster with engineers nearby. Work pauses while the FOB is contested. Vehicles parked on a finished spot hold it until they move.
-- FOBs can be fortified with a separate Defences upgrade in the FOB panel, in three tiers: sandbag positions (400 supplies), then machine-gun nests (255), then bunkers and guard towers in place of the sandbags (680). The positions stand round the edge of the FOB, facing out. A blocked position is skipped. The defences are lost only when every position is gone, and change hands when the FOB is captured. The AI commander builds them too. AI defenders man the machine guns only when Better Battle Buddies' static weapons option is on.
-- Each upgrade spot is checked on its own. A blocked spot shows as blocked in the panel, and a matching building already inside the FOB counts as that upgrade.
-- FIA heavy maintenance and large barracks keep the small buildings (FIA has no larger models) but give the full upgrade effect.
-- The AI commander now builds FOBs when its front is far from a deployment base, upgrades them, orders supplies while keeping an RP reserve, and rebuilds lost headquarters.
-- AI sappers can raid enemy FOBs. Once no defender is within 30 m of the headquarters, a sapper crouches, sets a real demolition charge with the game's own animations, wires it to his blasting machine and falls back, then fires it 45 seconds later. Defenders can disarm the charge with the normal Disarm action; AI defenders are sent to stand at it. The blast destroys only the headquarters.
-- A destroyed FOB headquarters cooks off: a heavy blast follows the charge, then several smaller secondary explosions round the tent over the next few seconds. Stay clear: the main blast is lethal close in and wounds out to about 30 m. AI sappers wait until their squad is 35 m away before firing.
-- Players can destroy an enemy FOB headquarters too: any M112 or TSh-400 charge that goes off within 10 m of it does the job, on a timer or a detonator.
-- Dismantling an enemy FOB headquarters with a shovel now needs the FOB contested and no defenders within 30 m.
-- A FOB whose headquarters is destroyed goes offline: no deployment, reinforcement, services, deliveries or upgrades. Its buildings remain, and can be captured with the FOB. An Establish FOB order inside it rebuilds the headquarters and brings it back online.
-- Capturing a FOB now transfers its buildings and upgrades to the new owner.
+### Build, supply and defend
 
-### AI commander
+- Establish FOB turns a squad with a construction truck and 500 supplies into a forward-base builder. Pick a clear site on the map and keep the squad there for the 90-second build. Cancelling refunds the reserved supplies; losing the truck loses them. Stalled construction gives up with a refund after three minutes without progress.
+- Develop each FOB through eight upgrade spots: hospital, maintenance, ammo, fuel, helipad, radio relay, barracks and supply depot. Maintenance and barracks have two tiers. Upgrades use the FOB's supplies, build faster with engineers nearby and pause while contested. Parked vehicles must clear a finished building's spot before it appears.
+- Fortify the perimeter through three Defences tiers: sandbags, machine-gun nests, then bunkers and guard towers. Blocked positions are skipped. Barracks send part of the garrison on perimeter patrols, and eligible AI defenders can man the guns when BBB static weapons are enabled.
+- Blocked upgrade spots are identified individually, and matching buildings already inside the FOB count toward its upgrades. FIA keeps its smaller maintenance and barracks models at the higher tier, with the full upgrade effect.
+- The AI commander establishes FOBs near a distant front, develops and resupplies them while keeping an RP reserve, deploys from suitable forward bases and rebuilds lost headquarters.
 
-- AI attacks now keep a base of fire. Its squad no longer joins the assault just because nobody has been seen at the objective yet: it holds a spot in range with a clear line of fire, shoots only at enemies its men actually see, and suppresses only enemies its side has spotted.
-- AI attacks come in from several directions. Each squad forms up on its own approach line, even squads that all arrive along the same road, so an attack no longer funnels down one route.
-- The AI commits its attacking force together instead of feeding squads in a few at a time. Squads still on their way hold the assault back for a little while, and squads far off no longer walk into an assault one after another.
-- AI defence in depth: when an attack on an AI base is spotted, part of the defence moves out 100 to 300 m towards it, into buildings where there are any, while the rest hold the base as a reserve. The forward squads fall back to the base when the enemy gets too close, when they are badly hurt, or when the threat has passed.
+### Raid, capture or rebuild
 
-### Fixes
+- AI sappers can plant a real demolition charge at an undefended enemy FOB headquarters, withdraw and detonate it after 45 seconds. Defenders can use the normal Disarm action; AI defenders are sent to the charge too.
+- Players can destroy an enemy headquarters with an M112 or TSh-400 detonated within 10 m. Shovel dismantling requires the FOB to be contested with no defenders within 30 m.
+- A destroyed headquarters cooks off with a heavy blast and secondary explosions. Stay clear: the main blast is lethal nearby and can wound out to about 30 m. AI sappers wait for their squad to get clear before firing.
+- Losing headquarters takes the FOB offline: deployment, reinforcement, services, deliveries and upgrades stop. Surviving buildings remain and transfer with a captured FOB. Establish FOB inside a friendly offline base rebuilds its headquarters.
 
-- Fixed FOB upgrades being invisible to joined players and destroyed radio antennas blocking replacement through the upgrade panel.
-- Prevented overlapping FOB construction orders from wasting truck supplies; blocked construction now refunds its reserved cargo.
-- Planted demolition charges keep their fuse when command changes hands or their attack plan ends.
-- Fixed the headquarters spawning on top of the construction truck; trucks now park clear of the base layout.
-- The AI commander no longer buys repeated construction trucks while one is already on its way.
-- Buildings without a side no longer repeat a log message every two seconds.
-- Squads whose leader is knocked out no longer stop over and over to regroup round his body: an awake soldier becomes the squad's reference point, and the unconscious no longer count as stragglers.
+### A more coordinated opponent
+
+- Attacks keep a base of fire in overwatch even before enemies are spotted at the objective. It fires at seen enemies and suppresses reported contacts instead of shooting at an empty objective centre.
+- Assault squads form up on separate approach lines and commit together, giving nearby reinforcements time to arrive. Distant latecomers no longer trickle into an assault already under way; specialist support teams stay out of the assault force.
+- Threatened AI bases defend in depth: some defenders move 100-300 m toward a spotted attack while others stay in reserve. Forward squads fall back when overrun, badly hurt or no longer needed.
+- Improved AI purchasing and reinforcement decisions, including saving for complete units and avoiding repeated construction-truck purchases.
+
+### Transport and fixes
+
+- Air lifts search farther for a second landing spot when a squad needs two helicopters. Helicopters bank through turns and change pitch more smoothly; landing checks no longer treat nearby soldiers as rotor-blocking obstacles.
+- Improved gunner-drive hill starts and recovery from stalled or unreachable vehicle orders.
+- Vehicle gunners keep fighting when their driver is lost: a stopped vehicle with a working, loaded gun keeps its gunner, and only passengers get out. Fixes soldiers climbing onto a parked vehicle's gun and straight back out, and crews abandoning working armed vehicles.
+- Fixed FOB upgrades being invisible to joined players, destroyed antennas blocking relay replacement, overlapping construction wasting supplies and headquarters spawning over the construction truck. Blocked completions refund reserved supplies. Building or removing FOB structures now requests a local pathfinding update.
+- Planted demolition fuses survive command handovers and cancelled attack plans.
+- Squads use an awake soldier as their reference when the leader is unconscious. Unconscious soldiers no longer hold, contest or spot bases, or block FOB construction. Fixed reserve squads repeatedly abandoning their regroup order.
+- LAV commander positions count as crew and stay aboard during passenger dismounts. RHS rifles with folded backup sights now raise them when no optic is fitted.
 
 ### Feedback
 
-- Bugs and ideas can now be reported on Discord (discord.gg/WK8xGSztB): #issues for bugs, #suggestions for ideas, no GitHub account needed. The match setup screen links it too. GitHub Issues remain available.
+- Report bugs in #issues and ideas in #suggestions on Discord: https://discord.gg/WK8xGSztB. The match setup screen links there too; GitHub Issues remain available.
 
 ## 0.5.5 — released
 
