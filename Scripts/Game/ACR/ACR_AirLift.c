@@ -219,7 +219,7 @@ class ACR_LiftHeli : ACR_HeliRun
   }
   vector dir = flat.Normalized();
   float want = Math.Atan2(dir[0], dir[2]) * Math.RAD2DEG;
-  m_fYaw = Wrap(m_fYaw + Math.Clamp(Wrap(want - m_fYaw), -24 * dt, 24 * dt));
+  TurnToward(want, 24, dt);
   m_fBodyYaw = m_fYaw;
   vector forward = Heading(m_fYaw);
   float wantedY = FlightClearance(forward, ALT_TRANSIT + m_iStack * STACK_STEP, now);
@@ -239,7 +239,7 @@ class ACR_LiftHeli : ACR_HeliRun
   GuardFlightMove(previous);
   vector velocity = vector.Zero;
   if (dt > 0) velocity = (m_Pos - previous) * (1 / dt);
-  Place(velocity, -Math.Clamp(m_fSpeed * 0.1, 0, 6), 0);
+  Fly(velocity, dt);
   return true;
  }
 

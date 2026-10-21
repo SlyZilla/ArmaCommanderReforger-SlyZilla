@@ -615,6 +615,7 @@ class ACR_HeliRun : ACR_SupportRun
  ResourceName m_Rocket;
  int m_iRockets;
  float m_fNextRocket;
+ float m_fDiveUntil;  // nose held down a little while firing rockets
  int m_iSalvoLeft;          // loiter: rockets still to fire in the current salvo
  vector m_SalvoAim;
  int m_iPhase;       // 0 inbound, 1 on station, 2 outbound
@@ -719,12 +720,12 @@ class ACR_HeliRun : ACR_SupportRun
   if (m_Pos[1] - ground < 3) rise = LIFT_RATE * 0.5;
   m_Pos[1] = m_Pos[1] + rise * dt;
   float wantYaw = Math.Atan2(m_Dir[0], m_Dir[2]) * Math.RAD2DEG;
-  m_fYaw = Wrap(m_fYaw + Math.Clamp(Wrap(wantYaw - m_fYaw), -15 * dt, 15 * dt));
+  TurnToward(wantYaw, 15, dt);
   m_fBodyYaw = m_fYaw;
   GuardFlightMove(previous, true);
   vector velocity = vector.Zero;
   if (dt > 0) velocity = (m_Pos - previous) * (1 / dt);
-  Place(velocity, 0, 0);
+  Fly(velocity, dt);
   if (m_Pos[1] - ground >= LIFT_HEIGHT)
   {
    m_bLifting = false;
@@ -750,6 +751,53 @@ class ACR_HeliRun : ACR_SupportRun
   }
  }
 
+ // Attitude from the motion itself (Jacob 20 Oct: forward flight twitched, turns had no bank):
+ // nose down to speed up and at cruise, nose up to brake, banked by the turn's sideways
+ // acceleration. Eased and rate-limited, so it never snaps from one frame to the next.
+ static const float MAX_BANK = 28;
+ static const float BANK_RATE = 20;   // deg/s
+ static const float PITCH_RATE = 12;  // deg/s
+ float m_fPitch;
+ protected vector m_vLastVelocity;
+ protected vector m_vAccel;           // smoothed horizontal acceleration
+ protected float m_fYawRate;          // deg/s the track is turning
+
+ protected void Fly(vector velocity, float dt, float pitchBias = 0)
+ {
+  if (dt > 0)
+  {
+   vector raw = (velocity - m_vLastVelocity) * (1 / dt);
+   raw[1] = 0;
+   m_vAccel = m_vAccel + (raw - m_vAccel) * Math.Min(1, dt * 3);
+  }
+  m_vLastVelocity = velocity;
+  vector nose = Heading(m_fBodyYaw);
+  vector right = Vector(nose[2], 0, -nose[0]);
+  float cruise = Math.Clamp(vector.Dot(velocity, nose) * 0.08, -2, 5);
+  float wantPitch = pitchBias - cruise - Math.Atan2(vector.Dot(m_vAccel, nose) * 0.6, 9.81) * Math.RAD2DEG;
+  float wantRoll = -Math.Atan2(vector.Dot(m_vAccel, right), 9.81) * Math.RAD2DEG;
+  m_fPitch = Ease(m_fPitch, Math.Clamp(wantPitch, -14, 12), PITCH_RATE, dt);
+  m_fRoll = Ease(m_fRoll, Math.Clamp(wantRoll, -MAX_BANK, MAX_BANK), BANK_RATE, dt);
+  Place(velocity, m_fPitch, m_fRoll);
+ }
+
+ static float Ease(float value, float wanted, float maxRate, float dt)
+ {
+  float step = (wanted - value) * Math.Min(1, dt * 2.5);
+  return value + Math.Clamp(step, -maxRate * dt, maxRate * dt);
+ }
+
+ // Turns the track toward wantYaw; the turn rate builds up and eases off instead of
+ // switching between full rate and none.
+ protected void TurnToward(float wantYaw, float maxRate, float dt)
+ {
+  float delta = Wrap(wantYaw - m_fYaw);
+  m_fYawRate += (Math.Clamp(delta * 1.5, -maxRate, maxRate) - m_fYawRate) * Math.Min(1, dt * 3);
+  float turn = m_fYawRate * dt;
+  if (turn * delta > 0 && Math.AbsFloat(turn) > Math.AbsFloat(delta)) turn = delta;
+  m_fYaw = Wrap(m_fYaw + turn);
+ }
+
  // Back to the pad: slows down on the way in, hovers over the pad and sets down.
  protected bool FlyHome(ACR_Supports supports, float dt, float now)
  {
@@ -770,7 +818,7 @@ class ACR_HeliRun : ACR_SupportRun
   if (d > 0.01) toPad = flat.Normalized();
   float padYaw = Math.Atan2(toPad[0], toPad[2]) * Math.RAD2DEG;
   float delta = Wrap(padYaw - m_fYaw);
-  if (d > 3) m_fYaw = Wrap(m_fYaw + Math.Clamp(delta, -24 * dt, 24 * dt));
+  if (d > 3) TurnToward(padYaw, 24, dt);
   m_fBodyYaw = Wrap(m_fBodyYaw + Math.Clamp(Wrap(m_fYaw - m_fBodyYaw), -40 * dt, 40 * dt));
   // Slower near the pad, and while still turning toward it (no circling round it).
   float facing = Math.Max(0.2, Math.Cos(Math.Min(Math.AbsFloat(delta), 90) * Math.DEG2RAD));
@@ -784,7 +832,6 @@ class ACR_HeliRun : ACR_SupportRun
   }
   // Brake early enough to stop with a bounded deceleration.
   wanted = Math.Min(wanted, Math.Sqrt(FLIGHT_BRAKE * 2 * d));
-  float before = m_fSpeed;
   m_fSpeed = ApproachSpeed(m_fSpeed, wanted, dt);
   vector previous = m_Pos;
   vector move;
@@ -823,12 +870,9 @@ class ACR_HeliRun : ACR_SupportRun
    if (away != vector.Zero) m_Pos = m_Pos + away * (2 * dt);
   }
   GuardFlightMove(previous, d < 1);
-  float pitch = -Math.Clamp(m_fSpeed * 0.1, 0, 6);
-  if (m_fSpeed < before - 0.05 && m_fSpeed > 3) pitch = 5; // flaring
-  m_fRoll += (0 - m_fRoll) * Math.Min(1, dt * 2);
   vector velocity = vector.Zero;
   if (dt > 0) velocity = (m_Pos - previous) * (1 / dt);
-  Place(velocity, pitch, m_fRoll);
+  Fly(velocity, dt);
   if (now >= m_fNextAltLog)
   {
    m_fNextAltLog = now + 5000;
@@ -1178,15 +1222,8 @@ class ACR_HeliRun : ACR_SupportRun
   vector away = Separation(supports);
   if (away != vector.Zero) desired = (desired + away).Normalized();
 
-  // Track: turn toward the desired heading at a helicopter-like rate, banking into it.
-  float desiredYaw = Math.Atan2(desired[0], desired[2]) * Math.RAD2DEG;
-  float delta = Wrap(desiredYaw - m_fYaw);
-  float maxTurn = 24 * dt;
-  float turn = Math.Clamp(delta, -maxTurn, maxTurn);
-  m_fYaw = Wrap(m_fYaw + turn);
-  float yawRate = 0;
-  if (dt > 0) yawRate = turn / dt;
-  m_fRoll += (Math.Clamp(-yawRate * 1.2, -25, 25) - m_fRoll) * Math.Min(1, dt * 2);
+  // Track: turn toward the desired heading at a helicopter-like rate (Fly banks into it).
+  TurnToward(Math.Atan2(desired[0], desired[2]) * Math.RAD2DEG, 24, dt);
   // Body: the nose follows the track plus the pylon-turn offset.
   float bodyDelta = Wrap(m_fYaw + bodyOffset - m_fBodyYaw);
   m_fBodyYaw = Wrap(m_fBodyYaw + Math.Clamp(bodyDelta, -40 * dt, 40 * dt));
@@ -1211,7 +1248,9 @@ class ACR_HeliRun : ACR_SupportRun
   m_Pos[1] = previous[1] + m_fClimb * dt;
   float floorY = SafeAltitude(m_Pos, forward, 20);
   if (m_Pos[1] < floorY) { m_Pos[1] = previous[1] + Math.Min(floorY - previous[1], 20 * dt); m_fClimb = Math.Max(m_fClimb, 0); }
-  float pitch = -4 + Math.Clamp(m_fClimb * 0.25, -3, 3);
+  // Fly adds cruise and acceleration pitch; this is the climb and the rocket dive.
+  float pitch = Math.Clamp(m_fClimb * 0.2, -2, 2);
+  if (now < m_fDiveUntil) pitch -= 4;
   if (now >= m_fNextAltLog)
   {
    m_fNextAltLog = now + 5000;
@@ -1243,7 +1282,6 @@ class ACR_HeliRun : ACR_SupportRun
      m_bAimedAtEnemy = runTarget != null;
      if (runTarget) aim = runTarget.GetOrigin() + Vector(Math.RandomFloat(-6, 6), 1, Math.RandomFloat(-6, 6));
      else aim = m_Target + Vector(Math.RandomFloat(-RUN_SPREAD, RUN_SPREAD), 3, Math.RandomFloat(-RUN_SPREAD, RUN_SPREAD));
-     pitch = -8;
     }
    }
    else if (m_iSalvoLeft > 0)
@@ -1251,7 +1289,6 @@ class ACR_HeliRun : ACR_SupportRun
     // A salvo, once started, is fired complete at the same spot (no odd pair of rockets).
     shoot = true;
     aim = m_SalvoAim + Vector(Math.RandomFloat(-8, 8), 0, Math.RandomFloat(-8, 8));
-    pitch = -8;
    }
    else if (m_iPhase == 1)
    {
@@ -1263,7 +1300,6 @@ class ACR_HeliRun : ACR_SupportRun
     if (enemy) aim = enemy.GetOrigin() + Vector(Math.RandomFloat(-6, 6), 2, Math.RandomFloat(-6, 6));
     if (shoot)
     {
-     pitch = -8;
      m_iSalvoLeft = Math.Min(4, m_iRockets);
      m_SalvoAim = enemy.GetOrigin() + Vector(0, 2, 0);
     }
@@ -1278,6 +1314,7 @@ class ACR_HeliRun : ACR_SupportRun
     m_iRockets--;
     PrintFormat("[ACR] SUPPORT heli rocket, %1 left, range %2, at an enemy %3", m_iRockets, vector.Distance(m_Pos, aim), m_bAimedAtEnemy);
     m_fNextRocket = now + 280;
+    m_fDiveUntil = now + 1200;
     if (m_bLoiter)
     {
      m_iSalvoLeft--;
@@ -1321,18 +1358,9 @@ class ACR_HeliRun : ACR_SupportRun
    PrintFormat("[ACR] SUPPORT gunship guns%1", report);
   }
 
-  vector transform[4];
-  Math3D.AnglesToMatrix(Vector(m_fBodyYaw, pitch, m_fRoll), transform);
-  transform[3] = m_Pos;
-  m_Vehicle.SetTransform(transform);
-  Physics physics = m_Vehicle.GetPhysics();
-  if (physics)
-  {
-   vector velocity = forward * speed;
-   if (dt > 0) velocity[1] = (m_Pos[1] - previous[1]) / dt;
-   physics.SetVelocity(velocity);
-   physics.SetAngularVelocity(vector.Zero);
-  }
+  vector velocity = forward * speed;
+  if (dt > 0) velocity[1] = (m_Pos[1] - previous[1]) / dt;
+  Fly(velocity, dt, pitch);
 
   // From a helipad: turn for home once clear of the target.
   if (m_Home && !m_bLoiter && vector.Dot(m_Target - m_Pos, m_Dir) < -600)
