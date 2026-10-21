@@ -20,7 +20,7 @@ reports in [Discord](https://discord.gg/WK8xGSztB) under **#issues** and ideas u
 **#suggestions**; no GitHub account needed. This repository's issue tracker remains
 available as an alternative.
 
-The current Workshop release is **0.5.5**.
+The current Workshop release is **0.5.6**, with **Better Battle Buddies 0.1.5**.
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Playing from Workshop
@@ -46,10 +46,17 @@ conditions or saved matches. AC: Actual requires
 [Better Battle Buddies](https://github.com/propst-design/BetterBattleBuddies), available
 separately on Workshop. Allow Workshop to install the dependency when prompted.
 
-In **0.5.5**, built FOBs start with an empty 1,000-supply construction
-store. Select your FOB on the command map to order 500 supplies for 20 RP (60 seconds,
-paused while contested), then stand inside its circle and choose **Build at FOB**. A truck
-is no longer needed for subsequent construction. Built FOBs do not refill trucks for free.
+In **0.5.6**, use **Establish FOB** with a squad and a construction truck carrying
+500 supplies. Pick a clear site and keep the squad there for the 90-second build.
+Select the completed FOB to order supplies and develop its eight upgrade spots:
+hospital, maintenance, ammo, fuel, helipad, relay, barracks and supply depot.
+Upgrade Defences through sandbags, machine-gun nests, then bunkers and guard towers.
+The AI commander can build, supply and raid FOBs too. Destroyed headquarters take a
+FOB offline; rebuild friendly headquarters with Establish FOB.
+
+FOBs start with an empty 1,000-supply store. Order 500 supplies for 20 RP, delivered
+after 60 uncontested seconds. Upgrades spend local supplies and build faster with
+engineers nearby; subsequent construction needs no truck. FOBs do not refill trucks for free.
 FOBs require a completed friendly radio relay inside their circle before deploying units or providing
 RP reinforcement. Losing the relay disables both until rebuilt; construction, deliveries and supplied
 services continue. Mission makers and hosts can disable this requirement in Logistics settings.

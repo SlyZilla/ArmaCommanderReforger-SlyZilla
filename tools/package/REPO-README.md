@@ -21,7 +21,7 @@ An unofficial fan port of the Arma 3 **Arma Commander** hybrid RTS/FPS game mode
 
 Friends join through the game's multiplayer browser. **No external launcher or ZIP download is needed.**
 
-The current Workshop release is **ACA 0.5.5**, with **Better Battle Buddies 0.1.4**
+The current Workshop release is **ACA 0.5.6**, with **Better Battle Buddies 0.1.5**
 available separately on Workshop. Allow Workshop to install BBB when prompted.
 Legacy ZIP downloads may contain an older version; use Workshop for current releases.
 
@@ -30,7 +30,7 @@ Legacy ZIP downloads may contain an older version; use Workshop for current rele
 - **Command and fight.** Give squads map orders, queue waypoints and hold buildings. Press F7 to take over a friendly AI soldier, then F8 to return to your commander.
 - **Build your force.** Capture bases for requisition points (RP), then buy infantry and crewed vehicles. An AI commander can lead either side.
 - **Bring support.** Use mortar teams, artillery, combat helicopters and off-map squad air lift.
-- **Keep the front supplied.** Service trucks carry ammunition, fuel and medical supplies. Construction trucks build service stations, helipads and forward deploy points; AI base building is not implemented.
+- **Keep the front supplied.** Service trucks carry ammunition, fuel and medical supplies. Construction trucks establish forward bases, with service buildings, helipads and perimeter defences. AI commanders can build and supply FOBs too.
 - **Share command.** Several players can order the same side's squads, share an RP pool and coordinate with map/3D pings.
 - **Fight over what you know.** AI perception and player sight reveal contacts. Owned bases also report nearby enemies without line of sight; stale contacts fade from the map.
 

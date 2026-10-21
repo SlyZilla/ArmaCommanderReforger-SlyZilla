@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.5.6 — unreleased
+## 0.5.7 — unreleased
+
+## 0.5.6 — released
 
 Take the fight forward. Build a base behind your advance, keep it supplied and defend it against an AI commander that can build, reinforce and raid too.
 
