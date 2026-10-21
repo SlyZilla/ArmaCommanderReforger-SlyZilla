@@ -773,11 +773,16 @@ class ACR_AIAttack
  ACR_Base m_Target;
  ref array<ACR_Squad> m_Squads = {};
  ref array<vector> m_aStaging = {};  // one staging point per squad (pincers)
+ ref array<int> m_aSlot = {};        // each squad's approach line (ACR_AICommander.s_aApproachTurns index, -1 none)
  vector m_Staging;                   // main approach, for smoke
+ vector m_vApproach;                 // main approach direction, from the target towards the attackers
  bool m_bAssaulting;
  float m_fStageDeadline;
  ACR_Squad m_Suppressor;             // support-by-fire squad
  float m_fFireBaseMoveSince;         // world time the base of fire started moving up to a firing spot
+ vector m_vOverwatch;                // where the base of fire holds while no enemy is seen at the objective
+ bool m_bOverwatch;
+ float m_fStageLimit;                // latest the forming up may be stretched to for late joiners
  int m_iStartStrength;
  bool m_bCounter;
  bool m_bGrab;                       // quick grab of an empty base (doesn't count against the attack limit)
@@ -798,6 +803,13 @@ class ACR_AIAttack
   if (m_Suppressor == m_Squads[index]) m_Suppressor = null;
   m_Squads.RemoveOrdered(index);
   if (index < m_aStaging.Count()) m_aStaging.RemoveOrdered(index);
+  if (index < m_aSlot.Count()) m_aSlot.RemoveOrdered(index);
+ }
+ void Add(ACR_Squad squad, vector stage, int slot)
+ {
+  m_Squads.Insert(squad);
+  m_aStaging.Insert(stage);
+  m_aSlot.Insert(slot);
  }
 }
 
@@ -837,6 +849,8 @@ class ACR_AICommander : Managed
  static bool ReserveMoving(ACR_EOrderState state) { return state == ACR_EOrderState.RIDE || state == ACR_EOrderState.REGROUP; }
  static const float REINFORCE_ATTACK_DISTANCE = 1400;
  static const float REINFORCE_ATTACK_MOUNTED = 2200;
+ static const float ASSAULT_JOIN_EXTRA = 400; // m past the staging ring a squad may be to join an assault already going in
+ static const float STAGE_STRETCH = 0.5;      // late joiners may stretch the forming up by half of STAGING_TIMEOUT
  // Initiative: with no attack launched for a while, the commander accepts
  // worse odds (down to 65% of the usual strength) and commits its reserve,
  // so two AI sides don't sit facing each other forever.
@@ -1141,6 +1155,10 @@ class ACR_AICommander : Managed
   m_SeenAt.Set(enemy, enemy.GetOrigin());
   m_SeenTime.Set(enemy, now);
  }
+ // Tests: a sighting at a given spot, forgetting one, and the assessment on demand.
+ void NoteAtForTest(IEntity enemy, vector at, float now) { m_SeenAt.Set(enemy, at); m_SeenTime.Set(enemy, now); }
+ void ForgetForTest(IEntity enemy) { m_SeenAt.Remove(enemy); m_SeenTime.Remove(enemy); }
+ void AssessForTest() { Assess(); }
 
  protected string FactionKeyOf(IEntity body)
  {
@@ -1299,6 +1317,7 @@ class ACR_AICommander : Managed
     PrintFormat("[ACR] AI %1: %2 defends %3 (threat %4)", m_sFaction, squad.GetName(), base.m_sName, threat);
    }
   }
+  DefendInDepth();
   // Defensive fires: shell the attackers of a base that is losing the fight.
   foreach (ACR_Base held : ACR_Base.s_All)
   {
@@ -1310,6 +1329,132 @@ class ACR_AICommander : Managed
    if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, seenAt, "defensive fire at " + held.m_sName)) break;
    // No mortar in reach: the howitzer battery (slow and dear, but it reaches anywhere).
    if (CallSupport(ACR_ESupportType.ARTILLERY_BATTERY, seenAt, "battery fire at " + held.m_sName)) break;
+  }
+ }
+
+ // Defence in depth (Jacob 20 Oct: defenders only ever held the point itself). When an
+ // attack on a base is seen coming (intel), part of its defenders move out to a forward
+ // line 100-300 m towards it (Travel garrisons a building there when there is one) and the
+ // rest stay at the point as the reserve (the base garrison counts towards it). The forward
+ // squads fall back to the point when the enemy gets too close to hold out there, when they
+ // are badly hurt, or when the threat is gone.
+ static const float FORWARD_MIN = 100;
+ static const float FORWARD_MAX = 300;
+ static const float FORWARD_ENEMY_GAP = 80;   // m a forward position stays short of the enemy
+ static const float FORWARD_REISSUE = 100;    // m the line must move before squads are moved again
+ static const float FORWARD_SPREAD = 60;      // m between forward squads along the line
+ protected ref map<ACR_Squad, vector> m_ForwardAt = new map<ACR_Squad, vector>();
+
+ // Where the known attackers of a base are (strength-weighted mean of where they were last
+ // seen within the threat ring). False: none seen.
+ bool ThreatFrom(ACR_Base base, out vector at)
+ {
+  vector center = base.GetOrigin();
+  vector sum;
+  float weight;
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == base.m_sOwner) continue;
+   vector known;
+   if (!KnownPosition(squad, known) || vector.DistanceXZ(known, center) > THREAT_DISTANCE + base.m_fRadius) continue;
+   float w = Math.Max(1, squad.Strength());
+   sum = sum + known * w;
+   weight += w;
+  }
+  if (weight <= 0) return false;
+  at = sum * (1.0 / weight);
+  return true;
+ }
+
+ bool ForwardSpotOf(ACR_Squad squad, out vector spot)
+ {
+  return m_ForwardAt.Find(squad, spot);
+ }
+
+ protected void RecallForward(ACR_Squad squad, ACR_Base base, string why)
+ {
+  m_ForwardAt.Remove(squad);
+  if (!base) return;
+  squad.SetMode(ACR_EMoveMode.FAST);
+  Travel(squad, base.GetOrigin(), true, 0);
+  PrintFormat("[ACR] AI %1: %2 falls back from the forward line to %3 (%4)", m_sFaction, squad.GetName(), base.m_sName, why);
+ }
+
+ void DefendInDepth()
+ {
+  // Forget squads that no longer defend (freed, fallen back, taken over, gone).
+  array<ACR_Squad> stale = {};
+  foreach (ACR_Squad held, vector heldAt : m_ForwardAt)
+   if (!held || !m_Manager.m_Squads.Contains(held) || held.HasPlayer() || held.m_iAITask != ACR_EAITask.DEFEND || !held.m_AITarget) stale.Insert(held);
+  foreach (ACR_Squad gone : stale) m_ForwardAt.Remove(gone);
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != m_sFaction || ThreatTo(base) == 0) continue;
+   vector center = base.GetOrigin();
+   array<ACR_Squad> defenders = {};
+   foreach (ACR_Squad squad : m_Manager.m_Squads)
+   {
+    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction || squad.HasPlayer() || !squad.GetAnchor()) continue;
+    if (squad == m_FobEscort || squad == m_ReserveSquad || squad.m_bMortar || squad.Aircraft() || ACR_AirLift.Busy(squad)) continue;
+    bool defending = squad.m_iAITask == ACR_EAITask.DEFEND && squad.m_AITarget == base;
+    // Troops posted at a threatened base are its defence now.
+    bool posted = squad.m_iAITask == ACR_EAITask.POSTED && squad.IsCombatUnit() && !IsSupportTeam(squad) && vector.DistanceXZ(PositionOf(squad), center) <= base.m_fRadius + 150;
+    if (!defending && !posted) continue;
+    if (posted)
+    {
+     squad.m_iAITask = ACR_EAITask.DEFEND;
+     squad.m_AITarget = base;
+    }
+    defenders.Insert(squad);
+   }
+   vector enemyAt;
+   bool seen = ThreatFrom(base, enemyAt);
+   float enemyDistance = 0;
+   if (seen) enemyDistance = vector.DistanceXZ(enemyAt, center);
+   float depth = 0;
+   if (seen) depth = Math.Clamp(Math.Max(enemyDistance * 0.5, base.m_fRadius + 40), FORWARD_MIN, FORWARD_MAX);
+   bool lineHolds = seen && enemyDistance - depth >= FORWARD_ENEMY_GAP;
+   // How many go forward: half, the base garrison counting as one more squad at the point;
+   // at least one squad (or the garrison) stays as the reserve.
+   int extra = 0;
+   if (base.m_iGarrisonLeft > 0) extra = 1;
+   int forward = (defenders.Count() + extra) / 2;
+   if (extra == 0) forward = Math.Min(forward, defenders.Count() - 1);
+   if (!lineHolds) forward = 0;
+   // Already forward and fit first (no shuffling), then the nearest to the line.
+   vector dir = enemyAt - center;
+   dir[1] = 0;
+   if (dir.LengthSq() > 1) dir.Normalize();
+   else dir = Vector(0, 0, 1);
+   vector line = center + dir * depth;
+   array<ACR_Squad> picked = {};
+   foreach (ACR_Squad was : defenders)
+    if (picked.Count() < forward && m_ForwardAt.Contains(was) && was.StrengthRatio() >= 0.5) picked.Insert(was);
+   SortByDistance(defenders, line);
+   foreach (ACR_Squad near : defenders)
+    if (picked.Count() < forward && !picked.Contains(near) && near.StrengthRatio() >= 0.5) picked.Insert(near);
+   foreach (ACR_Squad member : defenders)
+   {
+    if (picked.Contains(member) || !m_ForwardAt.Contains(member)) continue;
+    string why = "the enemy is too close";
+    if (member.StrengthRatio() < 0.5) why = "badly hurt";
+    else if (lineHolds) why = "needed in reserve";
+    RecallForward(member, base, why);
+   }
+   vector across = Vector(-dir[2], 0, dir[0]);
+   foreach (int i, ACR_Squad goer : picked)
+   {
+    float offset = (i - (picked.Count() - 1) * 0.5) * FORWARD_SPREAD;
+    vector spot = ACR_Manager.Ground(line + across * offset);
+    if (BBB_Terrain.IsWaterAt(spot)) spot = ACR_Manager.Ground(line);
+    if (BBB_Terrain.IsWaterAt(spot)) continue;
+    vector had;
+    if (m_ForwardAt.Find(goer, had) && vector.DistanceXZ(had, spot) < FORWARD_REISSUE) continue;
+    m_ForwardAt.Set(goer, spot);
+    goer.SetMode(ACR_EMoveMode.COMBAT);
+    Travel(goer, spot, true, 0);
+    PrintFormat("[ACR] AI %1: %2 moves out to a forward line %3 m from %4 towards the attack (enemy seen %5 m out, %6 stay in reserve)", m_sFaction, goer.GetName(), Math.Round(depth), base.m_sName, Math.Round(enemyDistance), defenders.Count() - picked.Count());
+   }
   }
  }
 
@@ -1334,6 +1479,13 @@ class ACR_AICommander : Managed
   return best;
  }
 
+ // Strength an attack on a held base wants (it is reinforced up to 1.25x this).
+ protected float AttackNeed(ACR_Base target)
+ {
+  if (target.m_bBuilt) return Math.Max(8, DefenceOf(target) * 0.9 + target.m_iGarrisonLeft * 0.7);
+  return Math.Max(10, DefenceOf(target) * ATTACK_RATIO * 0.65) + target.m_iGarrisonLeft;
+ }
+
  protected void ReinforceAttacks(array<ACR_Squad> free)
  {
   if (free.IsEmpty()) return;
@@ -1346,8 +1498,7 @@ class ACR_AICommander : Managed
    if (attack.m_SapperDemo && attack.m_SapperDemo.InProgress()) continue;
    int strength;
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
-   float need = Math.Max(10, DefenceOf(target) * ATTACK_RATIO * 0.65) + target.m_iGarrisonLeft;
-   if (target.m_bBuilt) need = Math.Max(8, DefenceOf(target) * 0.9 + target.m_iGarrisonLeft * 0.7);
+   float need = AttackNeed(target);
    if (attack.m_bAssaulting && attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > 90000) need *= 1.35;
    if (strength >= need * 1.15) continue;
    SortByDistance(free, target.GetOrigin());
@@ -1358,17 +1509,23 @@ class ACR_AICommander : Managed
     float dist = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
     float maxDist = REINFORCE_ATTACK_DISTANCE;
     if (squad.IsMounted()) maxDist = REINFORCE_ATTACK_MOUNTED;
+    // Once the assault is going in, only squads close enough to arrive with it join: no
+    // waves walking in one after another (Jacob 20 Oct, Etoupe).
+    if (attack.m_bAssaulting) maxDist = Math.Min(maxDist, target.m_fRadius + STAGING_DISTANCE + ASSAULT_JOIN_EXTRA);
     if (dist > REINFORCE_ATTACK_MOUNTED) break;
     // Observers, medics, snipers and other support teams don't join an assault.
     if (dist > maxDist || IsSupportTeam(squad)) { k++; continue; }
-    vector dir = PositionOf(squad) - target.GetOrigin();
-    dir[1] = 0;
-    if (dir.LengthSq() > 0.001) dir.Normalize();
-    else dir = Vector(0, 0, 1);
-    vector stage = ACR_Manager.Ground(target.GetOrigin() + dir * (target.m_fRadius + STAGING_DISTANCE));
-    StagingPoint(target, dir, target.m_fRadius + STAGING_DISTANCE, stage);
-    attack.m_Squads.Insert(squad);
-    attack.m_aStaging.Insert(stage);
+    vector stage;
+    int slot = PickApproach(attack, PositionOf(squad), stage);
+    attack.Add(squad, stage, slot);
+    // Still forming up: the assault waits for it (within limits) so they go in together.
+    if (!attack.m_bAssaulting)
+    {
+     float speed = 2;
+     if (squad.IsMounted()) speed = 8;
+     float arrive = now + (vector.DistanceXZ(PositionOf(squad), stage) / speed + 30) * 1000;
+     attack.m_fStageDeadline = Math.Max(attack.m_fStageDeadline, Math.Min(arrive, attack.m_fStageLimit));
+    }
     strength += squad.Strength();
     if (strength > attack.m_iStartStrength) attack.m_iStartStrength = strength;
     squad.m_iAITask = ACR_EAITask.ATTACK;
@@ -1473,8 +1630,7 @@ class ACR_AICommander : Managed
    grab.m_bGrab = true;
    grab.m_bAssaulting = true;
    grab.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
-   grab.m_Squads.Insert(runner);
-   grab.m_aStaging.Insert(empty.GetOrigin());
+   grab.Add(runner, empty.GetOrigin(), -1);
    grab.m_iStartStrength = runner.Strength();
    // Everon soak 5 Oct: most grabs of bases 2-3 km away timed out on the way at 480 s.
    // Allow the walk (or drive) there at about 1.2 m/s, plus 3 minutes.
@@ -1541,8 +1697,7 @@ class ACR_AICommander : Managed
   foreach (ACR_Base candidate : candidates)
   {
    float need = 1;
-   if (!candidate.m_sOwner.IsEmpty()) need = Math.Max(10, DefenceOf(candidate) * ATTACK_RATIO * 0.65) + candidate.m_iGarrisonLeft;
-   if (candidate.m_bBuilt) need = Math.Max(8, DefenceOf(candidate) * 0.9 + candidate.m_iGarrisonLeft * 0.7);
+   if (!candidate.m_sOwner.IsEmpty()) need = AttackNeed(candidate);
    if (counterDue) need = need * 0.7; // strike before they dig in
    need = need * pressure;
    if (ACR_Manager.ThreatOption() == 2) need = need * 0.85; // High: launch a viable force sooner
@@ -1587,11 +1742,22 @@ class ACR_AICommander : Managed
   // With troops to spare, send a margin above the bare minimum.
   float margin = 1;
   if (free.Count() > 4) margin = 1 + Math.Min(0.5, (free.Count() - 4) * 0.05);
+  // Commit the force together (Jacob 20 Oct, Etoupe: two squads went in and six followed in
+  // waves): past the bare minimum, every fighting squad in reach joins up to the strength the
+  // attack would otherwise be reinforced to.
+  float goal = Math.Max(required * margin, AttackNeed(target) * 1.15);
+  if (target.m_sOwner.IsEmpty()) goal = required * margin;
   foreach (ACR_Squad squad : free)
   {
+   if (strength >= required * margin)
+   {
+    if (strength >= goal) break;
+    float reach = REINFORCE_ATTACK_DISTANCE;
+    if (squad.IsMounted()) reach = REINFORCE_ATTACK_MOUNTED;
+    if (vector.DistanceXZ(PositionOf(squad), target.GetOrigin()) > reach || IsSupportTeam(squad)) continue;
+   }
    attack.m_Squads.Insert(squad);
    strength += squad.Strength();
-   if (strength >= required * margin) break;
   }
   if (strength < required)
   {
@@ -1611,19 +1777,20 @@ class ACR_AICommander : Managed
   vector dir = from - target.GetOrigin();
   dir[1] = 0;
   dir.Normalize();
+  attack.m_vApproach = dir;
   float ring = target.m_fRadius + STAGING_DISTANCE;
   attack.m_Staging = ACR_Manager.Ground(target.GetOrigin() + dir * ring);
   // Staging points on dry land with a dry run in (no forming up in a bay).
   vector dryMain;
   if (StagingPoint(target, dir, ring, dryMain)) attack.m_Staging = dryMain;
-  array<float> angles = {0, 55, -55, 90, -90};
-  foreach (int i, ACR_Squad member : attack.m_Squads)
+  attack.m_aStaging.Clear();
+  attack.m_aSlot.Clear();
+  foreach (ACR_Squad member : attack.m_Squads)
   {
-   float angle = angles[i % angles.Count()] * Math.DEG2RAD;
-   vector rotated = Vector(dir[0] * Math.Cos(angle) - dir[2] * Math.Sin(angle), 0, dir[0] * Math.Sin(angle) + dir[2] * Math.Cos(angle));
    vector stage;
-   if (!StagingPoint(target, rotated, ring, stage)) stage = attack.m_Staging;
+   int slot = PickApproach(attack, PositionOf(member), stage);
    attack.m_aStaging.Insert(stage);
+   attack.m_aSlot.Insert(slot);
   }
   bool empty = target.m_sOwner.IsEmpty();
   // With two or more squads on a held base, one becomes the base of fire
@@ -1640,6 +1807,7 @@ class ACR_AICommander : Managed
    }
   }
   attack.m_fStageDeadline = GetGame().GetWorld().GetWorldTime() + STAGING_TIMEOUT * 1000;
+  attack.m_fStageLimit = attack.m_fStageDeadline + STAGING_TIMEOUT * STAGE_STRETCH * 1000;
   // Motorized assault: an armed carrier (APC) in the attack takes an infantry squad to the
   // staging point and stays there with it as base of fire.
   array<ACR_Squad> carried = {};
@@ -1695,6 +1863,8 @@ class ACR_AICommander : Managed
     continue;
    }
    if (c < attack.m_aStaging.Count()) attack.m_aStaging[c] = stage;
+   int riderAt = attack.m_Squads.Find(best);
+   if (c < attack.m_aSlot.Count() && riderAt >= 0 && riderAt < attack.m_aSlot.Count()) attack.m_aSlot[c] = attack.m_aSlot[riderAt];
    carried.Insert(best);
    carried.Insert(carrier);
    PrintFormat("[ACR] AI %1: %2 carries %3 to the staging point for %4", m_sFaction, carrier.GetName(), best.GetName(), attack.m_Target.m_sName);
@@ -2032,11 +2202,27 @@ class ACR_AICommander : Managed
   return false;
  }
 
+ // Base of fire keeps covering until the assault squads are on the objective, then lifts
+ // fire and joins in.
+ void TickFireBase(ACR_AIAttack attack)
+ {
+  ACR_Base target = attack.m_Target;
+  if (!attack.m_Suppressor || !target) return;
+  bool closeIn = false;
+  foreach (ACR_Squad assaulter : attack.m_Squads)
+   if (assaulter && assaulter != attack.m_Suppressor && vector.DistanceXZ(PositionOf(assaulter), target.GetOrigin()) < target.m_fRadius + 60) closeIn = true;
+  if (closeIn) LiftFire(attack, "assault on the objective");
+  else UpdateFireBase(attack);
+ }
+
  // Base of fire (Jacob, 20 Oct: a squad stood suppressing an empty base centre for 10 min).
  // It fires only at an enemy this side has seen at the objective (intel, 90 s memory), from
  // within FIRE_BASE_RANGE with clear terrain between. Too far or blind: it moves up to a
- // spot short of the enemy. It joins the assault when nobody is seen there, nobody is left
- // to cover, it can't reach a firing spot in time, or after FIRE_BASE_MAX_S.
+ // spot short of the enemy. With nobody seen there yet it holds an overwatch position facing
+ // the objective (in range, clear fire line) and engages only what its own men see (Jacob
+ // 20 Oct, Everon: 18 of 27 bases of fire lifted "no enemy seen" the moment the assault
+ // started). It joins the assault when the assault reaches the objective, nobody is left to
+ // cover, it can't reach a firing spot in time, or after FIRE_BASE_MAX_S.
  protected void UpdateFireBase(ACR_AIAttack attack)
  {
   ACR_Squad fire = attack.m_Suppressor;
@@ -2045,18 +2231,20 @@ class ACR_AICommander : Managed
   float now = GetGame().GetWorld().GetWorldTime();
   bool covering = false;
   foreach (ACR_Squad other : attack.m_Squads)
-   if (other != fire && other.Strength() > 0) covering = true;
+   if (other && other != fire && other.Strength() > 0) covering = true;
+  if (!covering) { LiftFire(attack, "nobody left to cover"); return; }
+  if (attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > FIRE_BASE_MAX_S * 1000) { LiftFire(attack, "time up"); return; }
   vector seenAt;
   ACR_Squad enemy = EnemyNear(target.GetOrigin(), target.m_fRadius + 40, seenAt);
-  if (!covering) { LiftFire(attack, "nobody left to cover"); return; }
-  if (!enemy) { LiftFire(attack, "no enemy seen at the objective"); return; }
-  if (attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > FIRE_BASE_MAX_S * 1000) { LiftFire(attack, "time up"); return; }
+  if (!enemy) { Overwatch(attack); return; }
   vector from = PositionOf(fire);
   float distance = vector.DistanceXZ(from, seenAt);
   if (distance <= FIRE_BASE_RANGE && FireLine(from, seenAt))
   {
    attack.m_fFireBaseMoveSince = 0;
+   if (fire.OrderState() == ACR_EOrderState.SUPPRESS && vector.DistanceXZ(fire.m_MoveTarget, seenAt) < 10) return;
    fire.Suppress(seenAt);
+   PrintFormat("[ACR] AI %1: %2 (base of fire) suppresses the enemy seen at %3 (%4 m)", m_sFaction, fire.GetName(), target.m_sName, Math.Round(distance));
    return;
   }
   float stand = Math.Min(FIRE_BASE_STANDOFF, distance - 100);
@@ -2071,6 +2259,81 @@ class ACR_AICommander : Managed
   if (fire.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(fire.m_MoveTarget, spot) < 40) return;
   fire.MoveTo(spot);
   PrintFormat("[ACR] AI %1: %2 (base of fire) moves up to %3 m from the enemy at %4: %5", m_sFaction, fire.GetName(), Math.Round(stand), target.m_sName, spot);
+ }
+
+ // No enemy seen at the objective: hold (Defend) an overwatch spot facing it, so the squad
+ // shoots only at what it sees itself. Suppression of a spot nobody is seen at any more ends.
+ protected void Overwatch(ACR_AIAttack attack)
+ {
+  ACR_Squad fire = attack.m_Suppressor;
+  ACR_Base target = attack.m_Target;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (!attack.m_bOverwatch)
+  {
+   vector found;
+   if (!OverwatchSpot(target, PositionOf(fire), found)) { LiftFire(attack, "no firing spot"); return; }
+   attack.m_vOverwatch = found;
+   attack.m_bOverwatch = true;
+   attack.m_fFireBaseMoveSince = 0;
+  }
+  else if (fire.OrderState() != ACR_EOrderState.DEFEND)
+  {
+   // Back from suppressing or moving up: where it stands will do if it still has a fire line.
+   vector here = PositionOf(fire);
+   float range = vector.DistanceXZ(here, target.GetOrigin());
+   if (range >= target.m_fRadius + OVERWATCH_MIN_GAP && range <= FIRE_BASE_RANGE && FireLine(here, target.GetOrigin())) attack.m_vOverwatch = here;
+  }
+  vector spot = attack.m_vOverwatch;
+  float away = vector.DistanceXZ(PositionOf(fire), spot);
+  if (away > OVERWATCH_REACHED)
+  {
+   if (attack.m_fFireBaseMoveSince <= 0) attack.m_fFireBaseMoveSince = now;
+   if (now - attack.m_fFireBaseMoveSince > FIRE_BASE_MOVE_S * 1000) { LiftFire(attack, "no firing spot found in time"); return; }
+  }
+  else attack.m_fFireBaseMoveSince = 0;
+  if (fire.OrderState() == ACR_EOrderState.DEFEND && vector.DistanceXZ(fire.m_MoveTarget, spot) < 20) return;
+  fire.SetMode(ACR_EMoveMode.COMBAT);
+  fire.Defend(spot);
+  PrintFormat("[ACR] AI %1: %2 (base of fire) holds overwatch on %3 from %4 m (no enemy seen there yet): %5", m_sFaction, fire.GetName(), target.m_sName, Math.Round(vector.DistanceXZ(spot, target.GetOrigin())), spot);
+ }
+
+ // A spot within FIRE_BASE_RANGE of the objective with a clear fire line to it: where the
+ // squad stands if that will do, otherwise on rings round the objective on the squad's side.
+ static const float OVERWATCH_REACHED = 40;
+ static const float OVERWATCH_MIN_GAP = 90;   // m outside the base ring (not part of the assault)
+ bool OverwatchSpot(ACR_Base target, vector from, out vector spot)
+ {
+  if (!target) return false;
+  vector center = target.GetOrigin();
+  float minRange = target.m_fRadius + OVERWATCH_MIN_GAP;
+  float here = vector.DistanceXZ(from, center);
+  if (here >= minRange && here <= FIRE_BASE_RANGE && !BBB_Terrain.IsWaterAt(from) && FireLine(from, center))
+  {
+   spot = from;
+   return true;
+  }
+  vector side = from - center;
+  side[1] = 0;
+  if (side.LengthSq() < 1) side = Vector(0, 0, 1);
+  side.Normalize();
+  // The nearest one to the squad (it is walking there while the assault goes in).
+  array<float> rings = {200, 250, 300, 350, 400};
+  array<float> turns = {0, 10, -10, 20, -20, 30, -30, 45, -45, 60, -60};
+  float best = float.MAX;
+  foreach (float ring : rings)
+  {
+   float d = Math.Clamp(ring, minRange, FIRE_BASE_RANGE - 20);
+   foreach (float turn : turns)
+   {
+    vector candidate = ACR_Manager.Ground(center + Turned(side, turn) * d);
+    float walk = vector.DistanceXZ(candidate, from);
+    if (walk >= best || BBB_Terrain.IsWaterAt(candidate) || NearOtherEnemyBase(candidate, target)) continue;
+    if (!FireLine(candidate, center)) continue;
+    spot = candidate;
+    best = walk;
+   }
+  }
+  return best < float.MAX;
  }
 
  protected void LiftFire(ACR_AIAttack attack, string reason)
@@ -2273,16 +2536,7 @@ class ACR_AICommander : Managed
     }
     if (demoBusy) continue;
     PushAttackers(attack);
-    // Base of fire keeps suppressing until the assault squads are on the
-    // objective, then lifts fire and joins in.
-    if (attack.m_Suppressor)
-    {
-     bool closeIn = false;
-     foreach (ACR_Squad assaulter : attack.m_Squads)
-      if (assaulter != attack.m_Suppressor && vector.DistanceXZ(PositionOf(assaulter), target.GetOrigin()) < target.m_fRadius + 60) closeIn = true;
-     if (closeIn) LiftFire(attack, "assault on the objective");
-     else UpdateFireBase(attack);
-    }
+    TickFireBase(attack);
     continue;
    }
    bool anyAirLift = false;
@@ -2313,7 +2567,7 @@ class ACR_AICommander : Managed
     if (attack.m_Suppressor) UpdateFireBase(attack);
     string suppressor = "none";
     if (attack.m_Suppressor) suppressor = attack.m_Suppressor.GetName();
-    PrintFormat("[ACR] AI %1: assaulting %2 from %3 directions, base of fire: %4", m_sFaction, target.m_sName, attack.m_Squads.Count(), suppressor);
+    PrintFormat("[ACR] AI %1: assaulting %2 with %3 squad(s) on %4 approach line(s), base of fire: %5", m_sFaction, target.m_sName, attack.m_Squads.Count(), ApproachLines(attack), suppressor);
    }
   }
  }
@@ -2367,6 +2621,84 @@ class ACR_AICommander : Managed
    return true;
   }
   return BBB_Terrain.DryApproach(target.GetOrigin(), dir, ring, point);
+ }
+
+ // Approach lines (Jacob 20 Oct, Etoupe: the big assault came down one main road and was shot
+ // up there; reinforcements each staged on their own side, which was the same side). Every
+ // squad of an attack gets a line turned off the main approach: the least-used line first, then
+ // the one nearest the squad's own side. A line whose staging point ends up (water, other enemy
+ // bases) closer than APPROACH_SEPARATION degrees to another line's point is skipped.
+ static ref array<float> s_aApproachTurns = {0, 60, -60, 115, -115};
+ static const float APPROACH_SEPARATION = 40;
+
+ static vector Turned(vector dir, float degrees)
+ {
+  float angle = degrees * Math.DEG2RAD;
+  return Vector(dir[0] * Math.Cos(angle) - dir[2] * Math.Sin(angle), 0, dir[0] * Math.Sin(angle) + dir[2] * Math.Cos(angle));
+ }
+
+ // Degrees between two directions on the ground.
+ static float TurnBetween(vector a, vector b)
+ {
+  a[1] = 0;
+  b[1] = 0;
+  if (a.LengthSq() < 0.001 || b.LengthSq() < 0.001) return 0;
+  a.Normalize();
+  b.Normalize();
+  return Math.Acos(Math.Clamp(vector.Dot(a, b), -1, 1)) * Math.RAD2DEG;
+ }
+
+ // The approach line for a squad joining this attack (slot index, -1: none found, stage is
+ // then the main staging point). Squads already on lines are in attack.m_aSlot.
+ int PickApproach(ACR_AIAttack attack, vector from, out vector stage)
+ {
+  ACR_Base target = attack.m_Target;
+  stage = attack.m_Staging;
+  if (!target) return -1;
+  vector center = target.GetOrigin();
+  float ring = target.m_fRadius + STAGING_DISTANCE;
+  vector ahead = attack.m_vApproach;
+  vector own = from - center;
+  own[1] = 0;
+  if (own.LengthSq() > 1) own.Normalize();
+  else own = ahead;
+  if (ahead.LengthSq() < 0.001) ahead = own;
+  if (ahead.LengthSq() < 0.001) ahead = Vector(0, 0, 1);
+  array<int> order = {};
+  array<float> keys = {};
+  foreach (int slot, float turn : s_aApproachTurns)
+  {
+   int used = 0;
+   foreach (int taken : attack.m_aSlot) if (taken == slot) used++;
+   float key = used * 1000 + TurnBetween(Turned(ahead, turn), own);
+   int at = 0;
+   while (at < keys.Count() && keys[at] <= key) at++;
+   order.InsertAt(slot, at);
+   keys.InsertAt(key, at);
+  }
+  foreach (int pick : order)
+  {
+   vector candidate;
+   if (!StagingPoint(target, Turned(ahead, s_aApproachTurns[pick]), ring, candidate)) continue;
+   bool apart = true;
+   foreach (int i, int other : attack.m_aSlot)
+   {
+    if (other == pick || other < 0 || i >= attack.m_aStaging.Count()) continue;
+    if (TurnBetween(attack.m_aStaging[i] - center, candidate - center) < APPROACH_SEPARATION) apart = false;
+   }
+   if (!apart) continue;
+   stage = candidate;
+   return pick;
+  }
+  return -1;
+ }
+
+ // Distinct approach lines in use (for the log).
+ static int ApproachLines(ACR_AIAttack attack)
+ {
+  array<int> lines = {};
+  foreach (int slot : attack.m_aSlot) if (slot >= 0 && !lines.Contains(slot)) lines.Insert(slot);
+  return Math.Max(1, lines.Count());
  }
 
  protected bool NearOtherEnemyBase(vector point, ACR_Base except)

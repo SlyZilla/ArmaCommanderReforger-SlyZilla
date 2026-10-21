@@ -17,6 +17,13 @@
 - A FOB whose headquarters is destroyed goes offline: no deployment, reinforcement, services, deliveries or upgrades. Its buildings remain, and can be captured with the FOB. An Establish FOB order inside it rebuilds the headquarters and brings it back online.
 - Capturing a FOB now transfers its buildings and upgrades to the new owner.
 
+### AI commander
+
+- AI attacks now keep a base of fire. Its squad no longer joins the assault just because nobody has been seen at the objective yet: it holds a spot in range with a clear line of fire, shoots only at enemies its men actually see, and suppresses only enemies its side has spotted.
+- AI attacks come in from several directions. Each squad forms up on its own approach line, even squads that all arrive along the same road, so an attack no longer funnels down one route.
+- The AI commits its attacking force together instead of feeding squads in a few at a time. Squads still on their way hold the assault back for a little while, and squads far off no longer walk into an assault one after another.
+- AI defence in depth: when an attack on an AI base is spotted, part of the defence moves out 100 to 300 m towards it, into buildings where there are any, while the rest hold the base as a reserve. The forward squads fall back to the base when the enemy gets too close, when they are badly hurt, or when the threat has passed.
+
 ### Fixes
 
 - Fixed FOB upgrades being invisible to joined players and destroyed radio antennas blocking replacement through the upgrade panel.
