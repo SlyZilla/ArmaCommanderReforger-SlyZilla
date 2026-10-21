@@ -26,6 +26,10 @@
 - The AI commander no longer buys repeated construction trucks while one is already on its way.
 - Buildings without a side no longer repeat a log message every two seconds.
 
+### Feedback
+
+- Bugs and ideas can now be reported on Discord (discord.gg/WK8xGSztB): #issues for bugs, #suggestions for ideas, no GitHub account needed. The match setup screen links it too. GitHub Issues remain available.
+
 ## 0.5.5 — released
 
 ### FOBs and logistics

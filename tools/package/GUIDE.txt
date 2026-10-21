@@ -340,8 +340,9 @@ and UA through Ukraine Armed Forces RHS. Another faction mod only works if
 the map lists it and the mod sets up its factions the standard way (Game
 Master catalogs). Even then it may look rough (mixed uniforms, a squad
 leader as your command unit, vanilla stand-ins). Only RHS and UA are
-hand-fitted. Want a faction mod supported properly? Ask on GitHub:
-  https://github.com/propst-design/ArmaCommanderReforger/issues
+hand-fitted. Want a faction mod supported properly? Ask in Discord #suggestions:
+  https://discord.gg/WK8xGSztB
+GitHub alternative: https://github.com/propst-design/ArmaCommanderReforger/issues
 
 KNOWN LIMITS (alpha)
 --------------------
@@ -357,7 +358,9 @@ KNOWN LIMITS (alpha)
   a stocked construction truck available for further construction.
 - Game logs are in Documents\My Games\ArmaReforger\logs if something breaks.
   Sending the newest console.log helps a lot.
-- Found a bug? Report it at https://github.com/propst-design/ArmaCommanderReforger/issues
+- Found a bug? Use Discord #issues (choose AC: Actual): https://discord.gg/WK8xGSztB
+  No GitHub account needed. Ideas go in #suggestions.
+  GitHub alternative: https://github.com/propst-design/ArmaCommanderReforger/issues
   (what happened, version, host or client, and the newest log folder zipped).
   The project page lists what most needs multiplayer testing.
 

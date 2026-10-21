@@ -16,7 +16,9 @@ This is the main public source, development and [issue tracker](https://github.c
 Install and update through the in-game Workshop for normal play. The older
 [ACActual repository](https://github.com/propst-design/ACActual) retains historical
 documentation, existing issues and legacy ZIP downloads/updaters. File new bug
-reports and feature requests in this repository's issue tracker.
+reports in [Discord](https://discord.gg/WK8xGSztB) under **#issues** and ideas under
+**#suggestions**; no GitHub account needed. This repository's issue tracker remains
+available as an alternative.
 
 The current Workshop release is **0.5.5**.
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
@@ -25,9 +27,9 @@ See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 Workshop is the normal install route: open Workshop in Reforger, search for **Arma Commander
 Actual**, download and enable it, then select an included AC: Actual scenario in Scenarios or Host. The host/admin picks the sides and match options on the setup screen, then presses Start. No
-external launcher is needed for Workshop play. Report bugs and issues at
-https://github.com/propst-design/ArmaCommanderReforger/issues (include the map, mod set, steps to reproduce and
-logs if available).
+external launcher is needed for Workshop play. Report bugs in [Discord](https://discord.gg/WK8xGSztB)
+under **#issues** (choose **AC: Actual**), or use [GitHub Issues](https://github.com/propst-design/ArmaCommanderReforger/issues).
+Include the map, mod set, steps to reproduce and logs if available. No GitHub account is needed for Discord reports.
 
 ## Maps and match options
 
@@ -97,7 +99,8 @@ Another faction mod works only if the map lists it (one line in the map's factio
 mod sets up its factions the standard way (Game Master catalogs of soldiers, groups and vehicles).
 Even then it may look rough: mixed uniforms, a squad leader as your command unit, vanilla stand-ins
 for what the mod lacks. Only RHS and Ukraine Armed Forces RHS are hand-fitted. Want a faction mod
-supported properly? Ask on GitHub: https://github.com/propst-design/ArmaCommanderReforger/issues
+supported properly? Ask in [Discord #suggestions](https://discord.gg/WK8xGSztB) or on
+[GitHub](https://github.com/propst-design/ArmaCommanderReforger/issues).
 
 ## Command map and controls
 

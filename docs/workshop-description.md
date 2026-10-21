@@ -82,5 +82,7 @@ with or endorsed by Bohemia Interactive or the original authors.
 
 ## Issues and feedback
 
-https://github.com/propst-design/ArmaCommanderReforger/issues
-Include the map, mod set, what happened, reproduction steps and logs. Faction requests welcome.
+Discord: https://discord.gg/WK8xGSztB
+#issues: bugs (AC: Actual); #suggestions: ideas/factions. No GitHub needed.
+GitHub: https://github.com/propst-design/ArmaCommanderReforger/issues
+Include map, mods, steps, logs and what happened.

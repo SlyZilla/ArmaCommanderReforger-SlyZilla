@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **AC: Actual source development has moved to the [main project repository](https://github.com/propst-design/ArmaCommanderReforger).**
-> Visit the main repository for current source, development documentation and [new bug reports](https://github.com/propst-design/ArmaCommanderReforger/issues).
+> Visit the main repository for current source and development documentation. Report bugs in [Discord #issues](https://discord.gg/WK8xGSztB) or the [main issue tracker](https://github.com/propst-design/ArmaCommanderReforger/issues).
 > **Install and update the mod through the in-game Workshop.** This repository is retained for historical documentation, existing issues and legacy ZIP downloads/updaters. GitHub ZIPs and external launchers are a legacy/development fallback and may lag behind Workshop.
 
 [![Game: Arma Reforger](https://img.shields.io/badge/Arma-Reforger-556b2f?style=flat-square)](https://reforger.armaplatform.com/)
@@ -57,8 +57,8 @@ and a squad leader as the command unit may result.
 
 Enable any optional faction mods before starting; the setup screen selects among factions already
 loaded by the scenario. Joiners need the server's mod set. ACE All in One and All-in-One Command
-Menu are separate optional mods, not requirements for vanilla AC: Actual. Use GitHub issues for
-faction support requests.
+Menu are separate optional mods, not requirements for vanilla AC: Actual. Use
+[Discord #suggestions](https://discord.gg/WK8xGSztB) or GitHub issues for faction support requests.
 
 ## Basic controls
 
@@ -71,12 +71,14 @@ keys under Settings > Controls > AC: Actual.
 
 ## Feedback
 
-Found a problem or have a suggestion? Use the main project's
-[issue tracker](https://github.com/propst-design/ArmaCommanderReforger/issues).
+Found a problem or have a suggestion? Join [Discord](https://discord.gg/WK8xGSztB):
+**#issues** for bugs (choose **AC: Actual**), **#suggestions** for ideas. No GitHub account needed.
+The main project's [issue tracker](https://github.com/propst-design/ArmaCommanderReforger/issues) remains available.
 
 ## Reporting bugs
 
-[Open an issue](https://github.com/propst-design/ArmaCommanderReforger/issues/new/choose) and include:
+Post in [Discord #issues](https://discord.gg/WK8xGSztB) or
+[open a GitHub issue](https://github.com/propst-design/ArmaCommanderReforger/issues/new/choose) and include:
 
 1. **What happened**, and what you expected instead.
 2. **How to make it happen again**, if you know.

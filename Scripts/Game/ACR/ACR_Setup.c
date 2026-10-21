@@ -761,7 +761,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   Widget root = GetRootWidget();
   if (!root) return;
   SetTitle("AC: Actual - match setup");
-  SetMessage("Click an option to change it, then press Start. " + info);
+  SetMessage("Click an option to change it, then press Start. " + info + "\n\nAC: Actual is built and tested by one person. AI agents help write it, but I can't catch every bug or polish every feature alone, so please report any problem you hit: discord.gg/WK8xGSztB (#issues; no GitHub account needed).");
   if (!m_wRows)
   {
    Widget content = root.FindAnyWidget("ContentVerticalLayout");
