@@ -32,6 +32,7 @@
 - Fixed the headquarters spawning on top of the construction truck; trucks now park clear of the base layout.
 - The AI commander no longer buys repeated construction trucks while one is already on its way.
 - Buildings without a side no longer repeat a log message every two seconds.
+- Squads whose leader is knocked out no longer stop over and over to regroup round his body: an awake soldier becomes the squad's reference point, and the unconscious no longer count as stragglers.
 
 ### Feedback
 
