@@ -1728,7 +1728,8 @@ class ACR_Supports : Managed
   if (index < 0 || index >= data.m_aSupports.Count()) return "Unknown support";
   ACR_SupportEntry entry = data.m_aSupports[index];
   float now = GetGame().GetWorld().GetWorldTime();
-  if (now < entry.m_fReadyAt) return string.Format("%1 is not ready (%2 s)", entry.m_sName, Math.Ceil((entry.m_fReadyAt - now) / 1000));
+  bool waveSlot = entry.m_eType == ACR_ESupportType.AIR_LIFT && ACR_AirLift.WaveSlotAvailable(factionKey, now);
+  if (now < entry.m_fReadyAt && !waveSlot) return string.Format("%1 is not ready (%2 s)", entry.m_sName, Math.Ceil((entry.m_fReadyAt - now) / 1000));
   // Mortar supports are fired by a real mortar team (ACR_Mortars): nothing is spent unless one can.
   if (ACR_Mortars.IsMortarType(entry.m_eType)) return CallMortars(factionKey, entry, target, byAI);
   if (entry.m_eType == ACR_ESupportType.AIR_LIFT) return ACR_AirLift.Call(this, factionKey, entry, target, byAI, squad, finalPrefab, finalTarget, finalRadius, finalOrder, finalKind);

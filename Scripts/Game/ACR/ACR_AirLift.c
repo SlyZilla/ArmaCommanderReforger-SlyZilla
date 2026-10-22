@@ -201,6 +201,7 @@ class ACR_LiftHeli : ACR_HeliRun
   if (StillSpooling(now)) return true;
   if (m_bLifting) return Lift(dt);
   if (m_bLeaving) return FlyAway(dt, now);
+  if (m_bHold) return HoldStep(dt, now);
   if (m_bDown)
   {
    Place(vector.Zero, 0, 0);
@@ -217,6 +218,75 @@ class ACR_LiftHeli : ACR_HeliRun
  }
 
  bool Spooled() { return m_bSpooled; }
+
+ // Off-map lift helicopters spawn at transit height: fly in with the rotors spooling
+ // instead of hanging still in the air for ~20 s first (aca-airlift-wave).
+ void SkipSpoolWait() { m_bSpooled = true; }
+
+ // Sequential lifts (one landing spot for two helicopters): wait airborne short of the
+ // spot until the other helicopter has cleared it.
+ static const float HOLD_DISTANCE = 220;
+ bool m_bHold;
+ vector m_HoldAt;
+ int m_iLeg;          // sequential lifts: 0 to pickup, 1 loading, 2 to drop, 3 unloading, 4 gone
+ float m_fLegAt;
+
+ void Hold(vector spot)
+ {
+  if (m_bHold) return;
+  vector back = m_Start - spot;
+  back[1] = 0;
+  if (back.Length() < 1) back = m_Dir * -1;
+  back[1] = 0;
+  if (back.Length() < 0.01) back = "0 0 1";
+  m_HoldAt = spot + back.Normalized() * HOLD_DISTANCE;
+  m_bHold = true;
+  PrintFormat("[ACR] AIRLIFT helicopter holding %1 m short of %2 for its turn", (int)HOLD_DISTANCE, spot);
+ }
+
+ void Release()
+ {
+  if (!m_bHold) return;
+  m_bHold = false;
+  m_fNextTerrain = 0;
+  PrintFormat("[ACR] AIRLIFT helicopter cleared to land at %1", m_Spot);
+ }
+
+ // Fly to the holding point at transit height and hover there.
+ protected bool HoldStep(float dt, float now)
+ {
+  vector flat = m_HoldAt - m_Pos;
+  flat[1] = 0;
+  float d = flat.Length();
+  if (d > 20)
+  {
+   vector dir = flat.Normalized();
+   TurnToward(Math.Atan2(dir[0], dir[2]) * Math.RAD2DEG, 24, dt);
+  }
+  m_fBodyYaw = m_fYaw;
+  vector forward = Heading(m_fYaw);
+  float wantedY = FlightClearance(forward, ALT_TRANSIT + m_iStack * STACK_STEP, now);
+  float wanted = Math.Min(Math.Min(SPEED_RUN, m_fTerrainSpeed), Math.Sqrt(FLIGHT_BRAKE * 2 * d));
+  if (d <= 20) wanted = 0;
+  m_fSpeed = ApproachSpeed(m_fSpeed, wanted, dt);
+  vector previous = m_Pos;
+  m_Pos = m_Pos + forward * (m_fSpeed * dt);
+  float rate = Math.Clamp((wantedY - m_Pos[1]) * 0.6, -6, 8);
+  m_fClimb += (rate - m_fClimb) * Math.Min(1, dt * 1.5);
+  m_Pos[1] = previous[1] + m_fClimb * dt;
+  float ground = GetGame().GetWorld().GetSurfaceY(m_Pos[0], m_Pos[2]);
+  if (m_Pos[1] < ground + 20)
+  {
+   m_Pos[0] = previous[0];
+   m_Pos[2] = previous[2];
+   m_fSpeed = 0;
+  }
+  GuardFlightMove(previous);
+  vector velocity = vector.Zero;
+  if (dt > 0) velocity = (m_Pos - previous) * (1 / dt);
+  Fly(velocity, dt);
+  return true;
+ }
 
  // Off the ground, then on to the next spot (or away).
  void TakeOff(vector next, bool leaving)
@@ -323,11 +393,25 @@ class ACR_AirLift : ACR_SupportRun
  static const float FORCE_RANGE = 400;      // m: placed in after FORCE_BOARD_MS
  static float NEAR_BOARD_MS = 10000;
  static float FORCE_BOARD_MS = 60000;
+ static float SEQUENTIAL_FORCE_MS = 15000;  // later chalks of a sequential lift
  static float BOARD_WAIT_MS = 120000;       // then it leaves with whoever is aboard
  static float UNLOAD_WAIT_MS = 25000;       // then anyone still aboard is put out
  static const float TIME_LIMIT_MS = 900000;
 
  static ref array<ACR_AirLift> s_Active = {};   // weak: a finished lift drops out by itself
+
+ // Strategic multi-squad air assault wave (aca-airlift-wave): allow up to 3 squads to launch
+ // in the same wave within 15 seconds of the wave's first squad before triggering cooldown.
+ static float s_fWaveUntil;
+ static string s_sWaveFaction;
+ static int s_iWaveCount;
+ static const int MAX_WAVE_SQUADS = 3;
+ static const float WAVE_WINDOW_MS = 15000;
+
+ static bool WaveSlotAvailable(string factionKey, float now)
+ {
+  return s_sWaveFaction == factionKey && now <= s_fWaveUntil && s_iWaveCount < MAX_WAVE_SQUADS;
+ }
 
  ACR_Squad m_Squad;
  string m_sFaction;
@@ -347,6 +431,12 @@ class ACR_AirLift : ACR_SupportRun
  protected float m_fNextStep;
  protected bool m_bToldDown;
  protected float m_fOutAt = -1;
+ // Only one landing spot at either end for a squad that needs two helicopters: they take
+ // turns on the same spots (aca-airlift-wave; Jacob 21 Oct: 9-man squads in 6-seat Hueys
+ // were refused or walked 300 m through woods to a second spot).
+ bool m_bSequential;
+ protected int m_iChalksOut;      // sequential: helicopters that have left the pickup with troops
+ static bool s_bTestOneSpot;      // tests: never look for a second spot
 
  // A squad with an air lift on the way, boarding, in the air or getting out.
  static bool Busy(ACR_Squad squad)
@@ -395,6 +485,17 @@ class ACR_AirLift : ACR_SupportRun
   int cost = entry.CostFor(byAI);
   if (!supports.m_Manager.m_Bases.Spend(factionKey, cost)) return string.Format("Not enough RP for %1 (%2 needed)", entry.m_sName, cost);
   float now = GetGame().GetWorld().GetWorldTime();
+  bool inWave = WaveSlotAvailable(factionKey, now);
+  if (!inWave)
+  {
+   s_sWaveFaction = factionKey;
+   s_fWaveUntil = now + WAVE_WINDOW_MS;
+   s_iWaveCount = 1;
+  }
+  else
+  {
+   s_iWaveCount++;
+  }
   entry.m_fReadyAt = now + entry.m_iCooldown * 1000;
   ACR_AirLift lift = new ACR_AirLift();
   lift.m_Squad = squad;
@@ -411,7 +512,8 @@ class ACR_AirLift : ACR_SupportRun
   if (!lift.Begin(supports, now))
   {
    supports.m_Manager.m_Bases.GetFaction(factionKey).m_iRP += cost;
-   entry.m_fReadyAt = now;
+   if (inWave) s_iWaveCount--;
+   else { s_fWaveUntil = 0; entry.m_fReadyAt = now; }
    return "No helicopter available";
   }
   supports.AddRun(lift);
@@ -424,8 +526,9 @@ class ACR_AirLift : ACR_SupportRun
   squad.MoveTo(meet);
   squad.SetOrder("Air lift: to the landing zone", ACR_EOrderState.MOVE);
   ACR_LiftHeli first = lift.m_Helis[0];
-  // Include spool-up, gentle acceleration, braking and the final vertical descent.
-  float seconds = vector.DistanceXZ(first.m_Start, pickups[0]) / ACR_HeliRun.SPEED_RUN + ACR_HeliRun.SPOOL_MAX_SECONDS;
+  // Include gentle acceleration, braking and the final vertical descent (no spool-up wait:
+  // the helicopters arrive already flying).
+  float seconds = vector.DistanceXZ(first.m_Start, pickups[0]) / ACR_HeliRun.SPEED_RUN;
   seconds += ACR_HeliRun.SPEED_RUN / (ACR_HeliRun.FLIGHT_ACCEL * 2) + ACR_HeliRun.SPEED_RUN / (ACR_HeliRun.FLIGHT_BRAKE * 2);
   int eta = (int)(seconds + ACR_HeliRun.ALT_TRANSIT / ACR_HeliRun.LIFT_RATE);
   string message = string.Format("%1 for %2: %3 helicopter(s) landing at %4, ETA about %5 s.", entry.m_sName, name, lift.m_Helis.Count(), ACR_Manager.Grid(pickups[0]), (int)(Math.Round(eta / 15.0) * 15));
@@ -452,25 +555,39 @@ class ACR_AirLift : ACR_SupportRun
   if (seats < Alive(m_Squad))
   {
    // A second helicopter needs its own spot at both ends: look wider round the first one.
-   if (m_Pickups.Count() < 2) ACR_LandingZone.Another(m_Pickups[0], SECOND_SPOT_SEARCH, m_Pickups);
-   if (m_Drops.Count() < 2) ACR_LandingZone.Another(m_Drops[0], SECOND_SPOT_SEARCH, m_Drops);
+   if (!s_bTestOneSpot)
+   {
+    if (m_Pickups.Count() < 2) ACR_LandingZone.Another(m_Pickups[0], SECOND_SPOT_SEARCH, m_Pickups);
+    if (m_Drops.Count() < 2) ACR_LandingZone.Another(m_Drops[0], SECOND_SPOT_SEARCH, m_Drops);
+   }
    if (m_Pickups.Count() > 1 && m_Drops.Count() > 1) SpawnHeli(supports, prefab, 1, now);
+   else
+   {
+    // No room for two: the second one waits airborne and lands on the same spots in turn.
+    m_bSequential = true;
+    SpawnHeli(supports, prefab, 1, now, true);
+    PrintFormat("[ACR] AIRLIFT %1: one landing spot (pickup spots %2, drop spots %3): helicopters take turns", m_sSquadName, m_Pickups.Count(), m_Drops.Count());
+   }
    if (m_Helis.Count() < 2) PrintFormat("[ACR] AIRLIFT %1: no second helicopter (pickup spots %2, drop spots %3)", m_sSquadName, m_Pickups.Count(), m_Drops.Count());
   }
   PrintFormat("[ACR] AIRLIFT %1: %2 cargo seats per helicopter, %3 helicopter(s)", m_sSquadName, seats, m_Helis.Count());
   return true;
  }
 
- protected bool SpawnHeli(ACR_Supports supports, ResourceName prefab, int index, float now)
+ protected bool SpawnHeli(ACR_Supports supports, ResourceName prefab, int index, float now, bool sharedSpot = false)
  {
+  int spotIndex = index;
+  if (sharedSpot) spotIndex = 0;
   ACR_LiftHeli heli = new ACR_LiftHeli();
   heli.m_sFaction = m_sFaction;
   heli.m_bDoorGuns = true; // no rockets
-  heli.m_Target = m_Pickups[index];
-  heli.m_Spot = m_Pickups[index];
-  heli.m_Dir = supports.ApproachDirection(m_sFaction, m_Pickups[index]);
+  heli.m_Target = m_Pickups[spotIndex];
+  heli.m_Spot = m_Pickups[spotIndex];
+  heli.m_Dir = supports.ApproachDirection(m_sFaction, m_Pickups[spotIndex]);
   heli.m_iStack = index;
   if (!heli.Start(supports, prefab, now)) return false;
+  heli.SkipSpoolWait();
+  if (sharedSpot) heli.Hold(heli.m_Spot);
   m_Helis.Insert(heli);
   return true;
  }
@@ -496,6 +613,12 @@ class ACR_AirLift : ACR_SupportRun
   if (now < m_fNextStep) return true;
   m_fNextStep = now + 1000;
   bool squadGone = !m_Squad || !m_Squad.m_Group || Alive(m_Squad) == 0;
+  if (m_bSequential && m_iStage < UNLOADING)
+  {
+   if (squadGone) Leave(supports, now, "the squad is gone");
+   else SequentialStep(supports, now);
+   return true;
+  }
   switch (m_iStage)
   {
    case INBOUND:
@@ -640,15 +763,20 @@ class ACR_AirLift : ACR_SupportRun
    foreach (ACR_LiftHeli heli : m_Helis)
    {
     if (heli.m_bDestroyed || heli.m_bAway || !heli.m_bDown) continue;
+    // Taking turns: only the helicopter loading at the pickup (not one down at the drop).
+    if (m_bSequential && heli.m_iLeg != 1) continue;
     BaseCompartmentSlot free;
     if (heli.FreeSeats(free, claimed) == 0) continue;
     float d = vector.DistanceXZ(character.GetOrigin(), heli.m_Vehicle.GetOrigin());
     if (d < bestDistance) { bestDistance = d; best = heli; seat = free; }
    }
    if (!best) continue;
+   // Later chalks: the rest of the squad may have drifted after the first lifted off.
+   float forceMs = FORCE_BOARD_MS;
+   if (m_bSequential && m_iChalksOut > 0) forceMs = Math.Min(FORCE_BOARD_MS, SEQUENTIAL_FORCE_MS);
    bool close = bestDistance <= BOARD_RANGE;
    bool near = bestDistance <= NEAR_RANGE && waited > NEAR_BOARD_MS;
-   bool forced = bestDistance <= FORCE_RANGE && waited > FORCE_BOARD_MS;
+   bool forced = bestDistance <= FORCE_RANGE && waited > forceMs;
    if (!close && !near && !forced) continue;
    // Some cargo seats refuse a soldier (seen 14 Oct: one UH-1H seat, every try): try them all.
    array<BaseCompartmentSlot> seats = {};
@@ -695,25 +823,216 @@ class ACR_AirLift : ACR_SupportRun
   return count;
  }
 
+ protected void GetOutHeli(ACR_LiftHeli heli)
+ {
+  if (!heli || !heli.m_Vehicle) return;
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(heli.m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return;
+  array<BaseCompartmentSlot> seats = {};
+  compartments.GetCompartmentsOfType(seats, ECompartmentType.CARGO);
+  foreach (BaseCompartmentSlot seat : seats)
+  {
+   ChimeraCharacter passenger = ChimeraCharacter.Cast(seat.GetOccupant());
+   if (!passenger) continue;
+   CompartmentAccessComponent access = passenger.GetCompartmentAccessComponent();
+   if (!access || access.IsGettingOut()) continue;
+   access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+  }
+ }
+
+ protected void PutOutHeli(ACR_LiftHeli heli)
+ {
+  if (!heli || !heli.m_Vehicle) return;
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(heli.m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return;
+  array<BaseCompartmentSlot> seats = {};
+  compartments.GetCompartmentsOfType(seats, ECompartmentType.CARGO);
+  foreach (BaseCompartmentSlot seat : seats)
+  {
+   ChimeraCharacter passenger = ChimeraCharacter.Cast(seat.GetOccupant());
+   if (!passenger) continue;
+   CompartmentAccessComponent access = passenger.GetCompartmentAccessComponent();
+   if (!access || access.IsGettingOut()) continue;
+   bool ok = access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   PrintFormat("[ACR] AIRLIFT %1: put a passenger out -> %2", m_sSquadName, ok);
+  }
+ }
+
  // Whoever is still in a cargo seat (any group) is put out on the ground beside the helicopter.
  protected void PutOut()
  {
-  foreach (ACR_LiftHeli heli : m_Helis)
+  foreach (ACR_LiftHeli heli : m_Helis) PutOutHeli(heli);
+ }
+
+ // Two helicopters taking turns on a single landing spot (aca-airlift-wave).
+ protected void SequentialStep(ACR_Supports supports, float now)
+ {
+  if (m_Helis.Count() < 2)
   {
-   if (!heli.m_Vehicle) continue;
-   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(heli.m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
-   if (!compartments) continue;
-   array<BaseCompartmentSlot> seats = {};
-   compartments.GetCompartmentsOfType(seats, ECompartmentType.CARGO);
-   foreach (BaseCompartmentSlot seat : seats)
+   m_bSequential = false;
+   return;
+  }
+  ACR_LiftHeli h0 = m_Helis[0];
+  ACR_LiftHeli h1 = m_Helis[1];
+  int alive = Alive(m_Squad);
+
+  // Handle destruction of either helicopter gracefully
+  if (h0.m_bDestroyed && h0.m_iLeg < 4)
+  {
+   h0.m_iLeg = 4;
+   if (h1 && h1.m_bHold)
    {
-    ChimeraCharacter passenger = ChimeraCharacter.Cast(seat.GetOccupant());
-    if (!passenger) continue;
-    CompartmentAccessComponent access = passenger.GetCompartmentAccessComponent();
-    if (!access || access.IsGettingOut()) continue;
-    bool ok = access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
-    PrintFormat("[ACR] AIRLIFT %1: put a passenger out -> %2", m_sSquadName, ok);
+    h1.m_Spot = m_Drops[0];
+    h1.m_Target = m_Drops[0];
+    h1.Release();
    }
+  }
+  if (h1.m_bDestroyed && h1.m_iLeg < 4)
+  {
+   h1.m_iLeg = 4;
+  }
+
+  // Chalk 0: loading at pickup
+  if (h0.m_iLeg == 0 && h0.m_bDown)
+  {
+   h0.m_iLeg = 1;
+   h0.m_fLegAt = now;
+   Stage(BOARDING, now);
+   Tell(supports, string.Format("Air lift chalk 1 landed for %1 at %2.", m_sSquadName, ACR_Manager.Grid(m_Pickups[0])));
+  }
+  if (h0.m_iLeg == 1)
+  {
+   int aboard0 = Board(now);
+   BaseCompartmentSlot free0;
+   int freeSeats0 = h0.FreeSeats(free0, null);
+   float waited0 = now - h0.m_fLegAt;
+   if (freeSeats0 == 0 || aboard0 >= alive || (waited0 > BOARD_WAIT_MS && aboard0 > 0))
+   {
+    h0.TakeOff(m_Drops[0], false);
+    h0.m_iLeg = 2;
+    h0.m_fLegAt = now;
+    m_iChalksOut++;
+    PrintFormat("[ACR] AIRLIFT %1: chalk 1 taking off with %2 passengers", m_sSquadName, Passengers(h0));
+    if (h1 && !h1.m_bDestroyed && !h1.m_bAway)
+    {
+     h1.m_Spot = m_Pickups[0];
+     h1.m_Target = m_Pickups[0];
+     h1.Release();
+    }
+   }
+   else if (waited0 > BOARD_WAIT_MS)
+   {
+    m_Squad.Halt("Holding");
+    Leave(supports, now, "nobody reached the landing zone");
+    Tell(supports, string.Format("Air lift left: %1 never reached the landing zone.", m_sSquadName));
+    return;
+   }
+  }
+
+  // Chalk 1: loading at pickup
+  if (h1.m_iLeg == 0 && !h1.m_bHold && h1.m_bDown)
+  {
+   h1.m_iLeg = 1;
+   h1.m_fLegAt = now;
+   Tell(supports, string.Format("Air lift chalk 2 landed for %1 at %2.", m_sSquadName, ACR_Manager.Grid(m_Pickups[0])));
+  }
+  if (h1.m_iLeg == 1)
+  {
+   int aboard1 = Board(now);
+   BaseCompartmentSlot free1;
+   int freeSeats1 = h1.FreeSeats(free1, null);
+   float waited1 = now - h1.m_fLegAt;
+   if (freeSeats1 == 0 || aboard1 >= alive || (waited1 > BOARD_WAIT_MS && aboard1 > 0))
+   {
+    h1.TakeOff(m_Drops[0], false);
+    h1.m_iLeg = 2;
+    h1.m_fLegAt = now;
+    m_iChalksOut++;
+    PrintFormat("[ACR] AIRLIFT %1: chalk 2 taking off with %2 passengers", m_sSquadName, Passengers(h1));
+   }
+   else if (waited1 > BOARD_WAIT_MS)
+   {
+    h1.TakeOff(h1.m_Start, true);
+    h1.m_iLeg = 4;
+   }
+  }
+
+  // Chalk 0: arrival and unloading at drop spot
+  if (h0.m_iLeg == 2 && h0.m_bDown)
+  {
+   h0.m_iLeg = 3;
+   h0.m_fLegAt = now;
+   GetOutHeli(h0);
+   PrintFormat("[ACR] AIRLIFT %1: chalk 1 down at drop-off, unloading", m_sSquadName);
+  }
+  if (h0.m_iLeg == 3)
+  {
+   int still0 = Passengers(h0);
+   if (still0 > 0 && now - h0.m_fLegAt > UNLOAD_WAIT_MS) PutOutHeli(h0);
+   if (still0 == 0 || now - h0.m_fLegAt > UNLOAD_WAIT_MS + 5000)
+   {
+    h0.TakeOff(h0.m_Start, true);
+    h0.m_iLeg = 4;
+    PrintFormat("[ACR] AIRLIFT %1: chalk 1 departed drop-off", m_sSquadName);
+    if (h1 && h1.m_bHold)
+    {
+     h1.m_Spot = m_Drops[0];
+     h1.m_Target = m_Drops[0];
+     h1.Release();
+    }
+   }
+  }
+
+  // Chalk 1: approach and unloading at drop spot
+  if (h1.m_iLeg == 2)
+  {
+   if (h0.m_iLeg < 4 && !h1.m_bHold)
+   {
+    float distToDrop = vector.DistanceXZ(h1.m_Pos, m_Drops[0]);
+    if (distToDrop < ACR_LiftHeli.HOLD_DISTANCE + 50)
+    {
+     h1.Hold(m_Drops[0]);
+    }
+   }
+   if (!h1.m_bHold && h1.m_bDown)
+   {
+    h1.m_iLeg = 3;
+    h1.m_fLegAt = now;
+    GetOutHeli(h1);
+    PrintFormat("[ACR] AIRLIFT %1: chalk 2 down at drop-off, unloading", m_sSquadName);
+   }
+  }
+  if (h1.m_iLeg == 3)
+  {
+   int still1 = Passengers(h1);
+   if (still1 > 0 && now - h1.m_fLegAt > UNLOAD_WAIT_MS) PutOutHeli(h1);
+   if (still1 == 0 || now - h1.m_fLegAt > UNLOAD_WAIT_MS + 5000)
+   {
+    h1.TakeOff(h1.m_Start, true);
+    h1.m_iLeg = 4;
+    PrintFormat("[ACR] AIRLIFT %1: chalk 2 departed drop-off", m_sSquadName);
+   }
+  }
+
+  // Both chalks completed drop-off
+  if (h0.m_iLeg == 4 && h1.m_iLeg == 4)
+  {
+   Stage(UNLOADING, now);
+   if (m_Squad && m_Squad.m_Group && Alive(m_Squad) > 0)
+   {
+    if (!m_sFinalPrefab.IsEmpty())
+    {
+     vector finalDest = m_FinalTarget;
+     if (finalDest == vector.Zero) finalDest = m_Drops[0];
+     m_Squad.RestoreOrder(ACR_OrderSnapshot.Make(m_sFinalPrefab, finalDest, m_fFinalRadius, m_sFinalOrder, ACR_Squad.StateOfLabel(m_sFinalOrder), m_iFinalKind));
+    }
+    else
+    {
+     m_Squad.Defend(m_Drops[0]);
+    }
+   }
+   Tell(supports, string.Format("%1 landed at %2.", m_sSquadName, ACR_Manager.Grid(m_Drops[0])));
+   Leave(supports, now, "done");
   }
  }
 

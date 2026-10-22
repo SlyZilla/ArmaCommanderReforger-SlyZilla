@@ -1022,6 +1022,20 @@ class ACR_AICommander : Managed
   return base.IsVisibleTo(m_sFaction);
  }
 
+ bool HasKnownEnemyBase()
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (!base.m_sOwner.IsEmpty() && base.m_sOwner != m_sFaction && Visible(base)) return true;
+  return false;
+ }
+
+ bool FriendlyBaseThreatened()
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base.m_sOwner == m_sFaction && ThreatTo(base) > DefenceOf(base)) return true;
+  return false;
+ }
+
  // Own bases nearest to anything not ours: where fights happen.
  protected void FrontlineBases(array<ACR_Base> result)
  {
@@ -1098,7 +1112,10 @@ class ACR_AICommander : Managed
   if (index < 0 || !m_Manager.m_Supports) return false;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   ACR_SupportEntry entry = data.m_aSupports[index];
-  return GetGame().GetWorld().GetWorldTime() >= entry.m_fReadyAt && data.m_iRP >= entry.CostFor(true) + SUPPORT_RESERVE;
+  float now = GetGame().GetWorld().GetWorldTime();
+  bool ready = now >= entry.m_fReadyAt;
+  if (!ready && type == ACR_ESupportType.AIR_LIFT && ACR_AirLift.WaveSlotAvailable(m_sFaction, now)) ready = true;
+  return ready && data.m_iRP >= entry.CostFor(true) + SUPPORT_RESERVE;
  }
 
  // Own soldiers (squads and players) within radius: never call fire on them.
@@ -2103,11 +2120,22 @@ class ACR_AICommander : Managed
   ACR_SupportEntry entry = data.m_aSupports[supportIdx];
   if (!entry || !entry.m_bEnabled) return false;
   float now = GetGame().GetWorld().GetWorldTime();
-  if (now < entry.m_fReadyAt) return false;
-  if (now < m_fNextAirLiftTry) return false;
+  bool waveSlot = ACR_AirLift.WaveSlotAvailable(m_sFaction, now);
+  if (now < entry.m_fReadyAt && !waveSlot) return false;
+  if (now < m_fNextAirLiftTry && !waveSlot) return false;
   int cost = entry.CostFor(true);
   if (data.m_iRP < cost + SUPPORT_RESERVE) return false;
   if (squad.KnownEnemies(300) > 0) return false;
+
+  // AI priority gate: when known enemy bases exist, preserve air lifts for combat attacks
+  // and threatened base defense rather than idle squad shuffling or cheap grabs.
+  if (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED)
+  {
+   if (HasKnownEnemyBase())
+   {
+    if (FriendlyBaseThreatened() || !m_Attacks.IsEmpty() || data.m_iRP < cost * 2 + SUPPORT_RESERVE) return false;
+   }
+  }
 
   bool isLong = distance >= AIRLIFT_DISTANCE;
   bool isDetour = false;
