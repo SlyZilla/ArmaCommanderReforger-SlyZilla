@@ -1036,6 +1036,27 @@ class ACR_AICommander : Managed
   return false;
  }
 
+ ACR_Base NearestEnemyBase(vector point, ACR_Base except = null)
+ {
+  ACR_Base nearest;
+  float best = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || base == except) continue;
+   float d = vector.DistanceXZ(base.GetOrigin(), point);
+   if (d < best) { best = d; nearest = base; }
+  }
+  return nearest;
+ }
+
+ static bool IsReconTeam(ACR_Squad squad)
+ {
+  if (!squad) return false;
+  string name = squad.GetName();
+  name.ToLower();
+  return name.Contains("recon") || name.Contains("scout") || name.Contains("sniper") || name.Contains("observer") || name.Contains("spotter");
+ }
+
  // Own bases nearest to anything not ours: where fights happen.
  protected void FrontlineBases(array<ACR_Base> result)
  {
@@ -1325,6 +1346,7 @@ class ACR_AICommander : Managed
    {
     ACR_Squad squad = free[k];
     if (vector.DistanceXZ(PositionOf(squad), base.GetOrigin()) > DEFENSE_DISTANCE * 3) { k++; continue; }
+    if (IsSupportTeam(squad) && free.Count() > 1) { k++; continue; }
     squad.SetMode(ACR_EMoveMode.FAST);
     Travel(squad, base.GetOrigin(), true, 0);
     squad.m_iAITask = ACR_EAITask.DEFEND;
@@ -1332,6 +1354,17 @@ class ACR_AICommander : Managed
     needed -= squad.Strength();
     free.RemoveOrdered(k);
     PrintFormat("[ACR] AI %1: %2 defends %3 (threat %4)", m_sFaction, squad.GetName(), base.m_sName, threat);
+   }
+   if (needed > 0 && m_ReserveSquad && !free.Contains(m_ReserveSquad) && m_ReserveSquad.KnownEnemies(250) == 0)
+   {
+    ACR_Squad qrf = m_ReserveSquad;
+    m_ReserveSquad = null;
+    qrf.SetMode(ACR_EMoveMode.FAST);
+    Travel(qrf, base.GetOrigin(), true, 0);
+    qrf.m_iAITask = ACR_EAITask.DEFEND;
+    qrf.m_AITarget = base;
+    needed -= qrf.Strength();
+    PrintFormat("[ACR] AI %1: QRF reserve %2 committed to defend %3 (threat %4)", m_sFaction, qrf.GetName(), base.m_sName, threat);
    }
   }
   DefendInDepth();
@@ -1342,6 +1375,8 @@ class ACR_AICommander : Managed
    vector seenAt;
    ACR_Squad attacker = EnemyNear(held.GetOrigin(), THREAT_DISTANCE + held.m_fRadius, seenAt);
    if (!attacker) continue;
+   if (ThreatTo(held) >= 8 && CallSupport(ACR_ESupportType.HELI_GUN_RUN, seenAt, "gun run at " + held.m_sName)) break;
+   if (ThreatTo(held) >= 8 && CallSupport(ACR_ESupportType.ROCKET_STRIKE, seenAt, "rocket strike at " + held.m_sName)) break;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, seenAt, "defensive fire at " + held.m_sName)) break;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, seenAt, "defensive fire at " + held.m_sName)) break;
    // No mortar in reach: the howitzer battery (slow and dear, but it reaches anywhere).
@@ -1576,7 +1611,10 @@ class ACR_AICommander : Managed
   // HQ unless nothing else fits: Jacob 14 Oct, reserves at the HQ took too long to respond).
   array<ACR_Squad> all = {};
   MySquads(all, false);
-  if (all.Count() >= 5 && free.Count() >= 2 && Pressure() >= 0.9)
+  int minAllForReserve = 5;
+  if (ACR_Manager.ThreatOption() == 0) minAllForReserve = 6;
+  else if (ACR_Manager.ThreatOption() == 2) minAllForReserve = 4;
+  if (all.Count() >= minAllForReserve && free.Count() >= 2 && Pressure() >= 0.9)
   {
    ACR_Base home = ReserveBase();
    if (home)
@@ -1771,6 +1809,7 @@ class ACR_AICommander : Managed
   {
    int sqStrength = squad.Strength();
    remainingPool -= sqStrength;
+   if (squad.StrengthRatio() < 0.55 && strength + remainingPool >= required) continue;
    float distToTarget = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
    if (strength >= required * margin)
    {
@@ -2378,10 +2417,15 @@ class ACR_AICommander : Managed
    {
     vector candidate = ACR_Manager.Ground(center + Turned(side, turn) * d);
     float walk = vector.DistanceXZ(candidate, from);
-    if (walk >= best || BBB_Terrain.IsWaterAt(candidate) || NearOtherEnemyBase(candidate, target)) continue;
+    if (BBB_Terrain.IsWaterAt(candidate) || NearOtherEnemyBase(candidate, target)) continue;
     if (!FireLine(candidate, center)) continue;
-    spot = candidate;
-    best = walk;
+    float heightAdvantage = candidate[1] - center[1];
+    float score = walk - Math.Max(0.0, heightAdvantage * 2.5);
+    if (score < best)
+    {
+     spot = candidate;
+     best = score;
+    }
    }
   }
   return best < float.MAX;
@@ -2392,8 +2436,22 @@ class ACR_AICommander : Managed
   ACR_Squad fire = attack.m_Suppressor;
   if (!fire || !attack.m_Target) return;
   fire.SetMode(ACR_EMoveMode.COMBAT);
-  fire.Assault(attack.m_Target.GetOrigin());
-  PrintFormat("[ACR] AI %1: %2 lifts fire and joins the assault on %3 (%4)", m_sFaction, fire.GetName(), attack.m_Target.m_sName, reason);
+  IEntity vFire = ACR_Transport.CrewedVehicle(fire);
+  if (vFire && fire.HasGunner(vFire) && reason != "nobody left to cover")
+  {
+   vector dir = PositionOf(fire) - attack.m_Target.GetOrigin();
+   dir[1] = 0;
+   if (dir.LengthSq() < 1) dir = Vector(0, 0, 1);
+   dir.Normalize();
+   vector perimeterSpot = ACR_Manager.Ground(attack.m_Target.GetOrigin() + dir * (attack.m_Target.m_fRadius + 80));
+   fire.Defend(perimeterSpot);
+   PrintFormat("[ACR] AI %1: %2 (armed vehicle) holds perimeter standoff at %3 (%4)", m_sFaction, fire.GetName(), attack.m_Target.m_sName, reason);
+  }
+  else
+  {
+   fire.Assault(attack.m_Target.GetOrigin());
+   PrintFormat("[ACR] AI %1: %2 lifts fire and joins the assault on %3 (%4)", m_sFaction, fire.GetName(), attack.m_Target.m_sName, reason);
+  }
   attack.m_Suppressor = null;
  }
 
@@ -2601,19 +2659,37 @@ class ACR_AICommander : Managed
    {
     attack.m_bAssaulting = true;
     attack.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
-    // Preparation: shell the objective, screen the approach with smoke.
-    if (!CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, target.GetOrigin(), "preparation fire on " + target.m_sName))
-     if (!CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, target.GetOrigin(), "preparation fire on " + target.m_sName))
-      CallSupport(ACR_ESupportType.ARTILLERY_BATTERY, target.GetOrigin(), "battery preparation fire on " + target.m_sName);
+    // Preparation: shell the objective with heavy assets against fortified FOBs
+    bool heavyPrep = target.m_bBuilt || DefenceOf(target) >= 12;
+    if (!heavyPrep || !CallSupport(ACR_ESupportType.BOMB_RUN, target.GetOrigin(), "airstrike preparation on " + target.m_sName))
+     if (!heavyPrep || !CallSupport(ACR_ESupportType.ROCKET_STRIKE, target.GetOrigin(), "rocket strike preparation on " + target.m_sName))
+      if (!heavyPrep || !CallSupport(ACR_ESupportType.HELI_GUN_RUN, target.GetOrigin(), "gun run preparation on " + target.m_sName))
+       if (!CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, target.GetOrigin(), "preparation fire on " + target.m_sName))
+        if (!CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, target.GetOrigin(), "preparation fire on " + target.m_sName))
+         CallSupport(ACR_ESupportType.ARTILLERY_BATTERY, target.GetOrigin(), "battery preparation fire on " + target.m_sName);
     vector screen = attack.m_Staging + (target.GetOrigin() - attack.m_Staging) * 0.55;
     CallSupport(ACR_ESupportType.MORTAR_SMOKE, screen, "smoke screen for " + target.m_sName);
     // Reserve gunship support for an assault, not only the rare counterattack.
     // CallSupport still checks cooldown, range/pad readiness and friendly distance.
-    CallSupport(ACR_ESupportType.HELI_LOITER, target.GetOrigin(), "gunship for the assault on " + target.m_sName);
+    if (!CallSupport(ACR_ESupportType.HELI_LOITER, target.GetOrigin(), "gunship for the assault on " + target.m_sName))
+     CallSupport(ACR_ESupportType.HELI_DOOR_GUNS, target.GetOrigin(), "door-gunner heli for the assault on " + target.m_sName);
     foreach (ACR_Squad squad : attack.m_Squads)
     {
      squad.SetMode(ACR_EMoveMode.COMBAT);
-     if (squad != attack.m_Suppressor) squad.Assault(target.GetOrigin());
+     if (squad != attack.m_Suppressor)
+     {
+      IEntity vSquad = ACR_Transport.CrewedVehicle(squad);
+      if (vSquad && squad.HasGunner(vSquad))
+      {
+       vector vSpot;
+       if (OverwatchSpot(target, PositionOf(squad), vSpot)) squad.Defend(vSpot);
+       else squad.Assault(target.GetOrigin());
+      }
+      else
+      {
+       squad.Assault(target.GetOrigin());
+      }
+     }
     }
     if (attack.m_Suppressor) UpdateFireBase(attack);
     string suppressor = "none";
@@ -2635,6 +2711,22 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : free)
   {
    if (squad.m_iAITask == ACR_EAITask.POSTED) continue;
+   if (IsReconTeam(squad))
+   {
+    ACR_Base enemyBase = NearestEnemyBase(PositionOf(squad));
+    if (enemyBase)
+    {
+     vector vSpot;
+     if (OverwatchSpot(enemyBase, PositionOf(squad), vSpot))
+     {
+      squad.m_iAITask = ACR_EAITask.POSTED;
+      squad.SetMode(ACR_EMoveMode.SILENT);
+      squad.MoveTo(vSpot);
+      PrintFormat("[ACR] AI %1: recon team %2 posted to overwatch at %3 (%4 m)", m_sFaction, squad.GetName(), enemyBase.m_sName, (int)vector.DistanceXZ(vSpot, enemyBase.GetOrigin()));
+      continue;
+     }
+    }
+   }
    // Nearest frontline base, but spread out: each squad already posted
    // there counts as 400 m farther, so idle troops don't pile up in one place.
    ACR_Base nearest;
@@ -2911,6 +3003,15 @@ class ACR_AICommander : Managed
    ACR_Squad squad = team.m_Squad;
    if (!squad || squad.HasPlayer() || team.m_bLost || team.m_bFiring) continue;
    if (team.m_eState == ACR_EMortarState.PACKING || team.m_eState == ACR_EMortarState.DEPLOYING) continue;
+   // Shoot-and-scoot: after firing a mission, displace slightly so counter-battery misses
+   if (team.m_eState == ACR_EMortarState.DEPLOYED && team.m_iFired > 0 && !team.m_bFiring && now > team.m_fMissionEnd + 15000)
+   {
+    team.m_iFired = 0;
+    vector scoot = ACR_Manager.Ground(team.m_Spot + Vector(Math.RandomFloat(-40, 40), 0, Math.RandomFloat(-40, 40)));
+    squad.MoveTo(scoot);
+    PrintFormat("[ACR] AI %1 mortar: %2 shoot-and-scoot displacement", m_sFaction, squad.GetName());
+    continue;
+   }
    vector here = PositionOf(squad);
    if (team.m_eState == ACR_EMortarState.DEPLOYED) here = team.m_Spot;
    else if (ACR_Mortars.IsMoving(squad, here)) continue; // on its way
@@ -2989,11 +3090,15 @@ class ACR_AICommander : Managed
    }
    if (!nearBase) continue;
    // Only inside the circle: there the replacements come from this base and
-   // the squad gets its ammo too. Remnants walk in; others wait until they pass by.
+   // the squad gets its ammo too. Depleted squads walk in; others wait until they pass by.
    if (nearestDist > nearBase.m_fRadius)
    {
-    if (remnant && (!squad.m_Group || !squad.m_Group.GetCurrentWaypoint()))
+    bool shouldWalk = remnant || (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED);
+    if (shouldWalk && (!squad.m_Group || !squad.m_Group.GetCurrentWaypoint()))
+    {
      squad.RouteTo(ACR_Manager.Ground(nearBase.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
+     PrintFormat("[ACR] AI %1: depleted squad %2 (%3% strength) moving to %4 to reinforce", m_sFaction, squad.GetName(), (int)(squad.StrengthRatio() * 100), nearBase.m_sName);
+    }
     continue;
    }
    if (ACR_LogisticsRules.RelayBlocked(ACR_FobSupply.Nearby(m_sFaction, PositionOf(squad)))) continue;
@@ -3035,9 +3140,14 @@ class ACR_AICommander : Managed
   array<ACR_Squad> mine = {};
   MySquads(mine, false);
   // Only fighting units count against the cap (trucks and lone drivers don't).
-  for (int m = mine.Count() - 1; m >= 0; m--)
-   if (!mine[m].IsCombatUnit()) mine.RemoveOrdered(m);
-  if (mine.Count() >= cap) return;
+  int combatLine = 0;
+  int supportTeams = 0;
+  foreach (ACR_Squad existing : mine)
+  {
+   if (IsSupportTeam(existing)) supportTeams++;
+   else if (existing.IsCombatUnit()) combatLine++;
+  }
+  if (combatLine >= cap) return;
   // Deploy at the forward-most safe deployment base (military/airfield/FOB with
   // ThreatTo == 0 and at least FOB_DEPLOY_MIN_FRONT from any non-owned base);
   // fall back to the furthest rear base when all forward bases are under threat.
@@ -3171,6 +3281,7 @@ class ACR_AICommander : Managed
     {
      if (entry.m_iRemaining <= 0 || entry.m_iCost > saveMax) continue;
      if (mine.Count() < 2 && entry.m_iCost > budget) continue;
+     if (supportTeams >= 2 && IsSpecialistTeam(entry)) continue;
      if (entry.m_bMortarTeam) continue; // bought on its own (BuyMortarTeam)
      // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
      if (entry.m_bAircraft || entry.m_sVehicle.Contains("/Helicopters/") || entry.m_sVehicle.Contains("/Planes/")) continue;
@@ -3662,9 +3773,10 @@ class ACR_AICommander : Managed
  {
   array<ACR_Squad> free = {};
   MySquads(free, true);
+  if (builder) SortByDistance(free, PositionOf(builder));
   foreach (ACR_Squad squad : free)
   {
-   if (!squad || squad == builder || squad.HasPlayer() || squad.CountAlive() <= 0) continue;
+   if (!squad || squad == builder || squad.HasPlayer() || squad.CountAlive() <= 0 || IsSupportTeam(squad)) continue;
    if (squad.IsCombatUnit()) return squad;
   }
   return null;
@@ -3780,6 +3892,7 @@ class ACR_AICommander : Managed
    }
   }
   if (!best) return false;
+  best.m_iAITask = ACR_EAITask.DEFEND;
   best.SetMode(ACR_EMoveMode.FAST);
   best.MoveTo(chargePos);
   PrintFormat("[ACR] AI %1: %2 sent to defuse a demolition charge at %3 (%4 m)", m_sFaction, best.GetName(), chargePos, (int)bestDist);
