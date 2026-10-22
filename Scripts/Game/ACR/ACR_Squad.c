@@ -1748,6 +1748,50 @@ class ACR_Squad : Managed
   m_bRegrouping = true;
   m_fRegroupSince = now;
   PrintFormat("[ACR] TACTICS %1: %2 of %3 strung out, regrouping", m_Name, behind, alive);
+  LogStragglers(leader);
+ }
+
+ // Who is behind and what he is doing (21 Oct live, Kolguyev: the same two or three men every
+ // regroup, the heavily loaded ones by eye). One line per straggler, plus the leader for scale.
+ protected void LogStragglers(IEntity leader)
+ {
+  PrintFormat("[ACR] STRAGGLER %1 leader %2: load %3 kg", m_Name, StragglerKind(leader), Math.Round(LoadOf(leader)));
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || body == leader || !IsConscious(body) || ACR_Transport.VehicleOf(body)) continue;
+   float distance = vector.DistanceXZ(body.GetOrigin(), leader.GetOrigin());
+   if (distance <= STRAGGLER_DISTANCE) continue;
+   string doing = "idle";
+   SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
+   if (utility && utility.GetCurrentBehavior()) doing = utility.GetCurrentBehavior().ClassName();
+   string stance = "?";
+   ChimeraCharacter character = ChimeraCharacter.Cast(body);
+   if (character && character.GetCharacterController()) stance = typename.EnumToString(ECharacterStance, character.GetCharacterController().GetStance());
+   PrintFormat("[ACR] STRAGGLER %1 %2: %3 m behind, load %4 kg, %5, %6, climb %7 m", m_Name, StragglerKind(body), Math.Round(distance), Math.Round(LoadOf(body)), doing, stance, Math.Round(leader.GetOrigin()[1] - body.GetOrigin()[1]));
+  }
+ }
+
+ static float LoadOf(IEntity body)
+ {
+  if (!body) return 0;
+  SCR_CharacterInventoryStorageComponent storage = SCR_CharacterInventoryStorageComponent.Cast(body.FindComponent(SCR_CharacterInventoryStorageComponent));
+  if (!storage) return 0;
+  return storage.GetTotalWeight();
+ }
+
+ static string StragglerKind(IEntity body)
+ {
+  if (!body || !body.GetPrefabData()) return "?";
+  string name = body.GetPrefabData().GetPrefabName();
+  int slash = name.LastIndexOf("/");
+  if (slash >= 0) name = name.Substring(slash + 1, name.Length() - slash - 1);
+  name.Replace(".et", "");
+  name.Replace("Character_", "");
+  return name;
+ }
 
  // ---------------------------------------------------------------- stalled vehicles
  // The game's AI drivers get stuck on obstacles (and sit there honking), or stop
