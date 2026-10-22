@@ -39,6 +39,8 @@ class ACR_Rides : Managed
  static const float WASTED_SEAT_M = 30;        // m: penalty per empty seat when picking a transport
  static const float MAX_PICKUP = 800;          // m: farthest a transport is fetched from
  static const float PICKUP_SHARE = 0.5;        // ... and no farther than this share of the trip
+ static const float MAX_PICKUP_AI = 1500;      // m: wider motor-pool fetch for long trips
+ static const float PICKUP_SHARE_AI = 0.75;
  static const float MIN_TRIP = 400;            // m: shorter than this, just walk
  static const float PICKUP_REACHED = 35;       // m from the squad to stop and let them board
  static const float DROP_REACHED = 60;         // m from the drop-off point
@@ -140,9 +142,16 @@ class ACR_Rides : Managed
  }
 
  // Nearest free transport with room for everyone, within the fetch limits.
- ACR_Squad FindTransport(string faction, vector pickup, float trip, int seatsNeeded, out float distance)
+ ACR_Squad FindTransport(string faction, vector pickup, float trip, int seatsNeeded, out float distance, bool wideFetch = false)
  {
-  float limit = Math.Min(MAX_PICKUP, trip * PICKUP_SHARE);
+  float maxFetch = MAX_PICKUP;
+  float shareFetch = PICKUP_SHARE;
+  if (wideFetch)
+  {
+   maxFetch = MAX_PICKUP_AI;
+   shareFetch = PICKUP_SHARE_AI;
+  }
+  float limit = Math.Min(maxFetch, trip * shareFetch);
   ACR_Squad best;
   distance = float.MAX;
   float bestScore = float.MAX;
@@ -188,7 +197,7 @@ class ACR_Rides : Managed
 
  // Starts a ride, or returns null with the reason in why.
  // dropShort: how far short of the destination to get out.
- ACR_Ride Request(ACR_Squad rider, vector destination, float dropShort, ResourceName finalPrefab, float finalRadius, string finalOrder, int finalKind, out string why)
+ ACR_Ride Request(ACR_Squad rider, vector destination, float dropShort, ResourceName finalPrefab, float finalRadius, string finalOrder, int finalKind, out string why, bool wideFetch = false)
  {
   why = "";
   IEntity anchor = rider.GetAnchor();
@@ -201,11 +210,18 @@ class ACR_Rides : Managed
   if (trip < MIN_TRIP) { why = string.Format("too close to need a ride (under %1 m)", (int)MIN_TRIP); return null; }
   int seats = rider.CountAlive();
   float fetch;
-  ACR_Squad taxi = FindTransport(faction, from, trip, seats, fetch);
+  ACR_Squad taxi = FindTransport(faction, from, trip, seats, fetch, wideFetch);
   if (!taxi)
   {
    m_NoTransportAt.Set(faction, GetGame().GetWorld().GetWorldTime());
-   float limit = Math.Min(MAX_PICKUP, trip * PICKUP_SHARE);
+   float maxFetch = MAX_PICKUP;
+   float shareFetch = PICKUP_SHARE;
+   if (wideFetch)
+   {
+    maxFetch = MAX_PICKUP_AI;
+    shareFetch = PICKUP_SHARE_AI;
+   }
+   float limit = Math.Min(maxFetch, trip * shareFetch);
    why = string.Format("no free transport with %1 seats within %2 m", seats, (int)limit) + NearestTaxiNote(rider, faction, from, limit, seats);
    return null;
   }
@@ -559,11 +575,24 @@ class ACR_Rides : Managed
   vector here = ride.m_Vehicle.GetOrigin();
   ACR_Base home;
   float best = float.MAX;
+  float bestScore = float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (base.m_sOwner != ride.m_sFaction || base.m_bContested) continue;
    float d = vector.DistanceXZ(base.GetOrigin(), here);
-   if (d < best) { best = d; home = base; }
+   float score = d;
+   if (ACR_LogisticsRules.CanDeploy(base)) score -= 250;
+   foreach (ACR_Squad foot : m_Manager.m_Squads)
+   {
+    if (FactionOf(foot) != ride.m_sFaction || foot.IsMounted() || ACR_Transport.CrewedVehicle(foot) || foot.m_bMortar || foot.Aircraft()) continue;
+    IEntity footAnchor = foot.GetAnchor();
+    if (footAnchor && vector.DistanceXZ(footAnchor.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 150)
+    {
+     score -= 450;
+     break;
+    }
+   }
+   if (score < bestScore) { bestScore = score; best = d; home = base; }
   }
   if (!home || best < 80)
   {

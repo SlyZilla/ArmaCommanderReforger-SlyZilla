@@ -479,6 +479,7 @@ class ACR_Squad : Managed
  float m_fOrderedAt;
  float m_fOrderRadius = -1;
  float m_fContactLogged;
+ protected float m_fLastContactTime = -1;
 
  ACR_EMoveMode m_Mode = ACR_EMoveMode.COMBAT;
  string m_Order = "Holding";   // label for the map and panel; logic uses OrderState()
@@ -1285,6 +1286,7 @@ class ACR_Squad : Managed
    else IssueWaypoint(WP_GARRISON, m_MoveTarget, m_fOrderRadius);
   }
   bool contact = KnownEnemies(350) > 0;
+  if (contact) m_fLastContactTime = now;
   if (m_CombatFlank.Tick(this, now)) return;
   FollowRoute();
   Cohesion(now, contact);
@@ -1299,6 +1301,11 @@ class ACR_Squad : Managed
    IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius);
    m_Mode = mode;
    PrintFormat("[ACR] TACTICS %1: contact, fighting its way forward", m_Name);
+  }
+  else if (!m_bForced && m_Mode == ACR_EMoveMode.FAST && movingOrder && !contact && m_Waypoint && !IsMounted() && !m_bRegrouping && m_fLastContactTime > 0 && now - m_fLastContactTime >= 15000)
+  {
+   IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, true);
+   PrintFormat("[ACR] TACTICS %1: contact clear, resuming fast march", m_Name);
   }
   if (OrderState() == ACR_EOrderState.MOVE && m_OrderKind == ACR_EOrderKind.MOVE && !IsMounted())
   {
@@ -1741,7 +1748,6 @@ class ACR_Squad : Managed
   m_bRegrouping = true;
   m_fRegroupSince = now;
   PrintFormat("[ACR] TACTICS %1: %2 of %3 strung out, regrouping", m_Name, behind, alive);
- }
 
  // ---------------------------------------------------------------- stalled vehicles
  // The game's AI drivers get stuck on obstacles (and sit there honking), or stop

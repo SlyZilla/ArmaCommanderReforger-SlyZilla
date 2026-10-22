@@ -823,7 +823,7 @@ class ACR_AICommander : Managed
  static const int TICK_SECONDS = 15;          // STRATEGY_TICK
  static const float DEFENSE_DISTANCE = 450;   // squads this close count as defending a base
  static const float THREAT_DISTANCE = 400;    // enemies this far past the ring threaten it
- static const float STAGING_DISTANCE = 275;   // staging point outside the target ring
+ static const float STAGING_DISTANCE = 210;   // staging point outside the target ring
  static const float STAGING_CLEARANCE = 350;  // m kept between a staging point and any other enemy base ring
  static const float ATTACK_RATIO = 1.8;       // attackers want 1.8x the defence
  static const float DEFENSE_RATIO = 1.1;      // defenders want 1.1x the threat
@@ -1451,7 +1451,8 @@ class ACR_AICommander : Managed
     vector had;
     if (m_ForwardAt.Find(goer, had) && vector.DistanceXZ(had, spot) < FORWARD_REISSUE) continue;
     m_ForwardAt.Set(goer, spot);
-    goer.SetMode(ACR_EMoveMode.COMBAT);
+    if (vector.DistanceXZ(PositionOf(goer), spot) > 220 && goer.KnownEnemies(350) == 0) goer.SetMode(ACR_EMoveMode.FAST);
+    else goer.SetMode(ACR_EMoveMode.COMBAT);
     Travel(goer, spot, true, 0);
     PrintFormat("[ACR] AI %1: %2 moves out to a forward line %3 m from %4 towards the attack (enemy seen %5 m out, %6 stay in reserve)", m_sFaction, goer.GetName(), Math.Round(depth), base.m_sName, Math.Round(enemyDistance), defenders.Count() - picked.Count());
    }
@@ -1747,17 +1748,26 @@ class ACR_AICommander : Managed
   // attack would otherwise be reinforced to.
   float goal = Math.Max(required * margin, AttackNeed(target) * 1.15);
   if (target.m_sOwner.IsEmpty()) goal = required * margin;
+  int remainingPool = available;
+  bool airLiftReady = SupportReady(ACR_ESupportType.AIR_LIFT);
   foreach (ACR_Squad squad : free)
   {
+   int sqStrength = squad.Strength();
+   remainingPool -= sqStrength;
+   float distToTarget = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
    if (strength >= required * margin)
    {
     if (strength >= goal) break;
     float reach = REINFORCE_ATTACK_DISTANCE;
     if (squad.IsMounted()) reach = REINFORCE_ATTACK_MOUNTED;
-    if (vector.DistanceXZ(PositionOf(squad), target.GetOrigin()) > reach || IsSupportTeam(squad)) continue;
+    if (distToTarget > reach || IsSupportTeam(squad)) continue;
+   }
+   else if (!squad.IsMounted() && !airLiftReady && distToTarget > REINFORCE_ATTACK_DISTANCE * 1.5 && strength + remainingPool >= required * margin)
+   {
+    continue;
    }
    attack.m_Squads.Insert(squad);
-   strength += squad.Strength();
+   strength += sqStrength;
   }
   if (strength < required)
   {
@@ -1785,12 +1795,23 @@ class ACR_AICommander : Managed
   if (StagingPoint(target, dir, ring, dryMain)) attack.m_Staging = dryMain;
   attack.m_aStaging.Clear();
   attack.m_aSlot.Clear();
-  foreach (ACR_Squad member : attack.m_Squads)
+  // Assign foot squads first so they take the direct lines (0, +-60) and mounted units swing wide (+-115).
+  for (int pass = 0; pass < 2; pass++)
   {
-   vector stage;
-   int slot = PickApproach(attack, PositionOf(member), stage);
-   attack.m_aStaging.Insert(stage);
-   attack.m_aSlot.Insert(slot);
+   foreach (int idx, ACR_Squad member : attack.m_Squads)
+   {
+    bool mounted = member.IsMounted() || ACR_Transport.CrewedVehicle(member) != null;
+    if ((pass == 0 && mounted) || (pass == 1 && !mounted)) continue;
+    while (attack.m_aStaging.Count() <= idx)
+    {
+     attack.m_aStaging.Insert(attack.m_Staging);
+     attack.m_aSlot.Insert(-1);
+    }
+    vector stage;
+    int slot = PickApproach(attack, PositionOf(member), stage);
+    attack.m_aStaging[idx] = stage;
+    attack.m_aSlot[idx] = slot;
+   }
   }
   bool empty = target.m_sOwner.IsEmpty();
   // With two or more squads on a held base, one becomes the base of fire
@@ -2171,7 +2192,7 @@ class ACR_AICommander : Managed
    if (m_Manager.m_Rides && vector.DistanceXZ(PositionOf(squad), destination) > RIDE_DISTANCE)
    {
     string why;
-    if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why)) return;
+    if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why, true)) return;
    }
   }
   // On foot (or its own vehicle): round any water rather than across it.
@@ -2257,6 +2278,8 @@ class ACR_AICommander : Managed
   vector spot = seenAt + back * stand;
   spot[1] = GetGame().GetWorld().GetSurfaceY(spot[0], spot[2]);
   if (fire.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(fire.m_MoveTarget, spot) < 40) return;
+  if (vector.DistanceXZ(from, spot) > 80 && fire.KnownEnemies(250) == 0) fire.SetMode(ACR_EMoveMode.FAST);
+  else fire.SetMode(ACR_EMoveMode.COMBAT);
   fire.MoveTo(spot);
   PrintFormat("[ACR] AI %1: %2 (base of fire) moves up to %3 m from the enemy at %4: %5", m_sFaction, fire.GetName(), Math.Round(stand), target.m_sName, spot);
  }
@@ -2601,6 +2624,50 @@ class ACR_AICommander : Managed
    Travel(squad, nearest.GetOrigin(), true, 0);
    PrintFormat("[ACR] AI %1: %2 posted to %3", m_sFaction, squad.GetName(), nearest.m_sName);
   }
+  PositionTransports();
+ }
+
+ // Keep idle unarmed transport trucks near safe bases where foot infantry spawn or stage,
+ // while leaving their order state as RETURN so IsFreeTransport can claim them en route.
+ protected void PositionTransports()
+ {
+  if (!m_Manager.m_Rides) return;
+  array<ACR_Base> hubs = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_sOwner != m_sFaction || base.m_bContested || ThreatTo(base) > 0) continue;
+   bool hasFoot = false;
+   foreach (ACR_Squad foot : m_Manager.m_Squads)
+   {
+    if (!foot.GetFaction() || foot.GetFaction().GetFactionKey() != m_sFaction || foot.HasPlayer()) continue;
+    if (foot.IsMounted() || ACR_Transport.CrewedVehicle(foot) || foot.m_bMortar || foot.Aircraft()) continue;
+    if (foot.m_iAITask != ACR_EAITask.FREE && foot.m_iAITask != ACR_EAITask.POSTED) continue;
+    if (vector.DistanceXZ(PositionOf(foot), base.GetOrigin()) <= base.m_fRadius + 150) { hasFoot = true; break; }
+   }
+   if (hasFoot || base == m_ReserveBase || (ACR_LogisticsRules.CanDeploy(base) && FrontDistance(base) >= FOB_DEPLOY_MIN_FRONT))
+    hubs.Insert(base);
+  }
+  if (hubs.IsEmpty()) return;
+  foreach (ACR_Squad taxi : m_Manager.m_Squads)
+  {
+   if (!m_Manager.m_Rides.IsFreeTransport(taxi, m_sFaction)) continue;
+   if (taxi.OrderState() == ACR_EOrderState.RETURN) continue;
+   IEntity vehicle = ACR_Transport.CrewedVehicle(taxi);
+   if (!vehicle) continue;
+   vector here = vehicle.GetOrigin();
+   ACR_Base bestHub;
+   float bestDist = float.MAX;
+   foreach (ACR_Base hub : hubs)
+   {
+    float d = vector.DistanceXZ(here, hub.GetOrigin());
+    if (d < bestDist) { bestDist = d; bestHub = hub; }
+   }
+   if (!bestHub || bestDist <= 450) continue;
+   taxi.SetMode(ACR_EMoveMode.FAST);
+   taxi.RouteTo(ACR_Manager.Ground(bestHub.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Returning", ACR_EOrderKind.MOVE);
+   taxi.SetOrder("Returning", ACR_EOrderState.RETURN);
+   PrintFormat("[ACR] AI %1: motor pool %2 repositioning to %3 (%4 m)", m_sFaction, taxi.GetName(), bestHub.m_sName, (int)bestDist);
+  }
  }
 
  // A staging point around the target, as close to the wanted direction as
@@ -2943,14 +3010,13 @@ class ACR_AICommander : Managed
   for (int m = mine.Count() - 1; m >= 0; m--)
    if (!mine[m].IsCombatUnit()) mine.RemoveOrdered(m);
   if (mine.Count() >= cap) return;
-  // Deploy at the own spawn base furthest from the fighting, unless a built FOB
-  // can deploy and is safe (no threat, at least FOB_DEPLOY_MIN_FRONT from the
-  // nearest other base): that is what it was built for, so the FOB nearest
-  // the front wins.
+  // Deploy at the forward-most safe deployment base (military/airfield/FOB with
+  // ThreatTo == 0 and at least FOB_DEPLOY_MIN_FRONT from any non-owned base);
+  // fall back to the furthest rear base when all forward bases are under threat.
   ACR_Base spawn;
-  ACR_Base fob;
+  ACR_Base forwardSpawn;
   float best = -1;
-  float bestFob = 100000;
+  float bestForward = 100000;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (base.m_sOwner != m_sFaction || !ACR_LogisticsRules.CanDeploy(base) || base.m_bContested) continue;
@@ -2959,10 +3025,15 @@ class ACR_AICommander : Managed
    foreach (ACR_Base other : ACR_Base.s_All)
     if (other.m_sOwner != m_sFaction) nearestFront = Math.Min(nearestFront, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
    if (ThreatTo(base) > 0) nearestFront = 0;
-   else if (base.m_bBuilt && nearestFront >= FOB_DEPLOY_MIN_FRONT && nearestFront < bestFob) { bestFob = nearestFront; fob = base; }
+   else if (nearestFront >= FOB_DEPLOY_MIN_FRONT)
+   {
+    float forwardScore = nearestFront;
+    if (base.m_bBuilt) forwardScore -= 150;
+    if (forwardScore < bestForward) { bestForward = forwardScore; forwardSpawn = base; }
+   }
    if (nearestFront > best) { best = nearestFront; spawn = base; }
   }
-  if (fob) spawn = fob;
+  if (forwardSpawn) spawn = forwardSpawn;
   if (!spawn) return;
   // A service truck for a need nobody can meet (squads low on ammo, a wrecked
   // BRDM...), one of each kind at a time.
@@ -2985,7 +3056,9 @@ class ACR_AICommander : Managed
    }
   }
   // Squads keep having to walk far with no truck to fetch them: buy a transport first.
-  if (m_Manager.m_Rides && m_Manager.m_Rides.ShortOfTransport(m_sFaction) && m_Manager.m_Rides.CountTransports(m_sFaction) < 3)
+  int maxTransports = 4;
+  if (ACR_Manager.ThreatOption() == 2) maxTransports = 5;
+  if (m_Manager.m_Rides && m_Manager.m_Rides.ShortOfTransport(m_sFaction) && m_Manager.m_Rides.CountTransports(m_sFaction) < maxTransports)
   {
    int truck = -1;
    foreach (int t, ACR_RequisitionEntry candidate : data.m_aRequisitions)
