@@ -625,6 +625,12 @@ class ACR_Intel : Managed
   while (m_Radio.Count() > RADIO_QUEUE) m_Radio.RemoveOrdered(0);
  }
 
+ void RadioRoadblockAlert(string spotter, vector pos)
+ {
+  string relative = Relative(pos);
+  QueueRadio(string.Format("%1: contact, hostile movement approaching roadblock, %2.", spotter, relative));
+ }
+
  // Next radio report to send now, or "" (rate-limited so chat never floods).
  string PopRadio(float now)
  {

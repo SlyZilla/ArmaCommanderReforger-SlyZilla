@@ -27,7 +27,8 @@ enum ACR_ERequest
  ORDER_GARRISON,   // move into the building at point and hold its windows (ACR_Garrison)
  QUEUE_GARRISON,   // ... garrison there after the current order
  ORDER_FIRE_AT_WILL, // toggle: observers call mortar fire on what they see, mortar teams fire on their own
- ORDER_ESTABLISH_FOB // establish a forward base at site
+ ORDER_ESTABLISH_FOB, // establish a forward base at site
+ ORDER_ROADBLOCK     // establish a fortified roadblock on road at point
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -107,6 +108,21 @@ class ACR_Manager : Managed
  protected vector m_StallFrom;
  protected float m_fStallSince = -1;
  protected bool m_bStallLogged;
+ protected IEntity m_StallBody;
+ protected string m_sStallKind;
+ protected float m_fNextStallLog;
+
+ // A transition can itself get stuck. Describe it rather than suppressing it;
+ // zero speed input is especially useful when forward never reaches the controller.
+ static string StallKind(bool disabled, bool stance, bool item, bool gadget, float speed)
+ {
+  if (disabled) return "controls disabled";
+  if (stance) return "stance transition";
+  if (item) return "item transition";
+  if (gadget) return "gadget in use";
+  if (speed <= 0) return "no controller movement command";
+  return "movement commanded but blocked";
+ }
 
  protected void WatchStall(IEntity body, bool movementActive, bool mapOpen, bool possessed)
  {
@@ -114,8 +130,15 @@ class ACR_Manager : Managed
   float now = GetGame().GetWorld().GetWorldTime();
   CharacterControllerComponent controller;
   if (character) controller = character.GetCharacterController();
-  bool watching = controller && movementActive && !mapOpen && !character.IsInVehicle() && !controller.IsDead()
+  bool watching = controller && movementActive && !mapOpen && !ACR_RTSCameraManager.IsActive() && !character.IsInVehicle() && !controller.IsDead()
    && !controller.IsUnconscious() && !controller.IsClimbing() && !controller.IsSwimming() && !GetGame().GetMenuManager().IsAnyMenuOpen();
+  if (body != m_StallBody)
+  {
+   if (m_bStallLogged) PrintFormat("[ACR] STALL ended: controlled body changed after %1 s", ((now - m_fStallSince) / 1000).ToString(4, 1));
+   m_StallBody = body;
+   m_fStallSince = -1;
+   m_bStallLogged = false;
+  }
   if (!watching)
   {
    if (m_bStallLogged) PrintFormat("[ACR] STALL ended after %1 s (released or state changed)", ((now - m_fStallSince) / 1000).ToString(4, 1));
@@ -132,7 +155,15 @@ class ACR_Manager : Managed
    m_bStallLogged = false;
    return;
   }
-  if (m_bStallLogged || now - m_fStallSince < 700) return;
+  string kind = StallKind(controller.GetDisableMovementControls(), controller.IsChangingStance(), controller.IsChangingItem(), controller.IsGadgetInHands(), controller.GetMovementSpeed());
+  float threshold = 2000;
+  if (controller.GetDisableMovementControls() || controller.IsChangingStance() || controller.IsChangingItem() || controller.IsGadgetInHands()) threshold = 5000;
+  if (!m_bStallLogged && now - m_fStallSince < threshold) return;
+  if (m_bStallLogged && now < m_fNextStallLog) return;
+  // Long transitions and persistent zero-command episodes stay visible. Sample
+  // at most once per 15 s, including state changes, without restarting the timer.
+  m_fNextStallLog = now + 15000;
+  m_sStallKind = kind;
   m_bStallLogged = true;
   string item = "none";
   IEntity inHands = controller.GetCurrentItemInHands();
@@ -141,9 +172,10 @@ class ACR_Manager : Managed
   string aiState = "n/a";
   if (ai && ai.IsAIActivated()) aiState = "ON";
   else if (ai) aiState = "off";
-  PrintFormat("[ACR] STALL forward held, no movement 0.7 s: %1 possessed=%2 moveDisabled=%3 weaponDisabled=%4 stance=%5 changingStance=%6 changingItem=%7 gadget=%8 inHands=%9",
+  PrintFormat("[ACR] STALL forward action active, stationary: %1 possessed=%2 moveDisabled=%3 weaponDisabled=%4 stance=%5 changingStance=%6 changingItem=%7 gadget=%8 inHands=%9",
    FilePath.StripPath(character.GetPrefabData().GetPrefabName()), possessed, controller.GetDisableMovementControls(), controller.GetDisableWeaponControls(),
    typename.EnumToString(ECharacterStance, controller.GetStance()), controller.IsChangingStance(), controller.IsChangingItem(), controller.IsGadgetInHands(), item);
+  PrintFormat("[ACR] STALL context: %1, elapsed %2 s, forwardAction=%3", m_sStallKind, ((now - m_fStallSince) / 1000).ToString(4, 1), GetGame().GetInputManager().GetActionValue("CharacterForward"));
   PrintFormat("[ACR] STALL more: ai=%1 falling=%2 speedInput=%3 sprinting=%4", aiState, controller.IsFalling(), controller.GetMovementSpeed(), controller.IsSprinting());
  }
  protected bool m_WasMapOpen;
@@ -170,6 +202,7 @@ class ACR_Manager : Managed
  static void Stop()
  {
   ACR_OrganEasterEgg.Reset();
+  ACR_RTSCameraManager.Close();
   ACR_Hud.Clear();
   ACR_Skirmish.Reset();
   ACR_Report.Reset();
@@ -182,6 +215,7 @@ class ACR_Manager : Managed
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
   ACR_SquadMarksmen.Reset();
+  ACR_UALoadout.Reset();
   s_Instance = null;
  }
 
@@ -428,6 +462,10 @@ class ACR_Manager : Managed
   Pings().Tick();
   t = ACR_Perf.Lap("cleanup", t);
   WatchEvictions();
+  array<IEntity> allVehicles = {};
+  ACR_Vehicles.All(allVehicles);
+  foreach (IEntity veh : allVehicles) ACR_Transport.SanitizeVehicleHorn(veh);
+  ACR_Transport.PruneHornMaps();
   m_iStatusTick++;
   if (m_iStatusTick % 300 == 0) ACR_Report.LogAll();
   int statusPhase = m_iStatusTick % 5;
@@ -506,6 +544,14 @@ class ACR_Manager : Managed
    if (!attack || !attack.m_SapperDemo || !attack.m_SapperDemo.InProgress() || !attack.m_Target || attack.m_Target.m_bRetired)
     m_PrimedDemolitions.RemoveOrdered(i);
   }
+ }
+
+ bool HasPrimedDemolition(ACR_Base base)
+ {
+  if (!base) return false;
+  foreach (ACR_AIAttack attack : m_PrimedDemolitions)
+   if (attack && attack.m_Target == base && attack.m_SapperDemo && attack.m_SapperDemo.InProgress()) return true;
+  return false;
  }
 
  // Any AI squad in the world, including ones spawned mid-game, is picked up
@@ -1096,8 +1142,10 @@ class ACR_Manager : Managed
   int t = System.GetTickCount();
   if (!m_Supports) m_Supports = new ACR_Supports(this);
   m_Supports.Frame(timeSlice);
+  if (m_Respawn) m_Respawn.Frame(timeSlice);
   ACR_Perf.Lap("frames", t);
   CheckLandingZones();
+  ACR_Transport.UpdateHorns();
   BBB.Frame(); // backing stuck vehicles out (inputs every frame)
   if (m_Drives.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
@@ -1129,14 +1177,23 @@ class ACR_Manager : Managed
   ACR_SetupClient.Frame();
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   if (pc && !pc.GetControlledEntity()) pc.ACR_UpdateSetupMap();
-  if (!pc || !pc.GetControlledEntity()) return;
+  if (pc) pc.ACR_UpdateDeathTransition(0);
+  if (!pc || !pc.GetControlledEntity())
+  {
+   ACR_RTSCameraManager.Close();
+   return;
+  }
   InputManager input = GetGame().GetInputManager();
   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
   bool mapOpen = mapEntity && mapEntity.IsOpen();
+  if (mapOpen && ACR_RTSCameraManager.IsActive()) ACR_RTSCameraManager.Close();
+  bool rtsWasActive = ACR_RTSCameraManager.IsActive();
+  ACR_RTSCameraManager.Frame(pc);
+  if (rtsWasActive) return;
   // Activate independently of the character context: possession changes its update order.
   if (mapOpen) input.ActivateContext("ACR_MapContext");
   else input.ActivateContext("ACR_TestContext");
-  bool movementActive = input.IsActionActive("CharacterForward") && !mapOpen;
+  bool movementActive = Math.AbsFloat(input.GetActionValue("CharacterForward")) > 0.1 && !mapOpen && !ACR_SetupClient.IsActive();
   IEntity localBody = pc.GetControlledEntity();
   WatchStall(localBody, movementActive, mapOpen, pc.IsPossessing());
   if (localBody != m_LastLocalBody || (m_WasMovementActive && !movementActive) || mapOpen != m_WasMapOpen)
@@ -1235,6 +1292,11 @@ class ACR_Manager : Managed
   {
    if (mapOpen) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
    else GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
+  }
+  if (input.GetActionTriggered("ACR_RTSCamera"))
+  {
+   if (mapOpen) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+   ACR_RTSCameraManager.Toggle();
   }
  }
 }

@@ -111,10 +111,12 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 97; // 90 + finite rare stock at all three threat levels (3) + unconscious contest (2) + regroup loop (2)
+ static const int EXPECTED = 113; // includes six BBB order-leash and four roadblock placement checks
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
+ static SCR_AIGroup s_LostBoardingGroup;
+ static ref ACR_OrderSnapshot s_LostBoardingOrder;
  static IEntity s_ArsenalTruck;
 
  static ACR_Squad s_Defender;
@@ -218,6 +220,125 @@ class ACR_TestRegress
   }
  }
 
+ static void CheckBBBLeashPolicy(ACR_Manager manager)
+ {
+  ACR_Squad fixture;
+  foreach (ACR_Squad candidate : manager.m_Squads)
+   if (candidate.m_Group && candidate.CountConscious() > 0 && !candidate.IsMounted() && !candidate.m_CombatFlank.Active()) { fixture = candidate; break; }
+  Check("BBB leash: conscious foot-squad fixture", fixture != null);
+  if (!fixture) return;
+  ACR_EMoveMode savedMode = fixture.m_Mode;
+  ACR_EOrderState savedState = fixture.OrderState();
+  string savedLabel = fixture.m_Order;
+  int savedCommander = fixture.m_Commander;
+  int savedIssuer = fixture.m_iOrderedBy;
+  bool savedForced = fixture.m_bForced;
+  ACR_BBBHooks hooks = new ACR_BBBHooks(manager);
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
+  fixture.m_Commander = 0; fixture.m_iOrderedBy = 0; fixture.m_bForced = false;
+  fixture.SetOrder("Moving", ACR_EOrderState.MOVE);
+  Check("BBB leash: autonomous combat move admits local tactics", !hooks.IsBinding(fixture.m_Group));
+  fixture.m_iOrderedBy = 17;
+  bool humanIssued = hooks.IsBinding(fixture.m_Group);
+  fixture.m_iOrderedBy = 0; fixture.m_Commander = 17;
+  Check("BBB leash: human orders and control are binding", humanIssued && hooks.IsBinding(fixture.m_Group));
+  fixture.m_Commander = 0; fixture.m_bForced = true;
+  Check("BBB leash: forced movement stays binding", hooks.IsBinding(fixture.m_Group));
+  fixture.m_bForced = false; fixture.m_Mode = ACR_EMoveMode.SILENT;
+  bool silent = hooks.IsBinding(fixture.m_Group);
+  fixture.m_Mode = ACR_EMoveMode.FAST;
+  Check("BBB leash: silent and fast transit stay binding", silent && hooks.IsBinding(fixture.m_Group));
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
+  array<ACR_EOrderState> bindingStates = {ACR_EOrderState.GET_IN, ACR_EOrderState.GET_OUT, ACR_EOrderState.RIDE, ACR_EOrderState.RETURN, ACR_EOrderState.DISMOUNT, ACR_EOrderState.REGROUP, ACR_EOrderState.BUILD_FOB};
+  bool specialistBinding = true;
+  foreach (ACR_EOrderState bindingState : bindingStates)
+  {
+   fixture.SetOrder("Leash policy fixture", bindingState);
+   if (!hooks.IsBinding(fixture.m_Group)) specialistBinding = false;
+  }
+  Check("BBB leash: transport regroup and construction remain binding", specialistBinding);
+  fixture.m_Mode = savedMode; fixture.m_Commander = savedCommander;
+  fixture.m_iOrderedBy = savedIssuer; fixture.m_bForced = savedForced;
+  fixture.SetOrder(savedLabel, savedState);
+ }
+
+ // Real road + composition checks: clicking the verge must not build on the verge.
+ static void CheckRoadblockPlacement(vector origin)
+ {
+  ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  array<BaseRoad> roads = {};
+  if (aiWorld && aiWorld.GetRoadNetworkManager())
+   aiWorld.GetRoadNetworkManager().GetRoadsInAABB(origin - Vector(2000, 1000, 2000), origin + Vector(2000, 1000, 2000), roads);
+  vector roadCentre, click, forward, snapped;
+  float heading;
+  string refusal;
+  bool found;
+  foreach (BaseRoad road : roads)
+  {
+   array<vector> nodes = {};
+   road.GetPoints(nodes);
+   for (int i = 1; i < nodes.Count(); i++)
+   {
+    vector along = nodes[i] - nodes[i - 1];
+    along[1] = 0;
+    if (along.Length() < 40) continue;
+    along.Normalize();
+    vector centre = (nodes[i] + nodes[i - 1]) * 0.5;
+    vector side = Vector(along[2], 0, -along[0]);
+    vector verge = centre + side * 18;
+    if (!ACR_Roadblocks.ValidateSite(verge, snapped, heading, refusal, "US", centre + along * 100)) continue;
+    // Exclude nearby parallel roads/junctions from this independently known segment fixture.
+    BaseRoad closest;
+    float distance;
+    aiWorld.GetRoadNetworkManager().GetClosestRoad(verge, closest, distance);
+    if (closest != road) continue;
+    roadCentre = ACR_Manager.Ground(centre);
+    click = verge;
+    forward = along;
+    found = true;
+    break;
+   }
+   if (found) break;
+  }
+  Check("roadblock placement snaps verge click to actual road centre", found && vector.DistanceXZ(snapped, roadCentre) < 0.2, string.Format("click=%1 snapped=%2 road=%3", click, snapped, roadCentre));
+  bool compositionsFit = found;
+  array<string> sides = {"US", "USSR"};
+  foreach (string faction : sides)
+  {
+   ACR_Roadblock checkpoint;
+   if (found) checkpoint = ACR_Roadblocks.SpawnRoadblock(faction, snapped, heading);
+   if (!checkpoint || !checkpoint.m_Entity) compositionsFit = false;
+   else
+   {
+    vector transform[4];
+    checkpoint.m_Entity.GetTransform(transform);
+    float dot = transform[2][0] * forward[0] + transform[2][2] * forward[2];
+    bool fits = vector.DistanceXZ(checkpoint.m_Entity.GetOrigin(), roadCentre) < 0.2 && dot > 0.99 && checkpoint.m_Turret != null;
+    compositionsFit = compositionsFit && fits;
+    PrintFormat("[ACR] ROADBLOCK placement %1 actual=%2 road=%3 forwardDot=%4", faction, checkpoint.m_Entity.GetOrigin(), roadCentre, dot);
+    ACR_Navmesh.DeleteStructure(checkpoint.m_Entity);
+    ACR_Roadblocks.s_aRoadblocks.RemoveItem(checkpoint);
+   }
+  }
+  Check("roadblock US and USSR physically spawn centred and facing along road", compositionsFit);
+  // Click is 18 m from the real site: old clearance check (8 m) misses this vehicle.
+  IEntity blocker;
+  if (found) blocker = ACR_Manager.SpawnPrefab(ACR_TestCrew.LAV, roadCentre);
+  bool vehicleRejected = blocker && !ACR_Roadblocks.ValidateSite(click, snapped, heading, refusal) && refusal == "vehicles blocking road spot";
+  Check("roadblock rejects vehicle at snapped site away from click", found && vehicleRejected);
+  if (blocker) SCR_EntityHelper.DeleteEntityAndChildren(blocker);
+  // Existing post is 175 m from the snapped site, but 193 m from the click.
+  ref ACR_Roadblock nearby = new ACR_Roadblock();
+  EntitySpawnParams probeParams = new EntitySpawnParams();
+  nearby.m_Entity = GetGame().SpawnEntity(GenericEntity, GetGame().GetWorld(), probeParams);
+  nearby.m_vPos = roadCentre - (click - roadCentre).Normalized() * 175;
+  ACR_Roadblocks.s_aRoadblocks.Insert(nearby);
+  bool postRejected = found && !ACR_Roadblocks.ValidateSite(click, snapped, heading, refusal) && refusal == "too close to existing roadblock";
+  Check("roadblock spacing uses snapped site rather than click", postRejected);
+  ACR_Roadblocks.s_aRoadblocks.RemoveItem(nearby);
+  if (nearby.m_Entity) delete nearby.m_Entity;
+ }
+
  static void Run(ACR_TestHarness harness, int tick)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -236,6 +357,7 @@ class ACR_TestRegress
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {
+   CheckRoadblockPlacement(harness.m_Range.GetOrigin());
    ACR_TestOptions.Run();
    ACR_TestAccess.Run();
    // R18 (14 Oct review): records of deleted vehicles are dropped.
@@ -609,6 +731,7 @@ class ACR_TestRegress
   {
    s_RecoveryGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1430 0 2850")));
    s_BoardingGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1506 0 2956")));
+   s_LostBoardingGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1340 0 3000")));
    s_CancelBoardingGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(STALE_GROUP, harness.Ground("1508 0 2958")));
    s_ArsenalTruck = ACR_Manager.SpawnPrefab("{1FF144F8A209239D}Prefabs/Vehicles/Wheeled/M923A1/M923A1_arsenal.et", harness.Ground("1450 0 2850"));
    ACR_Vehicles.SetOwner(s_ArsenalTruck, "USSR");
@@ -622,6 +745,7 @@ class ACR_TestRegress
   {
    RecoveryChecks(manager, truck);
    StartBoardingCheck(manager);
+   StartLostBoardingCheck(manager, harness);
    SCR_ArsenalComponent arsenal = ACR_Vehicles.ArsenalOf(s_ArsenalTruck);
    bool arsenalReady;
    if (arsenal)
@@ -680,6 +804,7 @@ class ACR_TestRegress
   if (tick == 47)
   {
    CheckThreatStock();
+   CheckBBBLeashPolicy(manager);
    ACR_FactionData usData = manager.m_Bases.GetFaction("US");
    ACR_Base depot;
    foreach (ACR_Base base : ACR_Base.s_All)
@@ -759,6 +884,7 @@ class ACR_TestRegress
   if (tick == 60)
   {
    BoardingCheck(manager);
+   LostBoardingCheck(manager);
    SupportCloneCheck(manager);
    AirLiftAICheck(manager);
    Check("air lift accelerates gently and brakes at a bounded rate", Math.AbsFloat(ACR_HeliRun.ApproachSpeed(0, 55, 1) - 1.5) < 0.01 && Math.AbsFloat(ACR_HeliRun.ApproachSpeed(55, 0, 1) - 52) < 0.01 && ACR_HeliRun.ApproachSpeed(1, 0, 1) == 0);
@@ -866,6 +992,61 @@ class ACR_TestRegress
    cancelled.GetIn(crew.m_OwnVehicle.GetOrigin());
    cancelled.Halt("Holding");
   }
+ }
+
+ // Exercise the actual native group/waypoint lifecycle, not just the saved data.
+ static void StartLostBoardingCheck(ACR_Manager manager, ACR_TestHarness harness)
+ {
+  ACR_Squad squad = manager.FindSquadByGroup(s_LostBoardingGroup);
+  Vehicle vehicle = Vehicle.Cast(ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", harness.Ground("1340 0 3300")));
+  Check("boarding target-loss fixture exists", squad != null && vehicle != null);
+  bool restored;
+  if (squad && vehicle)
+  {
+   squad.BoardVehicle(vehicle, vehicle.GetOrigin());
+   s_LostBoardingOrder = squad.SnapshotOrder();
+   squad.Halt("Holding");
+   squad.RestoreOrder(s_LostBoardingOrder);
+   SCR_BoardingEntityWaypoint waypoint = SCR_BoardingEntityWaypoint.Cast(squad.m_Group.GetCurrentWaypoint());
+   restored = waypoint && waypoint.GetEntity() == vehicle && squad.OrderState() == ACR_EOrderState.GET_IN;
+  }
+  Check("restored Get In retains its actual vehicle reference", restored);
+  if (vehicle) SCR_EntityHelper.DeleteEntityAndChildren(vehicle);
+ }
+
+ static void LostBoardingCheck(ACR_Manager manager)
+ {
+  ACR_Squad squad = manager.FindSquadByGroup(s_LostBoardingGroup);
+  Check("deleted boarding vehicle cancels the native order", squad && squad.OrderState() == ACR_EOrderState.HOLD && squad.m_Group.GetCurrentWaypoint() == null);
+  bool refused, targetless;
+  if (squad && s_LostBoardingOrder)
+  {
+   squad.RestoreOrder(s_LostBoardingOrder);
+   refused = squad.OrderState() == ACR_EOrderState.HOLD && squad.m_Group.GetCurrentWaypoint() == null;
+   targetless = squad.IssueWaypoint(ACR_Squad.WP_GET_IN, squad.GetAnchor().GetOrigin()) == null && squad.m_Group.GetCurrentWaypoint() == null;
+  }
+  Check("restoring a deleted boarding target leaves no invalid order", refused);
+  Check("targetless Get In is rejected before native registration", targetless);
+  bool replacementKept;
+  if (squad && squad.GetAnchor())
+  {
+   vector at = squad.GetAnchor().GetOrigin();
+   Vehicle replacementTarget = Vehicle.Cast(ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", ACR_Manager.Ground(at + Vector(100, 0, 0))));
+   AIWaypoint replacement = AIWaypoint.Cast(ACR_Manager.SpawnPrefab(ACR_Squad.WP_MOVE, ACR_Manager.Ground(at + Vector(0, 0, 50))));
+   if (replacementTarget && replacement && squad.BoardVehicle(replacementTarget, replacementTarget.GetOrigin()))
+   {
+    // A native/GM command replaces our Get In without going through ACA.
+    squad.m_Group.RemoveWaypoint(squad.m_Waypoint);
+    squad.m_Group.AddWaypoint(replacement);
+    SCR_EntityHelper.DeleteEntityAndChildren(replacementTarget);
+    squad.Tactics(50, GetGame().GetWorld().GetWorldTime());
+    replacementKept = squad.m_Group.GetCurrentWaypoint() == replacement;
+   }
+   squad.Halt("Holding");
+   if (replacement) SCR_EntityHelper.DeleteEntityAndChildren(replacement);
+   if (replacementTarget) SCR_EntityHelper.DeleteEntityAndChildren(replacementTarget);
+  }
+  Check("lost old boarding target preserves a replacement native order", replacementKept);
  }
 
  static void BoardingCheck(ACR_Manager manager)

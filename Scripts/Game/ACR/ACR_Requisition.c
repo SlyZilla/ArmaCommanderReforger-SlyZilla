@@ -292,7 +292,9 @@ class ACR_Requisition : Managed
   }
   if (!group.IsEmpty())
   {
-   SCR_AIGroup spawned = SCR_AIGroup.Cast(SpawnForPurchase(group, groupPos));
+   ACR_RequisitionEntry formation = purchase.m_Entry;
+   if (!formation) formation = ACR_InfantryCatalog.Starting(faction, group);
+   SCR_AIGroup spawned = SpawnFormation(group, formation, groupPos);
    if (!spawned) { purchase.m_sError = "group did not spawn"; return false; }
    SetUnitFaction(spawned, faction);
    purchase.m_Group = spawned;
@@ -300,7 +302,9 @@ class ACR_Requisition : Managed
   }
   if (!passengers.IsEmpty())
   {
-   SCR_AIGroup riders = SCR_AIGroup.Cast(SpawnForPurchase(passengers, groupPos));
+   ACR_RequisitionEntry passengerFormation;
+   if (!purchase.m_Entry) passengerFormation = ACR_InfantryCatalog.Starting(faction, passengers);
+   SCR_AIGroup riders = SpawnFormation(passengers, passengerFormation, groupPos);
    if (!riders) { purchase.m_sError = "passengers did not spawn"; return false; }
    SetUnitFaction(riders, faction);
    purchase.m_Riders = riders;
@@ -308,6 +312,23 @@ class ACR_Requisition : Managed
    if (vehicle) m_Manager.m_PendingBoarding.Set(riders, vehicle);
   }
   return true;
+ }
+
+ // The same native group construction is used for purchased infantry and starting riders.
+ protected SCR_AIGroup SpawnFormation(ResourceName group, ACR_RequisitionEntry formation, vector position)
+ {
+  bool customFormation = formation && formation.m_aSoldiers && !formation.m_aSoldiers.IsEmpty();
+  if (customFormation) SCR_AIGroup.IgnoreSpawning(true);
+  SCR_AIGroup spawned = SCR_AIGroup.Cast(SpawnForPurchase(group, position));
+  if (customFormation) SCR_AIGroup.IgnoreSpawning(false);
+  if (spawned && customFormation)
+  {
+   if (!spawned.m_aUnitPrefabSlots) spawned.m_aUnitPrefabSlots = {};
+   spawned.m_aUnitPrefabSlots.Copy(formation.m_aSoldiers);
+   spawned.m_eACRFormation = formation.m_eFormation;
+   if (!FillGroup(spawned, formation.m_aSoldiers, position)) return null;
+  }
+  return spawned;
  }
 
  // Units that aren't bought (starting units, tests): same spawning, no transaction.

@@ -108,6 +108,7 @@ class ACR_OrderDisplay : Managed
 
  void Dot(float x, float y, float radius, int color)
  {
+  if (radius < 1) return;
   PolygonDrawCommand dot = new PolygonDrawCommand();
   dot.m_iColor = color;
   dot.m_Vertices = {};
@@ -245,18 +246,39 @@ class ACR_OrderDisplay : Managed
 
  protected void Bar(float x, float y, float width, float height, float fill, Color color)
  {
+  if (width < 2 || height < 2) return;
   fill = Math.Clamp(fill, 0, 1);
-  PolygonDrawCommand back = new PolygonDrawCommand();
   Color dark = new Color(0, 0, 0, 0.6);
-  back.m_iColor = dark.PackToInt();
-  back.m_Vertices = {x - 1, y - 1, x + width + 1, y - 1, x + width + 1, y + height + 1, x - 1, y + height + 1};
-  m_Commands.Insert(back);
-  if (fill <= 0) return;
-  PolygonDrawCommand bar = new PolygonDrawCommand();
-  bar.m_iColor = color.PackToInt();
-  float right = x + width * fill;
-  bar.m_Vertices = {x, y, right, y, right, y + height, x, y + height};
-  m_Commands.Insert(bar);
+  int darkColor = dark.PackToInt();
+  float x0 = x - 1;
+  float y0 = y - 1;
+  float x1 = x + width + 1;
+  float y1 = y + height + 1;
+
+  PolygonDrawCommand back1 = new PolygonDrawCommand();
+  back1.m_iColor = darkColor;
+  back1.m_Vertices = {x0, y0, x1, y0, x1, y1};
+  m_Commands.Insert(back1);
+
+  PolygonDrawCommand back2 = new PolygonDrawCommand();
+  back2.m_iColor = darkColor;
+  back2.m_Vertices = {x0, y0, x1, y1, x0, y1};
+  m_Commands.Insert(back2);
+
+  float fillWidth = width * fill;
+  if (fillWidth < 1.0) return;
+  float right = x + fillWidth;
+  int barColor = color.PackToInt();
+
+  PolygonDrawCommand bar1 = new PolygonDrawCommand();
+  bar1.m_iColor = barColor;
+  bar1.m_Vertices = {x, y, right, y, right, y + height};
+  m_Commands.Insert(bar1);
+
+  PolygonDrawCommand bar2 = new PolygonDrawCommand();
+  bar2.m_iColor = barColor;
+  bar2.m_Vertices = {x, y, right, y + height, x, y + height};
+  m_Commands.Insert(bar2);
  }
 
  // ---------------------------------------------------------------- bases, zones

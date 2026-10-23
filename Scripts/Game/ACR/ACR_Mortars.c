@@ -34,11 +34,13 @@ class ACR_MortarTeam : Managed
  // fire mission
  bool m_bFiring;
  float m_fMissionEnd;
+ float m_fLastFinished;
  string m_sMission;
  int m_iRounds;
  IEntity m_Gunner;
  ResourceName m_sShell;
  int m_iFired;
+ int m_iLoadingDismounts; // observed native aiming -> on-foot loading transitions
  int m_iReserveRounds; // paid mission rounds not yet issued to a gunner
  bool m_bNoSpotLogged;
  ref map<IEntity, ResourceName> m_Backpacks = new map<IEntity, ResourceName>(); // carriers' own packs while they carry parts
@@ -301,6 +303,9 @@ class ACR_Mortars : Managed
     }
     team.m_sStatus = string.Format("setting up, %1 s", Math.Ceil(team.m_fStateUntil - now));
     if (now < team.m_fStateUntil) return;
+    // End the setup Defend before anyone mounts the tube: deselection sends
+    // get-out messages to turret occupants, even when the next order is artillery.
+    squad.ClearOrders();
     team.m_Tube = SpawnTube(team);
     if (!team.m_Tube)
     {
@@ -336,7 +341,7 @@ class ACR_Mortars : Managed
       // Told to stay after all: back to the tube.
       team.m_Resume = null;
       team.m_eState = ACR_EMortarState.DEPLOYED;
-      squad.IssueWaypoint(ACR_Squad.WP_DEFEND, team.m_Spot, 8);
+      squad.ClearOrders();
       squad.SetOrder("Mortar ready", ACR_EOrderState.HOLD);
       return;
      }
@@ -853,6 +858,24 @@ class ACR_Mortars : Managed
   }
  }
 
+ // Native StaticArtilleryBehavior explicitly gets out after aiming to load
+ // shells on foot. Recognize only that executing behavior on this team's tube.
+ bool IsLoadingDeparture(ACR_Squad squad, AIAgent agent)
+ {
+  SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
+  if (!utility) return false;
+  SCR_AIStaticArtilleryBehavior action = SCR_AIStaticArtilleryBehavior.Cast(utility.GetExecutedAction());
+  if (!action) return false;
+  foreach (ACR_MortarTeam team : m_Teams)
+  {
+   if (team.m_Squad != squad || !team.m_bFiring || team.m_Gunner != agent.GetControlledEntity() || !team.m_Tube) continue;
+   if (!action.ACR_UsesTube(team.m_Tube)) continue;
+   team.m_iLoadingDismounts++;
+   return true;
+  }
+  return false;
+ }
+
  protected void UpdateMission(ACR_MortarTeam team, float now)
  {
   array<AIWaypoint> waypoints = {};
@@ -870,12 +893,15 @@ class ACR_Mortars : Managed
   if (!team.m_bFiring) return;
   team.m_bFiring = false;
   team.m_iReserveRounds = 0;
+  team.m_fLastFinished = GetGame().GetWorld().GetWorldTime() / 1000;
   s_iLastFired = team.m_iFired;
   PrintFormat("[ACR] MORTAR %1 fire mission %2 %3: %4 of %5 rounds fired", team.m_sName, team.m_sMission, why, s_iLastFired, team.m_iRounds);
   ACR_Squad squad = team.m_Squad;
   if (squad && team.m_eState == ACR_EMortarState.DEPLOYED && why != "packing up")
   {
-   squad.IssueWaypoint(ACR_Squad.WP_DEFEND, team.m_Spot, 8);
+   // Idle at the deployed tube without a Defend waypoint that orders its
+   // gunner out when the next fire mission replaces it.
+   squad.ClearOrders();
    squad.SetOrder("Mortar ready", ACR_EOrderState.HOLD);
    squad.m_OrderKind = ACR_EOrderKind.DEFEND;
   }
@@ -931,6 +957,11 @@ class ACR_Mortars : Managed
 // items as shots. Keep the hook scoped to AC:A's registered, firing mortar tubes.
 modded class SCR_AIStaticArtilleryBehavior
 {
+ bool ACR_UsesTube(IEntity tube)
+ {
+  return m_ArtilleryEntity.m_Value == tube;
+ }
+
  override void OnActionSelected()
  {
   super.OnActionSelected();

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AC230926A0010051}Prefabs/ACR/Infantry/UA_AT.et"
+ Configurations {
+  ETResourceClass PC {}
+  ETResourceClass HEADLESS : PC {}
+ }
+}

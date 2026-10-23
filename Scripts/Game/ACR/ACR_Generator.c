@@ -6,10 +6,11 @@
 //   remaining objectives (including hidden landmarks) are tactical, not passive income.
 //   HQs: value 2, radius >= 70, garrison 6, owned; other bases start neutral with no garrison.
 // Thin crowded objectives; reject rear/HQ-blocked approaches using cached land connectivity.
+// Seed later income/tactical destinations while protecting HQs, openings and economic budgets.
 // Bases remain on their map places (moved onto dry ground when the place is in water).
 // Runs instead of a hand-built layout when the host picks "Generated" (acrLayout generated) or
 // the world has no bases (e.g. ACR_Kolguyev). Same seed + size + world = same layout.
-// Sizes: full map; half (the sites on one side of the map's long axis); flashpoint (about seven
+// Sizes: full map; half (a seeded rotated band or compact region); flashpoint (about seven
 // sites within 1.8 km of one town, HQs inside it at opposite ends).
 class ACR_GenSite
 {
@@ -327,10 +328,11 @@ class ACR_Generator
  // ---------------------------------------------------------------- choosing the layout
  // The layout for a seed and size, without touching the world (tests call this to compare).
  // size: -1 full, else ACR_ESkirmishSize. hqs[0] = west HQ, hqs[1] = east HQ.
- static bool Plan(int seed, int size, notnull array<ref ACR_GenSite> layout, notnull array<ACR_GenSite> hqs)
+ static bool Plan(int seed, int size, notnull array<ref ACR_GenSite> layout, notnull array<ACR_GenSite> hqs, array<ref ACR_GenSite> incomeCandidates = null)
  {
   layout.Clear();
   hqs.Clear();
+  if (incomeCandidates) incomeCandidates.Clear();
   RandomGenerator rng = new RandomGenerator();
   rng.SetSeed(seed);
   // The map's places are read once (about a second), then copied for each plan.
@@ -379,38 +381,51 @@ class ACR_Generator
    spaced.Insert(chosen);
    added++;
   }
-  // Size: the sites in play.
-  array<ACR_GenSite> pool = {};
-  foreach (ACR_GenSite s : spaced) pool.Insert(s);
-  if (size == ACR_ESkirmishSize.HALF) pool = Half(pool, rng);
-  else if (size == ACR_ESkirmishSize.FLASHPOINT) pool = Flashpoint(pool, rng);
-  if (pool.Count() < 3)
+  // Flashpoints retry bounded local regions when access would leave fewer than five sites.
+  bool flash = size == ACR_ESkirmishSize.FLASHPOINT;
+  array<ACR_GenSite> pool = {}, hqPool = {};
+  int attempts = 1;
+  if (flash) attempts = 8;
+  bool selected = false;
+  for (int attempt = 0; attempt < attempts; attempt++)
   {
-   PrintFormat("[ACR] GENERATOR only %1 sites for this size: nothing generated", pool.Count());
-   return false;
+   pool.Clear(); hqPool.Clear();
+   foreach (ACR_GenSite s : spaced) pool.Insert(s);
+   if (size == ACR_ESkirmishSize.HALF) pool = Half(pool, rng);
+   else if (flash) pool = Flashpoint(pool, rng);
+   if (pool.Count() < 3) continue;
+   ACR_GenSite west, east;
+   PickHQs(pool, flash, rng, west, east);
+   if (!west || !east) continue;
+   hqPool.Insert(west); hqPool.Insert(east);
+   FairObjectives(pool, hqPool, flash);
+   int minimum = 3;
+   if (flash) minimum = 5;
+   if (pool.Count() < minimum) continue;
+   selected = true;
+   break;
   }
-  // HQs: two military sites (or the airport) far apart; a flashpoint uses its two ends.
-  ACR_GenSite west, east;
-  PickHQs(pool, size == ACR_ESkirmishSize.FLASHPOINT, rng, west, east);
-  if (!west || !east) return false;
-  if (rng.RandFloat01() < 0.5) { ACR_GenSite swap = west; west = east; east = swap; }
-  hqs.Insert(west);
-  hqs.Insert(east);
-  int unthinned = pool.Count();
-  FairObjectives(pool, hqs, size == ACR_ESkirmishSize.FLASHPOINT);
-  int accessible = pool.Count();
-  // An unsafe site must not displace a valid neighbour or consume a protected opening slot.
-  ThinObjectives(pool, hqs, size == ACR_ESkirmishSize.FLASHPOINT);
-  if (System.IsCLIParam("acrGenerateTest") || System.IsCLIParam("acrGenerateEveronTest")) PrintFormat("[ACR] GEN QUALITY seed %1 size %2: %3 -> accessible %4 -> spaced %5", seed, size, unthinned, accessible, pool.Count());
+  if (!selected) return false;
+  if (rng.RandFloat01() < 0.5) { ACR_GenSite swap = hqPool[0]; hqPool[0] = hqPool[1]; hqPool[1] = swap; }
+  hqs.Copy(hqPool);
+  ThinObjectives(pool, hqs, flash);
   if (pool.Count() < 3) return false;
   foreach (ACR_GenSite p : pool) layout.Insert(p);
+  // Establish the original income budget before omitting any optional tactical sites.
+  AssignEconomy(layout, hqs, flash, seed);
+  // Optional owned snapshot of the actual economic candidate pool, before tactical omission.
+  if (incomeCandidates) foreach (ACR_GenSite economic : layout) incomeCandidates.Insert(economic.Copy());
+  int economySize = layout.Count();
+  SelectContested(layout, hqs, flash, rng);
+  int omitted = economySize - layout.Count();
+  bool edited = seed == s_iMovesSeed && size == s_iMovesSize && (!s_Deleted.IsEmpty() || !s_Moves.IsEmpty());
   if (seed == s_iMovesSeed && size == s_iMovesSize)
    for (int removed = layout.Count() - 1; removed >= 0; removed--)
     if (s_Deleted.Contains(layout[removed].m_sId) && !hqs.Contains(layout[removed])) layout.RemoveOrdered(removed);
   ApplyMoves(seed, size, layout);
-  // Re-evaluate around the edited HQ positions, so moving an HQ does not strand its opening
-  // income at the old location. Automatic fairness filters never erase the host's own edits.
-  AssignEconomy(layout, hqs, size == ACR_ESkirmishSize.FLASHPOINT);
+  // Host edits remain authoritative; moving an HQ relocates its protected opening income.
+  // Automatically omitted tactical sites must not lower the economic target on a re-plan.
+  if (edited) AssignEconomy(layout, hqs, flash, seed, layout.Count() + omitted);
   // HQs get a 70 m circle where there is room for it.
   foreach (ACR_GenSite hq : hqs)
   {
@@ -527,7 +542,7 @@ class ACR_Generator
  // Home regions and four nearest ordinary objectives per side keep their full income. This
  // protects the opening; later RP comes from a spaced selection of strategic sites instead
  // of every town/landmark. HQ/basic income, starting RP and reinforcement prices are untouched.
- static void AssignEconomy(array<ref ACR_GenSite> layout, array<ACR_GenSite> hqs, bool flash)
+ static void AssignEconomy(array<ref ACR_GenSite> layout, array<ACR_GenSite> hqs, bool flash, int seed = 0, int plannedCount = -1)
  {
   foreach (ACR_GenSite site : layout) { site.m_bIncome = false; site.m_iOpeningSide = -1; }
   foreach (ACR_GenSite hq : hqs) { hq.m_bIncome = true; hq.m_iValue = 2; }
@@ -562,7 +577,8 @@ class ACR_Generator
    }
   int earning;
   foreach (ACR_GenSite counted : layout) if (counted.m_bIncome) earning++;
-  int target = Math.Max(earning, 2 + Math.Ceil(0.5 * (layout.Count() - 2)));
+  if (plannedCount < 0) plannedCount = layout.Count();
+  int target = Math.Max(earning, 2 + Math.Ceil(0.5 * (plannedCount - 2)));
   float separation = 800;
   if (flash) separation = 300;
   while (earning < target)
@@ -582,6 +598,176 @@ class ACR_Generator
    best.m_bIncome = true;
    earning++;
   }
+  if (seed != 0) VaryIncome(layout, hqs, flash, seed);
+ }
+
+ // Choose the later income portfolio together: one-site swaps cannot escape choices
+ // blocked by another earning site. Keep exact count/RP and protected openings; site values
+ // stay unchanged. Deterministic work cap, no wall-clock cutoff that could change a seed.
+ protected static void VaryIncome(array<ref ACR_GenSite> layout, array<ACR_GenSite> hqs, bool flash, int seed, int maxSteps = 4096)
+ {
+  array<ACR_GenSite> anchors = {}, original = {}, candidates = {};
+  int value = 0;
+  foreach (ACR_GenSite site : layout)
+  {
+   if (!site.m_bIncome) continue;
+   if (hqs.Contains(site) || site.m_iOpeningSide >= 0) anchors.Insert(site);
+   else { original.Insert(site); value += site.m_iValue; }
+  }
+  if (original.IsEmpty()) return;
+  float spacing = 800;
+  if (flash) spacing = 300;
+  foreach (ACR_GenSite option : layout)
+  {
+   if (hqs.Contains(option) || option.m_iOpeningSide >= 0 || option.m_sKind == "landmark" || option.m_iValue < 1 || option.m_iValue > 3) continue;
+   bool fits = true;
+   foreach (ACR_GenSite anchor : anchors)
+    if (vector.DistanceXZ(option.m_vPos, anchor.m_vPos) < spacing) fits = false;
+   if (fits) candidates.Insert(option);
+  }
+  array<ACR_GenSite> chosen = {};
+  array<int> budget = {maxSteps};
+  array<ref array<ACR_GenSite>> portfolios = {};
+  bool complete = EnumerateIncome(candidates, original.Count(), value, spacing, chosen, portfolios, budget);
+  if (complete && !portfolios.IsEmpty())
+  {
+   // A complete small pool gets an even seed cycle: consecutive seeds cannot repeatedly
+   // land on the same portfolio. No partial catalogue is used as though it were complete.
+   int choice = seed % portfolios.Count();
+   if (choice < 0) choice += portfolios.Count();
+   chosen.Copy(portfolios[choice]);
+  }
+  else
+  {
+   // Large pools retain seeded geographical variety rather than using a biased catalogue
+   // prefix. Each phase has <=4096 branches; failure changes no income flags.
+   RandomGenerator rng = new RandomGenerator(); rng.SetSeed(seed);
+   for (int i = candidates.Count() - 1; i > 0; i--)
+   {
+    int pick = Math.Min(i, Math.Floor(rng.RandFloat01() * (i + 1)));
+    ACR_GenSite swap = candidates[i]; candidates[i] = candidates[pick]; candidates[pick] = swap;
+   }
+   chosen.Clear(); budget[0] = maxSteps;
+   if (!ChooseIncome(candidates, 0, original.Count(), value, spacing, chosen, budget)) return;
+  }
+  // Atomic replacement: exhaustion/failure leaves the original flags completely intact.
+  foreach (ACR_GenSite previous : original) previous.m_bIncome = false;
+  foreach (ACR_GenSite selected : chosen) selected.m_bIncome = true;
+ }
+
+ // Bound the remaining RP by the actual available values before branching. The
+ // candidates entering this routine already fit every previously selected site.
+ protected static bool IncomeBudgetFits(array<ACR_GenSite> candidates, int slots, int value)
+ {
+  if (candidates.Count() < slots || value < slots || value > 3 * slots) return false;
+  array<int> counts = {0, 0, 0, 0};
+  foreach (ACR_GenSite site : candidates) counts[site.m_iValue] = counts[site.m_iValue] + 1;
+  int remaining = slots, minimum = 0, maximum = 0;
+  for (int low = 1; low <= 3; low++)
+  {
+   int takeLow = Math.Min(remaining, counts[low]);
+   minimum += takeLow * low; remaining -= takeLow;
+  }
+  remaining = slots;
+  for (int high = 3; high >= 1; high--)
+  {
+   int takeHigh = Math.Min(remaining, counts[high]);
+   maximum += takeHigh * high; remaining -= takeHigh;
+  }
+  return value >= minimum && value <= maximum;
+ }
+
+ protected static bool EnumerateIncome(array<ACR_GenSite> candidates, int slots, int value, float spacing, array<ACR_GenSite> chosen, array<ref array<ACR_GenSite>> portfolios, array<int> budget)
+ {
+  if (slots == 0)
+  {
+   if (value != 0) return true;
+   if (portfolios.Count() >= 128) return false;
+   array<ACR_GenSite> snapshot = {}; snapshot.Copy(chosen);
+   portfolios.Insert(snapshot);
+   return true;
+  }
+  if (!IncomeBudgetFits(candidates, slots, value)) return true;
+  for (int i = 0; i <= candidates.Count() - slots; i++)
+  {
+   if (budget[0] <= 0) return false;
+   budget[0] = budget[0] - 1;
+   ACR_GenSite option = candidates[i];
+   array<ACR_GenSite> next = {};
+   for (int j = i + 1; j < candidates.Count(); j++)
+    if (vector.DistanceXZ(option.m_vPos, candidates[j].m_vPos) >= spacing) next.Insert(candidates[j]);
+   chosen.Insert(option);
+   bool complete = EnumerateIncome(next, slots - 1, value - option.m_iValue, spacing, chosen, portfolios, budget);
+   chosen.RemoveOrdered(chosen.Count() - 1);
+   if (!complete) return false;
+  }
+  return true;
+ }
+
+ protected static bool ChooseIncome(array<ACR_GenSite> candidates, int start, int slots, int value, float spacing, array<ACR_GenSite> chosen, array<int> budget)
+ {
+  if (slots == 0) return value == 0;
+  if (value < slots || value > 3 * slots || candidates.Count() - start < slots) return false;
+  for (int i = start; i <= candidates.Count() - slots; i++)
+  {
+   if (budget[0] <= 0) return false;
+   budget[0] = budget[0] - 1;
+   ACR_GenSite option = candidates[i];
+   if (option.m_iValue > value) continue;
+   bool fits = true;
+   foreach (ACR_GenSite prior : chosen)
+    if (vector.DistanceXZ(option.m_vPos, prior.m_vPos) < spacing) fits = false;
+   if (!fits) continue;
+   chosen.Insert(option);
+   if (ChooseIncome(candidates, i + 1, slots - 1, value - option.m_iValue, spacing, chosen, budget)) return true;
+   chosen.RemoveOrdered(chosen.Count() - 1);
+  }
+  return false;
+ }
+
+ // Keep every income site and protected opening. Vary the remaining tactical presence;
+ // flashpoints instead select 5-7 sites from their accessible local pool, protecting the
+ // two nearest ordinary opening objectives per side, then assigning their normal economy.
+ protected static void SelectContested(array<ref ACR_GenSite> layout, array<ACR_GenSite> hqs, bool flash, RandomGenerator rng)
+ {
+  array<ref ACR_GenSite> selected = {};
+  array<ACR_GenSite> optional = {};
+  foreach (ACR_GenSite site : layout)
+  {
+   bool protect = site.m_bIncome || site.m_iOpeningSide >= 0 || hqs.Contains(site);
+   if (flash) protect = site.m_iOpeningSide >= 0 || hqs.Contains(site);
+   if (protect || (!flash && site.m_sKind == "landmark")) selected.Insert(site);
+   else optional.Insert(site);
+  }
+  int target = Math.Max(6, layout.Count() - Math.Ceil((0.2 + 0.2 * rng.RandFloat01()) * optional.Count()));
+  if (!flash && !optional.IsEmpty()) target = Math.Max(target, selected.Count() + 1);
+  if (flash) target = Math.Max(selected.Count(), 5 + Math.Floor(3 * rng.RandFloat01()));
+  target = Math.Min(target, layout.Count());
+  // A seeded direction and kind preference shift which flank and facilities feature.
+  float angle = Math.PI2 * rng.RandFloat01();
+  vector axis = Vector(Math.Cos(angle), 0, Math.Sin(angle));
+  vector middle = 0.5 * (hqs[0].m_vPos + hqs[1].m_vPos);
+  int kind = Math.Min(2, Math.Floor(3 * rng.RandFloat01()));
+  array<float> scores = {};
+  foreach (ACR_GenSite candidate : optional)
+  {
+   float preference = 0;
+   if (kind == 0 && (candidate.m_sKind == "city" || candidate.m_sKind == "town" || candidate.m_sKind == "village" || candidate.m_sKind == "settlement")) preference = 0.35;
+   if (kind == 1 && candidate.m_sKind == "industry") preference = 0.35;
+   if (kind == 2 && (candidate.m_sKind == "military" || candidate.m_sKind == "airport")) preference = 0.35;
+   float flank = Math.Clamp(vector.Dot(candidate.m_vPos - middle, axis) / 3000, -0.25, 0.25);
+   scores.Insert(rng.RandFloat01() + preference + flank);
+  }
+  while (selected.Count() < target && !optional.IsEmpty())
+  {
+   int best = 0;
+   for (int i = 1; i < optional.Count(); i++) if (scores[i] > scores[best]) best = i;
+   selected.Insert(optional[best]);
+   optional.RemoveOrdered(best); scores.RemoveOrdered(best);
+  }
+  layout.Clear();
+  foreach (ACR_GenSite chosen : selected) layout.Insert(chosen);
+  if (flash) AssignEconomy(layout, hqs, true);
  }
 
  // ---------------------------------------------------------------- layout editor
@@ -764,59 +950,67 @@ class ACR_Generator
   return true;
  }
 
- // The map's long axis = the two sites farthest apart; a half = the sites on one side of the
- // middle across it.
+ // Roughly half the ordinary sites in a seeded region: either a rotated, sliding band
+ // (including edge halves) or the nearest sites round a seeded place. Landmarks follow the
+ // boundary but do not define it, so a hidden-site roll cannot distort the battlefield.
  protected static array<ACR_GenSite> Half(array<ACR_GenSite> pool, RandomGenerator rng)
  {
-  ACR_GenSite a, b;
-  Farthest(pool, a, b);
+  array<ACR_GenSite> ordinary = {};
+  foreach (ACR_GenSite site : pool) if (site.m_sKind != "landmark") ordinary.Insert(site);
   array<ACR_GenSite> result = {};
-  if (!a) return result;
-  vector axis = b.m_vPos - a.m_vPos;
-  axis[1] = 0;
-  float length = axis.Length();
-  if (length < 1) return result;
-  axis = axis / length;
-  array<float> along = {};
-  foreach (ACR_GenSite site : pool) along.Insert(vector.Dot(site.m_vPos - a.m_vPos, axis));
+  if (ordinary.Count() < 3) return result;
+  float angle = Math.PI2 * rng.RandFloat01();
+  vector axis = Vector(Math.Cos(angle), 0, Math.Sin(angle));
+  int anchorIndex = Math.Min(ordinary.Count() - 1, Math.Floor(rng.RandFloat01() * ordinary.Count()));
+  vector anchor = ordinary[anchorIndex].m_vPos;
+  bool compact = rng.RandFloat01() < 0.35;
+  int count = Math.Max(3, Math.Round((0.45 + 0.1 * rng.RandFloat01()) * ordinary.Count()));
+  count = Math.Min(count, ordinary.Count());
   array<float> sorted = {};
-  sorted.Copy(along);
-  sorted.Sort();
-  float middle = sorted[sorted.Count() / 2];
-  bool first = rng.RandFloat01() < 0.5;
-  foreach (int i, ACR_GenSite s : pool)
+  foreach (ACR_GenSite point : ordinary)
   {
-   bool low = along[i] < middle;
-   if (low == first) result.Insert(s);
+   float metric = vector.Dot(point.m_vPos, axis);
+   if (compact) metric = vector.DistanceXZ(point.m_vPos, anchor);
+   sorted.Insert(metric);
+  }
+  sorted.Sort();
+  int start = 0;
+  if (!compact) start = Math.Min(ordinary.Count() - count, Math.Floor(rng.RandFloat01() * (ordinary.Count() - count + 1)));
+  float low = -float.MAX;
+  if (start > 0) low = 0.5 * (sorted[start - 1] + sorted[start]);
+  float high = float.MAX;
+  if (start + count < sorted.Count()) high = 0.5 * (sorted[start + count - 1] + sorted[start + count]);
+  foreach (ACR_GenSite included : pool)
+  {
+   float position = vector.Dot(included.m_vPos, axis);
+   if (compact) position = vector.DistanceXZ(included.m_vPos, anchor);
+   if (position >= low && position <= high) result.Insert(included);
   }
   return result;
  }
 
- // About seven sites round a town or village (within 1.8 km), at least five.
+ // An accessible local candidate pool; final selection keeps 5-7 actual objectives.
+ // Radius and centre vary; sparse neighbourhoods fall back to the original 1.8 km envelope.
  protected static array<ACR_GenSite> Flashpoint(array<ACR_GenSite> pool, RandomGenerator rng)
  {
   array<ACR_GenSite> centres = {};
   foreach (ACR_GenSite site : pool) if (site.m_sKind == "city" || site.m_sKind == "town" || site.m_sKind == "village") centres.Insert(site);
-  if (centres.IsEmpty()) centres.Copy(pool);
+  if (centres.IsEmpty()) foreach (ACR_GenSite ordinary : pool) if (ordinary.m_sKind != "landmark") centres.Insert(ordinary);
   array<ACR_GenSite> result = {};
   for (int attempt = 0; attempt < 20 && !centres.IsEmpty(); attempt++)
   {
-   int pick = Math.Floor(rng.RandFloat01() * centres.Count());
-   if (pick >= centres.Count()) pick = centres.Count() - 1;
+   int pick = Math.Min(centres.Count() - 1, Math.Floor(rng.RandFloat01() * centres.Count()));
    ACR_GenSite centre = centres[pick];
    centres.Remove(pick);
-   result.Clear();
-   array<ACR_GenSite> near = {};
-   foreach (ACR_GenSite s : pool) if (vector.DistanceXZ(s.m_vPos, centre.m_vPos) <= 1800) near.Insert(s);
-   while (result.Count() < 7 && !near.IsEmpty())
+   float radius = 1250 + 550 * rng.RandFloat01();
+   for (int envelope = 0; envelope < 2; envelope++)
    {
-    int best = 0;
-    for (int i = 1; i < near.Count(); i++)
-     if (vector.DistanceXZ(near[i].m_vPos, centre.m_vPos) < vector.DistanceXZ(near[best].m_vPos, centre.m_vPos)) best = i;
-    result.Insert(near[best]);
-    near.Remove(best);
+    result.Clear();
+    foreach (ACR_GenSite nearby : pool)
+     if (vector.DistanceXZ(nearby.m_vPos, centre.m_vPos) <= radius) result.Insert(nearby);
+    if (result.Count() >= 5) return result;
+    radius = 1800;
    }
-   if (result.Count() >= 5) return result;
   }
   return result;
  }
@@ -832,71 +1026,77 @@ class ACR_Generator
    }
  }
 
- // HQ pair: keep at least 80% of the greatest military/airport separation, prefer fewer
- // rear objectives, then vary among the three farthest eligible pairs. Flashpoints use
- // their two farthest non-landmark sites.
+ // HQ pairs retain the 80% separation floor. Keep the original three best geometric
+ // pairs as quality anchors and sample up to nine alternatives with at most two more rear
+ // objectives. Only pairs within one accessible objective of the best checked pair compete.
+ // Actual objectives still pass FairObjectives and ThinObjectives, regardless of the pair.
  protected static void PickHQs(array<ACR_GenSite> pool, bool flashpoint, RandomGenerator rng, out ACR_GenSite west, out ACR_GenSite east)
  {
   array<ACR_GenSite> candidates = {};
   if (!flashpoint)
    foreach (ACR_GenSite site : pool) if (site.m_sKind == "military" || site.m_sKind == "airport") candidates.Insert(site);
-  // Never a hidden landmark.
   if (candidates.Count() < 2)
   {
    candidates.Clear();
    foreach (ACR_GenSite open : pool) if (open.m_sKind != "landmark") candidates.Insert(open);
   }
-  if (candidates.Count() < 2) candidates.Copy(pool);
+  // Never promote hidden landmarks, even on a sparse map.
+  if (candidates.Count() < 2) return;
   if (flashpoint) { Farthest(candidates, west, east); return; }
   ACR_GenSite spanA, spanB;
   Farthest(candidates, spanA, spanB);
   if (!spanA || !spanB) return;
   float minimumSpan = 0.8 * vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
-  // The three farthest pairs.
-  array<float> dist = {-float.MAX, -float.MAX, -float.MAX};
-  array<int> ia = {-1, -1, -1};
-  array<int> ib = {-1, -1, -1};
+  array<int> allA = {}, allB = {}, rearCounts = {};
+  array<float> distances = {};
   int bestRear = int.MAX;
   for (int i = 0; i < candidates.Count(); i++)
    for (int j = i + 1; j < candidates.Count(); j++)
    {
-    float d = vector.DistanceXZ(candidates[i].m_vPos, candidates[j].m_vPos);
-    if (d < minimumSpan) continue;
-    // Prefer pairs with objectives between them, rather than a base partway along a peninsula.
+    float distance = vector.DistanceXZ(candidates[i].m_vPos, candidates[j].m_vPos);
+    if (distance < minimumSpan) continue;
     int rear = 0;
     foreach (ACR_GenSite objective : pool)
-     if (!BetweenHQs(objective.m_vPos, candidates[i].m_vPos, candidates[j].m_vPos)) rear++;
-    if (rear > bestRear) continue;
-    if (rear < bestRear)
-    {
-     bestRear = rear;
-     dist = {-float.MAX, -float.MAX, -float.MAX};
-     ia = {-1, -1, -1}; ib = {-1, -1, -1};
-    }
-    for (int k = 0; k < 3; k++)
-    {
-     if (d <= dist[k]) continue;
-     for (int m = 2; m > k; m--) { dist[m] = dist[m - 1]; ia[m] = ia[m - 1]; ib[m] = ib[m - 1]; }
-     dist[k] = d; ia[k] = i; ib[k] = j;
-     break;
-    }
+     if (objective.m_sKind != "landmark" && !BetweenHQs(objective.m_vPos, candidates[i].m_vPos, candidates[j].m_vPos)) rear++;
+    bestRear = Math.Min(bestRear, rear);
+    allA.Insert(i); allB.Insert(j); rearCounts.Insert(rear); distances.Insert(distance);
    }
-  array<int> accessible = {};
-  int bestCount = -1;
-  for (int c = 0; c < 3; c++)
+  array<int> shortlist = {};
+  // The farthest three with the fewest rear objectives are always evaluated.
+  for (int anchor = 0; anchor < 3; anchor++)
   {
-   if (ia[c] < 0) continue;
-   int retained = AccessibleCount(pool, candidates[ia[c]], candidates[ib[c]]);
-   if (retained < bestCount) continue;
-   if (retained > bestCount) { accessible.Clear(); bestCount = retained; }
-   accessible.Insert(c);
+   int farthest = -1;
+   float span = -1;
+   foreach (int p, float apart : distances)
+    if (rearCounts[p] == bestRear && !shortlist.Contains(p) && apart > span) { span = apart; farthest = p; }
+   if (farthest >= 0) shortlist.Insert(farthest);
   }
-  if (accessible.IsEmpty()) return;
-  int pick = Math.Floor(rng.RandFloat01() * accessible.Count());
-  if (pick >= accessible.Count()) pick = accessible.Count() - 1;
-  int choice = accessible[pick];
-  west = candidates[ia[choice]];
-  east = candidates[ib[choice]];
+  array<int> alternatives = {};
+  foreach (int option, int behind : rearCounts)
+   if (behind <= bestRear + 2 && !shortlist.Contains(option)) alternatives.Insert(option);
+  // Uniform sample without replacement; bounded graph work even when every town can be HQ.
+  for (int extra = 0; extra < 9 && !alternatives.IsEmpty(); extra++)
+  {
+   int sampled = Math.Min(alternatives.Count() - 1, Math.Floor(rng.RandFloat01() * alternatives.Count()));
+   shortlist.Insert(alternatives[sampled]);
+   alternatives.Remove(sampled);
+  }
+  array<int> counts = {};
+  int bestCount = -1;
+  foreach (int pair : shortlist)
+  {
+   int retained = AccessibleCount(pool, candidates[allA[pair]], candidates[allB[pair]]);
+   counts.Insert(retained);
+   bestCount = Math.Max(bestCount, retained);
+  }
+  array<int> suitable = {};
+  foreach (int checked, int total : counts)
+   if (total >= bestCount - 1 && total >= 3) suitable.Insert(shortlist[checked]);
+  if (suitable.IsEmpty()) return;
+  int pick = Math.Min(suitable.Count() - 1, Math.Floor(rng.RandFloat01() * suitable.Count()));
+  int choice = suitable[pick];
+  west = candidates[allA[choice]];
+  east = candidates[allB[choice]];
  }
 
  // ---------------------------------------------------------------- building it

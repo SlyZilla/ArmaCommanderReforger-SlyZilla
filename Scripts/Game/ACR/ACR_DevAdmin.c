@@ -10,9 +10,12 @@ class ACR_DevAdmin
   SCR_ChatPanelManager chat = SCR_ChatPanelManager.GetInstance();
   if (!chat) return;
   ChatCommandInvoker command = chat.GetCommandInvoker("login");
-  if (!command) return;
-  command.Remove(OnLogin);
-  command.Insert(OnLogin);
+  if (command)
+  {
+   command.Remove(OnLogin);
+   command.Insert(OnLogin);
+  }
+  ACR_DebugCommand.Register();
  }
 
  static void OnLogin(SCR_ChatPanel panel, string data)

@@ -7,12 +7,23 @@
 //    takes you there.
 //  - A possessed soldier dies: you go back to your command unit (or wait for the
 //    new one), never into the Game Master editor.
+class ACR_PendingPossession : Managed
+{
+ int m_iPlayerId;
+ ChimeraCharacter m_Victim;
+ ChimeraCharacter m_NextTarget; // null if falling back to command unit
+ float m_fTransferTime;
+ string m_sSquadName;
+ int m_iSquadNumber;
+}
+
 class ACR_Respawn : Managed
 {
  protected ACR_Manager m_Manager;
  protected ref map<int, float> m_DueAt = new map<int, float>();         // player -> world time the new unit is ready
  protected ref map<int, bool> m_ReturnWhenReady = new map<int, bool>();
  protected ref map<IEntity, vector> m_SpawnPointOrigins = new map<IEntity, vector>();
+ protected ref map<int, ref ACR_PendingPossession> m_mPendingPossession = new map<int, ref ACR_PendingPossession>();
 
  void ACR_Respawn(ACR_Manager manager) { m_Manager = manager; }
 
@@ -118,22 +129,131 @@ class ACR_Respawn : Managed
   return ACR_Manager.Ground(home);
  }
 
- // A soldier the player controlled died.
- void OnPossessedKilled(SCR_PlayerController pc)
+ // A soldier the player controlled died: Tarkov-style fall and fade to black,
+ // cascading into the next living squadmate (or command unit if squad is wiped).
+ void OnPossessedKilled(SCR_PlayerController pc, ChimeraCharacter victim = null)
  {
+  if (!pc) return;
   int id = pc.GetPlayerId();
-  if (IsAlive(pc.GetMainEntity()))
+  if (!victim) victim = ChimeraCharacter.Cast(pc.GetControlledEntity());
+
+  ACR_Squad squad = null;
+  if (victim) squad = m_Manager.FindSquadBySoldier(victim);
+  if (!squad) m_Manager.m_LastSquad.Find(id, squad);
+
+  ChimeraCharacter nextSubordinate = null;
+  if (squad)
   {
-   m_Manager.ReleaseAuthority(pc);
-   pc.SetPossessedEntity(null);
-   m_Manager.Notify(id, "Soldier killed. Back in your command unit.");
-   PrintFormat("[ACR] POSSESSED KILLED player=%1 -> command unit", id);
-   return;
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    ChimeraCharacter soldier = ChimeraCharacter.Cast(agent.GetControlledEntity());
+    if (!soldier || soldier == victim) continue;
+    if (!IsAlive(soldier) || soldier.GetCharacterController().IsUnconscious()) continue;
+    if (ACR_Squad.FindController(soldier) > 0) continue;
+    nextSubordinate = soldier;
+    break;
+   }
   }
-  Schedule(id);
-  m_ReturnWhenReady.Set(id, true);
-  m_Manager.Notify(id, string.Format("Soldier killed. Your new command unit is ready in %1 s.", SecondsLeft(id)));
-  PrintFormat("[ACR] POSSESSED KILLED player=%1 -> waiting for new command unit", id);
+
+  float now = GetGame().GetWorld().GetWorldTime();
+  ref ACR_PendingPossession pending = new ACR_PendingPossession();
+  pending.m_iPlayerId = id;
+  pending.m_Victim = victim;
+  pending.m_NextTarget = nextSubordinate;
+  pending.m_fTransferTime = now + 1800.0; // 1.8 s fall & collapse window
+
+  string msg;
+  if (nextSubordinate && squad)
+  {
+   pending.m_sSquadName = squad.GetName();
+   pending.m_iSquadNumber = squad.NumberOf(nextSubordinate);
+   msg = string.Format("Soldier killed. Transferring to %1-%2...", pending.m_sSquadName, pending.m_iSquadNumber);
+   PrintFormat("[ACR] POSSESSED KILLED player=%1 -> cascading to %2-%3 in 1.8s", id, pending.m_sSquadName, pending.m_iSquadNumber);
+  }
+  else
+  {
+   msg = "Squad eliminated. Returning to command unit...";
+   PrintFormat("[ACR] POSSESSED KILLED player=%1 -> squad eliminated -> command unit in 1.8s", id);
+  }
+
+  m_mPendingPossession.Set(id, pending);
+  pc.ACR_SendDeathTransition(1.8, 1.2, msg);
+ }
+
+ void CancelPendingPossession(int playerId)
+ {
+  m_mPendingPossession.Remove(playerId);
+ }
+
+ // Ticked every server frame by ACR_Manager to process possession transfers.
+ void Frame(float timeSlice)
+ {
+  if (m_mPendingPossession.IsEmpty()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  array<int> readyIds = {};
+  foreach (int id, ACR_PendingPossession pending : m_mPendingPossession)
+   if (now >= pending.m_fTransferTime) readyIds.Insert(id);
+
+  foreach (int id : readyIds)
+  {
+   ACR_PendingPossession pending = m_mPendingPossession.Get(id);
+   m_mPendingPossession.Remove(id);
+   if (!pending) continue;
+   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
+   if (!pc) continue;
+
+   ChimeraCharacter target = pending.m_NextTarget;
+   if (!target || !IsAlive(target) || target.GetCharacterController().IsUnconscious() || ACR_Squad.FindController(target) > 0)
+   {
+    target = null;
+    ACR_Squad squad = null;
+    if (pending.m_Victim) squad = m_Manager.FindSquadBySoldier(pending.m_Victim);
+    if (!squad) m_Manager.m_LastSquad.Find(id, squad);
+    if (squad)
+    {
+     array<AIAgent> agents = {};
+     squad.GetAgents(agents);
+     foreach (AIAgent agent : agents)
+     {
+      ChimeraCharacter soldier = ChimeraCharacter.Cast(agent.GetControlledEntity());
+      if (!soldier || soldier == pending.m_Victim) continue;
+      if (!IsAlive(soldier) || soldier.GetCharacterController().IsUnconscious()) continue;
+      if (ACR_Squad.FindController(soldier) > 0) continue;
+      target = soldier;
+      pending.m_sSquadName = squad.GetName();
+      pending.m_iSquadNumber = squad.NumberOf(target);
+      break;
+     }
+    }
+   }
+
+   if (target)
+   {
+    m_Manager.m_Requests.Possess(pc, pending.m_Victim, SCR_EntityHelper.EntityToRplId(target));
+    m_Manager.Notify(id, string.Format("Now controlling %1-%2. F8 to return to command unit.", pending.m_sSquadName, pending.m_iSquadNumber));
+    PrintFormat("[ACR] POSSESSED KILLED player=%1 -> transferred to subordinate %2-%3", id, pending.m_sSquadName, pending.m_iSquadNumber);
+   }
+   else
+   {
+    if (IsAlive(pc.GetMainEntity()))
+    {
+     m_Manager.ReleaseAuthority(pc);
+     pc.SetPossessedEntity(null);
+     ACR_MapHandoff.ClearCharacterInput(pc.GetControlledEntity());
+     m_Manager.Notify(id, "Squad wiped out. Back in your command unit.");
+     PrintFormat("[ACR] POSSESSED KILLED player=%1 -> command unit ready", id);
+    }
+    else
+    {
+     Schedule(id);
+     m_ReturnWhenReady.Set(id, true);
+     m_Manager.Notify(id, string.Format("Squad wiped out. Your new command unit arrives in %1 s.", SecondsLeft(id)));
+     PrintFormat("[ACR] POSSESSED KILLED player=%1 -> squad wiped out -> waiting for new command unit", id);
+    }
+   }
+  }
  }
 
  // F8 while the command unit is dead. Returns the message, or "" if not applicable.
@@ -294,7 +414,7 @@ modded class SCR_PossessingManagerComponent
   }
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(playerId));
   if (!pc) return super.HandlePlayerKilled(playerId, playerEntity, killerEntity, instigator);
-  manager.m_Respawn.OnPossessedKilled(pc);
+  manager.m_Respawn.OnPossessedKilled(pc, ChimeraCharacter.Cast(playerEntity));
   return false;
  }
 }

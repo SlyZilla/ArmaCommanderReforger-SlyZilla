@@ -1,0 +1,23 @@
+SCR_ChimeraCharacter : "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et" {
+ ID "AC230926A0010058"
+ components {
+  BaseLoadoutManagerComponent "{520EA1D2DB11821E}" {
+   Slots {
+    LoadoutSlotInfo Back { Prefab "{16C7AD0508F53A9B}Prefabs/Items/Equipment/Backpacks/backpack_Wartech_BB102/Backpack_Wartech_BB102_OD.et" }
+    LoadoutSlotInfo Jacket { Prefab "{A9D4DA189D2FBC65}Prefabs/Characters/Uniforms/Jacket_UA_M14_ground.et" }
+    LoadoutSlotInfo Pants { Prefab "{846B61FF83278E38}Prefabs/Characters/Uniforms/Pants_AU_M14_piso.et" }
+    LoadoutSlotInfo Boots { Prefab "{AB9E3D5524876346}Prefabs/Characters/Footwear/Boots_Faradey_1085/Footware_Faradey_1085.et" }
+    LoadoutSlotInfo Hat { Prefab "{EED31918A22454F9}Prefabs/Characters/HeadGear/Helmet_ECH/variants/ECH_M14_ua.et" }
+    LoadoutSlotInfo ArmoredVest { Prefab "{4825CC3E487EEB3A}Prefabs/Characters/Vests/Vest_TV102/Vest_TV102_OD_UA.et" }
+    LoadoutSlotInfo Vest { Prefab "{74F6035104400897}Prefabs/Characters/Vests/Vest_TV102/variants/Vest_TV102_rifleman_OD_UA.et" }
+   }
+  }
+  CharacterWeaponSlotComponent "{520EA1D2F659CFAB}" {
+   WeaponTemplate "{90D8238D1D8D2DC5}Prefabs/Weapons/Rifles/M4A1/Rifle_M4A1_RAS_Aimpoint.et"
+  }
+  ACR_InfantryKitComponent "{AC230926A0010058}" {
+   m_eKit 3
+   m_eRole 0
+  }
+ }
+}

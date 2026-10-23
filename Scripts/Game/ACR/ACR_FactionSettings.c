@@ -26,6 +26,9 @@ class ACR_RequisitionEntry
  bool m_bRare;        // set automatically: aircraft, armour, mortar team, support helicopters keep a fixed stock
  int m_iSupportHeli;  // support helicopter for a helipad (ACR_HeliStation): 1 gunship, 2 door gunners
 
+ ACR_EFormation m_eFormation; // independent of display names
+ ref array<ResourceName> m_aSoldiers; // native templates retained for reinforcement
+
  // runtime
  int m_iRemaining;
  int m_iBought;
@@ -57,7 +60,7 @@ class ACR_PrefabMapping
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Vanilla prefab to replace", "et")]
  ResourceName m_sFrom;
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Faction-specific prefab", "et")]
- ResourceName m_sTo;
+ string m_sTo; // optional resource; resolved only when this faction is used
 }
 
 enum ACR_ESupportUnitRole
@@ -276,20 +279,21 @@ class ACR_FactionCatalog
   return fallback;
  }
 
- // RHS USMC MEF riflemen spawn with an 8x VC18DSCO. Remove that optic from
- // their issued weapon; the M27's built-in sights remain available.
+ // Standard Marines use the 4x RCO instead of the issued 8x VC18DSCO.
+ // Covers native garrisons/officers and authored groups as well as bought squads;
+ // dedicated M38/M40 sights and other weapon families retain their issued optics.
  static void TrimUSMCRiflemanOptic(IEntity soldier)
  {
   if (!soldier || !soldier.GetPrefabData()) return;
   string characterPrefab = soldier.GetPrefabData().GetPrefabName();
-  if (!characterPrefab.Contains("/RHS_USAF_USMC_MEF/") || !characterPrefab.Contains("Rifleman")) return;
+  if (!characterPrefab.Contains("/RHS_USAF_USMC_MEF/")) return;
   BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(soldier.FindComponent(BaseWeaponManagerComponent));
   if (!weapons) return;
   array<IEntity> list = {};
   weapons.GetWeaponsList(list);
   foreach (IEntity weaponEntity : list)
   {
-   if (!weaponEntity) continue;
+   if (!weaponEntity || !weaponEntity.GetPrefabData() || !weaponEntity.GetPrefabData().GetPrefabName().Contains("Rifle_M27IAR_VC18DSCO")) continue;
    BaseWeaponComponent weapon = BaseWeaponComponent.Cast(weaponEntity.FindComponent(BaseWeaponComponent));
    if (!weapon) continue;
    array<AttachmentSlotComponent> attachments = {};
@@ -297,10 +301,23 @@ class ACR_FactionCatalog
    foreach (AttachmentSlotComponent attachmentSlot : attachments)
    {
     IEntity optic = attachmentSlot.GetAttachedEntity();
-    if (!optic || !optic.GetPrefabData()) continue;
-    if (!optic.GetPrefabData().GetPrefabName().Contains("optic_vc18dsco")) continue;
+    if (!optic || !optic.GetPrefabData() || !optic.GetPrefabData().GetPrefabName().Contains("optic_vc18dsco")) continue;
+    Resource resource = Resource.Load("{2518CA6044D6BBDD}Prefabs/Weapons/Attachments/Optics/ta31rco/Optic_TA31RCO.et");
+    if (!resource || !resource.IsValid()) continue;
+    EntitySpawnParams parameters = new EntitySpawnParams();
+    parameters.TransformMode = ETransformMode.WORLD;
+    parameters.Transform[3] = soldier.GetOrigin();
+    IEntity replacement = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), parameters);
+    if (!replacement) continue;
+    if (!attachmentSlot.CanSetAttachment(replacement)) { SCR_EntityHelper.DeleteEntityAndChildren(replacement); continue; }
     attachmentSlot.SetAttachment(null);
-    PrintFormat("[ACR] FACTION removed 8x optic from %1", FilePath.StripPath(characterPrefab));
+    attachmentSlot.SetAttachment(replacement);
+    if (attachmentSlot.GetAttachedEntity() == replacement) SCR_EntityHelper.DeleteEntityAndChildren(optic);
+    else
+    {
+     attachmentSlot.SetAttachment(optic);
+     SCR_EntityHelper.DeleteEntityAndChildren(replacement);
+    }
    }
   }
  }
@@ -429,11 +446,14 @@ class ACR_FactionCatalog
   {
    array<ResourceName> exclude = {};
    if (settings && settings.m_aExclude) exclude.Copy(settings.m_aExclude);
-   AddCatalog(factionKey, EEntityCatalogType.GROUP, used, exclude, result);
+   if (ACR_InfantryCatalog.UseDefaults(factionKey, settings)) ACR_InfantryCatalog.Build(factionKey, result);
+   else AddCatalog(factionKey, EEntityCatalogType.GROUP, used, exclude, result);
    AddCatalog(factionKey, EEntityCatalogType.VEHICLE, used, exclude, result);
    EnsureWestGunship(factionKey, exclude, result);
   }
   EnsureRUAFVehicles(factionKey, result);
+  // Mission-authored lists retain their prices.
+  if (!settings || !settings.m_aRequisitions || settings.m_aRequisitions.IsEmpty()) ACR_InfantryCatalog.VehiclePrices(factionKey, result);
   // Mission makers can edit support requisitions per faction; an absent row keeps defaults.
   ACR_RequisitionEntry supportEntry = ACR_Mortars.MakeEntry();
   if (ApplySupportUnit(supportEntry, settings, ACR_ESupportUnitRole.MORTAR_TEAM)) result.Insert(supportEntry);
@@ -740,8 +760,9 @@ class ACR_Pricing
   else
   {
    entry.m_iRemaining = ACR_Manager.ThreatStock(entry.m_iStock, !entry.m_sVehicle.IsEmpty());
-   // Rare units need a larger High-threat pool: four times base stock in either mode.
-   if (entry.m_bRare && ACR_Manager.ThreatOption() == 2) entry.m_iRemaining *= 2;
+   // Armor/support use four times base stock on High. SF keeps the ordinary
+   // threat multiplier, giving only 1/2/4 teams across Low/Normal/High.
+   if (entry.m_bRare && entry.m_eFormation != ACR_EFormation.SF && ACR_Manager.ThreatOption() == 2) entry.m_iRemaining *= 2;
   }
  }
 

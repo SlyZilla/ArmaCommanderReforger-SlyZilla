@@ -7,7 +7,12 @@ enum ACR_EDebug
  CAPTURE_OWN,     // the selected base becomes yours
  CAPTURE_ENEMY,   // ... the other side's
  REVEAL,          // toggle: your side's intel sees every enemy soldier
- RESET_SUPPORTS   // every support ready again (both sides)
+ RESET_SUPPORTS,  // every support ready again (both sides)
+ FOB_SUPPLY,      // +500 supplies to selected FOB
+ FOB_FINISH,      // finish in-progress upgrade at selected FOB
+ TIME_STEP,       // advance time +6 hours
+ HEAL_SQUAD,      // heal and rearm selected squad / character
+ KILL_SQUAD       // eliminate selected squad
 }
 
 // Debug menu (map panel, host and admins only): shortcuts for testing. Server side;
@@ -65,7 +70,46 @@ class ACR_Debug : Managed
   if (action == ACR_EDebug.CAPTURE_ENEMY) return CaptureFor(manager, FindBase(baseName), enemy);
   if (action == ACR_EDebug.REVEAL) return ToggleReveal(ownKey);
   if (action == ACR_EDebug.RESET_SUPPORTS) return ResetSupports(manager);
+  if (action == ACR_EDebug.FOB_SUPPLY) return FobSupply(baseName);
+  if (action == ACR_EDebug.FOB_FINISH) return FobFinish(baseName);
+  if (action == ACR_EDebug.TIME_STEP) return AdvanceTime(6);
   return "Unknown debug action";
+ }
+
+ protected string FobSupply(string baseName)
+ {
+  ACR_Base base = FindBase(baseName);
+  if (!base || !base.m_bBuilt || !base.m_FobSupply) return "Select a player-built FOB on the map first";
+  SCR_ResourceContainer container = ACR_Logistics.SupplyContainer(base.m_FobSupply);
+  if (!container) return "FOB has no supply container";
+  int maxSupply = ACR_FobSupply.CapacityOf(base);
+  int current = ACR_FobSupply.Stock(base.m_FobSupply);
+  int newSupply = Math.Clamp(current + 500, 0, maxSupply);
+  container.SetResourceValue(newSupply);
+  return string.Format("Debug: %1 now has %2 / %3 supplies", base.m_sName, newSupply, maxSupply);
+ }
+
+ protected string FobFinish(string baseName)
+ {
+  ACR_Base base = FindBase(baseName);
+  if (!base || !base.m_bBuilt) return "Select a player-built FOB on the map first";
+  ACR_FobSlot busy = ACR_FobSlots.BuildingSlot(base);
+  if (!busy) return "Debug: No upgrade building at " + base.m_sName;
+  busy.m_fProgress = busy.m_fDuration;
+  return string.Format("Debug: Finished %1 at %2", busy.m_sName, base.m_sName);
+ }
+
+ protected string AdvanceTime(float hours)
+ {
+  ChimeraWorld world = ChimeraWorld.CastFrom(GetGame().GetWorld());
+  if (!world) return "No world";
+  TimeAndWeatherManagerEntity timeMgr = world.GetTimeAndWeatherManager();
+  if (!timeMgr) return "No time manager";
+  int h, m, s;
+  timeMgr.GetHoursMinutesSeconds(h, m, s);
+  int targetH = (h + (int)hours) % 24;
+  timeMgr.SetHoursMinutesSeconds(targetH, m, s, true);
+  return string.Format("Debug: Time advanced to %1:00", targetH);
  }
 
  // Capped like income (ACR_BaseSystem.POINTS_CAP), or the next payout would cut it back.

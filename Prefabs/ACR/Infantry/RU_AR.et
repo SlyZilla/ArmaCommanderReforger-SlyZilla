@@ -1,0 +1,17 @@
+SCR_ChimeraCharacter : "{A0CAC00219D7EF55}Prefabs/Characters/Factions/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Character_RHS_RF_MSV_VKPO_S_Rifleman.et" {
+ ID "AC230926A0010043"
+ components {
+  BaseLoadoutManagerComponent "{520EA1D2DB11821E}" {
+   Slots {
+    LoadoutSlotInfo Back { Prefab "{16C7AD0508F53A9B}Prefabs/Items/Equipment/Backpacks/backpack_Wartech_BB102/Backpack_Wartech_BB102_OD.et" }
+   }
+  }
+  CharacterWeaponSlotComponent "{520EA1D2F659CFAB}" {
+   WeaponTemplate "{4EF6890D756306D1}Prefabs/Weapons/MachineGuns/RPK74M/MG_RPK74M.et"
+  }
+  ACR_InfantryKitComponent "{AC230926A0010043}" {
+   m_eKit 1
+   m_eRole 3
+  }
+ }
+}

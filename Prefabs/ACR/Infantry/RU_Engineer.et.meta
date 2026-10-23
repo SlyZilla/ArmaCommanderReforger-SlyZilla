@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AC230926A001004A}Prefabs/ACR/Infantry/RU_Engineer.et"
+ Configurations {
+  ETResourceClass PC {}
+  ETResourceClass HEADLESS : PC {}
+ }
+}

@@ -83,6 +83,14 @@ class ACR_BaseSystem : Managed
   return true;
  }
 
+ void Refund(string factionKey, int amount)
+ {
+  ACR_FactionData data = GetFaction(factionKey);
+  if (!data) return;
+  data.m_iRP = Math.Min(data.m_iRP + amount, POINTS_CAP);
+  ACR_Report.OnRefund(factionKey, amount);
+ }
+
  bool IsGarrison(SCR_AIGroup group)
  {
   return m_GarrisonGroups.Contains(group);

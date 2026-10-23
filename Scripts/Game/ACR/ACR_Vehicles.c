@@ -79,6 +79,18 @@ class ACR_Vehicles
   Prune();
  }
 
+ // Living vehicles without running pruning passes (suitable for per-frame sweeps).
+ static void Living(notnull array<IEntity> result)
+ {
+  result.Clear();
+  for (int i = s_All.Count() - 1; i >= 0; i--)
+  {
+   IEntity vehicle = s_All[i];
+   if (!vehicle) { s_All.Remove(i); continue; }
+   result.Insert(vehicle);
+  }
+ }
+
  // Drop deleted vehicles from the side and crew records (R18).
  static void Prune()
  {
@@ -192,7 +204,7 @@ modded class SCR_ArsenalComponent
 
 // Bought vehicles of a side with its own crewmen (RHS) seat those instead of the
 // vehicle's default crew: RHS reuses vanilla vehicles, whose seats name vanilla 80s
-// soldiers (Jacob, 8 Oct). Seats without a default crewman stay empty.
+// soldiers (Jacob, 8 Oct). Missing defaults stay empty except Typhoon crew seats.
 modded class BaseCompartmentSlot
 {
  override ResourceName GetDefaultOccupantPrefab(bool checkIfValid = true)
@@ -203,7 +215,15 @@ modded class BaseCompartmentSlot
   if (owner.IsEmpty()) return own;
   ResourceName custom = ACR_Vehicles.CustomCrew(vehicle);
   if (!custom.IsEmpty()) return custom;
-  if (own.IsEmpty()) return own;
+  if (own.IsEmpty())
+  {
+   // RHS/UA Typhoons omit default occupants, including the armed turret. Supply
+   // only their working crew seats; empty passenger slots must stay empty.
+   if (GetType() != ECompartmentType.PILOT && GetType() != ECompartmentType.TURRET) return own;
+   if (!vehicle || !vehicle.GetPrefabData()) return own;
+   string path = vehicle.GetPrefabData().GetPrefabName();
+   if (!path.Contains("/Vehicles/Wheeled/K4386/")) return own;
+  }
   ResourceName crewman = ACR_FactionCatalog.CrewmanFor(owner, vehicle);
   if (crewman.IsEmpty()) return own;
   return crewman;

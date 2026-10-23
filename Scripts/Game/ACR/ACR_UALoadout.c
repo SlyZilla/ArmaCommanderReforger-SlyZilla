@@ -1,4 +1,4 @@
-// UA soldiers (Jacob, 11 Oct live: "a lot of 80s US equipment, and no pants").
+// Shared RU/UA/USMC profile runner; legacy UA repair (Jacob, 11 Oct live: "a lot of 80s US equipment, and no pants").
 // Ukraine Armed Forces RHS re-skins the vanilla US key, but only its base soldier: every
 // role prefab keeps its 80s US kit, and the base's pants prefab (Pants_UA_M14_ground) is not
 // shipped, so they spawn without trousers. Each UA soldier (AI and command unit) is
@@ -7,7 +7,7 @@
 // pattern, about one in four Western (Jacob, 11 Oct: "mostly Soviet, some West"). Magazines
 // come from each new weapon's own default magazine, so they always fit.
 // Field kit (map, compass, watch, flashlight, radio, meds, MPL-50 shovel, RGD-5s, smoke) is topped
-// up 3 s later, once moved items have settled. Pilots keep their kit; crews keep their helmets. Inactive unless the UA mod is loaded.
+// up 3 s later, once moved items have settled. Pilots keep their kit; crews keep their helmets. Legacy repair requires the UA mod; explicit profiles select their own kit.
 enum ACR_EUARole
 {
  RIFLEMAN,
@@ -19,7 +19,14 @@ enum ACR_EUARole
  MARKSMAN,
  CREW,
  PILOT,
- UNARMED
+ UNARMED,
+ MG_ASSISTANT,
+ AT_ASSISTANT,
+ MEDIC,
+ ENGINEER,
+ LIGHT_AT,
+ SNIPER,
+ SPOTTER
 }
 
 class ACR_UALoadout
@@ -111,6 +118,49 @@ class ACR_UALoadout
   if (!soldier) return;
   ChimeraCharacter character = ChimeraCharacter.Cast(soldier);
   if (!character || !character.GetCharacterController() || character.GetCharacterController().IsDead()) return;
+  ACR_InfantryKitComponent kit = ACR_InfantryKitComponent.Of(soldier);
+  if (kit)
+  {
+   if (!kit.m_bAppearanceReady && kit.IsUA() && !kit.IsSF())
+   {
+    if (kit.m_sHelmet.IsEmpty()) kit.m_sHelmet = Pick("helmet");
+    if (kit.m_sBoots.IsEmpty()) kit.m_sBoots = Pick("boots");
+    SCR_InventoryStorageManagerComponent appearanceInventory = SCR_InventoryStorageManagerComponent.Cast(soldier.FindComponent(SCR_InventoryStorageManagerComponent));
+    SCR_CharacterInventoryStorageComponent appearanceLoadout = appearanceInventory.GetCharacterStorage();
+    array<IEntity> discarded = {};
+    bool fittedHelmet = Swap(appearanceInventory, appearanceLoadout, LoadoutHeadCoverArea, kit.m_sHelmet, discarded);
+    bool fittedBoots = Swap(appearanceInventory, appearanceLoadout, LoadoutBootsArea, kit.m_sBoots, discarded);
+    foreach (IEntity discardedCloth : discarded) GetGame().GetCallqueue().CallLater(DiscardCloth, 3000, false, discardedCloth);
+    kit.m_bAppearanceReady = fittedHelmet && fittedBoots;
+    if (!kit.m_bAppearanceReady)
+    {
+     kit.m_iSupplyAttempts++;
+     if (kit.m_iSupplyAttempts < 80) GetGame().GetCallqueue().CallLater(Finish, 250, false, soldier);
+     return;
+    }
+   }
+   if (ACR_InfantryEquipment.Finish(soldier))
+   {
+    IEntity readyPrimary;
+    IEntity readyLauncher;
+    IEntity readySidearm;
+    FindWeapons(soldier, readyPrimary, readyLauncher, readySidearm);
+    CharacterControllerComponent readyController = character.GetCharacterController();
+    if (readyPrimary && readyController && !readyController.IsPlayerControlled() && readyController.GetCurrentItemInHands() != readyPrimary)
+     readyController.TryEquipRightHandItem(readyPrimary, EEquipItemType.EEquipTypeWeapon, false);
+    kit.m_bReady = true;
+    return;
+   }
+   kit.m_iSupplyAttempts++;
+   if (kit.m_iSupplyAttempts < 80)
+   {
+    GetGame().GetCallqueue().CallLater(Finish, 250, false, soldier);
+    return;
+   }
+   s_iKitFailed++;
+   PrintFormat("[ACR] FORMATION KIT %1 did not finish supplying within 20 s", Leaf(soldier));
+   return;
+  }
   string missing = TopUpKit(soldier);
   if (!missing.IsEmpty())
   {
@@ -301,20 +351,50 @@ class ACR_UALoadout
  // Called every second for every AI soldier and command unit: equips each UA soldier once.
  static void Check(IEntity soldier)
  {
-  if (!soldier || !Active()) return;
-  if (s_Done.Contains(soldier.GetID())) return;
+  if (!soldier || !Replication.IsServer()) return;
+  ACR_InfantryKitComponent kit = ACR_InfantryKitComponent.Of(soldier);
+  if (!kit && !Active()) return;
+  if (kit && kit.m_bEquipped) return;
+  if (!kit && s_Done.Contains(soldier.GetID())) return;
   ChimeraCharacter character = ChimeraCharacter.Cast(soldier);
-  if (!character || !IsUA(soldier)) return;
+  if (!character || (!kit && !IsUA(soldier))) return;
   CharacterControllerComponent controller = character.GetCharacterController();
   if (!controller || controller.IsDead()) return;
-  s_Done.Insert(soldier.GetID());
+  if (kit) kit.m_bEquipped = true;
+  else s_Done.Insert(soldier.GetID());
   if (Equip(soldier)) s_iEquipped++;
   else s_iFailed++;
  }
 
- static bool WasEquipped(IEntity soldier) { return soldier && s_Done.Contains(soldier.GetID()); }
+ static void DiscardCloth(IEntity cloth)
+ {
+  if (cloth) SCR_EntityHelper.DeleteEntityAndChildren(cloth);
+ }
 
- static bool Settled(IEntity soldier) { return WasEquipped(soldier) && !s_Pending.Contains(soldier); }
+ static void Reset()
+ {
+  if (GetGame())
+  {
+   GetGame().GetCallqueue().Remove(Finish);
+   GetGame().GetCallqueue().Remove(DiscardCloth);
+  }
+  s_Done.Clear();
+  s_Pending.Clear();
+ }
+
+ static bool WasEquipped(IEntity soldier)
+ {
+  ACR_InfantryKitComponent kit = ACR_InfantryKitComponent.Of(soldier);
+  if (kit) return kit.m_bEquipped;
+  return soldier && s_Done.Contains(soldier.GetID());
+ }
+
+ static bool Settled(IEntity soldier)
+ {
+  ACR_InfantryKitComponent kit = ACR_InfantryKitComponent.Of(soldier);
+  if (kit) return kit.m_bReady;
+  return WasEquipped(soldier) && !s_Pending.Contains(soldier);
+ }
 
  static string Leaf(IEntity entity)
  {
@@ -441,7 +521,7 @@ class ACR_UALoadout
  }
 
  // Default magazines (or projectiles) of every reloadable muzzle the soldier now carries.
- protected static void Ammunition(IEntity soldier, notnull array<ResourceName> magazines, notnull array<BaseMuzzleComponent> muzzlesOut)
+ static void Ammunition(IEntity soldier, notnull array<ResourceName> magazines, notnull array<BaseMuzzleComponent> muzzlesOut)
  {
   BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(soldier.FindComponent(BaseWeaponManagerComponent));
   if (!weapons) return;
@@ -487,12 +567,14 @@ class ACR_UALoadout
   IEntity launcher;
   IEntity sidearm;
   FindWeapons(soldier, primary, launcher, sidearm);
+  ACR_InfantryKitComponent kit = ACR_InfantryKitComponent.Of(soldier);
   ACR_EUARole role = RoleOf(leaf, primary, launcher);
+  if (kit) role = kit.m_eRole;
 
   // Clothes. Items in the old clothes are moved over afterwards (old ammo is dropped).
   array<IEntity> removed = {};
   string clothFails;
-  if (role != ACR_EUARole.PILOT)
+  if (role != ACR_EUARole.PILOT && !kit)
   {
    if (!Swap(inventory, loadout, LoadoutJacketArea, JACKET, removed)) clothFails += " jacket";
    if (!Swap(inventory, loadout, LoadoutPantsArea, PANTS, removed)) clothFails += " pants";
@@ -506,27 +588,33 @@ class ACR_UALoadout
    if (!Swap(inventory, loadout, LoadoutVestArea, vest, removed)) clothFails += " vest:" + FilePath.StripPath(vest);
   }
 
-  // Weapons.
+  // Most curated weapons spawn natively in the character template. Only the
+  // ordinary UA mixture changes rifles; fixed roles never draw another capability.
   ResourceName newPrimary = PrimaryFor(role);
+  if (kit) newPrimary = ACR_InfantryEquipment.Primary(kit);
   bool primaryOk = true;
-  if (!newPrimary.IsEmpty())
+  if (!newPrimary.IsEmpty() && (!primary || !primary.GetPrefabData() || primary.GetPrefabData().GetPrefabName() != newPrimary))
   {
    if (primary) inventory.TryDeleteItem(primary);
    primaryOk = inventory.TrySpawnPrefabToStorage(newPrimary, null, -1, EStoragePurpose.PURPOSE_WEAPON_PROXY);
   }
   ResourceName newLauncher;
-  if (role == ACR_EUARole.LAT)
+  if (role == ACR_EUARole.LAT || role == ACR_EUARole.LIGHT_AT)
   {
    newLauncher = PickSide("lat");
-   if (launcher) inventory.TryDeleteItem(launcher);
-   if (!inventory.TrySpawnPrefabToStorage(newLauncher, null, -1, EStoragePurpose.PURPOSE_WEAPON_PROXY)) primaryOk = false;
+   if (kit) newLauncher = ACR_InfantryEquipment.Launcher(kit);
+   if (!launcher || !launcher.GetPrefabData() || launcher.GetPrefabData().GetPrefabName() != newLauncher)
+   {
+    if (launcher) inventory.TryDeleteItem(launcher);
+    if (!inventory.TrySpawnPrefabToStorage(newLauncher, null, -1, EStoragePurpose.PURPOSE_WEAPON_PROXY)) primaryOk = false;
+   }
   }
 
   // A pack for belt boxes and rockets, only where the back is empty (medic/radio packs stay).
   if (!loadout.GetClothFromArea(LoadoutBackpackArea))
   {
    ResourceName pack;
-   if (role == ACR_EUARole.MG || role == ACR_EUARole.AR) pack = PACK;
+   if (role == ACR_EUARole.MG || role == ACR_EUARole.AR || (kit && (kit.IsSF() || role == ACR_EUARole.MG_ASSISTANT || role == ACR_EUARole.AT_ASSISTANT || role == ACR_EUARole.MEDIC))) pack = PACK;
    else if (newLauncher.Contains("RPG7")) pack = PACK_RPG;
    if (!pack.IsEmpty() && !inventory.TrySpawnPrefabToStorage(pack, loadout)) clothFails += " pack";
   }
@@ -568,6 +656,7 @@ class ACR_UALoadout
   int spawned;
   foreach (int i, ResourceName magazine : keep)
   {
+   if (kit) continue; // curated kits supply only confirmed cargo after native spawn settles
    // Spares on top of the loaded one: UGL grenades 6, RPG-7 rockets 1, sidearm 2.
    int wanted = 2;
    IEntity owner = muzzles[i].GetOwner();
@@ -588,7 +677,7 @@ class ACR_UALoadout
 
   CharacterControllerComponent controller = ChimeraCharacter.Cast(soldier).GetCharacterController();
   bool equipStarted;
-  if (controller && nowPrimary) equipStarted = controller.TryEquipRightHandItem(nowPrimary, EEquipItemType.EEquipTypeWeapon, false);
+  if (!kit && controller && nowPrimary) equipStarted = controller.TryEquipRightHandItem(nowPrimary, EEquipItemType.EEquipTypeWeapon, false);
   if (System.IsCLIParam("acrUAHandsTest")) PrintFormat("[ACR] UA HANDS initial %1 primary=%2 accepted=%3 changing=%4 hands=%5", leaf, weaponLeaf, equipStarted, controller && controller.IsChangingItem(), ACR_UALoadout.Leaf(controller.GetCurrentItemInHands()));
 
   PrintFormat("[ACR] UA LOADOUT %1 role=%2 weapon=%3 launcher=%4 mags+%5 moved=%6 failed:%7", leaf, typename.EnumToString(ACR_EUARole, role), weaponLeaf, Leaf(nowLauncher), spawned, moved, clothFails);

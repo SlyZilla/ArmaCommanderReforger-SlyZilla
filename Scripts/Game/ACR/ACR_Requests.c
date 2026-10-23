@@ -20,10 +20,11 @@ class ACR_Requests : Managed
  {
   if (!Replication.IsServer() || !pc) return "Server unavailable";
   ChimeraCharacter body = ChimeraCharacter.Cast(pc.GetControlledEntity());
+  // F8 must also work while the player is attached to the dead ragdoll.
+  if (command == ACR_ERequest.RETURN) return ReturnToCommandUnit(pc, body);
   if (!body || body.GetCharacterController().IsDead()) return "Wait until you have spawned";
   switch (command)
   {
-   case ACR_ERequest.RETURN: return ReturnToCommandUnit(pc, body);
    case ACR_ERequest.POSSESS: return Possess(pc, body, targetId);
    case ACR_ERequest.SWITCH_TO_GROUP: return SwitchToGroup(pc, body, targetId);
    case ACR_ERequest.TAKE_GUNNER: return TakeGunner(pc, body, targetId);
@@ -37,15 +38,18 @@ class ACR_Requests : Managed
 
  string ReturnToCommandUnit(SCR_PlayerController pc, ChimeraCharacter body)
  {
+  pc.ACR_CancelDeathTransition();
   if (!pc.IsPossessing()) return "You are already in your command unit";
   if (m_Manager.m_Respawn)
   {
+   m_Manager.m_Respawn.CancelPendingPossession(pc.GetPlayerId());
    string waiting = m_Manager.m_Respawn.OnReturnRequested(pc);
    if (!waiting.IsEmpty()) return waiting;
   }
   ACR_MapHandoff.Release(pc, body);
   m_Manager.ReleaseAuthority(pc);
   pc.SetPossessedEntity(null);
+  ACR_MapHandoff.SanitizePossessedWeapons(pc, ChimeraCharacter.Cast(pc.GetMainEntity()), true);
   ACR_MapHandoff.ClearCharacterInput(pc.GetControlledEntity());
   PrintFormat("[ACR] RETURN player=%1", pc.GetPlayerId());
   return "Returned to your command unit";
@@ -69,6 +73,7 @@ class ACR_Requests : Managed
   m_Manager.ReleaseAuthority(pc);
   pc.SetPossessedEntity(target);
   squad.Refresh();
+  ACR_MapHandoff.SanitizePossessedWeapons(pc, target, true);
   ACR_MapHandoff.ClearCharacterInput(target);
   m_Manager.m_LastSquad.Set(pc.GetPlayerId(), squad);
   PrintFormat("[ACR] POSSESS player=%1 squad=%2 index=%3", pc.GetPlayerId(), squad.GetName(), squad.IndexOf(target));
@@ -202,6 +207,7 @@ class ACR_Requests : Managed
    case ACR_ERequest.ORDER_SET_LZ: return "unloading";
    case ACR_ERequest.ORDER_HALT: return "halted";
    case ACR_ERequest.ORDER_ESTABLISH_FOB: return "establishing FOB";
+   case ACR_ERequest.ORDER_ROADBLOCK: return "establishing roadblock";
   }
   return "moving";
  }
@@ -225,7 +231,7 @@ class ACR_Requests : Managed
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return outcome.Refuse("Only the commander can give map orders. Take command first.");
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return outcome.Refuse("That squad is not ready");
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB;
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB || command == ACR_ERequest.ORDER_ROADBLOCK;
   // Reject nonsense coordinates from a client.
   if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !ACR_Manager.OnMap(point))) return outcome.Refuse("Order is too far away");
   // Map clicks made inside Game Master / build mode are not orders (the client checks too).
@@ -351,6 +357,23 @@ class ACR_Requests : Managed
      return outcome.Accept(name + ": establishing FOB");
     }
     return outcome.Refuse(name + ": unable to establish FOB");
+   }
+   case ACR_ERequest.ORDER_ROADBLOCK:
+   {
+    string rbWhy;
+    if (!ACR_Roadblocks.CanOrder(squad, rbWhy)) return outcome.Refuse(name + ": " + rbWhy);
+    vector validRoadPos;
+    float validYaw;
+    string siteWhy;
+    string squadFaction = "";
+    if (squad.GetFaction()) squadFaction = squad.GetFaction().GetFactionKey();
+    if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction)) return outcome.Refuse(name + ": " + siteWhy);
+    if (squad.EstablishRoadblock(validRoadPos, validYaw))
+    {
+     PrintFormat("[ACR] ESTABLISH ROADBLOCK player=%1 squad=%2 target=%3", pc.GetPlayerId(), name, validRoadPos);
+     return outcome.Accept(name + ": establishing roadblock");
+    }
+    return outcome.Refuse(name + ": unable to establish roadblock");
    }
    default:
     return outcome.Refuse("Unknown command");

@@ -23,9 +23,11 @@ enum ACR_EPanelAction
  GARRISON,
  FIRE_AT_WILL,
  TOGGLE_REPORT,
+ TOGGLE_RTS_CAMERA,
  FOB_SUPPLY,
  FOB_BUILD,
  ESTABLISH_FOB,
+ ROADBLOCK,
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -41,7 +43,8 @@ enum ACR_ECursorMode
  LZ,
  RIDE,
  GARRISON,
- ESTABLISH_FOB
+ ESTABLISH_FOB,
+ ROADBLOCK
 }
 
 // Arma Commander side panel on the fullscreen map. Built from script out of the
@@ -92,6 +95,7 @@ class ACR_CommandPanel : Managed
  protected ref array<SCR_ButtonTextComponent> m_EntryButtons = {};
  protected SCR_ButtonTextComponent m_SupportButton;
  protected SCR_ButtonTextComponent m_ReportButton;
+ protected SCR_ButtonTextComponent m_RTSCameraButton;
  protected TextWidget m_ReportText;
  protected Widget m_SupportWidget;
  protected Widget m_SupportSection;
@@ -102,6 +106,8 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_RideButton;
  protected SCR_ButtonTextComponent m_EstablishFobButton;
  protected Widget m_EstablishFobWidget;
+ protected SCR_ButtonTextComponent m_RoadblockButton;
+ protected Widget m_RoadblockWidget;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
  protected Widget m_DebugRoot;
@@ -169,6 +175,7 @@ class ACR_CommandPanel : Managed
   m_ReportButton = AddButton(m_Content, "Report", ACR_EPanelAction.TOGGLE_REPORT);
   m_ReportText = AddText(m_Content, LAYOUT_TEXT, "");
   if (m_ReportText) { m_ReportText.SetVisible(false); AlignableSlot.SetPadding(m_ReportText, 0, 4, 0, 4); }
+  m_RTSCameraButton = AddButton(m_Content, "3D Camera  [F10]", ACR_EPanelAction.TOGGLE_RTS_CAMERA);
 
   m_GroupSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
@@ -216,6 +223,9 @@ class ACR_CommandPanel : Managed
   m_EstablishFobButton = AddButton(m_OrderSection, "Establish FOB", ACR_EPanelAction.ESTABLISH_FOB);
   m_EstablishFobWidget = m_LastButtonWidget;
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
+  m_RoadblockButton = AddButton(m_OrderSection, "Roadblock", ACR_EPanelAction.ROADBLOCK);
+  m_RoadblockWidget = m_LastButtonWidget;
+  if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(false);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
   CreateFeed(parent);
@@ -248,14 +258,22 @@ class ACR_CommandPanel : Managed
   Widget rp = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
   AddButton(rp, "+500 RP us", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RP_OWN, true);
   AddButton(rp, "+500 RP enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RP_ENEMY, true);
+  Widget fob = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
+  AddButton(fob, "+500 FOB Supply", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.FOB_SUPPLY, true);
+  AddButton(fob, "Finish Upgrade", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.FOB_FINISH, true);
+  Widget squad = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
+  AddButton(squad, "Heal Squad", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.HEAL_SQUAD, true);
+  AddButton(squad, "Kill Squad", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.KILL_SQUAD, true);
   AddButton(m_DebugSection, "Pause / resume enemy AI", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.PAUSE_ENEMY);
   m_DebugAttack = AddButton(m_DebugSection, "Enemy attacks now", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.ATTACK_NOW);
   Widget capture = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
   m_DebugCaptureOwn = AddButton(capture, "Base -> us", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.CAPTURE_OWN, true);
   m_DebugCaptureEnemy = AddButton(capture, "Base -> enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.CAPTURE_ENEMY, true);
   Widget misc = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
+  AddButton(misc, "Time +6h", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.TIME_STEP, true);
   AddButton(misc, "Reveal enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.REVEAL, true);
   AddButton(misc, "Reset supports", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RESET_SUPPORTS, true);
+  AddText(m_DebugSection, LAYOUT_TEXT, "Console: type /acr [cmd] in chat (/acr help)");
   m_DebugSection.SetVisible(false);
  }
 
@@ -514,6 +532,11 @@ class ACR_CommandPanel : Managed
    if (cursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_EstablishFobButton.SetText("[Establish FOB]");
    else m_EstablishFobButton.SetText("Establish FOB");
   }
+  if (m_RoadblockButton)
+  {
+   if (cursorMode == ACR_ECursorMode.ROADBLOCK) m_RoadblockButton.SetText("[Roadblock]");
+   else m_RoadblockButton.SetText("Roadblock");
+  }
   if (m_Hint) m_Hint.SetText(hint);
  }
 
@@ -643,6 +666,7 @@ class ACR_CommandPanel : Managed
   if (m_SwitchWidget) m_SwitchWidget.SetVisible(false);
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
+  if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
   if (m_Hint) m_Hint.SetText("");
  }
@@ -725,6 +749,11 @@ class ACR_CommandPanel : Managed
  void SetEstablishFob(bool visible)
  {
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(visible);
+ }
+
+ void SetRoadblock(bool visible)
+ {
+  if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(visible);
  }
 
  void Destroy()

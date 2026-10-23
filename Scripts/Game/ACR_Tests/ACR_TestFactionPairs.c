@@ -53,8 +53,14 @@ class ACR_TestFactionPairs
    // Support entries have their own known fallbacks (RHS has no mortar).
    if (entry.m_bMortarTeam || entry.m_bObserverTeam || entry.m_iSupportHeli > 0) continue;
    bool ok = true;
-   if (!entry.m_sGroup.IsEmpty() && !ACR_FactionCatalog.IsStandard(factionKey, entry.m_sGroup, EEntityCatalogType.GROUP)) ok = false;
+   if (!entry.m_aSoldiers && !entry.m_sGroup.IsEmpty() && !ACR_FactionCatalog.IsStandard(factionKey, entry.m_sGroup, EEntityCatalogType.GROUP)) ok = false;
    if (!entry.m_sVehicle.IsEmpty() && !ACR_FactionCatalog.IsStandard(factionKey, entry.m_sVehicle, EEntityCatalogType.VEHICLE)) ok = false;
+   if (entry.m_aSoldiers)
+    foreach (ResourceName character : entry.m_aSoldiers)
+    {
+     Resource resource = Resource.Load(character);
+     if (!resource || !resource.IsValid() || !character.Contains("Prefabs/ACR/Infantry/")) ok = false;
+    }
    PrintFormat("[ACR] FACTIONTEST %1 buy: %2 | %3 | %4%5", factionKey, entry.m_sName, FilePath.StripPath(entry.m_sGroup), FilePath.StripPath(entry.m_sVehicle), ok);
    if (!ok) offList++;
   }
@@ -72,6 +78,7 @@ class ACR_TestFactionPairs
 
  static void Run(int tick)
  {
+  if (System.IsCLIParam("acrInfantryTest")) { ACR_TestInfantry.Run(tick); return; }
   CheckFlyover(tick);
   CheckUA(tick);
   CheckDMRReplacements(tick);
@@ -81,13 +88,16 @@ class ACR_TestFactionPairs
   string east = ACR_FactionSelection.East();
   FactionManager manager = GetGame().GetFactionManager();
   int playable;
+  int emptyKeys;
   array<Faction> all = {};
   manager.GetFactionsList(all);
   foreach (Faction baseFaction : all)
   {
    SCR_Faction faction = SCR_Faction.Cast(baseFaction);
+   if (faction && faction.GetFactionKey().IsEmpty()) emptyKeys++;
    if (faction && faction.IsPlayable()) playable++;
   }
+  ACR_TestRegress.Check("factions: no unresolved optional faction entries", !all.IsEmpty() && emptyKeys == 0, emptyKeys.ToString());
   ACR_TestRegress.Check("factions: two selected sides are playable", playable == 2, string.Format("%1 / %2, playable=%3", west, east, playable));
   ACR_TestRegress.Check("factions: both selected faction keys exist", manager.GetFactionByKey(west) && manager.GetFactionByKey(east) && west != east, string.Format("%1 / %2", west, east));
   int offSide;
@@ -120,8 +130,8 @@ class ACR_TestFactionPairs
   selectedPair.ToLower();
   uaPair = selectedPair == "ru_ua" || selectedPair == "us_ua";
   if (uaPair) ACR_TestRegress.Check("factions: UAF resource is detected and labeled UA", ACR_FactionSelection.UkraineModLoaded() && ACR_FactionSelection.DisplayName("US") == "UA", ACR_FactionSelection.DisplayName("US"));
-  int expected = 6;
-  if (uaPair) expected = 7;
+  int expected = 7;
+  if (uaPair) expected = 8;
   expected += CheckStandard(west) + CheckStandard(east);
   if (selectedPair == "ru_us")
   {
@@ -357,7 +367,7 @@ class ACR_TestFactionPairs
   ACR_TestRegress.Check("factions: armed UA infantry are not left empty-handed after the kit swap", onFootArmed > 0 && emptyHands == 0, string.Format("%1 empty of %2 on-foot armed soldiers", emptyHands, onFootArmed));
   CheckFullDMR("UA DMR test", 9);
   CheckFullDMR(s_OtherDMRName, s_OtherDMRSize);
-  ACR_TestRegress.Check("factions: both full rifle squads keep machine guns, grenadiers and launchers", FullSupports("UA DMR test", 2, 2, 2) && FullSupports(s_OtherDMRName, 1, 1, 1), "DMR replaces a rifle, not a support weapon");
+  ACR_TestRegress.Check("factions: both full rifle squads keep machine guns, grenadiers and launchers", FullSupports("UA DMR test", 2, 1, 1) && FullSupports(s_OtherDMRName, 1, 1, 1), "Approved UA formation: RPK + PKM, one UGL, one RPG; RU retains MG/UGL/RPG");
   BeginDMRReplacement("UA DMR test");
   BeginDMRReplacement(s_OtherDMRName);
  }

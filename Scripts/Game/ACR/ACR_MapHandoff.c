@@ -62,6 +62,62 @@ class ACR_MapHandoff
   CharacterInputContext context = controller.GetInputContext();
   if (context) context.SetFreelook(false);
   ClearCharacterInput(body);
+  SanitizePossessedWeapons(pc, body, false);
+ }
+ static void SanitizePossessedWeapons(SCR_PlayerController pc, ChimeraCharacter target, bool possessing)
+ {
+  if (!target || !pc) return;
+  CharacterControllerComponent controller = target.GetCharacterController();
+  if (!controller) return;
+
+  CharacterAnimationComponent animComp = CharacterAnimationComponent.Cast(target.FindComponent(CharacterAnimationComponent));
+  if (animComp)
+  {
+   CharacterCommandHandlerComponent handler = animComp.GetCommandHandler();
+   if (handler) handler.CancelItemUse();
+  }
+
+  BaseWeaponManagerComponent wpnMan = controller.GetWeaponManagerComponent();
+  BaseWeaponComponent currentWpn = null;
+  if (wpnMan) currentWpn = wpnMan.GetCurrentWeapon();
+
+  // If caught mid-reload, item switch, or weapon action, reset weapon into hands without animations
+  if (possessing)
+  {
+   if (controller.IsReloading() || controller.IsChangingItem() || controller.IsUsingItem() || (currentWpn && !controller.CanFire()))
+   {
+    if (currentWpn && currentWpn.GetOwner())
+    {
+     controller.TryEquipRightHandItem(null, EEquipItemType.EEquipTypeUnarmedContextual, true);
+     controller.TryEquipRightHandItem(currentWpn.GetOwner(), EEquipItemType.EEquipTypeWeapon, true);
+    }
+   }
+  }
+
+  // Ensure weapon and magazine replication ownership matches the controlling connection
+  RplIdentity identity;
+  if (possessing) identity = pc.GetRplIdentity();
+  else identity = RplIdentity.Local();
+
+  array<IEntity> weapons = {};
+  if (wpnMan) wpnMan.GetWeaponsList(weapons);
+  foreach (IEntity wpnEnt : weapons)
+  {
+   if (!wpnEnt) continue;
+   RplComponent wpnRpl = RplComponent.Cast(wpnEnt.FindComponent(RplComponent));
+   if (wpnRpl) wpnRpl.GiveExt(identity, false);
+
+   BaseWeaponComponent bwc = BaseWeaponComponent.Cast(wpnEnt.FindComponent(BaseWeaponComponent));
+   if (bwc)
+   {
+    BaseMagazineComponent mag = bwc.GetCurrentMagazine();
+    if (mag && mag.GetOwner())
+    {
+     RplComponent magRpl = RplComponent.Cast(mag.GetOwner().FindComponent(RplComponent));
+     if (magRpl) magRpl.GiveExt(identity, false);
+    }
+   }
+  }
  }
 }
 

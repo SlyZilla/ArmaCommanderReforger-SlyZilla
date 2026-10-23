@@ -348,7 +348,25 @@ class ACR_TestStructures
     PrintFormat("[ACR] STRUCTURETEST humvee health %1 fuel %2", ACR_Logistics.Health(s_Humvee), ACR_Logistics.Fuel(s_Humvee));
    }
    // Helipad at the base.
-   vector padSpot = manager.ClearSpotNear(s_Base, 30, 70, 14);
+   vector padSpot;
+   bool clearPadSpot;
+   array<IEntity> padVehicles = {};
+   ACR_Vehicles.All(padVehicles);
+   // Terrain clearance does not exclude live vehicles. ClearPad rejects one
+   // within 10 m, so keep this fixture 14 m clear of the range truck/Humvee.
+   for (int padTry = 0; padTry < 32; padTry++)
+   {
+    vector padCandidate = manager.ClearSpotNear(s_Base, 30, 70, 14);
+    bool padBlocked;
+    foreach (IEntity padVehicle : padVehicles)
+     if (padVehicle && vector.DistanceXZ(padVehicle.GetOrigin(), padCandidate) < 14) { padBlocked = true; break; }
+    if (padBlocked) continue;
+    padSpot = padCandidate;
+    clearPadSpot = true;
+    break;
+   }
+   ACR_TestRegress.Check("structures: helipad fixture is clear of existing vehicles", clearPadSpot);
+   if (!clearPadSpot) { ACR_TestRegress.Abort("structures", "no unoccupied helipad fixture site"); return; }
    s_Helipad = Place(HELIPAD, padSpot);
    // Headquarters away from every base.
    vector hqSpot;
@@ -564,7 +582,7 @@ class ACR_TestStructures
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
    ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
    ACR_TestSapperLive.Final();
-   ACR_TestRegress.Complete("structures", 84 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS + ACR_TestFobUpgrades.CHECKS + ACR_TestFobDefences.CHECKS + ACR_TestFobIntel.CHECKS + ACR_TestFobPatrol.CHECKS + ACR_TestSapperDemo.CHECKS + ACR_TestFobDesign.CHECKS + ACR_TestSapperLive.CHECKS);
+   ACR_TestRegress.Complete("structures", 85 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS + ACR_TestFobUpgrades.CHECKS + ACR_TestFobDefences.CHECKS + ACR_TestFobIntel.CHECKS + ACR_TestFobPatrol.CHECKS + ACR_TestSapperDemo.CHECKS + ACR_TestFobDesign.CHECKS + ACR_TestSapperLive.CHECKS);
   }
  }
 

@@ -29,20 +29,18 @@ SCR_BaseGameMode ACR_GameMode : "{1B76F75A3175E85C}Prefabs/MP/Modes/Plain/GameMo
  }
  coords 6400 0 6400
 }
-SCR_FactionManager ACR_Factions : "{A242612865F2A48E}Prefabs/MP/Managers/Factions/FactionManager_Base.et" {
+SCR_FactionManager ACR_Factions : "{4A188E44289B9A50}Prefabs/MP/Managers/Factions/FactionManager_Editor.et" {
  ID "AC230926A0010200"
  Factions {
-  SCR_Faction "{56B2B46E999BF3BF}" : "{5EB46557DF2AA24F}Configs/Factions/US.conf" {
+  SCR_Faction "{56DEAC40D2DBC8B1}" : "{5EB46557DF2AA24F}Configs/Factions/US.conf" {
+   m_bIsPlayable 1
    m_sFactionBackground "{F8AC305446D5D480}UI/Textures/DeployMenu/Loadout-BG/Loadout_US_BG.imageset"
   }
-  SCR_Faction "{56B2B46E9AF80999}" : "{09727032415AC39B}Configs/Factions/USSR.conf" {
+  SCR_Faction "{56DEAC40D3C2E623}" : "{09727032415AC39B}Configs/Factions/USSR.conf" {
+   m_bIsPlayable 1
    m_sFactionBackground "{21533F2089005056}UI/Textures/DeployMenu/Loadout-BG/Loadout_BG_USSR.imageset"
   }
-  SCR_Faction "{AC230926A00102A1}" : "{F33C7BF22CBF3A8A}Configs/Factions/RHS_US_USMC.conf" {
-  }
-  SCR_Faction "{AC230926A00102A2}" : "{627A8CDE681D223D}Configs/Factions/RHS_RF_MSV.conf" {
-  }
-  SCR_Faction "{AC230926A00102A3}" : "{8053DB656DD18B14}Configs/Factions/FIA.conf" {
+  SCR_Faction "{56DEAC40D132400B}" : "{8053DB656DD18B14}Configs/Factions/FIA.conf" {
   }
  }
  m_bCanChangeFactionsPlayable 1
@@ -158,6 +156,7 @@ ACR_Base ACR_Base_0 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 70
+ m_eLogisticsRole 1
 }
 ACR_Base ACR_Base_1 {
  coords 10021 2.5 1551
@@ -168,6 +167,7 @@ ACR_Base ACR_Base_1 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 70
+ m_eLogisticsRole 1
 }
 ACR_Base ACR_Base_2 {
  coords 4502 13.4 10771
@@ -177,6 +177,7 @@ ACR_Base ACR_Base_2 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 90
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_3 {
  coords 9689 13.5 1558
@@ -186,6 +187,7 @@ ACR_Base ACR_Base_3 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 75
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_4 {
  coords 4773 164.3 7094
@@ -195,6 +197,7 @@ ACR_Base ACR_Base_4 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 75
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_5 {
  coords 5135 14.1 4011
@@ -204,6 +207,7 @@ ACR_Base ACR_Base_5 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 75
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_6 {
  coords 1279 37.5 5940
@@ -213,6 +217,7 @@ ACR_Base ACR_Base_6 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 75
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_7 {
  coords 2615 92.0 5378
@@ -222,6 +227,7 @@ ACR_Base ACR_Base_7 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_8 {
  coords 2838 86.4 6339
@@ -231,6 +237,7 @@ ACR_Base ACR_Base_8 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_9 {
  coords 4120 35.2 7796
@@ -240,6 +247,7 @@ ACR_Base ACR_Base_9 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_10 {
  coords 4520 14.1 9467
@@ -249,6 +257,7 @@ ACR_Base ACR_Base_10 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_11 {
  coords 4927 36.1 9092
@@ -258,6 +267,7 @@ ACR_Base ACR_Base_11 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_12 {
  coords 5250 63.4 5337
@@ -267,6 +277,7 @@ ACR_Base ACR_Base_12 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_13 {
  coords 5486 96.0 6087
@@ -276,6 +287,7 @@ ACR_Base ACR_Base_13 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_14 {
  coords 5766 215.1 7035
@@ -285,6 +297,7 @@ ACR_Base ACR_Base_14 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_15 {
  coords 7086 118.3 6012
@@ -294,6 +307,7 @@ ACR_Base ACR_Base_15 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_16 {
  coords 7205 136.7 2324
@@ -303,6 +317,7 @@ ACR_Base ACR_Base_16 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_17 {
  coords 7464 137.2 4738
@@ -312,6 +327,7 @@ ACR_Base ACR_Base_17 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_18 {
  coords 7558 82.6 5540
@@ -321,6 +337,7 @@ ACR_Base ACR_Base_18 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_19 {
  coords 8826 94.7 2745
@@ -330,6 +347,7 @@ ACR_Base ACR_Base_19 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_20 {
  coords 9243 59.7 2077
@@ -339,6 +357,7 @@ ACR_Base ACR_Base_20 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_21 {
  coords 10918 24.9 11706
@@ -348,6 +367,7 @@ ACR_Base ACR_Base_21 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_22 {
  coords 2223 17.3 7569
@@ -357,6 +377,7 @@ ACR_Base ACR_Base_22 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_23 {
  coords 2520 13.6 4289
@@ -366,6 +387,7 @@ ACR_Base ACR_Base_23 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_24 {
  coords 3540 111.1 5061
@@ -375,6 +397,7 @@ ACR_Base ACR_Base_24 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_25 {
  coords 3883 102.7 6286
@@ -384,6 +407,7 @@ ACR_Base ACR_Base_25 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_26 {
  coords 4839 113.0 8094
@@ -393,6 +417,7 @@ ACR_Base ACR_Base_26 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_27 {
  coords 5333 36.1 11372
@@ -402,6 +427,7 @@ ACR_Base ACR_Base_27 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_28 {
  coords 5390 17.6 10008
@@ -411,6 +437,7 @@ ACR_Base ACR_Base_28 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_29 {
  coords 6367 6.7 9664
@@ -420,6 +447,7 @@ ACR_Base ACR_Base_29 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_30 {
  coords 6579 151.6 7103
@@ -429,6 +457,7 @@ ACR_Base ACR_Base_30 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_31 {
  coords 6588 5.8 3113
@@ -438,6 +467,7 @@ ACR_Base ACR_Base_31 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_32 {
  coords 6736 89.2 5650
@@ -447,6 +477,7 @@ ACR_Base ACR_Base_32 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_33 {
  coords 7938 12.8 1469
@@ -456,6 +487,7 @@ ACR_Base ACR_Base_33 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_34 {
  coords 9354 5.3 5072
@@ -465,6 +497,7 @@ ACR_Base ACR_Base_34 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_35 {
  coords 11684 8.6 2234
@@ -474,6 +507,7 @@ ACR_Base ACR_Base_35 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_36 {
  coords 7447 7.9 6704
@@ -483,6 +517,7 @@ ACR_Base ACR_Base_36 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 2
 }
 ACR_Base ACR_Base_37 {
  coords 3901 15.3 8450
@@ -492,6 +527,7 @@ ACR_Base ACR_Base_37 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 2
 }
 ACR_Base ACR_Base_38 {
  coords 7631 13.1 8141
@@ -501,6 +537,7 @@ ACR_Base ACR_Base_38 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 2
 }
 ACR_Base ACR_Base_39 {
  coords 5354 43.4 10542
@@ -510,6 +547,7 @@ ACR_Base ACR_Base_39 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 2
 }
 ACR_Base ACR_Base_40 {
  coords 7505 165.8 4283
@@ -519,6 +557,7 @@ ACR_Base ACR_Base_40 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 2
 }
 ACR_Base ACR_Base_41 {
  coords 4536 16.9 10561
@@ -528,6 +567,7 @@ ACR_Base ACR_Base_41 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_42 {
  coords 4397 1.5 11098
@@ -537,6 +577,7 @@ ACR_Base ACR_Base_42 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_43 {
  coords 5043 28.0 10867
@@ -546,6 +587,7 @@ ACR_Base ACR_Base_43 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_44 {
  coords 4537 155.7 6844
@@ -555,6 +597,7 @@ ACR_Base ACR_Base_44 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_45 {
  coords 6463 162.2 6497
@@ -564,6 +607,7 @@ ACR_Base ACR_Base_45 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_46 {
  coords 5834 4.6 9786
@@ -573,6 +617,7 @@ ACR_Base ACR_Base_46 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_47 {
  coords 8839 220.0 4014
@@ -582,6 +627,7 @@ ACR_Base ACR_Base_47 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_48 {
  coords 3069 116.6 5195
@@ -591,6 +637,7 @@ ACR_Base ACR_Base_48 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_49 {
  coords 7272 139.1 2541
@@ -600,6 +647,7 @@ ACR_Base ACR_Base_49 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_50 {
  coords 9922 295.8 2584
@@ -609,6 +657,7 @@ ACR_Base ACR_Base_50 {
  m_bIncome 1
  m_bHidden 1
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_51 {
  coords 7073 95.0 8391
@@ -618,6 +667,7 @@ ACR_Base ACR_Base_51 {
  m_bIncome 1
  m_bHidden 1
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_52 {
  coords 7890 144.5 1838
@@ -627,6 +677,7 @@ ACR_Base ACR_Base_52 {
  m_bIncome 1
  m_bHidden 1
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_53 {
  coords 3792 157.7 4180
@@ -636,6 +687,7 @@ ACR_Base ACR_Base_53 {
  m_bIncome 1
  m_bHidden 1
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_54 {
  coords 5081 140.4 7731
@@ -645,6 +697,7 @@ ACR_Base ACR_Base_54 {
  m_bIncome 1
  m_bHidden 1
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_55 {
  coords 5330 52.4 10903
@@ -654,6 +707,7 @@ ACR_Base ACR_Base_55 {
  m_bIncome 1
  m_bHidden 1
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_StartingUnit ACR_Start_0 {
  coords 4939 28.2 11927

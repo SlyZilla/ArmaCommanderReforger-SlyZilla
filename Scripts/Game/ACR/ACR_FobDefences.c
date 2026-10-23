@@ -215,6 +215,34 @@ class ACR_FobDefences : Managed
 		return false;
 	}
 
+	// Checks if a candidate FOB center has room for defence spot on its 50 m ring.
+	static bool DefenceSpotClear(vector center, int spot, out string reason)
+	{
+		reason = "";
+		if (ACR_FobSlots.s_bSkipSpotChecksForTest) return true;
+		array<float> rings = {RING, RING + 7};
+		array<float> shifts = {0, 8, -8, 16, -16};
+		foreach (float ring : rings)
+		{
+			foreach (float shift : shifts)
+			{
+				float bearing = SpotBearing(spot) + shift;
+				float rad = bearing * Math.DEG2RAD;
+				vector candidate = center + Vector(Math.Sin(rad) * ring, 0, Math.Cos(rad) * ring);
+				candidate[1] = GetGame().GetWorld().GetSurfaceY(candidate[0], candidate[2]);
+				string why;
+				if (!ACR_FobBuild.FootprintClear(candidate, PIECE_RADIUS, null, why, true, MAX_RISE))
+				{
+					if (reason.IsEmpty()) reason = why;
+					continue;
+				}
+				reason = "";
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// A tier can be built when at least one of its spots is clear.
 	static bool CheckTier(ACR_Base base, ACR_FobSlot slot, int tier, out string reason)
 	{

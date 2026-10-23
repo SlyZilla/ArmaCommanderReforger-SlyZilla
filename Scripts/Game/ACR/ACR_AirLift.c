@@ -6,7 +6,8 @@
 // there, and the helicopters leave the way they came.
 //
 // Stages: INBOUND (spool up off-map, fly to the pickup spots, squad walks there) -> BOARDING
-// (seat whoever reaches a helicopter; stragglers are placed in after FORCE_BOARD_MS, the lift
+// (native walk-and-board tasks reserve cargo seats on both carriers; stalled passengers
+// retain bounded placement recovery, and the lift
 // leaves with whoever is aboard after BOARD_WAIT_MS) -> TRANSIT -> UNLOADING (Get out; anyone
 // still aboard after UNLOAD_WAIT_MS is put out) -> LEAVING. While a squad has an air lift, map
 // orders to it are refused and the AI commander leaves it alone (ACR_AirLift.Busy).
@@ -377,6 +378,45 @@ class ACR_LiftHeli : ACR_HeliRun
  }
 }
 
+// A cargo reservation stays owned until native occupancy confirms boarding.
+// Native GetInVehicle supplies the walk to the assigned carrier, including the
+// overflow carrier beyond the squad's shared rendezvous waypoint.
+class ACR_LiftBoarding
+{
+ ChimeraCharacter m_Character;
+ ACR_LiftHeli m_Heli;
+ BaseCompartmentSlot m_Seat;
+ SCR_AIUtilityComponent m_Utility;
+ ref SCR_AIGetInVehicle m_Action;
+ float m_fRequestedAt;
+ float m_fProgressAt;
+ float m_fBestDistance;
+ vector m_LastPosition;
+
+ void Release()
+ {
+  bool seated = m_Seat && m_Seat.GetOccupant() == m_Character;
+  if (m_Action && m_Utility)
+  {
+   EAIActionState state = m_Action.GetActionState();
+   if (state != EAIActionState.COMPLETED && state != EAIActionState.FAILED)
+   {
+    if (!seated && m_Character && ACR_Squad.FindController(m_Character) == 0 && m_Seat && m_Seat.IsReservedBy(m_Character))
+    {
+     CompartmentAccessComponent access = m_Character.GetCompartmentAccessComponent();
+     if (access && access.IsGettingIn()) access.InterruptVehicleActionQueue(true, true, true);
+    }
+    // Native Fail() can queue a dismount or eject an already seated passenger.
+    // Finish only our behavior; never clear someone else's newer reservation.
+    if (!m_Seat || !m_Seat.IsReservedBy(m_Character)) m_Action.m_CompartmentToGetIn.m_Value = null;
+    m_Action.Complete();
+   }
+  }
+  if (m_Seat && m_Character && m_Seat.IsReservedBy(m_Character)) m_Seat.SetReserved(null);
+  m_Action = null;
+ }
+}
+
 class ACR_AirLift : ACR_SupportRun
 {
  static const int INBOUND = 0;
@@ -388,9 +428,8 @@ class ACR_AirLift : ACR_SupportRun
  static const float PICKUP_SEARCH = 250;    // m round the squad for a clear landing spot
  static const float DROP_SEARCH = 200;      // m round the clicked point
  static const float SECOND_SPOT_SEARCH = 300; // m round the first spot when a second helicopter has none
- static const float BOARD_RANGE = 8;        // m: a soldier this close climbs in
- static const float NEAR_RANGE = 40;        // m: placed in after NEAR_BOARD_MS on the ground
- static const float FORCE_RANGE = 400;      // m: placed in after FORCE_BOARD_MS
+ static const float NEAR_RANGE = 40;        // m: stalled native boarding may use near recovery
+ static const float FORCE_RANGE = 400;      // m: farther stalled passengers may use delayed recovery
  static float NEAR_BOARD_MS = 10000;
  static float FORCE_BOARD_MS = 60000;
  static float SEQUENTIAL_FORCE_MS = 15000;  // later chalks of a sequential lift
@@ -419,6 +458,7 @@ class ACR_AirLift : ACR_SupportRun
  bool m_bByAI;
  int m_iStage;
  ref array<ref ACR_LiftHeli> m_Helis = {};
+ protected ref array<ref ACR_LiftBoarding> m_Boarding = {};
  ref array<vector> m_Pickups = {};
  ref array<vector> m_Drops = {};
  ResourceName m_sFinalPrefab;
@@ -637,6 +677,7 @@ class ACR_AirLift : ACR_SupportRun
     if (aboard >= alive || (now - m_fStageAt > BOARD_WAIT_MS && aboard > 0))
     {
      if (aboard < alive) PrintFormat("[ACR] AIRLIFT %1: leaving with %2 of %3 aboard", m_sSquadName, aboard, alive);
+     ClearBoarding();
      m_Squad.Halt("Air lift: in the air", ACR_EOrderState.HOLD);
      foreach (int i, ACR_LiftHeli up : m_Helis)
      {
@@ -725,6 +766,7 @@ class ACR_AirLift : ACR_SupportRun
   PrintFormat("[ACR] AIRLIFT %1: helicopters leaving (%2)", m_sSquadName, why);
   foreach (ACR_LiftHeli heli : m_Helis)
    if (!heli.m_bDestroyed && !heli.m_bAway && !heli.m_bLeaving) heli.TakeOff(heli.m_Start, true);
+  ClearBoarding();
   Stage(LEAVING, now);
  }
 
@@ -740,59 +782,141 @@ class ACR_AirLift : ACR_SupportRun
   return live > 0;
  }
 
- // Seats squad members in the landed helicopters: those close climb in; those near are placed
- // in after a while; stragglers after FORCE_BOARD_MS. Returns how many are aboard.
+ protected bool Loading(ACR_LiftHeli heli)
+ {
+  return heli && heli.m_Vehicle && !heli.m_bDestroyed && !heli.m_bAway && heli.m_bDown
+   && !heli.m_bLeaving && (!m_bSequential || heli.m_iLeg == 1);
+ }
+
+ protected void ClearBoarding(ACR_LiftHeli only = null)
+ {
+  for (int i = m_Boarding.Count() - 1; i >= 0; i--)
+  {
+   ACR_LiftBoarding job = m_Boarding[i];
+   if (only && job.m_Heli != only) continue;
+   job.Release();
+   m_Boarding.Remove(i);
+  }
+ }
+
+ // Native get-in tasks walk each soldier to a uniquely reserved cargo seat.
+ // Keep the existing placement recovery only for passengers who stop progressing.
  protected int Board(float now)
  {
   float waited = now - m_fStageAt;
-  int aboard;
-  array<BaseCompartmentSlot> claimed = {};
   array<AIAgent> agents = {};
   m_Squad.GetAgents(agents);
-  foreach (AIAgent agent : agents)
+  array<ChimeraCharacter> eligible = {};
+  foreach (AIAgent member : agents)
   {
-   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
-   if (!character || !ACR_Respawn.IsAlive(character)) continue;
+   if (!member) continue;
+   ChimeraCharacter body = ChimeraCharacter.Cast(member.GetControlledEntity());
+   if (body && ACR_Respawn.IsAlive(body) && ACR_Squad.FindController(body) == 0) eligible.Insert(body);
+  }
+  for (int prune = m_Boarding.Count() - 1; prune >= 0; prune--)
+  {
+   ACR_LiftBoarding pending = m_Boarding[prune];
+   bool occupied = pending.m_Seat && pending.m_Seat.GetOccupant() == pending.m_Character;
+   bool invalid = !eligible.Contains(pending.m_Character) || !Loading(pending.m_Heli)
+    || !pending.m_Utility || !pending.m_Seat || (!occupied && pending.m_Seat.GetOccupant() != null)
+    || (!occupied && pending.m_Seat.IsReserved() && !pending.m_Seat.IsReservedBy(pending.m_Character));
+   if (occupied || invalid)
+   {
+    pending.Release();
+    m_Boarding.Remove(prune);
+   }
+  }
+  foreach (ChimeraCharacter character : eligible)
+  {
    IEntity inVehicle = ACR_Transport.VehicleOf(character);
-   if (inVehicle && Ours(inVehicle)) { aboard++; continue; }
+   if (inVehicle && Ours(inVehicle)) continue;
+   if (inVehicle || character.GetCharacterController().IsUnconscious()) continue;
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
-   if (!access || access.IsGettingIn()) continue;
+   if (!access) continue;
+   ACR_LiftBoarding job;
+   foreach (ACR_LiftBoarding existing : m_Boarding)
+    if (existing.m_Character == character) { job = existing; break; }
+   if (job)
+   {
+    float distance = vector.DistanceXZ(character.GetOrigin(), job.m_Heli.m_Vehicle.GetOrigin());
+    // A valid path may first lead away from the carrier around an obstacle.
+    // Actual foot movement counts as progress as well as closing the distance.
+    if (distance < job.m_fBestDistance - 1 || vector.DistanceSqXZ(character.GetOrigin(), job.m_LastPosition) > 1)
+    {
+     job.m_fBestDistance = Math.Min(job.m_fBestDistance, distance);
+     job.m_LastPosition = character.GetOrigin();
+     job.m_fProgressAt = now;
+    }
+    EAIActionState actionState = job.m_Action.GetActionState();
+    bool ended = actionState == EAIActionState.COMPLETED || actionState == EAIActionState.FAILED;
+    float forceMs = FORCE_BOARD_MS;
+    if (m_bSequential && m_iChalksOut > 0) forceMs = Math.Min(forceMs, SEQUENTIAL_FORCE_MS);
+    bool stalled = now - job.m_fProgressAt > NEAR_BOARD_MS;
+    bool recover = stalled && ((distance <= NEAR_RANGE && waited > NEAR_BOARD_MS) || (distance <= FORCE_RANGE && waited > forceMs));
+    if (recover)
+    {
+     ACR_LiftHeli assigned = job.m_Heli;
+     BaseCompartmentSlot assignedSeat = job.m_Seat;
+     job.Release();
+     m_Boarding.RemoveItem(job);
+     if (!assignedSeat.GetOccupant() && !assignedSeat.IsReserved())
+     {
+      bool placed = access.GetInVehicle(assigned.m_Vehicle, assignedSeat, true, -1, ECloseDoorAfterActions.CLOSE_DOOR, false);
+      PrintFormat("[ACR] AIRLIFT recovery %1: stalled %2 s, %3 m to assigned carrier -> %4", m_sSquadName, (int)((now - job.m_fProgressAt) / 1000), (int)distance, placed);
+     }
+     continue;
+    }
+    if (ended && now - job.m_fRequestedAt >= 5000 && !access.IsGettingIn())
+    {
+     // Retain the progress clock across a native-path retry so repeated failures
+     // cannot reset the bounded recovery forever.
+     job.m_Seat.SetReserved(character);
+     job.m_Action = new SCR_AIGetInVehicle(job.m_Utility, null, job.m_Heli.m_Vehicle, job.m_Seat, EAICompartmentType.Cargo,
+      SCR_AIActionBase.PRIORITY_BEHAVIOR_GET_IN_VEHICLE, SCR_AIActionBase.PRIORITY_LEVEL_NORMAL);
+     job.m_Utility.AddAction(job.m_Action);
+     job.m_fRequestedAt = now;
+    }
+    continue;
+   }
+   // Do not replace another system's in-progress get-in animation.
+   if (access.IsGettingIn()) continue;
    ACR_LiftHeli best;
    BaseCompartmentSlot seat;
    float bestDistance = float.MAX;
    foreach (ACR_LiftHeli heli : m_Helis)
    {
-    if (heli.m_bDestroyed || heli.m_bAway || !heli.m_bDown) continue;
-    // Taking turns: only the helicopter loading at the pickup (not one down at the drop).
-    if (m_bSequential && heli.m_iLeg != 1) continue;
+    if (!Loading(heli)) continue;
     BaseCompartmentSlot free;
-    if (heli.FreeSeats(free, claimed) == 0) continue;
-    float d = vector.DistanceXZ(character.GetOrigin(), heli.m_Vehicle.GetOrigin());
-    if (d < bestDistance) { bestDistance = d; best = heli; seat = free; }
+    if (heli.FreeSeats(free, null) == 0) continue;
+    float candidateDistance = vector.DistanceXZ(character.GetOrigin(), heli.m_Vehicle.GetOrigin());
+    if (candidateDistance < bestDistance) { bestDistance = candidateDistance; best = heli; seat = free; }
    }
    if (!best) continue;
-   // Later chalks: the rest of the squad may have drifted after the first lifted off.
-   float forceMs = FORCE_BOARD_MS;
-   if (m_bSequential && m_iChalksOut > 0) forceMs = Math.Min(FORCE_BOARD_MS, SEQUENTIAL_FORCE_MS);
-   bool close = bestDistance <= BOARD_RANGE;
-   bool near = bestDistance <= NEAR_RANGE && waited > NEAR_BOARD_MS;
-   bool forced = bestDistance <= FORCE_RANGE && waited > forceMs;
-   if (!close && !near && !forced) continue;
-   // Some cargo seats refuse a soldier (seen 14 Oct: one UH-1H seat, every try): try them all.
-   array<BaseCompartmentSlot> seats = {};
-   best.FreeSeatList(seats, claimed);
-   bool ok = false;
-   string seatName = "";
-   foreach (BaseCompartmentSlot trySeat : seats)
-   {
-    ok = access.GetInVehicle(best.m_Vehicle, trySeat, !close, -1, ECloseDoorAfterActions.CLOSE_DOOR, false);
-    seatName = trySeat.GetCompartmentName();
-    if (ok) { claimed.Insert(trySeat); break; }
-   }
-   if (!ok && !close) ok = access.GetInVehicle(best.m_Vehicle, seat, false, -1, ECloseDoorAfterActions.CLOSE_DOOR, false);
-   PrintFormat("[ACR] AIRLIFT board %1: %2 m, placed %3, seat %4 -> %5", m_sSquadName, (int)bestDistance, !close, seatName, ok);
+   AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
+   if (!control || !control.GetControlAIAgent()) continue;
+   SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(control.GetControlAIAgent().FindComponent(SCR_AIUtilityComponent));
+   if (!utility) continue;
+   // Respect an existing native get-in task; never pile up competing behaviors.
+   if (utility.FindActionOfType(SCR_AIGetInVehicle)) continue;
+   seat.SetReserved(character);
+   SCR_AIGetInVehicle getIn = new SCR_AIGetInVehicle(utility, null, best.m_Vehicle, seat, EAICompartmentType.Cargo,
+    SCR_AIActionBase.PRIORITY_BEHAVIOR_GET_IN_VEHICLE, SCR_AIActionBase.PRIORITY_LEVEL_NORMAL);
+   utility.AddAction(getIn);
+   ACR_LiftBoarding next = new ACR_LiftBoarding();
+   next.m_Character = character;
+   next.m_Heli = best;
+   next.m_Seat = seat;
+   next.m_Utility = utility;
+   next.m_Action = getIn;
+   next.m_fRequestedAt = now;
+   next.m_fProgressAt = now;
+   next.m_fBestDistance = bestDistance;
+   next.m_LastPosition = character.GetOrigin();
+   m_Boarding.Insert(next);
+   PrintFormat("[ACR] AIRLIFT walk to board %1: carrier %2, seat %3, %4 m", m_sSquadName, m_Helis.Find(best) + 1, seat.GetCompartmentName(), (int)bestDistance);
   }
-  return aboard;
+  // Count passengers physically aboard, including any newly player-controlled member.
+  return Aboard();
  }
 
  protected bool Ours(IEntity vehicle)
@@ -882,8 +1006,16 @@ class ACR_AirLift : ACR_SupportRun
    h0.m_iLeg = 4;
    if (h1 && h1.m_bHold)
    {
-    h1.m_Spot = m_Drops[0];
-    h1.m_Target = m_Drops[0];
+    if (m_iChalksOut > 0)
+    {
+     h1.m_Spot = m_Drops[0];
+     h1.m_Target = m_Drops[0];
+    }
+    else
+    {
+     h1.m_Spot = m_Pickups[0];
+     h1.m_Target = m_Pickups[0];
+    }
     h1.Release();
    }
   }
@@ -903,11 +1035,10 @@ class ACR_AirLift : ACR_SupportRun
   if (h0.m_iLeg == 1)
   {
    int aboard0 = Board(now);
-   BaseCompartmentSlot free0;
-   int freeSeats0 = h0.FreeSeats(free0, null);
    float waited0 = now - h0.m_fLegAt;
-   if (freeSeats0 == 0 || aboard0 >= alive || (waited0 > BOARD_WAIT_MS && aboard0 > 0))
+   if (Passengers(h0) >= h0.CargoSeats() || aboard0 >= alive || (waited0 > BOARD_WAIT_MS && Passengers(h0) > 0))
    {
+    ClearBoarding(h0);
     h0.TakeOff(m_Drops[0], false);
     h0.m_iLeg = 2;
     h0.m_fLegAt = now;
@@ -939,11 +1070,10 @@ class ACR_AirLift : ACR_SupportRun
   if (h1.m_iLeg == 1)
   {
    int aboard1 = Board(now);
-   BaseCompartmentSlot free1;
-   int freeSeats1 = h1.FreeSeats(free1, null);
    float waited1 = now - h1.m_fLegAt;
-   if (freeSeats1 == 0 || aboard1 >= alive || (waited1 > BOARD_WAIT_MS && aboard1 > 0))
+   if (Passengers(h1) >= h1.CargoSeats() || aboard1 >= alive || (waited1 > BOARD_WAIT_MS && Passengers(h1) > 0))
    {
+    ClearBoarding(h1);
     h1.TakeOff(m_Drops[0], false);
     h1.m_iLeg = 2;
     h1.m_fLegAt = now;
@@ -952,6 +1082,7 @@ class ACR_AirLift : ACR_SupportRun
    }
    else if (waited1 > BOARD_WAIT_MS)
    {
+    ClearBoarding(h1);
     h1.TakeOff(h1.m_Start, true);
     h1.m_iLeg = 4;
    }
@@ -1039,6 +1170,7 @@ class ACR_AirLift : ACR_SupportRun
  override void Finish()
  {
   m_bDone = true;
+  ClearBoarding();
   foreach (ACR_LiftHeli heli : m_Helis)
   {
    if (!heli.m_Vehicle || heli.m_bDestroyed) continue;

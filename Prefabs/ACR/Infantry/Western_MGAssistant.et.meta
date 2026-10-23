@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AC230926A001005F}Prefabs/ACR/Infantry/Western_MGAssistant.et"
+ Configurations {
+  ETResourceClass PC {}
+  ETResourceClass HEADLESS : PC {}
+ }
+}

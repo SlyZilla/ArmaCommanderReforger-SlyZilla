@@ -1,0 +1,20 @@
+SCR_ChimeraCharacter : "{1FA45046DA1FC409}Prefabs/Characters/Factions/BLUFOR/RHS_USAF/RHS_USAF_MARSOC/Character_RHS_USMC_MARSOC_Rifleman.et" {
+ ID "AC230926A001007C"
+ components {
+  BaseLoadoutManagerComponent "{520EA1D2DB11821E}" {
+   Slots {
+    LoadoutSlotInfo Back { Prefab "{48602F57998AB597}Prefabs/Items/Equipment/Backpacks/FILBE_Backpack.et" }
+    LoadoutSlotInfo Hat { Prefab "{A36613EAD646961D}Prefabs/Characters/HeadGear/Helmet_OPSCORE/Helmet_OPSCORE_XP_MC_AMP.et" }
+    LoadoutSlotInfo ArmoredVest { Prefab "{4748E96320E4B517}Prefabs/Characters/Vests/Vest_AACPC/Vest_AACPC_NeckProtection_Groin_FG.et" }
+    LoadoutSlotInfo Vest { Prefab "{B9F1A4544C4D12E9}Prefabs/Characters/Vests/Vest_AACPC/variants/Vest_AACPC_arsarmaHSGI_FG_2.et" }
+   }
+  }
+  CharacterWeaponSlotComponent "{520EA1D2F659CFAB}" {
+   WeaponTemplate "{7C571F6F5A20A124}Prefabs/Weapons/Rifles/HK416A5/Rifle_HK416A5_Suppressed.et"
+  }
+  ACR_InfantryKitComponent "{AC230926A001007C}" {
+   m_eKit 7
+   m_eRole 0
+  }
+ }
+}

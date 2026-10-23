@@ -1,0 +1,23 @@
+SCR_ChimeraCharacter : "{5B1996C05B1E51A4}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_AR.et" {
+ ID "AC230926A001006C"
+ components {
+  BaseLoadoutManagerComponent "{520EA1D2DB11821E}" {
+   Slots {
+    LoadoutSlotInfo Jacket { Prefab "{A9D4DA189D2FBC65}Prefabs/Characters/Uniforms/Jacket_UA_M14_ground.et" }
+    LoadoutSlotInfo Pants { Prefab "{846B61FF83278E38}Prefabs/Characters/Uniforms/Pants_AU_M14_piso.et" }
+    LoadoutSlotInfo Boots { Prefab "{AB9E3D5524876346}Prefabs/Characters/Footwear/Boots_Faradey_1085/Footware_Faradey_1085.et" }
+    LoadoutSlotInfo Hat { Prefab "{A36613EAD646961D}Prefabs/Characters/HeadGear/Helmet_OPSCORE/Helmet_OPSCORE_XP_MC_AMP.et" }
+    LoadoutSlotInfo ArmoredVest { Prefab "{4748E96320E4B517}Prefabs/Characters/Vests/Vest_AACPC/Vest_AACPC_NeckProtection_Groin_FG.et" }
+    LoadoutSlotInfo Vest { Prefab "{B9F1A4544C4D12E9}Prefabs/Characters/Vests/Vest_AACPC/variants/Vest_AACPC_arsarmaHSGI_FG_2.et" }
+    LoadoutSlotInfo Back { Prefab "{16C7AD0508F53A9B}Prefabs/Items/Equipment/Backpacks/backpack_Wartech_BB102/Backpack_Wartech_BB102_OD.et" }
+   }
+  }
+  CharacterWeaponSlotComponent "{520EA1D2F659CFAB}" {
+   WeaponTemplate "{31F7F8522CF135B1}Prefabs/Weapons/Rifles/M27IAR/Rifle_M27IAR_VCOG_NT4.et"
+  }
+  ACR_InfantryKitComponent "{AC230926A001006C}" {
+   m_eKit 5
+   m_eRole 3
+  }
+ }
+}

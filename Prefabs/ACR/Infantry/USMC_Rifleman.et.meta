@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AC230926A0010070}Prefabs/ACR/Infantry/USMC_Rifleman.et"
+ Configurations {
+  ETResourceClass PC {}
+  ETResourceClass HEADLESS : PC {}
+ }
+}

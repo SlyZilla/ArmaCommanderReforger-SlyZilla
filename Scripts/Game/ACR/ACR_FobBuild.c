@@ -167,6 +167,14 @@ class ACR_FobBuild
 	// A FOB site: the HQ footprint must be clear and enough upgrade spots usable.
 	static bool CheckSpot(vector spot, out string reason, ACR_Squad ignoreBuilder = null)
 	{
+		int clearSlots;
+		return CheckSpotCount(spot, reason, clearSlots, ignoreBuilder);
+	}
+
+	static bool CheckSpotCount(vector spot, out string reason, out int clearSlots, ACR_Squad ignoreBuilder = null, out int clearDefences = 0)
+	{
+		clearSlots = 0;
+		clearDefences = 0;
 		reason = "";
 		spot[1] = GetGame().GetWorld().GetSurfaceY(spot[0], spot[2]);
 		if (!ACR_Manager.OnMap(spot))
@@ -242,8 +250,8 @@ class ACR_FobBuild
 			}
 			if (s == ACR_FobSlots.SLOT_RELAY) relayWhy = slotWhy;
 			if (firstWhy.IsEmpty()) firstWhy = string.Format("%1 %2", ACR_FobSlots.SlotName(s), slotWhy);
-			if (s - clear + 1 > ACR_FobSlots.SLOT_COUNT - MIN_CLEAR_SLOTS) break; // can no longer reach the minimum
 		}
+		clearSlots = clear;
 		if (!relayWhy.IsEmpty())
 		{
 			reason = "No room for the radio relay: " + relayWhy;
@@ -252,6 +260,24 @@ class ACR_FobBuild
 		if (clear < MIN_CLEAR_SLOTS)
 		{
 			reason = string.Format("Too few clear upgrade spots (%1)", firstWhy);
+			return false;
+		}
+
+		int defClear = 0;
+		int postClear = 0;
+		for (int d = 0; d < ACR_FobDefences.SPOT_COUNT; d++)
+		{
+			string defWhy;
+			if (ACR_FobDefences.DefenceSpotClear(spot, d, defWhy))
+			{
+				defClear++;
+				if (d < ACR_FobDefences.POST_COUNT) postClear++;
+			}
+		}
+		clearDefences = defClear;
+		if (postClear < 1)
+		{
+			reason = "No viable perimeter defence post positions (steep terrain or obstructions)";
 			return false;
 		}
 		return true;
@@ -269,28 +295,67 @@ class ACR_FobBuild
 		}
 
 		clicked[1] = GetGame().GetWorld().GetSurfaceY(clicked[0], clicked[2]);
-		if (CheckSpot(clicked, refusal))
+		int clickedClear = 0;
+		int clickedDefences = 0;
+		bool clickedValid = CheckSpotCount(clicked, refusal, clickedClear, null, clickedDefences);
+		int clickedScore = (clickedClear * 10) + clickedDefences;
+		if (clickedValid && clickedClear >= ACR_FobSlots.SLOT_COUNT && clickedDefences >= ACR_FobDefences.SPOT_COUNT)
 		{
 			validSpot = clicked;
 			return true;
 		}
 
+		vector bestSpot = clicked;
+		int bestScore = 0;
+		int bestClear = 0;
+		float bestDist = 999999.0;
+		if (clickedValid)
+		{
+			bestScore = clickedScore;
+			bestClear = clickedClear;
+			bestDist = 0.0;
+		}
+
 		for (float r = 10.0; r <= maxRing; r += 10.0)
 		{
 			int steps = 8 + (int)(r * 0.2);
+			bool foundFullOnRing = false;
 			for (int i = 0; i < steps; i++)
 			{
 				float angle = (i * 360.0 / steps) * Math.DEG2RAD;
 				vector candidate = clicked + Vector(Math.Cos(angle) * r, 0, Math.Sin(angle) * r);
 				candidate[1] = GetGame().GetWorld().GetSurfaceY(candidate[0], candidate[2]);
 				string dummy;
-				if (CheckSpot(candidate, dummy))
+				int candidateClear = 0;
+				int candidateDefences = 0;
+				if (CheckSpotCount(candidate, dummy, candidateClear, null, candidateDefences))
 				{
-					validSpot = candidate;
-					return true;
+					int candidateScore = (candidateClear * 10) + candidateDefences;
+					float dist = r;
+					if (candidateScore > bestScore || (candidateScore == bestScore && dist < bestDist))
+					{
+						bestSpot = candidate;
+						bestScore = candidateScore;
+						bestClear = candidateClear;
+						bestDist = dist;
+					}
+					if (candidateClear >= ACR_FobSlots.SLOT_COUNT && candidateDefences >= ACR_FobDefences.SPOT_COUNT)
+					{
+						foundFullOnRing = true;
+					}
 				}
 			}
+			if (foundFullOnRing)
+				break;
 		}
+
+		if (bestClear >= MIN_CLEAR_SLOTS)
+		{
+			validSpot = bestSpot;
+			refusal = "";
+			return true;
+		}
+
 		return false;
 	}
 

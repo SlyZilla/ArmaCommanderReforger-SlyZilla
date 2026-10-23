@@ -213,7 +213,7 @@ class ACR_PingDisplay
  {
   WorkspaceWidget ws = GetGame().GetWorkspace();
   if (!ws) return;
-  s_HudCanvas = CanvasWidget.Cast(ACR_Hud.Track(ws.CreateWidget(WidgetType.CanvasWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.BLEND, Color.FromInt(Color.WHITE), 0, ws)));
+  s_HudCanvas = CanvasWidget.Cast(ACR_Hud.Track(ws.CreateWidget(WidgetType.CanvasWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.BLEND, Color.FromInt(Color.WHITE), 0, ACR_Hud.Root())));
   if (!s_HudCanvas) return;
   FrameSlot.SetAnchorMin(s_HudCanvas, 0, 0);
   FrameSlot.SetAnchorMax(s_HudCanvas, 1, 1);
@@ -228,7 +228,7 @@ class ACR_PingDisplay
  {
   while (s_HudLabels.Count() <= index)
   {
-   TextWidget text = TextWidget.Cast(ACR_Hud.Track(GetGame().GetWorkspace().CreateWidgets("{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout", GetGame().GetWorkspace())));
+   TextWidget text = TextWidget.Cast(ACR_Hud.Track(GetGame().GetWorkspace().CreateWidgets("{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout", ACR_Hud.Root())));
    if (!text) return null;
    text.SetFlags(WidgetFlags.IGNORE_CURSOR);
    FrameSlot.SetSize(text, 200, 22);
@@ -250,7 +250,7 @@ class ACR_PingDisplay
   if (!s_HoldHint)
   {
    WorkspaceWidget ws = GetGame().GetWorkspace();
-   s_HoldHint = TextWidget.Cast(ACR_Hud.Track(ws.CreateWidgets("{0D7FF083FDE39877}UI/layouts/WidgetLibrary/TextWidgets/Text_Heading4.layout", ws)));
+   s_HoldHint = TextWidget.Cast(ACR_Hud.Track(ws.CreateWidgets("{0D7FF083FDE39877}UI/layouts/WidgetLibrary/TextWidgets/Text_Heading4.layout", ACR_Hud.Root())));
    if (!s_HoldHint) return;
    s_HoldHint.SetFlags(WidgetFlags.IGNORE_CURSOR);
    FrameSlot.SetAnchorMin(s_HoldHint, 0.5, 0.5);

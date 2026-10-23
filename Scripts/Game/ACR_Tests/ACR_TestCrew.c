@@ -5,6 +5,12 @@ class ACR_TestCrew
 {
  static const ResourceName LAV = "{0FBF8F010F81A4E5}Prefabs/Vehicles/Wheeled/LAV25/LAV25.et";
  static IEntity s_Lav;
+ static ref ACR_Roadblock s_Roadblock;
+ static SCR_AIGroup s_RoadblockGroup;
+ static IEntity s_PostGunner;
+ static int s_PostDepartures;
+ static vector s_PostFrom;
+ static ref ACR_TestRoadblockPlanner s_PostPlanner;
 
  static ACR_Squad Crew(ACR_Manager manager)
  {
@@ -57,6 +63,72 @@ class ACR_TestCrew
    if (seats) seats.SpawnDefaultOccupants(types);
   }
   ACR_Squad crew = Crew(manager);
+  if (tick == 4)
+  {
+   vector post = ACR_Manager.Ground(home + Vector(-40, 0, 35));
+   s_Roadblock = ACR_Roadblocks.SpawnRoadblock("US", post, 0, "Retention test");
+   s_RoadblockGroup = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(ACR_TestRegress.STALE_GROUP, post + Vector(5, 0, 0)));
+  }
+  ACR_Squad postSquad = manager.FindSquadByGroup(s_RoadblockGroup);
+  if (tick == 8)
+  {
+   ACR_TestRegress.Check("roadblock: real turret and squad fixture", postSquad && s_Roadblock && s_Roadblock.m_Turret);
+   if (postSquad && s_Roadblock)
+   {
+    postSquad.m_ActiveRoadblock = s_Roadblock;
+    postSquad.m_RoadblockTurret = s_Roadblock.m_Turret;
+    postSquad.m_vRoadblockSite = s_Roadblock.m_vPos;
+    postSquad.IssueWaypoint(ACR_Squad.WP_DEFEND, s_Roadblock.m_vPos, 15);
+    postSquad.SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+    postSquad.m_OrderKind = ACR_EOrderKind.DEFEND;
+   }
+  }
+  if (tick == 35)
+  {
+   if (postSquad && s_Roadblock && s_Roadblock.m_Turret)
+   {
+    SCR_BaseCompartmentManagerComponent postSeats = SCR_BaseCompartmentManagerComponent.Cast(s_Roadblock.m_Turret.FindComponent(SCR_BaseCompartmentManagerComponent));
+    array<BaseCompartmentSlot> postSlots = {};
+    if (postSeats) postSeats.GetCompartmentsOfType(postSlots, ECompartmentType.TURRET);
+    if (!postSlots.IsEmpty()) s_PostGunner = postSlots[0].GetOccupant();
+    s_PostDepartures = postSquad.m_iUnexpectedCrewDepartures;
+   }
+   ACR_TestRegress.Check("roadblock: native behavior physically mounts the gun", s_PostGunner != null);
+  }
+  if (tick == 65)
+  {
+   bool retained = postSquad && s_PostGunner && s_Roadblock && ACR_Transport.VehicleOf(s_PostGunner) == s_Roadblock.m_Turret && postSquad.m_iUnexpectedCrewDepartures == s_PostDepartures;
+   ACR_TestRegress.Check("roadblock: same gunner remains aboard for 30 seconds", retained);
+   if (postSquad)
+   {
+    s_PostFrom = postSquad.GetAnchor().GetOrigin();
+    s_PostPlanner = new ACR_TestRoadblockPlanner(manager, "US");
+    postSquad.m_iAITask = ACR_EAITask.ROADBLOCK;
+    postSquad.SetOrder("Construction guard fixture", ACR_EOrderState.BUILD_ROADBLOCK);
+    s_PostPlanner.ReleaseBuilders();
+    ACR_TestRegress.Check("roadblock: planner leaves ongoing construction assigned", postSquad.m_iAITask == ACR_EAITask.ROADBLOCK);
+    postSquad.SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+    postSquad.m_Commander = 991;
+    s_PostPlanner.ReleaseBuilders();
+    ACR_TestRegress.Check("roadblock: planner leaves player-controlled squad assigned", postSquad.m_iAITask == ACR_EAITask.ROADBLOCK);
+    postSquad.m_Commander = 0;
+    s_PostPlanner.ReleaseBuilders();
+    ACR_TestRegress.Check("roadblock: finished builder rejoins normal idle planning", postSquad.m_iAITask == ACR_EAITask.POSTED && postSquad.m_ActiveRoadblock == s_Roadblock);
+    ACR_Base defendTarget;
+    float nearestTarget = float.MAX;
+    foreach (ACR_Base friendly : ACR_Base.s_All)
+    {
+     if (friendly.m_sOwner != "US") continue;
+     float targetDistance = vector.DistanceXZ(friendly.GetOrigin(), s_PostFrom);
+     if (targetDistance < nearestTarget) { nearestTarget = targetDistance; defendTarget = friendly; }
+    }
+    if (defendTarget) s_PostPlanner.DefendWith(postSquad, defendTarget);
+    ACR_TestRegress.Check("roadblock: ordinary defender planner recalls completed builder", defendTarget && postSquad.m_iAITask == ACR_EAITask.DEFEND && postSquad.m_AITarget == defendTarget && postSquad.m_ActiveRoadblock == null);
+   }
+  }
+  if (tick == 72)
+   ACR_TestRegress.Check("roadblock: a new order releases the gunner", s_PostGunner && s_Roadblock && ACR_Transport.VehicleOf(s_PostGunner) != s_Roadblock.m_Turret && postSquad && postSquad.m_ActiveRoadblock == null);
+
   if (tick == 10)
   {
    if (!crew) { ACR_TestRegress.Check("crew: LAV crew registered", false, ""); return; }
@@ -109,7 +181,36 @@ class ACR_TestCrew
   {
    float moved = vector.DistanceXZ(s_Lav.GetOrigin(), s_From);
    ACR_TestRegress.Check("crew: the woken LAV takes the next order", moved > 20, string.Format("%1 m", moved));
-   ACR_TestRegress.Complete("crew");
+   float postMoved;
+   if (postSquad && postSquad.GetAnchor()) postMoved = vector.DistanceXZ(s_PostFrom, postSquad.GetAnchor().GetOrigin());
+   ACR_TestRegress.Check("roadblock: recalled squad physically leaves its post", postSquad && postSquad.m_iAITask == ACR_EAITask.DEFEND && postMoved > 3, string.Format("moved %1 m", postMoved));
+   ACR_TestRegress.Complete("crew", 16);
   }
+ }
+}
+
+// Use the production free-squad filter and defender planner; restrict the fixture
+// to its one squad so this test cannot redirect the vehicle-crew control.
+class ACR_TestRoadblockPlanner : ACR_AICommander
+{
+ ACR_Squad m_OnlySquad;
+ void ACR_TestRoadblockPlanner(ACR_Manager manager, string factionKey)
+ {
+  m_Manager = manager;
+  m_sFaction = factionKey;
+ }
+ void ReleaseBuilders() { ReleaseRoadblockBuilders(); }
+ void DefendWith(ACR_Squad squad, ACR_Base target)
+ {
+  m_OnlySquad = squad;
+  m_Threat.Set(target, squad.Strength() + 1);
+  m_Defence.Set(target, 0);
+  AssignDefenders();
+ }
+ override protected void MySquads(array<ACR_Squad> result, bool freeOnly)
+ {
+  super.MySquads(result, freeOnly);
+  for (int i = result.Count() - 1; i >= 0; i--)
+   if (result[i] != m_OnlySquad) result.RemoveOrdered(i);
  }
 }

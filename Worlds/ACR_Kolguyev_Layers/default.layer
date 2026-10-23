@@ -29,20 +29,18 @@ SCR_BaseGameMode ACR_GameMode : "{1B76F75A3175E85C}Prefabs/MP/Modes/Plain/GameMo
  }
  coords 6400 0 6400
 }
-SCR_FactionManager ACR_Factions : "{A242612865F2A48E}Prefabs/MP/Managers/Factions/FactionManager_Base.et" {
+SCR_FactionManager ACR_Factions : "{4A188E44289B9A50}Prefabs/MP/Managers/Factions/FactionManager_Editor.et" {
  ID "AC230926A0010400"
  Factions {
-  SCR_Faction "{56B2B46E999BF3BF}" : "{5EB46557DF2AA24F}Configs/Factions/US.conf" {
+  SCR_Faction "{56DEAC40D2DBC8B1}" : "{5EB46557DF2AA24F}Configs/Factions/US.conf" {
+   m_bIsPlayable 1
    m_sFactionBackground "{F8AC305446D5D480}UI/Textures/DeployMenu/Loadout-BG/Loadout_US_BG.imageset"
   }
-  SCR_Faction "{56B2B46E9AF80999}" : "{09727032415AC39B}Configs/Factions/USSR.conf" {
+  SCR_Faction "{56DEAC40D3C2E623}" : "{09727032415AC39B}Configs/Factions/USSR.conf" {
+   m_bIsPlayable 1
    m_sFactionBackground "{21533F2089005056}UI/Textures/DeployMenu/Loadout-BG/Loadout_BG_USSR.imageset"
   }
-  SCR_Faction "{AC230926A00102A1}" : "{F33C7BF22CBF3A8A}Configs/Factions/RHS_US_USMC.conf" {
-  }
-  SCR_Faction "{AC230926A00102A2}" : "{627A8CDE681D223D}Configs/Factions/RHS_RF_MSV.conf" {
-  }
-  SCR_Faction "{AC230926A00102A3}" : "{8053DB656DD18B14}Configs/Factions/FIA.conf" {
+  SCR_Faction "{56DEAC40D132400B}" : "{8053DB656DD18B14}Configs/Factions/FIA.conf" {
   }
  }
  m_bCanChangeFactionsPlayable 1

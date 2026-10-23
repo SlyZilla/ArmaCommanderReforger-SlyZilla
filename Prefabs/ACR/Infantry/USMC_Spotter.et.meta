@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AC230926A001007B}Prefabs/ACR/Infantry/USMC_Spotter.et"
+ Configurations {
+  ETResourceClass PC {}
+  ETResourceClass HEADLESS : PC {}
+ }
+}

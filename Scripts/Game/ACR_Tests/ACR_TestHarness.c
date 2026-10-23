@@ -80,7 +80,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrAITest", flag)) mode = MODE_AI;
   if (System.GetCLIParam("acrGunnerTest", flag)) mode = MODE_GUNNER;
   if (System.GetCLIParam("acrProbeTest", flag)) mode = MODE_PROBE;
-  if (System.GetCLIParam("acrRespawnTest", flag)) mode = MODE_RESPAWN;
+  if (System.GetCLIParam("acrRespawnTest", flag) || System.GetCLIParam("acrDeathFadeTest", flag) || System.GetCLIParam("acrRTSCameraTest", flag)) mode = MODE_RESPAWN;
   if (System.GetCLIParam("acrSupportTest", flag)) mode = MODE_SUPPORT;
   if (System.GetCLIParam("acrGunshipTest", flag)) mode = MODE_GUNSHIP;
   // -acrHeliTest 1: door gunners (Mi-8) and a rocket run (UH-1H) instead of two gunships.
@@ -115,7 +115,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrAttackPlanTest", flag)) mode = MODE_ATTACKPLAN;
   if (System.GetCLIParam("acrDrivelessGunTest", flag)) mode = MODE_DRIVELESSGUN;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
-  if (System.GetCLIParam("acrAirLiftTest", flag)) mode = MODE_AIRLIFT;
+  if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrPadsTest", flag)) mode = MODE_PADS;
   if (System.GetCLIParam("acrHelipadTest", flag)) mode = MODE_HELIPAD;
@@ -212,7 +212,12 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_MORTAR) { ACR_TestMortar.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_CREW) { ACR_TestCrew.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BATTERY) { ACR_TestBattery.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_AIRLIFT) { ACR_TestAirLift.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_AIRLIFT)
+  {
+   if (System.IsCLIParam("acrAirLiftBoardingTest")) ACR_TestLiftBoarding.Run(this, m_Ticks);
+   else ACR_TestAirLift.Run(this, m_Ticks);
+   return;
+  }
   if (m_Mode == MODE_BLAST) { ACR_TestBlast.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MOTORIZED) { ACR_TestMotorized.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FIRE) { ACR_TestFire.Run(this, m_Ticks); return; }

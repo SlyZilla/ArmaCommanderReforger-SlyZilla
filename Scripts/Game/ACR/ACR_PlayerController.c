@@ -14,6 +14,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  bool m_bContact;      // spotted enemy: clicks go through to the map
  int m_iPingId = -1;   // >= 0: this marker is a ping's label
  int m_iSymbolKey;     // changes when m_GroupSymbol is set differently
+ protected Widget m_wPip; // ground-level reticle pip for spotted contacts
  protected string m_sStyled = "-"; // what RefreshStyle last applied
  ref ACR_MarkerClick m_Click;
  ref SCR_MilitarySymbol m_GroupSymbol;
@@ -68,6 +69,24 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (m_Selected) color = new Color(1, 1, 1, 1);
   m_MarkerWidgetComp.SetColor(color);
   if (m_GroupSymbol) m_MarkerWidgetComp.UpdateMilitarySymbol(m_GroupSymbol);
+  if (m_bContact && m_wRoot && !m_wPip)
+  {
+   WorkspaceWidget ws = GetGame().GetWorkspace();
+   if (ws)
+   {
+    m_wPip = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(1, 0.22, 0.18, 0.9), 99, m_wRoot);
+    FrameSlot.SetAnchorMin(m_wPip, 0.5, 0.5);
+    FrameSlot.SetAnchorMax(m_wPip, 0.5, 0.5);
+    FrameSlot.SetAlignment(m_wPip, 0.5, 0.5);
+    FrameSlot.SetSize(m_wPip, 6, 6);
+   }
+  }
+  if (m_wPip)
+  {
+   float pipAlpha = 0.95;
+   if (m_State == 3 && m_Label.Contains("?")) pipAlpha = 0.55;
+   m_wPip.SetColor(new Color(1, 0.22, 0.18, pipAlpha));
+  }
  }
  // Left-click: select this marker's squad (Arma Commander style). The command
  // unit marker instead returns you to your command unit.
@@ -218,6 +237,173 @@ modded class SCR_PlayerController
   SCR_HintManagerComponent.ShowCustomHint(message, "AC: Actual", 5, true);
  }
 
+ // ---------------------------------------------------------------- Tarkov-style death transition
+ protected Widget m_DeathBlackoutRoot;
+ protected ImageWidget m_DeathBlackoutImage;
+ protected TextWidget m_DeathBlackoutText;
+ protected bool m_bDeathTransitionActive;
+ protected bool m_bDeathOpaqueReported;
+ protected float m_fDeathTransitionStart;
+ protected float m_fDeathFallDuration;
+ protected float m_fDeathHoldDuration;
+ protected string m_sDeathTransitionMessage;
+
+ void ACR_SendDeathTransition(float fallSeconds, float holdSeconds, string message)
+ {
+  Rpc(ACR_DeathTransitionOwner, fallSeconds, holdSeconds, message);
+ }
+
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_DeathTransitionOwner(float fallSeconds, float holdSeconds, string message)
+ {
+  m_bDeathTransitionActive = true;
+  m_bDeathOpaqueReported = false;
+  PrintFormat("[ACR] DEATH FADE received: %1", message);
+  m_fDeathTransitionStart = GetGame().GetWorld().GetWorldTime();
+  m_fDeathFallDuration = fallSeconds;
+  m_fDeathHoldDuration = holdSeconds;
+  m_sDeathTransitionMessage = message;
+  ACR_EnsureDeathOverlay();
+  if (m_DeathBlackoutImage) m_DeathBlackoutImage.SetOpacity(0);
+  if (m_DeathBlackoutText)
+  {
+   m_DeathBlackoutText.SetText(message);
+   m_DeathBlackoutText.SetVisible(false);
+  }
+ }
+
+ void ACR_CancelDeathTransition()
+ {
+  Rpc(ACR_CancelDeathTransitionOwner);
+ }
+
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_CancelDeathTransitionOwner()
+ {
+  m_bDeathTransitionActive = false;
+  if (m_DeathBlackoutRoot)
+  {
+   m_DeathBlackoutRoot.RemoveFromHierarchy();
+   m_DeathBlackoutRoot = null;
+   m_DeathBlackoutImage = null;
+   m_DeathBlackoutText = null;
+  }
+  ACR_MapHandoff.SetMenuControls(GetControlledEntity(), false);
+ }
+
+ protected void ACR_EnsureDeathOverlay()
+ {
+  if (m_DeathBlackoutRoot && m_DeathBlackoutImage && m_DeathBlackoutText) return;
+  if (m_DeathBlackoutRoot) m_DeathBlackoutRoot.RemoveFromHierarchy();
+  m_DeathBlackoutRoot = null;
+  m_DeathBlackoutImage = null;
+  m_DeathBlackoutText = null;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  if (!ws) return;
+  m_DeathBlackoutRoot = ACR_Hud.CreateLayer(9999);
+  if (!m_DeathBlackoutRoot) return;
+
+  m_DeathBlackoutImage = ImageWidget.Cast(ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(0, 0, 0, 1), 0, m_DeathBlackoutRoot));
+  if (!m_DeathBlackoutImage) return;
+  m_DeathBlackoutImage.SetOpacity(0);
+  FrameSlot.SetAnchorMin(m_DeathBlackoutImage, 0, 0);
+  FrameSlot.SetAnchorMax(m_DeathBlackoutImage, 1, 1);
+  FrameSlot.SetOffsets(m_DeathBlackoutImage, 0, 0, 0, 0);
+
+  // A raw TextWidget has no font resource. Use the game's actual styled text
+  // layout so both glyph rendering and size-to-content have a defined font.
+  m_DeathBlackoutText = TextWidget.Cast(ws.CreateWidgets("{0D7FF083FDE39877}UI/layouts/WidgetLibrary/TextWidgets/Text_Heading4.layout", m_DeathBlackoutRoot));
+  if (!m_DeathBlackoutText) return;
+  m_DeathBlackoutText.SetFlags(WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.IGNORE_CURSOR);
+  m_DeathBlackoutText.SetZOrder(1);
+  m_DeathBlackoutText.SetText(m_sDeathTransitionMessage);
+  FrameSlot.SetAnchorMin(m_DeathBlackoutText, 0.5, 0.5);
+  FrameSlot.SetAnchorMax(m_DeathBlackoutText, 0.5, 0.5);
+  FrameSlot.SetAlignment(m_DeathBlackoutText, 0.5, 0.5);
+  FrameSlot.SetSizeToContent(m_DeathBlackoutText, true);
+  m_DeathBlackoutText.SetExactFontSize(22);
+  m_DeathBlackoutText.SetColor(Color.FromInt(Color.WHITE));
+ }
+
+ void ACR_UpdateDeathTransition(float timeSlice)
+ {
+  if (!m_bDeathTransitionActive) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  float elapsed = (now - m_fDeathTransitionStart) / 1000.0;
+  float totalDuration = m_fDeathFallDuration + m_fDeathHoldDuration + 0.5;
+
+  if (elapsed >= totalDuration)
+  {
+   ACR_CancelDeathTransitionOwner();
+   return;
+  }
+
+  ACR_EnsureDeathOverlay();
+  if (!m_DeathBlackoutImage) return;
+
+  float alpha = 0.0;
+  // Phase 1: 0.0 - 0.5 s: camera follows ragdoll down, screen clear
+  if (elapsed < 0.5)
+  {
+   alpha = 0.0;
+   if (m_DeathBlackoutText) m_DeathBlackoutText.SetVisible(false);
+  }
+  // Phase 2: 0.5 s to fallDuration: fade into darkness as corpse lands
+  else if (elapsed < m_fDeathFallDuration)
+  {
+   float span = m_fDeathFallDuration - 0.5;
+   if (span > 0) alpha = Math.Clamp((elapsed - 0.5) / span, 0.0, 1.0);
+   else alpha = 1.0;
+   if (m_DeathBlackoutText) m_DeathBlackoutText.SetVisible(alpha >= 0.85);
+  }
+  // Phase 3: fallDuration to (fallDuration + holdDuration): pure black, showing status text
+  else if (elapsed < (m_fDeathFallDuration + m_fDeathHoldDuration))
+  {
+   alpha = 1.0;
+   if (m_DeathBlackoutText) m_DeathBlackoutText.SetVisible(true);
+   ACR_MapHandoff.SetMenuControls(GetControlledEntity(), true);
+  }
+  // Phase 4: fade up into the new subordinate
+  else
+  {
+   float inElapsed = elapsed - (m_fDeathFallDuration + m_fDeathHoldDuration);
+   alpha = Math.Clamp(1.0 - (inElapsed / 0.5), 0.0, 1.0);
+   if (m_DeathBlackoutText) m_DeathBlackoutText.SetVisible(false);
+   ACR_MapHandoff.SetMenuControls(GetControlledEntity(), false);
+  }
+
+  // Keep the image's black tint opaque and animate widget opacity explicitly.
+  // A transparent creation tint is not a reliable visibility animation.
+  m_DeathBlackoutImage.SetOpacity(alpha);
+  if (alpha >= 0.99 && !m_bDeathOpaqueReported)
+  {
+   m_bDeathOpaqueReported = true;
+   float w, h;
+   m_DeathBlackoutImage.GetScreenSize(w, h);
+   PrintFormat("[ACR] DEATH FADE opaque: %1x%2, text visible=%3, message=%4", w, h, m_DeathBlackoutText && m_DeathBlackoutText.IsVisible(), m_sDeathTransitionMessage);
+  }
+ }
+
+ // A diagnostic snapshot of the actual client widgets, including measured
+ // geometry and rendered text. Also used by the client transition regression.
+ bool ACR_DeathTransitionActive() { return m_bDeathTransitionActive; }
+
+ bool ACR_DeathOverlayState(out float opacity, out string message, out bool textVisible)
+ {
+  opacity = 0;
+  message = "";
+  textVisible = false;
+  if (!m_bDeathTransitionActive || !m_DeathBlackoutRoot || !m_DeathBlackoutImage || !m_DeathBlackoutText) return false;
+  float w, h, sw, sh, tw, th;
+  m_DeathBlackoutImage.GetScreenSize(w, h);
+  GetGame().GetWorkspace().GetScreenSize(sw, sh);
+  m_DeathBlackoutText.GetTextSize(tw, th);
+  opacity = m_DeathBlackoutImage.GetOpacity();
+  message = m_DeathBlackoutText.GetText();
+  textVisible = m_DeathBlackoutText.IsVisible();
+  return m_DeathBlackoutRoot.IsVisible() && m_DeathBlackoutImage.IsVisible() && sw > 0 && sh > 0 && w >= sw * 0.99 && h >= sh * 0.99 && tw > 0 && th > 0;
+ }
+
  // ---------------------------------------------------------------- setup phase (ACR_Setup)
  void ACR_SendSetup(bool active, bool allowed, string rows, string info)
  {
@@ -295,9 +481,71 @@ modded class SCR_PlayerController
    Rpc(ACR_FeedbackOwner, "Debug menu: join a side first");
    return;
   }
+  if (action == ACR_EDebug.HEAL_SQUAD)
+  {
+   ACR_Squad target = null;
+   if (m_ACR_SelectedGroup.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(m_ACR_SelectedGroup)));
+   if (!target) manager.m_LastSquad.Find(GetPlayerId(), target);
+   if (target)
+   {
+    ACR_DebugCommand.HealSquad(target);
+    Rpc(ACR_FeedbackOwner, "Debug: Healed and rearmed " + target.GetName());
+    return;
+   }
+   IEntity body = GetControlledEntity();
+   if (body)
+   {
+    ACR_DebugCommand.HealEntity(body);
+    Rpc(ACR_FeedbackOwner, "Debug: Healed your character");
+    return;
+   }
+   Rpc(ACR_FeedbackOwner, "Debug: Select a squad first");
+   return;
+  }
+  if (action == ACR_EDebug.KILL_SQUAD)
+  {
+   ACR_Squad target = null;
+   if (m_ACR_SelectedGroup.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(m_ACR_SelectedGroup)));
+   if (target)
+   {
+    ACR_DebugCommand.KillSquad(target);
+    Rpc(ACR_FeedbackOwner, "Debug: Eliminated squad " + target.GetName());
+    return;
+   }
+   Rpc(ACR_FeedbackOwner, "Debug: Select a squad first");
+   return;
+  }
   string result = manager.m_Debug.Run(manager, action, faction.GetFactionKey(), baseName);
   PrintFormat("[ACR] DEBUG player %1: %2", GetPlayerId(), result);
   Rpc(ACR_FeedbackOwner, result);
+ }
+
+ void ACR_RequestDebugCommand(string cmd)
+ {
+  vector cursorPos = vector.Zero;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (mapEntity && mapEntity.IsOpen())
+  {
+   float cx, cz;
+   mapEntity.GetMapCursorWorldPosition(cx, cz);
+   cursorPos = Vector(cx, 0, cz);
+  }
+  Rpc(ACR_DebugCommandServer, cmd, m_ACR_SelectedBase, m_ACR_SelectedGroup, cursorPos);
+ }
+
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_DebugCommandServer(string cmd, string baseName, RplId groupId, vector cursorPos)
+ {
+  string result = ACR_DebugCommand.Execute(this, cmd, baseName, groupId, cursorPos);
+  Rpc(ACR_DebugCommandOwner, result);
+ }
+
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_DebugCommandOwner(string message)
+ {
+  SCR_ChatPanelManager chat = SCR_ChatPanelManager.GetInstance();
+  if (chat) chat.OnNewMessage(message);
+  SCR_HintManagerComponent.ShowCustomHint(message, "Debug Command", 5, true);
  }
 
  // ---------------------------------------------------------------- gunner drives
@@ -310,6 +558,7 @@ modded class SCR_PlayerController
  // keepAlive (map open): no keys, but a message every 5 s so the session isn't released as idle.
  void ACR_UpdateGunnerDrive(IEntity vehicle, float throttle, float steer, bool keepAlive = false)
  {
+  if (m_bDeathTransitionActive) { throttle = 0; steer = 0; }
   float now = GetGame().GetWorld().GetWorldTime();
   if (vehicle != m_ACR_DriveVehicle)
   {
@@ -395,7 +644,7 @@ modded class SCR_PlayerController
  {
   WorkspaceWidget ws = GetGame().GetWorkspace();
   if (!ws) return;
-  m_ACR_CaptureRoot = ACR_Hud.Track(ws.CreateWidget(WidgetType.FrameWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, ws));
+  m_ACR_CaptureRoot = ACR_Hud.Track(ws.CreateWidget(WidgetType.FrameWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, ACR_Hud.Root()));
   FrameSlot.SetAnchorMin(m_ACR_CaptureRoot, 0.5, 0);
   FrameSlot.SetAnchorMax(m_ACR_CaptureRoot, 0.5, 0);
   FrameSlot.SetAlignment(m_ACR_CaptureRoot, 0.5, 0);
@@ -943,7 +1192,16 @@ modded class SCR_PlayerController
   if (!m_ACR_Data.m_Selected.IsEmpty()) m_ACR_SelectedGroup = m_ACR_Data.m_Selected[0];
  }
 
- protected bool ACR_ModifierHeld(string action)
+ ACR_MapData ACR_GetData() { return m_ACR_Data; }
+
+ void ACR_ToggleRTSCamera()
+ {
+  if (GetGame().GetMenuManager().IsAnyMenuOpen())
+   GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+  ACR_RTSCameraManager.Toggle();
+ }
+
+ bool ACR_ModifierHeld(string action)
  {
   InputManager input = GetGame().GetInputManager();
   return input && input.GetActionValue(action) > 0.5;
@@ -1246,6 +1504,9 @@ modded class SCR_PlayerController
   bool canEstablishFob = friendly && (modeAndFlags & 32) != 0 && m_ACR_Data.m_Selected.Count() <= 1;
   if (!canEstablishFob && m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB)
    m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+  bool canRoadblock = friendly && (modeAndFlags & 64) != 0 && m_ACR_Data.m_Selected.Count() <= 1;
+  if (!canRoadblock && m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK)
+   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   string hint;
   if (!friendly) hint = "Player group: not commandable";
   else if (!m_ACR_IsCommander) hint = "Take command to give orders";
@@ -1255,6 +1516,7 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.LZ) hint = "Right-click the landing zone: they jump out when their ride sets down there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) hint = "Right-click the destination: a free truck nearby picks them up and drops them there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) hint = "Right-click a clear site: establish forward base (click Establish FOB again to cancel)";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK) hint = "Right-click a road: establish fortified roadblock (20 RP; click Roadblock again to cancel)";
   else hint = "Right-click: move there";
   string title = m_ACR_Data.m_GroupNames[index];
   string detail = m_ACR_GroupDetails[index];
@@ -1277,6 +1539,7 @@ modded class SCR_PlayerController
   m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, modeAndFlags & 15, m_ACR_CursorMode, hint);
   m_ACR_Panel.SetGunner(friendly && (modeAndFlags & 16) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
   m_ACR_Panel.SetEstablishFob(canEstablishFob);
+  m_ACR_Panel.SetRoadblock(canRoadblock);
   // Also for a full squad low on ammo: inside a deploy base Reinforce restocks it
   // (the server says so when it isn't in one).
   string details = m_ACR_GroupDetails[index];
@@ -1293,6 +1556,9 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.TOGGLE_COMMAND:
     if (m_ACR_IsCommander) ACR_Request(ACR_ERequest.LEAVE_COMMAND);
     else ACR_Request(ACR_ERequest.TAKE_COMMAND);
+    return;
+   case ACR_EPanelAction.TOGGLE_RTS_CAMERA:
+    ACR_ToggleRTSCamera();
     return;
    case ACR_EPanelAction.SWITCH: ACR_Request(ACR_ERequest.SWITCH_TO_GROUP, m_ACR_SelectedGroup); return;
    case ACR_EPanelAction.TAKE_GUNNER: ACR_Request(ACR_ERequest.TAKE_GUNNER, m_ACR_SelectedGroup); return;
@@ -1329,6 +1595,10 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.ESTABLISH_FOB:
     if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
     else m_ACR_CursorMode = ACR_ECursorMode.ESTABLISH_FOB;
+    return;
+   case ACR_EPanelAction.ROADBLOCK:
+    if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+    else m_ACR_CursorMode = ACR_ECursorMode.ROADBLOCK;
     return;
    case ACR_EPanelAction.HALT: ACR_RequestSelected(ACR_ERequest.ORDER_HALT); return;
    case ACR_EPanelAction.FIRE_AT_WILL: ACR_RequestSelected(ACR_ERequest.ORDER_FIRE_AT_WILL); return;
@@ -1455,6 +1725,7 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.LZ) command = ACR_ERequest.ORDER_SET_LZ;
   if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) command = ACR_ERequest.ORDER_RIDE;
   if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) command = ACR_ERequest.ORDER_ESTABLISH_FOB;
+  if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK) command = ACR_ERequest.ORDER_ROADBLOCK;
   vector target = Vector(x, 0, z);
   // Right-click on a spotted enemy: hunt it down.
   if (m_ACR_CursorMode == ACR_ECursorMode.MOVE && !append)
@@ -1466,6 +1737,12 @@ modded class SCR_PlayerController
     target = m_ACR_ContactPositions[hunted];
    }
   }
+  ACR_IssueOrder(command, target, append);
+  return true;
+ }
+
+ bool ACR_IssueOrder(int command, vector target, bool append = false)
+ {
   bool spread = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_RIDE;
   // Several squads: a loose line across the direction of travel, 40 m apart,
   // each keeping its place in the line (sorted left to right).
@@ -1722,6 +1999,7 @@ modded class SCR_PlayerController
      marker.SetMarkerConfigID(1);
     }
     marker.SetCanBeRemovedByOwner(false);
+    marker.m_bContact = true;
     m_ACR_ContactMarkers.Insert(marker);
     m_ACR_ContactMarkerKinds.Insert(kindToMake);
     manager.InsertStaticMarker(marker, true);
@@ -1734,6 +2012,7 @@ modded class SCR_PlayerController
    int kindNow = m_ACR_ContactKinds[i];
    contact.m_Label = ACR_Intel.Describe(kindNow, m_ACR_ContactCounts[i]) + " (" + age.ToString() + "s)";
    contact.m_State = 3;
+   contact.m_bContact = true;
    vector pos = m_ACR_ContactPositions[i];
    contact.SetWorldPos(pos[0], pos[2]);
    int identity = EMilitarySymbolIdentity.OPFOR;

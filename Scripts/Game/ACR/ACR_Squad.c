@@ -28,7 +28,8 @@ enum ACR_EOrderState
  DISMOUNT,   // everyone getting out now
  COMMANDED,  // a player commands it through the game's own command menu
  DRIVEN,     // its vehicle is driven by a player in the gunner seat
- BUILD_FOB   // establishing a forward base
+ BUILD_FOB,   // establishing a forward base
+ BUILD_ROADBLOCK // establishing a road checkpoint
 }
 
 enum ACR_EMoveMode
@@ -43,6 +44,7 @@ enum ACR_EMoveMode
 class ACR_OrderSnapshot : Managed
 {
  ResourceName m_sPrefab;
+ IEntity m_Entity; // boarding target must survive saving/restoring the order
  vector m_Target;
  float m_fRadius = -1;
  string m_sLabel;
@@ -59,6 +61,32 @@ class ACR_OrderSnapshot : Managed
   snapshot.m_eState = state;
   snapshot.m_iKind = kind;
   return snapshot;
+ }
+}
+
+modded class SCR_AIGetVehicleWaypointParameters
+{
+ override ENodeResult EOnTaskSimulate(AIAgent owner, float dt)
+ {
+  SCR_AIGroup group = SCR_AIGroup.Cast(owner);
+  if (group)
+  {
+   IEntity waypointEntity;
+   if (!GetVariableIn(PORT_WAYPOINT_IN, waypointEntity)) waypointEntity = group.GetCurrentWaypoint();
+   SCR_BoardingEntityWaypoint boarding = SCR_BoardingEntityWaypoint.Cast(waypointEntity);
+   if (boarding && (!boarding.GetEntity() || ACR_Logistics.Health(boarding.GetEntity()) <= 0))
+   {
+    ACR_Manager manager = ACR_Manager.GetInstance();
+    ACR_Squad squad;
+    if (manager) squad = manager.FindSquadByGroup(group);
+    if (squad && squad.m_Waypoint == boarding)
+    {
+     if (group.GetCurrentWaypoint() == boarding) squad.CancelLostBoarding();
+     return ENodeResult.FAIL;
+    }
+   }
+  }
+  return super.EOnTaskSimulate(owner, dt);
  }
 }
 
@@ -500,7 +528,10 @@ class ACR_Squad : Managed
  ACR_OrderSnapshot SnapshotOrder()
  {
   if (m_CombatFlank.Active()) return m_CombatFlank.Original();
-  return ACR_OrderSnapshot.Make(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, m_Order, OrderState(), m_OrderKind);
+  ACR_OrderSnapshot snapshot = ACR_OrderSnapshot.Make(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, m_Order, OrderState(), m_OrderKind);
+  SCR_BoardingEntityWaypoint boarding = SCR_BoardingEntityWaypoint.Cast(m_Waypoint);
+  if (boarding) snapshot.m_Entity = boarding.GetEntity();
+  return snapshot;
  }
 
  // Issue a saved order again (at its own target, or at another point, e.g. a route leg).
@@ -516,9 +547,14 @@ class ACR_Squad : Managed
    vector center;
    if (ACR_Garrison.Assign(m_Group, m_Group.GetLeaderAgent(), target, Math.Max(1, CountAlive()), center, radius, false) <= 0) prefab = WP_DEFEND;
   }
-  IssueWaypoint(prefab, target, radius);
+  if (!IssueWaypoint(prefab, target, radius, false, snapshot.m_Entity))
+  {
+   Halt("Order target lost");
+   return;
+  }
   SetOrder(snapshot.m_sLabel, snapshot.m_eState);
   m_OrderKind = snapshot.m_iKind;
+  if (prefab == WP_GET_IN && snapshot.m_Entity) TrackBoarding(snapshot.m_Entity);
  }
 
  // What the squad is doing. NONE when m_Order no longer matches the label the
@@ -583,6 +619,13 @@ class ACR_Squad : Managed
  vector m_vFobGaveUpSite;      // last abandoned site (AI commander avoids it for a while)
  float m_fFobGaveUpAt;
  static const float FOB_GIVE_UP_MS = 180000;
+ vector m_vRoadblockSite;
+ float m_fRoadblockYaw;
+ float m_fRoadblockProgress;
+ float m_fRoadblockLastTick;
+ float m_fRoadblockLastProgress;
+ IEntity m_RoadblockTurret;
+ ref ACR_Roadblock m_ActiveRoadblock;
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -618,7 +661,7 @@ class ACR_Squad : Managed
 
  // Replace every queued order (ours or native) with a single waypoint.
  static bool s_bGameDefend; // test (srv:crewold): crews get the game's Defend waypoint as before
- AIWaypoint IssueWaypoint(ResourceName prefab, vector position, float completionRadius = -1, bool forced = false)
+ AIWaypoint IssueWaypoint(ResourceName prefab, vector position, float completionRadius = -1, bool forced = false, IEntity entity = null)
  {
   if (!m_Group) return null;
   if (prefab != WP_GET_OUT && Aircraft())
@@ -631,7 +674,7 @@ class ACR_Squad : Managed
   // no reason, 2 Oct live). A plain move there holds the vehicle just the same; the order
   // keeps WP_DEFEND as its kind (m_sOrderPrefab) and its "Defending" label.
   ResourceName spawned = prefab;
-  if (prefab == WP_DEFEND && !s_bGameDefend && ACR_Transport.CrewedVehicle(this)) spawned = WP_MOVE;
+  if (prefab == WP_DEFEND && !s_bGameDefend && !m_ActiveRoadblock && ACR_Transport.CrewedVehicle(this)) spawned = WP_MOVE;
   Resource resource = Resource.Load(spawned);
   if (!resource.IsValid()) return null;
   EntitySpawnParams params = new EntitySpawnParams();
@@ -639,6 +682,22 @@ class ACR_Squad : Managed
   params.Transform[3] = position;
   AIWaypoint waypoint = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(resource, null, params));
   if (!waypoint) return null;
+  SCR_BoardingEntityWaypoint boarding = SCR_BoardingEntityWaypoint.Cast(waypoint);
+  if (boarding)
+  {
+   // Configure before AddWaypoint exposes it to the group's behavior tree.
+   if (!entity || ACR_Logistics.Health(entity) <= 0)
+   {
+    SCR_EntityHelper.DeleteEntityAndChildren(waypoint);
+    return null;
+   }
+   boarding.SetEntity(entity);
+   if (boarding.GetEntity() != entity)
+   {
+    SCR_EntityHelper.DeleteEntityAndChildren(waypoint);
+    return null;
+   }
+  }
   return AdoptWaypoint(waypoint, prefab, position, completionRadius, forced);
  }
 
@@ -667,6 +726,8 @@ class ACR_Squad : Managed
  protected void NewOrder()
  {
   if (m_fReservedLoads > 0 || OrderState() == ACR_EOrderState.BUILD_FOB) CancelEstablishFob();
+  if (OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) CancelRoadblock();
+  if (m_RoadblockTurret) VacateRoadblockTurret();
   m_CombatFlank.Cancel();
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
@@ -695,6 +756,8 @@ class ACR_Squad : Managed
   SetOrder(label, state);
   NewOrder();
   ClearPlans();
+  IEntity vehicle = ACR_Transport.CrewedVehicle(this);
+  if (vehicle) ACR_Transport.SanitizeVehicleHorn(vehicle, true);
  }
 
  void ClearOrders()
@@ -1042,6 +1105,250 @@ class ACR_Squad : Managed
  void SetFobReservedTruckForTest(IEntity truck) { m_ReservedTruck = truck; }
  float FobReservedLoads() { return m_fReservedLoads; }
  vector FobSite() { return m_vFobSite; }
+ bool IsVehicle() { return ACR_Transport.CrewedVehicle(this) != null; }
+
+ // ================================================================ roadblocks (aca-f23)
+ bool EstablishRoadblock(vector site, float yaw)
+ {
+  string refusal;
+  if (!ACR_Roadblocks.CanOrder(this, refusal)) return false;
+  string factionKey = "";
+  if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !manager.m_Bases.Spend(factionKey, ACR_Roadblocks.ROADBLOCK_COST)) return false;
+
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+
+  m_vRoadblockSite = site;
+  m_fRoadblockYaw = yaw;
+  m_fRoadblockProgress = 0.0;
+  m_fRoadblockLastTick = GetGame().GetWorld().GetWorldTime();
+  m_fRoadblockLastProgress = m_fRoadblockLastTick;
+  m_RoadblockTurret = null;
+  m_ActiveRoadblock = null;
+
+  SetOrder("Building Roadblock (0%)", ACR_EOrderState.BUILD_ROADBLOCK);
+  m_OrderKind = ACR_EOrderKind.MOVE;
+  m_MoveTarget = site;
+  IssueWaypoint(WP_MOVE, site, 4.0);
+  PrintFormat("[ACR] SQUAD %1: building roadblock at %2 (yaw %3), paid %4 RP", m_Name, site, yaw, ACR_Roadblocks.ROADBLOCK_COST);
+  return true;
+ }
+
+ void CancelRoadblock()
+ {
+  if (OrderState() == ACR_EOrderState.BUILD_ROADBLOCK)
+  {
+   string factionKey = "";
+   if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+   ACR_Manager manager = ACR_Manager.GetInstance();
+   if (manager) manager.m_Bases.Refund(factionKey, ACR_Roadblocks.ROADBLOCK_COST);
+   EquipShovels(false);
+   m_fRoadblockProgress = 0.0;
+   if (m_iAITask == ACR_EAITask.ROADBLOCK) m_iAITask = ACR_EAITask.FREE;
+   ClearOrders();
+   SetOrder("Holding position", ACR_EOrderState.HOLD);
+   PrintFormat("[ACR] SQUAD %1: cancelled roadblock build, refunded %2 RP", m_Name, ACR_Roadblocks.ROADBLOCK_COST);
+  }
+ }
+
+ void TickEstablishRoadblock(float now)
+ {
+  if (m_fRoadblockLastTick <= 0) m_fRoadblockLastTick = now;
+  float dt = (now - m_fRoadblockLastTick) / 1000.0;
+  m_fRoadblockLastTick = now;
+  if (dt <= 0) return;
+  if (dt > 5.0) dt = 1.0;
+
+  if (CountAlive() <= 0)
+  {
+   CancelRoadblock();
+   return;
+  }
+
+  bool squadPresent = false;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), m_vRoadblockSite) <= ACR_Roadblocks.CP_RADIUS)
+   {
+    squadPresent = true;
+    break;
+   }
+  }
+
+  bool contested = KnownEnemies(60, true) > 0;
+  int pct = (int)((m_fRoadblockProgress / ACR_Roadblocks.BUILD_DURATION_S) * 100);
+
+  if (now - m_fRoadblockLastProgress >= FOB_GIVE_UP_MS)
+  {
+   PrintFormat("[ACR] SQUAD %1: roadblock at %2 abandoned after 3 minutes without progress", m_Name, m_vRoadblockSite);
+   CancelRoadblock();
+   return;
+  }
+
+  if (contested)
+  {
+   EquipShovels(false);
+   SetOrder(string.Format("Building Roadblock (%1%% - contact)", pct), ACR_EOrderState.BUILD_ROADBLOCK);
+   return;
+  }
+
+  if (!squadPresent)
+  {
+   if (m_Group && !m_Group.GetCurrentWaypoint() && !HasPlayer())
+   {
+    IssueWaypoint(WP_MOVE, m_vRoadblockSite, 4.0);
+   }
+   SetOrder(string.Format("Building Roadblock (%1%% - moving to road)", pct), ACR_EOrderState.BUILD_ROADBLOCK);
+   return;
+  }
+
+  EquipShovels(true);
+  m_fRoadblockLastProgress = now;
+  m_fRoadblockProgress += dt;
+  pct = Math.ClampInt((int)((m_fRoadblockProgress / ACR_Roadblocks.BUILD_DURATION_S) * 100), 0, 100);
+  SetOrder(string.Format("Building Roadblock (%1%%)", pct), ACR_EOrderState.BUILD_ROADBLOCK);
+
+  if (m_fRoadblockProgress >= ACR_Roadblocks.BUILD_DURATION_S)
+  {
+   CompleteRoadblock();
+  }
+ }
+
+ void CompleteRoadblock()
+ {
+  EquipShovels(false);
+  string factionKey = "";
+  if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+  ACR_Roadblock rb = ACR_Roadblocks.SpawnRoadblock(factionKey, m_vRoadblockSite, m_fRoadblockYaw, m_Name);
+  if (!rb)
+  {
+   CancelRoadblock();
+   return;
+  }
+
+  m_ActiveRoadblock = rb;
+  m_RoadblockTurret = rb.m_Turret;
+  // Native Defend owns turret allocation; do not seat a soldier before assigning it.
+
+  ClearOrders();
+  SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0);
+  PrintFormat("[ACR] SQUAD %1: completed roadblock at %2", m_Name, m_vRoadblockSite);
+ }
+
+ void ManRoadblockTurret()
+ {
+  if (!m_RoadblockTurret || !m_Group || m_Commander != 0 || HasPlayer()) return;
+  // Defend reserves compartments and sends native get-in behaviors. Replacing it
+  // each tick sends native get-out messages and starts the departure loop again.
+  if (!m_Group.GetCurrentWaypoint()) IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0);
+ }
+
+ void VacateRoadblockTurret()
+ {
+  if (m_RoadblockTurret)
+  {
+   // This departure belongs to our new order, not to a spontaneous AI decision.
+   array<AIAgent> postAgents = {};
+   GetAgents(postAgents);
+   foreach (AIAgent postAgent : postAgents)
+   {
+    IEntity postBody = postAgent.GetControlledEntity();
+    if (postBody && ACR_Transport.VehicleOf(postBody) == m_RoadblockTurret) m_CrewSeats.Set(postBody, -1);
+   }
+   ACR_Roadblocks.VacateTurret(m_RoadblockTurret);
+   m_RoadblockTurret = null;
+   m_ActiveRoadblock = null;
+   PrintFormat("[ACR] SQUAD %1: vacated roadblock machine gun", m_Name);
+  }
+ }
+
+ void TickRoadblockDefence(float now)
+ {
+  if (!m_ActiveRoadblock || m_Commander != 0 || HasPlayer()) return;
+  if (m_RoadblockTurret && !ACR_Roadblocks.IsTurretOccupied(m_RoadblockTurret))
+  {
+   ManRoadblockTurret();
+  }
+
+  // Tripwire intel detection: alert if enemies seen near road
+  if (!m_ActiveRoadblock.m_bAlerted && KnownEnemies(250, true) > 0)
+  {
+   m_ActiveRoadblock.m_bAlerted = true;
+   ACR_Manager mgr = ACR_Manager.GetInstance();
+   if (mgr)
+   {
+    ACR_Intel intel = mgr.IntelFor(m_ActiveRoadblock.m_sFaction);
+    if (intel)
+    {
+     intel.RadioRoadblockAlert(m_Name, m_ActiveRoadblock.m_vPos);
+    }
+   }
+  }
+ }
+
+ protected static IEntity FindShovelItem(IEntity character)
+ {
+  if (!character) return null;
+  SCR_InventoryStorageManagerComponent inv = SCR_InventoryStorageManagerComponent.Cast(character.FindComponent(SCR_InventoryStorageManagerComponent));
+  if (!inv) return null;
+  array<IEntity> items = {};
+  inv.GetItems(items);
+  foreach (IEntity item : items)
+  {
+   if (!item || !item.GetPrefabData()) continue;
+   string prefab = item.GetPrefabData().GetPrefabName();
+   if (prefab.Contains("ETool") && !prefab.Contains("carrier")) return item;
+  }
+  return null;
+ }
+
+ void EquipShovels(bool equip)
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  string factionKey = "";
+  if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+  ResourceName shovelPrefab = ACR_Requisition.SHOVEL_EAST;
+  if (ACR_Supports.IsWestern(factionKey)) shovelPrefab = ACR_Requisition.SHOVEL_WEST;
+
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character || !ACR_Respawn.IsAlive(character)) continue;
+   CharacterControllerComponent controller = character.GetCharacterController();
+   if (!controller) continue;
+
+   if (equip)
+   {
+    if (controller.GetStance() == ECharacterStance.STAND) controller.SetStanceChange(ECharacterStanceChange.STANCECHANGE_TOCROUCH);
+    IEntity shovel = FindShovelItem(character);
+    if (!shovel)
+    {
+     SCR_InventoryStorageManagerComponent inv = SCR_InventoryStorageManagerComponent.Cast(character.FindComponent(SCR_InventoryStorageManagerComponent));
+     if (inv) inv.TrySpawnPrefabToStorage(shovelPrefab, null, -1, EStoragePurpose.PURPOSE_GADGET_PROXY);
+     shovel = FindShovelItem(character);
+    }
+    SCR_GadgetManagerComponent gadgets = SCR_GadgetManagerComponent.GetGadgetManager(character);
+    if (gadgets && shovel) gadgets.SetGadgetMode(shovel, EGadgetMode.IN_HAND);
+   }
+   else
+   {
+    if (controller.GetStance() != ECharacterStance.STAND) controller.SetStanceChange(ECharacterStanceChange.STANCECHANGE_TOERECTED);
+    IEntity shovel = FindShovelItem(character);
+    SCR_GadgetManagerComponent gadgets = SCR_GadgetManagerComponent.GetGadgetManager(character);
+    if (gadgets && shovel) gadgets.SetGadgetMode(shovel, EGadgetMode.IN_SLOT);
+   }
+  }
+ }
 
  // Clear an objective: move in and fight through it (search and destroy).
  bool Assault(vector position)
@@ -1254,6 +1561,8 @@ class ACR_Squad : Managed
   WatchCrew();
   // A builder fights normally (Jacob, 18 Oct); its progress pauses while in contact.
   if (OrderState() == ACR_EOrderState.BUILD_FOB) TickEstablishFob(now);
+  if (OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) TickEstablishRoadblock(now);
+  if (m_ActiveRoadblock && m_RoadblockTurret) TickRoadblockDefence(now);
   if (!m_Group || m_Commander != 0) return;
   array<AIAgent> agents = {};
   GetAgents(agents);
@@ -1275,6 +1584,7 @@ class ACR_Squad : Managed
    m_CombatFlank.YieldToPlayer(this);
    return;
   }
+  WatchBoardingTarget();
   HuntTick(now);
   if (m_bGarrisonPending && m_Order == "Garrisoning") PlaceGarrison(m_GarrisonPending);
   else if (m_sOrderPrefab == WP_GARRISON && m_Order == "Garrisoning" && m_Group.GetCurrentWaypoint() == null && m_iGarrisonReissues < 2)
@@ -1302,8 +1612,9 @@ class ACR_Squad : Managed
    m_Mode = mode;
    PrintFormat("[ACR] TACTICS %1: contact, fighting its way forward", m_Name);
   }
-  else if (!m_bForced && m_Mode == ACR_EMoveMode.FAST && movingOrder && !contact && m_Waypoint && !IsMounted() && !m_bRegrouping && m_fLastContactTime > 0 && now - m_fLastContactTime >= 15000)
+  else if (m_Mode == ACR_EMoveMode.FAST && movingOrder && !contact && m_Waypoint && !IsMounted() && !m_bRegrouping && m_fLastContactTime > 0 && now - m_fLastContactTime >= 15000)
   {
+   m_fLastContactTime = -1;
    IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, true);
    PrintFormat("[ACR] TACTICS %1: contact clear, resuming fast march", m_Name);
   }
@@ -1376,6 +1687,7 @@ class ACR_Squad : Managed
 
  // Crewmen leaving a driver or gunner seat when no order of ours asked for it are logged
  // (2 Oct live: a LAV crew got out twice "for no reason"; not reproduced on the server).
+ int m_iUnexpectedCrewDepartures; // diagnostics and physical retention tests
  protected ref map<IEntity, int> m_CrewSeats = new map<IEntity, int>();
  protected void WatchCrew()
  {
@@ -1394,6 +1706,9 @@ class ACR_Squad : Managed
    if (!known || before < 0 || before == ECompartmentType.CARGO || seat >= 0) continue;
    ACR_EOrderState state = OrderState();
    if (state == ACR_EOrderState.GET_OUT || state == ACR_EOrderState.DISMOUNT) continue;
+   ACR_Manager manager = ACR_Manager.GetInstance();
+   if (m_bMortar && manager && manager.Mortars().IsLoadingDeparture(this, agent)) continue;
+   m_iUnexpectedCrewDepartures++;
    string where = "";
    if (m_OwnVehicle) where = string.Format(", vehicle health %1, driver %2", ACR_Logistics.Health(m_OwnVehicle), DriverOf(m_OwnVehicle) != null);
    PrintFormat("[ACR] CREW LEFT %1: %2 got out of the %3 seat on his own (order '%4', alive %5, enemies near %6, player %7%8)", m_Name, NumberOf(body), typename.EnumToString(ECompartmentType, before), m_Order, ACR_Respawn.IsAlive(body), KnownEnemies(350), FindController(body), where);
@@ -1456,8 +1771,22 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   ClearPlans();
   foreach (vector leg : legs) m_aRoute.Insert(leg);
-  m_Route = ACR_OrderSnapshot.Make(prefab, vector.Zero, radius, order, StateOfLabel(order), kind);
+  vector finalDestination = vector.Zero;
+  if (!legs.IsEmpty()) finalDestination = legs[legs.Count() - 1];
+  m_Route = ACR_OrderSnapshot.Make(prefab, finalDestination, radius, order, StateOfLabel(order), kind);
   NextLeg();
+ }
+
+ vector RouteDestination()
+ {
+  if (m_Route && m_Route.m_Target != vector.Zero) return m_Route.m_Target;
+  if (!m_aRoute.IsEmpty()) return m_aRoute[m_aRoute.Count() - 1];
+  return m_MoveTarget;
+ }
+
+ bool HasActiveRoute()
+ {
+  return m_Route != null || !m_aRoute.IsEmpty();
  }
 
  protected void NextLeg()
@@ -1637,10 +1966,19 @@ class ACR_Squad : Managed
   Halt("Holding (unreachable)");
  }
 
- // The nearest point on the soldiers' navmesh within radius of 'at' (infantry only).
+ // The nearest point on the soldiers' navmesh or road within radius of 'at'.
  protected bool ReachableNear(vector at, float radius, out vector result)
  {
-  if (IsMounted()) return false;
+  if (IsMounted())
+  {
+   vector roadPoint;
+   if (BBB_Terrain.RoadPointNear(at, radius, roadPoint))
+   {
+    result = roadPoint;
+    return true;
+   }
+   return false;
+  }
   array<AIAgent> agents = {};
   GetAgents(agents);
   foreach (AIAgent agent : agents)
@@ -1918,6 +2256,11 @@ class ACR_Squad : Managed
  // Suitability as a base of fire (support-role teams are not).
  int FirePower()
  {
+  if (m_Group && m_Group.m_eACRFormation != ACR_EFormation.NONE)
+  {
+   if (ACR_InfantryCatalog.Specialist(m_Group.m_eACRFormation)) return 0;
+   return CountAlive();
+  }
   string name = m_Name;
   name.ToLower();
   if (name.Contains("logistic") || name.Contains("medic") || name.Contains("engineer") || name.Contains("sapper") || name.Contains("demolition") || name.Contains("pioneer") || name.Contains("supply") || name.Contains("sniper"))
@@ -1984,6 +2327,7 @@ class ACR_Squad : Managed
    bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
    wantsToMove = !waypoints.IsEmpty() && movingOrder && vector.DistanceXZ(vehicle.GetOrigin(), m_MoveTarget) > STALL_ARRIVED;
   }
+  ACR_Transport.SanitizeVehicleHorn(vehicle, !eligible || !wantsToMove);
   if (!wantsToMove || vehicle != m_StallVehicle || (speed > 1.0 && vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5))
   {
    if (vehicle != m_StallVehicle || !wantsToMove) { m_iUnsticks = 0; m_iReroutes = 0; }
@@ -2100,6 +2444,7 @@ class ACR_Squad : Managed
   m_iUnsticks = 0;
   m_iReroutes = 0;
   m_fStuckAt = now;
+  if (vehicle) ACR_Transport.SanitizeVehicleHorn(vehicle, true);
   PrintFormat("[ACR] DRIVE %1: stuck, crew stays aboard and holds", m_Name);
  }
 
@@ -2118,7 +2463,11 @@ class ACR_Squad : Managed
  void EndUnstick()
  {
   m_bUnsticking = false;
-  if (m_StallVehicle) m_StallPos = m_StallVehicle.GetOrigin();
+  if (m_StallVehicle)
+  {
+   m_StallPos = m_StallVehicle.GetOrigin();
+   ACR_Transport.SanitizeVehicleHorn(m_StallVehicle, true);
+  }
   m_fStallSince = GetGame().GetWorld().GetWorldTime();
   // Fresh order, so the driver plans a new route from here.
   if (m_Group && !m_sOrderPrefab.IsEmpty())
@@ -2135,6 +2484,7 @@ class ACR_Squad : Managed
  protected void Bail(IEntity vehicle, string why, bool resume)
  {
   PrintFormat("[ACR] DRIVE %1: %2, crew bails out", m_Name, why);
+  if (vehicle) ACR_Transport.SanitizeVehicleHorn(vehicle, true);
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager)
   {
@@ -2376,13 +2726,17 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   if (vehicle)
   {
-   SCR_BoardingEntityWaypoint boarding = SCR_BoardingEntityWaypoint.Cast(IssueWaypoint(WP_GET_IN, vehicle.GetOrigin(), -1, true));
-   if (!boarding) return false;
-   boarding.SetEntity(vehicle);
+   if (!IssueWaypoint(WP_GET_IN, vehicle.GetOrigin(), -1, true, vehicle)) return false;
   }
   else if (!IssueWaypoint(WP_GET_IN_NEAREST, position, 20, true)) return false;
   SetOrder("Getting in", ACR_EOrderState.GET_IN);
   m_OrderKind = ACR_EOrderKind.GET_IN;
+  TrackBoarding(vehicle);
+  return true;
+ }
+
+ protected void TrackBoarding(IEntity vehicle)
+ {
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
   m_BoardTarget = vehicle;
   m_iBoardSerial = m_iOrderSerial;
@@ -2391,7 +2745,21 @@ class ACR_Squad : Managed
   if (vehicle && boardAnchor) approach = vector.DistanceXZ(boardAnchor.GetOrigin(), vehicle.GetOrigin()) / 1.2 * 1000;
   m_fBoardUntil = GetGame().GetWorld().GetWorldTime() + Math.Clamp(approach + 60000, 60000, 900000);
   if (vehicle && m_OwnVehicle != vehicle) GetGame().GetCallqueue().CallLater(EnsureBoardVehicle, 8000, false);
-  return true;
+ }
+
+ void CancelLostBoarding()
+ {
+  Halt("Boarding vehicle lost");
+  PrintFormat("[ACR] BOARD %1: target lost, order cancelled", m_Name);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager && GetFaction()) manager.NotifyFaction(GetFaction().GetFactionKey(), m_Name + ": boarding cancelled, vehicle lost.");
+ }
+
+ protected void WatchBoardingTarget()
+ {
+  if (OrderState() != ACR_EOrderState.GET_IN || !m_Group || m_Group.GetCurrentWaypoint() != m_Waypoint) return;
+  SCR_BoardingEntityWaypoint boarding = SCR_BoardingEntityWaypoint.Cast(m_Waypoint);
+  if (boarding && (!boarding.GetEntity() || ACR_Logistics.Health(boarding.GetEntity()) <= 0)) CancelLostBoarding();
  }
 
  protected IEntity m_BoardTarget;
@@ -2655,6 +3023,8 @@ class ACR_Squad : Managed
  void Dispose()
  {
   CancelEstablishFob();
+  CancelRoadblock();
+  if (m_RoadblockTurret) VacateRoadblockTurret();
   m_bUnsticking = false;
   if (m_UnstickListener) BBB_Unstick.Cancel(m_UnstickListener);
   m_Aside = null; // being removed: nothing to resume
@@ -2664,7 +3034,9 @@ class ACR_Squad : Managed
   GetGame().GetCallqueue().Remove(EnsureGetOut);
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
   GetGame().GetCallqueue().Remove(WakeCrew);
-  if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
+  // Detach orders before deleting them, including queued artillery/boarding orders.
+  // A surviving native group must never keep following a deleted owned waypoint.
+  ClearOrders();
   SCR_GroupsManagerComponent manager = SCR_GroupsManagerComponent.GetInstance();
   if (manager && m_CommandGroup) manager.DeleteAndUnregisterGroup(m_CommandGroup);
   if (m_Group && m_Group.GetAgentsCount() == 0) SCR_EntityHelper.DeleteEntityAndChildren(m_Group);

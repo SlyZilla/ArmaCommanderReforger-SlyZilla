@@ -257,7 +257,7 @@ You can use `m_aPrefabMappings` to replace a unit with one from another mod. Eac
 | Setting | Default | What it does |
 |---|---|---|
 | `m_sFrom` | empty | Exact original prefab to replace |
-| `m_sTo` | empty | Replacement prefab |
+| `m_sTo` | empty | Replacement prefab, resolved when this faction uses the mapping; load its supplying mod before selecting the faction |
 
 Choose both from the prefab browser. AC: Actual also tries to match starting units by their catalog
 name or role. If it cannot find a replacement, it uses the original unit and writes a `[ACR] FACTION
@@ -469,12 +469,34 @@ plus the two HQs. Protected opening sites can exceed that target; compact flashp
 two opening objectives per side. Other sites remain useful for control and deployment but pay
 no RP. Basic income, starting RP, capture rules and reinforcement prices are unchanged. This
 selection applies to generated layouts; hand-authored bases still use their own `m_bIncome` flags.
+Seeds select later income sites as a group, retaining the original number of earning sites
+and total nominal RP for that layout. Individual site values never change: for example, two
+2-RP sites can replace a 1-RP and a 3-RP site when all spacing constraints hold. Small complete
+sets of up to 128 valid arrangements use an even seed cycle; consecutive seeds visit each
+arrangement before repeating. Larger sets use seeded group selection. Each phase
+examines at most 4,096 candidate branches (8,192 combined); failure keeps the original income
+flags intact. HQs, the four nearest ordinary objectives per side and every ordinary site within 2 km of either HQ are protected. Remaining
+non-income objectives are selected with seeded flank and settlement/industry/military preferences;
+about 20-40% of optional tactical sites may be omitted, retaining at least one when available.
+Hidden landmarks stay tactical. Omitting tactical sites does not lower the original income target.
+Manual moves/deletions still apply afterwards, and moved HQs relocate opening-income protection.
+
+Flashpoints draw a seeded 1.25-1.8 km neighbourhood around a town/village (falling back to 1.8 km
+where necessary), then select 5-7 accessible sites with varied composition. Up to eight local
+regions are tried if HQ/access filtering leaves fewer than five sites. HQs remain the two farthest
+ordinary sites in that candidate region. Their two nearest ordinary opening objectives per side
+are protected during selection; flashpoint income keeps its existing rules and 300 m spacing.
 
 Ordinary generated objectives are normally at least 350 m apart; two nearby opening objectives
 per side may be 250 m apart to preserve the opening. Compact flashpoints keep their existing
 circle-spacing rule. Bases remain on their map places, moved onto dry ground when necessary;
 capture circles can shrink to 35 m. HQ candidates remain widely separated (at least 80% of the
-greatest eligible military/airport separation), preferring fewer rear or inaccessible objectives.
+greatest eligible military/airport separation). Half-map seeds choose rotated, shifted bands or
+compact regions containing roughly 45-55% of the ordinary sites before access/spacing filtering.
+HQ selection checks up to 12 pairs: the three farthest with the fewest rear objectives plus up
+to nine seeded alternatives with at most two extra rear objectives. It chooses among pairs
+within one accessible objective of the best checked pair; every retained objective still passes
+the same access and spacing filters. Hidden landmarks do not define the region boundary.
 The generator removes objectives directly behind HQ approaches and checks dry-land access from
 both sides while excluding the opposing HQ perimeter (350 m, or 100 m in a compact flashpoint).
 This cached coarse terrain check catches HQ/peninsula bottlenecks; it does not guarantee roads,
@@ -773,3 +795,62 @@ enable the mission addon and its AC: Actual dependency. Both players need a comp
 version and all dependencies. An unpacked local copy does not by itself create a Scenarios/Host
 entry. See [Run a map kept in your own addon](#run-a-map-kept-in-your-own-addon) for the current
 limitations and options.
+
+### RU, UA and RHS USMC default formations
+
+With RHS Russia, RHS USMC or the UA replacement faction selected, an empty requisition list
+with automatic filling enabled offers curated formations. Explicit requisition lists
+keep their authored entries and existing catalog behavior. Prices below are base RP;
+ordinary units retain the selected stepped or fixed-stock pricing mode.
+
+| Formation | RU size / RP | UA size / RP |
+|---|---:|---:|
+| Rifle squad | 6 / 24 | 9 / 30 |
+| Maneuver team | 4 / 14 | 4 / 14 |
+| Machine gun team | 3 / 12 | 3 / 12 |
+| RPG-7 anti-tank team | 3 / 14 | 3 / 14 |
+| Disposable AT team | — | 3 / 12 |
+| Scout team | 4 / 18 | 4 / 18 |
+| Sniper pair | 2 / 16 | 2 / 16 |
+| Western rifle squad | — | 8 / 34 |
+| Western fire team | — | 4 / 18 |
+| Special Forces team | 6 / 48 | 6 / 48 |
+| Engineer team | 4 / 16 | 4 / 16 |
+| Medical team | 3 / 10 | 3 / 10 |
+
+UA ordinary formations retain mostly Soviet equipment with some Western rifles;
+Western formations explicitly provide M4/M203, M249/M240 and M21 equipment.
+Special Forces receive suppressed primary weapons, modern armor and night vision,
+with no thermal sights. Their fixed stock is 1/2/4 at Low/Normal/High threat.
+AI commanders field at most one SF formation at a time and do not increase its
+purchase weight when its price rises. Existing caps and replacement costs apply.
+Mortar and observer requisitions retain their existing configurable support entries.
+
+RHS USMC offers these additional curated defaults:
+
+| Formation | Size / base RP |
+|---|---:|
+| Marine Rifle Squad | 9 / 34 |
+| Marine Fire Team | 4 / 18 |
+| Light Infantry Team | 4 / 14 |
+| Machine Gun Team | 3 / 12 |
+| Grenadier Team | 4 / 18 |
+| Light AT Team | 4 / 16 |
+| Scout Team | 4 / 20 |
+| Sniper Pair | 2 / 16 |
+| Engineer Team | 4 / 16 |
+| Medical Team | 3 / 10 |
+| MARSOC Team | 6 / 48 |
+
+The Marine rifle squad retains two M249s, two M203s, two M72 carriers and an M38
+marksman. Ordinary M27 carriers use 4x RCO optics; M203, M240, M38 and M40 roles
+retain their dedicated sights. Native MEF garrisons and officers also exchange their
+8x VC18DSCO for an RCO. MARSOC uses distinct woodland clothing, suppressed HK416,
+M27 and M38 weapons, modern armor/headsets and mounted dual PVS14 night vision.
+It follows the same stock and AI restrictions as RU/UA SF, with no thermal optics.
+
+Shared default vehicle base prices across these factions are Humvee 20 unarmed / 32
+armed, transport/ammo/repair/fuel truck 22 and construction truck 24. RU additionally
+uses BTR-70 72, BRDM-2 52, Typhoon 38 unarmed / 52 armed and UAZ 16 unarmed / 26
+armed. Ambulances, LAV-25, aircraft and UA APCs retain their existing catalog prices.
+Explicit mission-authored requisition prices remain unchanged.

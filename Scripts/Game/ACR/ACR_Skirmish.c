@@ -230,6 +230,7 @@ class ACR_Skirmish : GenericEntity
     base2.m_sCapturer = "";
     base2.m_bAllowSpawn = true;
     base2.m_bHidden = false;
+    base2.m_eLogisticsRole = ACR_EBaseRole.HQ;
     if (old && old.m_iGarrison > base2.m_iGarrison) base2.m_iGarrison = old.m_iGarrison;
     base2.m_iGarrisonLeft = base2.m_iGarrison;
    }

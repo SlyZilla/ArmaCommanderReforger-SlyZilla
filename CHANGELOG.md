@@ -2,6 +2,27 @@
 
 ## 0.5.7 — unreleased
 
+- Fixed late-game match stalls and infinite supply truck pathfinding loops: AI commanders scale active attack fronts (up to 8) and unit caps on large maps when holding surplus territory and RP, dismounted infantry no longer embark on multi-kilometer cross-island grabs on foot, and supply trucks en route to bases avoid redundant 15-second route recalculations.
+- Replaced 4-point map status bar polygons with paired triangles, eliminating Enfusion canvas ear-clipping triangulation errors when viewing the command map.
+- Fixed player movement stall false alarms caused by evaluating active input contexts while stationary.
+
+- Air-lift passengers receive individual boarding assignments for both helicopters, so soldiers who cannot fit in the first Huey walk to the second. Scripted placement is reserved for stalled boarding.
+
+- Fixed the 3D commander camera missing its mouse cursor and movement controls. WASD pans, right-drag rotates and the wheel changes altitude; exiting restores the previous view.
+
+- Roadblocks snap to the road centre instead of staying at the clicked position; clearance checks use the actual construction site.
+- AI squads become available for combat orders after finishing a roadblock, instead of being tied to it indefinitely. Roadblock construction leaves the commander's reserve squad available.
+
+- RU, UA and RHS USMC requisitions use distinct infantry formations with revised prices, dedicated support ammunition and role-specific replacement kits. UA keeps mostly Soviet equipment alongside Western-equipped squads and fire teams. Rare Special Forces carry suppressed weapons, modern armor and night vision without thermal sights; AI selection does not increase with their price. Marines use combat optics, dedicated scout/engineer/sniper teams and rare suppressed MARSOC; shared utility and logistics vehicles use aligned prices.
+
+- Fixed UA and Russian Typhoon purchases failing to deploy because their driver and gunner crews never spawned.
+
+- Fixed persistent AI vehicle horn audio loops: AI drivers cap continuous warning honks at 0.8 s with a 5 s silence cooldown, vacant/incapacitated vehicles immediately mute their audio signals, and per-frame post-simulation enforcement silences audio loops on dedicated servers, listen servers, and remote clients.
+
+- Generated battles vary tactical objectives and select later income sites together while preserving opening income, earning-site count, total RP and spacing. Consecutive seeds cycle evenly through small complete sets of valid income arrangements. Flashpoints vary their local area and objective mix, keeping 5-7 accessible sites and protected opening objectives.
+
+- Generated half-map battles use varied diagonal, shifted and compact regions, with more suitable HQ arrangements across seeds. Existing objective access, spacing and opening-income safeguards remain in place.
+
 ## 0.5.6 — released
 
 Take the fight forward. Build a base behind your advance, keep it supplied and defend it against an AI commander that can build, reinforce and raid too.

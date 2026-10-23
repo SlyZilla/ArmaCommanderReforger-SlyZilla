@@ -6,6 +6,7 @@ class ACR_TestMortar
  static ACR_MortarTeam s_Team;
  static ACR_MortarTeam s_East;
  static IEntity s_Truck;
+ static int s_iCrewDepartures;
  static int s_iPhase;
  static int s_iSince;
  static vector s_Moved;
@@ -139,6 +140,7 @@ class ACR_TestMortar
    string far = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 4200)));
    ACR_TestRegress.Check("mortar: out of range refused", far.Contains("out of range"), far);
    ACR_Mortars.s_iLastFired = -1;
+   s_iCrewDepartures = s_Team.m_Squad.m_iUnexpectedCrewDepartures;
    string near = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 700)));
    ACR_TestRegress.Check("mortar: fire mission accepted", near.Contains("firing"), near);
    s_iPhase = 2;
@@ -167,6 +169,7 @@ class ACR_TestMortar
   if (s_iPhase == 21 && s_Team && (ACR_Mortars.s_iLastFired >= 0 || waited > 80))
   {
    ACR_TestRegress.Check("mortar: all eight HE rounds fired across ammo batches", ACR_Mortars.s_iLastFired == 8, string.Format("fired %1, %2", ACR_Mortars.s_iLastFired, State()));
+   ACR_TestRegress.Check("mortar: native on-foot loading is distinguished from unexpected departures", s_Team.m_iLoadingDismounts > 0 && s_Team.m_Squad.m_iUnexpectedCrewDepartures == s_iCrewDepartures, string.Format("native loading %1, unexpected departures %2 -> %3", s_Team.m_iLoadingDismounts, s_iCrewDepartures, s_Team.m_Squad.m_iUnexpectedCrewDepartures));
    s_Moved = ACR_Manager.Ground(s_Team.m_Spot + Vector(-30, 0, 8));
    PrintFormat("[ACR] MORTAR move order: %1", s_Team.m_Squad.MoveTo(s_Moved));
    s_iPhase = 3;
@@ -215,7 +218,7 @@ class ACR_TestMortar
   {
    string dead = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 600)));
    ACR_TestRegress.Check("mortar: no calls once the team is dead", dead.Contains("no mortar team"), dead);
-   ACR_TestRegress.Complete("mortar", 21);
+   ACR_TestRegress.Complete("mortar", 22);
    s_iPhase = 7;
   }
  }

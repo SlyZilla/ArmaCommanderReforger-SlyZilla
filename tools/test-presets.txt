@@ -9,6 +9,8 @@ arland|-acrScenarioTest 1|240|Worlds/ACR_Arland.ent
 gunner|-acrGunnerTest 1|120
 probe|-acrProbeTest 1|90
 respawn|-acrRespawnTest 1|90
+deathfade|-acrDeathFadeTest 1|90
+rtscamera|-acrRTSCameraTest 1|90
 support|-acrSupportTest 1|260
 gunship|-acrGunshipTest 1|180
 heli|-acrHeliTest 1|180
@@ -50,6 +52,7 @@ liftclearance|-acrLiftClearanceTest 1|150|Worlds/ACR_Kolguyev.ent
 liftcontact|-acrAirLiftContactTest 1|240
 airlift|-acrAirLiftTest 1|460
 airlifttwo|-acrAirLiftTwoTest 1|460
+airliftboarding|-acrAirLiftBoardingTest 1|150
 pads|-acrPadsTest 1|130|Worlds/ACR_Arland.ent
 helipad|-acrHelipadTest 1|280
 garrison|-acrGarrisonTest 1|220
@@ -114,3 +117,6 @@ lzbench|-acrLzBenchTest 1|90|Worlds/ACR_Kolguyev.ent
 perfkolguyev|-acrPerfTest 1|260|Worlds/ACR_Kolguyev.ent
 slopes|-acrSlopesTest 1|260|Worlds/ACR_Kolguyev.ent
 bbbfeatureaudit|-acrBbbFeatureAuditTest 1|200|Worlds/BBB_TestArland.ent
+
+bbborderleash|-acrBbbOrderLeashTest 1|190|Worlds/BBB_TestArland.ent
+typhoons|-acrTyphoonPurchaseTest 1|120

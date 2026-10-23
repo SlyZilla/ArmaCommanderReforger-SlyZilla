@@ -48,7 +48,7 @@ class ACR_BBBHooks : BBB_Hooks
  override bool AllowFireManeuver(SCR_AIGroup group)
  {
   ACR_Squad squad = SquadOf(group);
-  if (!squad || squad.m_Mode != ACR_EMoveMode.COMBAT || squad.m_Commander != 0 || squad.m_CombatFlank.Active()) return false;
+  if (!squad || ACR_AirLift.Busy(squad) || squad.m_Mode != ACR_EMoveMode.COMBAT || squad.m_Commander != 0 || squad.m_CombatFlank.Active()) return false;
   ACR_EOrderState state = squad.OrderState();
   return state == ACR_EOrderState.MOVE || state == ACR_EOrderState.ASSAULT || state == ACR_EOrderState.HUNT;
  }
@@ -58,7 +58,20 @@ class ACR_BBBHooks : BBB_Hooks
  override bool AllowRelaxedMarch(SCR_AIGroup group)
  {
   ACR_Squad squad = SquadOf(group);
-  return squad && squad.OrderState() == ACR_EOrderState.MOVE && !squad.m_CombatFlank.Active();
+  return squad && !ACR_AirLift.Busy(squad) && squad.OrderState() == ACR_EOrderState.MOVE && !squad.m_CombatFlank.Active();
+ }
+
+ // BBB may react locally to ordinary autonomous foot orders. Player orders,
+ // quiet/forced movement, road columns and transport remain host-owned.
+ override bool IsBinding(SCR_AIGroup group)
+ {
+  ACR_Squad squad = SquadOf(group);
+  if (!squad) return false;
+  if (ACR_AirLift.Busy(squad)) return true;
+  if (squad.m_Commander != 0 || squad.m_iOrderedBy != 0 || squad.m_bForced || squad.m_Mode != ACR_EMoveMode.COMBAT || squad.m_CombatFlank.Active()) return true;
+  ACR_EOrderState state = squad.OrderState();
+  if (state == ACR_EOrderState.MOVE && squad.IsMounted()) return true;
+  return state != ACR_EOrderState.MOVE && state != ACR_EOrderState.ASSAULT && state != ACR_EOrderState.HUNT && state != ACR_EOrderState.DEFEND && state != ACR_EOrderState.HOLD && state != ACR_EOrderState.SUPPRESS;
  }
 
  override bool ManagesVehicleDriving(SCR_AIGroup group)
@@ -72,10 +85,19 @@ class ACR_BBBHooks : BBB_Hooks
  {
   ACR_Squad squad = SquadOf(group);
   if (!squad) return true;
+  if (ACR_AirLift.Busy(squad)) return false;
   if (squad.m_Commander != 0 || squad.m_Mode != ACR_EMoveMode.COMBAT || squad.m_CombatFlank.Active()) return false;
   ACR_EOrderState state = squad.OrderState();
   return state == ACR_EOrderState.DEFEND || state == ACR_EOrderState.ASSAULT || state == ACR_EOrderState.SUPPRESS || state == ACR_EOrderState.HUNT;
  }
+ // ACA's native artillery and roadblock defense own these static-weapon jobs.
+ // BBB's opportunistic quiet-time release must not take their gunners away.
+ override bool AllowStaticWeapons(SCR_AIGroup group)
+ {
+  ACR_Squad squad = SquadOf(group);
+  return !squad || (!ACR_AirLift.Busy(squad) && !squad.m_bMortar && !squad.m_ActiveRoadblock);
+ }
+
  override bool AllowMorale(SCR_AIGroup group)
  {
   return SquadOf(group) == null;

@@ -1,5 +1,11 @@
 # Arma Commander Actual (AC: Actual)
 
+
+> **Source development:** `main` contains ongoing development and can be ahead of
+> the Workshop release or contain unfinished changes. For normal play, use Workshop.
+> Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
+> testing and pull requests. No direct repository access is needed.
+
 [![Game: Arma Reforger](https://img.shields.io/badge/Arma-Reforger-556b2f?style=flat-square)](https://reforger.armaplatform.com/)
 [![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#maps-and-match-options)
 [![Requires Better Battle Buddies](https://img.shields.io/badge/Requires-Better_Battle_Buddies-teal?style=flat-square)](#maps-and-match-options)

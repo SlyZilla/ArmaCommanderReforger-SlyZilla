@@ -29,20 +29,18 @@ SCR_BaseGameMode ACR_GameMode : "{1B76F75A3175E85C}Prefabs/MP/Modes/Plain/GameMo
  }
  coords 2400 0 2400
 }
-SCR_FactionManager ACR_Factions : "{A242612865F2A48E}Prefabs/MP/Managers/Factions/FactionManager_Base.et" {
+SCR_FactionManager ACR_Factions : "{4A188E44289B9A50}Prefabs/MP/Managers/Factions/FactionManager_Editor.et" {
  ID "AC230926A0010200"
  Factions {
-  SCR_Faction "{56B2B46E999BF3BF}" : "{5EB46557DF2AA24F}Configs/Factions/US.conf" {
+  SCR_Faction "{56DEAC40D2DBC8B1}" : "{5EB46557DF2AA24F}Configs/Factions/US.conf" {
+   m_bIsPlayable 1
    m_sFactionBackground "{F8AC305446D5D480}UI/Textures/DeployMenu/Loadout-BG/Loadout_US_BG.imageset"
   }
-  SCR_Faction "{56B2B46E9AF80999}" : "{09727032415AC39B}Configs/Factions/USSR.conf" {
+  SCR_Faction "{56DEAC40D3C2E623}" : "{09727032415AC39B}Configs/Factions/USSR.conf" {
+   m_bIsPlayable 1
    m_sFactionBackground "{21533F2089005056}UI/Textures/DeployMenu/Loadout-BG/Loadout_BG_USSR.imageset"
   }
-  SCR_Faction "{AC230926A00102A1}" : "{F33C7BF22CBF3A8A}Configs/Factions/RHS_US_USMC.conf" {
-  }
-  SCR_Faction "{AC230926A00102A2}" : "{627A8CDE681D223D}Configs/Factions/RHS_RF_MSV.conf" {
-  }
-  SCR_Faction "{AC230926A00102A3}" : "{8053DB656DD18B14}Configs/Factions/FIA.conf" {
+  SCR_Faction "{56DEAC40D132400B}" : "{8053DB656DD18B14}Configs/Factions/FIA.conf" {
   }
  }
  m_bCanChangeFactionsPlayable 1
@@ -155,6 +153,7 @@ ACR_Base ACR_Base_0 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 80
+ m_eLogisticsRole 1
 }
 ACR_Base ACR_Base_1 {
  coords 1378 36 2385
@@ -165,6 +164,7 @@ ACR_Base ACR_Base_1 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 2
 }
 ACR_Base ACR_Base_2 {
  coords 1998 52 3022
@@ -174,6 +174,7 @@ ACR_Base ACR_Base_2 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 45
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_3 {
  coords 2582 122 2343
@@ -183,6 +184,7 @@ ACR_Base ACR_Base_3 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 2
 }
 ACR_Base ACR_Base_4 {
  coords 2291 90 1277
@@ -192,6 +194,7 @@ ACR_Base ACR_Base_4 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_5 {
  coords 1166 1 3322
@@ -201,6 +204,7 @@ ACR_Base ACR_Base_5 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_6 {
  coords 1455 34 1156
@@ -211,6 +215,7 @@ ACR_Base ACR_Base_6 {
  m_bHidden 0
  m_bAllowSpawn 0
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_7 {
  coords 3163 11 2778
@@ -221,6 +226,7 @@ ACR_Base ACR_Base_7 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 70
+ m_eLogisticsRole 1
 }
 ACR_Base ACR_Base_8 {
  coords 2760 77 1640
@@ -231,6 +237,7 @@ ACR_Base ACR_Base_8 {
  m_bIncome 1
  m_bHidden 0
  m_fRadius 60
+ m_eLogisticsRole 3
 }
 ACR_Base ACR_Base_9 {
  coords 3161 20 1195
@@ -241,6 +248,7 @@ ACR_Base ACR_Base_9 {
  m_bIncome 1
  m_bHidden 1
  m_fRadius 50
+ m_eLogisticsRole 4
 }
 ACR_Base ACR_Base_10 {
  coords 3555 45 2644
@@ -252,6 +260,7 @@ ACR_Base ACR_Base_10 {
  m_bHidden 0
  m_bAllowSpawn 0
  m_fRadius 40
+ m_eLogisticsRole 4
 }
 ACR_StartingUnit ACR_Start_0 {
  coords 1345 38 2935

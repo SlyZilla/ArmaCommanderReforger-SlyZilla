@@ -163,6 +163,7 @@ class ACR_GunnerDrive
    m_AIWasOn = true;
   }
   // Parked mid-honk (at a soldier in its way), the AI never lets go of the horn.
+  if (m_Vehicle) ACR_Transport.SanitizeVehicleHorn(m_Vehicle, true);
   CharacterInputContext input = m_Driver.GetCharacterController().GetInputContext();
   if (input && input.GetVehicleHorn() != 0) input.SetVehicleHorn(0);
   // The vehicle has its own AI (it does the actual driving for an AI driver). Left on,
@@ -463,6 +464,7 @@ class ACR_GunnerDrive
    AIControlComponent ai = AIControlComponent.Cast(m_Driver.FindComponent(AIControlComponent));
    if (ai && !ai.IsAIActivated()) ai.ActivateAI();
   }
+  if (m_Vehicle) ACR_Transport.SanitizeVehicleHorn(m_Vehicle, true);
   if (m_Squad && m_Squad.OrderState() == ACR_EOrderState.DRIVEN) m_Squad.SetOrder("Holding", ACR_EOrderState.HOLD);
  }
 }

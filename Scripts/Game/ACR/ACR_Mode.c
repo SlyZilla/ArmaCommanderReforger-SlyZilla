@@ -160,9 +160,10 @@ class ACR_Mode : GenericEntity
   if (m_iSeconds >= 1200 || (m_bPerf && m_iSeconds >= 185)) Print("[ACR] TEST COMPLETE");
  }
 
- // After the frame's other updates (gunner drives re-assert their inputs).
+ // After the frame's other updates (gunner drives re-assert their inputs; horn governor mutes latch loops).
  override void EOnPostFrame(IEntity owner, float timeSlice)
  {
+  ACR_Transport.UpdateHorns();
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (s_Instance == this && manager) manager.SimulateStep();
  }

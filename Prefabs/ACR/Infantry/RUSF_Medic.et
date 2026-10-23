@@ -1,0 +1,20 @@
+SCR_ChimeraCharacter : "{816A594FAD3F711A}Prefabs/Characters/Factions/OPFOR/RHS_AFRF/MSV/VKPO_Summer/Character_RHS_RF_MSV_VKPO_S_Medic.et" {
+ ID "AC230926A0010068"
+ components {
+  BaseLoadoutManagerComponent "{520EA1D2DB11821E}" {
+   Slots {
+    LoadoutSlotInfo Hat { Prefab "{7600E06C18AC1B53}Prefabs/Characters/HeadGear/Helmet_LShZ/variants/SSO/Helmet_LShZ_new_OD_HC_Peltor_SSO.et" }
+    LoadoutSlotInfo ArmoredVest { Prefab "{4748E96320E4B517}Prefabs/Characters/Vests/Vest_AACPC/Vest_AACPC_NeckProtection_Groin_FG.et" }
+    LoadoutSlotInfo Vest { Prefab "{B9F1A4544C4D12E9}Prefabs/Characters/Vests/Vest_AACPC/variants/Vest_AACPC_arsarmaHSGI_FG_2.et" }
+    LoadoutSlotInfo Back { Prefab "{16C7AD0508F53A9B}Prefabs/Items/Equipment/Backpacks/backpack_Wartech_BB102/Backpack_Wartech_BB102_OD.et" }
+   }
+  }
+  CharacterWeaponSlotComponent "{520EA1D2F659CFAB}" {
+   WeaponTemplate "{BCEF9B6B525600EC}Prefabs/Weapons/Rifles/AK74M/variants/Rifle_AK74M_npz_b10m_b19n_tgpa_SSO.et"
+  }
+  ACR_InfantryKitComponent "{AC230926A0010068}" {
+   m_eKit 4
+   m_eRole 12
+  }
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AC230926A001007E}Prefabs/ACR/Infantry/MARSOC_AR.et"
+ Configurations {
+  ETResourceClass PC {}
+  ETResourceClass HEADLESS : PC {}
+ }
+}

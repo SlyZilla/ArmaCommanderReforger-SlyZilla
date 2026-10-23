@@ -287,8 +287,111 @@ class ACR_TestCommand : Managed
   return string.Format("possessing=%1 controlledAlive=%2 mainAlive=%3 mainIsNew=%4 mainToCrossroads=%5 main=%6", pc.IsPossessing(), ACR_Respawn.IsAlive(controlled), ACR_Respawn.IsAlive(main), main != m_RespawnOldMain, distance, officer);
  }
 
+ static const string DEATH_MESSAGE = "Soldier killed. Transferring to the next soldier...";
+ protected IEntity m_DeathVictim;
+ protected int m_iDeathFadePolls;
+
+ void CheckDeathFade(int phase)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  float opacity;
+  string message;
+  bool textVisible;
+  bool visible = pc && pc.ACR_DeathOverlayState(opacity, message, textVisible);
+  string details = string.Format("widgets %1 opacity %2 textVisible %3 message '%4'", visible, opacity, textVisible, message);
+  if (phase == 0) ACR_TestRegress.Check("death fade: owner RPC creates fullscreen widgets with a font and message", visible && opacity < 0.1 && message == DEATH_MESSAGE, details);
+  if (phase == 1) ACR_TestRegress.Check("death fade: opaque black hold displays the intended message", visible && opacity >= 0.99 && textVisible && message == DEATH_MESSAGE, details);
+  if (phase == 2) ACR_TestRegress.Check("death fade: completed fade removes the overlay", !visible && message.IsEmpty(), details);
+  if (phase == 3) ACR_TestRegress.Check("death fade: real possession death sends its message", visible && !message.IsEmpty(), details);
+  if (phase == 4) ACR_TestRegress.Check("death fade: black hold and message survive the real body transfer", visible && opacity >= 0.99 && textVisible && !message.IsEmpty() && pc.GetControlledEntity() != m_DeathVictim && ACR_Respawn.IsAlive(pc.GetControlledEntity()), details);
+  if (phase == 5) ACR_TestRegress.Check("death fade: real death transition finishes", !visible && message.IsEmpty() && pc && ACR_Respawn.IsAlive(pc.GetControlledEntity()), details);
+  if (phase == 6) ACR_TestRegress.Check("death fade: F8 on the dead body removes the overlay and returns to command", !visible && message.IsEmpty() && pc && pc.GetControlledEntity() == pc.GetMainEntity() && ACR_Respawn.IsAlive(pc.GetControlledEntity()), details);
+ }
+
+ void KillForDeathFade()
+ {
+  h.Kill(m_DeathVictim);
+  m_iDeathFadePolls = 0;
+  GetGame().GetCallqueue().CallLater(WaitForDeathFade, 100, false, false);
+ }
+
+ // ForceDeath starts native processing; the kill callback can arrive a second
+ // later. Measure overlay phases from its real owner event, not the kill request.
+ void WaitForDeathFade(bool cancel)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  m_iDeathFadePolls++;
+  if (!pc || !pc.ACR_DeathTransitionActive())
+  {
+   if (m_iDeathFadePolls < 30) GetGame().GetCallqueue().CallLater(WaitForDeathFade, 100, false, cancel);
+   else ACR_TestRegress.Abort("deathfade", "native death transition event not received");
+   return;
+  }
+  if (cancel)
+  {
+   ACR_TestRegress.Check("death fade: F8 fixture is attached to the actual dead body", pc.GetControlledEntity() == m_DeathVictim && !ACR_Respawn.IsAlive(m_DeathVictim));
+   pc.ACR_Request(ACR_ERequest.RETURN);
+   GetGame().GetCallqueue().CallLater(CheckDeathFade, 150, false, 6);
+   GetGame().GetCallqueue().CallLater(CheckNoLateDeathTransfer, 2300, false);
+  }
+  else
+  {
+   CheckDeathFade(3);
+   GetGame().GetCallqueue().CallLater(CheckDeathFade, 2100, false, 4);
+   GetGame().GetCallqueue().CallLater(CheckDeathFade, 3700, false, 5);
+  }
+ }
+
+ void CheckNoLateDeathTransfer()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  ACR_TestRegress.Check("death fade: F8 cancels the pending automatic transfer", pc && pc.GetControlledEntity() == pc.GetMainEntity() && !pc.IsPossessing() && !pc.ACR_DeathTransitionActive());
+ }
+
+ void TestDeathFade()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (!pc) { ACR_TestRegress.Abort("deathfade", "client player required"); return; }
+  if (h.m_Ticks == 5)
+  {
+   ACR_TestRegress.Check("death fade: live client fixture", ACR_Respawn.IsAlive(pc.GetControlledEntity()));
+   pc.ACR_SendDeathTransition(1.8, 1.2, DEATH_MESSAGE);
+   GetGame().GetCallqueue().CallLater(CheckDeathFade, 150, false, 0);
+   GetGame().GetCallqueue().CallLater(CheckDeathFade, 2300, false, 1);
+   GetGame().GetCallqueue().CallLater(CheckDeathFade, 3800, false, 2);
+  }
+  if (h.m_Ticks == 10)
+  {
+   m_DeathVictim = h.AlphaMember(0);
+   if (m_DeathVictim) pc.ACR_Request(ACR_ERequest.POSSESS, SCR_EntityHelper.EntityToRplId(m_DeathVictim));
+   GetGame().GetCallqueue().CallLater(CheckDeathPossession, 500, false);
+  }
+  if (h.m_Ticks == 16)
+  {
+   m_DeathVictim = pc.GetControlledEntity();
+   bool cancelFixture = pc.IsPossessing() && ACR_Respawn.IsAlive(m_DeathVictim);
+   ACR_TestRegress.Check("death fade: second possessed soldier is alive for F8 cancellation", cancelFixture);
+   if (cancelFixture)
+   {
+    h.Kill(m_DeathVictim);
+    m_iDeathFadePolls = 0;
+    GetGame().GetCallqueue().CallLater(WaitForDeathFade, 100, false, true);
+   }
+  }
+  if (h.m_Ticks == 24) ACR_TestRegress.Complete("deathfade", 12);
+ }
+
+ void CheckDeathPossession()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  bool possessed = pc && m_DeathVictim && pc.GetControlledEntity() == m_DeathVictim;
+  ACR_TestRegress.Check("death fade: real possession fixture", possessed);
+  if (possessed) KillForDeathFade();
+ }
+
  void TestRespawn()
  {
+  if (System.IsCLIParam("acrDeathFadeTest")) { TestDeathFade(); return; }
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!pc || !manager) return;
