@@ -5,10 +5,10 @@
 // contested and goes twice as fast with sappers / engineers or a construction truck, like FOB
 // upgrades. Mines are the game's own editable ones, bought with RP and armed with the game's
 // own trigger: AT mines in both lanes of the road through the field, AP mines off the roads,
-// minefield signs at the corners, and a red area on the owning side's command map. Disarmed
-// mines stay where they are, harmless (AiO Command Menu's soldier-level Disarm mines works the
-// same way). The owning side's AI never sets off its own mines unless -acrMinesRealistic 1;
-// its players do (they see the marked area).
+// minefield signs at the corners, and a red area on the owning side's command map. Disarm
+// mines switches mines off with the game's own disarming (like AiO Command Menu's soldier-level
+// Disarm mines) and lifts them. The owning side's AI never sets off its own mines unless
+// -acrMinesRealistic 1; its players do (they see the marked area).
 enum ACR_EMineKind
 {
  AP,
@@ -126,7 +126,7 @@ class ACR_Minefields
   if (kind == ACR_EMineKind.AP) return string.Format("Right-click: lay a %1 m AP minefield off the roads (%2 RP; click AP mines again to cancel)", (int)SIZE, Cost(kind));
   if (kind == ACR_EMineKind.AT) return string.Format("Right-click a road: AT mines in both lanes, across the area without one (%1 RP; click AT mines again to cancel)", Cost(kind));
   if (kind == ACR_EMineKind.MIXED) return string.Format("Right-click a road: AT mines on it, AP mines round it (%1 RP; click Mixed mines again to cancel)", Cost(kind));
-  return string.Format("Right-click: disarm every armed mine within %1 m; they stay there, harmless (%2 RP; click Disarm mines again to cancel)", (int)DISARM_RADIUS, Cost(kind));
+  return string.Format("Right-click: disarm and lift every armed mine within %1 m (%2 RP; click Disarm mines again to cancel)", (int)DISARM_RADIUS, Cost(kind));
  }
 
  static ACR_EMineKind KindOf(int command)
@@ -599,7 +599,8 @@ class ACR_Minefields
   return trigger && trigger.IsActivated() && !trigger.WasTriggered();
  }
 
- // The game's own disarming: the mine stays where it is, harmless.
+ // The game's own disarming, then the mine is lifted (deleted): players expect a cleared field
+ // to be empty.
  static void DisarmMine(IEntity mine)
  {
   if (!mine) return;
@@ -607,6 +608,7 @@ class ACR_Minefields
   if (trigger) trigger.DisarmTrigger();
   s_Owner.Remove(mine);
   foreach (ACR_Minefield field : s_Fields) field.m_aMines.RemoveItem(mine);
+  SCR_EntityHelper.DeleteEntityAndChildren(mine);
  }
 
  // ---------------------------------------------------------------- friendly fire

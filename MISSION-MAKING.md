@@ -172,9 +172,9 @@ Infantry squads can lay minefields and disarm mines on the commander's orders (m
 mines**, **AT mines**, **Mixed mines**, **Disarm mines**). A field is a 30 m square: AT mines go in
 both lanes of a road within 20 m of the click (across the area without one) and AP mines off the
 road; vanilla minefield signs mark the corners and the area shows on the owning side's command map.
-Orders cost 15 / 20 / 25 RP (AP / AT / mixed) or 3 RP to disarm every armed mine within 25 m
-(disarmed mines stay where they are, harmless); they are paid up front and refund the share not
-laid when called off. Work pauses while the site is contested and runs twice
+Orders cost 15 / 20 / 25 RP (AP / AT / mixed) or 3 RP to disarm and lift every armed mine within
+25 m (8 s per mine, 4 s with engineers); they are paid up front and refund the share not laid when
+called off. Work pauses while the site is contested and runs twice
 as fast with sappers / engineers or a construction truck. Fields are refused within 50 m of a base
 centre. The owning side's AI never sets off its own mines; its players do. USSR, Russian, SLA and
 FIA factions lay PMN-4 / TM-62M mines, the others M14 / M15. Hosts change the three options below

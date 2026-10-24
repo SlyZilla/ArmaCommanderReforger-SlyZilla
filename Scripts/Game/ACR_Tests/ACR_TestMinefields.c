@@ -2,7 +2,7 @@
 // road (AT mines on it, AP mines off it), refusals that charge nothing, options and setup rows,
 // a mixed field laid by Alpha (cost, every mine, signs, armed, its side's map area), the
 // friendly-fire rule with a soldier of each side dropped onto a mine, a cancelled order's
-// refund, Disarm mines switching the field off, and the AI commander laying one only with
+// refund, Disarm mines lifting the field, and the AI commander laying one only with
 // -acrMinesAI.
 class ACR_TestMinefields
 {
@@ -169,8 +169,7 @@ class ACR_TestMinefields
   {
    if (alpha.m_MinePlan && waited < 150) return;
    IEntity left = ACR_Minefields.NearestMine(s_vCenter, ACR_Minefields.DISARM_RADIUS, s_vCenter);
-   bool harmless = s_FriendMine && !ACR_Minefields.Armed(s_FriendMine) && !ACR_Minefields.Spent(s_FriendMine);
-   ACR_TestRegress.Check("minefields: every armed mine round the point disarmed, left in place", !alpha.m_MinePlan && !left && ACR_Minefields.CountMines("US") == 0 && harmless, string.Format("after %1 s, order '%2', US mines %3, our mine still there and off %4", waited, alpha.m_Order, ACR_Minefields.CountMines("US"), harmless));
+   ACR_TestRegress.Check("minefields: every armed mine round the point disarmed and lifted", !alpha.m_MinePlan && !left && ACR_Minefields.CountMines("US") == 0 && !s_FriendMine, string.Format("after %1 s, order '%2', US mines %3, our last mine gone %4", waited, alpha.m_Order, ACR_Minefields.CountMines("US"), !s_FriendMine));
    NextStep(tick);
    return;
   }
