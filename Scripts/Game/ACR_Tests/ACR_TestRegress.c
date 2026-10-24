@@ -281,7 +281,7 @@ class ACR_TestRegress
    {
     vector along = nodes[i] - nodes[i - 1];
     along[1] = 0;
-    if (along.Length() < 40) continue;
+    if (along.Length() < 10) continue;
     along.Normalize();
     vector centre = (nodes[i] + nodes[i - 1]) * 0.5;
     vector side = Vector(along[2], 0, -along[0]);
