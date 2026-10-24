@@ -49,6 +49,7 @@ class ACR_Base : GenericEntity
  ref ACR_FobSlot m_FobDefences;     // the defences upgrade (ACR_FobDefences)
  float m_fFobSlotsLastTick;
  bool m_bHqLost;                    // built FOB whose HQ was destroyed: offline, capturable, rebuildable
+ bool m_bPocket;                    // FIA pocket of resistance (ACR_Pockets) until someone captures it
 
  // A built FOB keeps its upgrades when its HQ is destroyed (Jacob, 18 Oct): no deployment,
  // reinforcement, services, deliveries or upgrades until an Establish FOB order rebuilds the HQ.
@@ -113,6 +114,13 @@ class ACR_Base : GenericEntity
  {
   if (m_bIncome) return string.Format("%1 [%2]", m_sName, m_iValue);
   return m_sName;
+ }
+
+ // The owner as this faction knows it: an FIA pocket looks unclaimed until found.
+ string OwnerSeenBy(string factionKey)
+ {
+  if (m_bPocket && m_sOwner != factionKey && !m_aDetectedBy.Contains(factionKey)) return "";
+  return m_sOwner;
  }
 
  bool IsVisibleTo(string factionKey)

@@ -42,6 +42,16 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrSlopesTest")) ACR_TestSlopes.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
+  // -acrPocketsTest: FIA pockets of resistance (ACR_TestPockets).
+  if (System.IsCLIParam("acrPocketsTest")) ACR_TestPockets.Run(seconds);
+ }
+
+ // Tests keep their worlds as authored; the pocket test and the balance soaks get pockets.
+ override string Pockets()
+ {
+  if (System.IsCLIParam("acrPocketsTest") || System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrLongSoakTest")) return "few";
+  if (System.IsCLIParam("acrSetupTest") || System.IsCLIParam("acrSetupUiTest") || System.IsCLIParam("acrSetupGenTest") || System.IsCLIParam("acrSetupMapTest")) return "off";
+  return "";
  }
 
  override string SkirmishLayout()

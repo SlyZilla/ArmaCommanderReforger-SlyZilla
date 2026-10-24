@@ -204,7 +204,7 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"west", "east", "layout", "seed", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice"};
+  array<string> keys = {"west", "east", "layout", "seed", "pockets", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice"};
   foreach (string key : keys)
   {
    if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
@@ -228,6 +228,7 @@ class ACR_Setup
   if (key == "east") return "Red side";
   if (key == "layout") return "Battlefield";
   if (key == "seed") return "Layout seed";
+  if (key == "pockets") return "FIA resistance";
   if (key == "threat") return "Threat";
   if (key == "pricing") return "Prices";
   if (key == "ai") return "AI commanders";
@@ -275,6 +276,7 @@ class ACR_Setup
    ACR_FactionSelection.Candidates(keys);
    foreach (string candidate : keys) if (candidate != other) values.Insert(candidate);
   }
+  else if (key == "pockets") values = {"few", "many", "off"};
   else if (key == "threat") values = {"low", "normal", "high"};
   else if (key == "pricing") values = {"stepped", "stock"};
   else if (key == "ai")
@@ -297,6 +299,7 @@ class ACR_Setup
 
  static string Option(string key)
  {
+  if (key == "pockets") return "acrPockets";
   if (key == "threat") return "acrThreat";
   if (key == "pricing") return "acrPricing";
   if (key == "ai") return "acrAI";
@@ -342,6 +345,7 @@ class ACR_Setup
   value.ToLower();
   if (value == "")
   {
+   if (key == "pockets") return "few";
    if (key == "deployment") return "military";
    if (key == "reinforcement") return "settlements";
    if (key == "fobservices") return "supplies";
@@ -394,6 +398,9 @@ class ACR_Setup
    return ACR_FactionSelection.DisplayName(side) + " only";
   }
   if (key == "income") return "x" + value;
+  if (key == "pockets" && value == "few") return "a few pockets (whole/half map)";
+  if (key == "pockets" && value == "many") return "many pockets (whole/half map)";
+  if (key == "pockets" && value == "off") return "off";
   if (key == "deployment" && value == "military") return "military bases / HQs / FOBs";
   if (key == "deployment" && value == "hq") return "HQs / FOBs only";
   if (key == "deployment" && value == "all") return "all deployment-enabled points";

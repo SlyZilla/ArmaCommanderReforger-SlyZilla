@@ -42,6 +42,8 @@ class ACR_OrderDisplay : Managed
   if (owner.IsEmpty()) return new Color(0.85, 0.72, 0.1, alpha);
   Faction mine = SCR_FactionManager.SGetLocalPlayerFaction();
   if (mine && mine.GetFactionKey() == owner) return new Color(0.2, 0.5, 1.0, alpha);
+  // FIA is only ever a third party here (pockets are off when FIA plays a main side).
+  if (owner == ACR_Pockets.FACTION) return new Color(0.2, 0.7, 0.25, alpha);
   return new Color(0.9, 0.15, 0.15, alpha);
  }
 

@@ -144,13 +144,18 @@ class ACR_Skirmish : GenericEntity
   s_bApplied = true;
   ACR_FactionSelection.Apply();
   // A generated layout (aca-f07) replaces the hand-built one, at any size.
+  bool generated = false;
   if (ACR_Generator.Wanted())
   {
    ACR_Generator.Build();
-   if (ACR_Generator.Built() && !ACR_Generator.s_Sites.IsEmpty()) return;
+   generated = ACR_Generator.Built() && !ACR_Generator.s_Sites.IsEmpty();
   }
-  ACR_Skirmish layout = Choose();
-  if (layout) layout.Apply();
+  if (!generated)
+  {
+   ACR_Skirmish layout = Choose();
+   if (layout) layout.Apply();
+  }
+  ACR_Pockets.Apply();
  }
 
  void Apply()

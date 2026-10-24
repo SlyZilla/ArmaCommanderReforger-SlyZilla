@@ -2,6 +2,8 @@
 
 ## 0.5.7 — unreleased
 
+- FIA pockets of resistance: on whole-map and half-map battles a few empty bases away from both HQs start held by an FIA garrison (bigger at military sites, which also keep a small patrol). They look unclaimed until your units get close, so a squad sent to grab an empty village may have a fight on its hands. Clear one to capture it. New setup row "FIA resistance": few (default), many or off.
+
 - AI commanders keep spending in long games: the squad cap counts only fighting units (trucks, ambulances and 1-man remnants no longer fill it), and badly hurt idle squads walk back from the front to a quiet base to refill instead of staying at their post at a third of their strength.
 
 - Fixed late-game match stalls and infinite supply truck pathfinding loops: AI commanders scale active attack fronts (up to 8) and unit caps on large maps when holding surplus territory and RP, dismounted infantry no longer embark on multi-kilometer cross-island grabs on foot, and supply trucks en route to bases avoid redundant 15-second route recalculations.

@@ -19,4 +19,6 @@ class ACR_TestHooks
  void ScenarioSecond(int seconds) {}
  // Layout a skirmish test asks for, "" = none.
  string SkirmishLayout() { return ""; }
+ // FIA pockets a test asks for (few / many / off), "" = the host option (ACR_Pockets).
+ string Pockets() { return ""; }
 }

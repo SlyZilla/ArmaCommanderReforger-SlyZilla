@@ -456,7 +456,8 @@ class ACR_MapFeed
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (!base.IsVisibleTo(frame.m_sKey)) continue;
-   string detail = manager.m_Bases.Describe(base);
+   string detail = manager.m_Bases.Describe(base, frame.m_sKey);
+   string owner = base.OwnerSeenBy(frame.m_sKey);
    if (base.m_bBuilt && base.m_sOwner == frame.m_sKey)
    {
     detail += ACR_FobSupply.Describe(base);
@@ -464,7 +465,7 @@ class ACR_MapFeed
    }
    frame.m_BasePos.Insert(base.GetOrigin());
    frame.m_BaseNames.Insert(base.GetLabel());
-   frame.m_BaseOwners.Insert(base.m_sOwner);
+   frame.m_BaseOwners.Insert(owner);
    frame.m_BaseDetails.Insert(detail);
    frame.m_BaseRadii.Insert(base.m_fRadius);
    int flag = 0;
@@ -486,8 +487,8 @@ class ACR_MapFeed
     frame.m_BaseSupply.Insert(slotState);
     slotSig += slotState.ToString() + ",";
    }
-   sig += base.GetLabel() + "|" + base.m_sOwner + "|" + detail + "|" + flag.ToString() + "|" + slotSig + ";";
-   bytes += 12 + base.GetLabel().Length() + base.m_sOwner.Length() + detail.Length() + 4 * (8 + ACR_FobSlots.UPGRADE_COUNT);
+   sig += base.GetLabel() + "|" + owner + "|" + detail + "|" + flag.ToString() + "|" + slotSig + ";";
+   bytes += 12 + base.GetLabel().Length() + owner.Length() + detail.Length() + 4 * (8 + ACR_FobSlots.UPGRADE_COUNT);
   }
   frame.m_sBasesSig = sig;
   frame.m_Bytes.Set("bases", bytes + 28);

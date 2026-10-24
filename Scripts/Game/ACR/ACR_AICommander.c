@@ -1033,10 +1033,16 @@ class ACR_AICommander : Managed
   return base.IsVisibleTo(m_sFaction);
  }
 
+ // The owner as this commander knows it: an unfound FIA pocket looks empty (ACR_Pockets).
+ protected string SeenOwner(ACR_Base base)
+ {
+  return base.OwnerSeenBy(m_sFaction);
+ }
+
  bool HasKnownEnemyBase()
  {
   foreach (ACR_Base base : ACR_Base.s_All)
-   if (!base.m_sOwner.IsEmpty() && base.m_sOwner != m_sFaction && Visible(base)) return true;
+   if (!SeenOwner(base).IsEmpty() && base.m_sOwner != m_sFaction && Visible(base)) return true;
   return false;
  }
 
@@ -1053,7 +1059,7 @@ class ACR_AICommander : Managed
   float best = float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || base == except) continue;
+   if (base.m_sOwner == m_sFaction || SeenOwner(base).IsEmpty() || !Visible(base) || base == except) continue;
    float d = vector.DistanceXZ(base.GetOrigin(), point);
    if (d < best) { best = d; nearest = base; }
   }
@@ -1698,7 +1704,7 @@ class ACR_AICommander : Managed
   // Big maps (Everon soak 5 Oct: 3 grabs at once left each side with 7 of 56 bases after
   // 18 min): one grab per 6 empty bases in sight, 3 to 8.
   int unclaimed;
-  foreach (ACR_Base open : ACR_Base.s_All) if (open.m_sOwner.IsEmpty() && Visible(open)) unclaimed++;
+  foreach (ACR_Base open : ACR_Base.s_All) if (SeenOwner(open).IsEmpty() && Visible(open)) unclaimed++;
   int maxGrabs = Math.Clamp(unclaimed / 6, MAX_GRABS, MAX_GRABS_BIG);
   while (grabs < maxGrabs && !free.IsEmpty() && !PlanBudgetSpent())
   {
@@ -1707,7 +1713,7 @@ class ACR_AICommander : Managed
    float bestTime = float.MAX;
    foreach (ACR_Base candidate : ACR_Base.s_All)
    {
-    if (!candidate.m_sOwner.IsEmpty() || !Visible(candidate) || IsAttacking(candidate) || CoolingDown(candidate)) continue;
+    if (!SeenOwner(candidate).IsEmpty() || !Visible(candidate) || IsAttacking(candidate) || CoolingDown(candidate)) continue;
     foreach (ACR_Squad squad : free)
     {
      float dist = vector.DistanceXZ(PositionOf(squad), candidate.GetOrigin());
@@ -1768,10 +1774,13 @@ class ACR_AICommander : Managed
   {
    foreach (ACR_Base base : ACR_Base.s_All)
    {
-    if (base.m_sOwner == m_sFaction || base.m_sOwner.IsEmpty() || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
+    if (base.m_sOwner == m_sFaction || SeenOwner(base).IsEmpty() || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
     float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
     float dist = NearestFreeDistance(free, base.GetOrigin());
+    // FIA pockets: cleared when in the way (near our own bases), after the real enemy.
+    if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
     float score = cost * (dist / 1000 + 0.1);
+    if (base.m_bPocket) score *= POCKET_SCORE;
     if (base.m_bContested || (DefenceOf(base) <= UNKNOWN_DEFENCE + 2 && dist < 1200))
      score *= 0.65;
     if (base.m_bBuilt)
@@ -2041,6 +2050,8 @@ class ACR_AICommander : Managed
  static const int SAVE_MIN_UNITS = 4;            // save RP for a pricier unit only with this many fighting units out
  static const float FOB_DEPLOY_MIN_FRONT = 500;  // m: a built FOB closer to an enemy/neutral base than this isn't a deploy point
  static const float REINFORCE_RETRY_MS = 120000; // a squad whose AI reinforce failed waits this long before another try
+ static const float POCKET_IN_THE_WAY = 1500; // m: a found FIA pocket this close to one of our bases is a target
+ static const float POCKET_SCORE = 2.5;          // its attack score is multiplied by this (lower = sooner)
  static const float REFIT_WALK_RATIO = 0.5;       // idle squads below this strength walk back to a quiet base to refill
  static const float REFIT_GIVE_UP_MS = 900000;   // a walk back to refill that hasn't arrived by then is dropped
  protected ACR_Base m_ReserveBase;
@@ -2121,6 +2132,13 @@ class ACR_AICommander : Managed
    if (d < best) { best = d; nearest = base; }
   }
   return nearest;
+ }
+
+ protected float NearestOwnDistance(vector point)
+ {
+  ACR_Base nearest = NearestOwnBase(point);
+  if (!nearest) return float.MAX;
+  return vector.DistanceXZ(nearest.GetOrigin(), point);
  }
 
  static bool IsServiceVehicle(ACR_RequisitionEntry entry)
@@ -2659,7 +2677,7 @@ class ACR_AICommander : Managed
    }
    ACR_Base target = attack.m_Target;
    bool won = target && (target.m_sOwner == m_sFaction || target.m_bRetired);
-   if (attack.m_bGrab && target && !target.m_sOwner.IsEmpty() && !won)
+   if (attack.m_bGrab && target && !SeenOwner(target).IsEmpty() && !won)
    {
     PrintFormat("[ACR] AI %1: %2 was taken first, grab cancelled", m_sFaction, target.m_sName);
     foreach (ACR_Squad late : attack.m_Squads) late.m_iAITask = ACR_EAITask.FREE;

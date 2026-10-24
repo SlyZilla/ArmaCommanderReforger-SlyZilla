@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost"};
   foreach (string name : names)
   {
    string value;
@@ -90,6 +90,8 @@ class ACR_MissionHeader : SCR_MissionHeader
  string m_sAcrLayout;
  [Attribute("", UIWidgets.EditBox, "Skirmish size: full, half or flashpoint (-acrSize)")]
  string m_sAcrSize;
+ [Attribute("", UIWidgets.EditBox, "FIA pockets of resistance on whole/half maps: few (default), many or off (-acrPockets)")]
+ string m_sAcrPockets;
  [Attribute("", UIWidgets.EditBox, "Faction pair: vanilla, ru_us, ru_ua, us_ua or two faction keys WEST,EAST (-acrFactions)")]
  string m_sAcrFactions;
  [Attribute("", UIWidgets.EditBox, "Put every player on this faction key, or any (-acrPlayers)")]
@@ -144,6 +146,7 @@ class ACR_MissionHeader : SCR_MissionHeader
  {
   Text(values, "acrLayout", m_sAcrLayout);
   Text(values, "acrSize", m_sAcrSize);
+  Text(values, "acrPockets", m_sAcrPockets);
   Text(values, "acrFactions", m_sAcrFactions);
   Text(values, "acrPlayers", m_sAcrPlayers);
   Text(values, "acrThreat", m_sAcrThreat);

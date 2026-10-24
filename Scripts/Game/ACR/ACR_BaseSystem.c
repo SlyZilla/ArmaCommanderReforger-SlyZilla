@@ -209,6 +209,13 @@ class ACR_BaseSystem : Managed
    }
    if (!base.m_sOwner.IsEmpty() && key != base.m_sOwner)
    {
+    // An FIA pocket is found once its garrison would deploy against you.
+    if (base.m_bPocket && distance <= SPAWN_RANGE && !base.m_aDetectedBy.Contains(key))
+    {
+     base.m_aDetectedBy.Insert(key);
+     manager.NotifyFaction(key, string.Format("FIA resistance at %1", base.m_sName));
+     PrintFormat("[ACR] POCKETS %1 found by %2", base.m_sName, key);
+    }
     if (distance <= SPAWN_RANGE) enemyNear = true;
     if (distance <= SPAWN_RANGE + 300) enemyApproaching = true;
     if (distance <= DESPAWN_RANGE) enemyInRange = true;
@@ -285,6 +292,7 @@ class ACR_BaseSystem : Managed
   DespawnGarrison(base, false);
   DespawnPatrol(base, false);
   base.m_sOwner = factionKey;
+  base.m_bPocket = false;
   base.m_sCapturer = "";
   base.m_fScore = 100;
   base.m_bContested = false;
@@ -457,6 +465,12 @@ class ACR_BaseSystem : Managed
 
  static int PatrolSize(ACR_Base base)
  {
+  // FIA pockets at military sites walk a small patrol (ACR_Pockets).
+  if (base && base.m_bPocket && !base.m_bRetired)
+  {
+   if (base.m_iValue >= 3) return 2;
+   return 0;
+  }
   if (s_bNoFobPatrols || !base || !base.FobOnline() || base.m_sOwner.IsEmpty() || base.m_iHousingGarrison <= 0) return 0;
   if (base.m_iHousingGarrison >= 19) return 4;
   return 2;
@@ -543,11 +557,18 @@ class ACR_BaseSystem : Managed
  }
 
  // One line for the command panel.
- string Describe(ACR_Base base)
+ // viewer: the faction reading it (an unfound FIA pocket reads as unclaimed); "" = the truth.
+ string Describe(ACR_Base base, string viewer = "")
  {
   string owner = base.m_sOwner;
+  int garrison = base.m_iGarrisonLeft;
+  if (viewer != "" && owner != "" && base.OwnerSeenBy(viewer) == "")
+  {
+   owner = "";
+   garrison = 0;
+  }
   if (owner.IsEmpty()) owner = "Unclaimed";
-  string text = string.Format("%1 | garrison %2", owner, base.m_iGarrisonLeft);
+  string text = string.Format("%1 | garrison %2", owner, garrison);
   if (ACR_LogisticsRules.CanDeploy(base)) text += " | deploy new units";
   if (ACR_LogisticsRules.CanReinforce(base)) text += " | infantry replacements";
   if (base.m_bBuilt && base.m_bHqLost) text += " | HQ DESTROYED: FOB offline until rebuilt";

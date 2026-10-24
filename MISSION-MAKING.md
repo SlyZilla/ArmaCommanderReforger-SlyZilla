@@ -583,6 +583,7 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 |---|---|
 | `m_sAcrLayout` | `-acrLayout` |
 | `m_sAcrSize` | `-acrSize` |
+| `m_sAcrPockets` | `-acrPockets few` (default), `many`, `off` |
 | `m_sAcrFactions` | `-acrFactions` |
 | `m_sAcrPlayers` | `-acrPlayers` |
 | `m_sAcrThreat` | `-acrThreat` |
@@ -696,6 +697,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; finite stock in either mode: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (finite stock in either mode: rare units get quadruple base stock, other units double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
 | `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Hand-built worlds without a matching layout play in full; generated layouts support all three sizes |
+| `-acrPockets few` / `many` / `off` | FIA pockets of resistance (default few with the setup screen, off without it): on whole-map and half-map battles, neutral bases away from both starting bases start held by an FIA garrison (villages 4-6 men, industry 6-8, military sites 8-10 plus a 2-man patrol). Few = 7 on a whole map, 3 on a half; many = 12 / 6; never on flashpoints, or when FIA plays a main side. Other sides see a pocket as unclaimed until one of their units comes within 400 m. Whoever clears one captures the base |
 | `-acrLayout <name>` | Play this `ACR_Skirmish` layout (spaces may be written as `_`); overrides `-acrSize`. `-acrLayout generated` builds a layout from the map instead (see Generated layouts) |
 | `-acrSeed N` | Seed of a generated layout: the same seed, size and terrain data give the same plan within a version (before manual moves). Unset or 0 = a new random layout each match |
 | `-acrPricing stepped` / `stock` | Overrides every side's `m_ePricing` (stepped prices or fixed stock) |
