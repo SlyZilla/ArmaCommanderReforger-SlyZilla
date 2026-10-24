@@ -398,7 +398,7 @@ class ACR_RTSCameraManager : Managed
 					if (m_bRoadblockMode) m_RoadblockBtn.SetText("Roadblock [ON]");
 					else m_RoadblockBtn.SetText("Roadblock");
 				}
-				if (m_bRoadblockMode) ShowToast("Roadblock mode armed: Right-click road to construct (20 RP)");
+				if (m_bRoadblockMode) ShowToast(string.Format("Roadblock mode armed: Right-click road to construct (%1 RP or %2 truck supplies)", ACR_Roadblocks.Cost(ACR_ERoadblockType.MEDIUM), ACR_Roadblocks.Supplies(ACR_ERoadblockType.MEDIUM)));
 				else ShowToast("Roadblock mode off");
 				return;
 		}

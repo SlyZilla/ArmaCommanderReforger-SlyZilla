@@ -4350,7 +4350,7 @@ class ACR_AICommander : Managed
 
   if (!candidate) return;
 
-  if (candidate.EstablishRoadblock(targetRoadPos, targetYaw))
+  if (candidate.EstablishRoadblock(targetRoadPos, targetYaw, ACR_ERoadblockType.MEDIUM, false))
   {
    candidate.m_iAITask = ACR_EAITask.ROADBLOCK;
    PrintFormat("[ACR] AI %1: dispatched %2 to establish roadblock on approach to %3 at %4", m_sFaction, candidate.GetName(), frontlineBase.m_sName, targetRoadPos);
