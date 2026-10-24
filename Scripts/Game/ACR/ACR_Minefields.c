@@ -137,6 +137,19 @@ class ACR_Minefields
   return ACR_EMineKind.AP;
  }
 
+ // The order a minefield cursor mode arms (-1: not a minefield cursor).
+ static int KindOfCursor(int cursorMode)
+ {
+  switch (cursorMode)
+  {
+   case ACR_ECursorMode.MINES_AP: return ACR_EMineKind.AP;
+   case ACR_ECursorMode.MINES_AT: return ACR_EMineKind.AT;
+   case ACR_ECursorMode.MINES_MIXED: return ACR_EMineKind.MIXED;
+   case ACR_ECursorMode.DISARM_MINES: return ACR_EMineKind.DISARM;
+  }
+  return -1;
+ }
+
  static bool IsRequest(int command)
  {
   return command == ACR_ERequest.ORDER_MINES_AP || command == ACR_ERequest.ORDER_MINES_AT || command == ACR_ERequest.ORDER_MINES_MIXED || command == ACR_ERequest.ORDER_DISARM_MINES;
@@ -156,7 +169,9 @@ class ACR_Minefields
  }
 
  // The server side of the order (requests, AI commander, tests): plan the site, then the
- // squad pays and starts. false + refusal, nothing charged, when it can't.
+ // squad pays and starts; like any new order it replaces the squad's current job (laying,
+ // a FOB or roadblock build), which refunds itself. false + refusal, nothing charged, when it
+ // can't.
  static bool Order(ACR_Squad squad, ACR_EMineKind kind, vector point, out string refusal)
  {
   ACR_MinePlan plan = Plan(squad, kind, point, refusal);
@@ -185,12 +200,6 @@ class ACR_Minefields
   if (squad.IsVehicle())
   {
    refusal = "vehicles cannot lay or disarm mines";
-   return null;
-  }
-  ACR_EOrderState state = squad.OrderState();
-  if (squad.m_MinePlan || state == ACR_EOrderState.BUILD_FOB || state == ACR_EOrderState.BUILD_ROADBLOCK)
-  {
-   refusal = "already building";
    return null;
   }
   string faction = squad.GetFaction().GetFactionKey();

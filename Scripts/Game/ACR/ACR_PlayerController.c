@@ -1508,7 +1508,7 @@ modded class SCR_PlayerController
   if (!canRoadblock && m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK)
    m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   bool canMines = friendly && (modeAndFlags & 128) != 0 && m_ACR_Data.m_Selected.Count() <= 1;
-  if (!canMines && m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP)
+  if (!canMines && m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES)
    m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   string hint;
   if (!friendly) hint = "Player group: not commandable";
@@ -1520,7 +1520,7 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) hint = "Right-click the destination: a free truck nearby picks them up and drops them there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) hint = "Right-click a clear site: establish forward base (click Establish FOB again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK) hint = "Right-click a road: establish fortified roadblock (20 RP; click Roadblock again to cancel)";
-  else if (m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP) hint = ACR_Minefields.Hint(m_ACR_CursorMode - ACR_ECursorMode.MINES_AP);
+  else if (m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES) hint = ACR_Minefields.Hint(ACR_Minefields.KindOfCursor(m_ACR_CursorMode));
   else hint = "Right-click: move there";
   string title = m_ACR_Data.m_GroupNames[index];
   string detail = m_ACR_GroupDetails[index];

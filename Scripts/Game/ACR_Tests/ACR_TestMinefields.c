@@ -6,12 +6,13 @@
 // -acrMinesAI.
 class ACR_TestMinefields
 {
- static const int CHECKS = 29;
+ static const int CHECKS = 30;
  static int s_iStep;
  static int s_iStepAt;
  static int s_iRP;
  static vector s_vSite;
  static vector s_vCenter;
+ static vector s_vRoad;
  static int s_iPlanned;
  static ACR_Minefield s_Field;
  static ref array<IEntity> s_Signs = {};
@@ -157,10 +158,16 @@ class ACR_TestMinefields
    alpha.Halt("Holding");
    ACR_TestRegress.Check("minefields: cancelled before any mine, refunded in full", ordered && charged == before - 15 && us.m_iRP == before && !alpha.m_MinePlan && ACR_Minefields.CountFields("US") == fields && alpha.m_Order == "Holding", string.Format("%1 rp %2 -> %3 -> %4 '%5'", why, before, charged, us.m_iRP, alpha.m_Order));
 
-   // Disarm mines over the field.
+   // Like any new order, a mine order replaces a roadblock build and refunds it...
+   before = us.m_iRP;
+   bool building = alpha.EstablishRoadblock(s_vRoad, 0);
+   bool replaced = building && alpha.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK && ACR_Minefields.Order(alpha, ACR_EMineKind.AP, other, why);
+   ACR_TestRegress.Check("minefields: a mine order replaces a roadblock build and refunds it", replaced && alpha.OrderState() == ACR_EOrderState.LAY_MINES && us.m_iRP == before - 15, string.Format("%1 building %2, rp %3 -> %4, order '%5'", why, building, before, us.m_iRP, alpha.m_Order));
+
+   // ... and Disarm mines over the field replaces that laying order (nothing laid: all 15 back).
    s_iRP = us.m_iRP;
    bool disarming = ACR_Minefields.Order(alpha, ACR_EMineKind.DISARM, s_vCenter, why);
-   ACR_TestRegress.Check("minefields: Disarm mines charges 3 RP and starts", disarming && us.m_iRP == s_iRP - 3 && alpha.OrderState() == ACR_EOrderState.DISARM_MINES, string.Format("%1 '%2'", why, alpha.m_Order));
+   ACR_TestRegress.Check("minefields: Disarm mines replaces the laying order, refunds it and charges 3 RP", disarming && us.m_iRP == s_iRP + 15 - 3 && alpha.OrderState() == ACR_EOrderState.DISARM_MINES && alpha.m_MinePlan.m_eKind == ACR_EMineKind.DISARM, string.Format("%1 rp %2 -> %3 '%4'", why, s_iRP, us.m_iRP, alpha.m_Order));
    NextStep(tick);
    return;
   }
@@ -184,9 +191,11 @@ class ACR_TestMinefields
    // AI commander: off by default, on with -acrMinesAI 1.
    us.m_iRP = 500;
    ACR_AICommander ai = new ACR_AICommander(manager, "US");
+   ai.StartTickForTest();
    ai.ManageMinefields();
    ACR_TestRegress.Check("minefields: the AI commander lays none without -acrMinesAI", !LayingFor(manager, "US"));
    ACR_Options.Set("acrMinesAI", "1");
+   ai.StartTickForTest();
    ai.ManageMinefields();
    ACR_Squad layer = LayingFor(manager, "US");
    string where = "none";
@@ -211,6 +220,7 @@ class ACR_TestMinefields
   vector road, roadDir;
   float width;
   bool found = FindRoad(alpha.GetAnchor().GetOrigin(), road, roadDir, width);
+  s_vRoad = road;
   ACR_TestRegress.Check("minefields: a road for the plan checks", found, road.ToString());
   if (!found)
   {

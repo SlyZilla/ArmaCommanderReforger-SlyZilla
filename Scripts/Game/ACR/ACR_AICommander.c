@@ -4194,6 +4194,7 @@ class ACR_AICommander : Managed
  }
 
  void SetFobEvalTimeForTest(float time) { m_fNextFobEval = time; }
+ void StartTickForTest() { m_iTickStarted = System.GetTickCount(); }
  ACR_Squad FobBuilder() { return m_FobBuilder; }
  ACR_Squad FobEscort() { return m_FobEscort; }
  vector FobTargetSite() { return m_vFobTargetSite; }
@@ -4339,7 +4340,8 @@ class ACR_AICommander : Managed
    layer.m_iAITask = ACR_EAITask.POSTED;
    PrintFormat("[ACR] AI %1: %2 available for reassignment after laying mines", m_sFaction, layer.GetName());
   }
-  if (!ACR_Minefields.AIUses()) return;
+  // Planning a field queries the roads and terrain: it waits for a tick with budget left.
+  if (!ACR_Minefields.AIUses() || PlanBudgetSpent()) return;
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextMinefieldEval) return;
   m_fNextMinefieldEval = now + 30000;

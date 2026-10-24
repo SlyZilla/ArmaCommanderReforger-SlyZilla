@@ -28,7 +28,7 @@ enum ACR_EPanelAction
  FOB_BUILD,
  ESTABLISH_FOB,
  ROADBLOCK,
- MINES_AP,                // the minefield buttons, in ACR_EMineKind order
+ MINES_AP,                // the minefield buttons
  MINES_AT,
  MINES_MIXED,
  DISARM_MINES,
@@ -49,7 +49,7 @@ enum ACR_ECursorMode
  GARRISON,
  ESTABLISH_FOB,
  ROADBLOCK,
- MINES_AP,    // ACR_EMineKind order
+ MINES_AP,    // MINES_AP..DISARM_MINES: the minefield orders (ACR_Minefields.KindOfCursor)
  MINES_AT,
  MINES_MIXED,
  DISARM_MINES
@@ -557,7 +557,7 @@ class ACR_CommandPanel : Managed
   foreach (int mineKind, SCR_ButtonTextComponent mineButton : m_MineButtons)
   {
    if (!mineButton) continue;
-   if (cursorMode == ACR_ECursorMode.MINES_AP + mineKind) mineButton.SetText("[" + ACR_Minefields.Button(mineKind) + "]");
+   if (ACR_Minefields.KindOfCursor(cursorMode) == mineKind) mineButton.SetText("[" + ACR_Minefields.Button(mineKind) + "]");
    else mineButton.SetText(ACR_Minefields.Button(mineKind));
   }
   if (m_Hint) m_Hint.SetText(hint);

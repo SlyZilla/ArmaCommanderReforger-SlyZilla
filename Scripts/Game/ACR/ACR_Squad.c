@@ -1314,10 +1314,11 @@ class ACR_Squad : Managed
 
  // ================================================================ minefields (0.5.7)
  // ACR_Minefields plans the order; the squad pays, walks to the near edge of the site and
- // works there: mines go in (or are disarmed) as the work progresses.
+ // works there: mines go in (or are disarmed) as the work progresses. NewOrder calls off and
+ // refunds whatever job it had.
  bool LayMinefield(ACR_MinePlan plan)
  {
-  if (!plan || m_MinePlan) return false;
+  if (!plan) return false;
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager || !manager.m_Bases.Spend(plan.m_sFaction, plan.m_iCost)) return false;
 
