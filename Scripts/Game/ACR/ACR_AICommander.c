@@ -1715,8 +1715,10 @@ class ACR_AICommander : Managed
    grab.Add(runner, empty.GetOrigin(), -1);
    grab.m_iStartStrength = runner.Strength();
    // Everon soak 5 Oct: most grabs of bases 2-3 km away timed out on the way at 480 s.
-   // Allow the walk (or drive) there at about 1.2 m/s, plus 3 minutes (capped at 10 min).
-   grab.m_fGrabSeconds = Math.Min(600, vector.DistanceXZ(PositionOf(runner), empty.GetOrigin()) / 1.2 + 180);
+   // Allow the walk (or drive) there at about 1.2 m/s, plus 3 minutes. Foot grabs are already
+   // limited to 1500 m above; only mounted grabs, which can be far but fast, cap at 10 min.
+   grab.m_fGrabSeconds = vector.DistanceXZ(PositionOf(runner), empty.GetOrigin()) / 1.2 + 180;
+   if (runner.IsMounted()) grab.m_fGrabSeconds = Math.Min(600, grab.m_fGrabSeconds);
    runner.m_iAITask = ACR_EAITask.ATTACK;
    runner.m_AITarget = empty;
    runner.SetMode(ACR_EMoveMode.FAST);
