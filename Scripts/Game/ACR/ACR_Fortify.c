@@ -39,23 +39,40 @@ class ACR_FortifyPos : Managed
 	ref array<float> m_aPieceYaw = {};
 	ref array<ResourceName> m_aPiecePrefab = {};
 	ref array<bool> m_aPieceWall = {};     // sandbags (false: dressing)
+	bool m_bBlocked;                       // a main piece clipped something: drop the position
 
-	void Add(vector pos, float yaw, ResourceName prefab, bool wall)
+	// Adds a piece unless its footprint clips a world object or (dressing) another piece of
+	// this position. A main piece that does not fit blocks the whole position.
+	bool Add(vector pos, float yaw, ResourceName prefab, bool wall, bool main = false)
 	{
-		if (prefab.IsEmpty()) return;
+		if (prefab.IsEmpty()) return false;
 		pos[1] = GetGame().GetWorld().GetSurfaceY(pos[0], pos[2]);
+		if (!ACR_Fortify.Fits(this, pos, yaw, prefab, wall))
+		{
+			if (main) m_bBlocked = true;
+			return false;
+		}
 		m_aPiecePos.Insert(pos);
 		m_aPieceYaw.Insert(yaw);
 		m_aPiecePrefab.Insert(prefab);
 		m_aPieceWall.Insert(wall);
+		return true;
 	}
 
 	// A sandbag piece facing a direction, set by hand: a couple of degrees and centimetres off
 	// (more and the pieces of one wall visibly step).
-	void AddWall(vector pos, vector facing, ResourceName prefab)
+	bool AddWall(vector pos, vector facing, ResourceName prefab, bool main = false)
 	{
 		vector at = pos + facing * (ACR_Fortify.Rand() * 0.16 - 0.08);
-		Add(at, ACR_Fortify.Bearing(facing) + ACR_Fortify.Rand() * 4 - 2, prefab, true);
+		return Add(at, ACR_Fortify.Bearing(facing) + ACR_Fortify.Rand() * 4 - 2, prefab, true, main);
+	}
+
+	void RemovePiece(int i)
+	{
+		m_aPiecePos.Remove(i);
+		m_aPieceYaw.Remove(i);
+		m_aPiecePrefab.Remove(i);
+		m_aPieceWall.Remove(i);
 	}
 
 	int Walls()
@@ -146,6 +163,8 @@ class ACR_Fortify : Managed
 	static ref array<IEntity> s_aPreview = {};
 	protected static ref array<IEntity> s_aFound = {};
 	protected static int s_iSeed = 1;
+	protected static ref array<IEntity> s_aSolid = {};
+	static ref map<string, int> s_mBlockers = new map<string, int>();   // what blocked pieces (tuning)
 
 	// ---------------------------------------------------------------- variety
 
@@ -169,6 +188,128 @@ class ACR_Fortify : Managed
 		int idx = (int)(Rand() * count);
 		if (idx >= count) idx = count - 1;
 		return idx;
+	}
+
+	// ---------------------------------------------------------------- footprints
+
+	// Half extents (x, z) of each prop's footprint, from the model bounds srv:fortify prints.
+	static vector HalfSize(ResourceName prefab)
+	{
+		if (prefab == LONG_PLASTIC || prefab == LONG_BURLAP) return Vector(1.72, 0, 0.61);
+		if (prefab == END_PLASTIC || prefab == END_BURLAP) return Vector(1.07, 0, 0.6);
+		if (prefab == ROUND_PLASTIC || prefab == ROUND_BURLAP) return Vector(1.61, 0, 0.7);
+		if (prefab == DUCKBOARD) return Vector(0.63, 0, 1.9);
+		if (prefab == NET_US || prefab == NET_USSR || prefab == NET_FIA) return Vector(2.05, 0, 1.1);
+		if (prefab == WHEELBARROW) return Vector(0.43, 0, 1.08);
+		if (prefab == CRATES) return Vector(0.62, 0, 0.52);
+		if (prefab == PALLET) return Vector(0.41, 0, 0.62);
+		if (prefab == BARREL || prefab == JEEP_TIRES) return Vector(0.44, 0, 0.44);
+		if (prefab == CANVAS) return Vector(0.37, 0, 0.42);
+		if (prefab == CHAIR_US || prefab == CHAIR_EAST) return Vector(0.26, 0, 0.21);
+		if (prefab == LANTERN_US || prefab == LAMP_EAST) return Vector(0.12, 0, 0.12);
+		if (prefab == COIL) return Vector(0.52, 0, 0.5);
+		if (prefab == LOG) return Vector(0.2, 0, 3.0);
+		if (prefab == TIRES) return Vector(1.0, 0, 1.14);
+		if (prefab == LADDER) return Vector(0.31, 0, 0.1);
+		return Vector(0.5, 0, 0.5);
+	}
+
+	// Two footprints overlap (separating-axis test on the XZ plane), with gap m of slack.
+	static bool BoxesOverlap(vector ca, float yawA, vector ha, vector cb, float yawB, vector hb, float gap)
+	{
+		float ra = yawA * Math.DEG2RAD;
+		float rb = yawB * Math.DEG2RAD;
+		array<vector> axes = {Vector(Math.Cos(ra), 0, -Math.Sin(ra)), Vector(Math.Sin(ra), 0, Math.Cos(ra)), Vector(Math.Cos(rb), 0, -Math.Sin(rb)), Vector(Math.Sin(rb), 0, Math.Cos(rb))};
+		vector d = cb - ca;
+		foreach (vector l : axes)
+		{
+			float projA = ha[0] * Math.AbsFloat(DotXZ(axes[0], l)) + ha[2] * Math.AbsFloat(DotXZ(axes[1], l));
+			float projB = hb[0] * Math.AbsFloat(DotXZ(axes[2], l)) + hb[2] * Math.AbsFloat(DotXZ(axes[3], l));
+			if (Math.AbsFloat(DotXZ(d, l)) >= projA + projB + gap) return false;
+		}
+		return true;
+	}
+
+	static bool PiecesOverlap(ACR_FortifyPos a, int i, ACR_FortifyPos b, int j, float gap)
+	{
+		return BoxesOverlap(a.m_aPiecePos[i], a.m_aPieceYaw[i], HalfSize(a.m_aPiecePrefab[i]), b.m_aPiecePos[j], b.m_aPieceYaw[j], HalfSize(b.m_aPiecePrefab[j]), gap);
+	}
+
+	// The model a world object is drawn with (its prefab, else its mesh).
+	static string ModelName(IEntity e)
+	{
+		if (e.GetPrefabData() && !e.GetPrefabData().GetPrefabName().IsEmpty()) return FilePath.StripPath(e.GetPrefabData().GetPrefabName());
+		VObject mesh = e.GetVObject();
+		if (mesh) return FilePath.StripPath(mesh.GetResourceName());
+		return e.ClassName();
+	}
+
+	// Walkable surfaces: sandbags on a sidewalk is exactly where a street wall goes.
+	static bool Walkable(string model)
+	{
+		return model.Contains("Pavement") || model.Contains("Kerb") || model.Contains("Curb") || model.Contains("Sidewalk");
+	}
+
+	protected static bool CollectSolid(IEntity e)
+	{
+		if (!e || ChimeraCharacter.Cast(e) || !e.GetPhysics()) return true;
+		if (s_aPreview.Contains(e) || (e.GetRootParent() && s_aPreview.Contains(e.GetRootParent()))) return true;
+		s_aSolid.Insert(e);
+		return true;
+	}
+
+	// Nothing solid in the world under a footprint: fences, walls, poles, parked vehicles, props,
+	// tree trunks (bushes are fine, like vanilla's bought defences). Flat things (kerbs, rugs)
+	// and things overhead (wires, awnings, signs) don't count.
+	static bool WorldClear(vector at, float yaw, vector half)
+	{
+		s_aSolid.Clear();
+		GetGame().GetWorld().QueryEntitiesBySphere(at, half.Length() + 1.0, CollectSolid, null, EQueryEntitiesFlags.ALL);
+		bool clear = true;
+		foreach (IEntity e : s_aSolid)
+		{
+			vector mins, maxs;
+			e.GetBounds(mins, maxs);
+			vector size = maxs - mins;
+			if (Tree.Cast(e))
+			{
+				if (size[1] < 2.5) continue;
+				if (BoxesOverlap(at, yaw, half, e.GetOrigin(), 0, Vector(0.35, 0, 0.35), 0.1)) clear = false;
+				continue;
+			}
+			if (size[0] > 60 || size[2] > 60) continue;
+			vector boxCentre = e.CoordToParent((mins + maxs) * 0.5);
+			// Only what rises above the ground here: pavements, kerbs and half-buried rocks have
+			// boxes reaching below ground but stand under knee height; wires and awnings hang high.
+			float top = boxCentre[1] + size[1] * 0.5;
+			float bottom = boxCentre[1] - size[1] * 0.5;
+			if (top < at[1] + 0.35 || bottom > at[1] + 2.2) continue;
+			string model = ModelName(e);
+			if (Walkable(model)) continue;
+			float boxYaw = Bearing(e.VectorToParent(Vector(0, 0, 1)));
+			if (BoxesOverlap(at, yaw, half, boxCentre, boxYaw, size * 0.5, 0.1)) clear = false;
+			if (!clear)
+			{
+				s_mBlockers.Set(model, s_mBlockers.Get(model) + 1);
+				break;
+			}
+		}
+		s_aSolid.Clear();
+		return clear;
+	}
+
+	// A new piece fits: world clear, and dressing keeps off this position's other pieces
+	// (sandbags of one position touch on purpose, end to end).
+	static bool Fits(ACR_FortifyPos pos, vector at, float yaw, ResourceName prefab, bool wall)
+	{
+		vector half = HalfSize(prefab);
+		if (!WorldClear(at, yaw, half)) return false;
+		foreach (int k, vector other : pos.m_aPiecePos)
+		{
+			if (wall && pos.m_aPieceWall[k]) continue;
+			if (BoxesOverlap(at, yaw, half, other, pos.m_aPieceYaw[k], HalfSize(pos.m_aPiecePrefab[k]), 0.1)) return false;
+		}
+		return true;
 	}
 
 	static ACR_FortifyKit Kit(string factionKey)
@@ -237,12 +378,10 @@ class ACR_Fortify : Managed
 			ResourceName prefab = kit.m_aClutter[RandIndex(kit.m_aClutter.Count())];
 			vector p = origin + along * (Rand() * span) - facing * (back + Rand() * depth);
 			float yaw = Rand() * 360 - 180;
+			// A chair faces the bags, as if someone was sitting watching over them.
+			if (prefab == kit.m_sChair) yaw = Bearing(facing) + Rand() * 60 - 30;
 			if (BuildingGap(buildings, p, 6) < 0.6 || BBB_Terrain.IsWaterAt(p)) continue;
 			if (offRoad && RoadEdgeGap(segs, p) < 0.5) continue;
-			bool crowded = false;
-			foreach (int k, vector other : pos.m_aPiecePos)
-				if (!pos.m_aPieceWall[k] && vector.DistanceXZ(other, p) < 1.2) crowded = true;
-			if (crowded) continue;
 			pos.Add(p, yaw, prefab, false);
 		}
 	}
@@ -256,10 +395,7 @@ class ACR_Fortify : Managed
 			float need = 0.5;
 			if (pos.m_aPieceWall[i]) need = 0.25;
 			if (BuildingGap(buildings, pos.m_aPiecePos[i], 8) >= need) continue;
-			pos.m_aPiecePos.Remove(i);
-			pos.m_aPieceYaw.Remove(i);
-			pos.m_aPiecePrefab.Remove(i);
-			pos.m_aPieceWall.Remove(i);
+			pos.RemovePiece(i);
 		}
 	}
 
@@ -424,34 +560,66 @@ class ACR_Fortify : Managed
 
 	// ---------------------------------------------------------------- inputs
 
-	// Directions to the nearest (up to three) bases the owner does not hold. Enemy bases
-	// weigh 1, neutral ones 0.7, and further ones less.
+	// Where attacks come from: the two nearest enemy-held bases (any distance: that is the
+	// front), plus the nearest neutral base within 1.5 km at half weight if it lies in another
+	// direction. With no enemy base anywhere (start of a match), the three nearest neutral ones.
+	// (Before 24 Oct the three nearest bases not held counted alike, so neutral villages behind
+	// the lines turned positions to face the rear.)
 	static void Threats(ACR_Base base, string owner, notnull array<vector> dirs, notnull array<float> weights)
 	{
 		vector center = base.GetOrigin();
+		array<ACR_Base> enemy = {};
+		array<ACR_Base> neutral = {};
+		foreach (ACR_Base other : ACR_Base.s_All)
+		{
+			if (!other || other == base || other.m_bRetired) continue;
+			if (vector.DistanceXZ(center, other.GetOrigin()) < 50) continue;
+			if (other.m_sOwner.IsEmpty()) neutral.Insert(other);
+			else if (other.m_sOwner != owner) enemy.Insert(other);
+		}
+		if (!enemy.IsEmpty())
+		{
+			AddNearest(center, enemy, 2, 1.0, 0, dirs, weights);
+			int fronts = dirs.Count();
+			array<vector> near = {};
+			array<float> nearWeights = {};
+			AddNearest(center, neutral, 1, 0.5, 1500, near, nearWeights);
+			foreach (int ni, vector nd : near)
+			{
+				bool newDirection = true;
+				for (int fi = 0; fi < fronts; fi++)
+					if (DotXZ(dirs[fi], nd) > 0.87) newDirection = false;
+				if (!newDirection) continue;
+				dirs.Insert(nd);
+				weights.Insert(nearWeights[ni]);
+			}
+			return;
+		}
+		AddNearest(center, neutral, 3, 0.7, 0, dirs, weights);
+	}
+
+	// The count nearest of bases (within maxDist when > 0), weight scaled down with distance.
+	protected static void AddNearest(vector center, array<ACR_Base> bases, int count, float weight, float maxDist, notnull array<vector> dirs, notnull array<float> weights)
+	{
 		array<ACR_Base> picks = {};
 		float nearest = 0;
-		for (int pick = 0; pick < 3; pick++)
+		for (int pick = 0; pick < count; pick++)
 		{
 			ACR_Base best = null;
 			float bestDist = float.MAX;
-			foreach (ACR_Base other : ACR_Base.s_All)
+			foreach (ACR_Base other : bases)
 			{
-				if (!other || other == base || other.m_bRetired || picks.Contains(other)) continue;
-				if (!owner.IsEmpty() && other.m_sOwner == owner) continue;
+				if (picks.Contains(other)) continue;
 				float d = vector.DistanceXZ(center, other.GetOrigin());
-				if (d < 50 || d >= bestDist) continue;
+				if ((maxDist > 0 && d > maxDist) || d >= bestDist) continue;
 				best = other;
 				bestDist = d;
 			}
-			if (!best) break;
+			if (!best) return;
 			if (picks.IsEmpty()) nearest = bestDist;
 			picks.Insert(best);
-			float w = 0.7;
-			if (!best.m_sOwner.IsEmpty()) w = 1.0;
-			w = w * Math.Clamp(nearest / bestDist, 0.6, 1.0);
 			dirs.Insert(FlatDir(center, best.GetOrigin()));
-			weights.Insert(w);
+			weights.Insert(weight * Math.Clamp(nearest / bestDist, 0.6, 1.0));
 		}
 	}
 
@@ -661,7 +829,7 @@ class ACR_Fortify : Managed
 				}
 				Seed(c);
 				for (int k = 0; k < pieces; k++)
-					pos.AddWall(start + n * (LONG_LEN * (0.5 + k)), f, kit.m_sLong);
+					pos.AddWall(start + n * (LONG_LEN * (0.5 + k)), f, kit.m_sLong, true);
 				// Sometimes an end piece bent back at the street end, if the lane still allows it.
 				float span = LONG_LEN * pieces;
 				float bend = (30 + Rand() * 30) * Math.DEG2RAD;
@@ -676,6 +844,11 @@ class ACR_Fortify : Managed
 				Dress(pos, kit, start, f, n, span, 1.4, 1.2, 1 + RandIndex(3), segs, buildings, false);
 				pos.m_sNote = string.Format("%1 %2 pieces, road %3 m", pos.m_sNote, pieces, width.ToString(-1, 1));
 				Prune(pos, buildings);
+				if (pos.m_bBlocked)
+				{
+					s_iBlocked++;
+					continue;
+				}
 				found.Insert(pos);
 			}
 		}
@@ -761,7 +934,7 @@ class ACR_Fortify : Managed
 			pos.m_fScore = bestScore + armCount * 5 + Math.Min(node.m_fOpen, 20) - vector.DistanceXZ(node.m_vPos, center) * 0.05;
 			Seed(bestSpot);
 			vector mainAt = RedoubtPiece(bestSpot, first, segs, buildings);
-			pos.AddWall(mainAt, first, kit.m_sRound);
+			pos.AddWall(mainAt, first, kit.m_sRound, true);
 			Horseshoe(pos, kit, mainAt, first, segs, buildings, true);
 			if (second != vector.Zero && t2 >= 0.2 && DotXZ(first, second) < 0.5) pos.AddWall(RedoubtPiece(bestSpot, second, segs, buildings), second, kit.m_sRound);
 			vector across = RightOf(first);
@@ -772,6 +945,7 @@ class ACR_Fortify : Managed
 			int openM = (int)Math.Min(node.m_fOpen, 99);
 			pos.m_sNote = string.Format("%1 arms, %2 buildings, open %3 m", armCount, node.m_iBuildings, openM);
 			Prune(pos, buildings);
+			if (pos.m_bBlocked) continue;
 			found.Insert(pos);
 		}
 	}
@@ -804,7 +978,9 @@ class ACR_Fortify : Managed
 		array<float> scales = {0.9, 1.0, 1.15};
 		foreach (vector axis : axes)
 		{
-			ACR_FortifyPos best = null;
+			// Every clear spot along this approach, best first; the first whose round piece
+			// fits among the world's fences, poles and props is the post.
+			array<ref ACR_FortifyPos> spots = {};
 			float axisBearing = Bearing(axis);
 			for (float shift = -40; shift <= 40; shift += 8)
 			{
@@ -818,33 +994,40 @@ class ACR_Fortify : Managed
 					if (!ACR_FobBuild.FootprintClear(p, 2.5, null, why, true, 1.5)) continue;
 					float sight = Sight(p, outward, 120);
 					if (sight < MIN_PERIMETER_SIGHT) continue;
-					float threat = ThreatDot(dirs, weights, outward);
-					float score = threat * 30 + sight * 0.25;
-					if (BuildingGap(buildings, p - outward * 10, 15) < 15) score += 10;
-					if (best && best.m_fScore >= score) continue;
-					best = new ACR_FortifyPos();
-					best.m_eKind = ACR_EFortifyKind.PERIMETER;
-					best.m_vPos = p;
-					best.m_vFacing = outward;
-					best.m_fThreat = threat;
-					best.m_fSight = sight;
-					best.m_fScore = score;
+					ACR_FortifyPos spot = new ACR_FortifyPos();
+					spot.m_eKind = ACR_EFortifyKind.PERIMETER;
+					spot.m_vPos = p;
+					spot.m_vFacing = outward;
+					spot.m_fThreat = ThreatDot(dirs, weights, outward);
+					spot.m_fSight = sight;
+					spot.m_fScore = spot.m_fThreat * 30 + sight * 0.25;
+					if (BuildingGap(buildings, p - outward * 10, 15) < 15) spot.m_fScore += 10;
+					spots.Insert(spot);
 				}
 			}
-			if (!best) continue;
-			Seed(best.m_vPos);
-			vector f = best.m_vFacing;
-			vector across = RightOf(f);
-			best.AddWall(best.m_vPos, f, kit.m_sRound);
-			Horseshoe(best, kit, best.m_vPos, f, segs, buildings, true);
-			if (Rand() < 0.6) best.Add(best.m_vPos - f * 1.4, Bearing(f) + 90 + Rand() * 10 - 5, DUCKBOARD, false);
-			if (Rand() < 0.4) best.Add(best.m_vPos - f * 2.6, Bearing(f), kit.m_sNet, false);
-			Light(best, kit, best.m_vPos - f * 0.9 + across * (Rand() * 2 - 1), buildings);
-			Dress(best, kit, best.m_vPos - across * 1.5, f, across, 3.0, 1.8, 1.5, 1 + RandIndex(2), segs, buildings, true);
-			if (Rand() < 0.6) Wire(best, best.m_vPos + f * (6 + Rand() * 3), f, segs, buildings);
-			best.m_sNote = string.Format("ring %1 m", (int)vector.DistanceXZ(center, best.m_vPos));
-			Prune(best, buildings);
-			found.Insert(best);
+			while (!spots.IsEmpty())
+			{
+				int top = 0;
+				foreach (int si, ACR_FortifyPos s : spots)
+					if (s.m_fScore > spots[top].m_fScore) top = si;
+				ACR_FortifyPos best = spots[top];
+				spots.Remove(top);
+				Seed(best.m_vPos);
+				vector f = best.m_vFacing;
+				vector across = RightOf(f);
+				best.AddWall(best.m_vPos, f, kit.m_sRound, true);
+				if (best.m_bBlocked) continue;
+				Horseshoe(best, kit, best.m_vPos, f, segs, buildings, true);
+				if (Rand() < 0.6) best.Add(best.m_vPos - f * 1.4, Bearing(f) + 90 + Rand() * 10 - 5, DUCKBOARD, false);
+				if (Rand() < 0.4) best.Add(best.m_vPos - f * 2.6, Bearing(f), kit.m_sNet, false);
+				Light(best, kit, best.m_vPos - f * 0.9 + across * (Rand() * 2 - 1), buildings);
+				Dress(best, kit, best.m_vPos - across * 1.5, f, across, 3.0, 1.8, 1.5, 1 + RandIndex(2), segs, buildings, true);
+				if (Rand() < 0.6) Wire(best, best.m_vPos + f * (6 + Rand() * 3), f, segs, buildings);
+				best.m_sNote = string.Format("ring %1 m", (int)vector.DistanceXZ(center, best.m_vPos));
+				Prune(best, buildings);
+				found.Insert(best);
+				break;
+			}
 		}
 	}
 
@@ -896,7 +1079,7 @@ class ACR_Fortify : Managed
 				pos.m_fSight = sight;
 				pos.m_fScore = frontThreat * 30 + sight * 0.3;
 				Seed(c);
-				pos.AddWall(at, front, kit.m_sLong);
+				pos.AddWall(at, front, kit.m_sLong, true);
 				// The end piece turns back along the side face, covering the flank.
 				vector flankAt = at + side * (LONG_LEN * 0.5 + 0.3) - front * (END_LEN * 0.5);
 				if (BuildingGap(buildings, flankAt, 6) >= 0.4 && RoadEdgeGap(segs, flankAt) >= 1.0) pos.AddWall(flankAt, side, kit.m_sEnd);
@@ -905,22 +1088,44 @@ class ACR_Fortify : Managed
 				Dress(pos, kit, at - side * 1.5, front, side, 3.0, 1.2, 1.2, 1 + RandIndex(2), segs, buildings, true);
 				pos.m_sNote = string.Format("house corner, view %1 m", (int)sight);
 				Prune(pos, buildings);
+				if (pos.m_bBlocked) continue;
 				found.Insert(pos);
 			}
 		}
 	}
 
-	// Two positions whose sandbags come within 2.5 m (walls off neighbouring buildings can
-	// reach into the same street even when their corners are far apart).
+	// Two positions whose sandbags overlap each other's pieces (walls off neighbouring buildings
+	// can reach into the same street even when their corners are far apart). Dressing against
+	// dressing is not a clash: Trim removes it.
 	static bool Clash(ACR_FortifyPos a, ACR_FortifyPos b)
 	{
+		if (vector.DistanceXZ(a.m_vPos, b.m_vPos) > 40) return false;
 		foreach (int i, vector pa : a.m_aPiecePos)
 		{
-			if (!a.m_aPieceWall[i]) continue;
 			foreach (int j, vector pb : b.m_aPiecePos)
-				if (b.m_aPieceWall[j] && vector.DistanceXZ(pa, pb) < 2.5) return true;
+			{
+				if (!a.m_aPieceWall[i] && !b.m_aPieceWall[j]) continue;
+				if (PiecesOverlap(a, i, b, j, 0.3)) return true;
+			}
 		}
 		return false;
+	}
+
+	// Drops a newly chosen position's dressing where it overlaps a piece already placed.
+	static void Trim(ACR_FortifyPos pos, array<ref ACR_FortifyPos> placed)
+	{
+		for (int i = pos.m_aPiecePos.Count() - 1; i >= 0; i--)
+		{
+			if (pos.m_aPieceWall[i]) continue;
+			bool hit = false;
+			foreach (ACR_FortifyPos other : placed)
+			{
+				if (other == pos || vector.DistanceXZ(other.m_vPos, pos.m_vPos) > 40) continue;
+				foreach (int j, vector at : other.m_aPiecePos)
+					if (PiecesOverlap(pos, i, other, j, 0.1)) hit = true;
+			}
+			if (hit) pos.RemovePiece(i);
+		}
 	}
 
 	// Best first, at most max of them, spacing m apart.
@@ -942,6 +1147,8 @@ class ACR_Fortify : Managed
 				if (!tooClose) best = c;
 			}
 			if (!best) break;
+			Trim(best, chosen);
+			Trim(best, result);
 			chosen.Insert(best);
 		}
 		foreach (ACR_FortifyPos keep : chosen) result.Insert(keep);

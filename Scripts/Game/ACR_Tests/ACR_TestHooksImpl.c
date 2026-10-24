@@ -46,6 +46,7 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrPocketsTest")) ACR_TestPockets.Run(seconds);
   // -acrFortifyTest: the fortification planner on Everon (ACR_TestFortify).
   if (System.IsCLIParam("acrFortifyTest")) ACR_TestFortify.Run(seconds);
+  if (System.IsCLIParam("acrFortifySurveyTest")) ACR_TestFortify.RunSurvey(seconds);
  }
 
  // Tests keep their worlds as authored; the pocket test and the balance soaks get pockets.

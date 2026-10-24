@@ -5,7 +5,7 @@
 // piece stands inside a building, planning time, and the preview spawns and clears its props.
 class ACR_TestFortify
 {
- static const int EXPECTED = 12;
+ static const int EXPECTED = 13;
  static ref array<IEntity> s_aSpawned = {};
 
  // Neutral bases are planned for the US (the preview does the same with the player's side).
@@ -23,7 +23,7 @@ class ACR_TestFortify
 
  static void Plan()
  {
-  int bases, corners, squares, edges, houses, withCorners, maxMs, badLane, badThreat, inside, pieces, dressed, positions;
+  int bases, corners, squares, edges, houses, withCorners, maxMs, badLane, badThreat, inside, pieces, dressed, positions, clips;
   string worst = "";
   ACR_Base most;
   ACR_Base second;
@@ -69,6 +69,7 @@ class ACR_TestFortify
      }
     }
    }
+   clips += Clips(base, plan);
    if (here > 0) withCorners++;
    if (here > mostCorners)
    {
@@ -83,8 +84,13 @@ class ACR_TestFortify
     secondCorners = here;
    }
   }
+  // What the world clearance check runs into most (for tuning ACR_Fortify.WorldClear).
+  foreach (string what, int n : ACR_Fortify.s_mBlockers)
+   if (n >= 5) PrintFormat("[ACR] FORTIFY blocker %1 x%2", what, n);
   Geometry(most);
   Geometry(second);
+  Measure(most.GetOrigin());
+  SurveyTypes();
 
   ACR_TestRegress.Check("fortify: planned the Everon bases", bases >= 10, string.Format("%1 bases", bases));
   ACR_TestRegress.Check("fortify: corner walls in several towns", corners >= 5 && withCorners >= 3, string.Format("%1 corners at %2 bases", corners, withCorners));
@@ -95,6 +101,7 @@ class ACR_TestFortify
   ACR_TestRegress.Check("fortify: corner walls leave a vehicle lane", badLane == 0, string.Format("%1 too narrow", badLane));
   ACR_TestRegress.Check("fortify: corner walls face a threat", badThreat == 0, string.Format("%1 facing away", badThreat));
   ACR_TestRegress.Check("fortify: no piece inside a building", inside == 0, string.Format("%1 of %2 pieces", inside, pieces));
+  ACR_TestRegress.Check("fortify: no piece clips the world or another position", clips == 0, string.Format("%1 clipping pieces", clips));
   ACR_TestRegress.Check("fortify: planning time", maxMs < 500, string.Format("max %1 ms (%2)", maxMs, worst));
 
   // The preview of the town with the most corners: one prop per planned piece.
@@ -127,6 +134,102 @@ class ACR_TestFortify
   ACR_Fortify.Plan(most, Owner(most), again, unused);
   foreach (ACR_FortifyPos q : again) planned += q.m_aPiecePos.Count();
   ACR_TestRegress.Check("fortify: preview spawns its pieces", s_aSpawned.Count() == planned && planned > 0, string.Format("%1 spawned, %2 planned (%3)", s_aSpawned.Count(), planned, most.m_sName));
+ }
+
+ // Pieces that clip a world object (re-checked from scratch) or another position's piece.
+ static int Clips(ACR_Base base, array<ref ACR_FortifyPos> plan)
+ {
+  int bad = 0;
+  foreach (int a, ACR_FortifyPos p : plan)
+  {
+   foreach (int i, vector at : p.m_aPiecePos)
+   {
+    bool hit = !ACR_Fortify.WorldClear(at, p.m_aPieceYaw[i], ACR_Fortify.HalfSize(p.m_aPiecePrefab[i]));
+    foreach (int b, ACR_FortifyPos q : plan)
+    {
+     if (b <= a) continue;
+     foreach (int j, vector other : q.m_aPiecePos)
+      if (ACR_Fortify.PiecesOverlap(p, i, q, j, 0.0)) hit = true;
+    }
+    if (!hit) continue;
+    bad++;
+    PrintFormat("[ACR] FORTIFY clip: %1 %2 %3 at %4", base.m_sName, ACR_Fortify.KindName(p.m_eKind), FilePath.StripPath(p.m_aPiecePrefab[i]), at);
+   }
+  }
+  return bad;
+ }
+
+ // Every kit prop's model bounds (ACR_Fortify.HalfSize is built from these).
+ static void Measure(vector near)
+ {
+  array<ResourceName> all = {};
+  array<string> sides = {"US", "USSR", "FIA"};
+  foreach (string side : sides)
+  {
+   ACR_FortifyKit kit = ACR_Fortify.Kit(side);
+   array<ResourceName> mine = {kit.m_sLong, kit.m_sEnd, kit.m_sRound, kit.m_sLight, kit.m_sNet, ACR_Fortify.DUCKBOARD, ACR_Fortify.COIL};
+   foreach (ResourceName r : kit.m_aClutter) mine.Insert(r);
+   foreach (ResourceName m : mine) if (!all.Contains(m)) all.Insert(m);
+  }
+  foreach (int i, ResourceName prefab : all)
+  {
+   Resource res = Resource.Load(prefab);
+   if (!res.IsValid()) { PrintFormat("[ACR] FORTIFY measure: cannot load %1", prefab); continue; }
+   EntitySpawnParams params = new EntitySpawnParams();
+   params.TransformMode = ETransformMode.WORLD;
+   params.Transform[3] = near + Vector(i * 6, 300, 0);
+   IEntity e = GetGame().SpawnEntityPrefab(res, GetGame().GetWorld(), params);
+   if (!e) continue;
+   vector mins, maxs;
+   e.GetBounds(mins, maxs);
+   vector half = ACR_Fortify.HalfSize(prefab);
+   PrintFormat("[ACR] FORTIFY measure %1 bounds %2 .. %3 (HalfSize %4)", FilePath.StripPath(prefab), mins, maxs, half);
+   SCR_EntityHelper.DeleteEntityAndChildren(e);
+  }
+ }
+
+ protected static ref array<IEntity> s_aTypes = {};
+ protected static bool CollectType(IEntity e)
+ {
+  if (!e || e.GetParent()) return true;
+  if (!SCR_DestructibleBuildingEntity.Cast(e) && !BaseBuilding.Cast(e)) return true;
+  if (ACR_Fortify.ModelName(e).Contains("Powerline")) return true;
+  vector mins, maxs;
+  e.GetBounds(mins, maxs);
+  vector size = maxs - mins;
+  if (size[0] < 3.5 || size[2] < 3.5 || size[1] < 2.5) return true;
+  s_aTypes.Insert(e);
+  return true;
+ }
+
+ // Building models inside each base's capture circle, for command-post layouts per model:
+ // [ACR] FORTTYPE <base> | <prefab> | <count>
+ static void SurveyTypes()
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired) continue;
+   s_aTypes.Clear();
+   GetGame().GetWorld().QueryEntitiesBySphere(base.GetOrigin(), Math.Max(base.m_fRadius, 50), CollectType, null, EQueryEntitiesFlags.STATIC);
+   map<string, int> counts = new map<string, int>();
+   foreach (IEntity e : s_aTypes)
+   {
+    string prefab = ACR_Fortify.ModelName(e);
+    counts.Set(prefab, counts.Get(prefab) + 1);
+   }
+   PrintFormat("[ACR] FORTTYPE %1 | radius %2 | %3 buildings", base.m_sName, (int)base.m_fRadius, s_aTypes.Count());
+   foreach (string model, int n : counts) PrintFormat("[ACR] FORTTYPE %1 | %2 | %3", base.m_sName, model, n);
+  }
+  s_aTypes.Clear();
+ }
+
+ // -acrFortifySurveyTest 1 (server, any world, ~30 s): only the building-model survey.
+ static void RunSurvey(int tick)
+ {
+  if (tick != 8) return;
+  SurveyTypes();
+  ACR_TestRegress.Check("fortify survey: bases surveyed", !ACR_Base.s_All.IsEmpty(), string.Format("%1 bases", ACR_Base.s_All.Count()));
+  ACR_TestRegress.Complete("fortifysurvey", 1);
  }
 
  static void Cleared()
