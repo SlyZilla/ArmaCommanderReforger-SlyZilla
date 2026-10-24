@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{AC230926A00100D0}Prefabs/ACR/Fortify/ACR_TableMap_Kolguyev.et"
+ Configurations {
+  ETResourceClass PC {
+  }
+  ETResourceClass HEADLESS : PC {
+  }
+ }
+}

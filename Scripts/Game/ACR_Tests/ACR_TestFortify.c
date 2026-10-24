@@ -177,7 +177,7 @@ class ACR_TestFortify
   foreach (string side : sides)
   {
    ACR_FortifyKit kit = ACR_Fortify.Kit(side);
-   array<ResourceName> mine = {kit.m_sLong, kit.m_sEnd, kit.m_sRound, kit.m_sLight, kit.m_sNet, kit.m_sNetTop, kit.m_sTable, kit.m_sRadio, kit.m_sMap, ACR_Fortify.FLIPCHART, ACR_Fortify.DUCKBOARD, ACR_Fortify.COIL};
+   array<ResourceName> mine = {kit.m_sLong, kit.m_sEnd, kit.m_sRound, kit.m_sLight, kit.m_sNet, kit.m_sNetTop, kit.m_sTable, kit.m_sRadio, ACR_Fortify.MAP_US, ACR_Fortify.MAP_EAST, ACR_Fortify.MAP_KOLGUYEV, ACR_Fortify.FLIPCHART, ACR_Fortify.DUCKBOARD, ACR_Fortify.COIL};
    foreach (ResourceName r : kit.m_aClutter) mine.Insert(r);
    foreach (ResourceName m : mine) if (!all.Contains(m)) all.Insert(m);
   }
@@ -361,6 +361,7 @@ class ACR_TestFortify
   ACR_TestRegress.Check("fortify models: surveyed", true, "");
   // Command posts on this map (Kolguyev: the barracks).
   int posts = 0;
+  int maps = 0;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (!base || base.m_bRetired) continue;
@@ -371,10 +372,12 @@ class ACR_TestFortify
    {
     if (p.m_eKind != ACR_EFortifyKind.POST) continue;
     posts++;
-    PrintFormat("[ACR] FORTIFY post %1: %2, %3 pieces", base.m_sName, p.m_sNote, p.m_aPiecePos.Count());
+    bool hasMap = p.m_aPiecePrefab.Contains(ACR_Fortify.MAP_KOLGUYEV);
+    if (hasMap) maps++;
+    PrintFormat("[ACR] FORTIFY post %1: %2, %3 pieces, Kolguyev map %4", base.m_sName, p.m_sNote, p.m_aPiecePos.Count(), hasMap);
    }
   }
-  ACR_TestRegress.Check("fortify models: command posts placed", posts >= 3, string.Format("%1 posts", posts));
+  ACR_TestRegress.Check("fortify models: command posts placed", posts >= 3, string.Format("%1 posts, %2 with the Kolguyev map", posts, maps));
   ACR_TestRegress.Complete("fortifymodels", 2);
  }
 

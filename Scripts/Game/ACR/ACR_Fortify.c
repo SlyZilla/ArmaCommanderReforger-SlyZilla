@@ -159,6 +159,9 @@ class ACR_Fortify : Managed
 	// briefing flipchart (the BoardMap was a tourist sign).
 	static const ResourceName MAP_US = "{D60220233693B077}Prefabs/Items/Equipment/Maps/Map_Paper_01/Map_Paper_01_unfolded_table.et";
 	static const ResourceName MAP_EAST = "{942A96E02BC7AFA6}Prefabs/Items/Equipment/Maps/Map_Paper_01/Map_Paper_01_unfolded_table_USSR.et";
+	// Kolguyev's paper map with pick-up and inventory switched off (vanilla only ships Everon as
+	// table decor; Arland has no paper map, so tables there get none).
+	static const ResourceName MAP_KOLGUYEV = "{AC230926A00100D0}Prefabs/ACR/Fortify/ACR_TableMap_Kolguyev.et";
 	static const ResourceName FLIPCHART = "{D5DCF3520C2A8C41}Prefabs/Props/Furniture/Flipchart_01/Flipchart_01.et";
 	static const ResourceName NETTOP_US = "{5789E2676151FD33}Prefabs/Structures/Military/CamoNets/US/CamoNet_Small_Top_US.et";
 	static const ResourceName NETTOP_USSR = "{8088790C2D455045}Prefabs/Structures/Military/CamoNets/Soviet/CamoNet_Small_Top_Soviet.et";
@@ -250,7 +253,7 @@ class ACR_Fortify : Managed
 		if (prefab == LADDER) return Vector(0.31, 0, 0.1);
 		if (prefab == TABLE_US || prefab == TABLE_EAST) return Vector(TABLE_HALF_X, 0, TABLE_HALF_Z);
 		if (prefab == RADIO_US || prefab == RADIO_EAST) return Vector(0.25, 0, 0.2);
-		if (prefab == MAP_US || prefab == MAP_EAST) return Vector(0.45, 0, 0.35);
+		if (prefab == MAP_US || prefab == MAP_EAST || prefab == MAP_KOLGUYEV) return Vector(0.45, 0, 0.35);
 		if (prefab == FLIPCHART) return Vector(0.37, 0, 0.3);
 		if (IsNetTop(prefab)) return Vector(NETTOP_HALF, 0, NETTOP_HALF);
 		return Vector(0.5, 0, 0.5);
@@ -296,7 +299,9 @@ class ACR_Fortify : Managed
 	{
 		if (!e || ChimeraCharacter.Cast(e) || !e.GetPhysics()) return true;
 		if (s_aPreview.Contains(e) || (e.GetRootParent() && s_aPreview.Contains(e.GetRootParent()))) return true;
-		if (s_Ignore && (e == s_Ignore || e.GetRootParent() == s_Ignore)) return true;
+		// Only the building itself: props that come with it (a skip in the yard, terrace
+		// railings) are obstacles like any other (Jacob, 24 Oct: crates in a skip).
+		if (s_Ignore && e == s_Ignore) return true;
 		s_aSolid.Insert(e);
 		return true;
 	}
@@ -363,6 +368,21 @@ class ACR_Fortify : Managed
 		return true;
 	}
 
+	// The paper map of the island this is: Everon (the US or Soviet print), Kolguyev, or none
+	// (Arland and other terrains have no paper map; a wrong island would look worse).
+	static ResourceName TableMap(bool east)
+	{
+		string world = GetGame().GetWorldFile();
+		world.ToLower();
+		if (world.Contains("kolguyev")) return MAP_KOLGUYEV;
+		if (world.Contains("everon") || world.Contains("eden"))
+		{
+			if (east) return MAP_EAST;
+			return MAP_US;
+		}
+		return "";
+	}
+
 	static ACR_FortifyKit Kit(string factionKey)
 	{
 		ACR_FortifyKit kit = new ACR_FortifyKit();
@@ -377,10 +397,9 @@ class ACR_Fortify : Managed
 		kit.m_sNetTop = NETTOP_US;
 		kit.m_sTable = TABLE_US;
 		kit.m_sRadio = RADIO_US;
-		kit.m_sMap = MAP_US;
+		kit.m_sMap = TableMap(east || fia);
 		if (east || fia)
 		{
-			kit.m_sMap = MAP_EAST;
 			kit.m_sNetTop = NETTOP_USSR;
 			kit.m_sTable = TABLE_EAST;
 			kit.m_sRadio = RADIO_EAST;
@@ -1521,7 +1540,11 @@ class ACR_Fortify : Managed
 				if (!resource.IsValid()) continue;
 				EntitySpawnParams spawnParams = new EntitySpawnParams();
 				spawnParams.TransformMode = ETransformMode.WORLD;
-				Math3D.AnglesToMatrix(Vector(p.m_aPieceYaw[i], 0, 0), spawnParams.Transform);
+				// The Kolguyev map is an item held upright (vanilla's Everon table map lies flat):
+				// pitched to lie face up on the table.
+				float pitch = 0;
+				if (p.m_aPiecePrefab[i] == MAP_KOLGUYEV) pitch = 90;
+				Math3D.AnglesToMatrix(Vector(p.m_aPieceYaw[i], pitch, 0), spawnParams.Transform);
 				spawnParams.Transform[3] = at;
 				IEntity ent = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
 				if (!ent) continue;

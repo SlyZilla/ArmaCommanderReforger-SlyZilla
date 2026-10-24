@@ -1,0 +1,11 @@
+GenericEntity : "{D5D6F45EEA5F4140}Prefabs/Items/Equipment/Maps/Map_Paper_01/PaperMap_01_full_Kolguyev.et" {
+ ID "AC230926A00100D0"
+ components {
+  InventoryItemComponent "{5222EB4D0C73006B}" {
+   Enabled 0
+  }
+  ActionsManagerComponent "{508AB5952B584B2E}" {
+   Enabled 0
+  }
+ }
+}
