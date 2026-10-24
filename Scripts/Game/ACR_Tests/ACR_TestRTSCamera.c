@@ -9,7 +9,7 @@ modded class ACR_RTSCameraManager
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
   InputManager input = GetGame().GetInputManager();
   ACR_TestRegress.Check("RTS: owns current native camera", GetGame().GetCameraManager().CurrentCamera() == camera.m_Camera);
-  ACR_TestRegress.Check("RTS: cursor context activated", input.IsContextActive("ACR_RTSContext"));
+  ACR_TestRegress.Check("RTS: cursor context activated", camera.m_bContextActivated);
   float width, height;
   camera.m_InteractionLayer.GetScreenSize(width, height);
   float screenW = GetGame().GetWorkspace().GetWidth();
@@ -22,6 +22,11 @@ modded class ACR_RTSCameraManager
   input.SetActionValue("ACR_RTSPanForward", 0);
   vector after = camera.m_Camera.GetOrigin();
   ACR_TestRegress.Check("RTS: forward action physically pans camera", vector.DistanceXZ(before, after) > 0.01);
+  vector look = camera.m_Camera.GetWorldTransformAxis(2);
+  vector moved = after - before;
+  look[1] = 0;
+  moved[1] = 0;
+  ACR_TestRegress.Check("RTS: forward pan follows view heading", vector.Dot(look.Normalized(), moved.Normalized()) > 0.95);
   input.SetActionValue("ACR_MapShift", 1);
   input.SetActionValue("ACR_RTSPanForward", 1);
   camera.ApplyInput(input);
@@ -30,16 +35,19 @@ modded class ACR_RTSCameraManager
   vector fast = camera.m_Camera.GetOrigin();
   ACR_TestRegress.Check("RTS: Shift physically accelerates pan", vector.DistanceXZ(after, fast) > vector.DistanceXZ(before, after) * 2);
   ACR_TestRegress.Check("RTS: body did not pan with camera", vector.DistanceXZ(bodyBefore, camera.m_Body.GetOrigin()) < 0.1);
-  vector angleBefore = camera.m_Camera.GetAngles();
+  vector angleBefore = camera.m_Camera.GetYawPitchRoll();
   camera.BeginOrbit(200, 200);
-  camera.ApplyOrbit(260, 220);
-  camera.EndOrbit(260, 220, true);
-  vector angleAfter = camera.m_Camera.GetAngles();
-  ACR_TestRegress.Check("RTS: RMB drag physically rotates camera", Math.AbsFloat(angleAfter[0] - angleBefore[0]) > 5);
+  camera.ApplyOrbit(260, 200);
+  vector angleMid = camera.m_Camera.GetYawPitchRoll();
+  ACR_TestRegress.Check("RTS: horizontal RMB drag turns yaw only", Math.AbsFloat(angleMid[0] - angleBefore[0]) > 5 && Math.AbsFloat(angleMid[1] - angleBefore[1]) < 0.5);
+  camera.ApplyOrbit(260, 240);
+  camera.EndOrbit(260, 240, true);
+  vector angleAfter = camera.m_Camera.GetYawPitchRoll();
+  ACR_TestRegress.Check("RTS: vertical RMB drag tilts pitch only", Math.AbsFloat(angleAfter[1] - angleMid[1]) > 5 && Math.AbsFloat(angleAfter[0] - angleMid[0]) < 0.5);
   ACR_TestRegress.Check("RTS: RMB release clears orbit", !camera.m_bOrbit && camera.m_bDragged);
   // Look back at the anchor and exercise the actual screen ray, not a fake point.
   camera.m_Camera.SetOrigin(before);
-  camera.m_Camera.SetAngles(angleBefore);
+  camera.m_Camera.SetYawPitchRoll(angleBefore);
   vector ground = camera.m_Body.GetOrigin();
   ground[1] = GetGame().GetWorld().GetSurfaceY(ground[0], ground[2]);
   vector transform[4];
@@ -52,6 +60,23 @@ modded class ACR_RTSCameraManager
   bool picked = ScreenToWorld(pixel[0], pixel[1], hit, hitEntity);
   PrintFormat("[ACR] RTS PICK pixel=%1 target=%2 hit=%3 direction=%4", pixel, target, hit, transform[2]);
   ACR_TestRegress.Check("RTS: projected terrain resolves actual world hit", picked && vector.DistanceXZ(target, hit) < 5);
+  // Click the first on-screen squad marker the way the mouse would (native pixels).
+  camera.UpdateMarkers(pc);
+  ACR_MapData data = pc.ACR_GetData();
+  int shown = -1;
+  for (int i = 0; i < camera.m_SquadMarkerPos.Count(); i++)
+  {
+   vector mp = camera.m_SquadMarkerPos[i];
+   if (mp[2] > 0) { shown = i; break; }
+  }
+  if (shown < 0) ACR_TestRegress.Skip("RTS: clicking a squad marker selects it", "no friendly squad in view");
+  else
+  {
+   vector clickAt = camera.m_SquadMarkerPos[shown];
+   WorkspaceWidget ws = GetGame().GetWorkspace();
+   camera.HandleLeftClick(ws.DPIScale(clickAt[0]), ws.DPIScale(clickAt[1]));
+   ACR_TestRegress.Check("RTS: clicking a squad marker selects it", data.IsSelected(data.m_GroupIds[shown]));
+  }
   CameraBase previous = camera.m_PreviousCamera;
   Widget oldRoot = camera.m_RootWidget;
   Close();
@@ -77,6 +102,6 @@ modded class ACR_TestCommand
    ACR_RTSCameraManager.Open();
   }
   if (h.m_Ticks == 6) ACR_RTSCameraManager.CheckNativeRTS();
-  if (h.m_Ticks == 8) ACR_TestRegress.Complete("rtscamera", 11);
+  if (h.m_Ticks == 8) ACR_TestRegress.Complete("rtscamera", 14);
  }
 }

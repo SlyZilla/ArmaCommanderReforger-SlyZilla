@@ -78,6 +78,16 @@ class ACR_RTSCameraManager : Managed
 	protected float m_fToastUntil = 0;
 	protected float m_fLastHealth = 100;
 	protected bool m_bDefendMode = false;
+	protected bool m_bContextActivated; // last frame's cursor-context activation (tests read it)
+
+	// World markers: one pin per friendly squad and base, re-projected every frame.
+	// Screen positions are kept (reference pixels, z = depth) so clicks pick markers.
+	protected static const float MARKER_PICK_RADIUS = 28.0;
+	protected Widget m_MarkerLayer;
+	protected ref array<Widget> m_SquadMarkers = {};
+	protected ref array<Widget> m_BaseMarkers = {};
+	protected ref array<vector> m_SquadMarkerPos = {};
+	protected ref array<vector> m_BaseMarkerPos = {};
 
 	// ---------------------------------------------------------------- lifecycle
 	static bool IsActive()
@@ -149,7 +159,7 @@ class ACR_RTSCameraManager : Managed
 		if (eye == vector.Zero)
 		{
 			eye = localBody.GetOrigin();
-			vector bodyAngles = localBody.GetAngles();
+			vector bodyAngles = localBody.GetYawPitchRoll();
 			angles[0] = bodyAngles[0]; // Face player's facing yaw
 		}
 
@@ -204,6 +214,12 @@ class ACR_RTSCameraManager : Managed
 		FrameSlot.SetOffsets(m_InteractionLayer, 0, 0, 0, 0);
 		m_Handler = new ACR_RTSCameraHandler(this);
 		m_InteractionLayer.AddHandler(m_Handler);
+
+		// Markers sit above the click layer but ignore the cursor, so clicks still land on it.
+		m_MarkerLayer = ws.CreateWidget(WidgetType.FrameWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, m_RootWidget);
+		FrameSlot.SetAnchorMin(m_MarkerLayer, 0, 0);
+		FrameSlot.SetAnchorMax(m_MarkerLayer, 1, 1);
+		FrameSlot.SetOffsets(m_MarkerLayer, 0, 0, 0, 0);
 
 		// Top Status Banner
 		Widget topOverlay = ws.CreateWidget(WidgetType.OverlayWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_RootWidget);
@@ -419,6 +435,25 @@ class ACR_RTSCameraManager : Managed
 		ACR_MapData data = pc.ACR_GetData();
 		if (!data) return;
 
+		// 0. Markers first: what the player sees is what they pick.
+		WorkspaceWidget ws = GetGame().GetWorkspace();
+		int markerSq = NearestMarker(m_SquadMarkerPos, ws.DPIUnscale(x), ws.DPIUnscale(y));
+		if (markerSq >= 0 && markerSq < data.m_GroupIds.Count())
+		{
+			pc.ACR_SelectGroup(data.m_GroupIds[markerSq]);
+			string markerName = "Squad";
+			if (markerSq < data.m_GroupNames.Count()) markerName = data.m_GroupNames[markerSq];
+			ShowToast("Selected: " + markerName);
+			return;
+		}
+		int markerBase = NearestMarker(m_BaseMarkerPos, ws.DPIUnscale(x), ws.DPIUnscale(y));
+		if (markerBase >= 0 && markerBase < data.m_BaseNames.Count())
+		{
+			pc.ACR_SelectBase(data.m_BaseNames[markerBase]);
+			ShowToast("Selected Base: " + data.m_BaseNames[markerBase]);
+			return;
+		}
+
 		// 1. Select squad near hit
 		int bestSq = -1;
 		float bestSqDist = 20.0;
@@ -552,10 +587,10 @@ class ACR_RTSCameraManager : Managed
   if (Math.AbsInt(x - m_iDownX) >= 8 || Math.AbsInt(y - m_iDownY) >= 8) m_bDragged = true;
   if (m_bDragged)
   {
-   vector angles = m_Camera.GetAngles();
+   vector angles = m_Camera.GetYawPitchRoll();
    angles[0] = angles[0] + (x - m_iMouseX) * 0.2;
    angles[1] = Math.Clamp(angles[1] - (y - m_iMouseY) * 0.2, -85, -15);
-   m_Camera.SetAngles(angles);
+   m_Camera.SetYawPitchRoll(angles);
   }
   m_iMouseX = x;
   m_iMouseY = y;
@@ -569,7 +604,7 @@ class ACR_RTSCameraManager : Managed
    WidgetManager.GetMousePos(mouseX, mouseY);
    ApplyOrbit(mouseX, mouseY);
   }
-  vector angles = m_Camera.GetAngles();
+  vector angles = m_Camera.GetYawPitchRoll();
   vector heading[4];
   Math3D.AnglesToMatrix(Vector(angles[0], 0, 0), heading);
   vector movement = heading[2] * (input.GetActionValue("ACR_RTSPanForward") - input.GetActionValue("ACR_RTSPanBack"));
@@ -629,7 +664,7 @@ class ACR_RTSCameraManager : Managed
 
 		// 2. Escape or MenuBack exits camera
 		InputManager input = GetGame().GetInputManager();
-		input.ActivateContext("ACR_RTSContext");
+		m_bContextActivated = input.ActivateContext("ACR_RTSContext");
 		if (input.GetActionTriggered("MenuBack") || input.GetActionTriggered("ACR_RTSCamera"))
 		{
 			Close();
@@ -717,6 +752,7 @@ class ACR_RTSCameraManager : Managed
 		}
 
 		UpdateTacticalUI(pc);
+		UpdateMarkers(pc);
 
 		// Toast timeout
 		if (m_ToastText && m_ToastText.IsVisible() && System.GetTickCount() > m_fToastUntil)
@@ -826,6 +862,125 @@ class ACR_RTSCameraManager : Managed
 		}
 	}
 
+	// ---------------------------------------------------------------- world markers
+	protected static int NearestMarker(array<vector> positions, float x, float y)
+	{
+		int best = -1;
+		float bestSq = MARKER_PICK_RADIUS * MARKER_PICK_RADIUS;
+		for (int i = 0; i < positions.Count(); i++)
+		{
+			vector p = positions[i];
+			if (p[2] <= 0) continue;
+			float dx = p[0] - x;
+			float dy = p[1] - y;
+			float d = dx * dx + dy * dy;
+			if (d < bestSq)
+			{
+				bestSq = d;
+				best = i;
+			}
+		}
+		return best;
+	}
+
+	protected Widget CreateMarker()
+	{
+		WorkspaceWidget ws = GetGame().GetWorkspace();
+		Widget root = ws.CreateWidget(WidgetType.FrameWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, m_MarkerLayer);
+		FrameSlot.SetSize(root, 0, 0);
+		Widget pin = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, root);
+		pin.SetName("Pin");
+		TextWidget label = TextWidget.Cast(ws.CreateWidgets(LAYOUT_TEXT, root));
+		if (label)
+		{
+			label.SetName("Label");
+			label.SetFlags(WidgetFlags.IGNORE_CURSOR);
+			FrameSlot.SetAlignment(label, 0.5, 1);
+			FrameSlot.SetPos(label, 0, -12);
+			FrameSlot.SetSizeToContent(label, true);
+			label.SetOutline(1);
+		}
+		return root;
+	}
+
+	// Places (or hides) one marker; returns its screen position, z <= 0 when hidden.
+	protected vector PlaceMarker(array<Widget> pool, int index, vector worldPos, string text, Color color, bool selected)
+	{
+		while (pool.Count() <= index) pool.Insert(CreateMarker());
+		Widget root = pool[index];
+		WorkspaceWidget ws = GetGame().GetWorkspace();
+		vector screen = ws.ProjWorldToScreen(worldPos, GetGame().GetWorld());
+		root.SetVisible(screen[2] > 0);
+		if (screen[2] <= 0) return screen;
+		FrameSlot.SetPos(root, screen[0], screen[1]);
+		float size = 12;
+		if (selected) size = 18;
+		Widget pin = root.FindAnyWidget("Pin");
+		if (pin)
+		{
+			FrameSlot.SetPos(pin, -size * 0.5, -size * 0.5);
+			FrameSlot.SetSize(pin, size, size);
+			pin.SetColor(color);
+		}
+		TextWidget label = TextWidget.Cast(root.FindAnyWidget("Label"));
+		if (label)
+		{
+			label.SetText(text);
+			label.SetColor(color);
+		}
+		return screen;
+	}
+
+	protected void UpdateMarkers(SCR_PlayerController pc)
+	{
+		if (!m_MarkerLayer) return;
+		m_SquadMarkerPos.Clear();
+		m_BaseMarkerPos.Clear();
+		ACR_MapData data = pc.ACR_GetData();
+		int squads = 0;
+		int bases = 0;
+		if (data)
+		{
+			vector eye = m_Camera.GetOrigin();
+			Color selectedColor = new Color(1.0, 0.85, 0.2, 1.0);
+			Color commandColor = new Color(0.35, 0.65, 1.0, 1.0);
+			Color playerColor = new Color(0.45, 0.9, 0.45, 1.0);
+			squads = Math.Min(data.m_LeaderPositions.Count(), data.m_GroupIds.Count());
+			for (int i = 0; i < squads; i++)
+			{
+				vector pos = data.LeaderPos(i);
+				bool selected = data.IsSelected(data.m_GroupIds[i]);
+				Color color = playerColor;
+				if (i < data.m_Commandable.Count() && data.m_Commandable[i] == 1) color = commandColor;
+				if (selected) color = selectedColor;
+				string name = "Squad";
+				if (i < data.m_GroupNames.Count()) name = data.m_GroupNames[i];
+				string text = string.Format("%1  %2m", name, Math.Round(vector.Distance(eye, pos)));
+				m_SquadMarkerPos.Insert(PlaceMarker(m_SquadMarkers, i, pos + Vector(0, 2.5, 0), text, color, selected));
+			}
+
+			Faction myFaction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
+			string selectedBase = pc.ACR_SelectedBase();
+			bases = data.m_BasePositions.Count();
+			for (int b = 0; b < bases; b++)
+			{
+				string baseName = "";
+				if (b < data.m_BaseNames.Count()) baseName = data.m_BaseNames[b];
+				Color baseColor = new Color(0.75, 0.75, 0.75, 1.0);
+				if (b < data.m_BaseOwners.Count() && !data.m_BaseOwners[b].IsEmpty())
+				{
+					if (myFaction && data.m_BaseOwners[b] == myFaction.GetFactionKey()) baseColor = commandColor;
+					else baseColor = new Color(0.95, 0.3, 0.25, 1.0);
+				}
+				bool baseSelected = !baseName.IsEmpty() && baseName == selectedBase;
+				if (baseSelected) baseColor = selectedColor;
+				m_BaseMarkerPos.Insert(PlaceMarker(m_BaseMarkers, b, data.m_BasePositions[b] + Vector(0, 6, 0), baseName, baseColor, baseSelected));
+			}
+		}
+		for (int h = squads; h < m_SquadMarkers.Count(); h++) m_SquadMarkers[h].SetVisible(false);
+		for (int k = bases; k < m_BaseMarkers.Count(); k++) m_BaseMarkers[k].SetVisible(false);
+	}
+
 	void ShowToast(string message)
 	{
 		if (!m_ToastText) return;
@@ -867,6 +1022,11 @@ class ACR_RTSCameraManager : Managed
 			ACR_Hud.Remove(m_RootWidget);
 			m_RootWidget = null;
 		}
+		m_MarkerLayer = null;
+		m_SquadMarkers.Clear();
+		m_BaseMarkers.Clear();
+		m_SquadMarkerPos.Clear();
+		m_BaseMarkerPos.Clear();
 
   ACR_MapHandoff.ClearCharacterInput(m_Body);
   ACR_MapHandoff.SetMenuControls(m_Body, false);
