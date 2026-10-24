@@ -42,6 +42,40 @@ class ACR_Intel : Managed
   return secondsSinceDetected <= PERCEPTION_MAX_AGE_S;
  }
 
+ // The threat to a spot, for orders that face it (a player's roadblock): the nearest enemy the
+ // side knows of within THREAT_RANGE, else the nearest base an enemy side holds that the side
+ // can see. vector.Zero: neither.
+ static const float THREAT_RANGE = 600;
+ static vector ThreatPoint(string faction, vector point)
+ {
+  vector threat;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  ACR_Intel intel;
+  if (manager) intel = manager.IntelFor(faction);
+  if (intel)
+  {
+   float best = THREAT_RANGE;
+   foreach (ACR_Contact contact : intel.m_Contacts)
+   {
+    float d = vector.DistanceXZ(contact.m_Pos, point);
+    if (d >= best || d < 5) continue;
+    best = d;
+    threat = contact.m_Pos;
+   }
+  }
+  if (threat != vector.Zero) return threat;
+  float nearest = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner.IsEmpty() || base.m_sOwner == faction || !base.IsVisibleTo(faction)) continue;
+   float b = vector.DistanceXZ(base.GetOrigin(), point);
+   if (b >= nearest) continue;
+   nearest = b;
+   threat = base.GetOrigin();
+  }
+  return threat;
+ }
+
  string m_sFaction;
  protected ACR_Manager m_Manager;
  ref map<IEntity, vector> m_SeenAt = new map<IEntity, vector>();

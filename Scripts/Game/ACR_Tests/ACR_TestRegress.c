@@ -111,7 +111,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 114; // includes seven BBB order-leash and four roadblock placement checks
+ static const int EXPECTED = 115; // includes seven BBB order-leash and five roadblock placement checks
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -361,6 +361,29 @@ class ACR_TestRegress
    }
   }
   Check("roadblock US and USSR physically spawn centred and facing along road", compositionsFit);
+  // A player's roadblock faces the threat (ACR_Intel.ThreatPoint), whichever end of the road it
+  // is at: with a known enemy 120 m along the road one way, then the other, the checkpoint's +Z
+  // points at it.
+  ACR_Intel threatIntel = ACR_Manager.GetInstance().IntelFor("US");
+  bool facesThreat = found && threatIntel != null;
+  string facings = "";
+  array<float> ends = {1, -1};
+  foreach (float end : ends)
+  {
+   if (!facesThreat) break;
+   ACR_Contact threat = new ACR_Contact();
+   threat.m_Pos = ACR_Manager.Ground(roadCentre + forward * (120 * end));
+   threatIntel.m_Contacts.Insert(threat);
+   vector threatSite;
+   float threatYaw;
+   bool valid = ACR_Roadblocks.ValidateSite(click, threatSite, threatYaw, refusal, "US", ACR_Intel.ThreatPoint("US", click));
+   threatIntel.m_Contacts.RemoveItem(threat);
+   float rad = threatYaw * Math.DEG2RAD;
+   float facing = (Math.Sin(rad) * forward[0] + Math.Cos(rad) * forward[2]) * end;
+   facings += string.Format(" %1", facing);
+   facesThreat = valid && facing > 0.99;
+  }
+  Check("roadblock ordered by a player faces the nearest known enemy", facesThreat, "facing dot" + facings);
   // Click is 18 m from the real site: old clearance check (8 m) misses this vehicle.
   IEntity blocker;
   if (found) blocker = ACR_Manager.SpawnPrefab(ACR_TestCrew.LAV, roadCentre);

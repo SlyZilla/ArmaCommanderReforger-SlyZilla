@@ -2,6 +2,8 @@
 
 ## 0.5.7 — unreleased
 
+- Roadblocks ordered by a player face the threat: the nearest enemy their side knows of within 600 m, else the nearest enemy base it can see (the AI commander's already faced the enemy base). Before, the checkpoint faced whichever way the road happened to run.
+
 - AI commander doctrines: each AI side fights to one of five styles for the whole match. Balanced is the old commander; Blitz goes mechanised and attacks early; Firepower leans on mortars, gunships and preparation fire; Fortress defends in depth and counterattacks lost bases at once; Raider sends small teams after weak bases and FOBs. New setup rows "Blue AI doctrine" and "Red AI doctrine" (random by default). No doctrine fields a bigger army.
 
 - FIA pockets of resistance: on whole-map and half-map battles a few empty bases away from both HQs start held by an FIA garrison (bigger at military sites, which also keep a small patrol). They look unclaimed until your units get close, so a squad sent to grab an empty village may have a fight on its hands. Clear one to capture it. New setup row "FIA resistance": few (default), many or off.
