@@ -183,6 +183,14 @@ class ACR_TestCrew
    ACR_TestRegress.Check("crew: the woken LAV takes the next order", moved > 20, string.Format("%1 m", moved));
    float postMoved;
    if (postSquad && postSquad.GetAnchor()) postMoved = vector.DistanceXZ(s_PostFrom, postSquad.GetAnchor().GetOrigin());
+   if (postSquad)
+   {
+    vector target;
+    if (postSquad.m_AITarget) target = postSquad.m_AITarget.GetOrigin();
+    vector waypointAt;
+    if (postSquad.m_Group && postSquad.m_Group.GetCurrentWaypoint()) waypointAt = postSquad.m_Group.GetCurrentWaypoint().GetOrigin();
+    PrintFormat("[ACR] CREW recall diag: anchor %1 from %2, target %3 (%4 m from post), waypoint %5 (%6), mounted %7 | %8", postSquad.GetAnchor(), s_PostFrom, target, vector.DistanceXZ(target, s_PostFrom), waypointAt, postSquad.m_Group.GetCurrentWaypoint(), postSquad.IsMounted(), postSquad.Describe());
+   }
    ACR_TestRegress.Check("roadblock: recalled squad physically leaves its post", postSquad && postSquad.m_iAITask == ACR_EAITask.DEFEND && postMoved > 3, string.Format("moved %1 m", postMoved));
    ACR_TestRegress.Complete("crew", 16);
   }

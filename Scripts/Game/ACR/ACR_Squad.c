@@ -1728,6 +1728,10 @@ class ACR_Squad : Managed
   vector road;
   vector clicked = destination;
   IEntity driven = ACR_Transport.CrewedVehicle(this);
+  // A roadblock gunner is infantry for this order: the new order takes him off the gun.
+  // Planned as a crew, the road point nearest the target can be the roadblock itself.
+  bool onPost = driven != null && driven == m_RoadblockTurret;
+  if (onPost) driven = null;
   if (driven && BBB_Terrain.RoadPointNear(destination, 250, road)) destination = road;
   IEntity anchor = GetAnchor();
   array<vector> legs = {};
@@ -1747,7 +1751,7 @@ class ACR_Squad : Managed
   }
   if (exactEnd) destination = clicked;
   bool landRoute;
-  if (anchor && !IsMounted())
+  if (anchor && (onPost || !IsMounted()))
   {
    int landStarted = System.GetTickCount();
    landRoute = BBB_Terrain.LandRoute(anchor.GetOrigin(), destination, legs);
