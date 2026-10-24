@@ -99,6 +99,7 @@ $script:BBBOptions = @(
   @{ Flag = 'bbbWeaponReady'; Group = 'Soldiers'; Label = 'Take the weapon in hand when walking empty-handed'; Default = '1' }
   @{ Flag = 'bbbRelaxedMarch'; Group = 'Soldiers'; Label = 'Lower weapons on quiet marches'; Default = '1' }
   @{ Flag = 'bbbHorizonScan'; Group = 'Soldiers'; Label = 'Scan horizons and flanks'; Default = '1' }
+  @{ Flag = 'bbbThink'; Group = 'Diagnostics'; Label = 'Think overlay: look at an AI to see why it acts'; Default = '0' }
   @{ Flag = 'bbbPerf'; Group = 'Diagnostics'; Label = 'BBB timing report in the server log'; Default = '0' }
   @{ Flag = 'bbbTurretTrace'; Group = 'Diagnostics'; Label = 'Log turret boarding handoffs'; Default = '0' }
 )
