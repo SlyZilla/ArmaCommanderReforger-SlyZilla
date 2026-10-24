@@ -40,8 +40,8 @@ def baffle(d, face, side=1):
     a = math.radians(40)
     axis = (r[0] * side * math.cos(a) - n[0] * math.sin(a), r[1] * side * math.cos(a) - n[1] * math.sin(a))
     e = add(add(c, r, side * (LONG / 2)), axis, END / 2)
+    # the end piece's taper (free end) is its local +X: face so that +X points along axis
     g = (-axis[1], axis[0])
-    if g[0] * n[0] + g[1] * n[1] < 0: g = (-g[0], -g[1])
     out.append(piece('end', e, yaw_of(g), 'always'))
     return out
 
@@ -51,7 +51,8 @@ def corner(c, face, side_face):
     n = FACES[face]; s = FACES[side_face]
     at = add(add(c, n, 1.4), s, 0.4)
     flank = add(add(at, s, LONG / 2 + 0.3), n, -END / 2)
-    return [piece('long', at, yaw_of(n), face), piece('end', flank, yaw_of(s), face),
+    # the flank runs back from the front piece; its taper (local +X) points to the rear (-n)
+    return [piece('long', at, yaw_of(n), face), piece('end', flank, yaw_of((n[1], -n[0])), face),
             piece('lantern', add(add(at, n, -1.0), s, -0.8), 0, face)]
 
 

@@ -418,12 +418,13 @@ class ACR_Fortify : Managed
 		return kit;
 	}
 
-	// The facing of a piece whose long axis runs along axis, front towards the enemy side.
-	static vector FacingForAxis(vector axis, vector enemyward)
+	// The facing for an end piece whose free (tapered) end points along axis: the taper is at
+	// the model's local +X (vanilla MG nests: both end pieces at yaw 93.6, tapers to the rear).
+	// Choosing the facing by the enemy side instead turned every other end cap 180 degrees
+	// (Jacob, 24 Oct).
+	static vector EndFacing(vector axis)
 	{
-		vector g = Vector(-axis[2], 0, axis[0]);
-		if (DotXZ(g, enemyward) < 0) g = g * -1;
-		return g;
+		return Vector(-axis[2], 0, axis[0]);
 	}
 
 	static vector RightOf(vector facing)
@@ -489,7 +490,7 @@ class ACR_Fortify : Managed
 			vector at = roundAt + right * (ROUND_HALF * side) - facing * 0.5 + axis * (END_LEN * 0.5);
 			if (BuildingGap(buildings, at, 6) < 0.4) continue;
 			if (offRoad && RoadEdgeGap(segs, at) < 0.3) continue;
-			pos.AddWall(at, FacingForAxis(axis, facing), kit.m_sEnd);
+			pos.AddWall(at, EndFacing(axis), kit.m_sEnd);
 		}
 	}
 
@@ -900,7 +901,7 @@ class ACR_Fortify : Managed
 				vector capAxis = n * Math.Cos(bend) - f * Math.Sin(bend);
 				if (Rand() < 0.6 && pos.m_fLane - END_LEN * Math.Cos(bend) >= LANE)
 				{
-					pos.AddWall(start + n * span + capAxis * (END_LEN * 0.5), FacingForAxis(capAxis, f), kit.m_sEnd);
+					pos.AddWall(start + n * span + capAxis * (END_LEN * 0.5), EndFacing(capAxis), kit.m_sEnd);
 					pos.m_fLane = pos.m_fLane - END_LEN * Math.Cos(bend);
 				}
 				Light(pos, kit, start + n * (Rand() * span) - f * 0.9, buildings);
@@ -1359,7 +1360,7 @@ class ACR_Fortify : Managed
 				pos.AddWall(at, front, kit.m_sLong, true);
 				// The end piece turns back along the side face, covering the flank.
 				vector flankAt = at + side * (LONG_LEN * 0.5 + 0.3) - front * (END_LEN * 0.5);
-				if (BuildingGap(buildings, flankAt, 6) >= 0.4 && RoadEdgeGap(segs, flankAt) >= 1.0) pos.AddWall(flankAt, side, kit.m_sEnd);
+				if (BuildingGap(buildings, flankAt, 6) >= 0.4 && RoadEdgeGap(segs, flankAt) >= 1.0) pos.AddWall(flankAt, EndFacing(front * -1), kit.m_sEnd);
 				if (Rand() < 0.3) pos.Add(at - front * 1.6 - side * 1.2, Bearing(front), kit.m_sNet, false);
 				Light(pos, kit, at - front * 0.9 + side * (Rand() * 2 - 1), buildings);
 				Dress(pos, kit, at - side * 1.5, front, side, 3.0, 1.2, 1.2, 1 + RandIndex(2), segs, buildings, true);
