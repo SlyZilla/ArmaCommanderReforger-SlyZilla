@@ -80,6 +80,12 @@ class ACR_RTSCameraManager : Managed
 	protected bool m_bDefendMode = false;
 	protected bool m_bContextActivated; // last frame's cursor-context activation (tests read it)
 
+	// Altitude above terrain: the wheel sets a target, the camera glides to it.
+	protected static const float ATL_MIN = 12.0;
+	protected static const float ATL_MAX = 160.0;
+	protected static const float ATL_PER_NOTCH = 0.87; // each notch scales height ~13%
+	protected float m_fTargetAtl = 35.0;
+
 	// World markers: one pin per friendly squad and base, re-projected every frame.
 	// Screen positions are kept (reference pixels, z = depth) so clicks pick markers.
 	protected static const float MARKER_PICK_RADIUS = 28.0;
@@ -610,16 +616,29 @@ class ACR_RTSCameraManager : Managed
   vector movement = heading[2] * (input.GetActionValue("ACR_RTSPanForward") - input.GetActionValue("ACR_RTSPanBack"));
   movement = movement + heading[0] * (input.GetActionValue("ACR_RTSPanRight") - input.GetActionValue("ACR_RTSPanLeft"));
   if (movement.LengthSq() > 1) movement.Normalize();
-  float speed = 35;
-  if (input.GetActionValue("ACR_MapShift") > 0.5) speed = 100;
   vector pos = m_Camera.GetOrigin();
   BaseWorld world = GetGame().GetWorld();
   float height = pos[1] - world.GetSurfaceY(pos[0], pos[2]);
-  pos = pos + movement * speed * Math.Min(input.GetLastTimeDelta(), 0.1);
+  float dt = Math.Min(input.GetLastTimeDelta(), 0.1);
+  // Pan faster when high, so the ground moves across the screen at a similar rate.
+  float speed = 35.0 * Math.Clamp(height / 35.0, 0.5, 3.0);
+  if (input.GetActionValue("ACR_MapShift") > 0.5) speed = Math.Max(speed, Math.Min(speed * 3, 150.0));
+  pos = pos + movement * speed * dt;
   if (WidgetManager.GetWidgetUnderCursor() == m_InteractionLayer)
-   height = height - input.GetActionValue("MouseWheel") * 8;
-  pos[1] = world.GetSurfaceY(pos[0], pos[2]) + Math.Clamp(height, 12, 160);
+   ApplyZoom(input.GetActionValue("MouseWheel"));
+  height = height + (m_fTargetAtl - height) * Math.Min(1.0, dt * 10.0);
+  pos[1] = world.GetSurfaceY(pos[0], pos[2]) + Math.Clamp(height, ATL_MIN, ATL_MAX);
   m_Camera.SetOrigin(pos);
+ }
+
+ // Raw wheel values are large (120 per notch on Windows; vanilla divides by 1000),
+ // so count notches rather than metres; any nonzero value is at least one notch.
+ protected void ApplyZoom(float wheel)
+ {
+  if (wheel == 0) return;
+  float notches = Math.Clamp(Math.Round(Math.AbsFloat(wheel) / 120.0), 1, 4);
+  if (wheel < 0) notches = -notches;
+  m_fTargetAtl = Math.Clamp(m_fTargetAtl * Math.Pow(ATL_PER_NOTCH, notches), ATL_MIN, ATL_MAX);
  }
 
 	// ---------------------------------------------------------------- frame updates

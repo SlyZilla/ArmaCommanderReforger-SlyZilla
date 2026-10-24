@@ -60,6 +60,16 @@ modded class ACR_RTSCameraManager
   bool picked = ScreenToWorld(pixel[0], pixel[1], hit, hitEntity);
   PrintFormat("[ACR] RTS PICK pixel=%1 target=%2 hit=%3 direction=%4", pixel, target, hit, transform[2]);
   ACR_TestRegress.Check("RTS: projected terrain resolves actual world hit", picked && vector.DistanceXZ(target, hit) < 5);
+  // Wheel: one raw notch (120) is a small step; the full range takes many notches.
+  float atlBefore = camera.m_fTargetAtl;
+  camera.ApplyZoom(120);
+  float step = 1 - camera.m_fTargetAtl / atlBefore;
+  ACR_TestRegress.Check("RTS: one wheel notch is a fine altitude step", step > 0.05 && step < 0.25);
+  int notches = 0;
+  while (camera.m_fTargetAtl < ATL_MAX && notches < 100) { camera.ApplyZoom(-120); notches++; }
+  PrintFormat("[ACR] RTS ZOOM step=%1 notchesToMax=%2", step, notches);
+  ACR_TestRegress.Check("RTS: altitude range spans many wheel notches", notches >= 10 && notches < 100);
+  camera.m_fTargetAtl = atlBefore;
   // Click the first on-screen squad marker the way the mouse would (native pixels).
   camera.UpdateMarkers(pc);
   ACR_MapData data = pc.ACR_GetData();
@@ -102,6 +112,6 @@ modded class ACR_TestCommand
    ACR_RTSCameraManager.Open();
   }
   if (h.m_Ticks == 6) ACR_RTSCameraManager.CheckNativeRTS();
-  if (h.m_Ticks == 8) ACR_TestRegress.Complete("rtscamera", 14);
+  if (h.m_Ticks == 8) ACR_TestRegress.Complete("rtscamera", 16);
  }
 }
