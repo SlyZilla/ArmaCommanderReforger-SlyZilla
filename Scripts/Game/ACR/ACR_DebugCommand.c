@@ -29,7 +29,7 @@ class ACR_DebugCommand : Managed
 		commandLine = commandLine.Trim();
 		if (commandLine.IsEmpty() || commandLine == "help")
 		{
-			return "Commands: rp <amt> [side], time <0-24>, heal [all], kill [all], fob supply <amt>, fob finish, fob build <slot>, capture <base> [side], attack <base>, reveal, pause [enemy/us], tp [base], unbound";
+			return "Commands: rp <amt> [side], time <0-24>, heal [all], kill [all], fob supply <amt>, fob finish, fob build <slot>, capture <base> [side], attack <base>, reveal, pause [enemy/us], tp [base], fortify [base|clear], unbound";
 		}
 
 		array<string> tokens = {};
@@ -277,6 +277,34 @@ class ACR_DebugCommand : Managed
 			}
 			if (target == "us" || target == "own") return "[ACR] " + manager.m_Debug.Run(manager, ACR_EDebug.PAUSE_ENEMY, enemyKey, "");
 			return "[ACR] " + manager.m_Debug.Run(manager, ACR_EDebug.PAUSE_ENEMY, ownKey, "");
+		}
+
+		// FORTIFY [base | clear]: preview where a Fortify order would put sandbags (ACR_Fortify)
+		if (cmd == "fortify")
+		{
+			if (tokens.Count() >= 2 && tokens[1] == "clear")
+				return string.Format("[ACR] Removed %1 preview sandbag pieces", ACR_Fortify.ClearPreview());
+			ACR_Base fortBase = ACR_Debug.FindBase(baseName);
+			if (tokens.Count() >= 2)
+			{
+				string named = tokens[1];
+				for (int ti = 2; ti < tokens.Count(); ti++) named += " " + tokens[ti];
+				fortBase = ACR_Debug.FindBase(named);
+				if (!fortBase) return "Base not found: " + named;
+			}
+			if (!fortBase)
+			{
+				vector near = cursorWorldPos;
+				if (near == vector.Zero && pc.GetControlledEntity()) near = pc.GetControlledEntity().GetOrigin();
+				float nearDist = 600;
+				foreach (ACR_Base candidate : ACR_Base.s_All)
+				{
+					if (!candidate || candidate.m_bRetired || near == vector.Zero) continue;
+					float baseDist = vector.DistanceXZ(candidate.GetOrigin(), near);
+					if (baseDist < nearDist) { nearDist = baseDist; fortBase = candidate; }
+				}
+			}
+			return ACR_Fortify.Preview(fortBase, ownKey);
 		}
 
 		// 10. TELEPORT / TP [baseName]
