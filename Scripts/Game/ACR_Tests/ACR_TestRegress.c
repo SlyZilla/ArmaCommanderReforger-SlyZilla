@@ -294,25 +294,41 @@ class ACR_TestRegress
   float heading;
   string refusal;
   bool found;
+  int segments, longSegments, otherRoad;
+  float longest;
+  map<string, int> refusals = new map<string, int>();
   foreach (BaseRoad road : roads)
   {
    array<vector> nodes = {};
    road.GetPoints(nodes);
-   for (int i = 1; i < nodes.Count(); i++)
+   // Road splines are sampled every <40 m, so a straight stretch is a segment with
+   // collinear neighbours: the verge click then projects onto this segment's middle.
+   for (int i = 2; i < nodes.Count() - 1; i++)
    {
+    segments++;
     vector along = nodes[i] - nodes[i - 1];
-    along[1] = 0;
-    if (along.Length() < 40) continue;
+    vector before = nodes[i - 1] - nodes[i - 2];
+    vector after = nodes[i + 1] - nodes[i];
+    along[1] = 0; before[1] = 0; after[1] = 0;
+    float stretch = before.Length() + along.Length() + after.Length();
+    longest = Math.Max(longest, stretch);
+    if (along.Length() < 10 || stretch < 40) continue;
     along.Normalize();
+    if (vector.Dot(before.Normalized(), along) < 0.999 || vector.Dot(along, after.Normalized()) < 0.999) continue;
+    longSegments++;
     vector centre = (nodes[i] + nodes[i - 1]) * 0.5;
     vector side = Vector(along[2], 0, -along[0]);
     vector verge = centre + side * 18;
-    if (!ACR_Roadblocks.ValidateSite(verge, snapped, heading, refusal, "US", centre + along * 100)) continue;
+    if (!ACR_Roadblocks.ValidateSite(verge, snapped, heading, refusal, "US", centre + along * 100))
+    {
+     refusals.Set(refusal, refusals.Get(refusal) + 1);
+     continue;
+    }
     // Exclude nearby parallel roads/junctions from this independently known segment fixture.
     BaseRoad closest;
     float distance;
     aiWorld.GetRoadNetworkManager().GetClosestRoad(verge, closest, distance);
-    if (closest != road) continue;
+    if (closest != road) { otherRoad++; continue; }
     roadCentre = ACR_Manager.Ground(centre);
     click = verge;
     forward = along;
@@ -321,6 +337,9 @@ class ACR_TestRegress
    }
    if (found) break;
   }
+  string why = "";
+  foreach (string reason, int count : refusals) why += string.Format(" %1=%2", reason, count);
+  PrintFormat("[ACR] ROADBLOCK fixture search: %1 roads, %2 segments (longest 3-segment stretch %3 m), %4 straight >= 40 m, %5 nearest another road, refused:%6", roads.Count(), segments, longest, longSegments, otherRoad, why);
   Check("roadblock placement snaps verge click to actual road centre", found && vector.DistanceXZ(snapped, roadCentre) < 0.2, string.Format("click=%1 snapped=%2 road=%3", click, snapped, roadCentre));
   bool compositionsFit = found;
   array<string> sides = {"US", "USSR"};
