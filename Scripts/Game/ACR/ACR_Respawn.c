@@ -12,6 +12,7 @@ class ACR_PendingPossession : Managed
  int m_iPlayerId;
  ChimeraCharacter m_Victim;
  ChimeraCharacter m_NextTarget; // null if falling back to command unit
+ ACR_Squad m_Squad;             // the victim's squad: the cascade stays in it
  float m_fTransferTime;
  string m_sSquadName;
  int m_iSquadNumber;
@@ -139,7 +140,8 @@ class ACR_Respawn : Managed
 
   ACR_Squad squad = null;
   if (victim) squad = m_Manager.FindSquadBySoldier(victim);
-  if (!squad) m_Manager.m_LastSquad.Find(id, squad);
+  if (!squad) m_Manager.m_PossessedSquad.Find(id, squad);
+  if (squad && !m_Manager.m_Squads.Contains(squad)) squad = null;
 
   ChimeraCharacter nextSubordinate = null;
   if (squad)
@@ -162,6 +164,7 @@ class ACR_Respawn : Managed
   pending.m_iPlayerId = id;
   pending.m_Victim = victim;
   pending.m_NextTarget = nextSubordinate;
+  pending.m_Squad = squad;
   pending.m_fTransferTime = now + 1800.0; // 1.8 s fall & collapse window
 
   string msg;
@@ -208,10 +211,8 @@ class ACR_Respawn : Managed
    if (!target || !IsAlive(target) || target.GetCharacterController().IsUnconscious() || ACR_Squad.FindController(target) > 0)
    {
     target = null;
-    ACR_Squad squad = null;
-    if (pending.m_Victim) squad = m_Manager.FindSquadBySoldier(pending.m_Victim);
-    if (!squad) m_Manager.m_LastSquad.Find(id, squad);
-    if (squad)
+    ACR_Squad squad = pending.m_Squad;
+    if (squad && m_Manager.m_Squads.Contains(squad))
     {
      array<AIAgent> agents = {};
      squad.GetAgents(agents);

@@ -76,6 +76,7 @@ class ACR_Requests : Managed
   ACR_MapHandoff.SanitizePossessedWeapons(pc, target, true);
   ACR_MapHandoff.ClearCharacterInput(target);
   m_Manager.m_LastSquad.Set(pc.GetPlayerId(), squad);
+  m_Manager.m_PossessedSquad.Set(pc.GetPlayerId(), squad);
   PrintFormat("[ACR] POSSESS player=%1 squad=%2 index=%3", pc.GetPlayerId(), squad.GetName(), squad.IndexOf(target));
   if (pc.GetControlledEntity() != target) return "Control transfer failed; try again";
   if (squad.IsLeader(pc))

@@ -480,10 +480,20 @@ class ACR_Squad : Managed
   m_Commander = leaderPlayer;
   // Set our standing map order aside, or the squad keeps doing it and the
   // player's command-wheel orders queue up behind it. It resumes when he leaves.
+  // (Not a ride's: the ride re-issues its own order when he leaves.)
   m_Aside = null;
-  if (m_Waypoint != null && !m_sOrderPrefab.IsEmpty()) m_Aside = SnapshotOrder();
-  Halt("Following you", ACR_EOrderState.COMMANDED);
+  if (m_Waypoint != null && !m_sOrderPrefab.IsEmpty() && OrderState() != ACR_EOrderState.RIDE) m_Aside = SnapshotOrder();
+  FollowCommander();
   PrintFormat("[ACR] %1: native command granted player=%2 group=%3 linked=%4", m_Name, leaderPlayer, component.GetGroupID(), m_CommandGroup.GetSlave() == m_Group);
+ }
+
+ // The squad follows the player leading it. Not an order from anyone: a ride under way
+ // sees m_iCommandSerial and carries on.
+ int m_iCommandSerial = -1;
+ void FollowCommander()
+ {
+  Halt("Following you", ACR_EOrderState.COMMANDED);
+  m_iCommandSerial = m_iOrderSerial;
  }
 
  // ---------------------------------------------------------------- orders
@@ -2547,7 +2557,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
-   if (!character || !ACR_Respawn.IsAlive(character)) continue;
+   if (!character || !ACR_Respawn.IsAlive(character) || FindController(character) != 0) continue; // a player gets out himself
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
    if (!access) continue;
    // Still climbing in: stop, so nobody is left behind on board.
@@ -2589,7 +2599,8 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
-   if (!character || !ACR_Respawn.IsAlive(character) || character.IsInVehicle()) continue;
+   // (a player gets in himself: never placed into a seat)
+   if (!character || !ACR_Respawn.IsAlive(character) || character.IsInVehicle() || FindController(character) != 0) continue;
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
    float distance = vector.DistanceXZ(character.GetOrigin(), vehicle.GetOrigin());
    if (!access || (access.IsGettingIn() && !forceAll)) continue;
@@ -2638,7 +2649,7 @@ class ACR_Squad : Managed
    foreach (AIAgent agent : agents)
    {
     ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
-    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent()) continue;
+    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent() || FindController(character) != 0) continue;
     CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
     // Still aboard on the second sweep (6 s): the animated exit was accepted but never
     // happened (5 Oct: LAV passengers stayed in after a drop-off): teleport out.
@@ -2659,6 +2670,12 @@ class ACR_Squad : Managed
   {
    m_bResumeOnFoot = false;
    RestoreOrder(m_Resume);
+   return;
+  }
+  // Led by a player: out and with him, not a defend order his command-wheel orders queue behind.
+  if (m_Commander != 0)
+  {
+   FollowCommander();
    return;
   }
   IssueWaypoint(WP_DEFEND, anchor.GetOrigin(), 20);

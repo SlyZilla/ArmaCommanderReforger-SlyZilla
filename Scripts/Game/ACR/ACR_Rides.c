@@ -32,6 +32,11 @@ class ACR_Ride
  float m_fTaxiLostSince = -1;   // crew briefly out (seat swaps, a stumble): only give up after a while
  float m_fStoppedSince = -1;    // escort: when the carrier came to a standstill near the drop-off
  bool m_bEscort;                // an armed carrier (AI motorized assault): stays at the drop-off instead of going home
+ vector m_Pickup;
+ // A player in the riders (possession, 23 Oct; Jacob: taking over a riding squad cancelled the ride).
+ bool m_bLedByPlayer;           // a player took over their leader: they follow him, the ride goes on
+ bool m_bPlayerAboard;          // a player rider has been in the transport this leg
+ float m_fUnloadSince = -1;     // dropped off with a player still aboard: the transport waits for him
 }
 
 class ACR_Rides : Managed
@@ -55,9 +60,11 @@ class ACR_Rides : Managed
  static const float MOSTLY_ABOARD_WAIT_MS = 30000;
  static const float ESCORT_DROP_NEAR = 250;    // m: an assault carrier stopped this close drops its riders
  static const float ESCORT_STOPPED_MS = 15000;
+ static const float PLAYER_UNLOAD_MS = 60000;  // dropped off: the transport waits this long for a player to get out
 
  protected ACR_Manager m_Manager;
  ref array<ref ACR_Ride> m_Rides = {};
+ ref array<ref ACR_Ride> m_Unloading = {};    // rides over, transport waiting for a player rider to get out
  ref map<string, float> m_NoTransportAt = new map<string, float>(); // faction -> last time a ride found no transport
 
  void ACR_Rides(ACR_Manager manager)
@@ -92,6 +99,13 @@ class ACR_Rides : Managed
   return null;
  }
 
+ bool Unloading(ACR_Squad taxi)
+ {
+  foreach (ACR_Ride ride : m_Unloading)
+   if (ride.m_Taxi == taxi) return true;
+  return false;
+ }
+
  // A squad that can serve as a taxi: crews a drivable ground vehicle with no
  // manned gun, AI-driven, not busy with anything but holding or heading home.
  bool IsFreeTransport(ACR_Squad squad, string faction)
@@ -104,7 +118,7 @@ class ACR_Rides : Managed
  {
   if (FactionOf(squad) != faction) return "other side";
   if (squad.HasPlayer()) return "led by a player";
-  if (RideOf(squad)) return "already giving a ride";
+  if (RideOf(squad) || Unloading(squad)) return "already giving a ride";
   IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
   if (!vehicle) return "no vehicle";
   if (squad.HasGunner(vehicle)) return "has a manned gun";
@@ -299,18 +313,14 @@ class ACR_Rides : Managed
   if (BBB_Terrain.RoadPointNear(ride.m_Drop, roadReach, road)) ride.m_Drop = road;
   vector pickup = from;
   if (BBB_Terrain.RoadPointNear(from, 250, road)) pickup = road;
+  ride.m_Pickup = pickup;
   ride.m_sFinalPrefab = finalPrefab;
   ride.m_Final = destination;
   ride.m_fFinalRadius = finalRadius;
   ride.m_sFinalOrder = finalOrder;
   ride.m_iFinalKind = finalKind;
   ride.m_fDriveBudgetMs = (trip / 4 + 150) * 1000; // generous: 4 m/s average plus slack
-  if (pickup == from) rider.Halt("Waiting for ride", ACR_EOrderState.RIDE);
-  else
-  {
-   rider.MoveTo(pickup);
-   rider.SetOrder("Waiting for ride", ACR_EOrderState.RIDE);
-  }
+  RiderOrder(ride);
   taxi.SetMode(ACR_EMoveMode.FAST);
   taxi.RouteTo(pickup, ACR_Squad.WP_MOVE, -1, "Picking up " + rider.GetName(), 0);
   ride.m_iRiderSerial = rider.m_iOrderSerial;
@@ -342,6 +352,61 @@ class ACR_Rides : Managed
    ACR_Ride ride = m_Rides[i];
    if (!Step(ride)) m_Rides.RemoveOrdered(i);
   }
+  for (int u = m_Unloading.Count() - 1; u >= 0; u--)
+  {
+   ACR_Ride unload = m_Unloading[u];
+   if (!WaitForPlayerOut(unload)) m_Unloading.RemoveOrdered(u);
+  }
+ }
+
+ // The riders' own order for where the ride stands (also when a player stops leading them).
+ protected void RiderOrder(ACR_Ride ride)
+ {
+  ACR_Squad rider = ride.m_Rider;
+  IEntity anchor = rider.GetAnchor();
+  if (ride.m_State == ACR_ERideState.TO_DROP) rider.Halt("Riding", ACR_EOrderState.RIDE);
+  else if (ride.m_State == ACR_ERideState.BOARDING && ride.m_Vehicle)
+  {
+   rider.MoveTo(ride.m_Vehicle.GetOrigin());
+   rider.SetOrder("Boarding", ACR_EOrderState.RIDE);
+  }
+  else if (anchor && vector.DistanceXZ(anchor.GetOrigin(), ride.m_Pickup) > 5)
+  {
+   rider.MoveTo(ride.m_Pickup);
+   rider.SetOrder("Waiting for ride", ACR_EOrderState.RIDE);
+  }
+  else rider.Halt("Waiting for ride", ACR_EOrderState.RIDE);
+  ride.m_iRiderSerial = rider.m_iOrderSerial;
+ }
+
+ // Possessed riders: how many are in the transport, and how many alive outside it.
+ protected int PlayersAboard(ACR_Ride ride, out int outside)
+ {
+  outside = 0;
+  int inside;
+  array<AIAgent> agents = {};
+  ride.m_Rider.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!ACR_Respawn.IsAlive(body) || ACR_Squad.FindController(body) == 0) continue;
+   if (ride.m_Vehicle && ACR_Transport.VehicleOf(body) == ride.m_Vehicle) inside++;
+   else outside++;
+  }
+  return inside;
+ }
+
+ // Dropped off with a player aboard: the transport stays put until he is out (or a minute), then home.
+ protected bool WaitForPlayerOut(ACR_Ride ride)
+ {
+  ACR_Squad taxi = ride.m_Taxi;
+  if (!taxi || !ride.m_Vehicle || !m_Manager.m_Squads.Contains(taxi) || taxi.m_iOrderSerial != ride.m_iTaxiSerial) return false;
+  int outside;
+  bool waiting = ride.m_Rider != null && m_Manager.m_Squads.Contains(ride.m_Rider) && PlayersAboard(ride, outside) > 0;
+  if (waiting && GetGame().GetWorld().GetWorldTime() - ride.m_fUnloadSince < PLAYER_UNLOAD_MS) return true;
+  if (waiting) Log(ride, "a player is still aboard, the transport leaves with him");
+  SendHome(ride);
+  return false;
  }
 
  protected void SetState(ACR_Ride ride, int state)
@@ -387,7 +452,8 @@ class ACR_Rides : Managed
  protected bool Step(ACR_Ride ride)
  {
   float now = GetGame().GetWorld().GetWorldTime();
-  bool riderOk = ride.m_Rider != null && m_Manager.m_Squads.Contains(ride.m_Rider) && ride.m_Rider.IsAlive() && !ride.m_Rider.HasPlayer();
+  // (A player among the riders is fine: possessing one of them doesn't call the ride off.)
+  bool riderOk = ride.m_Rider != null && m_Manager.m_Squads.Contains(ride.m_Rider) && ride.m_Rider.IsAlive();
   ChimeraCharacter driver = ACR_Squad.DriverOf(ride.m_Vehicle);
   bool taxiOk = ride.m_Taxi != null && ride.m_Vehicle != null && driver != null && m_Manager.m_Squads.Contains(ride.m_Taxi);
   if (taxiOk) taxiOk = ACR_Respawn.IsAlive(driver) && ACR_Transport.CrewedVehicle(ride.m_Taxi) == ride.m_Vehicle && !ride.m_Taxi.HasPlayer();
@@ -416,6 +482,21 @@ class ACR_Rides : Managed
    ReleaseTaxi(ride);
    Finish(ride, aboard > 0);
    return false;
+  }
+  // A player took over the riders' leader: they follow him now (not a new order), and he
+  // rides along. When he lets go, they get the ride's own order again.
+  ACR_Squad led = ride.m_Rider;
+  if (led.m_iOrderSerial != ride.m_iRiderSerial && led.m_iOrderSerial == led.m_iCommandSerial)
+  {
+   ride.m_iRiderSerial = led.m_iOrderSerial;
+   ride.m_bLedByPlayer = true;
+   Log(ride, "a player leads the riders, the ride goes on");
+  }
+  else if (ride.m_bLedByPlayer && led.m_Commander == 0 && led.m_iOrderSerial == ride.m_iRiderSerial)
+  {
+   ride.m_bLedByPlayer = false;
+   RiderOrder(ride);
+   Log(ride, "the player let go of the riders, back on the ride's order");
   }
   // Someone else gave either squad a new order: the ride is off.
   if (ride.m_Rider.m_iOrderSerial != ride.m_iRiderSerial || ride.m_Taxi.m_iOrderSerial != ride.m_iTaxiSerial)
@@ -447,11 +528,10 @@ class ACR_Rides : Managed
     if (riderAnchor && vector.DistanceXZ(ride.m_Vehicle.GetOrigin(), riderAnchor.GetOrigin()) < PICKUP_REACHED)
     {
      ride.m_Taxi.Halt("Loading " + ride.m_Rider.GetName());
-     ride.m_Rider.MoveTo(ride.m_Vehicle.GetOrigin());
-     ride.m_Rider.SetOrder("Boarding", ACR_EOrderState.RIDE);
-     ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
      ride.m_iTaxiSerial = ride.m_Taxi.m_iOrderSerial;
      SetState(ride, ACR_ERideState.BOARDING);
+     // (A player leading them brings them over himself; seats are filled within 40 m.)
+     if (!ride.m_bLedByPlayer) RiderOrder(ride);
      Log(ride, "transport arrived, boarding");
      return true;
     }
@@ -471,12 +551,19 @@ class ACR_Rides : Managed
     int leftBehind = 0;
     if (alive > 0 && aboard > 0 && aboard < alive && inState > STRAGGLER_WAIT_MS) leftBehind = Stragglers(ride);
     bool mostly = alive > 0 && aboard < alive && inState > MOSTLY_ABOARD_WAIT_MS && MostlyAboard(aboard, alive);
-    if (alive > 0 && (aboard >= alive || leftBehind > 0 || mostly))
+    // Never off without a player rider: he climbs in himself.
+    int playersOutside;
+    PlayersAboard(ride, playersOutside);
+    if (alive > 0 && playersOutside == 0 && (aboard >= alive || leftBehind > 0 || mostly))
     {
      if (leftBehind > 0) Log(ride, string.Format("leaving without %1 rider(s) more than %2 m away", leftBehind, STRAGGLER_DISTANCE));
      else if (mostly) Log(ride, string.Format("leaving with %1/%2 aboard", aboard, alive));
-     ride.m_Rider.Halt("Riding", ACR_EOrderState.RIDE);
-     ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
+     // (A player leading them keeps them following him.)
+     if (!ride.m_bLedByPlayer)
+     {
+      ride.m_Rider.Halt("Riding", ACR_EOrderState.RIDE);
+      ride.m_iRiderSerial = ride.m_Rider.m_iOrderSerial;
+     }
      ride.m_Taxi.RouteTo(ride.m_Drop, ACR_Squad.WP_MOVE, -1, "Driving " + ride.m_Rider.GetName(), 0);
      ride.m_iTaxiSerial = ride.m_Taxi.m_iOrderSerial;
      SetState(ride, ACR_ERideState.TO_DROP);
@@ -485,7 +572,8 @@ class ACR_Rides : Managed
     }
     if (inState > BOARDING_TIMEOUT_MS)
     {
-     Log(ride, string.Format("boarding took too long (%1/%2 aboard), walking", aboard, alive));
+     if (playersOutside > 0) Log(ride, string.Format("the player never got in (%1/%2 aboard), off on foot", aboard, alive));
+     else Log(ride, string.Format("boarding took too long (%1/%2 aboard), walking", aboard, alive));
      SendHome(ride);
      Finish(ride, aboard > 0);
      return false;
@@ -494,6 +582,17 @@ class ACR_Rides : Managed
    }
    case ACR_ERideState.TO_DROP:
    {
+    // A player rider who gets out on the way ends the ride there: his squad gets out with him.
+    int playersOff;
+    int playersOn = PlayersAboard(ride, playersOff);
+    if (playersOn > 0) ride.m_bPlayerAboard = true;
+    else if (ride.m_bPlayerAboard && playersOff > 0 && aboard > 0)
+    {
+     Log(ride, "a player got out on the way, everyone out here");
+     Finish(ride, true);
+     SendHome(ride);
+     return false;
+    }
     if (aboard == 0)
     {
      Log(ride, "riders are out early, continuing on foot");
@@ -519,6 +618,15 @@ class ACR_Rides : Managed
      if (arrived) Log(ride, "dropped off");
      else Log(ride, "drive took too long, getting out here");
      Finish(ride, true);
+     // A player aboard gets out himself: wait for him rather than drive off with him.
+     if (playersOn > 0 && !ride.m_bEscort)
+     {
+      ride.m_Taxi.Halt("Unloading");
+      ride.m_iTaxiSerial = ride.m_Taxi.m_iOrderSerial;
+      ride.m_fUnloadSince = now;
+      m_Unloading.Insert(ride);
+      return false;
+     }
      SendHome(ride);
      return false;
     }
@@ -532,6 +640,13 @@ class ACR_Rides : Managed
  protected void Finish(ACR_Ride ride, bool aboard)
  {
   ACR_Squad rider = ride.m_Rider;
+  // Led by a player: he decides what comes next; they get out (if aboard) and follow him.
+  if (rider.m_Commander != 0)
+  {
+   if (aboard) rider.DismountAndContinue("", ride.m_Final, ride.m_fFinalRadius, ride.m_sFinalOrder, ride.m_iFinalKind);
+   else rider.FollowCommander();
+   return;
+  }
   if (aboard)
   {
    rider.DismountAndContinue(ride.m_sFinalPrefab, ride.m_Final, ride.m_fFinalRadius, ride.m_sFinalOrder, ride.m_iFinalKind);

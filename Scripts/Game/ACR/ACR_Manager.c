@@ -45,6 +45,9 @@ class ACR_Manager : Managed
  protected ref map<string, ref ACR_Intel> m_Intel = new map<string, ref ACR_Intel>();
  string m_sSpawningFaction; // side paying for the unit being spawned
  ref map<int, ACR_Squad> m_LastSquad = new map<int, ACR_Squad>();
+ // The squad of the soldier each player last took over (death hand-off: a dead body has already
+ // left its group, and m_LastSquad follows map orders, so it named the jeep he had just ordered).
+ ref map<int, ACR_Squad> m_PossessedSquad = new map<int, ACR_Squad>();
  protected int m_SquadNumber;
 
  // Command rules. One commander per faction unless shared command is on.
