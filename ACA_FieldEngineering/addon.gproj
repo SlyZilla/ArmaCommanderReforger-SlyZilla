@@ -1,0 +1,10 @@
+GameProject {
+ ID "ACA_FieldEngineering"
+ GUID "F4EF6A0A51B808A8"
+ TITLE "ACA Field Engineering"
+ Dependencies {
+  "58D0FB3206B6F859"
+  "BBB0261015000001"
+  "AC230926A0010001"
+ }
+}
