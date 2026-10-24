@@ -100,6 +100,22 @@ class ACR_BBBHooks : BBB_Hooks
   return !squad || (!ACR_AirLift.Busy(squad) && !squad.m_bMortar && !squad.m_ActiveRoadblock);
  }
 
+ // Radio contact reports (BBB_ContactRelay) can make vanilla send fireteams to look. Only
+ // squads waiting in place take them: free, posted or defending, on foot, not under a player's
+ // own command. Movers, riders, attackers, builders and squads walking back to refit keep
+ // ACA's plan.
+ override bool AllowContactRelay(SCR_AIGroup group)
+ {
+  ACR_Squad squad = SquadOf(group);
+  if (!squad) return true;
+  if (ACR_AirLift.Busy(squad) || squad.m_Commander != 0 || squad.m_bForced || squad.m_Mode != ACR_EMoveMode.COMBAT) return false;
+  if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad) || squad.m_CombatFlank.Active()) return false;
+  int task = squad.m_iAITask;
+  if (task != ACR_EAITask.FREE && task != ACR_EAITask.POSTED && task != ACR_EAITask.DEFEND) return false;
+  ACR_EOrderState state = squad.OrderState();
+  return state == ACR_EOrderState.NONE || state == ACR_EOrderState.HOLD || state == ACR_EOrderState.DEFEND;
+ }
+
  override bool AllowMorale(SCR_AIGroup group)
  {
   return SquadOf(group) == null;
