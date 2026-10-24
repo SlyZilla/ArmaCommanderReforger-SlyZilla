@@ -884,6 +884,7 @@ class ACR_AICommander : Managed
  protected ref map<ACR_Base, float> m_StalledUntil = new map<ACR_Base, float>();
  protected ref map<ACR_Squad, float> m_RetreatingUntil = new map<ACR_Squad, float>();
  protected ref map<ACR_Squad, float> m_ReinforceRetryAt = new map<ACR_Squad, float>();
+ protected ref map<ACR_Squad, float> m_Refitting = new map<ACR_Squad, float>(); // squad walking back to refill -> give up at
  protected int m_iSaveForEntry = -1;
  protected int m_iLastSavedLog = -1;
  protected float m_fNextStatus;
@@ -2040,6 +2041,8 @@ class ACR_AICommander : Managed
  static const int SAVE_MIN_UNITS = 4;            // save RP for a pricier unit only with this many fighting units out
  static const float FOB_DEPLOY_MIN_FRONT = 500;  // m: a built FOB closer to an enemy/neutral base than this isn't a deploy point
  static const float REINFORCE_RETRY_MS = 120000; // a squad whose AI reinforce failed waits this long before another try
+ static const float REFIT_WALK_RATIO = 0.5;       // idle squads below this strength walk back to a quiet base to refill
+ static const float REFIT_GIVE_UP_MS = 900000;   // a walk back to refill that hasn't arrived by then is dropped
  protected ACR_Base m_ReserveBase;
  protected ACR_Squad m_ReserveSquad;
 
@@ -2603,6 +2606,19 @@ class ACR_AICommander : Managed
    idleAt.Set(where, had + 1);
   }
   foreach (string place, int n : idleAt) attacks += string.Format(" %1:%2", place, n);
+  // What the rest of the force is: the AI squad cap counts fighting units only.
+  int line, depleted, vehiclesNoGunner, remnants;
+  foreach (ACR_Squad member : all)
+  {
+   if (member.IsCombatUnit())
+   {
+    if (!IsSpecialistSquad(member)) line++;
+    if (!ACR_Transport.CrewedVehicle(member) && member.StrengthRatio() < REFIT_WALK_RATIO) depleted++;
+   }
+   else if (ACR_Transport.CrewedVehicle(member)) vehiclesNoGunner++;
+   else remnants++;
+  }
+  attacks += string.Format(" | line %1, depleted %2, refitting %3, remnants %4, unarmed vehicles %5", line, depleted, m_Refitting.Count(), remnants, vehiclesNoGunner);
   int visible;
   foreach (ACR_Base base : ACR_Base.s_All)
    if (base.m_sOwner != m_sFaction && !base.m_sOwner.IsEmpty() && Visible(base)) visible++;
@@ -3107,6 +3123,10 @@ class ACR_AICommander : Managed
   if (!data || !m_Manager.m_Requisition || m_Manager.m_Requisition.OverSoldierCap(m_sFaction)) return false;
   array<ACR_Squad> all = {};
   MySquads(all, false);
+  array<ACR_Squad> gone = {};
+  foreach (ACR_Squad walker, float until : m_Refitting)
+   if (!walker || !all.Contains(walker)) gone.Insert(walker);
+  foreach (ACR_Squad lost : gone) m_Refitting.Remove(lost);
   ACR_Squad best;
   int bestScore = -1;
   int bestCost = 0;
@@ -3123,33 +3143,57 @@ class ACR_AICommander : Managed
    }
    array<ResourceName> missing = {};
    squad.GetMissing(missing);
-   if (missing.IsEmpty()) continue;
+   if (missing.IsEmpty())
+   {
+    m_Refitting.Remove(squad);
+    continue;
+   }
+   // Builders stay on their FOB or roadblock (ManageFobBuild / ManageRoadblocks own them).
+   if (squad.m_iAITask == ACR_EAITask.BUILD_FOB || squad.m_iAITask == ACR_EAITask.ROADBLOCK) continue;
    bool remnant = !squad.IsCombatUnit();
-   if (!remnant && squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.DEFEND && squad.m_iAITask != ACR_EAITask.RESUPPLY) continue;
+   float giveUpAt;
+   bool refitting = m_Refitting.Find(squad, giveUpAt);
+   if (!remnant && !refitting && squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.DEFEND && squad.m_iAITask != ACR_EAITask.RESUPPLY) continue;
    if (!remnant && squad.StrengthRatio() > 0.65) continue;
-   if (m_Manager.m_Requisition.InContact(squad) != "") continue;
-   ACR_Base nearBase;
-   float nearestDist = float.MAX;
+   // A base whose circle it is in now, else the nearest one out of the fighting.
+   ACR_Base inside;
+   ACR_Base refit;
+   float insideDist = float.MAX;
+   float refitDist = float.MAX;
    foreach (ACR_Base base : ACR_Base.s_All)
    {
     if (base.m_sOwner != m_sFaction || !ACR_LogisticsRules.CanReinforce(base) || base.m_bContested) continue;
     float d = vector.DistanceXZ(PositionOf(squad), base.GetOrigin());
-    if (d < nearestDist) { nearestDist = d; nearBase = base; }
+    if (d <= base.m_fRadius && d < insideDist) { insideDist = d; inside = base; }
+    if (ThreatTo(base) == 0 && d < refitDist) { refitDist = d; refit = base; }
    }
-   if (!nearBase) continue;
-   // Only inside the circle: there the replacements come from this base and
-   // the squad gets its ammo too. Depleted squads walk in; others wait until they pass by.
-   if (nearestDist > nearBase.m_fRadius)
+   // Only inside the circle: there the replacements come from this base and the squad
+   // gets its ammo too. Badly hurt idle squads walk back out of the fighting to refill
+   // (posted ones too: their post's waypoint used to keep them at the front for good);
+   // others wait until they pass a base.
+   if (!inside)
    {
-    bool shouldWalk = remnant || (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED || squad.m_iAITask == ACR_EAITask.RESUPPLY);
-    if (shouldWalk && (!squad.m_Group || !squad.m_Group.GetCurrentWaypoint()))
+    if (refitting && now >= giveUpAt)
     {
-     squad.m_iAITask = ACR_EAITask.RESUPPLY;
-     squad.RouteTo(ACR_Manager.Ground(nearBase.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
-     PrintFormat("[ACR] AI %1: depleted squad %2 (%3% strength) moving to %4 to reinforce", m_sFaction, squad.GetName(), (int)(squad.StrengthRatio() * 100), nearBase.m_sName);
+     m_Refitting.Remove(squad);
+     if (squad.m_iAITask == ACR_EAITask.RESUPPLY) squad.m_iAITask = ACR_EAITask.FREE;
+     m_ReinforceRetryAt.Set(squad, now + REINFORCE_RETRY_MS);
+     PrintFormat("[ACR] AI %1: %2 gave up walking back to reinforce", m_sFaction, squad.GetName());
+     continue;
     }
+    if (refitting && squad.m_Group && squad.m_Group.GetCurrentWaypoint()) continue;
+    // Don't cut short a walk to a service vehicle (ManageLogistics).
+    if (!refitting && squad.m_iAITask == ACR_EAITask.RESUPPLY && squad.m_Group && squad.m_Group.GetCurrentWaypoint()) continue;
+    bool idle = squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED || squad.m_iAITask == ACR_EAITask.RESUPPLY;
+    if (!refit || !(refitting || remnant || (idle && squad.StrengthRatio() < REFIT_WALK_RATIO))) continue;
+    if (!refitting) m_Refitting.Set(squad, now + REFIT_GIVE_UP_MS);
+    squad.m_iAITask = ACR_EAITask.RESUPPLY;
+    squad.SetMode(ACR_EMoveMode.FAST);
+    Travel(squad, ACR_Manager.Ground(refit.GetOrigin()), false, 0);
+    PrintFormat("[ACR] AI %1: depleted squad %2 (%3% strength) moving to %4 to reinforce", m_sFaction, squad.GetName(), (int)(squad.StrengthRatio() * 100), refit.m_sName);
     continue;
    }
+   if (m_Manager.m_Requisition.InContact(squad) != "") continue;
    if (ACR_LogisticsRules.RelayBlocked(ACR_FobSupply.Nearby(m_sFaction, PositionOf(squad)))) continue;
    // Same price ReinforceSquad checks: replacements plus a FOB's instant restock fee.
    int cost = missing.Count() * ACR_Requisition.REINFORCE_COST_PER_SOLDIER;
@@ -3172,6 +3216,7 @@ class ACR_AICommander : Managed
    return false;
   }
   if (best.m_iAITask == ACR_EAITask.RESUPPLY) best.m_iAITask = ACR_EAITask.FREE;
+  m_Refitting.Remove(best);
   PrintFormat("[ACR] AI %1 reinforce: %2", m_sFaction, outcome);
   return true;
  }
@@ -3269,7 +3314,7 @@ class ACR_AICommander : Managed
   // Keep a fire-support budget unless troops are needed more.
   int keep = 0;
   bool highThreat = ACR_Manager.ThreatOption() == 2;
-  bool urgent = UrgentTroops(mine.Count(), cap);
+  bool urgent = UrgentTroops(combatLine, cap);
   if (highThreat)
   {
    // High intensity should field its fire support even while the infantry pool
@@ -3305,11 +3350,11 @@ class ACR_AICommander : Managed
   // Save up for a pricier unit only with a working force in the field; short of
   // troops, or when troops are urgent, buy what is affordable now.
   int saveMax = Math.Max(budget, 85);
-  if (mine.Count() < SAVE_MIN_UNITS || (urgent && !highThreat)) saveMax = budget;
+  if (combatLine < SAVE_MIN_UNITS || (urgent && !highThreat)) saveMax = budget;
   if (m_iSaveForEntry >= 0 && m_iSaveForEntry < data.m_aRequisitions.Count())
   {
    ACR_RequisitionEntry savedEntry = data.m_aRequisitions[m_iSaveForEntry];
-   if (savedEntry.m_iRemaining <= 0 || savedEntry.m_iCost > saveMax || (mine.Count() < 2 && savedEntry.m_iCost > budget) || (savedEntry.m_eFormation == ACR_EFormation.SF && HasSpecialForces()))
+   if (savedEntry.m_iRemaining <= 0 || savedEntry.m_iCost > saveMax || (combatLine < 2 && savedEntry.m_iCost > budget) || (savedEntry.m_eFormation == ACR_EFormation.SF && HasSpecialForces()))
     m_iSaveForEntry = -1;
    else if (savedEntry.m_iCost > budget)
     return;
@@ -3317,7 +3362,9 @@ class ACR_AICommander : Managed
   else m_iSaveForEntry = -1;
 
   bool boughtSF;
-  for (int n = 0; n < 2 && mine.Count() + n < cap; n++)
+  // The cap counts fighting units only (as above): trucks, ambulances, crewless
+  // vehicles and 1-man remnants filled it on Everon and the AI sat on 1000 RP.
+  for (int n = 0; n < 2 && combatLine + n < cap; n++)
   {
    budget = data.m_iRP - keep;
    int pick = -1;
@@ -3336,7 +3383,7 @@ class ACR_AICommander : Managed
     {
      if (entry.m_iRemaining <= 0 || entry.m_iCost > saveMax) continue;
      if (entry.m_eFormation == ACR_EFormation.SF && (boughtSF || HasSpecialForces())) continue;
-     if (mine.Count() < 2 && entry.m_iCost > budget) continue;
+     if (combatLine < 2 && entry.m_iCost > budget) continue;
      if (supportTeams >= 2 && IsSpecialistTeam(entry)) continue;
      if (entry.m_bMortarTeam) continue; // bought on its own (BuyMortarTeam)
      // AI can't fly: a bought helicopter would just sit at base. Gunships come as supports instead.
@@ -3354,7 +3401,7 @@ class ACR_AICommander : Managed
      else if (smallTeam && !(isSapper && HasEnemyFob())) weight *= 0.35;
      if (highThreat && !entry.m_sVehicle.IsEmpty()) weight *= 1.5;
      if (highThreat && m_sFaction == "RHS_AFRF" && IsRUArmorEntry(entry)) weight *= 2;
-     if (!entry.m_sVehicle.IsEmpty() && vehicles == 0 && mine.Count() >= 3) weight *= 1.6;
+     if (!entry.m_sVehicle.IsEmpty() && vehicles == 0 && combatLine >= 3) weight *= 1.6;
      if (isSapper && HasEnemyFob())
      {
       if (!OwnsLike(entry)) weight *= 3.0;
@@ -3537,7 +3584,8 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : mine)
   {
    int need = NeedsOf(squad);
-   if (squad.m_iAITask == ACR_EAITask.RESUPPLY && need == 0)
+   // Walking back for replacements (ReinforceDepleted) is a resupply with no service need.
+   if (squad.m_iAITask == ACR_EAITask.RESUPPLY && need == 0 && !m_Refitting.Contains(squad))
    {
     squad.m_iAITask = ACR_EAITask.FREE;
     PrintFormat("[ACR] AI %1: %2 resupplied", m_sFaction, squad.GetName());
@@ -4285,6 +4333,7 @@ class ACR_AICommander : Managed
   m_Attacks.Clear();
   m_RetreatingUntil.Clear();
   m_ReinforceRetryAt.Clear();
+  m_Refitting.Clear();
   m_ReserveSquad = null;
   m_iSaveForEntry = -1;
   m_iLastSavedLog = -1;
