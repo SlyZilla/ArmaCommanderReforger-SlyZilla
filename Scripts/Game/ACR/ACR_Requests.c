@@ -368,7 +368,8 @@ class ACR_Requests : Managed
     string siteWhy;
     string squadFaction = "";
     if (squad.GetFaction()) squadFaction = squad.GetFaction().GetFactionKey();
-    if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction)) return outcome.Refuse(name + ": " + siteWhy);
+    // Face the threat, as the AI commander's roadblocks face the enemy base.
+    if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction, ACR_Intel.ThreatPoint(squadFaction, point))) return outcome.Refuse(name + ": " + siteWhy);
     if (squad.EstablishRoadblock(validRoadPos, validYaw))
     {
      PrintFormat("[ACR] ESTABLISH ROADBLOCK player=%1 squad=%2 target=%3", pc.GetPlayerId(), name, validRoadPos);
