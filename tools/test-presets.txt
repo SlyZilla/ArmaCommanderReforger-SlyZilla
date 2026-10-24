@@ -127,3 +127,5 @@ fortify|-acrFortifyTest 1|120|Worlds/ACR_Everon.ent
 fortifysurvey|-acrFortifySurveyTest 1|90|Worlds/ACR_Everon.ent
 fortifysurveyarland|-acrFortifySurveyTest 1|90|Worlds/ACR_Arland.ent
 fortifysurveykolguyev|-acrFortifySurveyTest 1|90|Worlds/ACR_Kolguyev.ent
+fortifymodels|-acrFortifyModelsTest 1|120|Worlds/ACR_Everon.ent
+fortifymodelskolguyev|-acrFortifyModelsTest 1|120|Worlds/ACR_Kolguyev.ent

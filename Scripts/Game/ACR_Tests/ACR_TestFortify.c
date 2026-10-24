@@ -223,6 +223,135 @@ class ACR_TestFortify
   s_aTypes.Clear();
  }
 
+ // -acrFortifyModelsTest 1 (server, Everon or Kolguyev, ~60 s): a plan of one copy of each
+ // command-post model, in the building's own frame (x right, z forward, metres from its
+ // origin), for designing a layout per model. Lines:
+ //   FORTMODEL <model> at <world pos> yaw <deg> bounds <mins> .. <maxs>
+ //   FORTPART <model> <x> <z> <yaw> <part>        doors, windows and other child parts
+ //   FORTROW <model> <z> <cells>                  0.5 m cells from x = mins-6: '.' open
+ //     ground, '#' under the building's roof, '_' the building's open-air raised surface
+ //     (terrace, steps, platform), 'o' something else solid (fence, prop), trees ignored
+ //   FORTWALL <model> <x> <z> <what>              chest-height (1.2 m) wall hits, 'door'/'window'/'wall'
+ static const string MODELS = "House_Village_E_1I02_Furniture,Barracks_USSR_01_military,Warehouse_01,House_Village_E_1L03t,House_Wooden_E_1I01,Workshop_02_grey,Barn_E_01,Barn_E_02,FarmHouse_E_1L01,House_Village_E_1I08t";
+ protected static IEntity s_Building;
+
+ protected static bool CollectAnyBuilding(IEntity e)
+ {
+  if (!e || e.GetParent()) return true;
+  if (SCR_DestructibleBuildingEntity.Cast(e) || BaseBuilding.Cast(e)) s_aTypes.Insert(e);
+  return true;
+ }
+
+ static void SurveyModels()
+ {
+  array<string> wanted = {};
+  MODELS.Split(",", wanted, true);
+  array<string> done = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   s_aTypes.Clear();
+   GetGame().GetWorld().QueryEntitiesBySphere(base.GetOrigin(), Math.Max(base.m_fRadius, 50), CollectAnyBuilding, null, EQueryEntitiesFlags.STATIC);
+   foreach (IEntity b : s_aTypes)
+   {
+    string model = ACR_Fortify.ModelName(b);
+    model = FilePath.StripExtension(model);
+    if (!wanted.Contains(model) || done.Contains(model)) continue;
+    done.Insert(model);
+    DumpModel(model, b);
+   }
+  }
+  s_aTypes.Clear();
+  PrintFormat("[ACR] FORTMODEL found %1 of %2 models", done.Count(), wanted.Count());
+ }
+
+ protected static bool NotChar(notnull IEntity e)
+ {
+  return ChimeraCharacter.Cast(e) == null && Tree.Cast(e) == null;
+ }
+
+ static void DumpModel(string model, IEntity b)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  vector mins, maxs;
+  b.GetBounds(mins, maxs);
+  PrintFormat("[ACR] FORTMODEL %1 at %2 yaw %3 bounds %4 .. %5", model, b.GetOrigin(), (int)ACR_Fortify.Bearing(b.VectorToParent(Vector(0, 0, 1))), mins, maxs);
+  // Parts: doors, windows, everything attached.
+  IEntity child = b.GetChildren();
+  while (child)
+  {
+   string part = ACR_Fortify.ModelName(child);
+   vector local = b.CoordToLocal(child.GetOrigin());
+   float partYaw = ACR_Fortify.Bearing(b.VectorToLocal(child.VectorToParent(Vector(0, 0, 1))));
+   PrintFormat("[ACR] FORTPART %1 %2 %3 %4 %5", model, local[0].ToString(-1, 2), local[2].ToString(-1, 2), (int)partYaw, part);
+   child = child.GetSibling();
+  }
+  float x0 = mins[0] - 6;
+  float x1 = maxs[0] + 6;
+  float z0 = mins[2] - 6;
+  float z1 = maxs[2] + 6;
+  float top = b.CoordToParent(maxs)[1] + 10;
+  for (float z = z1; z >= z0; z -= 0.5)
+  {
+   string row = "";
+   for (float x = x0; x <= x1; x += 0.5)
+   {
+    vector p = b.CoordToParent(Vector(x, 0, z));
+    float ground = world.GetSurfaceY(p[0], p[2]);
+    // Down from high above: anything over 2 m up is roof (or a tall wall).
+    TraceParam high = new TraceParam();
+    high.Start = Vector(p[0], top, p[2]);
+    high.End = Vector(p[0], ground - 0.5, p[2]);
+    high.Flags = TraceFlags.ENTS;
+    float f = world.TraceMove(high, NotChar);
+    float hitY = top + (ground - 0.5 - top) * f;
+    bool ours = high.TraceEnt && (high.TraceEnt == b || high.TraceEnt.GetRootParent() == b);
+    string cell = ".";
+    if (f < 1 && ours && hitY > ground + 2.0) cell = "#";
+    else if (f < 1 && ours && hitY > ground + 0.15) cell = "_";
+    else if (f < 1 && !ours && hitY > ground + 0.3) cell = "o";
+    row += cell;
+   }
+   PrintFormat("[ACR] FORTROW %1 %2 %3", model, z.ToString(-1, 1), row);
+  }
+  // Chest-height walls: rays along local x, every 0.5 m of z, recording each surface met.
+  for (float wz = z0 + 3; wz <= z1 - 3; wz += 0.5)
+  {
+   vector from = b.CoordToParent(Vector(x0 + 3, 0, wz));
+   vector to = b.CoordToParent(Vector(x1 - 3, 0, wz));
+   from[1] = world.GetSurfaceY(from[0], from[2]) + 1.2;
+   to[1] = world.GetSurfaceY(to[0], to[2]) + 1.2;
+   for (int hop = 0; hop < 12; hop++)
+   {
+    TraceParam ray = new TraceParam();
+    ray.Start = from;
+    ray.End = to;
+    ray.Flags = TraceFlags.ENTS;
+    float rf = world.TraceMove(ray, NotChar);
+    if (rf >= 1) break;
+    vector hit = from + (to - from) * rf;
+    string what = "wall";
+    if (ray.TraceEnt && ray.TraceEnt != b)
+    {
+     string hitModel = ACR_Fortify.ModelName(ray.TraceEnt);
+     if (hitModel.Contains("Door") || hitModel.Contains("Gate")) what = "door";
+     else if (hitModel.Contains("Win") || hitModel.Contains("Glass")) what = "window";
+     else if (ray.TraceEnt.GetParent() != b) what = "other";
+    }
+    vector lh = b.CoordToLocal(hit);
+    PrintFormat("[ACR] FORTWALL %1 %2 %3 %4", model, lh[0].ToString(-1, 2), lh[2].ToString(-1, 2), what);
+    from = hit + (to - from).Normalized() * 0.3;
+   }
+  }
+ }
+
+ static void RunModels(int tick)
+ {
+  if (tick != 8) return;
+  SurveyModels();
+  ACR_TestRegress.Check("fortify models: surveyed", true, "");
+  ACR_TestRegress.Complete("fortifymodels", 1);
+ }
+
  // -acrFortifySurveyTest 1 (server, any world, ~30 s): only the building-model survey.
  static void RunSurvey(int tick)
  {
