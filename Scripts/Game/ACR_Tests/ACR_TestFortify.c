@@ -1,11 +1,11 @@
 // -acrFortifyTest 1 (server, Everon, ~40 s): the fortification planner (ACR_Fortify) on every
 // Everon base. Prints each base's plan (FORTIFY lines) and, for the two towns with the most
 // corner walls, their buildings and roads (FORTGEO lines) so a plan can be drawn and checked.
-// Checks: plans exist for the towns, every corner wall faces a threat and leaves a lane, no
+// Checks: plans exist for the towns (all four kinds), most are dressed, corner walls face a threat and leave a lane, no
 // piece stands inside a building, planning time, and the preview spawns and clears its props.
 class ACR_TestFortify
 {
- static const int EXPECTED = 10;
+ static const int EXPECTED = 12;
  static ref array<IEntity> s_aSpawned = {};
 
  // Neutral bases are planned for the US (the preview does the same with the player's side).
@@ -23,7 +23,7 @@ class ACR_TestFortify
 
  static void Plan()
  {
-  int bases, corners, squares, edges, withCorners, maxMs, badLane, badThreat, inside, pieces;
+  int bases, corners, squares, edges, houses, withCorners, maxMs, badLane, badThreat, inside, pieces, dressed, positions;
   string worst = "";
   ACR_Base most;
   ACR_Base second;
@@ -55,7 +55,10 @@ class ACR_TestFortify
      if (p.m_fThreat < ACR_Fortify.MIN_THREAT) badThreat++;
     }
     else if (p.m_eKind == ACR_EFortifyKind.SQUARE) squares++;
+    else if (p.m_eKind == ACR_EFortifyKind.EDGE) houses++;
     else edges++;
+    positions++;
+    if (p.m_aPiecePos.Count() > p.Walls()) dressed++;
     foreach (vector at : p.m_aPiecePos)
     {
      pieces++;
@@ -87,6 +90,8 @@ class ACR_TestFortify
   ACR_TestRegress.Check("fortify: corner walls in several towns", corners >= 5 && withCorners >= 3, string.Format("%1 corners at %2 bases", corners, withCorners));
   ACR_TestRegress.Check("fortify: square redoubts found", squares >= 1, string.Format("%1 squares", squares));
   ACR_TestRegress.Check("fortify: perimeter posts found", edges >= 5, string.Format("%1 posts", edges));
+  ACR_TestRegress.Check("fortify: house corners found", houses >= 5, string.Format("%1 house corners", houses));
+  ACR_TestRegress.Check("fortify: positions are dressed", positions > 0 && dressed * 4 >= positions * 3, string.Format("%1 of %2 have props besides sandbags", dressed, positions));
   ACR_TestRegress.Check("fortify: corner walls leave a vehicle lane", badLane == 0, string.Format("%1 too narrow", badLane));
   ACR_TestRegress.Check("fortify: corner walls face a threat", badThreat == 0, string.Format("%1 facing away", badThreat));
   ACR_TestRegress.Check("fortify: no piece inside a building", inside == 0, string.Format("%1 of %2 pieces", inside, pieces));
@@ -161,7 +166,7 @@ class ACR_TestFortify
   foreach (ACR_FortifyPos p : plan)
   {
    foreach (int i, vector at : p.m_aPiecePos)
-    PrintFormat("[ACR] FORTGEO P %1 %2 %3 %4 %5", ACR_Fortify.KindName(p.m_eKind), at[0].ToString(-1, 1), at[2].ToString(-1, 1), p.m_aPieceYaw[i].ToString(-1, 0), p.m_aPieceRound[i]);
+    PrintFormat("[ACR] FORTGEO P %1 %2 %3 %4 %5 %6", ACR_Fortify.KindName(p.m_eKind), at[0].ToString(-1, 1), at[2].ToString(-1, 1), p.m_aPieceYaw[i].ToString(-1, 0), FilePath.StripExtension(FilePath.StripPath(p.m_aPiecePrefab[i])), p.m_aPieceWall[i]);
   }
  }
 }
