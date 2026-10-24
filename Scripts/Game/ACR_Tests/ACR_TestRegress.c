@@ -111,7 +111,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 113; // includes six BBB order-leash and four roadblock placement checks
+ static const int EXPECTED = 114; // includes seven BBB order-leash and four roadblock placement checks
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -260,6 +260,27 @@ class ACR_TestRegress
   fixture.m_Mode = savedMode; fixture.m_Commander = savedCommander;
   fixture.m_iOrderedBy = savedIssuer; fixture.m_bForced = savedForced;
   fixture.SetOrder(savedLabel, savedState);
+
+  // A crew defending in combat mode is still ACA's to drive (no BBB armour escape).
+  ACR_Squad crew;
+  foreach (ACR_Squad crewCandidate : manager.m_Squads)
+   if (crewCandidate.m_Group && ACR_Transport.CrewedVehicle(crewCandidate) && !crewCandidate.HasPlayer() && !ACR_AirLift.Busy(crewCandidate) && !crewCandidate.m_CombatFlank.Active()) { crew = crewCandidate; break; }
+  if (!crew)
+  {
+   Skip("BBB leash: crewed vehicles stay binding in any order", "no crewed vehicle squad");
+   return;
+  }
+  savedMode = crew.m_Mode; savedState = crew.OrderState(); savedLabel = crew.m_Order;
+  savedCommander = crew.m_Commander; savedIssuer = crew.m_iOrderedBy; savedForced = crew.m_bForced;
+  crew.m_Mode = ACR_EMoveMode.COMBAT;
+  crew.m_Commander = 0; crew.m_iOrderedBy = 0; crew.m_bForced = false;
+  crew.SetOrder("Leash policy fixture", ACR_EOrderState.DEFEND);
+  bool crewDefends = hooks.IsBinding(crew.m_Group);
+  crew.SetOrder("Leash policy fixture", ACR_EOrderState.ASSAULT);
+  Check("BBB leash: crewed vehicles stay binding in any order", crewDefends && hooks.IsBinding(crew.m_Group));
+  crew.m_Mode = savedMode; crew.m_Commander = savedCommander;
+  crew.m_iOrderedBy = savedIssuer; crew.m_bForced = savedForced;
+  crew.SetOrder(savedLabel, savedState);
  }
 
  // Real road + composition checks: clicking the verge must not build on the verge.

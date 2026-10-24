@@ -70,7 +70,9 @@ class ACR_BBBHooks : BBB_Hooks
   if (ACR_AirLift.Busy(squad)) return true;
   if (squad.m_Commander != 0 || squad.m_iOrderedBy != 0 || squad.m_bForced || squad.m_Mode != ACR_EMoveMode.COMBAT || squad.m_CombatFlank.Active()) return true;
   ACR_EOrderState state = squad.OrderState();
-  if (state == ACR_EOrderState.MOVE && squad.IsMounted()) return true;
+  // Riders and crews in any order stay host-owned: ACA's stall/unstick drives its vehicles,
+  // so BBB armour escapes must not back a defending or assaulting tank out on their own.
+  if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad)) return true;
   return state != ACR_EOrderState.MOVE && state != ACR_EOrderState.ASSAULT && state != ACR_EOrderState.HUNT && state != ACR_EOrderState.DEFEND && state != ACR_EOrderState.HOLD && state != ACR_EOrderState.SUPPRESS;
  }
 
