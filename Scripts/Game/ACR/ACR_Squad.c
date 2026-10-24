@@ -1236,6 +1236,10 @@ class ACR_Squad : Managed
   EquipShovels(false);
   string factionKey = "";
   if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+  // Stop the walk to the site first: the composition and its navmesh rebuild land on the
+  // builders, and a move still running there fails natively (Everon soak 23 Oct: VM exception
+  // "Failed move ... to waypoint" 1.7 s after a roadblock completed).
+  ClearOrders();
   ACR_Roadblock rb = ACR_Roadblocks.SpawnRoadblock(factionKey, m_vRoadblockSite, m_fRoadblockYaw, m_Name);
   if (!rb)
   {
@@ -1247,7 +1251,6 @@ class ACR_Squad : Managed
   m_RoadblockTurret = rb.m_Turret;
   // Native Defend owns turret allocation; do not seat a soldier before assigning it.
 
-  ClearOrders();
   SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0);
