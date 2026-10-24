@@ -3,12 +3,15 @@
 // USSR set, FIA log barricades); every size spawned for US, USSR and FIA on a road near Alpha,
 // guns on the medium and large checkpoints only; RP and construction truck payment, each refunded
 // where it came from (Halt, a new order, a walk that times out), a truck reserved for another
-// squad's FOB left alone, the AI commander paying RP, a regroup pausing a paid build without a
-// refund; then Alpha builds a barricade that waits for a truck to leave the road, faces a known
-// enemy and is held until a new order.
+// squad's FOB left alone, the AI commander paying RP (and refused before its current order is
+// touched), a switch to a bigger roadblock paid with the first one's refund, time set aside not
+// counting, a regroup pausing a paid build without a refund; then Alpha builds a barricade that
+// waits for a truck to leave the road but not for one at its stage beside the road, faces a known
+// enemy, is held until a new order and is dismantled for half back; and Bravo, wiped out while
+// its build is set aside, gets the payment back.
 class ACR_TestRoadblocks
 {
- static const int CHECKS = 18;
+ static const int CHECKS = 24;
  static const ResourceName TRUCK = "{2D74C39A650A3030}Prefabs/Vehicles/Wheeled/M923A1/M923A1_engineer.et";
  static int s_iStep;
  static int s_iStepAt;
@@ -20,6 +23,8 @@ class ACR_TestRoadblocks
  static vector s_vBuild;
  static float s_fStock;
  static int s_iVehicleWaits;
+ static float s_fStage;
+ static int s_iBravoRP;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -140,7 +145,8 @@ class ACR_TestRoadblocks
     ACR_TestRegress.Abort("roadblocks", "the barricade order failed: " + why);
     return;
    }
-   PrintFormat("[ACR] ROADBLOCKS test: barricade ordered at %1 yaw %2, threat %3 (known %4), paid by truck %5", s_vBuild, yaw, threat, s_bThreatKnown, alpha.m_RoadblockTruck == s_Truck);
+   s_fStage = vector.DistanceXZ(alpha.m_MoveTarget, s_vBuild);
+   PrintFormat("[ACR] ROADBLOCKS test: barricade ordered at %1 yaw %2, threat %3 (known %4), paid by truck %5, stage %6 m off", s_vBuild, yaw, threat, s_bThreatKnown, alpha.m_RoadblockTruck == s_Truck, s_fStage);
    // The truck parks on the spot before the work is done.
    s_Truck.SetOrigin(s_vBuild + Vector(0, 1, 0));
    s_Truck.Update();
@@ -153,8 +159,9 @@ class ACR_TestRoadblocks
    if (alpha.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK && alpha.m_Order.Contains("vehicles")) s_iVehicleWaits++;
    if (s_iVehicleWaits < 3 && alpha.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK && waited < 60) return;
    ACR_TestRegress.Check("roadblocks: finished work waits for a vehicle to leave the road", s_iVehicleWaits >= 3 && alpha.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK && !alpha.m_ActiveRoadblock, string.Format("waited %1 s while the truck stood there, order '%2'", s_iVehicleWaits, alpha.m_Order));
-   vector away = Along(s_fYaw);
-   s_Truck.SetOrigin(ACR_Manager.Ground(s_vBuild + Vector(away[2], 0, -away[0]) * 25));
+   // The truck leaves the spot for the squad's stage beside the road (a little along it, clear of
+   // the soldiers there): that does not hold the work.
+   s_Truck.SetOrigin(ACR_Manager.Ground(alpha.m_vRoadblockStage + Along(s_fYaw) * 9) + Vector(0, 1, 0));
    s_Truck.Update();
    NextStep(tick);
    return;
@@ -180,17 +187,48 @@ class ACR_TestRoadblocks
    bool held = alpha.OrderState() == ACR_EOrderState.DEFEND && alpha.m_Order == "Holding roadblock" && !alpha.RoadblockPending();
    bool paid = Math.AbsFloat(s_fStock - stock - 1.6) < 0.01;
    ACR_TestRegress.Check("roadblocks: the barricade goes in paid by the truck, faces the known enemy, and is held", built && held && paid && s_bThreatKnown && facing > 0.9, string.Format("'%1', order '%2', stock %3 -> %4, facing dot %5 (threat known %6)", FilePath.StripPath(prefab), alpha.m_Order, s_fStock, stock, facing, s_bThreatKnown));
+   bool clear = s_fStage > ACR_Roadblocks.Footprint(ACR_ERoadblockType.BARRICADE) && s_fStage <= ACR_Roadblocks.CP_RADIUS;
+   ACR_TestRegress.Check("roadblocks: the squad waits beside the road, so a truck at its stage does not hold the work", clear && rb, string.Format("stage %1 m from the spot (footprint %2), built %3", s_fStage, ACR_Roadblocks.Footprint(ACR_ERoadblockType.BARRICADE), rb != null));
    alpha.MoveTo(ACR_Manager.Ground(alpha.GetAnchor().GetOrigin() + Vector(5, 0, 0)));
    ACR_TestRegress.Check("roadblocks: a new order releases a barricade's squad; the barricade stays", rb && !alpha.m_ActiveRoadblock && ACR_Roadblocks.s_aRoadblocks.Contains(rb) && rb.m_Entity);
-   if (rb)
-   {
-    if (rb.m_Entity) ACR_Navmesh.DeleteStructure(rb.m_Entity);
-    ACR_Roadblocks.s_aRoadblocks.RemoveItem(rb);
-   }
+   // Dismantled: half back where it was paid from (the truck's 1.6 loads: 0.8; a barricade's 8 RP: 4).
+   stock = logistics.StockOf(s_Truck);
+   int rp = us.m_iRP;
+   if (rb) ACR_Roadblocks.DismantleRoadblock(rb);
+   float truckBack = logistics.StockOf(s_Truck) - stock;
+   int rpBack = us.m_iRP - rp;
    if (s_Truck) SCR_EntityHelper.DeleteEntityAndChildren(s_Truck);
+   ACR_Roadblock unpaid = ACR_Roadblocks.SpawnRoadblock("US", s_vBuild, s_fYaw, "", ACR_ERoadblockType.BARRICADE);
+   rp = us.m_iRP;
+   if (unpaid) ACR_Roadblocks.DismantleRoadblock(unpaid);
+   ACR_TestRegress.Check("roadblocks: dismantling gives half back where it was paid from", Math.AbsFloat(truckBack - 0.8) < 0.01 && rpBack == 0 && unpaid && us.m_iRP - rp == 4 && !ACR_Roadblocks.s_aRoadblocks.Contains(rb), string.Format("truck-paid barricade: +%1 loads, +%2 RP; RP-paid barricade: +%3 RP", truckBack, rpBack, us.m_iRP - rp));
+
+   // Bravo starts a roadblock (RP), the order is set aside, and Bravo is wiped out.
+   ACR_Squad bravo = manager.FindSquadByGroup(h.m_Range.m_Bravo);
+   us.m_iRP = 500;
+   s_iBravoRP = -1;
+   if (bravo && bravo.EstablishRoadblock(s_vSite, s_fYaw, ACR_ERoadblockType.SMALL))
+   {
+    s_iBravoRP = us.m_iRP;
+    bravo.SetOrder("Regrouping", ACR_EOrderState.REGROUP);
+    array<AIAgent> bravoAgents = {};
+    bravo.GetAgents(bravoAgents);
+    foreach (AIAgent bravoAgent : bravoAgents)
+     if (bravoAgent && bravoAgent.GetControlledEntity()) h.Kill(bravoAgent.GetControlledEntity());
+   }
+   NextStep(tick);
+   return;
+  }
+
+  if (s_iStep == 8)
+  {
+   if (waited < 4) return;
+   ACR_Squad gone = manager.FindSquadByGroup(h.m_Range.m_Bravo);
+   bool pending = gone && gone.RoadblockPending();
+   ACR_TestRegress.Check("roadblocks: a squad wiped out while its build is set aside gets the payment back", s_iBravoRP == 488 && us.m_iRP == 500 && !pending, string.Format("rp 500 -> %1 -> %2, squad left %3, pending %4", s_iBravoRP, us.m_iRP, gone != null, pending));
    ACR_Roadblocks.s_fWorkScaleForTest = 1;
    ACR_TestRegress.Complete("roadblocks", CHECKS);
-   s_iStep = 8;
+   s_iStep = 9;
   }
  }
 
@@ -319,6 +357,37 @@ class ACR_TestRoadblocks
   string why;
   bool refused = !ACR_Roadblocks.CanOrder(alpha, why, ACR_ERoadblockType.BARRICADE) && !alpha.EstablishRoadblock(s_vSite, s_fYaw, ACR_ERoadblockType.BARRICADE);
   ACR_TestRegress.Check("roadblocks: refused short of RP and supplies, nothing charged", refused && us.m_iRP == 5 && logistics.StockOf(s_Truck) < 0.01 && why.Contains("RP") && alpha.OrderState() != ACR_EOrderState.BUILD_ROADBLOCK, why);
+  us.m_iRP = 500;
+  Restock(logistics, 20);
+
+  // The AI path (RP only) short of RP, with a full truck near: refused before anything happens
+  // to the squad's current order.
+  alpha.MoveTo(ACR_Manager.Ground(home + Vector(4, 0, 0)));
+  int serial = alpha.m_iOrderSerial;
+  us.m_iRP = 5;
+  bool aiOrdered = alpha.EstablishRoadblock(s_vSite, s_fYaw, ACR_ERoadblockType.MEDIUM, false);
+  ACR_TestRegress.Check("roadblocks: refused on the AI path before the squad's current order is touched", !aiOrdered && alpha.m_iOrderSerial == serial && alpha.OrderState() == ACR_EOrderState.MOVE && us.m_iRP == 5 && Math.AbsFloat(logistics.StockOf(s_Truck) - 20) < 0.01, string.Format("ordered %1, serial %2 -> %3, state %4, rp %5", aiOrdered, serial, alpha.m_iOrderSerial, alpha.OrderState(), us.m_iRP));
+
+  // Switching mid-build from M to L with 25 RP left: the M's 20 RP refund pays for the L.
+  Restock(logistics, 0);
+  us.m_iRP = 45;
+  bool medium = alpha.EstablishRoadblock(s_vSite, s_fYaw, ACR_ERoadblockType.MEDIUM);
+  int afterMedium = us.m_iRP;
+  bool large = medium && alpha.EstablishRoadblock(s_vSite, s_fYaw, ACR_ERoadblockType.LARGE);
+  int afterLarge = us.m_iRP;
+  bool switched = large && alpha.m_iRoadblockType == ACR_ERoadblockType.LARGE && alpha.m_iRoadblockPaidRP == 30;
+  alpha.Halt("Holding");
+  ACR_TestRegress.Check("roadblocks: switching to a bigger roadblock counts the first one's refund", switched && afterMedium == 25 && afterLarge == 15 && us.m_iRP == 45, string.Format("rp 45 -> %1 (M) -> %2 (L) -> %3 after Halt", afterMedium, afterLarge, us.m_iRP));
+
+  // Time with the order set aside (a long player takeover) counts for neither limit.
+  ordered = alpha.EstablishRoadblock(s_vSite, s_fYaw, ACR_ERoadblockType.SMALL);
+  float orderedAt = alpha.m_fRoadblockLastTick;
+  float deadline = alpha.m_fRoadblockDeadline;
+  alpha.TickEstablishRoadblock(orderedAt + 600000);
+  bool kept = ordered && alpha.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK && Math.AbsFloat(alpha.m_fRoadblockDeadline - deadline - 599000) < 1;
+  string keptLabel = alpha.m_Order;
+  alpha.Halt("Holding");
+  ACR_TestRegress.Check("roadblocks: ten minutes set aside count for neither the walk limit nor the give-up timer", kept && us.m_iRP == 45, string.Format("'%1', deadline moved %2 s", keptLabel, (alpha.m_fRoadblockDeadline - deadline) / 1000));
   us.m_iRP = 500;
   Restock(logistics, 20);
 

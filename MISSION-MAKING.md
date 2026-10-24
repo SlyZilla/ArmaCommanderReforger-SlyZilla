@@ -198,10 +198,12 @@ USSR, Russian (also RHS AFRF) and SLA sides build the Soviet compositions, the o
 FIA has no checkpoints: it builds log barricades sized to the road at the barricade's price, and
 its panel shows only **Barricade**. A construction truck within 50 m of the squad pays in supplies
 when it holds enough (never one another squad has reserved for a FOB); otherwise the side pays RP.
-An order called off before the roadblock goes in (a new order, Halt, the squad lost, 3 minutes at
-the road without progress, or a walk there that takes too long) is refunded where it was paid
-from; a destroyed truck's supplies are lost. Work pauses in contact, and the roadblock goes in
-once no vehicle stands on the spot. The squad then holds it and mans its gun; the roadblock stays
+Like any new order, a roadblock order replaces the squad's current job, and what that job gives
+back counts towards the price. An order called off before the roadblock goes in (a new order,
+Halt, the squad lost, 3 minutes at the road without progress, or a walk there that takes too long)
+is refunded where it was paid from; a destroyed truck's supplies are lost. Time while a regroup or
+a player has set the order aside doesn't count. The squad waits beside the road, clear of the
+spot. Work pauses in contact, and the roadblock goes in once no vehicle stands on the spot. The squad then holds it and mans its gun; the roadblock stays
 when the squad leaves. Roadblocks are refused within 120 m of a base and 180 m of another
 roadblock. AI commanders build medium checkpoints paid in RP, and the 3D commander camera's
 **Roadblock** button orders a medium checkpoint.

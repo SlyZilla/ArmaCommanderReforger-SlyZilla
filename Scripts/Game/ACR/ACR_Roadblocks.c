@@ -28,6 +28,8 @@ class ACR_Roadblock : Managed
 	float m_fSpawnedAt;
 	bool m_bAlerted;
 	int m_iType = ACR_ERoadblockType.MEDIUM;
+	IEntity m_PaidTruck;  // the construction truck that paid for it (none: RP)
+	float m_fPaidLoads;
 }
 
 class ACR_Roadblocks : Managed
@@ -58,6 +60,7 @@ class ACR_Roadblocks : Managed
 	static const float MIN_ROADBLOCK_DIST = 180.0;
 	static const float CP_RADIUS = 15.0;
 	static const float TRAVEL_SPEED = 1.0; // m/s allowed for the walk to the road, plus 3 minutes
+	static const float STAGE_GAP = 4.0;    // the squad waits this far outside the footprint
 
 	static bool IsEast(string factionKey)
 	{
@@ -207,20 +210,44 @@ class ACR_Roadblocks : Managed
 		return -1;
 	}
 
-	// The squad's construction truck (ACR_Squad.ConstructionTruck: never one reserved for another
-	// squad's FOB) when it has the supplies; loads to take from it.
-	static bool TruckCanPay(ACR_Squad squad, int type, out IEntity truck, out float loads)
+	// Who pays: the squad's construction truck (ACR_Squad.ConstructionTruck: never one reserved
+	// for another squad's FOB) when truckMayPay and it holds the supplies (truck, loads), else RP
+	// (truck null). Both count what the squad's current job gives back, since the new order
+	// replaces it first. False: neither can pay.
+	static bool Payer(ACR_Squad squad, int type, bool truckMayPay, out IEntity truck, out float loads)
 	{
 		truck = null;
 		loads = Supplies(type) / ACR_Logistics.SUPPLIES_PER_LOAD_CONSTRUCTION;
-		if (!squad) return false;
-		IEntity candidate = squad.ConstructionTruck();
 		ACR_Manager manager = ACR_Manager.GetInstance();
-		if (!candidate || !manager) return false;
+		if (!squad || !manager) return false;
 		if (!manager.m_Logistics) manager.m_Logistics = new ACR_Logistics(manager);
-		if (manager.m_Logistics.StockOf(candidate) < loads) return false;
-		truck = candidate;
-		return true;
+		if (truckMayPay)
+		{
+			IEntity candidate = squad.ConstructionTruck();
+			if (candidate)
+			{
+				float capacity = ACR_Logistics.Capacity(ACR_Logistics.ServiceOf(candidate));
+				if (Math.Min(manager.m_Logistics.StockOf(candidate) + squad.PendingLoads(candidate), capacity) >= loads)
+				{
+					truck = candidate;
+					return true;
+				}
+			}
+		}
+		string factionKey = "";
+		if (squad.GetFaction()) factionKey = squad.GetFaction().GetFactionKey();
+		return manager.m_Bases.GetRP(factionKey) + squad.PendingRP() >= Cost(type);
+	}
+
+	// Beside the road on the squad's side, clear of the footprint: the squad heads there, so a
+	// truck it brings does not park on the spot.
+	static vector Stage(vector site, float yaw, int type, vector from)
+	{
+		float rad = yaw * Math.DEG2RAD;
+		vector side = Vector(Math.Cos(rad), 0, -Math.Sin(rad));
+		vector toSquad = from - site;
+		if (toSquad[0] * side[0] + toSquad[2] * side[2] < 0) side = side * -1;
+		return ACR_Manager.Ground(site + side * (Footprint(type) + STAGE_GAP));
 	}
 
 	static float RoadWidthAt(vector pos)
@@ -234,16 +261,13 @@ class ACR_Roadblocks : Managed
 		return road.GetWidth();
 	}
 
-	static bool CanOrder(ACR_Squad squad, out string refusal, int type = ACR_ERoadblockType.MEDIUM)
+	// Like any new order, a roadblock order replaces the squad's current job (a roadblock or FOB
+	// build too), which refunds itself; Payer counts that refund.
+	static bool CanOrder(ACR_Squad squad, out string refusal, int type = ACR_ERoadblockType.MEDIUM, bool truckMayPay = true)
 	{
 		if (!squad || squad.CountAlive() <= 0)
 		{
 			refusal = "squad is unavailable";
-			return false;
-		}
-		if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB)
-		{
-			refusal = "already building";
 			return false;
 		}
 		if (squad.IsVehicle())
@@ -254,12 +278,12 @@ class ACR_Roadblocks : Managed
 		string factionKey = "";
 		if (squad.GetFaction()) factionKey = squad.GetFaction().GetFactionKey();
 		type = TypeFor(type, factionKey);
-		ACR_Manager manager = ACR_Manager.GetInstance();
 		IEntity truck;
 		float loads;
-		if (!manager || (manager.m_Bases.GetRP(factionKey) < Cost(type) && !TruckCanPay(squad, type, truck, loads)))
+		if (!Payer(squad, type, truckMayPay, truck, loads))
 		{
 			refusal = string.Format("not enough RP (%1 needed) or construction truck supplies (%2)", Cost(type), Supplies(type));
+			if (!truckMayPay) refusal = string.Format("not enough RP (%1 needed)", Cost(type));
 			return false;
 		}
 		return true;
@@ -427,13 +451,27 @@ class ACR_Roadblocks : Managed
 		if (rb.m_Turret) VacateTurret(rb.m_Turret);
 		if (rb.m_Entity) ACR_Navmesh.DeleteStructure(rb.m_Entity);
 
-		// Half its RP price back (the medium checkpoint's DISMANTLE_REFUND).
-		int refund = Cost(rb.m_iType) * DISMANTLE_REFUND / ROADBLOCK_COST;
+		// Half its price back where it was paid from (the medium checkpoint's DISMANTLE_REFUND RP);
+		// a destroyed truck's half is lost.
 		ACR_Manager manager = ACR_Manager.GetInstance();
-		if (manager) manager.m_Bases.Refund(rb.m_sFaction, refund);
+		string refund = "nothing";
+		if (rb.m_fPaidLoads > 0)
+		{
+			if (manager && manager.m_Logistics && rb.m_PaidTruck && ACR_Logistics.Health(rb.m_PaidTruck) > 0)
+			{
+				manager.m_Logistics.AddStock(rb.m_PaidTruck, rb.m_fPaidLoads * 0.5);
+				refund = string.Format("%1 supplies to the construction truck", Math.Round(rb.m_fPaidLoads * 0.5 * ACR_Logistics.SUPPLIES_PER_LOAD_CONSTRUCTION));
+			}
+		}
+		else
+		{
+			int rp = Cost(rb.m_iType) * DISMANTLE_REFUND / ROADBLOCK_COST;
+			if (manager) manager.m_Bases.Refund(rb.m_sFaction, rp);
+			refund = string.Format("%1 RP", rp);
+		}
 
 		s_aRoadblocks.RemoveItem(rb);
-		PrintFormat("[ACR] ROADBLOCK dismantled at %1, refunded %2 RP to %3", rb.m_vPos, refund, rb.m_sFaction);
+		PrintFormat("[ACR] ROADBLOCK dismantled at %1, refunded %2 to %3", rb.m_vPos, refund, rb.m_sFaction);
 	}
 
 	static IEntity FindTurretInHierarchy(IEntity root)
