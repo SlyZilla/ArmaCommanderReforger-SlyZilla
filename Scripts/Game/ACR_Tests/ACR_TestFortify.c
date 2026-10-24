@@ -5,7 +5,7 @@
 // piece stands inside a building, planning time, and the preview spawns and clears its props.
 class ACR_TestFortify
 {
- static const int EXPECTED = 13;
+ static const int EXPECTED = 15;
  static ref array<IEntity> s_aSpawned = {};
 
  // Neutral bases are planned for the US (the preview does the same with the player's side).
@@ -23,7 +23,7 @@ class ACR_TestFortify
 
  static void Plan()
  {
-  int bases, corners, squares, edges, houses, withCorners, maxMs, badLane, badThreat, inside, pieces, dressed, positions, clips;
+  int bases, corners, squares, edges, houses, posts, postPieces, withCorners, maxMs, badLane, badThreat, inside, pieces, dressed, positions, clips;
   string worst = "";
   ACR_Base most;
   ACR_Base second;
@@ -56,13 +56,21 @@ class ACR_TestFortify
     }
     else if (p.m_eKind == ACR_EFortifyKind.SQUARE) squares++;
     else if (p.m_eKind == ACR_EFortifyKind.EDGE) houses++;
+    else if (p.m_eKind == ACR_EFortifyKind.POST)
+    {
+     posts++;
+     postPieces += p.m_aPiecePos.Count();
+     string have = "";
+     foreach (ResourceName pr : p.m_aPiecePrefab) have += FilePath.StripExtension(FilePath.StripPath(pr)) + " ";
+     PrintFormat("[ACR] FORTIFY post %1: %2 | %3", base.m_sName, p.m_sNote, have);
+    }
     else edges++;
     positions++;
     if (p.m_aPiecePos.Count() > p.Walls()) dressed++;
     foreach (vector at : p.m_aPiecePos)
     {
      pieces++;
-     if (ACR_Fortify.BuildingGap(buildings, at, 25) < 0.2)
+     if (ACR_Fortify.BuildingGap(buildings, at, 25, p.m_Host) < 0.2)
      {
       inside++;
       PrintFormat("[ACR] FORTIFY inside a building: %1 %2 at %3", base.m_sName, ACR_Fortify.KindName(p.m_eKind), at);
@@ -97,6 +105,8 @@ class ACR_TestFortify
   ACR_TestRegress.Check("fortify: square redoubts found", squares >= 1, string.Format("%1 squares", squares));
   ACR_TestRegress.Check("fortify: perimeter posts found", edges >= 5, string.Format("%1 posts", edges));
   ACR_TestRegress.Check("fortify: house corners found", houses >= 5, string.Format("%1 house corners", houses));
+  ACR_TestRegress.Check("fortify: command posts on the post models", posts >= 10, string.Format("%1 posts", posts));
+  ACR_TestRegress.Check("fortify: command posts are full", posts > 0 && postPieces >= posts * 12, string.Format("%1 pieces in %2 posts", postPieces, posts));
   ACR_TestRegress.Check("fortify: positions are dressed", positions > 0 && dressed * 4 >= positions * 3, string.Format("%1 of %2 have props besides sandbags", dressed, positions));
   ACR_TestRegress.Check("fortify: corner walls leave a vehicle lane", badLane == 0, string.Format("%1 too narrow", badLane));
   ACR_TestRegress.Check("fortify: corner walls face a threat", badThreat == 0, string.Format("%1 facing away", badThreat));
@@ -144,12 +154,12 @@ class ACR_TestFortify
   {
    foreach (int i, vector at : p.m_aPiecePos)
    {
-    bool hit = !ACR_Fortify.WorldClear(at, p.m_aPieceYaw[i], ACR_Fortify.HalfSize(p.m_aPiecePrefab[i]));
+    bool hit = !ACR_Fortify.WorldClear(at, p.m_aPieceYaw[i], ACR_Fortify.HalfSize(p.m_aPiecePrefab[i]), p.m_Host);
     foreach (int b, ACR_FortifyPos q : plan)
     {
      if (b <= a) continue;
      foreach (int j, vector other : q.m_aPiecePos)
-      if (ACR_Fortify.PiecesOverlap(p, i, q, j, 0.0)) hit = true;
+      if (!ACR_Fortify.IsNetTop(q.m_aPiecePrefab[j]) && !ACR_Fortify.IsNetTop(p.m_aPiecePrefab[i]) && ACR_Fortify.PiecesOverlap(p, i, q, j, 0.0)) hit = true;
     }
     if (!hit) continue;
     bad++;
@@ -167,7 +177,7 @@ class ACR_TestFortify
   foreach (string side : sides)
   {
    ACR_FortifyKit kit = ACR_Fortify.Kit(side);
-   array<ResourceName> mine = {kit.m_sLong, kit.m_sEnd, kit.m_sRound, kit.m_sLight, kit.m_sNet, ACR_Fortify.DUCKBOARD, ACR_Fortify.COIL};
+   array<ResourceName> mine = {kit.m_sLong, kit.m_sEnd, kit.m_sRound, kit.m_sLight, kit.m_sNet, kit.m_sNetTop, kit.m_sTable, kit.m_sRadio, ACR_Fortify.MAP_BOARD, ACR_Fortify.DUCKBOARD, ACR_Fortify.COIL};
    foreach (ResourceName r : kit.m_aClutter) mine.Insert(r);
    foreach (ResourceName m : mine) if (!all.Contains(m)) all.Insert(m);
   }
@@ -349,7 +359,23 @@ class ACR_TestFortify
   if (tick != 8) return;
   SurveyModels();
   ACR_TestRegress.Check("fortify models: surveyed", true, "");
-  ACR_TestRegress.Complete("fortifymodels", 1);
+  // Command posts on this map (Kolguyev: the barracks).
+  int posts = 0;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired) continue;
+   array<ref ACR_FortifyPos> plan = {};
+   string summary;
+   ACR_Fortify.Plan(base, Owner(base), plan, summary);
+   foreach (ACR_FortifyPos p : plan)
+   {
+    if (p.m_eKind != ACR_EFortifyKind.POST) continue;
+    posts++;
+    PrintFormat("[ACR] FORTIFY post %1: %2, %3 pieces", base.m_sName, p.m_sNote, p.m_aPiecePos.Count());
+   }
+  }
+  ACR_TestRegress.Check("fortify models: command posts placed", posts >= 3, string.Format("%1 posts", posts));
+  ACR_TestRegress.Complete("fortifymodels", 2);
  }
 
  // -acrFortifySurveyTest 1 (server, any world, ~30 s): only the building-model survey.
