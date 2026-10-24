@@ -1,8 +1,11 @@
 # Contributing
 
 Bug reports, reproducible test cases, documentation, scenarios and focused code
-changes are welcome. For a substantial feature, open an issue or discuss it in
-[Discord](https://discord.gg/WK8xGSztB) first so work does not overlap.
+changes are welcome. Before starting a feature, check the pinned **Roadmap** issue
+and the open issues labelled `in progress`: those are already being worked on. To take
+something on, comment on its issue (or open one) so it can be assigned to you, and for a
+substantial feature discuss it there or in [Discord](https://discord.gg/WK8xGSztB) first.
+Push work in progress early as a draft pull request so others can see it.
 
 ## Development and releases
 
