@@ -1,13 +1,12 @@
 // -acrMinefieldsTest 1 (server-capable, ~3 min): the commander's minefield orders. Plans on a
 // road (AT mines on it, AP mines off it), refusals that charge nothing, options and setup rows,
-// a mixed field laid by Alpha (cost, a regroup on the way pausing it without a refund, every
-// mine, signs, armed, its side's map area), the
-// friendly-fire rule with a soldier of each side dropped onto a mine, a cancelled order's
-// refund, Disarm mines lifting the field, and the AI commander laying one only with
-// -acrMinesAI.
+// a mixed field laid by Alpha (cost, a regroup on the way pausing it without a refund and
+// lasting ten minutes without timing it out, every mine, signs, armed, its side's map area), the
+// friendly-fire rule with a soldier of each side dropped onto a mine, a cancelled order's refund,
+// Disarm mines lifting the field, and the AI commander laying one only with -acrMinesAI.
 class ACR_TestMinefields
 {
- static const int CHECKS = 31;
+ static const int CHECKS = 32;
  static int s_iStep;
  static int s_iStepAt;
  static int s_iRP;
@@ -20,6 +19,8 @@ class ACR_TestMinefields
  static IEntity s_EnemyMine, s_FriendMine, s_Enemy, s_Friend;
  static ref ACR_OrderSnapshot s_Regroup;
  static string s_sRegroup;
+ static float s_fRewound;
+ static float s_fShifted;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -71,6 +72,15 @@ class ACR_TestMinefields
    if (waited < 3) return;
    s_sRegroup = string.Format("while regrouping: plan %1, rp %2, state %3", alpha.m_MinePlan != null, us.m_iRP, alpha.OrderState());
    if (!alpha.m_MinePlan || us.m_iRP != s_iRP - 25 || alpha.OrderState() != ACR_EOrderState.REGROUP) s_sRegroup = "lost " + s_sRegroup;
+   // As if the order had been set aside for ten minutes (a player holding the squad): past the
+   // walk limit and the 3-minute timer.
+   if (alpha.m_MinePlan)
+   {
+    alpha.m_MinePlan.m_fLastTick -= 600000;
+    alpha.m_MinePlan.m_fLastProgress -= 600000;
+    alpha.m_MinePlan.m_fDeadline -= 600000;
+    s_fRewound = alpha.m_MinePlan.m_fDeadline;
+   }
    alpha.RestoreOrder(s_Regroup);
    NextStep(tick);
    return;
@@ -78,6 +88,7 @@ class ACR_TestMinefields
 
   if (s_iStep == 2)
   {
+   if (alpha.m_MinePlan) s_fShifted = Math.Max(s_fShifted, alpha.m_MinePlan.m_fDeadline - s_fRewound);
    if (alpha.m_MinePlan && waited < 100) return;
    s_Field = null;
    foreach (ACR_Minefield field : ACR_Minefields.s_Fields) if (field.m_sFaction == "US") s_Field = field;
@@ -85,6 +96,7 @@ class ACR_TestMinefields
    if (s_Field) laid = s_Field.m_aMines.Count();
    ACR_TestRegress.Check("minefields: finished with every planned mine down", !alpha.m_MinePlan && s_Field && laid == s_iPlanned && laid > 0 && alpha.OrderState() == ACR_EOrderState.DEFEND, string.Format("laid %1 of %2 after %3 s, order '%4'", laid, s_iPlanned, waited, alpha.m_Order));
    ACR_TestRegress.Check("minefields: a regroup on the way pauses the paid order; restored, it finishes with no refund", !s_sRegroup.StartsWith("lost") && s_Field && laid == s_iPlanned && us.m_iRP == s_iRP - 25, string.Format("%1; after: rp %2 (paid %3)", s_sRegroup, us.m_iRP, s_iRP - 25));
+   ACR_TestRegress.Check("minefields: ten minutes set aside count for neither the walk limit nor the give-up timer; the field is laid", s_fShifted >= 590000 && s_Field && laid == s_iPlanned && us.m_iRP == s_iRP - 25, string.Format("deadline moved %1 s on the first tick back, laid %2 of %3", s_fShifted / 1000, laid, s_iPlanned));
    if (!s_Field)
    {
     ACR_TestRegress.Abort("minefields", "no field was laid");
