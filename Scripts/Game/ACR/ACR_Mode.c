@@ -19,6 +19,7 @@ class ACR_Mode : GenericEntity
  protected bool m_bSummary;
  protected bool m_bSoak;
  protected bool m_bPerf;
+ protected int m_iSoakEnd = 1200;
  protected int m_iSeconds;
 
  void ACR_Mode(IEntitySource src, IEntity parent)
@@ -59,6 +60,8 @@ class ACR_Mode : GenericEntity
    if (m_bPerf) { m_bSoak = true; ACR_Perf.s_bOn = true; }
    // -acrEveronSoakTest: the 20-minute soak with tick timings (Everon at scale).
    if (System.IsCLIParam("acrEveronSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; }
+   // -acrLongSoakTest: the same soak for 2 hours (long-session stability and drift).
+   if (System.IsCLIParam("acrLongSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; m_iSoakEnd = 7200; }
    if (m_bSoak || m_bSummary) ACR_Perf.s_bChecks = true;
    GetGame().GetCallqueue().CallLater(Second, 1000, true);
   }
@@ -157,7 +160,7 @@ class ACR_Mode : GenericEntity
    foreach (ACR_Base base : ACR_Base.s_All)
     PrintFormat("[ACR] SOAK   %1: %2", base.m_sName, manager.m_Bases.Describe(base));
   }
-  if (m_iSeconds >= 1200 || (m_bPerf && m_iSeconds >= 185)) Print("[ACR] TEST COMPLETE");
+  if (m_iSeconds >= m_iSoakEnd || (m_bPerf && m_iSeconds >= 185)) Print("[ACR] TEST COMPLETE");
  }
 
  // After the frame's other updates (gunner drives re-assert their inputs; horn governor mutes latch loops).

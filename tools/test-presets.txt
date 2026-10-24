@@ -86,6 +86,7 @@ padsmontignac|-acrPadsMontignacTest 1|130|Worlds/ACR_Everon.ent
 padsphilippe|-acrPadsPhilippeTest 1|130|Worlds/ACR_Everon.ent
 motorized|-acrMotorizedTest 1|230
 everonsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Everon.ent
+longsoak|-acrLongSoakTest 1|7380|Worlds/ACR_Everon.ent
 fire|-acrFireTest 1|240
 factions|-acrFactionTest 1|120
 uahands|-acrUAHandsTest 1|100|Worlds/BBB_TestArland.ent
