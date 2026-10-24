@@ -840,26 +840,41 @@ class ACR_FobSlots : Managed
 		}
 
 		vector pos = SlotPosition(base.GetOrigin(), slot.m_iSlotIndex);
+		int started = System.GetTickCount();
 		ACR_FobBuild.FellTrees(pos, SlotRadius(slot.m_iSlotIndex, slot.m_iTier));
+		s_iFellMs = System.GetTickCount() - started;
 
 		IEntity ent = SpawnComposition(PrefabFor(slot.m_eKind, base.m_sOwner, slot.m_iTier), pos, slot.m_fAngleDeg, base, slot.m_iTier);
 		if (ent) slot.m_Entity = ent;
+		// Long Everon soak 24 Oct: a barracks completion took the bases stage to 1285 ms in one tick.
+		int total = System.GetTickCount() - started;
+		if (total > SLOW_COMPLETION_MS) PrintFormat("[ACR] FOB %1: slow completion of %2, %3 ms (trees %4, load %5, spawn %6, navmesh %7)", base.m_sName, slot.m_sName, total, s_iFellMs, s_iLoadMs, s_iSpawnMs, s_iNavmeshMs);
 		PrintFormat("[ACR] FOB %1: completed upgrade %2 (tier %3) at %4 (entity=%5)", base.m_sName, slot.m_sName, slot.m_iTier, pos, ent != null);
 	}
 
 	// A finished upgrade composition, already paid for, owned by the FOB's side.
+	static const int SLOW_COMPLETION_MS = 100;
+	protected static int s_iFellMs, s_iLoadMs, s_iSpawnMs, s_iNavmeshMs; // last completion's parts (slow-completion log)
+
 	static IEntity SpawnComposition(ResourceName prefab, vector pos, float yaw, ACR_Base base, int tier)
 	{
+		s_iLoadMs = 0;
+		s_iSpawnMs = 0;
+		s_iNavmeshMs = 0;
 		if (prefab.IsEmpty()) return null;
 		IEntity ent = null;
+		int started = System.GetTickCount();
 		Resource resource = Resource.Load(prefab);
+		s_iLoadMs = System.GetTickCount() - started;
 		if (resource.IsValid())
 		{
 			EntitySpawnParams spawnParams = new EntitySpawnParams();
 			spawnParams.TransformMode = ETransformMode.WORLD;
 			Math3D.AnglesToMatrix(Vector(yaw, 0, 0), spawnParams.Transform);
 			spawnParams.Transform[3] = pos;
+			started = System.GetTickCount();
 			ent = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
+			s_iSpawnMs = System.GetTickCount() - started;
 		}
 		if (!ent) return null;
 		ent.SetYawPitchRoll(Vector(yaw, 0, 0));
@@ -872,7 +887,9 @@ class ACR_FobSlots : Managed
 			comp.ACR_MarkBuildCharged();
 			comp.ACR_SetCompositionSpawned(true);
 		}
+		started = System.GetTickCount();
 		ACR_Navmesh.RebuildAfterSpawn(ent);
+		s_iNavmeshMs = System.GetTickCount() - started;
 		return ent;
 	}
 
