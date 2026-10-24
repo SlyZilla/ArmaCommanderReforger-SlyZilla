@@ -1375,12 +1375,9 @@ class ACR_Squad : Managed
  void TickMineWork(float now)
  {
   ACR_MinePlan plan = m_MinePlan;
-  // Something replaced the order without NewOrder: call it off.
-  if (OrderState() != MineState())
-  {
-   CancelMineWork("replaced by another order");
-   return;
-  }
+  // A regroup or a player taking the squad sets the order aside and restores it: the work
+  // pauses meanwhile and stays paid for (NewOrder calls it off and refunds).
+  if (OrderState() != MineState()) return;
   float dt = (now - plan.m_fLastTick) / 1000.0;
   plan.m_fLastTick = now;
   if (dt <= 0) return;
