@@ -8,6 +8,8 @@
 
 - Air-lift passengers receive individual boarding assignments for both helicopters, so soldiers who cannot fit in the first Huey walk to the second. Scripted placement is reserved for stalled boarding.
 
+- Host and Play launchers start every Better Battle Buddies behaviour switched on, and its options sit in one BBB submenu instead of separate main-menu toggles.
+
 - Fixed the 3D commander camera missing its mouse cursor and movement controls. WASD pans, right-drag rotates and the wheel changes altitude; exiting restores the previous view.
 
 - Roadblocks snap to the road centre instead of staying at the clicked position; clearance checks use the actual construction site.

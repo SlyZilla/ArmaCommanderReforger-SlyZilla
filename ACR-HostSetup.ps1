@@ -103,8 +103,23 @@ $script:BBBOptions = @(
   @{ Flag = 'bbbTurretTrace'; Group = 'Diagnostics'; Label = 'Log turret boarding handoffs'; Default = '0' }
 )
 
+# The launcher starts every BBB switch on. Kept off: binoculars under fire (on = vanilla,
+# undoing a fix) and log-only diagnostics. Default stays BBB's own, so args still reach BBB.
+$script:BBBKeepOff = @('bbbBinocsUnderFire', 'bbbPerf', 'bbbTurretTrace')
+
+function Get-BBBLaunchDefault($o) {
+  if ($o.ContainsKey('Min') -or $script:BBBKeepOff -contains $o.Flag) { return $o.Default }
+  return '1'
+}
+
 function Get-BBBChangedCount($bbb) {
-  return @($script:BBBOptions | Where-Object { $bbb[$_.Flag] -ne $_.Default }).Count
+  return @($script:BBBOptions | Where-Object { $bbb[$_.Flag] -ne (Get-BBBLaunchDefault $_) }).Count
+}
+
+function Get-BBBSummary($bbb) {
+  $switches = @($script:BBBOptions | Where-Object { !$_.ContainsKey('Min') })
+  $onCount = @($switches | Where-Object { $bbb[$_.Flag] -eq '1' }).Count
+  return ([string]$onCount + ' of ' + $switches.Count + ' on, ' + (Get-BBBChangedCount $bbb) + ' changed from defaults')
 }
 
 function Get-BBBArgs($bbb) {
@@ -131,12 +146,13 @@ function Show-BBBOptions($bbb) {
       if ($o.Group -ne $group) { $group = $o.Group; Write-Host ('-- ' + $group) -ForegroundColor DarkCyan }
       $value = Format-BBBValue $o $bbb[$o.Flag]
       $line = ('{0,3}  {1,-56} {2}' -f ($i + 1), $o.Label, $value)
-      if ($bbb[$o.Flag] -ne $o.Default) { Write-Host ($line + '   (default ' + (Format-BBBValue $o $o.Default) + ')') -ForegroundColor Yellow }
+      $launchDefault = Get-BBBLaunchDefault $o
+      if ($bbb[$o.Flag] -ne $launchDefault) { Write-Host ($line + '   (default ' + (Format-BBBValue $o $launchDefault) + ')') -ForegroundColor Yellow }
       else { Write-Host $line }
     }
     $choice = (Read-Host 'Choice').Trim()
     if ($choice -eq '') { return }
-    if ($choice -eq 'd') { foreach ($o in $script:BBBOptions) { $bbb[$o.Flag] = $o.Default }; continue }
+    if ($choice -eq 'd') { foreach ($o in $script:BBBOptions) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o }; continue }
     $n = 0
     if (![int]::TryParse($choice, [ref]$n) -or $n -lt 1 -or $n -gt $script:BBBOptions.Count) { Write-Host ('Type a number from 1 to ' + $script:BBBOptions.Count + ', d, or Enter.') -ForegroundColor Yellow; continue }
     $o = $script:BBBOptions[$n - 1]
@@ -160,7 +176,7 @@ function Show-HostSetup([switch]$Solo) {
   # Only pre-load choices belong here. Ignore old saved match settings.
   $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no' }
   $bbb = @{}
-  foreach ($o in $script:BBBOptions) { $bbb[$o.Flag] = $o.Default }
+  foreach ($o in $script:BBBOptions) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o }
   # Settings files from before the full BBB list used these names (yes/no).
   $oldNames = @{ FireManeuver = 'bbbFireManeuver'; CombatManeuver = 'bbbCombatManeuver'; CrewTurnout = 'bbbCrewTurnout'; DriverAlign = 'bbbDriverAlign' }
   if (Test-Path -LiteralPath $file) {
@@ -181,13 +197,10 @@ function Show-HostSetup([switch]$Solo) {
   if (@('yes', 'no') -notcontains $s.ACE) { $s.ACE = 'no' }
   foreach ($o in $script:BBBOptions) {
     $v = 0.0
-    if (!$o.ContainsKey('Min')) { if (@('0', '1') -notcontains $bbb[$o.Flag]) { $bbb[$o.Flag] = $o.Default } }
+    if (!$o.ContainsKey('Min')) { if (@('0', '1') -notcontains $bbb[$o.Flag]) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o } }
     elseif (![double]::TryParse($bbb[$o.Flag], [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$v) -or $v -lt $o.Min -or $v -gt $o.Max) { $bbb[$o.Flag] = $o.Default }
   }
-  $quick = @('bbbFireManeuver', 'bbbCombatManeuver', 'bbbCrewTurnout', 'bbbDriverAlign')
   while ($true) {
-    $on = @{}
-    foreach ($flag in $quick) { if ($bbb[$flag] -eq '1') { $on[$flag] = 'yes' } else { $on[$flag] = 'no' } }
     $mapName = [IO.Path]::GetFileNameWithoutExtension($s.World) -replace '^ACR_', ''
     Write-Host ''
     $title = '=== HOST: MAP AND MODS ==='
@@ -196,11 +209,7 @@ function Show-HostSetup([switch]$Solo) {
     Write-Host (' 1  Map                     ' + $mapName)
     Write-Host (' 2  Faction mods            ' + (Get-PairLabel $s.Factions))
     Write-Host (' 3  ACE All in One          ' + $s.ACE)
-    Write-Host (' 4  BBB fire maneuver       ' + $on['bbbFireManeuver'] + '   (experimental, for play-testing)')
-    Write-Host (' 5  BBB combat maneuver     ' + $on['bbbCombatManeuver'] + '   (experimental, for play-testing)')
-    Write-Host (' 6  BBB crew turnout        ' + $on['bbbCrewTurnout'] + '   (experimental, for play-testing)')
-    Write-Host (' 7  BBB driver alignment    ' + $on['bbbDriverAlign'] + '   (experimental, for play-testing)')
-    Write-Host (' 8  All BBB options         ' + (Get-BBBChangedCount $bbb) + ' changed from defaults')
+    Write-Host (' 4  BBB options             ' + (Get-BBBSummary $bbb))
     Write-Host 'Choose the playable sides, battlefield and match settings in game, then press Start.' -ForegroundColor DarkGray
     Write-Host 'Faction mods must be loaded now; UA replaces vanilla US while loaded.' -ForegroundColor DarkGray
     if (!$Solo) { Write-Host 'Connect before friends: the first connection controls setup; access does not transfer after disconnect.' -ForegroundColor Yellow }
@@ -210,17 +219,13 @@ function Show-HostSetup([switch]$Solo) {
       '1' { if ($worlds.Count -gt 1) { $i = [array]::IndexOf($worlds, $s.World); $s.World = $worlds[($i + 1) % $worlds.Count] } else { Write-Host 'Only one map is available.' -ForegroundColor Yellow } }
       '2' { $pairs = @('vanilla', 'ru_us', 'ru_ua', 'us_ua'); $i = [array]::IndexOf($pairs, $s.Factions); $s.Factions = $pairs[($i + 1) % $pairs.Count] }
       '3' { if ($s.ACE -eq 'yes') { $s.ACE = 'no' } else { $s.ACE = 'yes' } }
-      { @('4', '5', '6', '7') -contains $_ } {
-        $flag = $quick[[int]$choice - 4]
-        if ($bbb[$flag] -eq '1') { $bbb[$flag] = '0' } else { $bbb[$flag] = '1' }
-      }
-      '8' { Show-BBBOptions $bbb }
-      default { Write-Host 'Type a number from 1 to 8, or press Enter to launch.' -ForegroundColor Yellow }
+      '4' { Show-BBBOptions $bbb }
+      default { Write-Host 'Type a number from 1 to 4, or press Enter to launch.' -ForegroundColor Yellow }
     }
   }
-  # Only changed BBB options are saved, so a new BBB default reaches old settings files.
+  # Only options changed from the launcher default are saved, so a new default reaches old files.
   $lines = @($s.Keys | ForEach-Object { $_ + '=' + $s[$_] })
-  foreach ($o in $script:BBBOptions) { if ($bbb[$o.Flag] -ne $o.Default) { $lines += ($o.Flag + '=' + $bbb[$o.Flag]) } }
+  foreach ($o in $script:BBBOptions) { if ($bbb[$o.Flag] -ne (Get-BBBLaunchDefault $o)) { $lines += ($o.Flag + '=' + $bbb[$o.Flag]) } }
   $lines | Set-Content -LiteralPath $file
   # World launches have no mission header: enable the in-game setup explicitly.
   $extra = ' -acrSetup 1'
