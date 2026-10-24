@@ -495,9 +495,25 @@ class ACR_HeliRun : ACR_SupportRun
  // because its squad stood under the tail box, so they never got the get-in order).
  protected bool RotorTraceFilter(notnull IEntity e, vector start = "0 0 0", vector dir = "0 0 0")
  {
+  IEntity root = e;
   for (IEntity part = e; part; part = part.GetParent())
+  {
    if (ChimeraCharacter.Cast(part)) return false;
-  return true;
+   root = part;
+  }
+  return !LooseGear(root);
+ }
+
+ // Nor does loose gear: weapons and kit dropped by casualties under a landing spot held a lift
+ // on the ground until cleanup removed them (Everon soak 23 Oct: 6 min, 500 ms/s). Only a small
+ // free-standing weapon or item counts; vehicles carry item components in their hierarchy.
+ static bool LooseGear(IEntity root)
+ {
+  if (!root || Vehicle.Cast(root)) return false;
+  if (!root.FindComponent(WeaponComponent) && !root.FindComponent(InventoryItemComponent)) return false;
+  vector mins, maxs;
+  root.GetBounds(mins, maxs);
+  return Math.Max(maxs[0] - mins[0], Math.Max(maxs[1] - mins[1], maxs[2] - mins[2])) < 2.5;
  }
 
  // Last movement check, including vertical takeoff and descent. Prediction can be
@@ -516,11 +532,11 @@ class ACR_HeliRun : ACR_SupportRun
   rotor.ExcludeArray = m_aFlightIgnore;
   rotor.Flags = flags;
   BaseWorld world = GetGame().GetWorld();
-  if (world.TraceMove(rotor, RotorTraceFilter) < 1) return false;
+  if (world.TraceMove(rotor, RotorTraceFilter) < 1) { m_BlockedBy = rotor.TraceEnt; return false; }
   // A movement trace can permit an overlap already present at its start. Check
   // the destination volume too, including when a moving obstacle entered it.
   rotor.Start = to;
-  if (world.TracePosition(rotor, RotorTraceFilter) < 0) return false;
+  if (world.TracePosition(rotor, RotorTraceFilter) < 0) { m_BlockedBy = rotor.TraceEnt; return false; }
   // The long, narrow tail extends beyond the main disk. Enclose its rotated bounds
   // in a world-aligned box rather than using a full rotor-width square at tail height.
   TraceBox tail = new TraceBox();
@@ -534,14 +550,34 @@ class ACR_HeliRun : ACR_SupportRun
   tail.End = to + tailCenter;
   tail.ExcludeArray = m_aFlightIgnore;
   tail.Flags = flags;
-  if (world.TraceMove(tail, RotorTraceFilter) < 1) return false;
+  if (world.TraceMove(tail, RotorTraceFilter) < 1) { m_BlockedBy = tail.TraceEnt; return false; }
   tail.Start = tail.End;
-  return world.TracePosition(tail, RotorTraceFilter) >= 0;
+  if (world.TracePosition(tail, RotorTraceFilter) >= 0) return true;
+  m_BlockedBy = tail.TraceEnt;
+  return false;
  }
+
+ // A blocked helicopter holds still and retries a few times a second rather than repeating
+ // the rotor traces every frame (Everon soak 23 Oct: a lift held down for 6 min cost ~8 ms
+ // per frame). The blocker is logged so it can be fixed at its source.
+ static const float GUARD_RETRY_MS = 250;
+ static const float GUARD_LOG_MS = 10000;
+ protected IEntity m_BlockedBy;
+ protected float m_fGuardRetryAt;
+ protected float m_fGuardLogAt;
 
  protected void GuardFlightMove(vector previous, bool vertical = false)
  {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < m_fGuardRetryAt)
+  {
+   m_Pos = previous;
+   m_fClimb = 0;
+   m_fSpeed = 0;
+   return;
+  }
   IgnoreFlightOccupants();
+  m_BlockedBy = null;
   if (RotorMoveClear(previous, m_Pos, vertical)) return;
   // An upward escape may still be clear even when forward movement is blocked.
   vector escape = previous;
@@ -551,6 +587,18 @@ class ACR_HeliRun : ACR_SupportRun
   {
    m_Pos = previous;
    m_fClimb = 0;
+   m_fGuardRetryAt = now + GUARD_RETRY_MS;
+   if (now >= m_fGuardLogAt)
+   {
+    m_fGuardLogAt = now + GUARD_LOG_MS;
+    string blocker = "terrain";
+    if (m_BlockedBy)
+    {
+     blocker = m_BlockedBy.ClassName();
+     if (m_BlockedBy.GetPrefabData()) blocker = blocker + " " + m_BlockedBy.GetPrefabData().GetPrefabName();
+    }
+    PrintFormat("[ACR] SUPPORT %1 blocked at %2 by %3", LogName(), previous, blocker);
+   }
   }
   m_fSpeed = 0;
  }

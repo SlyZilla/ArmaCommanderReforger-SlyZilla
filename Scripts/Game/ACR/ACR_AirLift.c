@@ -31,6 +31,19 @@ class ACR_LandingZone
 
  static const int SEARCH_BUDGET_MS = 120; // a search gives up after this (it runs inside one server tick)
 
+ // A spot another air lift still uses (its pickups and drops until it is done). Two lifts sent
+ // to one area picked spots 17 m apart (Everon soak 23 Oct), rotor disks overlapping.
+ static bool InUse(vector spot)
+ {
+  foreach (ACR_AirLift lift : ACR_AirLift.s_Active)
+  {
+   if (!lift || lift.m_bDone) continue;
+   foreach (vector pickup : lift.m_Pickups) if (vector.DistanceXZ(pickup, spot) < SPACING) return true;
+   foreach (vector drop : lift.m_Drops) if (vector.DistanceXZ(drop, spot) < SPACING) return true;
+  }
+  return false;
+ }
+
  static int Find(vector center, float maxRadius, int count, notnull array<vector> spots)
  {
   spots.Clear();
@@ -51,7 +64,7 @@ class ACR_LandingZone
    {
     float angle = Math.PI2 * i / steps;
     vector spot = Vector(center[0] + Math.Cos(angle) * ring, 0, center[2] + Math.Sin(angle) * ring);
-    bool apart = true;
+    bool apart = !InUse(spot);
     foreach (vector taken : spots) if (vector.DistanceXZ(taken, spot) < SPACING) apart = false;
     if (System.GetTickCount() - started > SEARCH_BUDGET_MS) break;
     if (!apart || !Clear(spot)) continue;
@@ -82,7 +95,7 @@ class ACR_LandingZone
     if (System.GetTickCount() - started > SEARCH_BUDGET_MS) return false;
     float angle = Math.PI2 * i / steps;
     vector spot = Vector(center[0] + Math.Cos(angle) * ring, 0, center[2] + Math.Sin(angle) * ring);
-    bool apart = true;
+    bool apart = !InUse(spot);
     foreach (vector taken : spots) if (vector.DistanceXZ(taken, spot) < SPACING) apart = false;
     if (!apart || !Clear(spot)) continue;
     spot[1] = GetGame().GetWorld().GetSurfaceY(spot[0], spot[2]);

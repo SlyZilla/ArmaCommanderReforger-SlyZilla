@@ -49,6 +49,7 @@ class ACR_TestLiftClearance
  static vector s_From, s_Dir, s_Zone;
  static IEntity s_Obstacle;
  static IEntity s_Soldier;
+ static const ResourceName DROPPED_RIFLE = "{3E413771E1834D2F}Prefabs/Weapons/Rifles/M16/Rifle_M16A2.et";
  static bool s_bFlying;
  static bool s_bFinished;
  static bool s_bLanding, s_bLanded;
@@ -89,6 +90,22 @@ class ACR_TestLiftClearance
     SCR_EntityHelper.DeleteEntityAndChildren(s_Soldier);
    }
    else ACR_TestRegress.Check("fixture soldier spawned", false);
+   // Everon soak 23 Oct: gear dropped by casualties under a landing spot held a lift down for
+   // 6 min. A rifle in the same tail box spot, 1.5 m up (inside the box), must not block.
+   vector rifleAt = ACR_Manager.Ground(s_Zone + Vector(11, 0, 0));
+   vector groundTouch = Vector(s_Zone[0], rifleAt[1] + 0.3, s_Zone[2]);
+   rifleAt[1] = rifleAt[1] + 1.5;
+   IEntity rifle = ACR_Manager.SpawnPrefab(DROPPED_RIFLE, rifleAt);
+   if (rifle)
+   {
+    // SpawnPrefab snaps to the ground: freeze it and lift it into the tail box.
+    if (rifle.GetPhysics()) rifle.GetPhysics().ChangeSimulationState(SimulationState.COLLISION);
+    rifle.SetOrigin(rifleAt);
+   }
+   bool inBox = rifle != null && rifle.GetOrigin()[1] > groundTouch[1] + 1 && rifle.GetOrigin()[1] < groundTouch[1] + 10;
+   ACR_TestRegress.Check("fixture dropped rifle is loose gear inside the tail box", ACR_HeliRun.LooseGear(rifle) && inBox, string.Format("rifle at %1, tail box from %2", rifle.GetOrigin(), groundTouch[1] + 1));
+   ACR_TestRegress.Check("dropped gear under the tail does not stop the touchdown", rifle != null && !s_Helis.IsEmpty() && s_Helis[0].CanMoveAt(groundTouch, groundTouch - Vector(0, 0.5, 0), true));
+   if (rifle) SCR_EntityHelper.DeleteEntityAndChildren(rifle);
   }
   if (second == 30 && s_Helis.Count() == 2)
   {
@@ -118,7 +135,7 @@ class ACR_TestLiftClearance
    ACR_TestRegress.Check("final braking reaches the landing center and touches down", s_bLanded);
    ACR_TestRegress.Check("vertical landing leaves rotors and drivetrain undamaged", s_fMaxDamage < 0.01, s_fMaxDamage.ToString());
    foreach (ACR_ClearanceTestHeli cleanup : s_Helis) cleanup.Finish();
-   ACR_TestRegress.Complete("liftclearance", 13);
+   ACR_TestRegress.Complete("liftclearance", 15);
   }
  }
 
