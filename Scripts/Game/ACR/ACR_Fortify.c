@@ -46,15 +46,15 @@ class ACR_FortifyPos : Managed
 	ref array<bool> m_aPieceWall = {};     // sandbags (false: dressing)
 	bool m_bBlocked;                       // a main piece clipped something: drop the position
 	IEntity m_Host;                        // POST: the building it is attached to (never an obstacle)
-	ResourceName m_sTableUsed;             // POST: its table (the radio may stand on it)
 
 	// Adds a piece unless its footprint clips a world object or (dressing) another piece of
 	// this position. A main piece that does not fit blocks the whole position.
-	bool Add(vector pos, float yaw, ResourceName prefab, bool wall, bool main = false, bool keepY = false)
+	// onTable: stands on this position's table, so it only needs to clear the world.
+	bool Add(vector pos, float yaw, ResourceName prefab, bool wall, bool main = false, bool keepY = false, bool onTable = false)
 	{
 		if (prefab.IsEmpty()) return false;
 		if (!keepY) pos[1] = GetGame().GetWorld().GetSurfaceY(pos[0], pos[2]);
-		if (!ACR_Fortify.Fits(this, pos, yaw, prefab, wall))
+		if (!ACR_Fortify.Fits(this, pos, yaw, prefab, wall, onTable))
 		{
 			if (main) m_bBlocked = true;
 			return false;
@@ -102,6 +102,7 @@ class ACR_FortifyKit : Managed
 	ResourceName m_sNetTop;
 	ResourceName m_sTable;
 	ResourceName m_sRadio;
+	ResourceName m_sMap;
 	ref array<ResourceName> m_aClutter = {};
 }
 
@@ -135,13 +136,13 @@ class ACR_Fortify : Managed
 	static const ResourceName DUCKBOARD = "{CC66836BF4E211F9}Prefabs/Props/Military/Camps/Duckboard_01.et";
 	static const ResourceName LANTERN_US = "{50E6A3845C9F20FD}Prefabs/Props/Military/Camps/LanternMilitary_US_01.et";
 	static const ResourceName LAMP_EAST = "{2CB0AA2A87842C18}Prefabs/Props/Civilian/LampKerosene_01/LampKerosene_01_military_USSR.et";
-	static const ResourceName CANVAS = "{31E97EEAE2DA9C8F}Prefabs/Structures/Military/Camps/Canvas_Covers/US/CanvasCover_Folded_US.et";
 	static const ResourceName CHAIR_US = "{55973C5B0950D4AB}Prefabs/Props/Military/Furniture/ChairMilitary_US_01.et";
 	static const ResourceName CHAIR_EAST = "{172DD50ACF177B9E}Prefabs/Props/Military/Furniture/ChairMilitary_USSR_01.et";
 	static const ResourceName NET_US = "{C06AF25AD6AD95D1}Prefabs/Structures/Military/CamoNets/US/CamoNet_Wall_medium_US.et";
 	static const ResourceName NET_USSR = "{08313D18309DAC02}Prefabs/Structures/Military/CamoNets/Soviet/CamoNet_Wall_medium_Soviet.et";
 	static const ResourceName NET_FIA = "{7E1711BD38AB2AE6}Prefabs/Structures/Military/CamoNets/FIA/CamoNet_Wall_medium_FIA_01_V1.et";
-	static const ResourceName COIL = "{BE7B5BAFE1A16A50}Prefabs/Props/Military/Fortification/BarbedTape_Coil.et";
+	// Deployed concertina wire (it snags, like vanilla's). Not BarbedTape_Coil: that is a spool on a pallet.
+	static const ResourceName COIL = "{EF39F5715EF2323E}Prefabs/Structures/Walls/BarbedWire/BarbedTape_01/BarbedTape_01_Short.et";
 	static const ResourceName WHEELBARROW = "{6DD0648BB7A52420}Prefabs/Props/Civilian/Wheelbarrow_01.et";
 	static const ResourceName CRATES = "{AA1E1DD1D69055EC}Prefabs/Props/Military/MilitaryCrates/CrateStack_01/CrateStack_01_green.et";
 	static const ResourceName LOG = "{32654927F2657E8A}Prefabs/Props/Forest/WoodPile/WoodLog_01_A.et";
@@ -154,7 +155,11 @@ class ACR_Fortify : Managed
 	static const ResourceName TABLE_EAST = "{1A1020205E2B1710}Prefabs/Props/Military/Furniture/TableMilitary_USSR_01.et";
 	static const ResourceName RADIO_US = "{4417ED07902CE47E}Prefabs/Props/Military/Radios/RadioStation_ANPRC77_01.et";
 	static const ResourceName RADIO_EAST = "{03B44EA7652D0D17}Prefabs/Props/Military/Radios/RadioStation_R123M_01.et";
-	static const ResourceName MAP_BOARD = "{C6B86C6BD76EA814}Prefabs/Structures/Civilian/BoardMap_01/BoardMap_01.et";
+	// A paper map laid on the table (its pick-up and inventory are disabled in vanilla) and a
+	// briefing flipchart (the BoardMap was a tourist sign).
+	static const ResourceName MAP_US = "{D60220233693B077}Prefabs/Items/Equipment/Maps/Map_Paper_01/Map_Paper_01_unfolded_table.et";
+	static const ResourceName MAP_EAST = "{942A96E02BC7AFA6}Prefabs/Items/Equipment/Maps/Map_Paper_01/Map_Paper_01_unfolded_table_USSR.et";
+	static const ResourceName FLIPCHART = "{D5DCF3520C2A8C41}Prefabs/Props/Furniture/Flipchart_01/Flipchart_01.et";
 	static const ResourceName NETTOP_US = "{5789E2676151FD33}Prefabs/Structures/Military/CamoNets/US/CamoNet_Small_Top_US.et";
 	static const ResourceName NETTOP_USSR = "{8088790C2D455045}Prefabs/Structures/Military/CamoNets/Soviet/CamoNet_Small_Top_Soviet.et";
 	static const ResourceName NETTOP_FIA = "{00B3E3FD05C85DBD}Prefabs/Structures/Military/CamoNets/FIA/CamoNet_Small_Top_FIA_01_V1.et";
@@ -187,7 +192,6 @@ class ACR_Fortify : Managed
 	protected static IEntity s_Ignore;                                   // WorldClear: the post's own building
 	static const float TABLE_HALF_X = 0.67;
 	static const float TABLE_HALF_Z = 0.4;
-	static const float MAP_HALF_X = 1.3;
 	// The overhead net is a 9 x 9.5 m sheet whose model origin sits off its centre (bounds
 	// x -4.07..5.02, z -5.90..3.67): placed shifted so it is centred over the CP, and checked
 	// only for its middle (the poles), since the sheet itself hangs over walls and branches.
@@ -238,16 +242,16 @@ class ACR_Fortify : Managed
 		if (prefab == CRATES) return Vector(0.62, 0, 0.52);
 		if (prefab == PALLET) return Vector(0.41, 0, 0.62);
 		if (prefab == BARREL || prefab == JEEP_TIRES) return Vector(0.44, 0, 0.44);
-		if (prefab == CANVAS) return Vector(0.37, 0, 0.42);
 		if (prefab == CHAIR_US || prefab == CHAIR_EAST) return Vector(0.26, 0, 0.21);
 		if (prefab == LANTERN_US || prefab == LAMP_EAST) return Vector(0.12, 0, 0.12);
-		if (prefab == COIL) return Vector(0.52, 0, 0.5);
+		if (prefab == COIL) return Vector(0.5, 0, 1.0);
 		if (prefab == LOG) return Vector(0.2, 0, 3.0);
 		if (prefab == TIRES) return Vector(1.0, 0, 1.14);
 		if (prefab == LADDER) return Vector(0.31, 0, 0.1);
 		if (prefab == TABLE_US || prefab == TABLE_EAST) return Vector(TABLE_HALF_X, 0, TABLE_HALF_Z);
 		if (prefab == RADIO_US || prefab == RADIO_EAST) return Vector(0.25, 0, 0.2);
-		if (prefab == MAP_BOARD) return Vector(MAP_HALF_X, 0, 0.33);
+		if (prefab == MAP_US || prefab == MAP_EAST) return Vector(0.45, 0, 0.35);
+		if (prefab == FLIPCHART) return Vector(0.37, 0, 0.3);
 		if (IsNetTop(prefab)) return Vector(NETTOP_HALF, 0, NETTOP_HALF);
 		return Vector(0.5, 0, 0.5);
 	}
@@ -341,9 +345,11 @@ class ACR_Fortify : Managed
 
 	// A new piece fits: world clear, and dressing keeps off this position's other pieces
 	// (sandbags of one position touch on purpose, end to end).
-	static bool Fits(ACR_FortifyPos pos, vector at, float yaw, ResourceName prefab, bool wall)
+	static bool Fits(ACR_FortifyPos pos, vector at, float yaw, ResourceName prefab, bool wall, bool onTable = false)
 	{
 		vector half = HalfSize(prefab);
+		// Things on a table are above the floor clutter: only the table matters, and it fitted.
+		if (onTable) return true;
 		if (!WorldClear(at, yaw, half, pos.m_Host)) return false;
 		// An overhead net covers the CP under it on purpose.
 		if (IsNetTop(prefab)) return true;
@@ -351,8 +357,7 @@ class ACR_Fortify : Managed
 		{
 			if (wall && pos.m_aPieceWall[k]) continue;
 			if (IsNetTop(pos.m_aPiecePrefab[k])) continue;
-			// The radio stands on the table.
-			if (pos.m_aPiecePrefab[k] == pos.m_sTableUsed && (prefab == RADIO_US || prefab == RADIO_EAST)) continue;
+			if (other[1] > at[1] + 0.5) continue;
 			if (BoxesOverlap(at, yaw, half, other, pos.m_aPieceYaw[k], HalfSize(pos.m_aPiecePrefab[k]), 0.1)) return false;
 		}
 		return true;
@@ -372,8 +377,10 @@ class ACR_Fortify : Managed
 		kit.m_sNetTop = NETTOP_US;
 		kit.m_sTable = TABLE_US;
 		kit.m_sRadio = RADIO_US;
+		kit.m_sMap = MAP_US;
 		if (east || fia)
 		{
+			kit.m_sMap = MAP_EAST;
 			kit.m_sNetTop = NETTOP_USSR;
 			kit.m_sTable = TABLE_EAST;
 			kit.m_sRadio = RADIO_EAST;
@@ -389,9 +396,9 @@ class ACR_Fortify : Managed
 			kit.m_sNet = NET_FIA;
 			kit.m_sNetTop = NETTOP_FIA;
 		}
-		// Regulars bring crates and canvas; FIA make do with what the town has.
+		// Regulars bring crates; FIA make do with what the town has. (No folded canvas: lying
+		// alone on the ground it looked dropped, Jacob 24 Oct.)
 		kit.m_aClutter.Insert(kit.m_sChair);
-		kit.m_aClutter.Insert(CANVAS);
 		kit.m_aClutter.Insert(PALLET);
 		kit.m_aClutter.Insert(BARREL);
 		if (fia)
@@ -466,7 +473,8 @@ class ACR_Fortify : Managed
 	static void Wire(ACR_FortifyPos pos, vector at, vector facing, array<ref ACR_FortifySeg> segs, array<IEntity> buildings)
 	{
 		if (RoadEdgeGap(segs, at) < 1.5 || BuildingGap(buildings, at, 8) < 2 || BBB_Terrain.IsWaterAt(at)) return;
-		pos.Add(at, Bearing(facing) + 90 + Rand() * 20 - 10, COIL, false);
+		// The wire's 2 m length is its local z: turned to lie across the approach.
+		pos.Add(at, Bearing(facing) + 90 + Rand() * 16 - 8, COIL, false);
 	}
 
 	// End pieces bent back from both tips of a round piece: a horseshoe. A flank that would
@@ -1102,6 +1110,63 @@ class ACR_Fortify : Managed
 		return Math.Max(ground, ground + 1.8 - 2.3 * f);
 	}
 
+	protected static ref array<IEntity> s_aFences = {};
+	protected static bool CollectFence(IEntity e)
+	{
+		if (!e || !e.GetPhysics()) return true;
+		string model = ModelName(e);
+		// Open fences only (net, picket, pole, wire mesh); solid walls already give cover.
+		if (!model.Contains("Fence") || model.Contains("Gate") || model.Contains("Wall")) return true;
+		s_aFences.Insert(e);
+		return true;
+	}
+
+	// Sandbags along the inside of open yard fences round a command post, on the sides that face
+	// the enemy (Jacob, 24 Oct: "could use sandbags along that open fence"). At most 8 pieces.
+	static void Fences(ACR_FortifyPos pos, ACR_FortifyKit kit, array<vector> dirs, array<float> weights, IEntity host)
+	{
+		vector mins, maxs;
+		host.GetBounds(mins, maxs);
+		float reach = vector.DistanceXZ(mins, maxs) * 0.5 + 14;
+		vector hostAt = host.CoordToParent((mins + maxs) * 0.5);
+		s_aFences.Clear();
+		GetGame().GetWorld().QueryEntitiesBySphere(hostAt, reach, CollectFence, null, EQueryEntitiesFlags.STATIC);
+		int added = 0;
+		foreach (IEntity fence : s_aFences)
+		{
+			if (added >= 8) break;
+			vector fMins, fMaxs;
+			fence.GetBounds(fMins, fMaxs);
+			vector size = fMaxs - fMins;
+			vector axis = fence.VectorToParent(Vector(1, 0, 0));
+			float length = size[0];
+			float depth = size[2];
+			if (size[2] > size[0])
+			{
+				axis = fence.VectorToParent(Vector(0, 0, 1));
+				length = size[2];
+				depth = size[0];
+			}
+			axis = FlatDir(vector.Zero, axis);
+			if (length < 2.5 || depth > 1.5) continue;
+			vector centre = fence.CoordToParent((fMins + fMaxs) * 0.5);
+			vector inward = Vector(-axis[2], 0, axis[0]);
+			if (DotXZ(hostAt - centre, inward) < 0) inward = inward * -1;
+			vector outward = inward * -1;
+			if (ThreatDot(dirs, weights, outward) < 0) continue;
+			int count = (int)Math.Floor(length / LONG_LEN);
+			if (count < 1) count = 1;
+			for (int i = 0; i < count && added < 8; i++)
+			{
+				float along = LONG_LEN * (0.5 + i) - LONG_LEN * count * 0.5;
+				vector at = centre + axis * along + inward * (depth * 0.5 + 0.8);
+				at[1] = FloorY(at);
+				if (pos.Add(at, Bearing(outward), kit.m_sLong, true, false, true)) added++;
+			}
+		}
+		s_aFences.Clear();
+	}
+
 	// The building's own roof is overhead.
 	static bool UnderRoof(vector at, IEntity building)
 	{
@@ -1121,7 +1186,9 @@ class ACR_Fortify : Managed
 			case "end": return kit.m_sEnd;
 			case "table": return kit.m_sTable;
 			case "radio": return kit.m_sRadio;
-			case "map": return MAP_BOARD;
+			case "map": return kit.m_sMap;
+			case "lamp": return kit.m_sLight;
+			case "chart": return FLIPCHART;
 			case "chair": return kit.m_sChair;
 			case "crates": return CRATES;
 			case "lantern": return kit.m_sLight;
@@ -1158,8 +1225,9 @@ class ACR_Fortify : Managed
 			pos.m_eKind = ACR_EFortifyKind.POST;
 			pos.m_Host = b;
 			pos.m_vPos = b.GetOrigin();
-			pos.m_sTableUsed = kit.m_sTable;
 			Seed(pos.m_vPos);
+			bool tableSet = false;
+			float tableTop = 0;
 			float best = -1;
 			int sides = 0;
 			array<string> built = {};
@@ -1185,7 +1253,13 @@ class ACR_Fortify : Managed
 				float rad = piece.m_fYaw * Math.DEG2RAD;
 				float yaw = Bearing(b.VectorToParent(Vector(Math.Sin(rad), 0, Math.Cos(rad))));
 				at[1] = FloorY(at);
-				if (piece.m_sKind == "radio") at[1] = at[1] + TABLE_TOP;
+				bool onTable = piece.m_sKind == "radio" || piece.m_sKind == "map" || piece.m_sKind == "lamp";
+				if (onTable)
+				{
+					// Nothing on a table that is not there.
+					if (!tableSet) continue;
+					at[1] = tableTop;
+				}
 				if (piece.m_sKind == "nettop")
 				{
 					// Under the building's own roof (barn, warehouse) a net is pointless.
@@ -1194,8 +1268,36 @@ class ACR_Fortify : Managed
 					at = at - RightOf(facing) * NETTOP_OFFSET_X - facing * NETTOP_OFFSET_Z;
 				}
 				bool wall = piece.m_sKind == "long" || piece.m_sKind == "end";
-				pos.Add(at, yaw, PostPrefab(kit, piece.m_sKind), wall, piece.m_sKind == "table", true);
+				ResourceName prefab = PostPrefab(kit, piece.m_sKind);
+				bool placed = pos.Add(at, yaw, prefab, wall, piece.m_sKind == "table", true, onTable);
+				if (piece.m_sKind == "table" && placed)
+				{
+					tableSet = true;
+					tableTop = at[1] + TABLE_TOP;
+				}
+				// A piece that does not fit tries a few spots close by before it is left out
+				// (walls only step forward or back, so a line stays a line).
+				if (!placed && !onTable && !pos.m_bBlocked && piece.m_sKind != "table" && piece.m_sKind != "nettop")
+				{
+					vector fwd = Vector(Math.Sin(yaw * Math.DEG2RAD), 0, Math.Cos(yaw * Math.DEG2RAD));
+					array<vector> nudges = {fwd * 0.5, fwd * -0.5, fwd * 1.0, fwd * -1.0};
+					if (!wall)
+					{
+						vector across = RightOf(fwd);
+						nudges.Insert(across * 0.6);
+						nudges.Insert(across * -0.6);
+						nudges.Insert(across * 1.2);
+						nudges.Insert(across * -1.2);
+					}
+					foreach (vector nudge : nudges)
+					{
+						vector moved = at + nudge;
+						moved[1] = FloorY(moved);
+						if (pos.Add(moved, yaw, prefab, wall, false, true)) break;
+					}
+				}
 			}
+			Fences(pos, kit, dirs, weights, b);
 			Prune(pos, buildings);
 			if (pos.m_bBlocked) continue;
 			pos.m_fThreat = best;

@@ -177,7 +177,7 @@ class ACR_TestFortify
   foreach (string side : sides)
   {
    ACR_FortifyKit kit = ACR_Fortify.Kit(side);
-   array<ResourceName> mine = {kit.m_sLong, kit.m_sEnd, kit.m_sRound, kit.m_sLight, kit.m_sNet, kit.m_sNetTop, kit.m_sTable, kit.m_sRadio, ACR_Fortify.MAP_BOARD, ACR_Fortify.DUCKBOARD, ACR_Fortify.COIL};
+   array<ResourceName> mine = {kit.m_sLong, kit.m_sEnd, kit.m_sRound, kit.m_sLight, kit.m_sNet, kit.m_sNetTop, kit.m_sTable, kit.m_sRadio, kit.m_sMap, ACR_Fortify.FLIPCHART, ACR_Fortify.DUCKBOARD, ACR_Fortify.COIL};
    foreach (ResourceName r : kit.m_aClutter) mine.Insert(r);
    foreach (ResourceName m : mine) if (!all.Contains(m)) all.Insert(m);
   }
