@@ -10,23 +10,44 @@ class ACR_TestLiftBoarding
  static float s_fNear;
  static float s_fForce;
  static bool s_bFinished;
+ static int s_iStart = -1;         // tick before the pickup spots were found (-1: still searching)
+ static const int SEARCH_TICKS = 25;
 
  static void Run(ACR_TestHarness h, int tick)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager || s_bFinished) return;
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All) settings.m_bAICommander = false;
-  if (tick == 1)
+  // One search runs on a 120 ms budget (and a failed centre is remembered for 2 min), so a
+  // single attempt during server boot can miss. Try the rally, then centres 300-600 m round
+  // it, one per tick, before giving up. Later steps count from the tick the spots were found.
+  if (s_iStart < 0)
   {
-   if (ACR_LandingZone.Find(h.m_Range.m_Rally, 250, 2, s_Spots) < 2)
-   { ACR_TestRegress.Abort("liftboarding", "two clear native pickup spots required"); s_bFinished = true; return; }
+   if (tick > SEARCH_TICKS) { ACR_TestRegress.Abort("liftboarding", "two clear native pickup spots required"); s_bFinished = true; return; }
+   vector center = h.m_Range.m_Rally;
+   if (tick > 1)
+   {
+    int bearing = (tick - 2) % 8;
+    int ring = (tick - 2) / 8;
+    float angle = Math.PI2 * bearing / 8.0;
+    float distance = 300.0 + 300.0 * ring;
+    center = center + Vector(Math.Cos(angle) * distance, 0, Math.Sin(angle) * distance);
+   }
+   if (!ACR_Manager.OnMap(center) || BBB_Terrain.IsWater(center[0], center[2]) || ACR_LandingZone.Find(center, 250, 2, s_Spots) < 2) return;
+   PrintFormat("[ACR] TEST liftboarding pickup spots %1 and %2 at tick %3", s_Spots[0], s_Spots[1], tick);
+   s_iStart = tick - 1;
    s_Group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab("Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et", ACR_Manager.Ground(s_Spots[0] + Vector(0, 0, 22))));
   }
-  if (tick == 5)
+  tick -= s_iStart;
+  // The native group spawns its members over several frames: wait for all nine.
+  if (tick >= 5 && !s_Lift)
   {
    ACR_Squad squad = manager.FindSquadByGroup(s_Group);
    if (!squad || ACR_AirLift.Alive(squad) != 9)
-   { ACR_TestRegress.Abort("liftboarding", "native nine-man vanilla US rifle squad required"); s_bFinished = true; return; }
+   {
+    if (tick < 15) return;
+    ACR_TestRegress.Abort("liftboarding", "native nine-man vanilla US rifle squad required"); s_bFinished = true; return;
+   }
    // Fixture placement happens before any boarding task: all nine start on
    // the first carrier's side, with the second carrier over 40 m away.
    array<AIAgent> agents = {};
