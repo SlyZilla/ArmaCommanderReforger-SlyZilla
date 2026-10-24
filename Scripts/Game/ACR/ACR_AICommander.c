@@ -894,6 +894,11 @@ class ACR_AICommander : Managed
  static const int SUPPORT_BUDGET_MAX = 60;  // most RP it holds back from buying for supports
  static const int MAX_GRABS = 3;           // empty bases it goes for at the same time (at least)
  static const int MAX_GRABS_BIG = 8;       // ... at most, on maps with many empty bases
+ // Planning work one strategic tick may do before further grabs and attacks wait for the next
+ // (Everon soak 23 Oct: an air lift search, a ride request and a water route in one tick froze
+ // the server for 200 ms; each costs up to ~100 ms on its own).
+ static const int PLAN_BUDGET_MS = 50;
+ protected int m_iTickStarted;
 
  void ACR_AICommander(ACR_Manager manager, string factionKey)
  {
@@ -916,6 +921,7 @@ class ACR_AICommander : Managed
   m_iSeconds++;
   if (m_iSeconds % TICK_SECONDS != 1) return;
   int t = System.GetTickCount();
+  m_iTickStarted = t;
   ReleaseRoadblockBuilders();
   Assess();
   t = ACR_Perf.Lap("ai.assess", t);
@@ -1623,6 +1629,11 @@ class ACR_AICommander : Managed
   }
  }
 
+ protected bool PlanBudgetSpent()
+ {
+  return System.GetTickCount() - m_iTickStarted > PLAN_BUDGET_MS;
+ }
+
  protected void AssignAttacks()
  {
   ACR_FactionSettings settings = Settings();
@@ -1688,7 +1699,7 @@ class ACR_AICommander : Managed
   int unclaimed;
   foreach (ACR_Base open : ACR_Base.s_All) if (open.m_sOwner.IsEmpty() && Visible(open)) unclaimed++;
   int maxGrabs = Math.Clamp(unclaimed / 6, MAX_GRABS, MAX_GRABS_BIG);
-  while (grabs < maxGrabs && !free.IsEmpty())
+  while (grabs < maxGrabs && !free.IsEmpty() && !PlanBudgetSpent())
   {
    ACR_Base empty;
    ACR_Squad runner;
@@ -1728,8 +1739,9 @@ class ACR_AICommander : Managed
    grabs++;
    PrintFormat("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime);
   }
+  if (PlanBudgetSpent()) return;
   ReinforceAttacks(free);
-  if (free.IsEmpty()) return;
+  if (free.IsEmpty() || PlanBudgetSpent()) return;
   // Plenty of idle troops: open more fronts. On large maps with many bases and idle armies,
   // allow up to 6 extra attacks so a dominant side doesn't sit idle.
   int maxExtraAttacks = 3;
