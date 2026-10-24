@@ -204,7 +204,7 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"west", "east", "layout", "seed", "pockets", "threat", "pricing", "ai", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice"};
+  array<string> keys = {"west", "east", "layout", "seed", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice"};
   foreach (string key : keys)
   {
    if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
@@ -232,6 +232,8 @@ class ACR_Setup
   if (key == "threat") return "Threat";
   if (key == "pricing") return "Prices";
   if (key == "ai") return "AI commanders";
+  if (key == "doctrinewest") return "Blue AI doctrine";
+  if (key == "doctrineeast") return "Red AI doctrine";
   if (key == "unitcap") return "AI squad cap";
   if (key == "startrp") return "Starting RP";
   if (key == "income") return "Income";
@@ -283,6 +285,7 @@ class ACR_Setup
   {
    values = {"both", "none", "west", "east"};
   }
+  else if (key == "doctrinewest" || key == "doctrineeast") values = {"", "random", "balanced", "blitz", "firepower", "fortress", "raider"};
   else if (key == "unitcap") values = {"", "4", "6", "8", "12", "16", "24"};
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
   else if (key == "income") values = {"", "0.5", "1", "1.5", "2", "3"};
@@ -303,6 +306,8 @@ class ACR_Setup
   if (key == "threat") return "acrThreat";
   if (key == "pricing") return "acrPricing";
   if (key == "ai") return "acrAI";
+  if (key == "doctrinewest") return "acrDoctrineWest";
+  if (key == "doctrineeast") return "acrDoctrineEast";
   if (key == "unitcap") return "acrUnitCap";
   if (key == "startrp") return "acrStartRP";
   if (key == "income") return "acrIncome";
@@ -374,6 +379,7 @@ class ACR_Setup
    if (key == "rpservice") return "3 RP per serviced soldier (scenario default)";
    if (key == "seed") return "random (click to roll one)";
    if (key == "pricing" || key == "ai") return "scenario's choice";
+   if (key == "doctrinewest" || key == "doctrineeast") return "scenario's choice (random unless it sets one)";
    return "scenario default";
   }
   if (key == "layout")
@@ -396,6 +402,12 @@ class ACR_Setup
    if (value == "west") side = ACR_FactionSelection.West();
    else if (value == "east") side = ACR_FactionSelection.East();
    return ACR_FactionSelection.DisplayName(side) + " only";
+  }
+  if (key == "doctrinewest" || key == "doctrineeast")
+  {
+   ACR_AIDoctrine doctrine = ACR_AIDoctrine.Find(value);
+   if (!doctrine) return "random each match";
+   return doctrine.m_sName + ": " + doctrine.m_sSummary;
   }
   if (key == "income") return "x" + value;
   if (key == "pockets" && value == "few") return "a few pockets (whole/half map)";

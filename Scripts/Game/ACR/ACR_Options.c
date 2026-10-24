@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost"};
   foreach (string name : names)
   {
    string value;
@@ -102,6 +102,10 @@ class ACR_MissionHeader : SCR_MissionHeader
  string m_sAcrPricing;
  [Attribute("", UIWidgets.EditBox, "AI commanders: both, none or a faction key (-acrAI)")]
  string m_sAcrAI;
+ [Attribute("", UIWidgets.EditBox, "Blue side AI doctrine: random, balanced, blitz, firepower, fortress or raider (-acrDoctrineWest)")]
+ string m_sAcrDoctrineWest;
+ [Attribute("", UIWidgets.EditBox, "Red side AI doctrine: random, balanced, blitz, firepower, fortress or raider (-acrDoctrineEast)")]
+ string m_sAcrDoctrineEast;
  [Attribute("-1", UIWidgets.EditBox, "AI commander squad cap per side (-acrUnitCap)")]
  int m_iAcrUnitCap;
  [Attribute("-1", UIWidgets.EditBox, "Generated layout seed (-acrSeed); -1 or 0 = a new random layout each match")]
@@ -152,6 +156,8 @@ class ACR_MissionHeader : SCR_MissionHeader
   Text(values, "acrThreat", m_sAcrThreat);
   Text(values, "acrPricing", m_sAcrPricing);
   Text(values, "acrAI", m_sAcrAI);
+  Text(values, "acrDoctrineWest", m_sAcrDoctrineWest);
+  Text(values, "acrDoctrineEast", m_sAcrDoctrineEast);
   Number(values, "acrUnitCap", m_iAcrUnitCap);
   Number(values, "acrSeed", m_iAcrSeed);
   Number(values, "acrSoldierCap", m_iAcrSoldierCap);

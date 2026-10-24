@@ -2,6 +2,8 @@
 
 ## 0.5.7 — unreleased
 
+- AI commander doctrines: each AI side fights to one of five styles for the whole match. Balanced is the old commander; Blitz goes mechanised and attacks early; Firepower leans on mortars, gunships and preparation fire; Fortress defends in depth and counterattacks lost bases at once; Raider sends small teams after weak bases and FOBs. New setup rows "Blue AI doctrine" and "Red AI doctrine" (random by default). No doctrine fields a bigger army.
+
 - FIA pockets of resistance: on whole-map and half-map battles a few empty bases away from both HQs start held by an FIA garrison (bigger at military sites, which also keep a small patrol). They look unclaimed until your units get close, so a squad sent to grab an empty village may have a fight on its hands. Clear one to capture it. New setup row "FIA resistance": few (default), many or off.
 
 - AI commanders keep spending in long games: the squad cap counts only fighting units (trucks, ambulances and 1-man remnants no longer fill it), and badly hurt idle squads walk back from the front to a quiet base to refill instead of staying at their post at a third of their strength.

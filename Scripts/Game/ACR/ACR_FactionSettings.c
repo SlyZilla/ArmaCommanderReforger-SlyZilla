@@ -113,6 +113,18 @@ class ACR_FactionSettings : GenericEntity
  int m_iAIUnitCap;
  [Attribute("1", UIWidgets.EditBox, "AI commander: how many base attacks it runs at once")]
  int m_iAIAttacks;
+ [Attribute("0", UIWidgets.ComboBox, "AI commander doctrine: how it fights. Blank = random each match; the host's setup screen or -acrDoctrineWest/-acrDoctrineEast override it.", "", ParamEnumArray.FromEnum(ACR_EAIDoctrineChoice))]
+ ACR_EAIDoctrineChoice m_eAIDoctrine;
+ // The chosen doctrine's key, "" = random (ACR_AIDoctrine.Find).
+ string AIDoctrineKey()
+ {
+  if (m_eAIDoctrine == ACR_EAIDoctrineChoice.BALANCED) return "balanced";
+  if (m_eAIDoctrine == ACR_EAIDoctrineChoice.BLITZ) return "blitz";
+  if (m_eAIDoctrine == ACR_EAIDoctrineChoice.FIREPOWER) return "firepower";
+  if (m_eAIDoctrine == ACR_EAIDoctrineChoice.FORTRESS) return "fortress";
+  if (m_eAIDoctrine == ACR_EAIDoctrineChoice.RAIDER) return "raider";
+  return "";
+ }
  [Attribute("0", UIWidgets.ComboBox, "Stepped prices: infantry, cars and trucks can be bought without limit but each purchase raises that unit's price (threat level sets the step); aircraft, armour, mortar teams and support helicopters keep their stock. Fixed stock: every unit has a stock per match, scaled by threat level, at a fixed price.", "", ParamEnumArray.FromEnum(ACR_EPricing))]
  ACR_EPricing m_ePricing;
  [Attribute("1", UIWidgets.CheckBox, "Add every group and vehicle from the faction's Game Master catalog with automatic prices. Entries below override or add to it.")]
@@ -198,6 +210,7 @@ class ACR_FactionSettings : GenericEntity
    made.m_bAICommander = template.m_bAICommander;
    made.m_iAIUnitCap = template.m_iAIUnitCap;
    made.m_iAIAttacks = template.m_iAIAttacks;
+   made.m_eAIDoctrine = template.m_eAIDoctrine;
    made.m_ePricing = template.m_ePricing;
    made.m_bSupports = template.m_bSupports;
    if (template.m_aSupports)

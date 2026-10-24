@@ -205,6 +205,7 @@ AI commander is turned off.
 | `m_bAICommander` | on | An AI commander leads this side whenever no player is in command |
 | `m_iAIUnitCap` | 8 | Maximum number of squads the AI commander keeps in the field |
 | `m_iAIAttacks` | 1 | How many base attacks the AI commander can run at once |
+| `m_eAIDoctrine` | `RANDOM` | How the AI commander fights: `RANDOM` (a new pick each match), `BALANCED`, `BLITZ`, `FIREPOWER`, `FORTRESS` or `RAIDER` (see AI commander doctrines). The setup screen or `-acrDoctrineWest`/`-acrDoctrineEast` override it |
 | `m_ePricing` | `STEPPED` | How the buy list limits purchases: `STEPPED` or `FIXED_STOCK` (see Prices below) |
 | `m_bAutoFill` | on | Add the faction's eligible Game Master catalog units to the buy list at automatic prices |
 | `m_aRequisitions` | empty | Units you add to the buy list yourself. An entry replaces the matching automatic item |
@@ -221,6 +222,21 @@ AI commander is turned off.
 AC: Actual uses faction keys to tell sides apart. For default support assets, `RHS_AFRF` and keys
 starting with `USSR` count as eastern; otherwise keys containing `US`, or exactly `NATO` or
 `BLUFOR`, count as western. Other keys use eastern defaults unless prefab mappings replace them.
+
+#### AI commander doctrines
+
+Each AI commander fights to one doctrine for the whole match. By default each side gets a random one;
+the setup screen (Blue/Red AI doctrine), `-acrDoctrineWest`/`-acrDoctrineEast` or `m_eAIDoctrine`
+pick it. Doctrines change how the commander plans, attacks and buys, never how big its army is: squad
+cap, RP and stock are the same for all of them.
+
+| Doctrine | How it fights |
+|---|---|
+| Balanced | The standard commander |
+| Blitz | Buys about twice as many armed vehicles and an extra truck, grabs more empty bases, attacks on thinner odds and sooner after a lull, presses on with heavier losses, keeps a reserve only with a bigger force |
+| Firepower | Buys mortar teams and gunships first and keeps more RP for fire missions, air or rocket preparation on more targets, wants better odds, one extra front at most, falls back sooner |
+| Fortress | Sends more defenders and holds out longer, counterattacks a lost base on 55% of the usual force for 10 minutes, keeps a reserve sooner, up to three roadblocks, fewer grabs and fronts |
+| Raider | More small teams, goes for weakly held bases and FOBs first, opens many fronts with two squads each, breaks off an attack at half strength, fewer vehicles |
 
 #### Factions and mods
 
@@ -589,6 +605,8 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_sAcrThreat` | `-acrThreat` |
 | `m_sAcrPricing` | `-acrPricing` |
 | `m_sAcrAI` | `-acrAI` |
+| `m_sAcrDoctrineWest` | `-acrDoctrineWest` |
+| `m_sAcrDoctrineEast` | `-acrDoctrineEast` |
 | `m_iAcrUnitCap` | `-acrUnitCap` |
 | `m_iAcrSeed` | `-acrSeed` |
 | `m_iAcrSoldierCap` | `-acrSoldierCap` |
@@ -694,6 +712,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrFactions vanilla` / `ru_us` / `ru_ua` / `us_ua` / `<west>,<east>` | Select the playable faction pair: a named pair or any two faction keys your world's faction manager lists, e.g. `US,FIA`. The world's US-side bases and units go to the first, USSR-side to the second. A faction is playable when the world lists it and its catalog has soldiers and groups; a side without an `ACR_FactionSettings` entity copies the replaced side's settings (RP, AI commander, caps, supports) and builds its buy list from its catalog |
 | `-acrMarksmen 0` | Disable the automatic DMR carrier in full UA/Russian rifle squads (enabled by default; keeps squad size and support weapons) |
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
+| `-acrDoctrineWest <doctrine>` / `-acrDoctrineEast <doctrine>` | The blue / red side AI commander's doctrine: `random`, `balanced`, `blitz`, `firepower`, `fortress` or `raider` (overrides `m_eAIDoctrine`; default random each match). The log names each side's pick (`AI commander <faction> doctrine:`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; finite stock in either mode: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (finite stock in either mode: rare units get quadruple base stock, other units double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
 | `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Hand-built worlds without a matching layout play in full; generated layouts support all three sizes |

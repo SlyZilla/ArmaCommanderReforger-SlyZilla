@@ -1,0 +1,199 @@
+// AI commander doctrines (Jacob, 24 Oct): each AI side fights to one of a few styles, picked
+// per side on the setup screen (Blue/Red AI doctrine), by -acrDoctrineWest/-acrDoctrineEast,
+// by the faction's m_eAIDoctrine, or at random (the default). A doctrine is not a second
+// commander: it reweights levers ACR_AICommander already has (attack and defence odds, empty
+// base grabs, fronts, initiative, reserve, retreat, what it buys, when it calls supports).
+// The squad cap, RP and stock are the same for every doctrine, so none fields a bigger army.
+enum ACR_EAIDoctrineChoice
+{
+ RANDOM,
+ BALANCED,
+ BLITZ,
+ FIREPOWER,
+ FORTRESS,
+ RAIDER
+}
+
+class ACR_AIDoctrine : Managed
+{
+ string m_sKey;
+ string m_sName;
+ string m_sSummary;
+
+ // Planning (ACR_AICommander.AssignAttacks / AssignDefenders / UpdateAttacks)
+ float m_fAttackRatio = 1;      // x the force it wants against a defended base
+ float m_fDefenseRatio = 1;     // x the defence it sends against a threat
+ float m_fConcedeRatio = 1;     // x the odds at which it gives a base up
+ int m_iGrabs;                  // + empty bases it goes for at once (3..8 before this)
+ int m_iExtraFronts = 3;        // most extra attacks with idle troops (6 on maps over 24 bases)
+ int m_iSquadsPerFront = 3;     // idle squads per extra attack
+ float m_fWeakTarget = 1;       // x score of weakly held or contested bases (lower = sooner)
+ float m_fFobTarget = 1;        // x score of enemy FOBs (lower = sooner)
+ float m_fCounterNeed = 0.7;    // force it accepts for a counterattack on a base it just lost
+ float m_fCounterMinutes = 5;   // how long a counterattack stays due
+ float m_fQuietMinutes = 4;     // minutes without an attack before it accepts worse odds
+ float m_fPressurePerMinute = 0.05;
+ float m_fMinPressure = 0.65;
+ int m_iReserveSquads;          // + squads it needs before it keeps a reserve back
+ float m_fRetreatRatio = 0.4;   // a squad in contact below this falls back
+ float m_fAbortRatio = 0.35;    // an attack below this share of its strength is called off
+ int m_iHeavyPrep = 12;         // known defenders that earn air or rocket preparation fires
+ int m_iRoadblocks = 2;         // most roadblocks it holds
+
+ // Buying (ACR_AICommander.Requisition)
+ float m_fVehicleWeight = 1;    // x the pick weight of armed vehicles
+ float m_fSmallTeamWeight = 1;  // x the pick weight of 2-3 man teams
+ bool m_bSmallTeamsFree;        // small teams aren't held back by the line-squad ratio
+ int m_iTransports;             // + trucks it keeps for rides
+ bool m_bSupportsFirst;         // buys mortars and gunships even while short of troops
+ int m_iSupportBudgetMax = 60;  // most RP it holds back for fire missions
+
+ static const string RANDOM = "random";
+ protected static ref array<ref ACR_AIDoctrine> s_All;
+
+ static array<ref ACR_AIDoctrine> All()
+ {
+  if (s_All) return s_All;
+  s_All = {};
+
+  ACR_AIDoctrine balanced = new ACR_AIDoctrine();
+  balanced.m_sKey = "balanced";
+  balanced.m_sName = "Balanced";
+  balanced.m_sSummary = "the standard commander";
+  s_All.Insert(balanced);
+
+  // Mechanised shock: vehicles, speed and many fronts; accepts thinner odds and losses.
+  ACR_AIDoctrine blitz = new ACR_AIDoctrine();
+  blitz.m_sKey = "blitz";
+  blitz.m_sName = "Blitz";
+  blitz.m_sSummary = "mechanised, fast, attacks early on thin odds";
+  blitz.m_fAttackRatio = 0.85;
+  blitz.m_iGrabs = 2;
+  blitz.m_iExtraFronts = 4;
+  blitz.m_fQuietMinutes = 2;
+  blitz.m_fPressurePerMinute = 0.08;
+  blitz.m_fMinPressure = 0.6;
+  blitz.m_iReserveSquads = 2;
+  blitz.m_fRetreatRatio = 0.3;
+  blitz.m_fAbortRatio = 0.25;
+  blitz.m_iHeavyPrep = 16;
+  blitz.m_fVehicleWeight = 2.2;
+  blitz.m_iTransports = 1;
+  blitz.m_iSupportBudgetMax = 40;
+  s_All.Insert(blitz);
+
+  // Attrition: mortars and air first, one front at a time, every assault prepared by fire.
+  ACR_AIDoctrine firepower = new ACR_AIDoctrine();
+  firepower.m_sKey = "firepower";
+  firepower.m_sName = "Firepower";
+  firepower.m_sSummary = "artillery and air first, patient, one front at a time";
+  firepower.m_fAttackRatio = 1.15;
+  firepower.m_iExtraFronts = 1;
+  firepower.m_iSquadsPerFront = 4;
+  firepower.m_fQuietMinutes = 6;
+  firepower.m_fPressurePerMinute = 0.04;
+  firepower.m_fMinPressure = 0.75;
+  firepower.m_fRetreatRatio = 0.45;
+  firepower.m_iHeavyPrep = 6;
+  firepower.m_bSupportsFirst = true;
+  firepower.m_iSupportBudgetMax = 100;
+  s_All.Insert(firepower);
+
+  // Defence in depth: holds what it has, hits back hard at what it loses.
+  ACR_AIDoctrine fortress = new ACR_AIDoctrine();
+  fortress.m_sKey = "fortress";
+  fortress.m_sName = "Fortress";
+  fortress.m_sSummary = "defends in depth, counterattacks lost bases at once";
+  fortress.m_fAttackRatio = 1.1;
+  fortress.m_fDefenseRatio = 1.35;
+  fortress.m_fConcedeRatio = 1.5;
+  fortress.m_iGrabs = -1;
+  fortress.m_iExtraFronts = 1;
+  fortress.m_iSquadsPerFront = 4;
+  fortress.m_fCounterNeed = 0.55;
+  fortress.m_fCounterMinutes = 10;
+  fortress.m_fQuietMinutes = 6;
+  fortress.m_fMinPressure = 0.75;
+  fortress.m_iReserveSquads = -1;
+  fortress.m_iRoadblocks = 3;
+  s_All.Insert(fortress);
+
+  // Raids: many small teams going for weak spots and FOBs, quick to break off.
+  ACR_AIDoctrine raider = new ACR_AIDoctrine();
+  raider.m_sKey = "raider";
+  raider.m_sName = "Raider";
+  raider.m_sSummary = "small teams raid weak bases and FOBs, break off early";
+  raider.m_fAttackRatio = 0.9;
+  raider.m_iGrabs = 1;
+  raider.m_iExtraFronts = 5;
+  raider.m_iSquadsPerFront = 2;
+  raider.m_fWeakTarget = 0.5;
+  raider.m_fFobTarget = 0.6;
+  raider.m_fQuietMinutes = 3;
+  raider.m_fRetreatRatio = 0.5;
+  raider.m_fAbortRatio = 0.5;
+  raider.m_fVehicleWeight = 0.7;
+  raider.m_fSmallTeamWeight = 2.5;
+  raider.m_bSmallTeamsFree = true;
+  s_All.Insert(raider);
+  return s_All;
+ }
+
+ static ACR_AIDoctrine Find(string key)
+ {
+  string lower = key;
+  lower.ToLower();
+  foreach (ACR_AIDoctrine doctrine : All())
+   if (doctrine.m_sKey == lower) return doctrine;
+  return null;
+ }
+
+ static string NameOf(string key)
+ {
+  ACR_AIDoctrine doctrine = Find(key);
+  if (doctrine) return doctrine.m_sName;
+  return "Random";
+ }
+
+ // The host option for the side this faction plays: "acrDoctrineWest" or "acrDoctrineEast".
+ static string OptionFor(string factionKey)
+ {
+  if (factionKey == ACR_FactionSelection.East()) return "acrDoctrineEast";
+  return "acrDoctrineWest";
+ }
+
+ // The doctrine this faction's AI commander fights to this match, and where it came from.
+ static ACR_AIDoctrine Choose(string factionKey, out string source)
+ {
+  string value;
+  bool picked = ACR_Options.Get(OptionFor(factionKey), value);
+  value.ToLower();
+  if (picked && Find(value))
+  {
+   source = ACR_Options.Source(OptionFor(factionKey));
+   return Find(value);
+  }
+  if (picked && value == RANDOM) return Random(source);
+  ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  if (settings && Find(settings.AIDoctrineKey()))
+  {
+   source = "faction settings";
+   return Find(settings.AIDoctrineKey());
+  }
+  // Tests keep the standard commander unless they ask for a doctrine.
+  string forTest = ACR_TestHooks.Get().AIDoctrine(factionKey);
+  if (Find(forTest))
+  {
+   source = "test";
+   return Find(forTest);
+  }
+  return Random(source);
+ }
+
+ protected static ACR_AIDoctrine Random(out string source)
+ {
+  source = RANDOM;
+  array<ref ACR_AIDoctrine> all = All();
+  return all[Math.RandomInt(0, all.Count())];
+ }
+}

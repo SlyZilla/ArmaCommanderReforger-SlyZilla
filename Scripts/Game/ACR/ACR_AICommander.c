@@ -855,10 +855,7 @@ class ACR_AICommander : Managed
  static const float STAGE_STRETCH = 0.5;      // late joiners may stretch the forming up by half of STAGING_TIMEOUT
  // Initiative: with no attack launched for a while, the commander accepts
  // worse odds (down to 65% of the usual strength) and commits its reserve,
- // so two AI sides don't sit facing each other forever.
- static const float QUIET_MINUTES = 4;
- static const float PRESSURE_PER_MINUTE = 0.05;
- static const float MIN_PRESSURE = 0.65;
+ // so two AI sides don't sit facing each other forever. How long and how far: the doctrine.
  protected float m_fLastOffensive = -1;
  protected float m_fNextWeakLog;
 
@@ -866,9 +863,9 @@ class ACR_AICommander : Managed
  {
   float now = GetGame().GetWorld().GetWorldTime();
   if (m_fLastOffensive < 0) m_fLastOffensive = now;
-  float quiet = (now - m_fLastOffensive) / 60000 - QUIET_MINUTES;
+  float quiet = (now - m_fLastOffensive) / 60000 - m_Doctrine.m_fQuietMinutes;
   if (quiet <= 0) return 1;
-  return Math.Max(MIN_PRESSURE, 1 - quiet * PRESSURE_PER_MINUTE);
+  return Math.Max(m_Doctrine.m_fMinPressure, 1 - quiet * m_Doctrine.m_fPressurePerMinute);
  }
 
  ACR_Manager m_Manager;
@@ -889,10 +886,8 @@ class ACR_AICommander : Managed
  protected int m_iLastSavedLog = -1;
  protected float m_fNextStatus;
  protected float m_fCounterUntil;
- static const float RETREAT_RATIO = 0.4;   // a squad below 40% in contact falls back
- static const float ABORT_RATIO = 0.35;    // an attack below 35% of its strength is called off
+ // Retreat (a squad in contact) and abort (a whole attack) ratios: the doctrine's, 0.4 / 0.35 standard.
  static const int SUPPORT_RESERVE = 15;    // RP the AI keeps back when calling supports
- static const int SUPPORT_BUDGET_MAX = 60;  // most RP it holds back from buying for supports
  static const int MAX_GRABS = 3;           // empty bases it goes for at the same time (at least)
  static const int MAX_GRABS_BIG = 8;       // ... at most, on maps with many empty bases
  // Planning work one strategic tick may do before further grabs and attacks wait for the next
@@ -901,11 +896,20 @@ class ACR_AICommander : Managed
  static const int PLAN_BUDGET_MS = 50;
  protected int m_iTickStarted;
 
+ // The style this commander fights to this match (ACR_AIDoctrine), chosen when it is made.
+ protected ref ACR_AIDoctrine m_Doctrine;
+ protected string m_sDoctrineSource;
+ ACR_AIDoctrine Doctrine() { return m_Doctrine; }
+ void SetDoctrineForTest(ACR_AIDoctrine doctrine) { m_Doctrine = doctrine; m_sDoctrineSource = "test"; }
+
  void ACR_AICommander(ACR_Manager manager, string factionKey)
  {
   m_Manager = manager;
   m_sFaction = factionKey;
+  m_Doctrine = ACR_AIDoctrine.Choose(factionKey, m_sDoctrineSource);
+  PrintFormat("[ACR] AI commander %1 doctrine: %2 (%3; %4)", m_sFaction, m_Doctrine.m_sName, m_sDoctrineSource, m_Doctrine.m_sSummary);
  }
+ protected float RetreatRatio() { return m_Doctrine.m_fRetreatRatio; }
 
  // Called every second by the manager.
  void Tick(bool noPlayerCommander)
@@ -973,7 +977,7 @@ class ACR_AICommander : Managed
    return false;
   }
   ACR_Base safe = NearestOwnBase(PositionOf(squad));
-  if (safe && ThreatTo(safe) == 0 && vector.DistanceXZ(PositionOf(squad), safe.GetOrigin()) <= safe.m_fRadius && squad.KnownEnemies(300) == 0 && squad.StrengthRatio() >= RETREAT_RATIO && (squad.m_iAmmoPct < 0 || squad.m_iAmmoPct >= OUT_OF_AMMO))
+  if (safe && ThreatTo(safe) == 0 && vector.DistanceXZ(PositionOf(squad), safe.GetOrigin()) <= safe.m_fRadius && squad.KnownEnemies(300) == 0 && squad.StrengthRatio() >= RetreatRatio() && (squad.m_iAmmoPct < 0 || squad.m_iAmmoPct >= OUT_OF_AMMO))
   {
    m_RetreatingUntil.Remove(squad);
    return false;
@@ -1131,7 +1135,7 @@ class ACR_AICommander : Managed
    dearest = Math.Max(dearest, entry.m_iCost);
   }
   if (dearest == 0) return 0;
-  return Math.Min(SUPPORT_BUDGET_MAX, dearest + SUPPORT_RESERVE);
+  return Math.Min(m_Doctrine.m_iSupportBudgetMax, dearest + SUPPORT_RESERVE);
  }
 
  // Needing troops beats keeping fire support money: well under strength, or a
@@ -1316,7 +1320,7 @@ class ACR_AICommander : Managed
    {
     // Hit back while the enemy is still thin on the ground.
     m_CounterTarget = base;
-    m_fCounterUntil = GetGame().GetWorld().GetWorldTime() + 300000;
+    m_fCounterUntil = GetGame().GetWorld().GetWorldTime() + m_Doctrine.m_fCounterMinutes * 60000;
     PrintFormat("[ACR] AI %1: lost %2, planning a counterattack", m_sFaction, base.m_sName);
    }
    m_LastOwner.Set(base, base.m_sOwner);
@@ -1346,7 +1350,7 @@ class ACR_AICommander : Managed
    }
    // A defence that is being overrun: the badly hurt get out rather than die in place.
    bool overrun = ThreatTo(held) > DefenceOf(held) * 2;
-   if (overrun && squad.StrengthRatio() < RETREAT_RATIO && squad.KnownEnemies(300) > 0)
+   if (overrun && squad.StrengthRatio() < RetreatRatio() && squad.KnownEnemies(300) > 0)
     FallBack(squad, "defence of " + held.m_sName + " overrun", held);
    else if (squad.m_iAmmoPct >= 0 && squad.m_iAmmoPct < OUT_OF_AMMO && squad.KnownEnemies(300) > 0)
     FallBack(squad, "out of ammo", held);
@@ -1360,8 +1364,8 @@ class ACR_AICommander : Managed
    int threat = ThreatTo(base);
    if (threat == 0) continue;
    int defence = DefenceOf(base);
-   if (threat > defence * CONCEDE_RATIO && defence > 0) continue; // lost cause
-   float needed = threat * DEFENSE_RATIO - defence;
+   if (threat > defence * CONCEDE_RATIO * m_Doctrine.m_fConcedeRatio && defence > 0) continue; // lost cause
+   float needed = threat * DEFENSE_RATIO * m_Doctrine.m_fDefenseRatio - defence;
    if (needed <= 0) continue;
    SortByDistance(free, base.GetOrigin());
    int k = 0;
@@ -1573,7 +1577,7 @@ class ACR_AICommander : Managed
  protected float AttackNeed(ACR_Base target)
  {
   if (target.m_bBuilt) return Math.Max(8, DefenceOf(target) * 0.9 + target.m_iGarrisonLeft * 0.7);
-  return Math.Max(10, DefenceOf(target) * ATTACK_RATIO * 0.65) + target.m_iGarrisonLeft;
+  return Math.Max(10, DefenceOf(target) * ATTACK_RATIO * m_Doctrine.m_fAttackRatio * 0.65) + target.m_iGarrisonLeft;
  }
 
  protected void ReinforceAttacks(array<ACR_Squad> free)
@@ -1656,6 +1660,7 @@ class ACR_AICommander : Managed
   int minAllForReserve = 5;
   if (ACR_Manager.ThreatOption() == 0) minAllForReserve = 6;
   else if (ACR_Manager.ThreatOption() == 2) minAllForReserve = 4;
+  minAllForReserve = (int)Math.Max(3, minAllForReserve + m_Doctrine.m_iReserveSquads);
   if (all.Count() >= minAllForReserve && free.Count() >= 2 && Pressure() >= 0.9)
   {
    ACR_Base home = ReserveBase();
@@ -1705,7 +1710,7 @@ class ACR_AICommander : Managed
   // 18 min): one grab per 6 empty bases in sight, 3 to 8.
   int unclaimed;
   foreach (ACR_Base open : ACR_Base.s_All) if (SeenOwner(open).IsEmpty() && Visible(open)) unclaimed++;
-  int maxGrabs = Math.Clamp(unclaimed / 6, MAX_GRABS, MAX_GRABS_BIG);
+  int maxGrabs = Math.Clamp(unclaimed / 6, Math.Max(1, MAX_GRABS + m_Doctrine.m_iGrabs), Math.Max(1, MAX_GRABS_BIG + m_Doctrine.m_iGrabs));
   while (grabs < maxGrabs && !free.IsEmpty() && !PlanBudgetSpent())
   {
    ACR_Base empty;
@@ -1751,9 +1756,9 @@ class ACR_AICommander : Managed
   if (free.IsEmpty() || PlanBudgetSpent()) return;
   // Plenty of idle troops: open more fronts. On large maps with many bases and idle armies,
   // allow up to 6 extra attacks so a dominant side doesn't sit idle.
-  int maxExtraAttacks = 3;
-  if (ACR_Base.s_All.Count() > 24) maxExtraAttacks = 6;
-  maxAttacks += Math.Min(maxExtraAttacks, free.Count() / 3);
+  int maxExtraAttacks = m_Doctrine.m_iExtraFronts;
+  if (ACR_Base.s_All.Count() > 24) maxExtraAttacks = maxExtraAttacks * 2;
+  maxAttacks += Math.Min(maxExtraAttacks, free.Count() / m_Doctrine.m_iSquadsPerFront);
   if (attacks >= maxAttacks && !counterDue) return;
 
   // Target: a counterattack on a base just lost, otherwise the enemy base with
@@ -1775,17 +1780,17 @@ class ACR_AICommander : Managed
    foreach (ACR_Base base : ACR_Base.s_All)
    {
     if (base.m_sOwner == m_sFaction || SeenOwner(base).IsEmpty() || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
-    float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO);
+    float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO * m_Doctrine.m_fAttackRatio);
     float dist = NearestFreeDistance(free, base.GetOrigin());
     // FIA pockets: cleared when in the way (near our own bases), after the real enemy.
     if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
     float score = cost * (dist / 1000 + 0.1);
     if (base.m_bPocket) score *= POCKET_SCORE;
     if (base.m_bContested || (DefenceOf(base) <= UNKNOWN_DEFENCE + 2 && dist < 1200))
-     score *= 0.65;
+     score *= 0.65 * m_Doctrine.m_fWeakTarget;
     if (base.m_bBuilt)
     {
-     score *= 0.35;
+     score *= 0.35 * m_Doctrine.m_fFobTarget;
      float frontDist = float.MAX;
      foreach (ACR_Base ownBase : ACR_Base.s_All)
      {
@@ -1807,7 +1812,7 @@ class ACR_AICommander : Managed
   {
    float need = 1;
    if (!candidate.m_sOwner.IsEmpty()) need = AttackNeed(candidate);
-   if (counterDue) need = need * 0.7; // strike before they dig in
+   if (counterDue) need = need * m_Doctrine.m_fCounterNeed; // strike before they dig in
    need = need * pressure;
    if (ACR_Manager.ThreatOption() == 2) need = need * 0.85; // High: launch a viable force sooner
    if (!wanted) { wanted = candidate; wantedRequired = need; }
@@ -2640,7 +2645,7 @@ class ACR_AICommander : Managed
   int visible;
   foreach (ACR_Base base : ACR_Base.s_All)
    if (base.m_sOwner != m_sFaction && !base.m_sOwner.IsEmpty() && Visible(base)) visible++;
-  attacks += string.Format(" | support budget %1", SupportBudget());
+  attacks += string.Format(" | support budget %1 | doctrine %2", SupportBudget(), m_Doctrine.m_sName);
   PrintFormat("[ACR] AI %1 status: %2 squads (free %3, defending %4, attacking %5, other %6), attacks:%7, enemy bases known %8, RP %9",
    m_sFaction, all.Count(), nFree, nDefend, nAttack, nOther, attacks, visible, m_Manager.m_Bases.GetRP(m_sFaction));
  }
@@ -2662,7 +2667,7 @@ class ACR_AICommander : Managed
      continue;
     }
     // Badly hurt and still under fire: pull out instead of dying in place.
-    if (attack.m_bAssaulting && squad.StrengthRatio() < RETREAT_RATIO && squad.KnownEnemies(300) > 0)
+    if (attack.m_bAssaulting && squad.StrengthRatio() < RetreatRatio() && squad.KnownEnemies(300) > 0)
     {
      FallBack(squad, "heavy casualties");
      attack.Remove(s);
@@ -2687,7 +2692,7 @@ class ACR_AICommander : Managed
    int strength;
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
    bool fusePrimed = attack.m_SapperDemo && attack.m_SapperDemo.InProgress();
-   bool broken = !fusePrimed && attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * ABORT_RATIO;
+   bool broken = !fusePrimed && attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * m_Doctrine.m_fAbortRatio;
    bool stalled = !fusePrimed && !won && target && Stalled(attack);
    if (!target || won || (attack.m_Squads.IsEmpty() && !fusePrimed) || broken || stalled)
    {
@@ -2739,7 +2744,7 @@ class ACR_AICommander : Managed
     attack.m_bAssaulting = true;
     attack.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
     // Preparation: shell the objective with heavy assets against fortified FOBs
-    bool heavyPrep = target.m_bBuilt || DefenceOf(target) >= 12;
+    bool heavyPrep = target.m_bBuilt || DefenceOf(target) >= m_Doctrine.m_iHeavyPrep;
     if (!heavyPrep || !CallSupport(ACR_ESupportType.BOMB_RUN, target.GetOrigin(), "airstrike preparation on " + target.m_sName))
      if (!heavyPrep || !CallSupport(ACR_ESupportType.ROCKET_STRIKE, target.GetOrigin(), "rocket strike preparation on " + target.m_sName))
       if (!heavyPrep || !CallSupport(ACR_ESupportType.HELI_GUN_RUN, target.GetOrigin(), "gun run preparation on " + target.m_sName))
@@ -3313,6 +3318,7 @@ class ACR_AICommander : Managed
   // Squads keep having to walk far with no truck to fetch them: buy a transport first.
   int maxTransports = 4;
   if (ACR_Manager.ThreatOption() == 2) maxTransports = 5;
+  maxTransports += m_Doctrine.m_iTransports;
   if (m_Manager.m_Rides && m_Manager.m_Rides.ShortOfTransport(m_sFaction) && m_Manager.m_Rides.CountTransports(m_sFaction) < maxTransports)
   {
    int truck = -1;
@@ -3342,9 +3348,10 @@ class ACR_AICommander : Managed
    if (BuyMortarTeam(spawn, data)) return;
    if (BuyHelicopter(data)) return;
   }
-  else if (!urgent)
+  else if (!urgent || m_Doctrine.m_bSupportsFirst)
   {
-   keep = SupportBudget();
+   // Firepower still buys its guns when short of troops, but doesn't sit on mission money then.
+   if (!urgent) keep = SupportBudget();
    if (BuyMortarTeam(spawn, data)) return;
    if (BuyHelicopter(data)) return;
   }
@@ -3412,11 +3419,16 @@ class ACR_AICommander : Managed
      bool isSapper = IsSapperEntry(entry);
      bool smallTeam = IsSmallTeamEntry(entry);
      if (smallTeam && !(isSapper && HasEnemyFob()) && hasLineOffer && smallTeams >= 2 && smallTeams * 2 >= lineSquads)
-      continue;
+     {
+      // Raiders run more small teams, up to two per line squad.
+      if (!m_Doctrine.m_bSmallTeamsFree || (smallTeams >= 3 && smallTeams >= lineSquads * 2)) continue;
+     }
      // Weigh by the base price: a unit whose stepped price has climbed isn't worth more.
      float weight = ACR_InfantryCatalog.AIWeight(entry);
      if (entry.m_sVehicle.IsEmpty() && !smallTeam && !IsSpecialistTeam(entry)) weight *= 1.8;
      else if (smallTeam && !(isSapper && HasEnemyFob())) weight *= 0.35;
+     if (smallTeam) weight *= m_Doctrine.m_fSmallTeamWeight;
+     if (!entry.m_sVehicle.IsEmpty()) weight *= m_Doctrine.m_fVehicleWeight;
      if (highThreat && !entry.m_sVehicle.IsEmpty()) weight *= 1.5;
      if (highThreat && m_sFaction == "RHS_AFRF" && IsRUArmorEntry(entry)) weight *= 2;
      if (!entry.m_sVehicle.IsEmpty() && vehicles == 0 && combatLine >= 3) weight *= 1.6;
@@ -4242,13 +4254,13 @@ class ACR_AICommander : Managed
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   if (!data || data.m_iRP < 45) return;
 
-  // Cap: max 2 active roadblocks per faction
+  // Cap: 2 active roadblocks per faction (the doctrine may change it)
   int activeCount = 0;
   foreach (ACR_Roadblock rb : ACR_Roadblocks.s_aRoadblocks)
   {
    if (rb && rb.m_sFaction == m_sFaction) activeCount++;
   }
-  if (activeCount >= 2) return;
+  if (activeCount >= m_Doctrine.m_iRoadblocks) return;
 
   // Find frontline base to protect
   ACR_Base frontlineBase = null;

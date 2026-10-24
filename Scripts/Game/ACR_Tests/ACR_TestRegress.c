@@ -399,6 +399,7 @@ class ACR_TestRegress
   {
    CheckRoadblockPlacement(harness.m_Range.GetOrigin());
    ACR_TestOptions.Run();
+   ACR_TestDoctrine.Run(manager);
    ACR_TestAccess.Run();
    // R18 (14 Oct review): records of deleted vehicles are dropped.
    int recordsBefore = ACR_Vehicles.RecordCount();

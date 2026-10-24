@@ -54,6 +54,13 @@ modded class ACR_TestHooks
   return "";
  }
 
+ // Tests keep the standard commander (a random doctrine would make runs differ); a test
+ // that wants one sets -acrDoctrineWest/-acrDoctrineEast or ACR_Options.
+ override string AIDoctrine(string factionKey)
+ {
+  return "balanced";
+ }
+
  override string SkirmishLayout()
  {
   if (ACR_TestSkirmish.Wanted()) return ACR_TestSkirmish.Layout();
