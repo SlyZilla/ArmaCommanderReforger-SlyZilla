@@ -44,10 +44,10 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
   // -acrPocketsTest: FIA pockets of resistance (ACR_TestPockets).
   if (System.IsCLIParam("acrPocketsTest")) ACR_TestPockets.Run(seconds);
-  // -acrFortifyTest: the fortification planner on Everon (ACR_TestFortify).
-  if (System.IsCLIParam("acrFortifyTest")) ACR_TestFortify.Run(seconds);
-  if (System.IsCLIParam("acrFortifySurveyTest")) ACR_TestFortify.RunSurvey(seconds);
-  if (System.IsCLIParam("acrFortifyModelsTest")) ACR_TestFortify.RunModels(seconds);
+  // -acrBaseDefencesTest: the fortification planner on Everon (ACR_TestBaseDefences).
+  if (System.IsCLIParam("acrBaseDefencesTest")) ACR_TestBaseDefences.Run(seconds);
+  if (System.IsCLIParam("acrBaseDefencesSurveyTest")) ACR_TestBaseDefences.RunSurvey(seconds);
+  if (System.IsCLIParam("acrBaseDefencesModelsTest")) ACR_TestBaseDefences.RunModels(seconds);
  }
 
  // Tests keep their worlds as authored; the pocket test and the balance soaks get pockets.

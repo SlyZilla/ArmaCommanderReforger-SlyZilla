@@ -29,7 +29,7 @@ class ACR_DebugCommand : Managed
 		commandLine = commandLine.Trim();
 		if (commandLine.IsEmpty() || commandLine == "help")
 		{
-			return "Commands: rp <amt> [side], time <0-24>, heal [all], kill [all], fob supply <amt>, fob finish, fob build <slot>, capture <base> [side], attack <base>, reveal, pause [enemy/us], tp [base], fortify [base|clear], unbound";
+			return "Commands: rp <amt> [side], time <0-24>, heal [all], kill [all], fob supply <amt>, fob finish, fob build <slot>, capture <base> [side], attack <base>, reveal, pause [enemy/us], tp [base], defences [base|clear], unbound";
 		}
 
 		array<string> tokens = {};
@@ -279,11 +279,11 @@ class ACR_DebugCommand : Managed
 			return "[ACR] " + manager.m_Debug.Run(manager, ACR_EDebug.PAUSE_ENEMY, ownKey, "");
 		}
 
-		// FORTIFY [base | clear]: preview where a Fortify order would put sandbags (ACR_Fortify)
-		if (cmd == "fortify")
+		// DEFENCES [base | clear]: preview where base defences would put sandbags (ACR_BaseDefences)
+		if (cmd == "defences")
 		{
 			if (tokens.Count() >= 2 && tokens[1] == "clear")
-				return string.Format("[ACR] Removed %1 preview sandbag pieces", ACR_Fortify.ClearPreview());
+				return string.Format("[ACR] Removed %1 preview sandbag pieces", ACR_BaseDefences.ClearPreview());
 			ACR_Base fortBase = ACR_Debug.FindBase(baseName);
 			if (tokens.Count() >= 2)
 			{
@@ -304,7 +304,7 @@ class ACR_DebugCommand : Managed
 					if (baseDist < nearDist) { nearDist = baseDist; fortBase = candidate; }
 				}
 			}
-			return ACR_Fortify.Preview(fortBase, ownKey);
+			return ACR_BaseDefences.Preview(fortBase, ownKey);
 		}
 
 		// 10. TELEPORT / TP [baseName]

@@ -124,9 +124,9 @@ bbbfeatureaudit|-acrBbbFeatureAuditTest 1|200|Worlds/BBB_TestArland.ent
 bbborderleash|-acrBbbOrderLeashTest 1|190|Worlds/BBB_TestArland.ent
 typhoons|-acrTyphoonPurchaseTest 1|120
 pockets|-acrPocketsTest 1|150|Worlds/ACR_Everon.ent
-fortify|-acrFortifyTest 1|120|Worlds/ACR_Everon.ent
-fortifysurvey|-acrFortifySurveyTest 1|90|Worlds/ACR_Everon.ent
-fortifysurveyarland|-acrFortifySurveyTest 1|90|Worlds/ACR_Arland.ent
-fortifysurveykolguyev|-acrFortifySurveyTest 1|90|Worlds/ACR_Kolguyev.ent
-fortifymodels|-acrFortifyModelsTest 1|120|Worlds/ACR_Everon.ent
-fortifymodelskolguyev|-acrFortifyModelsTest 1|120|Worlds/ACR_Kolguyev.ent
+basedefences|-acrBaseDefencesTest 1|120|Worlds/ACR_Everon.ent
+basedefencessurvey|-acrBaseDefencesSurveyTest 1|90|Worlds/ACR_Everon.ent
+basedefencessurveyarland|-acrBaseDefencesSurveyTest 1|90|Worlds/ACR_Arland.ent
+basedefencessurveykolguyev|-acrBaseDefencesSurveyTest 1|90|Worlds/ACR_Kolguyev.ent
+basedefencesmodels|-acrBaseDefencesModelsTest 1|120|Worlds/ACR_Everon.ent
+basedefencesmodelskolguyev|-acrBaseDefencesModelsTest 1|120|Worlds/ACR_Kolguyev.ent
