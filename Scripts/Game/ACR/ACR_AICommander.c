@@ -890,6 +890,45 @@ class ACR_AICommander : Managed
  protected float m_fCounterUntil;
  // Retreat (a squad in contact) and abort (a whole attack) ratios: the doctrine's, 0.4 / 0.35 standard.
  static const int SUPPORT_RESERVE = 15;    // RP the AI keeps back when calling supports
+
+ // Engineering budget (-acrAIBuildShare N, 0 = off by default): N% (at most 30) of what the
+ // side's RP gains between strategy ticks is set aside for roadblocks and minefields (and
+ // Fortify positions where that order exists); unit purchases leave it alone, and what those
+ // orders spend comes out of it. At most BUILD_BUDGET_MAX, never more than the side holds.
+ static const int BUILD_BUDGET_MAX = 100;
+ float m_fBuildBudget;
+ protected int m_iBuildLastRP = -1;
+ static int BuildShare() { return Math.ClampInt(ACR_LogisticsRules.Choice("acrAIBuildShare", "0").ToInt(), 0, 30); }
+ int BuildBudget() { return (int)m_fBuildBudget; }
+
+ // At the start of a strategy tick: the share of the RP gained since the last one.
+ void AccrueBuildBudget()
+ {
+  int rp = m_Manager.m_Bases.GetRP(m_sFaction);
+  int share = BuildShare();
+  if (share <= 0) m_fBuildBudget = 0;
+  else if (m_iBuildLastRP >= 0 && rp > m_iBuildLastRP) m_fBuildBudget += (rp - m_iBuildLastRP) * share / 100.0;
+  m_fBuildBudget = Math.Clamp(m_fBuildBudget, 0, Math.Min(BUILD_BUDGET_MAX, rp));
+  m_iBuildLastRP = rp;
+ }
+
+ void SpendBuildBudget(int spent)
+ {
+  if (spent > 0) m_fBuildBudget = Math.Max(0, m_fBuildBudget - spent);
+ }
+
+ // What unit purchases keep back for it.
+ int BuildKeep()
+ {
+  if (BuildShare() <= 0) return 0;
+  return BuildBudget();
+ }
+
+ string BuildStatus()
+ {
+  if (BuildShare() <= 0) return "";
+  return string.Format(" | build budget %1 RP (%2%% of income)", BuildBudget(), BuildShare());
+ }
  static const int MAX_GRABS = 3;           // empty bases it goes for at the same time (at least)
  static const int MAX_GRABS_BIG = 8;       // ... at most, on maps with many empty bases
  // Planning work one strategic tick may do before further grabs and attacks wait for the next
@@ -934,6 +973,7 @@ class ACR_AICommander : Managed
   if (m_iSeconds % TICK_SECONDS != 1) return;
   int t = System.GetTickCount();
   m_iTickStarted = t;
+  AccrueBuildBudget();
   ReleaseRoadblockBuilders();
   Assess();
   t = ACR_Perf.Lap("ai.assess", t);
@@ -950,14 +990,17 @@ class ACR_AICommander : Managed
   ManageLogistics();
   ManageFobBuild();
   ManageFobUpgrades();
+  int beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
   ManageRoadblocks();
   ManageMinefields();
   ManageFortify();
+  SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
   t = ACR_Perf.Lap("ai.logistics", t);
   Requisition();
   t = ACR_Perf.Lap("ai.buy", t);
   ReviewDoctrine();
   LogStatus();
+  m_iBuildLastRP = m_Manager.m_Bases.GetRP(m_sFaction);
  }
 
  // ---------------------------------------------------------------- doctrine reviews
@@ -2780,7 +2823,7 @@ class ACR_AICommander : Managed
   int visible;
   foreach (ACR_Base base : ACR_Base.s_All)
    if (base.m_sOwner != m_sFaction && !base.m_sOwner.IsEmpty() && Visible(base)) visible++;
-  attacks += string.Format(" | support budget %1 | doctrine %2", SupportBudget(), m_Doctrine.m_sName);
+  attacks += string.Format(" | support budget %1 | doctrine %2", SupportBudget(), m_Doctrine.m_sName) + BuildStatus();
   PrintFormat("[ACR] AI %1 status: %2 squads (free %3, defending %4, attacking %5, other %6), attacks:%7, enemy bases known %8, RP %9",
    m_sFaction, all.Count(), nFree, nDefend, nAttack, nOther, attacks, visible, m_Manager.m_Bases.GetRP(m_sFaction));
  }
@@ -3501,6 +3544,7 @@ class ACR_AICommander : Managed
    if (BuyMortarTeam(spawn, data)) return;
    if (BuyHelicopter(data)) return;
   }
+  keep += BuildKeep(); // the engineering budget (-acrAIBuildShare) isn't for units
   int smallTeams, lineSquads, vehicles;
   foreach (ACR_Squad existing : mine)
   {
