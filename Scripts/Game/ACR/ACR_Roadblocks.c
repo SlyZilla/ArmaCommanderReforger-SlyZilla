@@ -470,8 +470,11 @@ class ACR_Roadblocks : Managed
 			refund = string.Format("%1 RP", rp);
 		}
 
+		// Removing it from the list frees it when the caller holds no strong reference.
+		vector pos = rb.m_vPos;
+		string faction = rb.m_sFaction;
 		s_aRoadblocks.RemoveItem(rb);
-		PrintFormat("[ACR] ROADBLOCK dismantled at %1, refunded %2 to %3", rb.m_vPos, refund, rb.m_sFaction);
+		PrintFormat("[ACR] ROADBLOCK dismantled at %1, refunded %2 to %3", pos, refund, faction);
 	}
 
 	static IEntity FindTurretInHierarchy(IEntity root)

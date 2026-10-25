@@ -7,11 +7,12 @@
 // touched), a switch to a bigger roadblock paid with the first one's refund, time set aside not
 // counting, a regroup pausing a paid build without a refund; then Alpha builds a barricade that
 // waits for a truck to leave the road but not for one at its stage beside the road, faces a known
-// enemy, is held until a new order and is dismantled for half back; and Bravo, wiped out while
+// enemy, is held until a new order and is dismantled for half back; Alpha's medium checkpoint
+// gun, left for a new order at once four times, with no failed move; and Bravo, wiped out while
 // its build is set aside, gets the payment back.
 class ACR_TestRoadblocks
 {
- static const int CHECKS = 24;
+ static const int CHECKS = 25;
  static const ResourceName TRUCK = "{2D74C39A650A3030}Prefabs/Vehicles/Wheeled/M923A1/M923A1_engineer.et";
  static int s_iStep;
  static int s_iStepAt;
@@ -25,6 +26,10 @@ class ACR_TestRoadblocks
  static int s_iVehicleWaits;
  static float s_fStage;
  static int s_iBravoRP;
+ static ACR_Roadblock s_GunPost;
+ static vector s_vLeaderAt;
+ static ref array<vector> s_aSquadAt = {};
+ static int s_iGunRounds, s_iGunCycles, s_iGunMoved;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -40,7 +45,7 @@ class ACR_TestRoadblocks
    if (tick == 60) ACR_TestRegress.Abort("roadblocks", "no Alpha squad");
    return;
   }
-  if (tick > 180) ACR_TestRegress.Abort("roadblocks", string.Format("timed out in step %1", s_iStep));
+  if (tick > 400) ACR_TestRegress.Abort("roadblocks", string.Format("timed out in step %1", s_iStep));
   if (tick < 5) return;
   if (!manager.m_Logistics) manager.m_Logistics = new ACR_Logistics(manager);
   ACR_Logistics logistics = manager.m_Logistics;
@@ -203,6 +208,95 @@ class ACR_TestRoadblocks
    if (unpaid) ACR_Roadblocks.DismantleRoadblock(unpaid);
    ACR_TestRegress.Check("roadblocks: dismantling gives half back where it was paid from", Math.AbsFloat(truckBack - 0.8) < 0.01 && rpBack == 0 && unpaid && us.m_iRP - rp == 4 && !ACR_Roadblocks.s_aRoadblocks.Contains(rb), string.Format("truck-paid barricade: +%1 loads, +%2 RP; RP-paid barricade: +%3 RP", truckBack, rpBack, us.m_iRP - rp));
 
+   // Alpha builds a medium checkpoint (with a gun) for the leave-the-gun rounds.
+   us.m_iRP = 500;
+   if (!alpha.EstablishRoadblock(s_vBuild, s_fYaw, ACR_ERoadblockType.MEDIUM))
+   {
+    ACR_TestRegress.Abort("roadblocks", "the gun checkpoint order failed");
+    return;
+   }
+   NextStep(tick);
+   return;
+  }
+
+  if (s_iStep == 8)
+  {
+   bool gunManned = alpha.m_RoadblockTurret && ACR_Roadblocks.IsTurretOccupied(alpha.m_RoadblockTurret);
+   if (!gunManned && waited < 90) return;
+   s_GunPost = alpha.m_ActiveRoadblock;
+   if (!s_GunPost || !s_GunPost.m_Turret)
+   {
+    ACR_TestRegress.Abort("roadblocks", "no checkpoint gun for the leave-the-gun rounds");
+    return;
+   }
+   NextStep(tick);
+   return;
+  }
+
+  // Four rounds: once a gunner is on the gun (native Defend), a new order at once. Ten seconds on,
+  // the squad must be moving (the leader or the squad on average 2 m on) with nobody left on the
+  // gun; a native "Failed move" error would end the run. Then back on the post for the next round.
+  if (s_iStep == 9)
+  {
+   bool onGun = ACR_Roadblocks.IsTurretOccupied(s_GunPost.m_Turret);
+   if (!onGun && waited < 40) return;
+   if (onGun)
+   {
+    s_iGunCycles++;
+    s_vLeaderAt = alpha.GetLeader().GetOrigin();
+    s_aSquadAt.Clear();
+    array<AIAgent> before = {};
+    alpha.GetAgents(before);
+    foreach (AIAgent soldier : before) if (soldier.GetControlledEntity()) s_aSquadAt.Insert(soldier.GetControlledEntity().GetOrigin());
+    // Off the road, to either side in turn (from the same side, the leader may already be there).
+    vector gunAlong = Along(s_GunPost.m_fYaw);
+    float away = 30;
+    if (s_iGunRounds % 2 == 1) away = -30;
+    alpha.MoveTo(ACR_Manager.Ground(s_GunPost.m_vPos + Vector(gunAlong[2], 0, -gunAlong[0]) * away));
+   }
+   NextStep(tick);
+   return;
+  }
+
+  if (s_iStep == 10)
+  {
+   if (waited < 10) return;
+   if (s_vLeaderAt != vector.Zero)
+   {
+    // The squad's average step from where each soldier stood at the order.
+    float step;
+    int counted;
+    array<AIAgent> after = {};
+    alpha.GetAgents(after);
+    foreach (int i, AIAgent soldier : after)
+    {
+     if (i >= s_aSquadAt.Count() || !soldier.GetControlledEntity()) continue;
+     step += vector.DistanceXZ(soldier.GetControlledEntity().GetOrigin(), s_aSquadAt[i]);
+     counted++;
+    }
+    if (counted > 0) step /= counted;
+    float leaderStep = vector.DistanceXZ(alpha.GetLeader().GetOrigin(), s_vLeaderAt);
+    bool moving = !ACR_Roadblocks.IsTurretOccupied(s_GunPost.m_Turret) && (leaderStep > 2 || step > 2);
+    if (moving) s_iGunMoved++;
+    PrintFormat("[ACR] ROADBLOCKS test: gun round %1: moving %2 (state %3, gun manned %4), leader %5 m on, squad %6 m on average", s_iGunRounds, moving, alpha.OrderState(), ACR_Roadblocks.IsTurretOccupied(s_GunPost.m_Turret), leaderStep, step);
+   }
+   s_vLeaderAt = vector.Zero;
+   s_iGunRounds++;
+   if (s_iGunRounds < 4)
+   {
+    alpha.m_ActiveRoadblock = s_GunPost;
+    alpha.m_RoadblockTurret = s_GunPost.m_Turret;
+    alpha.m_vRoadblockSite = s_GunPost.m_vPos;
+    alpha.IssueWaypoint(ACR_Squad.WP_DEFEND, s_GunPost.m_vPos, 15);
+    alpha.SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+    alpha.m_OrderKind = ACR_EOrderKind.DEFEND;
+    s_iStep = 9;
+    s_iStepAt = tick;
+    return;
+   }
+   ACR_TestRegress.Check("roadblocks: a gunner leaving the checkpoint gun for a new order at once: the squad moves off, no failed move", s_iGunCycles >= 2 && s_iGunMoved == s_iGunCycles, string.Format("%1 of 4 rounds with a gunner on, moving after %2", s_iGunCycles, s_iGunMoved));
+   ACR_Roadblocks.DismantleRoadblock(s_GunPost);
+
    // Bravo starts a roadblock (RP), the order is set aside, and Bravo is wiped out.
    ACR_Squad bravo = manager.FindSquadByGroup(h.m_Range.m_Bravo);
    us.m_iRP = 500;
@@ -220,7 +314,7 @@ class ACR_TestRoadblocks
    return;
   }
 
-  if (s_iStep == 8)
+  if (s_iStep == 11)
   {
    if (waited < 4) return;
    ACR_Squad gone = manager.FindSquadByGroup(h.m_Range.m_Bravo);
@@ -228,7 +322,7 @@ class ACR_TestRoadblocks
    ACR_TestRegress.Check("roadblocks: a squad wiped out while its build is set aside gets the payment back", s_iBravoRP == 488 && us.m_iRP == 500 && !pending, string.Format("rp 500 -> %1 -> %2, squad left %3, pending %4", s_iBravoRP, us.m_iRP, gone != null, pending));
    ACR_Roadblocks.s_fWorkScaleForTest = 1;
    ACR_TestRegress.Complete("roadblocks", CHECKS);
-   s_iStep = 9;
+   s_iStep = 12;
   }
  }
 

@@ -1406,8 +1406,46 @@ class ACR_Squad : Managed
    ACR_Roadblocks.VacateTurret(m_RoadblockTurret);
    m_RoadblockTurret = null;
    m_ActiveRoadblock = null;
+   StepOntoNavmeshSoon();
    PrintFormat("[ACR] SQUAD %1: vacated roadblock machine gun", m_Name);
   }
+ }
+
+ // After a gunner's teleport get-out (a roadblock's or a fortified position's gun). The exit can
+ // be inside the gun's sandbags, and Defend can leave a soldier on top of them: with the leader at
+ // either spot, the next order's move failed natively ("Failed move ... to waypoint", within 8
+ // leave-the-gun cycles in each Fortify stress run). Once the get-out has landed, everyone off
+ // the navmesh steps onto the closest point of it.
+ void StepOntoNavmeshSoon()
+ {
+  GetGame().GetCallqueue().Remove(StepOntoNavmesh);
+  GetGame().GetCallqueue().CallLater(StepOntoNavmesh, 100, false, 0);
+ }
+
+ protected void StepOntoNavmesh(int tries)
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  bool seated = false;
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   if (ACR_Transport.VehicleOf(body))
+   {
+    seated = true;
+    continue;
+   }
+   AIPathfindingComponent pathing = AIPathfindingComponent.Cast(agent.FindComponent(AIPathfindingComponent));
+   vector at = body.GetOrigin();
+   vector onMesh;
+   if (!pathing || !pathing.GetClosestPositionOnNavmesh(at, Vector(3, 3, 3), onMesh)) continue;
+   if (vector.DistanceXZ(onMesh, at) < 0.5 && Math.AbsFloat(onMesh[1] - at[1]) < 0.6) continue;
+   PrintFormat("[ACR] SQUAD %1: soldier off the navmesh by a gun stepped %2 m onto it", m_Name, vector.Distance(onMesh, at));
+   body.SetOrigin(onMesh);
+  }
+  // A gunner still getting off: again shortly.
+  if (seated && tries < 4) GetGame().GetCallqueue().CallLater(StepOntoNavmesh, 250, false, tries + 1);
  }
 
  void TickRoadblockDefence(float now)
@@ -3349,6 +3387,7 @@ class ACR_Squad : Managed
   m_Aside = null; // being removed: nothing to resume
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);
+  GetGame().GetCallqueue().Remove(StepOntoNavmesh);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);
   GetGame().GetCallqueue().Remove(EnsureGetOut);
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
@@ -3366,6 +3405,7 @@ class ACR_Squad : Managed
  {
   if (!GetGame()) return;
   GetGame().GetCallqueue().Remove(LinkSquad);
+  GetGame().GetCallqueue().Remove(StepOntoNavmesh);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);
   GetGame().GetCallqueue().Remove(EnsureGetOut);
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
