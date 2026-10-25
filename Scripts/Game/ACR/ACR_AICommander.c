@@ -4864,9 +4864,10 @@ class ACR_AICommander : Managed
  // Minefields on the approaches (-acrMinesAI 1; off by default). Every 30 s, one field at a
  // time, while it has fewer than its doctrine's m_iMinefields down and engineering can pay: at the
  // first of our front bases with no field of ours within 300 m, a free infantry squad within 600 m
- // of it (sappers first; else the nearest within FAR_BUILDER) lays one in front of our position
- // or roadblock there, else 150-270 m out towards the nearest enemy base (MineSamples), never
- // within DEFENCE_STANDOFF of our own defences: mixed on a road, AP mines on open ground.
+ // of it (sappers first; else the nearest within FAR_BUILDER) lays one at the best scored spot
+ // (ACR_MineSiting: on the road ahead of our roadblock or in front of our position where they cover
+ // it, on the enemy's road route, in dead ground; the old ring 150-270 m out last), never within
+ // DEFENCE_STANDOFF of our own defences: mixed on a road, AP mines on open ground.
  void ManageMinefields()
  {
   foreach (ACR_Squad layer : m_Manager.m_Squads)
@@ -4942,39 +4943,28 @@ class ACR_AICommander : Managed
   }
  }
 
- // Lays a field round 'front' with 'candidate' (MineSamples: the first spot it may lay at); true
- // if ordered, else notes why not.
+ // Lays a field round 'front' with 'candidate' at the best scored spot it may lay at
+ // (ACR_MineSiting: covered by our roadblock or position, on the enemy's road, dead ground; the old
+ // ring last); true if ordered, else notes why not.
  protected bool LayMines(ACR_Squad candidate, ACR_Base front, vector enemyPos, string from)
  {
-  vector toEnemy = enemyPos - front.GetOrigin();
-  toEnemy[1] = 0;
-  toEnemy.Normalize();
-  array<vector> samples = {};
-  MineSamples(front.GetOrigin(), toEnemy, samples);
-  int crowded = 0;
+  array<ref ACR_MineSite> sites = {};
+  int crowded;
+  ACR_MineSiting.Candidates(this, m_sFaction, front.GetOrigin(), enemyPos, sites, crowded);
   int refused = 0;
   string refusal = "";
-  foreach (vector sample : samples)
+  foreach (ACR_MineSite site : sites)
   {
-   if (!ClearOfOwnDefences(sample))
-   {
-    crowded++;
-    continue;
-   }
-   vector roadPoint, roadDir;
-   float roadWidth;
-   ACR_EMineKind kind = ACR_EMineKind.AP;
-   if (ACR_Minefields.Snap(sample, ACR_Minefields.ROAD_SNAP, roadPoint, roadDir, roadWidth)) kind = ACR_EMineKind.MIXED;
-   if (!ACR_Minefields.Order(candidate, kind, sample, refusal))
+   if (!ACR_Minefields.Order(candidate, site.m_eKind, site.m_vPos, refusal))
    {
     refused++;
     continue;
    }
    candidate.m_iAITask = ACR_EAITask.MINES;
-   PrintFormat("[ACR] AI %1: %2%3 laying %4 on the approach to %5 at %6", m_sFaction, candidate.GetName(), from, ACR_Minefields.Name(kind), front.m_sName, sample);
+   PrintFormat("[ACR] AI %1: %2%3 laying %4 on the approach to %5 at %6: of %7 spots, %8", m_sFaction, candidate.GetName(), from, ACR_Minefields.Name(site.m_eKind), front.m_sName, site.m_vPos, sites.Count(), ACR_MineSiting.Breakdown(site));
    return true;
   }
-  string why = string.Format("%1 of %2 spots too near our own defences or bases", crowded, samples.Count());
+  string why = string.Format("%1 spots, %2 more too near our own defences or bases", sites.Count(), crowded);
   if (refused > 0) why += string.Format(", %1 refused (last: %2)", refused, refusal);
   NoteBuild("mines site " + front.m_sName, string.Format("[ACR] AI %1: no minefield site at %2: %3", m_sFaction, front.m_sName, why));
   return false;
@@ -5007,29 +4997,6 @@ class ACR_AICommander : Managed
    if (base && !base.m_bRetired && base.m_sOwner == m_sFaction && vector.DistanceXZ(base.GetOrigin(), pos) < base.m_fRadius + 40) return false;
   }
   return true;
- }
-
- // Where a field round a front base may go, best first: 60-150 m in front of our position or
- // roadblock there (towards the enemy, covered by it), then 150-270 m out along the line to the
- // enemy and 60 m to either side of it.
- protected void MineSamples(vector basePos, vector toEnemy, notnull array<vector> samples)
- {
-  foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
-  {
-   if (fort.m_sFaction != m_sFaction || vector.DistanceXZ(fort.m_vPos, basePos) > 400) continue;
-   for (float ahead = 60; ahead <= 150; ahead += 30) samples.Insert(ACR_Manager.Ground(fort.m_vPos + toEnemy * ahead));
-  }
-  foreach (ACR_Roadblock rb : ACR_Roadblocks.s_aRoadblocks)
-  {
-   if (!rb || rb.m_sFaction != m_sFaction || vector.DistanceXZ(rb.m_vPos, basePos) > 450) continue;
-   for (float ahead = 60; ahead <= 150; ahead += 30) samples.Insert(ACR_Manager.Ground(rb.m_vPos + toEnemy * ahead));
-  }
-  vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
-  array<float> laterals = {0, -DEFENCE_STANDOFF, DEFENCE_STANDOFF};
-  foreach (float lateral : laterals)
-  {
-   for (float reach = 150; reach <= 270; reach += 40) samples.Insert(ACR_Manager.Ground(basePos + toEnemy * reach + side * lateral));
-  }
  }
 
  void ResetBuildTimersForTest()

@@ -150,7 +150,8 @@ class ACR_SiteScore
   return seen;
  }
 
- protected static bool Visible(vector eyePos, vector ground)
+ // An eye at 'eyePos' sees a man's head (1 m over the ground) at 'ground'.
+ static bool Visible(vector eyePos, vector ground)
  {
   BaseWorld world = GetGame().GetWorld();
   vector target = ground;

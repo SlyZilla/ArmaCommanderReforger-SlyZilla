@@ -70,6 +70,7 @@ class ACR_TestHarness : Managed
  static const int MODE_ROADSITING = 67;
  static const int MODE_BUILDRIDE = 73;
  static const int MODE_RIDEJOB = 68; // 54-67: Fortify and the playtest branches
+ static const int MODE_MINESITING = 71; // 68-70: ride job, defend swap, LAV ride (own branches)
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -134,6 +135,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRoadSitingTest", flag)) mode = MODE_ROADSITING;
   if (System.GetCLIParam("acrBuildRideTest", flag)) mode = MODE_BUILDRIDE;
   if (System.GetCLIParam("acrRideJobTest", flag)) mode = MODE_RIDEJOB;
+  if (System.GetCLIParam("acrMineSitingTest", flag)) mode = MODE_MINESITING;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -256,6 +258,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_ROADSITING) { ACR_TestRoadSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BUILDRIDE) { ACR_TestBuildRide.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDEJOB) { ACR_TestRideJob.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MINESITING) { ACR_TestMineSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

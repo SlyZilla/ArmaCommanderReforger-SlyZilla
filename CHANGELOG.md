@@ -8,6 +8,8 @@
 
 - AI building budget (host option, off by default): `-acrAIBuildShare N` makes each AI commander set N% (at most 30) of the RP it gains aside for engineering, up to 100 RP. Unit purchases leave that money alone, so its roadblocks, minefields (`-acrMinesAI`) and Fortify positions (`-acrFortifyAI`) get built instead of losing out to the next squad. The AI status log line shows the budget. The setup screen has a row for it: **AI build budget** (off, 10, 15 or 25% of income).
 
+- AI minefields go where they do most: mixed fields across the road 60-150 m ahead of the side's own roadblock, where its gunners cover them, more on the enemy's road route and at chokepoints; AP fields in dead ground and tree lines in front of its positions. The spots are scored and tried best first, the old ring last, so the AI never lays fewer fields than before.
+
 ## 0.5.7 — released
 
 Dig in and read the enemy. Fortify positions, mine the approaches, size your checkpoints, and face AI commanders that fight to their own doctrine and change it when it fails.
