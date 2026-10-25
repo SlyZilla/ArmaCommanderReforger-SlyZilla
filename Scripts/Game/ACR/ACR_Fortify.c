@@ -1,6 +1,7 @@
 // Fortify position (0.5.7): the commander digs an infantry squad in where it is sent. Like FOB
 // Defences, a position has fixed spots in its own frame (x across, z towards the threat) and
-// three tiers; ordering Fortify again on one of our positions upgrades it:
+// three tiers; ordering Fortify again on one of our positions upgrades it (in whole or not at
+// all, checked when it is ordered; its pieces look further afield than a new position's):
 //   I, Hasty:         a line of three sandbag positions, a barbed-wire line in front of it.
 //   II, Dug in:       a machine-gun nest replaces the middle position, a covered post behind it.
 //   III, Strongpoint: a bunker replaces the covered post, a heavy MG goes on a flank.
@@ -22,6 +23,7 @@ class ACR_Fortification : Managed
  ref array<IEntity> m_aPieces = {};  // one per spot (null: none)
  ref array<IEntity> m_aWire = {};    // the wire line's segments (tier I)
  ref array<IEntity> m_aTurrets = {}; // the guns among its pieces (ACR_Fortify.RefreshTurrets)
+ float m_fUpgradeHeldUntil;          // world ms: an upgrade here was refused, the AI leaves it till then
 }
 
 // One Fortify order: the tier it builds and how far the work is. The squad keeps it while it
@@ -74,6 +76,10 @@ class ACR_Fortify
  static const float FIRE_RANGE = 30;       // a gun's line of fire is traced this far ...
  static const float FIRE_CLEAR = 15;       // ... and must be clear this far
  static const int GUN_PLACES = 6;          // places a gun tries for a clear line of fire
+ static const int GUN_PLACES_UPGRADE = 12; // ... in an upgrade (its wider ring)
+ static const float MUZZLE_UP = 1.1;       // a gun's muzzle above the ground (measured, 25 Oct)
+ static const float MAX_AIM_UP = 15;       // a gun aims this far up rising ground in front of it
+ static const float UPGRADE_HOLD_S = 900;  // a refused upgrade: the AI leaves the position this long
  static const float HOLD_RADIUS = 24;      // the holding squad's Defend: every gun's place inside
  static const float FLANK_TURN = 20;       // the heavy MG turns in this far from its flank
  static float WORK_SCALE = 1;              // tests shorten the work
@@ -213,6 +219,16 @@ class ACR_Fortify
   return tier == 2 || tier == 3;
  }
 
+ // A spot's piece at a tier, for refusals the player reads.
+ static string PieceName(int spot, int tier)
+ {
+  if (spot <= 1 || (spot == 2 && tier <= 1)) return "a sandbag position";
+  if (spot == 2) return "the MG nest";
+  if (spot == 3) return "the heavy MG";
+  if (tier >= 3) return "the bunker";
+  return "the covered post";
+ }
+
  static ResourceName PrefabFor(int spot, string faction, int tier)
  {
   bool east = faction == "USSR" || faction.Contains("AFRF") || faction.Contains("RU") || faction.Contains("SLA");
@@ -291,18 +307,60 @@ class ACR_Fortify
 
  // Where a spot's piece goes: where its current piece stands, else the spot itself or the first
  // clear point beside it, off asphalt and concrete if any will do. The position's own pieces
- // never block it.
- static bool FindSpot(vector site, float yaw, int spot, ACR_Fortification target, out vector pos, out string reason)
+ // never block it. 'wide': an upgrade's piece also tries the wider ring (WideOffsets).
+ static bool FindSpot(vector site, float yaw, int spot, ACR_Fortification target, out vector pos, out string reason, bool wide = false)
  {
   array<vector> places = {};
-  if (!FindSpots(site, yaw, spot, target, places, reason, 1)) return false;
+  if (!FindSpots(site, yaw, spot, target, places, reason, 1, -1, wide)) return false;
   pos = places[0];
   return true;
  }
 
+ // An upgrade's pieces look further than a new position's (playtest 25 Oct: a covered post
+ // behind a position by a road and a nest facing a rising bank were refused on every try, the
+ // first fixed spots being the only ones): offsets past the near ones round a spot's base,
+ // nearest first. The covered post / bunker moves back, or behind either end post (never
+ // forward into the line); a gun moves up to 6 m along the line, a step back or 6 m forward.
+ static void WideOffsets(int spot, notnull array<vector> offsets)
+ {
+  if (spot != 4 && !IsGun(spot)) return;
+  array<float> across = {0, 2, -2, 4, -4, 6, -6};
+  array<float> along = {0, 2, 4, -2, 6};
+  array<float> postAcross = {0, 4, -4, 7, -7, 10.5, -10.5};
+  array<float> postAlong = {0, -3, -6, -9, -12};
+  if (spot == 4)
+  {
+   across = postAcross;
+   along = postAlong;
+  }
+  array<vector> wide = {};
+  foreach (float dz : along)
+  {
+   foreach (float dx : across)
+   {
+    vector offset = Vector(dx, 0, dz);
+    if (!offsets.Contains(offset)) wide.Insert(offset);
+   }
+  }
+  // Nearest first (a plain insertion sort: a few dozen offsets).
+  for (int i = 1; i < wide.Count(); i++)
+  {
+   vector held = wide[i];
+   int j = i - 1;
+   while (j >= 0)
+   {
+    if (wide[j].Length() <= held.Length()) break;
+    wide[j + 1] = wide[j];
+    j--;
+   }
+   wide[j + 1] = held;
+  }
+  foreach (vector offset : wide) offsets.Insert(offset);
+ }
+
  // ... up to 'most' clear places, best first (around each of SpotBases, or only the one numbered
- // 'onlyBase'). A gun never moves back (behind the posts).
- static bool FindSpots(vector site, float yaw, int spot, ACR_Fortification target, notnull array<vector> places, out string reason, int most, int onlyBase = -1)
+ // 'onlyBase'). A gun never moves back (behind the posts) unless 'wide'.
+ static bool FindSpots(vector site, float yaw, int spot, ACR_Fortification target, notnull array<vector> places, out string reason, int most, int onlyBase = -1, bool wide = false)
  {
   reason = "";
   if (s_bBlockSpotsForTest)
@@ -326,6 +384,13 @@ class ACR_Fortify
    along.Insert(2);
    along.Insert(4);
   }
+  array<vector> offsets = {};
+  foreach (float dz : along)
+  {
+   foreach (float dx : across) offsets.Insert(Vector(dx, 0, dz));
+  }
+  int near = offsets.Count();
+  if (wide) WideOffsets(spot, offsets);
   array<vector> bases = {};
   SpotBases(spot, bases);
   for (int pass = 0; pass < 2; pass++)
@@ -338,31 +403,33 @@ class ACR_Fortify
      if (reason.IsEmpty()) reason = "blocked (test)";
      continue;
     }
-    foreach (float dz : along)
+    foreach (int k, vector offset : offsets)
     {
-     foreach (float dx : across)
+     if (k < near && spot == s_iBlockNearForTest)
      {
-      vector candidate;
-      bool kept = old && dx == 0 && dz == 0 && b == 0;
-      if (kept) candidate = old.GetOrigin();
-      else candidate = ToWorld(site, yaw, around + Vector(dx, 0, dz));
-      if (pass == 0 && !kept && !s_bSkipSpotChecksForTest && HardSurface(candidate)) continue;
-      string why;
-      if (!s_bSkipSpotChecksForTest && !ACR_FobBuild.FootprintClear(candidate, SpotRadius(spot), ignore, why, true, MAX_RISE))
-      {
-       if (reason.IsEmpty()) reason = why;
-       continue;
-      }
-      if (!s_bSkipSpotChecksForTest && RockIn(candidate, SpotRadius(spot)))
-      {
-       if (reason.IsEmpty()) reason = "big rocks in the way";
-       continue;
-      }
-      if (places.Contains(candidate)) continue;
-      places.Insert(candidate);
-      reason = "";
-      if (places.Count() >= most) return true;
+      if (reason.IsEmpty()) reason = "blocked (test)";
+      continue;
      }
+     vector candidate;
+     bool kept = old && k == 0 && b == 0;
+     if (kept) candidate = old.GetOrigin();
+     else candidate = ToWorld(site, yaw, around + offset);
+     if (pass == 0 && !kept && !s_bSkipSpotChecksForTest && HardSurface(candidate)) continue;
+     string why;
+     if (!s_bSkipSpotChecksForTest && !ACR_FobBuild.FootprintClear(candidate, SpotRadius(spot), ignore, why, true, MAX_RISE))
+     {
+      if (reason.IsEmpty()) reason = why;
+      continue;
+     }
+     if (!s_bSkipSpotChecksForTest && RockIn(candidate, SpotRadius(spot)))
+     {
+      if (reason.IsEmpty()) reason = "big rocks in the way";
+      continue;
+     }
+     if (places.Contains(candidate)) continue;
+     places.Insert(candidate);
+     reason = "";
+     if (places.Count() >= most) return true;
     }
    }
   }
@@ -419,7 +486,32 @@ class ACR_Fortify
   vector muzzle = turret.GetOrigin();
   muzzle[1] = Math.Max(muzzle[1], maxs[1] - 0.1);
   float facing = Math.Atan2(forward[0], forward[2]) * Math.RAD2DEG;
-  s_FirePiece = piece;
+  return FireClear(muzzle, facing, piece, detail);
+ }
+
+ // The same check before the piece exists (an order's dry run, UpgradeBlocker): a gun facing
+ // compass 'facing' at 'place', its muzzle MUZZLE_UP above the ground; 'replaced' is the piece it
+ // takes the place of (the middle post), which doesn't count.
+ static bool LineOfFireAt(vector place, float facing, IEntity replaced, out string detail)
+ {
+  detail = "";
+  if (s_bBlockFireForTest)
+  {
+   detail = "line of fire blocked (test)";
+   return false;
+  }
+  vector muzzle = place;
+  muzzle[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]) + MUZZLE_UP;
+  return FireClear(muzzle, facing, replaced, detail);
+ }
+
+ // Rising ground in front only blocks a gun that can't aim up it (playtest 25 Oct: a nest's seven
+ // places all "blocked 5-6 m out by GenericTerrain", about 11 degrees up): a trace that hits the
+ // terrain is tried again aimed at a man's height above the ground FIRE_CLEAR m out, up to
+ // MAX_AIM_UP degrees.
+ protected static bool FireClear(vector muzzle, float facing, IEntity own, out string detail)
+ {
+  s_FirePiece = own;
   array<float> turns = {0, -10, 10};
   foreach (float turn : turns)
   {
@@ -432,6 +524,8 @@ class ACR_Fortify
    float hit = GetGame().GetWorld().TraceMove(trace, FireFilter);
    float clear = 1.2 + hit * (FIRE_RANGE - 1.2);
    if (hit >= 1 || clear >= FIRE_CLEAR) continue;
+   bool ground = !trace.TraceEnt || GenericTerrainEntity.Cast(trace.TraceEnt) != null;
+   if (ground && !s_bNoAimUpForTest && AimsUpClear(muzzle, dir)) continue;
    string what = "the ground";
    if (trace.TraceEnt && trace.TraceEnt.GetPrefabData()) what = FilePath.StripPath(trace.TraceEnt.GetPrefabData().GetPrefabName());
    else if (trace.TraceEnt) what = trace.TraceEnt.ClassName();
@@ -441,6 +535,21 @@ class ACR_Fortify
   }
   s_FirePiece = null;
   return true;
+ }
+
+ protected static bool AimsUpClear(vector muzzle, vector dir)
+ {
+  vector aim = muzzle + dir * FIRE_CLEAR;
+  aim[1] = GetGame().GetWorld().GetSurfaceY(aim[0], aim[2]) + 1.0;
+  float rise = aim[1] - muzzle[1];
+  if (rise <= 0 || Math.Atan2(rise, FIRE_CLEAR) * Math.RAD2DEG > MAX_AIM_UP) return false;
+  vector up = aim - muzzle;
+  up.Normalize();
+  TraceParam trace = new TraceParam();
+  trace.Start = muzzle + up * 1.2;
+  trace.End = aim;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  return GetGame().GetWorld().TraceMove(trace, FireFilter) >= 1;
  }
 
  protected static bool FireFilter(notnull IEntity e)
@@ -457,6 +566,8 @@ class ACR_Fortify
  static bool s_bBlockSpotsForTest;
  static bool s_bBlockFireForTest;
  static int s_iBlockBaseForTest = -1;
+ static int s_iBlockNearForTest = -1;     // this spot's near places are blocked (its wide ring isn't)
+ static bool s_bNoAimUpForTest;           // guns don't aim up rising ground
 
  // A tier can be built when at least one of its spots is clear.
  static bool CheckTier(vector site, float yaw, int tier, ACR_Fortification target, out string reason)
@@ -473,6 +584,55 @@ class ACR_Fortify
   }
   reason = "every spot blocked (" + first + ")";
   return false;
+ }
+
+ // An upgrade goes in whole or not at all (Build), so before anything is charged: every piece it
+ // changes needs a clear place, and each gun a clear line of fire from one of the places Build
+ // will try (playtest 25 Oct: one clear spot passed the order, the squad paid, worked and was
+ // refunded half a minute later, and the player saw only the RP go). "" when it fits, else what
+ // stops it, for the player.
+ static string UpgradeBlocker(vector site, float yaw, int tier, ACR_Fortification target)
+ {
+  for (int spot = 0; spot < SPOT_COUNT; spot++)
+  {
+   if (!SpotChangesAt(spot, tier)) continue;
+   array<vector> places = {};
+   string why;
+   int most = 1;
+   if (IsGun(spot)) most = GUN_PLACES_UPGRADE;
+   if (!FindSpots(site, yaw, spot, target, places, why, most, -1, true)) return string.Format("%1 has no clear place (%2)", PieceName(spot, tier), why);
+   if (!IsGun(spot)) continue;
+   IEntity replaced;
+   if (target && spot < target.m_aPieces.Count()) replaced = target.m_aPieces[spot];
+   bool fires;
+   string fireWhy;
+   foreach (vector place : places)
+   {
+    if (!LineOfFireAt(place, yaw + TurnAt(site, yaw, spot, place), replaced, fireWhy)) continue;
+    fires = true;
+    break;
+   }
+   if (!fires) return string.Format("%1 has no clear line of fire (%2)", PieceName(spot, tier), fireWhy);
+  }
+  return "";
+ }
+
+ // A new position's tiers II and III would fit too (the AI commander's choice of sites).
+ static bool UpgradesFit(vector site, float yaw)
+ {
+  return UpgradeBlocker(site, yaw, 2, null).IsEmpty() && UpgradeBlocker(site, yaw, 3, null).IsEmpty();
+ }
+
+ // A refused upgrade: the AI commander leaves the position alone for a while (players may order
+ // it again at any time).
+ static void HoldUpgrades(ACR_Fortification fort)
+ {
+  if (fort) fort.m_fUpgradeHeldUntil = GetGame().GetWorld().GetWorldTime() + UPGRADE_HOLD_S * 1000;
+ }
+
+ static bool UpgradesHeld(ACR_Fortification fort)
+ {
+  return fort && GetGame().GetWorld().GetWorldTime() < fort.m_fUpgradeHeldUntil;
  }
 
  static bool VehicleOnSpots(ACR_FortifyPlan plan)
@@ -578,7 +738,18 @@ class ACR_Fortify
    refusal = string.Format("not enough RP (%1 needed)", plan.m_iCost);
    return null;
   }
-  if (!CheckTier(plan.m_vSite, plan.m_fYaw, plan.m_iTier, plan.m_Target, refusal)) return null;
+  if (plan.m_Target)
+  {
+   string blocker = UpgradeBlocker(plan.m_vSite, plan.m_fYaw, plan.m_iTier, plan.m_Target);
+   if (!blocker.IsEmpty())
+   {
+    refusal = "upgrade not possible here: " + blocker;
+    HoldUpgrades(plan.m_Target);
+    PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused when ordered: %4", faction, TierName(plan.m_iTier), plan.m_vSite, blocker);
+    return null;
+   }
+  }
+  else if (!CheckTier(plan.m_vSite, plan.m_fYaw, plan.m_iTier, plan.m_Target, refusal)) return null;
   // The squad works from behind the position.
   plan.m_vStage = ToWorld(plan.m_vSite, plan.m_fYaw, Vector(0, 0, -22));
   if (BBB_Terrain.IsWaterAt(plan.m_vStage)) plan.m_vStage = plan.m_vSite;
@@ -665,13 +836,14 @@ class ACR_Fortify
    vector pos;
    string why;
    bool changes = SpotChangesAt(spot, plan.m_iTier);
-   bool fits = changes && FindSpot(fort.m_vPos, fort.m_fYaw, spot, fort, pos, why);
+   bool fits = changes && FindSpot(fort.m_vPos, fort.m_fYaw, spot, fort, pos, why, !created);
    found.Insert(pos);
    clear.Insert(fits);
    if (!changes || fits) continue;
    if (!created)
    {
-    reason = why;
+    reason = string.Format("%1 has no clear place (%2)", PieceName(spot, plan.m_iTier), why);
+    HoldUpgrades(fort);
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused: spot %4 blocked (%5)", fort.m_sFaction, TierName(plan.m_iTier), fort.m_vPos, spot, why);
     return null;
    }
@@ -682,6 +854,8 @@ class ACR_Fortify
   // Guns first (a gun with no clear line of fire anywhere fails an upgrade before anything else
   // goes in): each tries its spot's places, around each of its bases, until LineOfFire is clear.
   array<int> order = {2, 3, 0, 1, 4};
+  int gunPlaces = GUN_PLACES;
+  if (!created) gunPlaces = GUN_PLACES_UPGRADE;
   foreach (int s : order)
   {
    if (!clear[s]) continue;
@@ -691,7 +865,7 @@ class ACR_Fortify
    {
     array<vector> bases = {};
     SpotBases(s, bases);
-    for (int b = 0; b < bases.Count(); b++) FindSpots(fort.m_vPos, fort.m_fYaw, s, fort, tries, tryWhy, tries.Count() + GUN_PLACES, b);
+    for (int b = 0; b < bases.Count(); b++) FindSpots(fort.m_vPos, fort.m_fYaw, s, fort, tries, tryWhy, tries.Count() + gunPlaces, b, !created);
    }
    // What stood there goes back if the upgrade is refused (the middle post the nest replaces).
    ResourceName oldPrefab;
@@ -732,6 +906,8 @@ class ACR_Fortify
     }
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused: no clear line of fire for spot %4", fort.m_sFaction, TierName(plan.m_iTier), fort.m_vPos, s);
     if (reason.IsEmpty()) reason = "no clear line of fire";
+    reason = string.Format("%1 has no clear line of fire (%2)", PieceName(s, plan.m_iTier), reason);
+    HoldUpgrades(fort);
     return null;
    }
    fort.m_aPieces[s] = piece;

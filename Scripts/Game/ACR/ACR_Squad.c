@@ -1799,6 +1799,10 @@ class ACR_Squad : Managed
    if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
    SetOrder("Holding position", ACR_EOrderState.HOLD);
    PrintFormat("[ACR] SQUAD %1: could not fortify (%2), refunded %3 RP", m_Name, why, plan.m_iCost);
+   // Said where the player sees it (playtest 25 Oct: only the RP was seen to go).
+   string lost = string.Format("%1 could not fortify: %2 (%3 RP refunded)", m_Name, why, plan.m_iCost);
+   if (manager) manager.Command().Feed(plan.m_sFaction, lost);
+   if (manager && m_iOrderedBy != 0) manager.Notify(m_iOrderedBy, lost);
    return;
   }
   m_Fortification = fort;

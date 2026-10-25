@@ -4597,7 +4597,8 @@ class ACR_AICommander : Managed
  // Fortified positions on the approaches (-acrFortifyAI 1; off by default). Every 60 s, with RP
  // to spare and one order at a time: upgrade our position nearest the frontline base, else (fewer
  // than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base,
- // facing it. The squad is released (posted) once the work is done.
+ // facing it, where its upgrades would fit if such a site is near. The squad is released
+ // (posted) once the work is done.
  void ManageFortify()
  {
   foreach (ACR_Squad digger : m_Manager.m_Squads)
@@ -4619,7 +4620,8 @@ class ACR_AICommander : Managed
    if (busy && busy.m_FortifyPlan && busy.GetFaction() && busy.GetFaction().GetFactionKey() == m_sFaction) return;
 
   ACR_Fortification nearFront = ACR_Fortify.NearestOwn(m_sFaction, front.GetOrigin(), 300);
-  bool upgrading = nearFront && nearFront.m_iTier < ACR_Fortify.MAX_TIER;
+  // A position whose upgrade was refused is left alone for a while (ACR_Fortify.HoldUpgrades).
+  bool upgrading = nearFront && nearFront.m_iTier < ACR_Fortify.MAX_TIER && !ACR_Fortify.UpgradesHeld(nearFront);
   if (!upgrading && ACR_Fortify.CountPositions(m_sFaction) >= 2) return;
   int tier = 1;
   if (upgrading) tier = nearFront.m_iTier + 1;
@@ -4654,13 +4656,27 @@ class ACR_AICommander : Managed
   vector toEnemy = enemyPos - front.GetOrigin();
   toEnemy[1] = 0;
   toEnemy.Normalize();
-  for (float reach = 80; reach <= 160; reach += 40)
+  vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
+  // First a site where tiers II and III would fit as well (its upgrades then go in), also 40 m
+  // to either side; then any site that takes tier I, as before.
+  array<float> laterals = {0, -40, 40};
+  for (int pass = 0; pass < 2; pass++)
   {
-   vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach);
-   if (!ACR_Fortify.Order(candidate, sample, refusal, enemyPos)) continue;
-   candidate.m_iAITask = ACR_EAITask.FORTIFY;
-   PrintFormat("[ACR] AI %1: %2 digging in on the approach to %3 at %4", m_sFaction, candidate.GetName(), front.m_sName, sample);
-   return;
+   for (float reach = 80; reach <= 160; reach += 40)
+   {
+    foreach (float lateral : laterals)
+    {
+     if (pass == 1 && lateral != 0) continue;
+     vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
+     if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemyPos))) continue;
+     if (!ACR_Fortify.Order(candidate, sample, refusal, enemyPos)) continue;
+     candidate.m_iAITask = ACR_EAITask.FORTIFY;
+     string fit = "";
+     if (pass == 0) fit = ", its upgrades fit";
+     PrintFormat("[ACR] AI %1: %2 digging in on the approach to %3 at %4%5", m_sFaction, candidate.GetName(), front.m_sName, sample, fit);
+     return;
+    }
+   }
   }
  }
 

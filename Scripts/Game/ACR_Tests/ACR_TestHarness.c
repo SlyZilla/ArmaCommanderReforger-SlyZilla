@@ -63,6 +63,7 @@ class ACR_TestHarness : Managed
  static const int MODE_MINEFIELDS = 51;
  static const int MODE_FORTIFY = 52;
  static const int MODE_ROADBLOCKS = 53;
+ static const int MODE_FORTIFYFIT = 66;
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -120,6 +121,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrMinefieldsTest", flag)) mode = MODE_MINEFIELDS;
   if (System.GetCLIParam("acrRoadblocksTest", flag)) mode = MODE_ROADBLOCKS;
   if (System.GetCLIParam("acrFortifyTest", flag)) mode = MODE_FORTIFY;
+  if (System.GetCLIParam("acrFortifyFitTest", flag)) mode = MODE_FORTIFYFIT;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -235,6 +237,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_MINEFIELDS) { ACR_TestMinefields.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADBLOCKS) { ACR_TestRoadblocks.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FORTIFY) { ACR_TestFortify.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_FORTIFYFIT) { ACR_TestFortifyFit.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }
