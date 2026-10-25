@@ -26,6 +26,7 @@ class ACR_TestRoadblocks
  static int s_iVehicleWaits;
  static float s_fStage;
  static int s_iBravoRP;
+ static int s_iIncomeLeft; // seconds to the next income tick when Bravo paid
  static ACR_Roadblock s_GunPost;
  static vector s_vLeaderAt;
  static ref array<vector> s_aSquadAt = {};
@@ -301,6 +302,7 @@ class ACR_TestRoadblocks
    ACR_Squad bravo = manager.FindSquadByGroup(h.m_Range.m_Bravo);
    us.m_iRP = 500;
    s_iBravoRP = -1;
+   s_iIncomeLeft = manager.m_Bases.SecondsToIncome();
    if (bravo && bravo.EstablishRoadblock(s_vSite, s_fYaw, ACR_ERoadblockType.SMALL))
    {
     s_iBravoRP = us.m_iRP;
@@ -319,7 +321,10 @@ class ACR_TestRoadblocks
    if (waited < 4) return;
    ACR_Squad gone = manager.FindSquadByGroup(h.m_Range.m_Bravo);
    bool pending = gone && gone.RoadblockPending();
-   ACR_TestRegress.Check("roadblocks: a squad wiped out while its build is set aside gets the payment back", s_iBravoRP == 488 && us.m_iRP == 500 && !pending, string.Format("rp 500 -> %1 -> %2, squad left %3, pending %4", s_iBravoRP, us.m_iRP, gone != null, pending));
+   // An income tick may land in these seconds (the countdown starts over): it counts on top.
+   int income = 0;
+   if (manager.m_Bases.SecondsToIncome() > s_iIncomeLeft) income = (int)Math.Round(manager.m_Bases.GetIncome("US") * ACR_Manager.IncomeOption());
+   ACR_TestRegress.Check("roadblocks: a squad wiped out while its build is set aside gets the payment back", s_iBravoRP == 488 && us.m_iRP == 500 + income && !pending, string.Format("rp 500 -> %1 -> %2 (income %3), squad left %4, pending %5", s_iBravoRP, us.m_iRP, income, gone != null, pending));
    ACR_Roadblocks.s_fWorkScaleForTest = 1;
    ACR_TestRegress.Complete("roadblocks", CHECKS);
    s_iStep = 12;

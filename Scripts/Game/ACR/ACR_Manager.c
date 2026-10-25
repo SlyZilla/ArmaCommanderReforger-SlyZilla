@@ -35,7 +35,8 @@ enum ACR_ERequest
  ORDER_DISARM_MINES, // disarm the armed mines round point
  ORDER_ROADBLOCK_S,  // ... a small checkpoint (no machine gun)
  ORDER_ROADBLOCK_L,  // ... a large checkpoint (heavy machine gun)
- ORDER_BARRICADE     // ... a barricade sized to the road
+ ORDER_BARRICADE,    // ... a barricade sized to the road
+ ORDER_FORTIFY       // dig in at point, or upgrade our position there (ACR_Fortify)
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -222,6 +223,7 @@ class ACR_Manager : Managed
   ACR_Vehicles.Reset();
   ACR_Generator.Reset();
   ACR_Minefields.Reset();
+  ACR_Fortify.Reset();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
@@ -472,6 +474,7 @@ class ACR_Manager : Managed
   if (!m_Launchers) m_Launchers = new ACR_Launchers(this);
   Pings().Tick();
   ACR_Minefields.Tick();
+  ACR_Fortify.Tick();
   t = ACR_Perf.Lap("cleanup", t);
   WatchEvictions();
   array<IEntity> allVehicles = {};
