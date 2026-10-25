@@ -35,6 +35,7 @@ enum ACR_EPanelAction
  ROADBLOCK_S,
  ROADBLOCK_L,
  BARRICADE,
+ FORTIFY,
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -58,7 +59,8 @@ enum ACR_ECursorMode
  DISARM_MINES,
  ROADBLOCK_S,
  ROADBLOCK_L,
- BARRICADE
+ BARRICADE,
+ FORTIFY
 }
 
 // Arma Commander side panel on the fullscreen map. Built from script out of the
@@ -125,6 +127,8 @@ class ACR_CommandPanel : Managed
  protected Widget m_MinesWidget;
  protected ref array<SCR_ButtonTextComponent> m_MineButtons = {};
  protected Widget m_RoadblockSizes;
+ protected SCR_ButtonTextComponent m_FortifyButton;
+ protected Widget m_FortifyWidget;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
  protected Widget m_DebugRoot;
@@ -255,6 +259,9 @@ class ACR_CommandPanel : Managed
   m_MineButtons.Insert(AddButton(layMines, ACR_Minefields.Button(ACR_EMineKind.MIXED), ACR_EPanelAction.MINES_MIXED, true));
   m_MineButtons.Insert(AddButton(m_MinesWidget, ACR_Minefields.Button(ACR_EMineKind.DISARM), ACR_EPanelAction.DISARM_MINES));
   if (m_MinesWidget) m_MinesWidget.SetVisible(false);
+  m_FortifyButton = AddButton(m_OrderSection, "Fortify", ACR_EPanelAction.FORTIFY);
+  m_FortifyWidget = m_LastButtonWidget;
+  if (m_FortifyWidget) m_FortifyWidget.SetVisible(false);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
   CreateFeed(parent);
@@ -574,6 +581,11 @@ class ACR_CommandPanel : Managed
    if (ACR_Minefields.KindOfCursor(cursorMode) == mineKind) mineButton.SetText("[" + ACR_Minefields.Button(mineKind) + "]");
    else mineButton.SetText(ACR_Minefields.Button(mineKind));
   }
+  if (m_FortifyButton)
+  {
+   if (cursorMode == ACR_ECursorMode.FORTIFY) m_FortifyButton.SetText("[Fortify]");
+   else m_FortifyButton.SetText("Fortify");
+  }
   if (m_Hint) m_Hint.SetText(hint);
  }
 
@@ -705,6 +717,7 @@ class ACR_CommandPanel : Managed
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
   if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(false);
   if (m_MinesWidget) m_MinesWidget.SetVisible(false);
+  if (m_FortifyWidget) m_FortifyWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
   if (m_Hint) m_Hint.SetText("");
  }
@@ -812,6 +825,11 @@ class ACR_CommandPanel : Managed
  void SetMines(bool visible)
  {
   if (m_MinesWidget) m_MinesWidget.SetVisible(visible);
+ }
+
+ void SetFortify(bool visible)
+ {
+  if (m_FortifyWidget) m_FortifyWidget.SetVisible(visible);
  }
 
  void Destroy()

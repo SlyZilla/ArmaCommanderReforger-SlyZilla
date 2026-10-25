@@ -7,7 +7,8 @@ enum ACR_EAITask
  RESUPPLY,  // on its way to an ammo / repair / fuel / medical vehicle
  BUILD_FOB, // establishing a forward base
  ROADBLOCK, // establishing or holding a forward roadblock
- MINES      // laying a minefield on an approach (-acrMinesAI)
+ MINES,     // laying a minefield on an approach (-acrMinesAI)
+ FORTIFY    // digging in or upgrading a position on an approach (-acrFortifyAI)
 }
 
 enum ACR_ESapperDemoState
@@ -951,6 +952,7 @@ class ACR_AICommander : Managed
   ManageFobUpgrades();
   ManageRoadblocks();
   ManageMinefields();
+  ManageFortify();
   t = ACR_Perf.Lap("ai.logistics", t);
   Requisition();
   t = ACR_Perf.Lap("ai.buy", t);
@@ -3888,6 +3890,7 @@ class ACR_AICommander : Managed
  protected float m_fNextFobEval;
  protected float m_fNextRoadblockEval;
  protected float m_fNextMinefieldEval;
+ protected float m_fNextFortifyEval;
  protected float m_fFobTruckBoughtAt = -FOB_TRUCK_RETRY_MS;
  protected ref array<vector> m_aAvoidSites = {};
  protected ref array<float> m_aAvoidUntil = {};
@@ -4534,22 +4537,8 @@ class ACR_AICommander : Managed
   if (!data || data.m_iRP < ACR_Minefields.Cost(ACR_EMineKind.MIXED) + 30) return;
   if (ACR_Minefields.CountFields(m_sFaction) >= m_Doctrine.m_iMinefields) return;
 
-  ACR_Base front;
   vector enemyPos;
-  float nearest = float.MAX;
-  foreach (ACR_Base base : ACR_Base.s_All)
-  {
-   if (!base || base.m_bRetired || base.m_sOwner != m_sFaction || base.m_bContested) continue;
-   foreach (ACR_Base other : ACR_Base.s_All)
-   {
-    if (!other || other.m_bRetired || other.m_sOwner == m_sFaction || other.m_sOwner.IsEmpty()) continue;
-    float d = vector.DistanceXZ(base.GetOrigin(), other.GetOrigin());
-    if (d >= nearest) continue;
-    nearest = d;
-    front = base;
-    enemyPos = other.GetOrigin();
-   }
-  }
+  ACR_Base front = FrontlineBase(enemyPos);
   if (!front) return;
 
   ACR_Squad candidate;
@@ -4581,6 +4570,113 @@ class ACR_AICommander : Managed
    candidate.m_iAITask = ACR_EAITask.MINES;
    PrintFormat("[ACR] AI %1: %2 laying %3 on the approach to %4 at %5", m_sFaction, candidate.GetName(), ACR_Minefields.Name(kind), front.m_sName, sample);
    return;
+  }
+ }
+
+ // Our uncontested base nearest to an enemy base, and that enemy base's position.
+ protected ACR_Base FrontlineBase(out vector enemyPos)
+ {
+  ACR_Base front;
+  float nearest = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner != m_sFaction || base.m_bContested) continue;
+   foreach (ACR_Base other : ACR_Base.s_All)
+   {
+    if (!other || other.m_bRetired || other.m_sOwner == m_sFaction || other.m_sOwner.IsEmpty()) continue;
+    float d = vector.DistanceXZ(base.GetOrigin(), other.GetOrigin());
+    if (d >= nearest) continue;
+    nearest = d;
+    front = base;
+    enemyPos = other.GetOrigin();
+   }
+  }
+  return front;
+ }
+
+ // Fortified positions on the approaches (-acrFortifyAI 1; off by default). Every 60 s, with RP
+ // to spare and one order at a time: upgrade our position nearest the frontline base, else (fewer
+ // than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base,
+ // facing it, where its upgrades would fit if such a site is near. The squad is released
+ // (posted) once the work is done.
+ void ManageFortify()
+ {
+  foreach (ACR_Squad digger : m_Manager.m_Squads)
+  {
+   if (!digger || digger.m_iAITask != ACR_EAITask.FORTIFY || digger.m_FortifyPlan) continue;
+   if (!digger.GetFaction() || digger.GetFaction().GetFactionKey() != m_sFaction) continue;
+   digger.m_iAITask = ACR_EAITask.POSTED;
+  }
+  // Planning a position queries the terrain round it: it waits for a tick with budget left.
+  if (!ACR_Fortify.AIUses() || PlanBudgetSpent()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < m_fNextFortifyEval) return;
+  m_fNextFortifyEval = now + 60000;
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  vector enemyPos;
+  ACR_Base front = FrontlineBase(enemyPos);
+  if (!data || !front) return;
+  foreach (ACR_Squad busy : m_Manager.m_Squads)
+   if (busy && busy.m_FortifyPlan && busy.GetFaction() && busy.GetFaction().GetFactionKey() == m_sFaction) return;
+
+  ACR_Fortification nearFront = ACR_Fortify.NearestOwn(m_sFaction, front.GetOrigin(), 300);
+  // A position whose upgrade was refused is left alone for a while (ACR_Fortify.HoldUpgrades).
+  bool upgrading = nearFront && nearFront.m_iTier < ACR_Fortify.MAX_TIER && !ACR_Fortify.UpgradesHeld(nearFront);
+  if (!upgrading && ACR_Fortify.CountPositions(m_sFaction) >= 2) return;
+  int tier = 1;
+  if (upgrading) tier = nearFront.m_iTier + 1;
+  if (data.m_iRP < ACR_Fortify.Cost(tier) + 30) return;
+
+  ACR_Squad candidate;
+  float candidateDistance = 500;
+  array<ACR_Squad> squads = {};
+  MySquads(squads, true);
+  foreach (ACR_Squad squad : squads)
+  {
+   if (!squad || squad.HasPlayer() || squad.m_Commander != 0 || squad == m_ReserveSquad || IsSupportTeam(squad) || !ACR_Fortify.CanFortify(squad)) continue;
+   if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
+   if (squad.m_MinePlan || squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
+   // Not off a roadblock or position it holds (the one being upgraded aside).
+   if (squad.m_ActiveRoadblock || (squad.m_Fortification && (!upgrading || squad.m_Fortification != nearFront))) continue;
+   float d = vector.DistanceXZ(PositionOf(squad), front.GetOrigin());
+   if (d >= candidateDistance) continue;
+   candidateDistance = d;
+   candidate = squad;
+  }
+  if (!candidate) return;
+
+  string refusal;
+  if (upgrading)
+  {
+   if (!ACR_Fortify.Order(candidate, nearFront.m_vPos, refusal)) return;
+   candidate.m_iAITask = ACR_EAITask.FORTIFY;
+   PrintFormat("[ACR] AI %1: %2 upgrading the position near %3 to %4", m_sFaction, candidate.GetName(), front.m_sName, ACR_Fortify.TierName(tier));
+   return;
+  }
+  vector toEnemy = enemyPos - front.GetOrigin();
+  toEnemy[1] = 0;
+  toEnemy.Normalize();
+  vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
+  // First a site where tiers II and III would fit as well (its upgrades then go in), also 40 m
+  // to either side; then any site that takes tier I, as before.
+  array<float> laterals = {0, -40, 40};
+  for (int pass = 0; pass < 2; pass++)
+  {
+   for (float reach = 80; reach <= 160; reach += 40)
+   {
+    foreach (float lateral : laterals)
+    {
+     if (pass == 1 && lateral != 0) continue;
+     vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
+     if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemyPos))) continue;
+     if (!ACR_Fortify.Order(candidate, sample, refusal, enemyPos)) continue;
+     candidate.m_iAITask = ACR_EAITask.FORTIFY;
+     string fit = "";
+     if (pass == 0) fit = ", its upgrades fit";
+     PrintFormat("[ACR] AI %1: %2 digging in on the approach to %3 at %4%5", m_sFaction, candidate.GetName(), front.m_sName, sample, fit);
+     return;
+    }
+   }
   }
  }
 

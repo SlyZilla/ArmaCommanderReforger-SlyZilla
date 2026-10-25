@@ -92,12 +92,12 @@ class ACR_BBBHooks : BBB_Hooks
   ACR_EOrderState state = squad.OrderState();
   return state == ACR_EOrderState.DEFEND || state == ACR_EOrderState.ASSAULT || state == ACR_EOrderState.SUPPRESS || state == ACR_EOrderState.HUNT;
  }
- // ACA's native artillery and roadblock defense own these static-weapon jobs.
- // BBB's opportunistic quiet-time release must not take their gunners away.
+ // ACA's native artillery, roadblock and fortified-position defence own these static-weapon
+ // jobs. BBB's opportunistic quiet-time release must not take their gunners away.
  override bool AllowStaticWeapons(SCR_AIGroup group)
  {
   ACR_Squad squad = SquadOf(group);
-  return !squad || (!ACR_AirLift.Busy(squad) && !squad.m_bMortar && !squad.m_ActiveRoadblock);
+  return !squad || (!ACR_AirLift.Busy(squad) && !squad.m_bMortar && !squad.m_ActiveRoadblock && !squad.m_Fortification);
  }
 
  // Radio contact reports (BBB_ContactRelay) can make vanilla send fireteams to look. Only

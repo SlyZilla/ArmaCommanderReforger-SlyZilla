@@ -31,7 +31,8 @@ enum ACR_EOrderState
  BUILD_FOB,   // establishing a forward base
  BUILD_ROADBLOCK, // establishing a road checkpoint
  LAY_MINES,   // laying a minefield (ACR_Minefields)
- DISARM_MINES // disarming the armed mines round a point
+ DISARM_MINES, // disarming the armed mines round a point
+ FORTIFY      // digging in (ACR_Fortify)
 }
 
 enum ACR_EMoveMode
@@ -646,6 +647,8 @@ class ACR_Squad : Managed
  bool m_bRoadblockArrived;     // the give-up timer runs from the squad's arrival
  float m_fRoadblockDeadline;   // world ms by which the squad must reach the road
  vector m_vRoadblockStage;     // beside the road, where the squad (and a truck it brings) waits
+ ref ACR_FortifyPlan m_FortifyPlan;  // the Fortify order at work
+ ACR_Fortification m_Fortification;  // the position it holds (its gunners stay on the guns)
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -751,6 +754,8 @@ class ACR_Squad : Managed
   if (m_RoadblockTurret) VacateRoadblockTurret();
   if (m_MinePlan) CancelMineWork();
   m_ActiveRoadblock = null; // a barricade or small checkpoint has no gun to vacate
+  if (m_FortifyPlan) CancelFortify();
+  if (m_Fortification) LeaveFortification();
   m_CombatFlank.Cancel();
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
@@ -1206,11 +1211,12 @@ class ACR_Squad : Managed
  bool RoadblockPending() { return m_iRoadblockPaidRP > 0 || m_fRoadblockLoads > 0; }
 
  // What NewOrder gives back from the squad's current job, so a new order can count it: RP from
- // a roadblock or minefield order ...
+ // a roadblock, minefield or Fortify order ...
  int PendingRP()
  {
   int rp = m_iRoadblockPaidRP;
   if (m_MinePlan) rp += ACR_Minefields.Refund(m_MinePlan);
+  if (m_FortifyPlan) rp += m_FortifyPlan.m_iCost;
   return rp;
  }
 
@@ -1639,6 +1645,206 @@ class ACR_Squad : Managed
   IssueWaypoint(WP_DEFEND, plan.m_vStage, 8.0);
  }
 
+ // ================================================================ fortify (0.5.7)
+ // ACR_Fortify plans the tier; the squad pays, works from behind the position and holds it once
+ // the pieces are in.
+ bool Fortify(ACR_FortifyPlan plan)
+ {
+  if (!plan) return false;
+  // Affordable counting what NewOrder gives back from the current job; paid after it.
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || manager.m_Bases.GetRP(plan.m_sFaction) + PendingRP() < plan.m_iCost) return false;
+
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  if (!manager.m_Bases.Spend(plan.m_sFaction, plan.m_iCost))
+  {
+   SetOrder("Holding position", ACR_EOrderState.HOLD);
+   return false;
+  }
+  m_FortifyPlan = plan;
+  SetOrder(FortifyLabel("moving to the site"), ACR_EOrderState.FORTIFY);
+  m_OrderKind = ACR_EOrderKind.MOVE;
+  m_MoveTarget = plan.m_vStage;
+  IssueWaypoint(WP_MOVE, plan.m_vStage, 4.0);
+  PrintFormat("[ACR] SQUAD %1: fortifying (%2) at %3 facing %4, paid %5 RP", m_Name, ACR_Fortify.TierName(plan.m_iTier), plan.m_vSite, (int)plan.m_fYaw, plan.m_iCost);
+  return true;
+ }
+
+ // "Fortifying: dug in (40% - contact)"
+ protected string FortifyLabel(string status = "")
+ {
+  string label = string.Format("Fortifying: %1 (%2%%", ACR_Fortify.TierWords(m_FortifyPlan.m_iTier), (int)(m_FortifyPlan.m_fProgress / m_FortifyPlan.m_fDuration * 100));
+  if (status != "") label += " - " + status;
+  return label + ")";
+ }
+
+ // The order called off before the pieces went in: the whole cost comes back.
+ void CancelFortify(string why = "cancelled")
+ {
+  ACR_FortifyPlan plan = m_FortifyPlan;
+  if (!plan) return;
+  bool working = OrderState() == ACR_EOrderState.FORTIFY;
+  m_FortifyPlan = null;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
+  if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+  if (working)
+  {
+   EquipShovels(false);
+   ClearOrders();
+   SetOrder("Holding position", ACR_EOrderState.HOLD);
+  }
+  PrintFormat("[ACR] SQUAD %1: fortifying %2, refunded %3 RP", m_Name, why, plan.m_iCost);
+ }
+
+ void TickFortify(float now)
+ {
+  ACR_FortifyPlan plan = m_FortifyPlan;
+  // A regroup or a player taking the squad sets the order aside and restores it: the work
+  // pauses meanwhile and stays paid for (NewOrder calls it off and refunds).
+  if (OrderState() != ACR_EOrderState.FORTIFY) return;
+  float dt = (now - plan.m_fLastTick) / 1000.0;
+  plan.m_fLastTick = now;
+  if (dt <= 0) return;
+  if (dt > 5.0)
+  {
+   // The order was set aside (a regroup, a player taking the squad): that time counts for
+   // neither the walk's limit nor the give-up timer.
+   plan.m_fDeadline += (dt - 1.0) * 1000;
+   plan.m_fLastProgress += (dt - 1.0) * 1000;
+   dt = 1.0;
+  }
+  if (CountAlive() <= 0)
+  {
+   CancelFortify("abandoned: the squad is gone");
+   return;
+  }
+
+  bool present = false;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body) || vector.DistanceXZ(body.GetOrigin(), plan.m_vSite) > plan.m_fRadius) continue;
+   present = true;
+   break;
+  }
+  if (present && !plan.m_bArrived)
+  {
+   plan.m_bArrived = true;
+   plan.m_fLastProgress = now;
+  }
+  if (!plan.m_bArrived && now > plan.m_fDeadline)
+  {
+   CancelFortify("abandoned: the squad could not reach the site");
+   return;
+  }
+  if (plan.m_bArrived && now - plan.m_fLastProgress >= FOB_GIVE_UP_MS)
+  {
+   PrintFormat("[ACR] SQUAD %1: fortifying at %2 abandoned after 3 minutes without progress", m_Name, plan.m_vSite);
+   CancelFortify("abandoned");
+   return;
+  }
+
+  if (ACR_FobBuild.IsContested(plan.m_vSite, plan.m_sFaction) || KnownEnemies(60, true) > 0)
+  {
+   EquipShovels(false);
+   SetOrder(FortifyLabel("contact"), ACR_EOrderState.FORTIFY);
+   return;
+  }
+  if (!present)
+  {
+   if (m_Group && !m_Group.GetCurrentWaypoint() && !HasPlayer()) IssueWaypoint(WP_MOVE, plan.m_vStage, 4.0);
+   SetOrder(FortifyLabel("moving to the site"), ACR_EOrderState.FORTIFY);
+   return;
+  }
+
+  if (plan.m_fProgress < plan.m_fDuration)
+  {
+   EquipShovels(true);
+   plan.m_fProgress = Math.Min(plan.m_fProgress + dt * ACR_Minefields.Speed(this), plan.m_fDuration);
+   plan.m_fLastProgress = now;
+  }
+  if (plan.m_fProgress < plan.m_fDuration)
+  {
+   SetOrder(FortifyLabel(), ACR_EOrderState.FORTIFY);
+   return;
+  }
+  // Done: the pieces go in once no vehicle stands on a spot (3 minutes, then it gives up).
+  if (ACR_Fortify.VehicleOnSpots(plan))
+  {
+   EquipShovels(false);
+   SetOrder(FortifyLabel("move vehicles off the site"), ACR_EOrderState.FORTIFY);
+   return;
+  }
+  CompleteFortify();
+ }
+
+ protected void CompleteFortify()
+ {
+  ACR_FortifyPlan plan = m_FortifyPlan;
+  m_FortifyPlan = null;
+  EquipShovels(false);
+  // Stop the walk first: the pieces and their navmesh rebuild land round the builders.
+  ClearOrders();
+  string why;
+  ACR_Fortification fort = ACR_Fortify.Build(plan, why);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!fort)
+  {
+   if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
+   if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+   SetOrder("Holding position", ACR_EOrderState.HOLD);
+   PrintFormat("[ACR] SQUAD %1: could not fortify (%2), refunded %3 RP", m_Name, why, plan.m_iCost);
+   // Said where the player sees it (playtest 25 Oct: only the RP was seen to go).
+   string lost = string.Format("%1 could not fortify: %2 (%3 RP refunded)", m_Name, why, plan.m_iCost);
+   if (manager) manager.Command().Feed(plan.m_sFaction, lost);
+   if (manager && m_iOrderedBy != 0) manager.Notify(m_iOrderedBy, lost);
+   return;
+  }
+  m_Fortification = fort;
+  string done = string.Format("%1 dug in: %2 (%3)", m_Name, ACR_Fortify.TierName(fort.m_iTier), ACR_Fortify.TierWords(fort.m_iTier));
+  ACR_Intel intel;
+  if (manager) intel = manager.IntelFor(plan.m_sFaction);
+  if (intel) done += " " + intel.Place(fort.m_vPos);
+  if (manager) manager.Command().Feed(plan.m_sFaction, done);
+  ACR_Report.Event(plan.m_sFaction, done);
+  PrintFormat("[ACR] SQUAD %1: %2", m_Name, done);
+  // Hold it: native Defend puts gunners on the position's guns.
+  SetOrder("Holding position", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  IssueWaypoint(WP_DEFEND, fort.m_vPos, ACR_Fortify.HOLD_RADIUS);
+ }
+
+ // A new order: the position stays; our gunners leave its guns (as from a roadblock's).
+ void LeaveFortification()
+ {
+  ACR_Fortification fort = m_Fortification;
+  m_Fortification = null;
+  if (!fort) return;
+  array<IEntity> turrets = {};
+  ACR_Fortify.Turrets(fort, turrets);
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (IEntity turret : turrets)
+  {
+   bool ours = false;
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (!body || ACR_Transport.VehicleOf(body) != turret) continue;
+    m_CrewSeats.Set(body, -1);
+    ours = true;
+   }
+   if (ours) ACR_Roadblocks.VacateTurret(turret);
+  }
+  // Off the nest's sandbags and onto the navmesh (the shared helper, as for roadblock guns).
+  StepOntoNavmeshSoon();
+ }
+
  protected static IEntity FindShovelItem(IEntity character)
  {
   if (!character) return null;
@@ -1912,6 +2118,7 @@ class ACR_Squad : Managed
   else if (RoadblockPending() && CountAlive() <= 0) CancelRoadblock("abandoned: the squad is gone");
   if (m_ActiveRoadblock) TickRoadblockDefence(now);
   if (m_MinePlan) TickMineWork(now);
+  if (m_FortifyPlan) TickFortify(now);
   if (!m_Group || m_Commander != 0) return;
   array<AIAgent> agents = {};
   GetAgents(agents);
@@ -3390,6 +3597,8 @@ class ACR_Squad : Managed
   CancelRoadblock();
   if (m_RoadblockTurret) VacateRoadblockTurret();
   CancelMineWork("abandoned: the squad is gone");
+  CancelFortify("abandoned: the squad is gone");
+  m_Fortification = null;
   m_bUnsticking = false;
   if (m_UnstickListener) BBB_Unstick.Cancel(m_UnstickListener);
   m_Aside = null; // being removed: nothing to resume
