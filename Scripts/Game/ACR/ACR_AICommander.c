@@ -4668,8 +4668,9 @@ class ACR_AICommander : Managed
  // Minefields on the approaches (-acrMinesAI 1; off by default). Every 30 s, one field at a
  // time, while it has fewer than its doctrine's m_iMinefields down and engineering can pay: at the
  // first of our front bases with no field of ours within 300 m, a free infantry squad within 600 m
- // of it (sappers first) lays one 150-270 m out towards the nearest enemy base: mixed on a road,
- // AP mines on open ground.
+ // of it (sappers first) lays one in front of our position or roadblock there, else 150-270 m out
+ // towards the nearest enemy base (MineSamples), never within DEFENCE_STANDOFF of our own defences:
+ // mixed on a road, AP mines on open ground.
  void ManageMinefields()
  {
   foreach (ACR_Squad layer : m_Manager.m_Squads)
@@ -4715,9 +4716,11 @@ class ACR_AICommander : Managed
    vector toEnemy = enemies[f] - front.GetOrigin();
    toEnemy[1] = 0;
    toEnemy.Normalize();
-   for (float reach = 150; reach <= 270; reach += 40)
+   array<vector> samples = {};
+   MineSamples(front.GetOrigin(), toEnemy, samples);
+   foreach (vector sample : samples)
    {
-    vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach);
+    if (!ClearOfOwnDefences(sample)) continue;
     vector roadPoint, roadDir;
     float roadWidth;
     ACR_EMineKind kind = ACR_EMineKind.AP;
@@ -4730,6 +4733,54 @@ class ACR_AICommander : Managed
    }
   }
  }
+ // Our defences keep apart (playtest 25 Oct: twice an AI minefield 10 m from one of its own
+ // positions, laid or dug in either order; the AI is spared its own mines, its players are not):
+ // a field's centre DEFENCE_STANDOFF m from our positions and roadblocks (also those on their way)
+ // and clear of our bases' edges by 40 m, a position as far from our fields.
+ static const float DEFENCE_STANDOFF = 60;
+ bool ClearOfOwnDefences(vector pos)
+ {
+  if (ACR_Fortify.NearestOwn(m_sFaction, pos, DEFENCE_STANDOFF)) return false;
+  foreach (ACR_Roadblock rb : ACR_Roadblocks.s_aRoadblocks)
+  {
+   if (rb && rb.m_sFaction == m_sFaction && vector.DistanceXZ(rb.m_vPos, pos) < DEFENCE_STANDOFF) return false;
+  }
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   if (squad.m_FortifyPlan && vector.DistanceXZ(squad.m_FortifyPlan.m_vSite, pos) < DEFENCE_STANDOFF) return false;
+   if (squad.RoadblockPending() && vector.DistanceXZ(squad.m_vRoadblockSite, pos) < DEFENCE_STANDOFF) return false;
+  }
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base && !base.m_bRetired && base.m_sOwner == m_sFaction && vector.DistanceXZ(base.GetOrigin(), pos) < base.m_fRadius + 40) return false;
+  }
+  return true;
+ }
+
+ // Where a field round a front base may go, best first: 60-150 m in front of our position or
+ // roadblock there (towards the enemy, covered by it), then 150-270 m out along the line to the
+ // enemy and 60 m to either side of it.
+ protected void MineSamples(vector basePos, vector toEnemy, notnull array<vector> samples)
+ {
+  foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
+  {
+   if (fort.m_sFaction != m_sFaction || vector.DistanceXZ(fort.m_vPos, basePos) > 400) continue;
+   for (float ahead = 60; ahead <= 150; ahead += 30) samples.Insert(ACR_Manager.Ground(fort.m_vPos + toEnemy * ahead));
+  }
+  foreach (ACR_Roadblock rb : ACR_Roadblocks.s_aRoadblocks)
+  {
+   if (!rb || rb.m_sFaction != m_sFaction || vector.DistanceXZ(rb.m_vPos, basePos) > 450) continue;
+   for (float ahead = 60; ahead <= 150; ahead += 30) samples.Insert(ACR_Manager.Ground(rb.m_vPos + toEnemy * ahead));
+  }
+  vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
+  array<float> laterals = {0, -DEFENCE_STANDOFF, DEFENCE_STANDOFF};
+  foreach (float lateral : laterals)
+  {
+   for (float reach = 150; reach <= 270; reach += 40) samples.Insert(ACR_Manager.Ground(basePos + toEnemy * reach + side * lateral));
+  }
+ }
+
  void ResetBuildTimersForTest()
  {
   m_fNextRoadblockEval = 0;
@@ -4763,9 +4814,10 @@ class ACR_AICommander : Managed
  // III (nearest the front first), worked by the squad holding it or a free one within 500 m; else,
  // with fewer than its doctrine's m_iFortifyPositions, dig a free infantry squad in 80-160 m out
  // from the first of our front bases with no position of ours within 300 m, facing the enemy, where
- // its upgrades would fit if such a site is near. A position whose upgrade was refused is left
- // alone for a while (ACR_Fortify.HoldUpgrades). The squad then holds it while KeepsHolding, else
- // it is posted again.
+ // its upgrades would fit if such a site is near (also to either side, never within
+ // DEFENCE_STANDOFF of our own fields). A position whose upgrade was refused is left alone for a
+ // while (ACR_Fortify.HoldUpgrades). The squad then holds it while KeepsHolding, else it is posted
+ // again.
  void ManageFortify()
  {
   foreach (ACR_Squad digger : m_Manager.m_Squads)
@@ -4820,17 +4872,18 @@ class ACR_AICommander : Managed
    toEnemy[1] = 0;
    toEnemy.Normalize();
    vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
-   // First a site where tiers II and III would fit as well (its upgrades then go in), also 40 m
-   // to either side; then any site that takes tier I, as before.
-   array<float> laterals = {0, -40, 40};
+   // First a site where tiers II and III would fit as well (its upgrades then go in), then any
+   // that takes tier I; on the line out and DEFENCE_STANDOFF to either side, never within
+   // DEFENCE_STANDOFF of our own fields.
+   array<float> laterals = {0, -DEFENCE_STANDOFF, DEFENCE_STANDOFF};
    for (int pass = 0; pass < 2; pass++)
    {
-    for (float reach = 80; reach <= 160; reach += 40)
+    foreach (float lateral : laterals)
     {
-     foreach (float lateral : laterals)
+     for (float reach = 80; reach <= 160; reach += 40)
      {
-      if (pass == 1 && lateral != 0) continue;
       vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
+      if (ACR_Minefields.FieldNear(m_sFaction, sample, DEFENCE_STANDOFF)) continue;
       if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemies[f]))) continue;
       if (!ACR_Fortify.Order(candidate, sample, refusal, enemies[f])) continue;
       candidate.m_iAITask = ACR_EAITask.FORTIFY;

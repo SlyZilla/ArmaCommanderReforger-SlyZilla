@@ -1,11 +1,12 @@
 // -acrAIDefencesTest 1 (server-capable, ~30 s): the AI's defences (playtest 25 Oct). The build
 // budget's trickle and the doctrine's share (Fortress twice); engineering paid from the budget;
 // front bases nearest the enemy first; no second minefield where a squad of ours is already on its
-// way to lay one, and the AI sends one layer at a time; a builder holds what it built while fewer
+// way to lay one, and the AI sends one layer at a time; its fields and positions keep 60 m apart,
+// either order; a builder holds what it built while fewer
 // than its doctrine's holders do; a tier I position holds a defender.
 class ACR_TestAIDefences
 {
- static const int CHECKS = 8;
+ static const int CHECKS = 10;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -110,6 +111,61 @@ class ACR_TestAIDefences
   }
   ACR_TestRegress.Check("aidefences: the AI sends one squad to lay a field, and no second while it is on its way", layers == 1 && layersAfter == 1, string.Format("after one pass %1 laying, after two %2", layers, layersAfter));
 
+  // 6b. Our defences keep apart, either order (playtest 25 Oct: twice an AI field 10 m from one of
+  // its own positions). A position of ours where the line out from the front base meets the
+  // mines' first spot: the field goes DEFENCE_STANDOFF or more from it.
+  string apartDetail = "no front base";
+  bool minesApart, digApart;
+  if (!fronts.IsEmpty())
+  {
+   vector toEnemy = enemies[0] - fronts[0].GetOrigin();
+   toEnemy[1] = 0;
+   toEnemy.Normalize();
+   ACR_Fortification pretend = new ACR_Fortification();
+   pretend.m_sFaction = "US";
+   pretend.m_iTier = 1;
+   pretend.m_vPos = ACR_Manager.Ground(fronts[0].GetOrigin() + toEnemy * 150);
+   for (int s = 0; s < ACR_Fortify.SPOT_COUNT; s++) pretend.m_aPieces.Insert(null);
+   ACR_Fortify.s_Positions.Insert(pretend);
+   ACR_Options.Set("acrMinesAI", "1");
+   us.m_iRP = 500;
+   ai.StartTickForTest();
+   ai.ResetBuildTimersForTest();
+   ai.ManageMinefields();
+   ACR_Options.Unset("acrMinesAI");
+   vector fieldAt = LayingAt(manager);
+   ACR_Fortify.s_Positions.RemoveItem(pretend);
+   float fieldGap = vector.DistanceXZ(fieldAt, pretend.m_vPos);
+   bool inFront = vector.Dot(fieldAt - pretend.m_vPos, toEnemy) > 0;
+   minesApart = fieldAt != vector.Zero && fieldGap >= ACR_AICommander.DEFENCE_STANDOFF;
+   foreach (ACR_Squad layer : manager.m_Squads)
+   {
+    if (layer && layer.m_MinePlan) layer.Halt("Holding");
+   }
+   // A field of ours where the line out meets the AI's new positions: the dig goes as far from it.
+   ACR_Minefield field2 = new ACR_Minefield();
+   field2.m_sFaction = "US";
+   field2.m_vPos = ACR_Manager.Ground(fronts[0].GetOrigin() + toEnemy * 120);
+   ACR_Minefields.s_Fields.Insert(field2);
+   ACR_Options.Set("acrFortifyAI", "1");
+   us.m_iRP = 500;
+   ai.StartTickForTest();
+   ai.ResetBuildTimersForTest();
+   ai.ManageFortify();
+   ACR_Options.Unset("acrFortifyAI");
+   vector digAt = DiggingAt(manager);
+   ACR_Minefields.s_Fields.RemoveItem(field2);
+   float digGap = vector.DistanceXZ(digAt, field2.m_vPos);
+   digApart = digAt != vector.Zero && digGap >= ACR_AICommander.DEFENCE_STANDOFF;
+   foreach (ACR_Squad digger : manager.m_Squads)
+   {
+    if (digger && digger.m_FortifyPlan) digger.Halt("Holding");
+   }
+   apartDetail = string.Format("field %1 m from our position (in front %2); position %3 m from our field", (int)fieldGap, inFront, (int)digGap);
+  }
+  ACR_TestRegress.Check("aidefences: the AI lays no field within 60 m of its own position", minesApart, apartDetail);
+  ACR_TestRegress.Check("aidefences: the AI digs no position within 60 m of its own field", digApart, apartDetail);
+
   // 7. A builder holds its roadblock while fewer than the doctrine's holders do; with none
   // allowed it is posted again.
   bravo.m_iAITask = ACR_EAITask.ROADBLOCK;
@@ -131,6 +187,24 @@ class ACR_TestAIDefences
   bool tierOne = ACR_Fortify.Defenders(0) == 0 && ACR_Fortify.Defenders(1) == 1 && ACR_Fortify.Defenders(2) == 2;
   ACR_TestRegress.Check("aidefences: a tier I position holds 1 defender (tier II 2)", tierOne, string.Format("tier I %1, tier II %2", ACR_Fortify.Defenders(1), ACR_Fortify.Defenders(2)));
   ACR_TestRegress.Complete("aidefences", CHECKS);
+ }
+
+ protected static vector LayingAt(ACR_Manager manager)
+ {
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (squad && squad.m_MinePlan && squad.GetFaction() && squad.GetFaction().GetFactionKey() == "US") return squad.m_MinePlan.m_vSite;
+  }
+  return vector.Zero;
+ }
+
+ protected static vector DiggingAt(ACR_Manager manager)
+ {
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (squad && squad.m_FortifyPlan && squad.GetFaction() && squad.GetFaction().GetFactionKey() == "US") return squad.m_FortifyPlan.m_vSite;
+  }
+  return vector.Zero;
  }
 
  protected static int Layers(ACR_Manager manager)
