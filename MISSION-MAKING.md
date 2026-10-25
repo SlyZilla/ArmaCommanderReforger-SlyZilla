@@ -233,8 +233,12 @@ job gives back counts) and refunded in full if it is called off before the piece
 are refused within 30 m of a base centre and 40 m of another of your positions. The squad then
 holds the position and mans its guns; the pieces stay when it leaves. The position shows on its
 side's command map as a pale ring until every piece is destroyed or dismantled, and its wire goes
-with it then. Hosts change the options below on the startup Logistics
-settings page.
+with it then. Tier II and III hold defenders in reserve at the position, from the side's garrison
+soldiers (2 at tier II, 4 at tier III; an upgrade adds the difference). Like a base's garrison
+they deploy when an enemy comes within 400 m, defend the position, pack up once none is within
+450 m and are used up as they die; a position that is gone takes its reserve with it. Hosts
+change the options below on the startup Logistics settings page; the defender sizes are launch
+flags and header fields only.
 
 ### AI world and navmesh
 
@@ -722,6 +726,8 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrMinesAI` | `-acrMinesAI 0` (default) or `1`; AI commanders lay minefields on their approaches |
 | `m_iAcrFortify` | `-acrFortify 1` (default) or `0`; the commander's Fortify order (see [Fortify position](#fortify-position)) |
 | `m_iAcrFortifyAI` | `-acrFortifyAI 0` (default) or `1`; AI commanders dig in and upgrade positions on their approaches |
+| `m_iAcrFortifyDefenders2` | `-acrFortifyDefenders2 2` default, 0–12; defenders in reserve at a Fortify tier II position (0: none) |
+| `m_iAcrFortifyDefenders3` | `-acrFortifyDefenders3 4` default, 0–12; defenders in reserve at a tier III position |
 
 The header describes the scenario; it does not publish, package or copy the world. Workbench creates
 the `.meta` files beside the world and header. Keep them there and do not edit them. When you choose
@@ -829,6 +835,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrMinesRealistic 1` | Mines go off for everyone. By default the owning side's AI never sets off its own mines; its players do |
 | `-acrFortify 0` | Turn off the commander's Fortify order (on by default; see [Fortify position](#fortify-position)) |
 | `-acrFortifyAI 1` | AI commanders fortify: every 60 s, with RP to spare, one order at a time, they upgrade their position nearest the frontline base or (fewer than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base (off by default) |
+| `-acrFortifyDefenders2 N` / `-acrFortifyDefenders3 N` | Defenders held in reserve at a Fortify tier II / III position (2 / 4 by default, 0 none, at most 12; see [Fortify position](#fortify-position)) |
 | `-acrMinesAI 1` | AI commanders lay minefields: every 30 s, with RP to spare and fewer than two fields down, a free infantry squad (sappers first) mines the approach 150-270 m out from its frontline base towards the nearest enemy base (off by default) |
 | `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual Play and Host launchers pass `-acrSetup 1` and leave match settings to this screen |
 | `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default for ordinary dedicated servers; Host-ACA enables it for its separate local server, so the launching host must connect before friends. Configured admins remain trusted, and authority does not transfer after the first player disconnects |

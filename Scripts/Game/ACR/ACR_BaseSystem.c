@@ -454,6 +454,71 @@ class ACR_BaseSystem : Managed
   PrintFormat("[ACR] Garrison packed up at %1: %2 in reserve", base.m_sName, base.m_iGarrisonLeft);
  }
 
+ // ================================================================ defenders (ACR_Defenders)
+
+ // Defenders of a built position outside any base: count soldiers from the faction's garrison
+ // pool round center, defending it within radius. Like a garrison, never a squad.
+ SCR_AIGroup SpawnGuards(string faction, vector center, int count, string name, float radius)
+ {
+  ACR_FactionData data = GetFaction(faction);
+  if (!data || data.m_aGarrison.IsEmpty() || count <= 0) return null;
+  // The group prefab would otherwise spawn its own default members on top of ours.
+  SCR_AIGroup.IgnoreSpawning(true);
+  SCR_AIGroup group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(GROUP_BASE, center));
+  SCR_AIGroup.IgnoreSpawning(false);
+  if (!group) return null;
+  group.SetMaxUnitsToSpawn(0);
+  m_GarrisonGroups.Insert(group); // before any soldier joins, so it is never registered as a squad
+  group.SetDeleteWhenEmpty(false);
+  group.SetCustomName(name, 0);
+  for (int i = 0; i < count; i++)
+  {
+   vector spot = ACR_Manager.Ground(center + Vector(Math.RandomFloat(-8, 8), 0, Math.RandomFloat(-8, 8)));
+   vector free;
+   if (SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 5, 0.6, 2)) spot = ACR_Manager.Ground(free);
+   IEntity soldier = ACR_Manager.SpawnPrefab(data.m_aGarrison.GetRandomElement(), spot);
+   if (!soldier) continue;
+   if (!group.AddAIEntityToGroup(soldier))
+   {
+    SCR_EntityHelper.DeleteEntityAndChildren(soldier);
+    continue;
+   }
+   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(soldier.FindComponent(FactionAffiliationComponent));
+   if (affiliation) affiliation.SetAffiliatedFactionByKey(faction);
+  }
+  ACR_Squad.KeepSimulated(group);
+  AIWaypoint defend = AIWaypoint.Cast(GetGame().SpawnEntityPrefabLocal(Resource.Load(ACR_Squad.WP_DEFEND), null, SpawnParams(center)));
+  if (defend)
+  {
+   defend.SetCompletionRadius(radius);
+   group.AddWaypoint(defend);
+  }
+  return group;
+ }
+
+ int GuardsAlive(SCR_AIGroup group)
+ {
+  if (!group) return 0;
+  return CountAlive(group);
+ }
+
+ // Packs defenders up (never one a player controls); returns how many were alive.
+ int PackUpGuards(SCR_AIGroup group)
+ {
+  if (!group) return 0;
+  int alive = CountAlive(group);
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity soldier = agent.GetControlledEntity();
+   if (soldier && !ACR_Squad.FindController(soldier)) SCR_EntityHelper.DeleteEntityAndChildren(soldier);
+  }
+  m_GarrisonGroups.RemoveItem(group);
+  SCR_EntityHelper.DeleteEntityAndChildren(group);
+  return alive;
+ }
+
  // ================================================================ FOB patrols
 
  // A FOB with barracks keeps 2 (small) or 4 (large) of its garrison walking the perimeter
