@@ -25,6 +25,8 @@ class ACR_Fortification : Managed
  ref array<IEntity> m_aTurrets = {}; // the guns among its pieces (ACR_Fortify.RefreshTurrets)
  ACR_DefenderPost m_Defenders;       // its defenders (tier II and III, ACR_Defenders)
  float m_fUpgradeHeldUntil;          // world ms: an upgrade here was refused, the AI leaves it till then
+ string m_sUpgradeRefused;           // why the last upgrade here was refused
+ int m_iUpgradeRefusals;             // ... and how many times in a row for that reason
 }
 
 // One Fortify order: the tier it builds and how far the work is. The squad keeps it while it
@@ -81,6 +83,7 @@ class ACR_Fortify
  static const float MUZZLE_UP = 1.1;       // a gun's muzzle above the ground (measured, 25 Oct)
  static const float MAX_AIM_UP = 15;       // a gun aims this far up rising ground in front of it
  static const float UPGRADE_HOLD_S = 900;  // a refused upgrade: the AI leaves the position this long
+ static const int UPGRADE_GIVE_UP = 2;     // ... and for good once refused this often for one reason
  static const float HOLD_RADIUS = 24;      // the holding squad's Defend: every gun's place inside
  static const float FLANK_TURN = 20;       // the heavy MG turns in this far from its flank
  static float WORK_SCALE = 1;              // tests shorten the work
@@ -637,11 +640,23 @@ class ACR_Fortify
   return UpgradeBlocker(site, yaw, 2, null).IsEmpty() && UpgradeBlocker(site, yaw, 3, null).IsEmpty();
  }
 
- // A refused upgrade: the AI commander leaves the position alone for a while (players may order
- // it again at any time).
- static void HoldUpgrades(ACR_Fortification fort)
+ // A refused upgrade: the AI commander leaves the position alone for a while, and for good once
+ // it has been refused UPGRADE_GIVE_UP times in a row for the same reason (playtest 25 Oct: an AI
+ // tier I by big rocks was refused, nothing charged, every 15 min all game). Players may order it
+ // again at any time.
+ static void HoldUpgrades(ACR_Fortification fort, string why)
  {
-  if (fort) fort.m_fUpgradeHeldUntil = GetGame().GetWorld().GetWorldTime() + UPGRADE_HOLD_S * 1000;
+  if (!fort) return;
+  if (why == fort.m_sUpgradeRefused) fort.m_iUpgradeRefusals++;
+  else
+  {
+   fort.m_sUpgradeRefused = why;
+   fort.m_iUpgradeRefusals = 1;
+  }
+  fort.m_fUpgradeHeldUntil = GetGame().GetWorld().GetWorldTime() + UPGRADE_HOLD_S * 1000;
+  if (fort.m_iUpgradeRefusals < UPGRADE_GIVE_UP) return;
+  if (fort.m_fUpgradeHeldUntil < float.MAX) PrintFormat("[ACR] FORTIFY %1 position at %2: the AI gives up upgrading it (refused %3 times: %4)", fort.m_sFaction, fort.m_vPos, fort.m_iUpgradeRefusals, why);
+  fort.m_fUpgradeHeldUntil = float.MAX;
  }
 
  static bool UpgradesHeld(ACR_Fortification fort)
@@ -758,7 +773,7 @@ class ACR_Fortify
    if (!blocker.IsEmpty())
    {
     refusal = "upgrade not possible here: " + blocker;
-    HoldUpgrades(plan.m_Target);
+    HoldUpgrades(plan.m_Target, blocker);
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused when ordered: %4", faction, TierName(plan.m_iTier), plan.m_vSite, blocker);
     return null;
    }
@@ -857,7 +872,7 @@ class ACR_Fortify
    if (!created)
    {
     reason = string.Format("%1 has no clear place (%2)", PieceName(spot, plan.m_iTier), why);
-    HoldUpgrades(fort);
+    HoldUpgrades(fort, reason);
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused: spot %4 blocked (%5)", fort.m_sFaction, TierName(plan.m_iTier), fort.m_vPos, spot, why);
     return null;
    }
@@ -921,7 +936,7 @@ class ACR_Fortify
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused: no clear line of fire for spot %4", fort.m_sFaction, TierName(plan.m_iTier), fort.m_vPos, s);
     if (reason.IsEmpty()) reason = "no clear line of fire";
     reason = string.Format("%1 has no clear line of fire (%2)", PieceName(s, plan.m_iTier), reason);
-    HoldUpgrades(fort);
+    HoldUpgrades(fort, reason);
     return null;
    }
    fort.m_aPieces[s] = piece;
