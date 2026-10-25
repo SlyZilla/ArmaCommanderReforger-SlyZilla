@@ -39,6 +39,10 @@ class ACR_TestDefenders
   {
    s_sEnemy = "USSR";
    if (us == "USSR") s_sEnemy = "US";
+   // The side can pay for each tier (the AI's first strategy tick, before tick 1 turns it off,
+   // may spend it all: a LAV-25 once took 76 of 76 RP).
+   ACR_FactionData side = manager.m_Bases.GetFaction(us);
+   if (side) side.m_iRP = 500;
    // No enemy near while the position goes up (they would deploy at once).
    KillSide(h, manager, s_sEnemy);
    vector site;
