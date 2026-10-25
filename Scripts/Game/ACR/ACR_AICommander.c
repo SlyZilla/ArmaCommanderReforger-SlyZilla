@@ -4561,14 +4561,21 @@ class ACR_AICommander : Managed
 
  // Manage roadblocks / observation posts (aca-f23). Every 15 s, one build at a time, while it
  // holds fewer than its doctrine's m_iRoadblocks and engineering can pay (CanBuild): at the first
- // of our front bases (FrontBases) with no roadblock of ours within 400 m, a free squad within
- // 450 m of it establishes one on the road 250-380 m out towards the nearest enemy base.
+ // of our front bases (FrontBases) with no roadblock of ours within 400 m, else at the first with
+ // a second road towards the enemy that has none, a free squad within 450 m of it establishes one
+ // at the best road site 200-450 m out towards the nearest enemy base (ACR_RoadblockSiting: sight
+ // down the road, no junction or dead end near, chokepoints; playtest 25 Oct: the first road point
+ // found put two at a road's end and a T-crossing).
  void ManageRoadblocks()
  {
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextRoadblockEval) return;
   m_fNextRoadblockEval = now + 15000;
-  if (!CanBuild(ACR_Roadblocks.ROADBLOCK_COST, 25)) return;
+  if (!CanBuild(ACR_Roadblocks.ROADBLOCK_COST, 25))
+  {
+   NoteRoadblock("pay", string.Format("[ACR] AI %1: no roadblock for now: engineering can't pay %2 RP", m_sFaction, ACR_Roadblocks.ROADBLOCK_COST));
+   return;
+  }
 
   int activeCount = 0;
   foreach (ACR_Roadblock rb : ACR_Roadblocks.s_aRoadblocks)
@@ -4588,51 +4595,74 @@ class ACR_AICommander : Managed
   FrontBases(fronts, enemies, FRONT_BASES);
   array<ACR_Squad> squads = {};
   MySquads(squads, true);
-  foreach (int f, ACR_Base frontlineBase : fronts)
+  // First the bases with no roadblock of ours near; then a second road into one that has.
+  for (int pass = 0; pass < 2; pass++)
   {
-   bool covered = false;
-   foreach (ACR_Roadblock rb2 : ACR_Roadblocks.s_aRoadblocks)
+   foreach (int f, ACR_Base frontlineBase : fronts)
    {
-    if (rb2 && rb2.m_sFaction == m_sFaction && vector.DistanceXZ(rb2.m_vPos, frontlineBase.GetOrigin()) < 400.0) covered = true;
-   }
-   if (covered) continue;
+    bool covered = false;
+    foreach (ACR_Roadblock rb2 : ACR_Roadblocks.s_aRoadblocks)
+    {
+     if (rb2 && rb2.m_sFaction == m_sFaction && vector.DistanceXZ(rb2.m_vPos, frontlineBase.GetOrigin()) < 400.0) covered = true;
+    }
+    if (covered != (pass == 1)) continue;
+    // Scoring a base's road sites traces sight lines: it waits for a tick with budget left.
+    if (PlanBudgetSpent())
+    {
+     NoteRoadblock("budget", string.Format("[ACR] AI %1: roadblock siting at %2 waits for a tick with planning budget left", m_sFaction, frontlineBase.m_sName));
+     return;
+    }
+    vector enemyBasePos = enemies[f];
+    vector basePos = frontlineBase.GetOrigin();
+    int considered;
+    string none;
+    ACR_RoadSite site = ACR_RoadblockSiting.Best(basePos, enemyBasePos, m_sFaction, pass == 1, considered, none);
+    if (!site)
+    {
+     if (pass == 0) NoteRoadblock("site " + frontlineBase.m_sName, string.Format("[ACR] AI %1: no roadblock site at %2: %3", m_sFaction, frontlineBase.m_sName, none));
+     continue;
+    }
+    vector targetRoadPos = site.m_vPos;
+    float targetYaw = site.m_fYaw;
 
-   // Find road corridor between frontlineBase and the enemy base (250m to 380m out)
-   vector enemyBasePos = enemies[f];
-   vector basePos = frontlineBase.GetOrigin();
-   vector toEnemy = enemyBasePos - basePos;
-   toEnemy[1] = 0;
-   toEnemy.Normalize();
-   vector targetRoadPos = vector.Zero;
-   float targetYaw = 0;
-   bool foundRoad = false;
-   for (float testDist = 250.0; testDist <= 380.0 && !foundRoad; testDist += 30.0)
-   {
-    vector samplePos = basePos + toEnemy * testDist;
-    samplePos[1] = GetGame().GetWorld().GetSurfaceY(samplePos[0], samplePos[2]);
-    string refusal;
-    foundRoad = ACR_Roadblocks.ValidateSite(samplePos, targetRoadPos, targetYaw, refusal, m_sFaction, enemyBasePos);
+    // Find an idle or posted squad near this base
+    ACR_Squad candidate = null;
+    foreach (ACR_Squad squad : squads)
+    {
+     if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0 || squad.IsVehicle() || IsSupportTeam(squad)) continue;
+     if (squad == m_ReserveSquad || squad.m_Commander != 0) continue;
+     if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
+     if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
+     if (vector.DistanceXZ(PositionOf(squad), basePos) >= 450.0) continue;
+     candidate = squad;
+     break;
+    }
+    if (!candidate)
+    {
+     NoteRoadblock("squad " + frontlineBase.m_sName, string.Format("[ACR] AI %1: a roadblock site at %2 waits for a free squad within 450 m", m_sFaction, frontlineBase.m_sName));
+     continue;
+    }
+    if (!candidate.EstablishRoadblock(targetRoadPos, targetYaw, ACR_ERoadblockType.MEDIUM, false)) continue;
+    candidate.m_iAITask = ACR_EAITask.ROADBLOCK;
+    string which = "";
+    if (pass == 1) which = " (a second road)";
+    PrintFormat("[ACR] AI %1: dispatched %2 to establish roadblock on approach to %3 at %4%5: of %6 road sites, %7", m_sFaction, candidate.GetName(), frontlineBase.m_sName, targetRoadPos, which, considered, ACR_RoadblockSiting.Breakdown(site));
+    return;
    }
-   if (!foundRoad) continue;
-
-   // Find an idle or posted squad near this base
-   ACR_Squad candidate = null;
-   foreach (ACR_Squad squad : squads)
-   {
-    if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0 || squad.IsVehicle() || IsSupportTeam(squad)) continue;
-    if (squad == m_ReserveSquad || squad.m_Commander != 0) continue;
-    if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
-    if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
-    if (vector.DistanceXZ(PositionOf(squad), basePos) >= 450.0) continue;
-    candidate = squad;
-    break;
-   }
-   if (!candidate) continue;
-   if (!candidate.EstablishRoadblock(targetRoadPos, targetYaw, ACR_ERoadblockType.MEDIUM, false)) continue;
-   candidate.m_iAITask = ACR_EAITask.ROADBLOCK;
-   PrintFormat("[ACR] AI %1: dispatched %2 to establish roadblock on approach to %3 at %4", m_sFaction, candidate.GetName(), frontlineBase.m_sName, targetRoadPos);
-   return;
   }
+ }
+
+ // What held a roadblock up, at most once per NOTE_S per kind (a playtest log shows whether
+ // siting ever stopped one, or the RP, the planning budget or a free squad did).
+ static const float NOTE_S = 300;
+ protected ref map<string, float> m_mRoadblockNotes = new map<string, float>();
+ protected void NoteRoadblock(string key, string line)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  float last;
+  if (m_mRoadblockNotes.Find(key, last) && now - last < NOTE_S * 1000) return;
+  m_mRoadblockNotes.Set(key, now);
+  PrintFormat("%1", line);
  }
 
  // Minefields on the approaches (-acrMinesAI 1; off by default). Every 30 s, one field at a

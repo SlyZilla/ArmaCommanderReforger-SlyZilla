@@ -74,6 +74,7 @@ class ACR_TestHarness : Managed
  static const int MODE_DEFENDERS = 59;
  static const int MODE_BUDGET = 60;
  static const int MODE_AIDEFENCES = 65;
+ static const int MODE_ROADSITING = 67; // 66: srv:fortifyfit (fortify-upgrade-fix)
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -136,6 +137,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrDefendersTest", flag)) mode = MODE_DEFENDERS;
   if (System.GetCLIParam("acrBuildBudgetTest", flag)) mode = MODE_BUDGET;
   if (System.GetCLIParam("acrAIDefencesTest", flag)) mode = MODE_AIDEFENCES;
+  if (System.GetCLIParam("acrRoadSitingTest", flag)) mode = MODE_ROADSITING;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -256,6 +258,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_DEFENDERS) { ACR_TestDefenders.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BUDGET) { ACR_TestBuildBudget.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_AIDEFENCES) { ACR_TestAIDefences.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_ROADSITING) { ACR_TestRoadSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }
