@@ -844,7 +844,7 @@ class ACR_AICommander : Managed
  static const float PUSH_INTERVAL = 120;      // s between re-issuing assault orders
  static const float FIRE_BASE_RANGE = 500;    // m: the base of fire shoots only this close to a seen enemy
  static const float FIRE_BASE_STANDOFF = 300; // m: how far short of them it moves up when too far or blind
- static const float FIRE_BASE_MAX_S = 240;    // s of supporting fire before it joins the assault anyway
+ // (s of supporting fire before the base of fire joins the assault anyway: the doctrine's m_fFireBaseSeconds, 240 standard)
  static const float FIRE_BASE_MOVE_S = 120;   // s to reach a firing spot before it joins instead
  static const float RETREAT_COOLDOWN_MS = 60000;
  // A reserve riding or regrouping is on its way: re-posting it would cancel that (20 Oct
@@ -901,6 +901,7 @@ class ACR_AICommander : Managed
  protected ref ACR_AIDoctrine m_Doctrine;
  protected string m_sDoctrineSource;
  ACR_AIDoctrine Doctrine() { return m_Doctrine; }
+ int DoctrineChanges() { return m_iDoctrineChanges; }
  void SetDoctrineForTest(ACR_AIDoctrine doctrine) { m_Doctrine = doctrine; m_sDoctrineSource = "test"; }
 
  void ACR_AICommander(ACR_Manager manager, string factionKey)
@@ -911,6 +912,8 @@ class ACR_AICommander : Managed
   PrintFormat("[ACR] AI commander %1 doctrine: %2 (%3; %4)", m_sFaction, m_Doctrine.m_sName, m_sDoctrineSource, m_Doctrine.m_sSummary);
  }
  protected float RetreatRatio() { return m_Doctrine.m_fRetreatRatio; }
+ // Defenders of an overrun base hold to their own ratio (Fortress stands, Raider slips away).
+ protected float HoldRatio() { return m_Doctrine.m_fHoldRatio; }
 
  // Called every second by the manager.
  void Tick(bool noPlayerCommander)
@@ -920,6 +923,8 @@ class ACR_AICommander : Managed
    m_bActive = noPlayerCommander;
    PrintFormat("[ACR] AI commander %1: %2", m_sFaction, m_bActive);
    if (!m_bActive) ReleaseAll();
+   // Back in command: judge its doctrine on what it does from now, not on the player's spell.
+   m_fNextDoctrineReview = -1;
   }
   if (!m_bActive) return;
   GatherIntel();
@@ -949,7 +954,124 @@ class ACR_AICommander : Managed
   t = ACR_Perf.Lap("ai.logistics", t);
   Requisition();
   t = ACR_Perf.Lap("ai.buy", t);
+  ReviewDoctrine();
   LogStatus();
+ }
+
+ // ---------------------------------------------------------------- doctrine reviews
+ // Doctrines can change (Jacob, 24 Oct). Every DOCTRINE_REVIEW_MIN minutes, the first after
+ // DOCTRINE_FIRST_REVIEW_MIN, the commander reads its own side's report (ACR_Report: bases won
+ // and lost, soldiers lost and enemies killed since the last review) and changes doctrine when
+ // the current one isn't working. With the enemy's doctrine worked out from intel
+ // (ACR_DoctrineIntel: the same picture its players get, never the truth) it picks the counter.
+ // At most one change per review; -acrDoctrineAdapt 0 keeps the first doctrine.
+ static const float DOCTRINE_FIRST_REVIEW_MIN = 15;
+ static const float DOCTRINE_REVIEW_MIN = 10;
+ protected float m_fNextDoctrineReview = -1;
+ protected int m_iReviewLost, m_iReviewKills, m_iReviewWon, m_iReviewBasesLost;
+ protected int m_iDoctrineChanges;
+
+ protected void SnapshotReview()
+ {
+  ACR_SideStats s = ACR_Report.Of(m_sFaction);
+  if (!s) return;
+  m_iReviewLost = s.m_iLost;
+  m_iReviewKills = s.m_iKills;
+  m_iReviewWon = s.m_iBasesWon;
+  m_iReviewBasesLost = s.m_iBasesLost;
+ }
+
+ protected void ReviewDoctrine()
+ {
+  if (!ACR_AIDoctrine.AdaptAllowed()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (m_fNextDoctrineReview < 0)
+  {
+   m_fNextDoctrineReview = now + DOCTRINE_FIRST_REVIEW_MIN * 60000;
+   SnapshotReview();
+   return;
+  }
+  if (now < m_fNextDoctrineReview) return;
+  m_fNextDoctrineReview = now + DOCTRINE_REVIEW_MIN * 60000;
+  ACR_SideStats s = ACR_Report.Of(m_sFaction);
+  if (!s) return;
+  int lost = s.m_iLost - m_iReviewLost;
+  int kills = s.m_iKills - m_iReviewKills;
+  int won = s.m_iBasesWon - m_iReviewWon;
+  int basesLost = s.m_iBasesLost - m_iReviewBasesLost;
+  SnapshotReview();
+  string enemyKnown;
+  ACR_Intel intel = m_Manager.IntelFor(m_sFaction);
+  if (intel) enemyKnown = intel.Doctrine().Believed();
+  string why;
+  string pick = PickDoctrine(m_Doctrine.m_sKey, enemyKnown, won, basesLost, lost, kills, why);
+  PrintFormat("[ACR] AI commander %1 doctrine review: %2, bases +%3 -%4, lost %5 killed %6, enemy doctrine '%7': %8", m_sFaction, m_Doctrine.m_sName, won, basesLost, lost, kills, enemyKnown, why);
+  if (pick.IsEmpty() || pick == m_Doctrine.m_sKey) return;
+  ChangeDoctrine(ACR_AIDoctrine.Find(pick), why);
+ }
+
+ // What a review decides over one review window: the doctrine key to change to, "" to keep.
+ static string PickDoctrine(string current, string enemyKnown, int won, int basesLost, int lost, int kills, out string why)
+ {
+  bool winning = won >= basesLost + 2 || (kills >= 12 && kills > lost * 1.6);
+  bool losingGround = basesLost >= won + 2;
+  bool bleeding = lost >= 12 && lost > kills * 1.6;
+  bool stuck = won == 0 && basesLost == 0;
+  if (winning)
+  {
+   why = "it is working";
+   return "";
+  }
+  string counter = ACR_AIDoctrine.Counter(enemyKnown);
+  if (!counter.IsEmpty() && counter != current)
+  {
+   why = "countering the enemy's " + ACR_AIDoctrine.NameOf(enemyKnown);
+   return counter;
+  }
+  // Already the answer to what the enemy does: only losing ground makes it think again.
+  if (!counter.IsEmpty() && !losingGround)
+  {
+   why = "already countering the enemy's " + ACR_AIDoctrine.NameOf(enemyKnown);
+   return "";
+  }
+  if (losingGround)
+  {
+   why = "losing ground";
+   if (current == "fortress") return "firepower";
+   return "fortress";
+  }
+  if (bleeding)
+  {
+   why = "losses too heavy";
+   if (current == "firepower") return "fortress";
+   return "firepower";
+  }
+  if (stuck)
+  {
+   why = "getting nowhere";
+   if (current == "blitz") return "raider";
+   return "blitz";
+  }
+  why = "holding its own";
+  return "";
+ }
+
+ void ChangeDoctrine(ACR_AIDoctrine doctrine, string why)
+ {
+  if (!doctrine || doctrine == m_Doctrine) return;
+  ACR_AIDoctrine was = m_Doctrine;
+  m_Doctrine = doctrine;
+  m_sDoctrineSource = "changed";
+  m_iDoctrineChanges++;
+  PrintFormat("[ACR] AI commander %1 doctrine: %2 -> %3 (%4; %5)", m_sFaction, was.m_sName, doctrine.m_sName, why, doctrine.m_sSummary);
+  // Its own side hears it (players fighting under this commander); the enemy has to notice.
+  string line = string.Format("Commander: switching to %1 (%2)", doctrine.m_sName, why);
+  ACR_Intel own = m_Manager.IntelFor(m_sFaction);
+  if (own) own.AddFeed(GetGame().GetWorld().GetWorldTime(), line);
+  ACR_Report.Event(m_sFaction, string.Format("commander switched to %1 (%2)", doctrine.m_sName, why));
+  m_Manager.NotifyFaction(m_sFaction, line);
+  ACR_Intel enemy = m_Manager.IntelFor(ACR_Debug.EnemyOf(m_sFaction));
+  if (enemy) enemy.Doctrine().OnEnemyChanged(was.m_sKey);
  }
 
  protected void TickSapperDemos()
@@ -1126,19 +1248,27 @@ class ACR_AICommander : Managed
   return -1;
  }
 
- // RP kept back from unit purchases so a fire mission is always affordable:
- // the dearest mortar mission plus the usual reserve (capped).
+ // RP kept back from unit purchases so the fire missions it plans are always affordable:
+ // the doctrine's dearest few (mortars; with m_bAirBudget the off-map air and rocket strikes
+ // too) plus the usual reserve, capped by the doctrine. (Before 24 Oct pass 2 only the dearest
+ // mortar counted: 25 + 15 RP, under every doctrine's cap, so the cap never changed anything.)
  protected int SupportBudget()
  {
-  int dearest;
+  array<int> costs = {};
   foreach (ACR_SupportEntry entry : m_Manager.m_Bases.GetFaction(m_sFaction).m_aSupports)
   {
-   if (entry.m_eType != ACR_ESupportType.MORTAR_HE_SMALL && entry.m_eType != ACR_ESupportType.MORTAR_HE_LARGE && entry.m_eType != ACR_ESupportType.MORTAR_SMOKE) continue;
-   dearest = Math.Max(dearest, entry.m_iCost);
+   if (!entry.m_bEnabled) continue;
+   bool planned = entry.m_eType == ACR_ESupportType.MORTAR_HE_SMALL || entry.m_eType == ACR_ESupportType.MORTAR_HE_LARGE || entry.m_eType == ACR_ESupportType.MORTAR_SMOKE;
+   if (m_Doctrine.m_bAirBudget && (entry.m_eType == ACR_ESupportType.BOMB_RUN || entry.m_eType == ACR_ESupportType.ROCKET_STRIKE)) planned = true;
+   if (planned && entry.m_iCost > 0) costs.Insert(entry.m_iCost);
   }
-  if (dearest == 0) return 0;
-  return Math.Min(m_Doctrine.m_iSupportBudgetMax, dearest + SUPPORT_RESERVE);
+  if (costs.IsEmpty()) return 0;
+  costs.Sort(true);
+  int budget = SUPPORT_RESERVE;
+  for (int i = 0; i < costs.Count() && i < m_Doctrine.m_iSupportMissions; i++) budget += costs[i];
+  return Math.Min(m_Doctrine.m_iSupportBudgetMax, budget);
  }
+ int SupportBudgetForTest() { return SupportBudget(); }
 
  // Needing troops beats keeping fire support money: well under strength, or a
  // base threatened by more than it has defending it.
@@ -1352,7 +1482,7 @@ class ACR_AICommander : Managed
    }
    // A defence that is being overrun: the badly hurt get out rather than die in place.
    bool overrun = ThreatTo(held) > DefenceOf(held) * 2;
-   if (overrun && squad.StrengthRatio() < RetreatRatio() && squad.KnownEnemies(300) > 0)
+   if (overrun && squad.StrengthRatio() < HoldRatio() && squad.KnownEnemies(300) > 0)
     FallBack(squad, "defence of " + held.m_sName + " overrun", held);
    else if (squad.m_iAmmoPct >= 0 && squad.m_iAmmoPct < OUT_OF_AMMO && squad.KnownEnemies(300) > 0)
     FallBack(squad, "out of ammo", held);
@@ -1404,8 +1534,9 @@ class ACR_AICommander : Managed
    vector seenAt;
    ACR_Squad attacker = EnemyNear(held.GetOrigin(), THREAT_DISTANCE + held.m_fRadius, seenAt);
    if (!attacker) continue;
-   if (ThreatTo(held) >= 8 && CallSupport(ACR_ESupportType.HELI_GUN_RUN, seenAt, "gun run at " + held.m_sName)) break;
-   if (ThreatTo(held) >= 8 && CallSupport(ACR_ESupportType.ROCKET_STRIKE, seenAt, "rocket strike at " + held.m_sName)) break;
+   int airThreat = m_Doctrine.m_iDefensiveAirThreat;
+   if (ThreatTo(held) >= airThreat && CallSupport(ACR_ESupportType.HELI_GUN_RUN, seenAt, "gun run at " + held.m_sName)) break;
+   if (ThreatTo(held) >= airThreat && CallSupport(ACR_ESupportType.ROCKET_STRIKE, seenAt, "rocket strike at " + held.m_sName)) break;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, seenAt, "defensive fire at " + held.m_sName)) break;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, seenAt, "defensive fire at " + held.m_sName)) break;
    // No mortar in reach: the howitzer battery (slow and dear, but it reaches anywhere).
@@ -1508,11 +1639,11 @@ class ACR_AICommander : Managed
    float depth = 0;
    if (seen) depth = Math.Clamp(Math.Max(enemyDistance * 0.5, base.m_fRadius + 40), FORWARD_MIN, FORWARD_MAX);
    bool lineHolds = seen && enemyDistance - depth >= FORWARD_ENEMY_GAP;
-   // How many go forward: half, the base garrison counting as one more squad at the point;
-   // at least one squad (or the garrison) stays as the reserve.
+   // How many go forward: the doctrine's share (half standard), the base garrison counting as
+   // one more squad at the point; at least one squad (or the garrison) stays as the reserve.
    int extra = 0;
    if (base.m_iGarrisonLeft > 0) extra = 1;
-   int forward = (defenders.Count() + extra) / 2;
+   int forward = (int)(m_Doctrine.m_fForwardShare * (defenders.Count() + extra));
    if (extra == 0) forward = Math.Min(forward, defenders.Count() - 1);
    if (!lineHolds) forward = 0;
    // Already forward and fit first (no shuffling), then the nearest to the line.
@@ -1787,7 +1918,7 @@ class ACR_AICommander : Managed
     // FIA pockets: cleared when in the way (near our own bases), after the real enemy.
     if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
     float score = cost * (dist / 1000 + 0.1);
-    if (base.m_bPocket) score *= POCKET_SCORE;
+    if (base.m_bPocket) score *= m_Doctrine.m_fPocketScore;
     if (base.m_bContested || (DefenceOf(base) <= UNKNOWN_DEFENCE + 2 && dist < 1200))
      score *= 0.65 * m_Doctrine.m_fWeakTarget;
     if (base.m_bBuilt)
@@ -2058,8 +2189,8 @@ class ACR_AICommander : Managed
  static const float FOB_DEPLOY_MIN_FRONT = 500;  // m: a built FOB closer to an enemy/neutral base than this isn't a deploy point
  static const float REINFORCE_RETRY_MS = 120000; // a squad whose AI reinforce failed waits this long before another try
  static const float POCKET_IN_THE_WAY = 1500; // m: a found FIA pocket this close to one of our bases is a target
- static const float POCKET_SCORE = 2.5;          // its attack score is multiplied by this (lower = sooner)
- static const float REFIT_WALK_RATIO = 0.5;       // idle squads below this strength walk back to a quiet base to refill
+ // (A pocket's attack score is multiplied by the doctrine's m_fPocketScore, 2.5 standard; idle
+ // squads below the doctrine's m_fRefitRatio, 0.5 standard, walk back to a quiet base to refill.)
  static const float REFIT_GIVE_UP_MS = 900000;   // a walk back to refill that hasn't arrived by then is dropped
  protected ACR_Base m_ReserveBase;
  protected ACR_Squad m_ReserveSquad;
@@ -2161,8 +2292,8 @@ class ACR_AICommander : Managed
 
  // Long trips on foot become rides or air lifts:
  // Air lift (aca-f22 part 2): long moves (~2 km+ or long road detours) when the flight path is clear of known enemies.
- static const float RIDE_DISTANCE = 900;
- static const float AIRLIFT_DISTANCE = 2000;
+ // (How far on foot before a ride, and before an air lift: the doctrine's m_fRideDistance and
+ // m_fAirLiftDistance, 900 and 2000 m standard.)
  static const float AIRLIFT_RETRY_MS = 60000;   // after a refused AI air lift
  protected float m_fNextAirLiftTry;
  static const float AIRLIFT_ENEMY_CLEARANCE = 350;
@@ -2247,9 +2378,9 @@ class ACR_AICommander : Managed
    }
   }
 
-  bool isLong = distance >= AIRLIFT_DISTANCE;
+  bool isLong = distance >= m_Doctrine.m_fAirLiftDistance;
   bool isDetour = false;
-  if (!isLong && distance >= RIDE_DISTANCE)
+  if (!isLong && distance >= m_Doctrine.m_fRideDistance)
   {
    if (BBB_Terrain.WaterAlong(from, destination) > BBB_Terrain.WET_ALLOWED)
    {
@@ -2327,7 +2458,7 @@ class ACR_AICommander : Managed
   if (!squad.IsMounted())
   {
    if (TryAirLift(squad, destination, prefab, radius, order, kind, dropShort)) return;
-   if (m_Manager.m_Rides && vector.DistanceXZ(PositionOf(squad), destination) > RIDE_DISTANCE)
+   if (m_Manager.m_Rides && vector.DistanceXZ(PositionOf(squad), destination) > m_Doctrine.m_fRideDistance)
    {
     string why;
     if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why, true)) return;
@@ -2381,7 +2512,7 @@ class ACR_AICommander : Managed
  // the objective (in range, clear fire line) and engages only what its own men see (Jacob
  // 20 Oct, Everon: 18 of 27 bases of fire lifted "no enemy seen" the moment the assault
  // started). It joins the assault when the assault reaches the objective, nobody is left to
- // cover, it can't reach a firing spot in time, or after FIRE_BASE_MAX_S.
+ // cover, it can't reach a firing spot in time, or after the doctrine's m_fFireBaseSeconds.
  protected void UpdateFireBase(ACR_AIAttack attack)
  {
   ACR_Squad fire = attack.m_Suppressor;
@@ -2392,7 +2523,7 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad other : attack.m_Squads)
    if (other && other != fire && other.Strength() > 0) covering = true;
   if (!covering) { LiftFire(attack, "nobody left to cover"); return; }
-  if (attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > FIRE_BASE_MAX_S * 1000) { LiftFire(attack, "time up"); return; }
+  if (attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > m_Doctrine.m_fFireBaseSeconds * 1000) { LiftFire(attack, "time up"); return; }
   vector seenAt;
   ACR_Squad enemy = EnemyNear(target.GetOrigin(), target.m_fRadius + 40, seenAt);
   if (!enemy) { Overwatch(attack); return; }
@@ -2638,7 +2769,7 @@ class ACR_AICommander : Managed
    if (member.IsCombatUnit())
    {
     if (!IsSpecialistSquad(member)) line++;
-    if (!ACR_Transport.CrewedVehicle(member) && member.StrengthRatio() < REFIT_WALK_RATIO) depleted++;
+    if (!ACR_Transport.CrewedVehicle(member) && member.StrengthRatio() < m_Doctrine.m_fRefitRatio) depleted++;
    }
    else if (ACR_Transport.CrewedVehicle(member)) vehiclesNoGunner++;
    else remnants++;
@@ -2700,7 +2831,13 @@ class ACR_AICommander : Managed
    {
     string outcome = "failed";
     if (won) outcome = "won";
-    if (broken) outcome = "called off (too many losses)";
+    if (broken)
+    {
+     outcome = "called off (too many losses)";
+     // Not straight back at the base that just beat it (Raider breaks off at half strength
+     // and weighs weak bases low, so it used to re-launch at the same one).
+     if (target) m_StalledUntil.Set(target, GetGame().GetWorld().GetWorldTime() + STALLED_COOLDOWN * 1000);
+    }
     if (stalled)
     {
      outcome = "called off (stalled)";
@@ -3210,7 +3347,7 @@ class ACR_AICommander : Managed
     // Don't cut short a walk to a service vehicle (ManageLogistics).
     if (!refitting && squad.m_iAITask == ACR_EAITask.RESUPPLY && squad.m_Group && squad.m_Group.GetCurrentWaypoint()) continue;
     bool idle = squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED || squad.m_iAITask == ACR_EAITask.RESUPPLY;
-    if (!refit || !(refitting || remnant || (idle && squad.StrengthRatio() < REFIT_WALK_RATIO))) continue;
+    if (!refit || !(refitting || remnant || (idle && squad.StrengthRatio() < m_Doctrine.m_fRefitRatio))) continue;
     if (!refitting) m_Refitting.Set(squad, now + REFIT_GIVE_UP_MS);
     squad.m_iAITask = ACR_EAITask.RESUPPLY;
     squad.SetMode(ACR_EMoveMode.FAST);
@@ -3265,13 +3402,18 @@ class ACR_AICommander : Managed
   MySquads(mine, false);
   // Only fighting units count against the cap (trucks and lone drivers don't).
   int combatLine = 0;
+  float capUsed = 0;
   int supportTeams = 0;
   foreach (ACR_Squad existing : mine)
   {
    if (IsSpecialistSquad(existing)) supportTeams++;
-   else if (existing.IsCombatUnit()) combatLine++;
+   else if (existing.IsCombatUnit())
+   {
+    combatLine++;
+    capUsed += CapSlots(existing);
+   }
   }
-  if (combatLine >= cap) return;
+  if (capUsed >= cap) return;
   // Deploy at the forward-most safe deployment base (military/airfield/FOB with
   // ThreatTo == 0 and at least FOB_DEPLOY_MIN_FRONT from any non-owned base);
   // fall back to the furthest rear base when all forward bases are under threat.
@@ -3391,7 +3533,7 @@ class ACR_AICommander : Managed
   bool boughtSF;
   // The cap counts fighting units only (as above): trucks, ambulances, crewless
   // vehicles and 1-man remnants filled it on Everon and the AI sat on 1000 RP.
-  for (int n = 0; n < 2 && combatLine + n < cap; n++)
+  for (int n = 0; n < 2 && capUsed < cap; n++)
   {
    budget = data.m_iRP - keep;
    int pick = -1;
@@ -3442,6 +3584,7 @@ class ACR_AICommander : Managed
      {
       if (OwnsLike(entry)) continue;
       weight *= 0.3;
+      if (entry.m_bObserverTeam) weight *= m_Doctrine.m_fObserverWeight;
      }
      // Keep infantry the backbone.
      if (!entry.m_sVehicle.IsEmpty()) weight *= 0.5;
@@ -3480,8 +3623,20 @@ class ACR_AICommander : Managed
    if (!chosen.m_sVehicle.IsEmpty()) vehicles++;
    else if (IsSmallTeamEntry(chosen)) smallTeams++;
    else lineSquads++;
+   if (m_Doctrine.m_bSmallTeamsFree && IsSmallTeamEntry(chosen)) capUsed += 0.5;
+   else capUsed += 1;
   }
  }
+
+ // Share of the AI squad cap a fighting unit takes: one, or half for a 2-3 man team of a
+ // doctrine built on them (Raider), so it fields about as many men as the others
+ // (the soldier cap still bounds the total).
+ protected float CapSlots(ACR_Squad squad)
+ {
+  if (m_Doctrine.m_bSmallTeamsFree && !ACR_Transport.CrewedVehicle(squad) && FullSizeOf(squad) <= 3) return 0.5;
+  return 1;
+ }
+ float CapSlotsForTest(ACR_Squad squad) { return CapSlots(squad); }
 
  protected bool IsRUArmorEntry(ACR_RequisitionEntry entry)
  {
@@ -3717,7 +3872,7 @@ class ACR_AICommander : Managed
  }
 
  // ---------------------------------------------------------------- FOB establishment (Stage 3)
- static const float FOB_FRONT_DISTANCE = 1500;       // 1.5 km front gap requirement
+ // (Front gap before a FOB: the doctrine's m_fFobFront, 1.5 km standard.)
  static const float FOB_EXISTING_PROXIMITY = 1000;   // don't build within 1 km of existing friendly FOB
  static const int FOB_RP_COMBAT_RESERVE = 30;        // RP reserve required when buying construction truck
  static const float FOB_EVAL_INTERVAL_MS = 30000;    // evaluate every 30 seconds
@@ -3797,7 +3952,7 @@ class ACR_AICommander : Managed
     if (d < nearestDeploy) nearestDeploy = d;
    }
 
-   if (nearestDeploy >= FOB_FRONT_DISTANCE)
+   if (nearestDeploy >= m_Doctrine.m_fFobFront)
    {
     bool hasCloseFob = false;
     foreach (ACR_Base existingFob : ACR_Base.s_All)
@@ -4377,7 +4532,7 @@ class ACR_AICommander : Managed
   m_fNextMinefieldEval = now + 30000;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   if (!data || data.m_iRP < ACR_Minefields.Cost(ACR_EMineKind.MIXED) + 30) return;
-  if (ACR_Minefields.CountFields(m_sFaction) >= 2) return;
+  if (ACR_Minefields.CountFields(m_sFaction) >= m_Doctrine.m_iMinefields) return;
 
   ACR_Base front;
   vector enemyPos;

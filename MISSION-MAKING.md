@@ -267,18 +267,38 @@ starting with `USSR` count as eastern; otherwise keys containing `US`, or exactl
 
 #### AI commander doctrines
 
-Each AI commander fights to one doctrine for the whole match. By default each side gets a random one;
+Each AI commander starts the match with one doctrine. By default each side gets a random one;
 the setup screen (Blue/Red AI doctrine), `-acrDoctrineWest`/`-acrDoctrineEast` or `m_eAIDoctrine`
-pick it. Doctrines change how the commander plans, attacks and buys, never how big its army is: squad
-cap, RP and stock are the same for all of them.
+pick it. Doctrines change how the commander plans, attacks, defends, moves, fires and buys, never how
+big its army is: squad cap, RP and stock are the same for all of them (Raider's 2-3 man teams take
+half a squad-cap slot each, so it fields about as many men; the soldier cap still applies).
 
 | Doctrine | How it fights |
 |---|---|
 | Balanced | The standard commander |
-| Blitz | Buys about twice as many armed vehicles and an extra truck, grabs more empty bases, attacks on thinner odds and sooner after a lull, presses on with heavier losses, keeps a reserve only with a bigger force |
-| Firepower | Buys mortar teams and gunships first and keeps more RP for fire missions, air or rocket preparation on more targets, wants better odds, one extra front at most, falls back sooner |
-| Fortress | Sends more defenders and holds out longer, counterattacks a lost base on 55% of the usual force for 10 minutes, keeps a reserve sooner, up to three roadblocks, fewer grabs and fronts |
-| Raider | More small teams, goes for weakly held bases and FOBs first, opens many fronts with two squads each, breaks off an attack at half strength, fewer vehicles |
+| Blitz | Buys about twice as many armed vehicles and an extra truck, rides from 600 m and air-lifts from 1.7 km, grabs more empty bases, attacks on thinner odds and sooner after a lull, shorter base of fire, presses on with heavier losses, builds FOBs closer to the front, lays one minefield at most, refits late, fires fewer mortar missions, keeps little RP for fire missions, keeps a reserve only with a bigger force |
+| Firepower | Buys mortar teams, gunships and forward observers first and keeps the RP for two fire missions (air and rocket strikes too), air or rocket preparation on more targets and on defence against smaller attacks, mortars fire more often, longer base of fire, wants better odds, one extra front at most, defenders hold the point, falls back sooner |
+| Fortress | Sends more defenders, most of them out to a forward line, and they hold to 25% strength, gives a base up only against 6x its defence, counterattacks a lost base on 55% of the usual force for 10 minutes, keeps a reserve sooner, up to three roadblocks and four minefields, clears FIA pockets near its bases sooner, refits early, walks farther before a ride, fewer grabs and fronts |
+| Raider | More small teams, goes for weakly held bases and FOBs first, opens many fronts with two squads each, air-lifts from 1.5 km, breaks off an attack at half strength (and leaves that base alone for 5 minutes), defenders slip away at half strength, leaves FIA pockets alone longer, fewer vehicles and minefields |
+
+**Discovering a doctrine.** The other side can work out an AI commander's doctrine from what it sees:
+each enemy squad reported in contact (more for vehicles, armour and aircraft), an enemy FOB found, a
+base taken from that commander (a lot) or lost to it. At 30 points the side gets a hint (the doctrine
+and the one it looks most like, e.g. "Blitz or Raider"), at 60 the doctrine is confirmed. Each step is
+a feed line, a notice and a report timeline entry, and the map panel's Report shows "Enemy doctrine:
+unknown / X or Y? / X (confirmed)" with the intel so far. Players on an AI-commanded side see their own
+commander's doctrine there too. An AI commander gets the same picture and nothing more.
+
+**Changing doctrine.** From 15 minutes in and every 10 minutes after, an AI commander reviews the
+last window from its side's report: two or more bases lost net means Fortress (Firepower if already
+Fortress), heavy losses (12+ and 1.6x what it killed) mean Firepower (or Fortress), nothing changing
+hands means Blitz (or Raider); a commander that is winning keeps its doctrine. If its intel has
+confirmed the enemy's doctrine and it isn't winning, it picks the counter instead: Fortress against
+Blitz, Firepower against Fortress, Raider against Firepower, Blitz against Raider. Its own side is told
+(feed, notice, report). The enemy's picture goes out of date without them knowing: they keep seeing
+the old doctrine until 10 points of new intel show the change ("the enemy commander has changed
+tactics"), then work the new one out from scratch. `-acrDoctrineAdapt 0` (setup row AI doctrines adapt)
+keeps every commander on its first doctrine.
 
 #### Factions and mods
 
@@ -649,6 +669,7 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_sAcrAI` | `-acrAI` |
 | `m_sAcrDoctrineWest` | `-acrDoctrineWest` |
 | `m_sAcrDoctrineEast` | `-acrDoctrineEast` |
+| `m_sAcrDoctrineAdapt` | `-acrDoctrineAdapt` |
 | `m_iAcrUnitCap` | `-acrUnitCap` |
 | `m_iAcrSeed` | `-acrSeed` |
 | `m_iAcrSoldierCap` | `-acrSoldierCap` |
@@ -758,6 +779,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrMarksmen 0` | Disable the automatic DMR carrier in full UA/Russian rifle squads (enabled by default; keeps squad size and support weapons) |
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrDoctrineWest <doctrine>` / `-acrDoctrineEast <doctrine>` | The blue / red side AI commander's doctrine: `random`, `balanced`, `blitz`, `firepower`, `fortress` or `raider` (overrides `m_eAIDoctrine`; default random each match). The log names each side's pick (`AI commander <faction> doctrine:`) |
+| `-acrDoctrineAdapt 1` / `0` | AI commanders change doctrine when theirs isn't working (default on; see AI commander doctrines). Each review logs `AI commander <faction> doctrine review:` |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; finite stock in either mode: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (finite stock in either mode: rare units get quadruple base stock, other units double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
 | `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Hand-built worlds without a matching layout play in full; generated layouts support all three sizes |

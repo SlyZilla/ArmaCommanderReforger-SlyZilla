@@ -304,6 +304,7 @@ class ACR_BaseSystem : Managed
   if (!base.m_aDetectedBy.Contains(factionKey)) base.m_aDetectedBy.Insert(factionKey);
   PrintFormat("[ACR] Base captured: %1 by %2 (was %3)", base.m_sName, factionKey, previous);
   ACR_Report.OnCapture(base.m_sName, factionKey, previous);
+  ACR_DoctrineIntel.OnCapture(manager, factionKey, previous);
   manager.NotifyFaction(factionKey, string.Format("%1 captured", base.m_sName));
   if (!previous.IsEmpty()) manager.NotifyFaction(previous, string.Format("%1 lost", base.m_sName));
  }

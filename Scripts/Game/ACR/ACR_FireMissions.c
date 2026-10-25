@@ -110,6 +110,15 @@ class ACR_FireMissions : Managed
   return false;
  }
 
+ // An AI-led side fires as often as its commander's doctrine wants (Firepower more, Blitz less).
+ protected float Gap(string key, bool ai)
+ {
+  if (!ai) return 1;
+  ACR_AICommander commander = m_Manager.AICommanderFor(key);
+  if (!commander || !commander.Doctrine()) return 1;
+  return commander.Doctrine().m_fFireMissionGap;
+ }
+
  protected bool AILed(string key)
  {
   // (m_bActive keeps its last value when the faction settings switch the AI off.)
@@ -188,7 +197,7 @@ class ACR_FireMissions : Managed
    }
    if (!best) continue;
    string result = m_Manager.m_Supports.Call(key, index, best.m_Pos, true);
-   m_NextCall.Set(key, now + SIDE_GAP_S);
+   m_NextCall.Set(key, now + SIDE_GAP_S * Gap(key, ai));
    s_iCalls++;
    string what = ACR_Intel.Describe(best.m_iKind, best.m_iCount);
    PrintFormat("[ACR] FIRE %1 observer %2 calls mortars on %3 at %4: %5", key, observer.GetName(), what, best.m_Pos, result);
@@ -223,7 +232,7 @@ class ACR_FireMissions : Managed
    if (!best) continue;
    vector aim = ACR_Manager.Ground(best.m_Pos + Vector(Math.RandomFloat(-FREE_SCATTER, FREE_SCATTER), 0, Math.RandomFloat(-FREE_SCATTER, FREE_SCATTER)));
    m_Manager.Mortars().StartFreeFire(team, aim, FREE_ROUNDS);
-   m_NextFree.Set(team, now + FREE_GAP_S);
+   m_NextFree.Set(team, now + FREE_GAP_S * Gap(key, ai));
    s_iFreeFires++;
    PrintFormat("[ACR] FIRE %1 %2 fires at will: %3 rounds on %4 at %5", key, team.m_sName, FREE_ROUNDS, ACR_Intel.Describe(best.m_iKind, best.m_iCount), aim);
   }

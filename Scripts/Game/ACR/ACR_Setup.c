@@ -204,7 +204,7 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"west", "east", "layout", "seed", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai"};
+  array<string> keys = {"west", "east", "layout", "seed", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai"};
   foreach (string key : keys)
   {
    if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
@@ -234,6 +234,7 @@ class ACR_Setup
   if (key == "ai") return "AI commanders";
   if (key == "doctrinewest") return "Blue AI doctrine";
   if (key == "doctrineeast") return "Red AI doctrine";
+  if (key == "doctrineadapt") return "AI doctrines adapt";
   if (key == "unitcap") return "AI squad cap";
   if (key == "startrp") return "Starting RP";
   if (key == "income") return "Income";
@@ -289,6 +290,7 @@ class ACR_Setup
    values = {"both", "none", "west", "east"};
   }
   else if (key == "doctrinewest" || key == "doctrineeast") values = {"", "random", "balanced", "blitz", "firepower", "fortress", "raider"};
+  else if (key == "doctrineadapt") values = {"1", "0"};
   else if (key == "unitcap") values = {"", "4", "6", "8", "12", "16", "24"};
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
   else if (key == "income") values = {"", "0.5", "1", "1.5", "2", "3"};
@@ -313,6 +315,7 @@ class ACR_Setup
   if (key == "ai") return "acrAI";
   if (key == "doctrinewest") return "acrDoctrineWest";
   if (key == "doctrineeast") return "acrDoctrineEast";
+  if (key == "doctrineadapt") return "acrDoctrineAdapt";
   if (key == "unitcap") return "acrUnitCap";
   if (key == "startrp") return "acrStartRP";
   if (key == "income") return "acrIncome";
@@ -366,7 +369,7 @@ class ACR_Setup
    if (key == "depotcapacity") return "2000";
    if (key == "servicecost") return "10";
    if (key == "rpservice") return "3";
-   if (key == "mines") return "1";
+   if (key == "mines" || key == "doctrineadapt") return "1";
    if (key == "minesreal" || key == "minesai") return "0";
   }
   if (key == "threat" && value == "") return "normal";
@@ -435,6 +438,11 @@ class ACR_Setup
   {
    if (value == "0") return "off";
    return "on";
+  }
+  if (key == "doctrineadapt")
+  {
+   if (value == "0" || value == "off" || value == "false") return "off: each keeps its first doctrine";
+   return "on: a losing commander changes doctrine";
   }
   return value;
  }

@@ -103,7 +103,12 @@ class ACR_Intel : Managed
  {
   m_Manager = manager;
   m_sFaction = faction;
+  m_DoctrineIntel = new ACR_DoctrineIntel(this);
  }
+
+ // What we have worked out about the enemy commander's doctrine.
+ protected ref ACR_DoctrineIntel m_DoctrineIntel;
+ ACR_DoctrineIntel Doctrine() { return m_DoctrineIntel; }
 
  static string FactionKeyOf(IEntity body)
  {
@@ -381,6 +386,7 @@ class ACR_Intel : Managed
   QueueRadio(string.Format("%1: enemy FOB spotted, %2.", spotter, relative));
   ACR_Report.Event(m_sFaction, "found enemy " + fob.m_sName);
   m_Manager.NotifyFaction(m_sFaction, string.Format("Enemy base discovered: %1", fob.m_sName));
+  if (fob.m_sOwner == ACR_Debug.EnemyOf(m_sFaction)) m_DoctrineIntel.Add(ACR_DoctrineIntel.FOB_FOUND, "FOB found");
  }
 
  // A change to one of our own FOBs, for its side's feed and report (established, HQ lost...).
@@ -627,6 +633,7 @@ class ACR_Intel : Managed
    if (spotter.IsEmpty()) spotter = "Contact";
    AddFeed(now, string.Format("%1: %2 %3", spotter, Describe(contact.m_iKind, contact.m_iCount), Place(contact.m_Pos)));
    QueueRadio(string.Format("%1: contact, %2, %3.", spotter, Describe(contact.m_iKind, contact.m_iCount), Relative(contact.m_Pos)));
+   m_DoctrineIntel.OnContact(contact);
   }
  }
 

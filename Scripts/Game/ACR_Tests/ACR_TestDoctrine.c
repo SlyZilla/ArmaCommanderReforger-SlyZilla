@@ -1,6 +1,8 @@
 // AI commander doctrines (ACR_AIDoctrine, 24 Oct), run from srv:regress at tick 4: the pick
 // follows option > faction settings > test default > random, the standard doctrine keeps the
-// commander's old numbers, and a new commander takes its side's pick.
+// commander's old numbers, and a new commander takes its side's pick. Pass 2: the support
+// budget follows the doctrine, reviews pick the right doctrine, and discovery (ACR_DoctrineIntel)
+// goes hint > confirmed > out of date > noticed.
 class ACR_TestDoctrine
 {
  static void Run(ACR_Manager manager)
@@ -22,7 +24,21 @@ class ACR_TestDoctrine
   same = same && standard.m_iHeavyPrep == 12 && standard.m_iRoadblocks == 2 && standard.m_iTransports == 0;
   same = same && standard.m_fVehicleWeight == 1 && standard.m_fSmallTeamWeight == 1 && !standard.m_bSmallTeamsFree;
   same = same && !standard.m_bSupportsFirst && standard.m_iSupportBudgetMax == 60;
+  same = same && standard.m_fHoldRatio == 0.4 && standard.m_fForwardShare == 0.5 && standard.m_iDefensiveAirThreat == 8;
+  same = same && standard.m_iMinefields == 2 && standard.m_fFobFront == 1500 && standard.m_fFireBaseSeconds == 240;
+  same = same && standard.m_fPocketScore == 2.5 && standard.m_fRideDistance == 900 && standard.m_fAirLiftDistance == 2000;
+  same = same && standard.m_fRefitRatio == 0.5 && standard.m_fFireMissionGap == 1 && standard.m_fObserverWeight == 1;
+  same = same && standard.m_iSupportMissions == 1 && !standard.m_bAirBudget;
   ACR_TestRegress.Check("doctrine: balanced keeps the standard commander's numbers", same, "");
+
+  bool pairs = true;
+  foreach (ACR_AIDoctrine each : ACR_AIDoctrine.All())
+  {
+   if (ACR_AIDoctrine.LookAlike(each.m_sKey) == each.m_sKey || !ACR_AIDoctrine.Find(ACR_AIDoctrine.LookAlike(each.m_sKey))) pairs = false;
+   string counter = ACR_AIDoctrine.Counter(each.m_sKey);
+   if (!counter.IsEmpty() && (counter == each.m_sKey || !ACR_AIDoctrine.Find(counter))) pairs = false;
+  }
+  ACR_TestRegress.Check("doctrine: every doctrine has a look-alike and counters are real doctrines", pairs, "");
 
   string west = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
@@ -40,6 +56,20 @@ class ACR_TestDoctrine
 
   ACR_AICommander made = new ACR_AICommander(manager, west);
   ACR_TestRegress.Check("doctrine: a new AI commander fights to its side's pick", made.Doctrine() && made.Doctrine().m_sKey == "blitz", made.Doctrine().m_sName);
+
+  // The support budget follows the doctrine (it used to be 40 RP for all of them).
+  made.SetDoctrineForTest(ACR_AIDoctrine.Find("balanced"));
+  int balancedBudget = made.SupportBudgetForTest();
+  made.SetDoctrineForTest(ACR_AIDoctrine.Find("firepower"));
+  int firepowerBudget = made.SupportBudgetForTest();
+  made.SetDoctrineForTest(ACR_AIDoctrine.Find("blitz"));
+  int blitzBudget = made.SupportBudgetForTest();
+  bool budgets = balancedBudget > 0 && firepowerBudget > balancedBudget && blitzBudget < balancedBudget;
+  ACR_TestRegress.Check("doctrine: Firepower keeps more RP for fire missions, Blitz less", budgets,
+   string.Format("balanced %1, firepower %2, blitz %3", balancedBudget, firepowerBudget, blitzBudget));
+
+  CheckReviews();
+  CheckDiscovery(manager);
 
   ACR_Options.Set("acrDoctrineWest", "random");
   ACR_AIDoctrine rolled = ACR_AIDoctrine.Choose(west, source);
@@ -62,5 +92,48 @@ class ACR_TestDoctrine
   bool rows = ACR_Setup.Rows().Contains("doctrinewest\tBlue AI doctrine") && ACR_Setup.Option("doctrineeast") == "acrDoctrineEast" && row.StartsWith("Fortress");
   ACR_TestRegress.Check("doctrine: setup screen rows for both sides", rows, row);
   ACR_Options.Unset("acrDoctrineEast");
+ }
+
+ protected static void CheckReviews()
+ {
+  string why;
+  string winning = ACR_AICommander.PickDoctrine("blitz", "fortress", 3, 0, 5, 20, why);
+  string losing = ACR_AICommander.PickDoctrine("blitz", "", 0, 3, 10, 10, why);
+  string losingFortress = ACR_AICommander.PickDoctrine("fortress", "", 1, 3, 10, 10, why);
+  string bleeding = ACR_AICommander.PickDoctrine("balanced", "", 1, 1, 20, 8, why);
+  string stuck = ACR_AICommander.PickDoctrine("balanced", "", 0, 0, 4, 4, why);
+  string stuckBlitz = ACR_AICommander.PickDoctrine("blitz", "", 0, 0, 4, 4, why);
+  string counter = ACR_AICommander.PickDoctrine("balanced", "blitz", 1, 1, 6, 6, why);
+  string even = ACR_AICommander.PickDoctrine("raider", "", 2, 1, 8, 8, why);
+  string countering = ACR_AICommander.PickDoctrine("fortress", "blitz", 0, 0, 6, 6, why);
+  bool ok = winning == "" && losing == "fortress" && losingFortress == "firepower" && bleeding == "firepower";
+  ok = ok && stuck == "blitz" && stuckBlitz == "raider" && counter == "fortress" && even == "" && countering == "";
+  ACR_TestRegress.Check("doctrine: reviews keep a winning doctrine, change a failing one, counter a known enemy", ok,
+   string.Format("winning [%1] losing %2/%3 bleeding %4 stuck %5/%6 counter %7 even [%8] countering [%9]", winning, losing, losingFortress, bleeding, stuck, stuckBlitz, counter, even, countering));
+ }
+
+ protected static void CheckDiscovery(ACR_Manager manager)
+ {
+  ACR_Intel intel = new ACR_Intel(manager, "ACR_TEST_SIDE");
+  ACR_DoctrineIntel known = intel.Doctrine();
+  known.m_EnemyForTest = ACR_AIDoctrine.Find("blitz");
+  known.Add(20, "test");
+  bool start = known.m_iLevel == 0 && known.Text().Contains("unknown") && known.Believed() == "";
+  known.Add(15, "test");
+  bool hint = known.m_iLevel == 1 && known.Text().Contains("Blitz or Raider") && known.Believed() == "";
+  known.Add(30, "test");
+  bool confirmed = known.m_iLevel == 2 && known.Text().Contains("Blitz (confirmed)") && known.Believed() == "blitz";
+  ACR_TestRegress.Check("doctrine: intel goes from unknown to a hint to confirmed", start && hint && confirmed, known.Text());
+
+  // The enemy changes: the side keeps the old picture until new intel shows the change.
+  known.m_EnemyForTest = ACR_AIDoctrine.Find("fortress");
+  known.OnEnemyChanged("blitz");
+  bool unnoticed = known.Believed() == "blitz" && known.Text().Contains("Blitz (confirmed)");
+  known.Add(10, "test");
+  string afterNotice = known.Text();
+  bool noticed = known.m_bChangeNoticed && known.Believed() == "" && afterNotice.Contains("no longer Blitz") && afterNotice.Contains("unknown");
+  known.Add(60, "test");
+  bool relearned = known.Believed() == "fortress" && !known.m_bStale;
+  ACR_TestRegress.Check("doctrine: a change goes unnoticed until new intel, then is worked out again", unnoticed && noticed && relearned, afterNotice + " / " + known.Text());
  }
 }

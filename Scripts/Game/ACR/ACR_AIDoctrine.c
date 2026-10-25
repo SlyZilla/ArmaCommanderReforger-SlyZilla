@@ -2,8 +2,13 @@
 // per side on the setup screen (Blue/Red AI doctrine), by -acrDoctrineWest/-acrDoctrineEast,
 // by the faction's m_eAIDoctrine, or at random (the default). A doctrine is not a second
 // commander: it reweights levers ACR_AICommander already has (attack and defence odds, empty
-// base grabs, fronts, initiative, reserve, retreat, what it buys, when it calls supports).
-// The squad cap, RP and stock are the same for every doctrine, so none fields a bigger army.
+// base grabs, fronts, initiative, reserve, retreat, what it buys, when it calls supports,
+// rides and air lifts, fire missions, mines, FOBs, refits, pockets).
+// The squad cap, RP and stock are the same for every doctrine, so none fields a bigger army
+// (Raider's 2-3 man teams take half a cap slot each, so it fields about as many men).
+// Pass 2 (Jacob, 24 Oct): the enemy can work out a doctrine from intel (ACR_DoctrineIntel),
+// and a commander whose doctrine isn't working changes it (ACR_AICommander.ReviewDoctrine,
+// -acrDoctrineAdapt 0 keeps the first one).
 enum ACR_EAIDoctrineChoice
 {
  RANDOM,
@@ -35,10 +40,25 @@ class ACR_AIDoctrine : Managed
  float m_fPressurePerMinute = 0.05;
  float m_fMinPressure = 0.65;
  int m_iReserveSquads;          // + squads it needs before it keeps a reserve back
- float m_fRetreatRatio = 0.4;   // a squad in contact below this falls back
+ float m_fRetreatRatio = 0.4;   // an attacking squad in contact below this falls back
+ float m_fHoldRatio = 0.4;      // a defender of an overrun base below this falls back
+ float m_fForwardShare = 0.5;   // share of a threatened base's defenders that go out to a forward line
+ int m_iDefensiveAirThreat = 8; // threat at a losing base that earns a gun run or rockets
  float m_fAbortRatio = 0.35;    // an attack below this share of its strength is called off
  int m_iHeavyPrep = 12;         // known defenders that earn air or rocket preparation fires
  int m_iRoadblocks = 2;         // most roadblocks it holds
+ int m_iMinefields = 2;         // most minefields it keeps laid
+ float m_fFobFront = 1500;      // m from the nearest deploy base before a front base wants a FOB
+ float m_fFireBaseSeconds = 240; // s a base of fire supports before it joins the assault
+ float m_fPocketScore = 2.5;    // x attack score of FIA pockets in the way (lower = sooner)
+
+ // Moving (ACR_AICommander.Travel / TryAirLift)
+ float m_fRideDistance = 900;   // m on foot before it asks for a truck
+ float m_fAirLiftDistance = 2000; // m before it calls an air lift
+ float m_fRefitRatio = 0.5;     // idle squads below this strength walk back to refill
+
+ // Fire missions (ACR_FireMissions, AI-led sides)
+ float m_fFireMissionGap = 1;   // x the wait between observer calls and mortar free fire
 
  // Buying (ACR_AICommander.Requisition)
  float m_fVehicleWeight = 1;    // x the pick weight of armed vehicles
@@ -46,6 +66,9 @@ class ACR_AIDoctrine : Managed
  bool m_bSmallTeamsFree;        // small teams aren't held back by the line-squad ratio
  int m_iTransports;             // + trucks it keeps for rides
  bool m_bSupportsFirst;         // buys mortars and gunships even while short of troops
+ float m_fObserverWeight = 1;  // x the pick weight of forward observer teams
+ int m_iSupportMissions = 1;    // fire missions it keeps the RP for (dearest first)
+ bool m_bAirBudget;             // ... counting air and rocket strikes, not only mortars
  int m_iSupportBudgetMax = 60;  // most RP it holds back for fire missions
 
  static const string RANDOM = "random";
@@ -75,11 +98,21 @@ class ACR_AIDoctrine : Managed
   blitz.m_fMinPressure = 0.6;
   blitz.m_iReserveSquads = 2;
   blitz.m_fRetreatRatio = 0.3;
+  blitz.m_fHoldRatio = 0.35;
+  blitz.m_fForwardShare = 0.34;
+  blitz.m_iDefensiveAirThreat = 10;
   blitz.m_fAbortRatio = 0.25;
   blitz.m_iHeavyPrep = 16;
+  blitz.m_iMinefields = 1;
+  blitz.m_fFobFront = 1100;
+  blitz.m_fFireBaseSeconds = 150;
+  blitz.m_fRideDistance = 600;
+  blitz.m_fAirLiftDistance = 1700;
+  blitz.m_fRefitRatio = 0.35;
+  blitz.m_fFireMissionGap = 1.25;
   blitz.m_fVehicleWeight = 2.2;
   blitz.m_iTransports = 1;
-  blitz.m_iSupportBudgetMax = 40;
+  blitz.m_iSupportBudgetMax = 30;
   s_All.Insert(blitz);
 
   // Attrition: mortars and air first, one front at a time, every assault prepared by fire.
@@ -94,8 +127,18 @@ class ACR_AIDoctrine : Managed
   firepower.m_fPressurePerMinute = 0.04;
   firepower.m_fMinPressure = 0.75;
   firepower.m_fRetreatRatio = 0.45;
+  firepower.m_fHoldRatio = 0.45;
+  firepower.m_fForwardShare = 0.34;
+  firepower.m_iDefensiveAirThreat = 5;
   firepower.m_iHeavyPrep = 6;
+  firepower.m_fFireBaseSeconds = 360;
+  firepower.m_fPocketScore = 2;
+  firepower.m_fRefitRatio = 0.55;
+  firepower.m_fFireMissionGap = 0.6;
+  firepower.m_fObserverWeight = 3;
   firepower.m_bSupportsFirst = true;
+  firepower.m_iSupportMissions = 2;
+  firepower.m_bAirBudget = true;
   firepower.m_iSupportBudgetMax = 100;
   s_All.Insert(firepower);
 
@@ -115,7 +158,17 @@ class ACR_AIDoctrine : Managed
   fortress.m_fQuietMinutes = 6;
   fortress.m_fMinPressure = 0.75;
   fortress.m_iReserveSquads = -1;
+  fortress.m_fHoldRatio = 0.25;
+  fortress.m_fForwardShare = 0.75;
+  fortress.m_iDefensiveAirThreat = 6;
   fortress.m_iRoadblocks = 3;
+  fortress.m_iMinefields = 4;
+  fortress.m_fPocketScore = 1.5;
+  fortress.m_fRideDistance = 1100;
+  fortress.m_fAirLiftDistance = 2400;
+  fortress.m_fRefitRatio = 0.6;
+  fortress.m_fFireMissionGap = 0.8;
+  fortress.m_fObserverWeight = 1.5;
   s_All.Insert(fortress);
 
   // Raids: many small teams going for weak spots and FOBs, quick to break off.
@@ -131,7 +184,15 @@ class ACR_AIDoctrine : Managed
   raider.m_fFobTarget = 0.6;
   raider.m_fQuietMinutes = 3;
   raider.m_fRetreatRatio = 0.5;
+  raider.m_fHoldRatio = 0.5;
   raider.m_fAbortRatio = 0.5;
+  raider.m_iMinefields = 1;
+  raider.m_fFobFront = 1300;
+  raider.m_fFireBaseSeconds = 180;
+  raider.m_fPocketScore = 3.5;
+  raider.m_fRideDistance = 800;
+  raider.m_fAirLiftDistance = 1500;
+  raider.m_fFireMissionGap = 1.25;
   raider.m_fVehicleWeight = 0.7;
   raider.m_fSmallTeamWeight = 2.5;
   raider.m_bSmallTeamsFree = true;
@@ -188,6 +249,39 @@ class ACR_AIDoctrine : Managed
    return Find(forTest);
   }
   return Random(source);
+ }
+
+ // Changing doctrine mid-match (on unless the host sets -acrDoctrineAdapt 0 / off).
+ static bool AdaptAllowed()
+ {
+  string value;
+  if (!ACR_Options.Get("acrDoctrineAdapt", value)) return true;
+  value.ToLower();
+  return value != "0" && value != "false" && value != "off";
+ }
+
+ // The doctrine that beats this one (a heuristic from how they fight): Fortress's prepared
+ // defence breaks Blitz's thin-odds attacks; Firepower's preparation fires crack a Fortress;
+ // Raider's many fronts outrun Firepower's one at a time; Blitz's armour runs down raiders.
+ // Balanced has no clear answer.
+ static string Counter(string key)
+ {
+  if (key == "blitz") return "fortress";
+  if (key == "fortress") return "firepower";
+  if (key == "firepower") return "raider";
+  if (key == "raider") return "blitz";
+  return "";
+ }
+
+ // The doctrine that looks most like this one from the outside (the other half of an intel
+ // hint): the two aggressive ones, the two patient ones, and Balanced with Fortress.
+ static string LookAlike(string key)
+ {
+  if (key == "blitz") return "raider";
+  if (key == "raider") return "blitz";
+  if (key == "firepower") return "fortress";
+  if (key == "fortress") return "firepower";
+  return "fortress";
  }
 
  protected static ACR_AIDoctrine Random(out string source)

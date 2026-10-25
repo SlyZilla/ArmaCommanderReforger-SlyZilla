@@ -109,6 +109,8 @@ class ACR_Report
   string text = ACR_FactionSelection.DisplayName(key) + " report\n" + string.Format("Time %1\nSoldiers lost %2, enemy killed %3\nVehicles lost %4, enemy vehicles destroyed %5\nBases won %6, lost %7\nRP earned %8, spent %9",
    Clock(), s.m_iLost, s.m_iKills, s.m_iVehiclesLost, s.m_iVehicleKills, s.m_iBasesWon, s.m_iBasesLost, s.m_iRPEarned, s.m_iRPSpent);
   if (s.m_iFobsBuilt > 0 || s.m_iFobsLost > 0) text += string.Format("\nFOBs built %1, HQs lost %2", s.m_iFobsBuilt, s.m_iFobsLost);
+  string doctrines = ACR_DoctrineIntel.ReportLines(key);
+  if (!doctrines.IsEmpty()) text += "\n" + doctrines;
   if (!s.m_aTimeline.IsEmpty())
   {
    text += "\n";
