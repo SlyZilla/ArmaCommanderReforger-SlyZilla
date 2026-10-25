@@ -125,6 +125,8 @@ class ACR_TestRegress
  static RplId s_StaleId;
  static const ResourceName STALE_GROUP = "{3BF36BDEEB33AEC9}Prefabs/Groups/BLUFOR/Group_US_SentryTeam.et";
  static IEntity s_Layout;
+ static IEntity s_ReplacedWaypoint;
+ static bool s_bReplacedKept;
  static const ResourceName LAYOUT_BASE = "{BB1B3769EB8C290D}Prefabs/Compositions/Misc/FreeRoamBuilding/CompositionLayoutBase.et";
 
  // R15 (14 Oct review): each faction owns its support entries; a cooldown never reaches the
@@ -741,7 +743,11 @@ class ACR_TestRegress
   {
    bravo.Defend(harness.Ground("1450 0 2890"));
    ACR_OrderSnapshot saved = bravo.SnapshotOrder();
+   s_ReplacedWaypoint = bravo.m_Waypoint;
    bravo.Halt("Halted");
+   array<AIWaypoint> left = {};
+   bravo.m_Group.GetWaypoints(left);
+   s_bReplacedKept = s_ReplacedWaypoint != null && left.IsEmpty();
    bool halted = bravo.OrderState() == ACR_EOrderState.HOLD;
    bravo.RestoreOrder(saved);
    bool back = bravo.m_Order == saved.m_sLabel && bravo.OrderState() == ACR_EOrderState.DEFEND && bravo.m_OrderKind == ACR_EOrderKind.DEFEND && bravo.m_sOrderPrefab == ACR_Squad.WP_DEFEND && vector.Distance(bravo.m_MoveTarget, saved.m_Target) < 0.1;
@@ -754,6 +760,7 @@ class ACR_TestRegress
    ACR_FactionData usData = manager.m_Bases.GetFaction("US");
    usData.m_iRP = 100;
    dbg.Run(manager, ACR_EDebug.RP_OWN, "US", "");
+   Check("a replaced order's waypoint is removed at once and deleted a moment later (a running Defend still reads it)", s_bReplacedKept && !s_ReplacedWaypoint, string.Format("kept through the frame %1, deleted after 2 s %2", s_bReplacedKept, !s_ReplacedWaypoint));
    Check("debug: +500 RP to own side", usData.m_iRP == 100 + ACR_Debug.RP_STEP, usData.m_iRP.ToString());
    foreach (ACR_SupportEntry sup : usData.m_aSupports) sup.m_fReadyAt = GetGame().GetWorld().GetWorldTime() + 999000;
    dbg.Run(manager, ACR_EDebug.RESET_SUPPORTS, "US", "");
