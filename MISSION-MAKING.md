@@ -216,9 +216,9 @@ your side can see, else away from the squad (the way it was going). Ordering For
 
 | Tier | Pieces | Cost | Work |
 |---|---|---|---|
-| I, hasty | two sandbag positions in an arc, a barbed-wire line about 10 m in front | 10 RP | 45 s |
-| II, dug in | a machine-gun nest on the left flank, a sandbag bunker under a camo net behind the middle | 15 RP | 60 s |
-| III, strongpoint | a bunker instead of the covered post, a heavy MG on the right flank | 25 RP | 90 s |
+| I, hasty | a line of three sandbag positions, a barbed-tape fence about 12 m in front (the guns fire through it) | 10 RP | 45 s |
+| II, dug in | a machine-gun nest in place of the middle position (the gun in the centre of the line), a sandbag bunker under a camo net behind it | 15 RP | 60 s |
+| III, strongpoint | a bunker instead of the covered post, a heavy MG past the right end of the line turned in across the front for crossfire (the left end when the right has no clear place or line of fire) | 25 RP | 90 s |
 
 The pieces are the side's own (US, USSR and Russian, or FIA). They go in when the work is done
 and no vehicle stands on a spot. A blocked spot tries points beside it, under the same rules as

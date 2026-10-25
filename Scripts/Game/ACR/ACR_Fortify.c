@@ -1,9 +1,9 @@
 // Fortify position (0.5.7): the commander digs an infantry squad in where it is sent. Like FOB
 // Defences, a position has fixed spots in its own frame (x across, z towards the threat) and
 // three tiers; ordering Fortify again on one of our positions upgrades it:
-//   I, Hasty:         two sandbag positions in an arc, a barbed-wire line in front of it.
-//   II, Dug in:       a machine-gun nest on the left flank, a camo net behind the middle.
-//   III, Strongpoint: a bunker replaces the net, a heavy MG goes on the right flank.
+//   I, Hasty:         a line of three sandbag positions, a barbed-wire line in front of it.
+//   II, Dug in:       a machine-gun nest replaces the middle position, a covered post behind it.
+//   III, Strongpoint: a bunker replaces the covered post, a heavy MG goes on a flank.
 // ACR_Requests (and the AI commander) call Order: the server plans the tier here, the squad pays
 // and works it in its FORTIFY state (ACR_Squad). The pieces go in when the work is done and no
 // vehicle stands on a spot; a blocked spot tries points beside it, then is skipped (FOB rules:
@@ -50,7 +50,10 @@ class ACR_Fortify
  protected static int s_iNextId;
  protected static int s_iTicks;
 
- static const ResourceName WIRE = "{130BED24711F375F}PrefabsEditable/Auto/Structures/Walls/BarbedWire/E_BarbedTape_Triple.et";
+ // A barbed-tape fence the guns fire through: a triple concertina stopped a projectile trace
+ // anywhere below about 1.5 m, and both guns' muzzles are about 1.1 m up (25 Oct); the tape stops
+ // one only at its stakes.
+ static const ResourceName WIRE = "{365E4BF1FFFD8B30}PrefabsEditable/Auto/Structures/Walls/BarbedWire/E_BarbedTape_Long.et";
  // Tier II's covered post: a sandbag bunker under a camo net (a bare net over bare ground and
  // rocks looked like a piece was missing, playtest 25 Oct).
  static const ResourceName NET_US = "{F3A7C84173BF2D1E}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/E_Sandbag_Bunker_Camouflaged_US_01.et";
@@ -71,7 +74,8 @@ class ACR_Fortify
  static const float FIRE_RANGE = 30;       // a gun's line of fire is traced this far ...
  static const float FIRE_CLEAR = 15;       // ... and must be clear this far
  static const int GUN_PLACES = 6;          // places a gun tries for a clear line of fire
- static const float HOLD_RADIUS = 20;      // the holding squad's Defend: every gun's place inside
+ static const float HOLD_RADIUS = 24;      // the holding squad's Defend: every gun's place inside
+ static const float FLANK_TURN = 20;       // the heavy MG turns in this far from its flank
  static float WORK_SCALE = 1;              // tests shorten the work
 
  // ---------------------------------------------------------------- options
@@ -134,27 +138,54 @@ class ACR_Fortify
  }
 
  // Each spot's place in the position's frame (x across, z towards the threat) and its piece's
- // footprint, on one arc: the two posts in the middle, the MG nest (II) on the left flank and
- // the heavy MG (III) on the right, a little ahead of the posts so nothing stands in front of
- // their guns, the covered post (II) / bunker (III) just behind the middle. The wire line runs
- // in front (WireLine).
+ // footprint. Tier I is a line of three sandbag positions (each about 11 m wide, end to end), the
+ // middle one a little ahead; tier II's MG nest (as wide) takes the middle one's place, so the gun
+ // is in the centre of the line, joined to the posts on both sides (the user wanted the MG in the
+ // middle, not on a flank, playtest 25 Oct). The heavy MG (III) goes past the right end of the
+ // line, turned in across the front to cross the nest's fire, or past the left end when the right
+ // has no clear place (SpotBases). The covered post (II) / bunker (III) is just behind the middle,
+ // clear of the nest. The wire line runs in front (WireLine).
  static vector SpotOffset(int spot)
  {
   switch (spot)
   {
-   case 0: return Vector(-6, 0, 0);
-   case 1: return Vector(6, 0, 0);
-   case 2: return Vector(-12.5, 0, 1.5);
-   case 3: return Vector(12.5, 0, 1.5);
-   case 4: return Vector(0, 0, -8);
+   case 0: return Vector(-10.5, 0, 0);
+   case 1: return Vector(10.5, 0, 0);
+   case 2: return Vector(0, 0, 1.5);
+   case 3: return Vector(20, 0, 1);
+   case 4: return Vector(0, 0, -10);
   }
   return vector.Zero;
  }
 
- // The MG nest and the heavy MG.
+ // The places a spot's piece is tried around, best first: the heavy MG's right flank, then the
+ // left one.
+ static void SpotBases(int spot, notnull array<vector> bases)
+ {
+  vector offset = SpotOffset(spot);
+  bases.Insert(offset);
+  if (spot == 3) bases.Insert(Vector(-offset[0], 0, offset[2]));
+ }
+
+ // The MG nest's spot (the middle sandbag position at tier I) and the heavy MG's.
  static bool IsGun(int spot)
  {
   return spot == 2 || spot == 3;
+ }
+
+ // How far right of the position's centre a point is (negative: left).
+ static float LocalX(vector site, float yaw, vector pos)
+ {
+  float rad = yaw * Math.DEG2RAD;
+  vector offset = pos - site;
+  return offset[0] * Math.Cos(rad) - offset[2] * Math.Sin(rad);
+ }
+
+ // The turn of a spot's piece standing at 'pos': the heavy MG turns in from whichever flank it is on.
+ static float TurnAt(vector site, float yaw, int spot, vector pos)
+ {
+  if (spot == 3 && LocalX(site, yaw, pos) < 0) return FLANK_TURN;
+  return SpotTurn(spot);
  }
 
  static float SpotRadius(int spot)
@@ -164,21 +195,20 @@ class ACR_Fortify
   return 4;
  }
 
- // The pieces turn outwards along the arc.
+ // The end posts turn outwards along the arc; the heavy MG on the right flank turns in (TurnAt).
  static float SpotTurn(int spot)
  {
   if (spot == 0) return -15;
   if (spot == 1) return 15;
-  if (spot == 2) return -35;
-  if (spot == 3) return 35;
+  if (spot == 3) return -FLANK_TURN;
   return 0;
  }
 
- // The spots a tier places or replaces a piece on.
+ // The spots a tier places or replaces a piece on (tier II's nest replaces the middle post).
  static bool SpotChangesAt(int spot, int tier)
  {
   if (spot <= 1) return tier == 1;
-  if (spot == 2) return tier == 2;
+  if (spot == 2) return tier == 1 || tier == 2;
   if (spot == 3) return tier == 3;
   return tier == 2 || tier == 3;
  }
@@ -187,7 +217,7 @@ class ACR_Fortify
  {
   bool east = faction == "USSR" || faction.Contains("AFRF") || faction.Contains("RU") || faction.Contains("SLA");
   bool fia = !east && faction.Contains("FIA");
-  if (spot <= 1)
+  if (spot <= 1 || (spot == 2 && tier <= 1))
   {
    if (east) return ACR_FobDefences.SANDBAGS_USSR;
    if (fia) return ACR_FobDefences.SANDBAGS_FIA;
@@ -216,13 +246,14 @@ class ACR_Fortify
   return NET_US;
  }
 
- // The wire line in the position's frame: across the front, bent back at both ends.
+ // The wire line in the position's frame: across the front, bent back at both ends past the
+ // heavy MG on either flank.
  static void WireLine(notnull array<vector> points)
  {
-  points.Insert(Vector(-17, 0, 9));
-  points.Insert(Vector(-10, 0, 13));
-  points.Insert(Vector(10, 0, 13));
-  points.Insert(Vector(17, 0, 9));
+  points.Insert(Vector(-24, 0, 6));
+  points.Insert(Vector(-11, 0, 14));
+  points.Insert(Vector(11, 0, 14));
+  points.Insert(Vector(24, 0, 6));
  }
 
  // The ground under a point (the terrain's or a road / runway surface's material name).
@@ -269,8 +300,9 @@ class ACR_Fortify
   return true;
  }
 
- // ... up to 'most' clear places, best first. A gun never moves back (behind the posts).
- static bool FindSpots(vector site, float yaw, int spot, ACR_Fortification target, notnull array<vector> places, out string reason, int most)
+ // ... up to 'most' clear places, best first (around each of SpotBases, or only the one numbered
+ // 'onlyBase'). A gun never moves back (behind the posts).
+ static bool FindSpots(vector site, float yaw, int spot, ACR_Fortification target, notnull array<vector> places, out string reason, int most, int onlyBase = -1)
  {
   reason = "";
   if (s_bBlockSpotsForTest)
@@ -294,32 +326,43 @@ class ACR_Fortify
    along.Insert(2);
    along.Insert(4);
   }
+  array<vector> bases = {};
+  SpotBases(spot, bases);
   for (int pass = 0; pass < 2; pass++)
   {
-   foreach (float dz : along)
+   foreach (int b, vector around : bases)
    {
-    foreach (float dx : across)
+    if (onlyBase >= 0 && b != onlyBase) continue;
+    if (b == s_iBlockBaseForTest)
     {
-     vector candidate;
-     bool kept = old && dx == 0 && dz == 0;
-     if (kept) candidate = old.GetOrigin();
-     else candidate = ToWorld(site, yaw, SpotOffset(spot) + Vector(dx, 0, dz));
-     if (pass == 0 && !kept && !s_bSkipSpotChecksForTest && HardSurface(candidate)) continue;
-     string why;
-     if (!s_bSkipSpotChecksForTest && !ACR_FobBuild.FootprintClear(candidate, SpotRadius(spot), ignore, why, true, MAX_RISE))
+     if (reason.IsEmpty()) reason = "blocked (test)";
+     continue;
+    }
+    foreach (float dz : along)
+    {
+     foreach (float dx : across)
      {
-      if (reason.IsEmpty()) reason = why;
-      continue;
+      vector candidate;
+      bool kept = old && dx == 0 && dz == 0 && b == 0;
+      if (kept) candidate = old.GetOrigin();
+      else candidate = ToWorld(site, yaw, around + Vector(dx, 0, dz));
+      if (pass == 0 && !kept && !s_bSkipSpotChecksForTest && HardSurface(candidate)) continue;
+      string why;
+      if (!s_bSkipSpotChecksForTest && !ACR_FobBuild.FootprintClear(candidate, SpotRadius(spot), ignore, why, true, MAX_RISE))
+      {
+       if (reason.IsEmpty()) reason = why;
+       continue;
+      }
+      if (!s_bSkipSpotChecksForTest && RockIn(candidate, SpotRadius(spot)))
+      {
+       if (reason.IsEmpty()) reason = "big rocks in the way";
+       continue;
+      }
+      if (places.Contains(candidate)) continue;
+      places.Insert(candidate);
+      reason = "";
+      if (places.Count() >= most) return true;
      }
-     if (!s_bSkipSpotChecksForTest && RockIn(candidate, SpotRadius(spot)))
-     {
-      if (reason.IsEmpty()) reason = "big rocks in the way";
-      continue;
-     }
-     if (places.Contains(candidate)) continue;
-     places.Insert(candidate);
-     reason = "";
-     if (places.Count() >= most) return true;
     }
    }
   }
@@ -360,6 +403,11 @@ class ACR_Fortify
   detail = "";
   IEntity turret = ACR_Roadblocks.FindTurretInHierarchy(piece);
   if (!turret) return true;
+  if (s_bBlockFireForTest)
+  {
+   detail = "line of fire blocked (test)";
+   return false;
+  }
   vector mins, maxs;
   turret.GetWorldBounds(mins, maxs);
   vector transform[4];
@@ -407,6 +455,8 @@ class ACR_Fortify
 
  static bool s_bSkipSpotChecksForTest;
  static bool s_bBlockSpotsForTest;
+ static bool s_bBlockFireForTest;
+ static int s_iBlockBaseForTest = -1;
 
  // A tier can be built when at least one of its spots is clear.
  static bool CheckTier(vector site, float yaw, int tier, ACR_Fortification target, out string reason)
@@ -530,7 +580,7 @@ class ACR_Fortify
   }
   if (!CheckTier(plan.m_vSite, plan.m_fYaw, plan.m_iTier, plan.m_Target, refusal)) return null;
   // The squad works from behind the position.
-  plan.m_vStage = ToWorld(plan.m_vSite, plan.m_fYaw, Vector(0, 0, -18));
+  plan.m_vStage = ToWorld(plan.m_vSite, plan.m_fYaw, Vector(0, 0, -22));
   if (BBB_Terrain.IsWaterAt(plan.m_vStage)) plan.m_vStage = plan.m_vSite;
   plan.m_fRadius = 30;
   plan.m_fDuration = Duration(plan.m_iTier) * WORK_SCALE;
@@ -629,21 +679,38 @@ class ACR_Fortify
    if (reason.IsEmpty()) reason = why;
    PrintFormat("[ACR] FORTIFY spot %1 skipped (%2)", spot, why);
   }
-  // Guns first (only ever by an upgrade, so a gun with no clear line of fire anywhere fails it
-  // before anything else goes in): each tries its spot's places until LineOfFire is clear.
+  // Guns first (a gun with no clear line of fire anywhere fails an upgrade before anything else
+  // goes in): each tries its spot's places, around each of its bases, until LineOfFire is clear.
   array<int> order = {2, 3, 0, 1, 4};
   foreach (int s : order)
   {
    if (!clear[s]) continue;
    array<vector> tries = {found[s]};
    string tryWhy;
-   if (IsGun(s)) FindSpots(fort.m_vPos, fort.m_fYaw, s, fort, tries, tryWhy, GUN_PLACES);
+   if (IsGun(s))
+   {
+    array<vector> bases = {};
+    SpotBases(s, bases);
+    for (int b = 0; b < bases.Count(); b++) FindSpots(fort.m_vPos, fort.m_fYaw, s, fort, tries, tryWhy, tries.Count() + GUN_PLACES, b);
+   }
+   // What stood there goes back if the upgrade is refused (the middle post the nest replaces).
+   ResourceName oldPrefab;
+   vector oldAt;
+   float oldYaw;
+   IEntity old = fort.m_aPieces[s];
+   if (old && old.GetPrefabData())
+   {
+    oldPrefab = old.GetPrefabData().GetPrefabName();
+    oldAt = old.GetOrigin();
+    vector oldAngles = old.GetYawPitchRoll();
+    oldYaw = oldAngles[0];
+   }
    RemovePiece(fort, s);
    IEntity piece;
    foreach (vector place : tries)
    {
     ACR_FobBuild.FellTrees(place, SpotRadius(s));
-    piece = SpawnPiece(PrefabFor(s, fort.m_sFaction, plan.m_iTier), place, fort.m_fYaw + SpotTurn(s), fort.m_sFaction);
+    piece = SpawnPiece(PrefabFor(s, fort.m_sFaction, plan.m_iTier), place, fort.m_fYaw + TurnAt(fort.m_vPos, fort.m_fYaw, s, place), fort.m_sFaction);
     if (!piece) continue;
     string fireWhy;
     if (LineOfFire(piece, fireWhy))
@@ -658,6 +725,11 @@ class ACR_Fortify
    }
    if (!piece && IsGun(s) && !created)
    {
+    if (!oldPrefab.IsEmpty())
+    {
+     fort.m_aPieces[s] = SpawnPiece(oldPrefab, oldAt, oldYaw, fort.m_sFaction);
+     RefreshTurrets(fort);
+    }
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused: no clear line of fire for spot %4", fort.m_sFaction, TierName(plan.m_iTier), fort.m_vPos, s);
     if (reason.IsEmpty()) reason = "no clear line of fire";
     return null;
@@ -840,7 +912,7 @@ class ACR_Fortify
   {
    if (fort.m_sFaction != faction) continue;
    positions.Insert(fort.m_vPos);
-   radii.Insert(20);
+   radii.Insert(HOLD_RADIUS);
    labels.Insert("~" + TierName(fort.m_iTier));
   }
  }
@@ -853,5 +925,7 @@ class ACR_Fortify
   WORK_SCALE = 1;
   s_bSkipSpotChecksForTest = false;
   s_bBlockSpotsForTest = false;
+  s_bBlockFireForTest = false;
+  s_iBlockBaseForTest = -1;
  }
 }

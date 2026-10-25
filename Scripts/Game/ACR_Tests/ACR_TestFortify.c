@@ -1,17 +1,20 @@
 // -acrFortifyTest 1 (server-capable, ~4 min): the commander's Fortify order. Prefabs per side,
 // options, setup rows, refusals that charge nothing and the facing rule; Alpha digs in (a regroup
-// on the way pausing it without a refund; tier I: pieces placed and facing, its side's map ring),
-// upgrades (tier II: the MG nest, manned by native Defend; an upgrade with a blocked spot refused
-// whole), a cancelled upgrade refunded in full, a Fortify order paid partly by the refund of the
-// mine order it replaces,
+// on the way pausing it without a refund; tier I: a line of three sandbag positions placed and
+// facing, its side's map ring), upgrades (tier II: the MG nest in the middle post's place, manned
+// by native Defend; an upgrade whose nest has no line of fire refused with the middle post put
+// back; one with a blocked spot refused whole), a cancelled upgrade refunded in full, a Fortify
+// order paid partly by the refund of the mine order it replaces,
 // an enemy team pausing the work, a truck on a spot holding the finished work until it leaves,
-// tier III, the position and its wire dropping off the map once its pieces are gone, and the AI
+// tier III (the heavy MG on a flank, turned in, off a wall in front of its first place; both guns
+// shooting clear as a bullet sees it; the left flank when the right has no place), the position
+// and its wire dropping off the map once its pieces are gone, and the AI
 // commander fortifying only with -acrFortifyAI, never with a squad holding a position. A new
 // position with every spot blocked is refused (no wire-only position); ten minutes with the order
 // set aside don't abandon it.
 class ACR_TestFortify
 {
- static const int CHECKS = 32;
+ static const int CHECKS = 38;
  static const ResourceName BOULDER = "{1F0AA3EA77753B5D}Prefabs/Rocks/Granite/Granite_Boulder_02.et";
  static const ResourceName SANDBAG_WALL = "{A3A7C365E845B1B6}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_high_burlap.et";
  static int s_iStep;
@@ -24,6 +27,7 @@ class ACR_TestFortify
  static ref ACR_Fortification s_Held;
  static IEntity s_Wall;
  static vector s_vNestFirst;
+ static vector s_vGunFirst;
  static string s_sRegroup;
  static IEntity s_Enemy;
  static float s_fProgress;
@@ -98,6 +102,8 @@ class ACR_TestFortify
    ACR_TestRegress.Check("fortify: pieces are the side's and face the position's way", PiecesFace(s_Fort), string.Format("position yaw %1", s_Fort.m_fYaw));
    string wireDetail;
    ACR_TestRegress.Check("fortify: a joined wire line in front of the position", WireJoined(s_Fort, wireDetail), wireDetail);
+   string lineDetail;
+   ACR_TestRegress.Check("fortify: tier I is a line of three sandbag positions, joined end to end, the middle one in the centre", LineOfPosts(s_Fort, lineDetail), lineDetail);
    array<vector> positions = {};
    array<float> radii = {};
    array<string> labels = {};
@@ -108,16 +114,23 @@ class ACR_TestFortify
    labels.Clear();
    ACR_Fortify.Zones("USSR", positions, radii, labels);
    ACR_TestRegress.Check("fortify: a pale ring on its own side's map only", own == 1 && label == "~Fortified position I" && labels.IsEmpty(), string.Format("US %1 '%2', USSR %3", own, label, labels.Count()));
+   // A tier II whose nest has no clear line of fire anywhere is refused whole: the middle post it
+   // would replace stands again where it stood.
+   // (Build deletes the post it replaces, which empties this reference.)
+   IEntity middle = s_Fort.m_aPieces[2];
+   bool hadMiddle = middle != null;
+   if (middle) s_vNestFirst = middle.GetOrigin();
+   ACR_FortifyPlan noFire = ACR_Fortify.Plan(alpha, s_vSite, why);
+   string noFireWhy;
+   ACR_Fortification noFireFort;
+   ACR_Fortify.s_bBlockFireForTest = true;
+   if (noFire) noFireFort = ACR_Fortify.Build(noFire, noFireWhy);
+   ACR_Fortify.s_bBlockFireForTest = false;
+   IEntity back = s_Fort.m_aPieces[2];
+   bool restored = hadMiddle && back && back.GetPrefabData().GetPrefabName() == ACR_FobDefences.SANDBAGS_US && vector.DistanceXZ(back.GetOrigin(), s_vNestFirst) < 0.1;
+   ACR_TestRegress.Check("fortify: a tier II whose nest has no line of fire anywhere is refused, the middle post put back", noFire && noFire.m_iTier == 2 && !noFireFort && s_Fort.m_iTier == 1 && restored && ACR_Fortify.Standing(s_Fort) == standing, string.Format("'%1', tier %2, middle post back %3, %4 of %5 pieces", noFireWhy, s_Fort.m_iTier, restored, ACR_Fortify.Standing(s_Fort), standing));
    // Fortify again a few metres off: the upgrade.
    s_iRP = us.m_iRP;
-   // A high sandbag wall (a prop, not a composition) 8 m in front of the MG nest's first place,
-   // across its line of fire.
-   string nestWhy;
-   if (ACR_Fortify.FindSpot(s_Fort.m_vPos, s_Fort.m_fYaw, 2, s_Fort, s_vNestFirst, nestWhy))
-   {
-    float wallRad = (s_Fort.m_fYaw + ACR_Fortify.SpotTurn(2)) * Math.DEG2RAD;
-    s_Wall = ACR_Fortify.SpawnPiece(SANDBAG_WALL, ACR_Manager.Ground(s_vNestFirst + Vector(Math.Sin(wallRad), 0, Math.Cos(wallRad)) * 8), s_Fort.m_fYaw + ACR_Fortify.SpotTurn(2), "US");
-   }
    bool upgrading = ACR_Fortify.Order(alpha, s_vSite + Vector(6, 0, 0), why);
    ACR_TestRegress.Check("fortify: ordering it again on the position upgrades it (15 RP)", upgrading && us.m_iRP == s_iRP - 15 && alpha.m_FortifyPlan && alpha.m_FortifyPlan.m_Target == s_Fort && alpha.m_FortifyPlan.m_iTier == 2 && !alpha.m_Fortification, why);
    NextStep(tick);
@@ -135,12 +148,8 @@ class ACR_TestFortify
    string covered;
    if (s_Fort.m_aPieces[4]) covered = s_Fort.m_aPieces[4].GetPrefabData().GetPrefabName();
    ACR_TestRegress.Check("fortify: tier II's covered post is a sandbag bunker under its camo net", covered == ACR_Fortify.NET_US && covered.Contains("Sandbag_Bunker_Camouflaged"), FilePath.StripPath(covered));
-   string nestFireWhy;
-   float nestMoved;
-   if (nest) nestMoved = vector.DistanceXZ(nest.GetOrigin(), s_vNestFirst);
-   bool nestFires = nest && ACR_Fortify.LineOfFire(nest, nestFireWhy);
-   ACR_TestRegress.Check("fortify: an MG nest whose place faces a wall moves to one with a clear line of fire", s_Wall && nest && nestMoved > 1 && nestFires, string.Format("wall %1, nest %2 m from its first place, line of fire %3 %4", s_Wall != null, nestMoved, nestFires, nestFireWhy));
-   if (s_Wall) SCR_EntityHelper.DeleteEntityAndChildren(s_Wall);
+   string centreDetail;
+   ACR_TestRegress.Check("fortify: tier II's MG nest takes the middle post's place, in the centre of the line, with a clear line of fire", NestInCentre(s_Fort, s_vNestFirst, centreDetail), centreDetail);
    // Tier III with its spots blocked: nothing goes in, the tier stays (CompleteFortify refunds),
    // and it can be ordered again.
    ACR_FortifyPlan next = ACR_Fortify.Plan(alpha, s_vSite, why);
@@ -177,6 +186,15 @@ class ACR_TestFortify
    // 12 RP left: with the mine order's 15 back, the 25 RP tier III is affordable.
    us.m_iRP = 12;
    int beforeFortify = us.m_iRP;
+   // A high sandbag wall (a prop, not a composition) 8 m in front of the heavy MG's first place,
+   // across its line of fire.
+   string gunWhy;
+   if (ACR_Fortify.FindSpot(s_Fort.m_vPos, s_Fort.m_fYaw, 3, s_Fort, s_vGunFirst, gunWhy))
+   {
+    float wallYaw = s_Fort.m_fYaw + ACR_Fortify.TurnAt(s_Fort.m_vPos, s_Fort.m_fYaw, 3, s_vGunFirst);
+    float wallRad = wallYaw * Math.DEG2RAD;
+    s_Wall = ACR_Fortify.SpawnPiece(SANDBAG_WALL, ACR_Manager.Ground(s_vGunFirst + Vector(Math.Sin(wallRad), 0, Math.Cos(wallRad)) * 8), wallYaw, "US");
+   }
    ordered = laying && ACR_Fortify.Order(alpha, s_vSite, why);
    ACR_TestRegress.Check("fortify: a Fortify order replaces a mine-laying order, its refund counting towards the price", ordered && !alpha.m_MinePlan && alpha.m_FortifyPlan && alpha.m_FortifyPlan.m_iTier == 3 && us.m_iRP == beforeFortify + 15 - 25, string.Format("%1 laying %2, rp %3 -> %4", why, laying, beforeFortify, us.m_iRP));
    us.m_iRP = 450;
@@ -236,6 +254,28 @@ class ACR_TestFortify
    bool nestClear = s_Fort.m_aPieces[2] && ACR_Fortify.LineOfFire(s_Fort.m_aPieces[2], nestFire);
    bool hmgClear = s_Fort.m_aPieces[3] && ACR_Fortify.LineOfFire(s_Fort.m_aPieces[3], hmgFire);
    ACR_TestRegress.Check("fortify: every gun has a clear line of fire", nestClear && hmgClear, string.Format("MG nest %1 %2, heavy MG %3 %4", nestClear, nestFire, hmgClear, hmgFire));
+   // The heavy MG: on a flank past the end of the line, turned in across the front; off the wall
+   // that faced its first place.
+   string flankDetail;
+   ACR_TestRegress.Check("fortify: tier III's heavy MG goes on a flank past the end of the line, turned in across the front", OnFlank(s_Fort, flankDetail), flankDetail);
+   float gunMoved;
+   if (s_Fort.m_aPieces[3]) gunMoved = vector.DistanceXZ(s_Fort.m_aPieces[3].GetOrigin(), s_vGunFirst);
+   ACR_TestRegress.Check("fortify: a heavy MG whose place faces a wall moves to one with a clear line of fire", s_Wall && s_Fort.m_aPieces[3] && gunMoved > 1 && hmgClear, string.Format("wall %1, heavy MG %2 m from its first place, line of fire %3 %4", s_Wall != null, gunMoved, hmgClear, hmgFire));
+   if (s_Wall) SCR_EntityHelper.DeleteEntityAndChildren(s_Wall);
+   // As a bullet sees it, the wire and the posts counted: both guns shoot clear.
+   string nestBullet, hmgBullet;
+   bool nestShoots = BulletClear(s_Fort.m_aPieces[2], nestBullet);
+   bool hmgShoots = BulletClear(s_Fort.m_aPieces[3], hmgBullet);
+   ACR_TestRegress.Check("fortify: the centre MG and the heavy MG shoot over the wire and past the line (projectile traces)", nestShoots && hmgShoots, string.Format("MG nest: %1; heavy MG: %2; wire %3 m high", nestBullet, hmgBullet, WireTop(s_Fort)));
+   // With no place on the right flank the heavy MG's spot is on the left one, turned in from there.
+   ACR_Fortify.s_iBlockBaseForTest = 0;
+   vector leftAt;
+   string leftWhy;
+   bool leftFound = ACR_Fortify.FindSpot(s_Fort.m_vPos, s_Fort.m_fYaw, 3, s_Fort, leftAt, leftWhy);
+   ACR_Fortify.s_iBlockBaseForTest = -1;
+   float leftX = ACR_Fortify.LocalX(s_Fort.m_vPos, s_Fort.m_fYaw, leftAt);
+   float leftTurn = ACR_Fortify.TurnAt(s_Fort.m_vPos, s_Fort.m_fYaw, 3, leftAt);
+   ACR_TestRegress.Check("fortify: with no place on the right flank the heavy MG takes the left one, turned in from there", leftFound && leftX < -15 && leftTurn == ACR_Fortify.FLANK_TURN, string.Format("found %1 at x %2, turn %3 (%4)", leftFound, leftX, leftTurn, leftWhy));
    // Every piece destroyed or dismantled: the position goes, and its wire with it.
    s_aWire.Copy(s_Fort.m_aWire);
    foreach (IEntity piece : s_Fort.m_aPieces) if (piece) SCR_EntityHelper.DeleteEntityAndChildren(piece);
@@ -288,7 +328,7 @@ class ACR_TestFortify
  // Prefabs per side, options, setup rows, refusals and facing (nothing spawned or charged).
  protected static void CheckStatic(ACR_Squad alpha, ACR_FactionData us)
  {
-  ACR_TestRegress.Check("fortify: US / USSR / RHS / FIA pieces", ACR_Fortify.PrefabFor(0, "US", 1) == ACR_FobDefences.SANDBAGS_US && ACR_Fortify.PrefabFor(0, "RHS_AFRF", 1) == ACR_FobDefences.SANDBAGS_USSR && ACR_Fortify.PrefabFor(2, "FIA", 2) == ACR_FobDefences.NEST_FIA && ACR_Fortify.PrefabFor(4, "US", 2) == ACR_Fortify.NET_US && ACR_Fortify.PrefabFor(4, "US", 3) == ACR_FobDefences.BUNKER_US && ACR_Fortify.PrefabFor(3, "USSR", 3) == ACR_Fortify.HMG_USSR);
+  ACR_TestRegress.Check("fortify: US / USSR / RHS / FIA pieces", ACR_Fortify.PrefabFor(0, "US", 1) == ACR_FobDefences.SANDBAGS_US && ACR_Fortify.PrefabFor(2, "US", 1) == ACR_FobDefences.SANDBAGS_US && ACR_Fortify.PrefabFor(0, "RHS_AFRF", 1) == ACR_FobDefences.SANDBAGS_USSR && ACR_Fortify.PrefabFor(2, "FIA", 2) == ACR_FobDefences.NEST_FIA && ACR_Fortify.PrefabFor(4, "US", 2) == ACR_Fortify.NET_US && ACR_Fortify.PrefabFor(4, "US", 3) == ACR_FobDefences.BUNKER_US && ACR_Fortify.PrefabFor(3, "USSR", 3) == ACR_Fortify.HMG_USSR);
   ACR_TestRegress.Check("fortify: defaults are orders on, AI commanders off", ACR_Fortify.Enabled() && !ACR_Fortify.AIUses() && ACR_Fortify.CanFortify(alpha));
   map<string, string> header = new map<string, string>();
   header.Set("acrFortify", "0");
@@ -434,9 +474,142 @@ class ACR_TestFortify
    string prefab = piece.GetPrefabData().GetPrefabName();
    if (prefab != ACR_Fortify.PrefabFor(spot, "US", fort.m_iTier)) return false;
    vector angles = piece.GetYawPitchRoll();
-   if (YawGap(angles[0], fort.m_fYaw + ACR_Fortify.SpotTurn(spot)) > 3) return false;
+   if (YawGap(angles[0], fort.m_fYaw + ACR_Fortify.TurnAt(fort.m_vPos, fort.m_fYaw, spot, piece.GetOrigin())) > 3) return false;
   }
   return any;
+ }
+
+ // Tier I: three sandbag positions in a line, the middle one in the centre, each end post joined
+ // to it (about a post's width, 11 m, apart).
+ protected static bool LineOfPosts(ACR_Fortification fort, out string detail)
+ {
+  for (int i = 0; i < 3; i++)
+  {
+   IEntity post = fort.m_aPieces[i];
+   if (!post || post.GetPrefabData().GetPrefabName() != ACR_FobDefences.SANDBAGS_US)
+   {
+    detail = string.Format("spot %1 is no sandbag position (%2)", i, post != null);
+    return false;
+   }
+  }
+  float leftX = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, fort.m_aPieces[0].GetOrigin());
+  float rightX = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, fort.m_aPieces[1].GetOrigin());
+  float middleX = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, fort.m_aPieces[2].GetOrigin());
+  float leftGap = middleX - leftX;
+  float rightGap = rightX - middleX;
+  detail = string.Format("posts at x %1 / %2 / %3", leftX, middleX, rightX);
+  return Math.AbsFloat(middleX) <= 2.5 && leftGap >= 8 && leftGap <= 13 && rightGap >= 8 && rightGap <= 13;
+ }
+
+ // Tier II: the nest where the middle post stood, between the end posts near the centre line,
+ // with a clear line of fire.
+ protected static bool NestInCentre(ACR_Fortification fort, vector postAt, out string detail)
+ {
+  IEntity nest = fort.m_aPieces[2];
+  if (!nest || !fort.m_aPieces[0] || !fort.m_aPieces[1])
+  {
+   detail = string.Format("nest %1, end posts %2 %3", nest != null, fort.m_aPieces[0] != null, fort.m_aPieces[1] != null);
+   return false;
+  }
+  float x = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, nest.GetOrigin());
+  float leftX = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, fort.m_aPieces[0].GetOrigin());
+  float rightX = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, fort.m_aPieces[1].GetOrigin());
+  float moved = vector.DistanceXZ(nest.GetOrigin(), postAt);
+  string fireWhy;
+  bool fires = ACR_Fortify.LineOfFire(nest, fireWhy);
+  detail = string.Format("nest at x %1 (end posts %2 / %3), %4 m from the middle post's place, line of fire %5 %6", x, leftX, rightX, moved, fires, fireWhy);
+  return leftX < x && x < rightX && Math.AbsFloat(x) <= 2.5 && moved < 0.5 && fires;
+ }
+
+ // Tier III: the heavy MG past the end post on its side, turned in from that flank.
+ protected static bool OnFlank(ACR_Fortification fort, out string detail)
+ {
+  IEntity gun = fort.m_aPieces[3];
+  if (!gun || !fort.m_aPieces[0] || !fort.m_aPieces[1])
+  {
+   detail = "no heavy MG or end posts";
+   return false;
+  }
+  float x = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, gun.GetOrigin());
+  float leftX = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, fort.m_aPieces[0].GetOrigin());
+  float rightX = ACR_Fortify.LocalX(fort.m_vPos, fort.m_fYaw, fort.m_aPieces[1].GetOrigin());
+  vector angles = gun.GetYawPitchRoll();
+  bool right = x > rightX + 5 && YawGap(angles[0], fort.m_fYaw - ACR_Fortify.FLANK_TURN) < 3;
+  bool left = x < leftX - 5 && YawGap(angles[0], fort.m_fYaw + ACR_Fortify.FLANK_TURN) < 3;
+  detail = string.Format("heavy MG at x %1 (end posts %2 / %3), yaw %4 (position %5)", x, leftX, rightX, angles[0], fort.m_fYaw);
+  return right || left;
+ }
+
+ // A gun's fire as a bullet sees it: projectile-layer traces from its muzzle (as LineOfFire),
+ // straight and 10 degrees either side, meet nothing within FIRE_CLEAR but people, the wire and
+ // the posts counted (LineOfFire leaves the wire out).
+ protected static IEntity s_BulletPiece;
+ protected static bool BulletClear(IEntity piece, out string detail)
+ {
+  IEntity turret = ACR_Roadblocks.FindTurretInHierarchy(piece);
+  if (!turret)
+  {
+   detail = "no gun";
+   return false;
+  }
+  vector mins, maxs;
+  turret.GetWorldBounds(mins, maxs);
+  vector transform[4];
+  turret.GetWorldTransform(transform);
+  vector forward = transform[2];
+  forward[1] = 0;
+  forward.Normalize();
+  vector muzzle = turret.GetOrigin();
+  muzzle[1] = Math.Max(muzzle[1], maxs[1] - 0.1);
+  float height = muzzle[1] - GetGame().GetWorld().GetSurfaceY(muzzle[0], muzzle[2]);
+  float facing = Math.Atan2(forward[0], forward[2]) * Math.RAD2DEG;
+  s_BulletPiece = piece;
+  array<float> turns = {0, -10, 10};
+  foreach (float turn : turns)
+  {
+   float rad = (facing + turn) * Math.DEG2RAD;
+   vector dir = Vector(Math.Sin(rad), 0, Math.Cos(rad));
+   TraceParam trace = new TraceParam();
+   trace.Start = muzzle + dir * 1.2;
+   trace.End = muzzle + dir * ACR_Fortify.FIRE_RANGE;
+   trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+   trace.LayerMask = EPhysicsLayerPresets.Projectile;
+   float hit = GetGame().GetWorld().TraceMove(trace, BulletFilter);
+   float clear = 1.2 + hit * (ACR_Fortify.FIRE_RANGE - 1.2);
+   if (hit >= 1 || clear >= ACR_Fortify.FIRE_CLEAR) continue;
+   string what = "the ground";
+   if (trace.TraceEnt && trace.TraceEnt.GetPrefabData()) what = FilePath.StripPath(trace.TraceEnt.GetPrefabData().GetPrefabName());
+   else if (trace.TraceEnt) what = trace.TraceEnt.ClassName();
+   detail = string.Format("muzzle %1 m up, hit %2 %3 m out (%4 deg)", height, what, (int)clear, turn);
+   s_BulletPiece = null;
+   return false;
+  }
+  s_BulletPiece = null;
+  detail = string.Format("muzzle %1 m up, clear", height);
+  return true;
+ }
+
+ protected static bool BulletFilter(notnull IEntity e)
+ {
+  if (ChimeraCharacter.Cast(e)) return false;
+  IEntity root = e;
+  while (root.GetParent()) root = root.GetParent();
+  return root != s_BulletPiece;
+ }
+
+ // The wire's top over the ground (the highest segment).
+ protected static float WireTop(ACR_Fortification fort)
+ {
+  float top;
+  foreach (IEntity segment : fort.m_aWire)
+  {
+   if (!segment) continue;
+   vector mins, maxs;
+   segment.GetWorldBounds(mins, maxs);
+   vector at = segment.GetOrigin();
+   top = Math.Max(top, maxs[1] - GetGame().GetWorld().GetSurfaceY(at[0], at[2]));
+  }
+  return top;
  }
 
  // The wire: at least three segments, all in front of the posts, each one within a segment's
