@@ -116,6 +116,14 @@ class ACR_BBBHooks : BBB_Hooks
   return state == ACR_EOrderState.NONE || state == ACR_EOrderState.HOLD || state == ACR_EOrderState.DEFEND;
  }
 
+ // BBB's committed squad tactic (contact pause, assault, hold, reorganise) only for the same
+ // waiting squads as contact relay: its HOLD stops advances, so ACA's movers, attackers and
+ // flankers keep their plan and vanilla/BBB reactions as before.
+ override bool AllowSquadTactic(SCR_AIGroup group)
+ {
+  return AllowContactRelay(group);
+ }
+
  override bool AllowMorale(SCR_AIGroup group)
  {
   return SquadOf(group) == null;
