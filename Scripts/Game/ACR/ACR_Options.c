@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrFortify", "acrFortifyAI"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrFortify", "acrFortifyAI", "acrHoldGuns"};
   foreach (string name : names)
   {
    string value;
@@ -151,6 +151,8 @@ class ACR_MissionHeader : SCR_MissionHeader
  int m_iAcrMines;
  [Attribute("-1", UIWidgets.EditBox, "Realistic minefields: 1 = the owning side's AI sets off its own mines too (-acrMinesRealistic)")]
  int m_iAcrMinesRealistic;
+ [Attribute("-1", UIWidgets.EditBox, "Gunners stay on the static guns of a spot their squad holds: 1 default, 0 vanilla (-acrHoldGuns)")]
+ int m_iAcrHoldGuns;
  [Attribute("-1", UIWidgets.EditBox, "AI commanders lay minefields: 0 default, 1 enables (-acrMinesAI)")]
  int m_iAcrMinesAI;
  [Attribute("-1", UIWidgets.EditBox, "Commander Fortify orders: 1 default, 0 disables (-acrFortify)")]
@@ -192,6 +194,7 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrFobRPServiceCost", m_iAcrFobRPServiceCost);
   Number(values, "acrMines", m_iAcrMines);
   Number(values, "acrMinesRealistic", m_iAcrMinesRealistic);
+  Number(values, "acrHoldGuns", m_iAcrHoldGuns);
   Number(values, "acrMinesAI", m_iAcrMinesAI);
   Number(values, "acrFortify", m_iAcrFortify);
   Number(values, "acrFortifyAI", m_iAcrFortifyAI);

@@ -204,7 +204,7 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"west", "east", "layout", "seed", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
+  array<string> keys = {"west", "east", "layout", "seed", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "startrp", "income", "shared", "holdguns", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
   foreach (string key : keys)
   {
    if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
@@ -239,6 +239,7 @@ class ACR_Setup
   if (key == "startrp") return "Starting RP";
   if (key == "income") return "Income";
   if (key == "shared") return "Shared command";
+  if (key == "holdguns") return "Gunners stay on held guns";
   if (key == "deployment") return "New-unit deployment";
   if (key == "reinforcement") return "Infantry replacements";
   if (key == "fobservices") return "FOB service payment";
@@ -297,6 +298,7 @@ class ACR_Setup
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
   else if (key == "income") values = {"", "0.5", "1", "1.5", "2", "3"};
   else if (key == "shared") values = {"1", "0"};
+  else if (key == "holdguns") values = {"1", "0"};
   else if (key == "deployment") values = {"military", "all", "hq"};
   else if (key == "reinforcement") values = {"settlements", "all", "deployment"};
   else if (key == "fobservices") values = {"supplies", "free"};
@@ -322,6 +324,7 @@ class ACR_Setup
   if (key == "startrp") return "acrStartRP";
   if (key == "income") return "acrIncome";
   if (key == "shared") return "acrSharedCommand";
+  if (key == "holdguns") return "acrHoldGuns";
   if (key == "deployment") return "acrDeployment";
   if (key == "reinforcement") return "acrReinforcement";
   if (key == "fobservices") return "acrFobServices";
@@ -380,6 +383,7 @@ class ACR_Setup
   if (key == "pricing" && value == "") return "";
   if (key == "ai" && value == "") return "";
   if (key == "shared" && value == "") return "1";
+  if (key == "holdguns" && value == "") return "1";
   return value;
  }
 
@@ -436,6 +440,8 @@ class ACR_Setup
   if (key == "reinforcement" && value == "settlements") return "settlements + deployment bases";
   if (key == "reinforcement" && value == "deployment") return "deployment bases only";
   if (key == "reinforcement" && value == "all") return "all reinforcement-enabled points";
+  if (key == "holdguns" && value == "0") return "off (vanilla)";
+  if (key == "holdguns") return "on";
   if (key == "minesreal" && value == "1") return "dangerous to all";
   if (key == "minesreal") return "safe for our AI";
   if (key == "shared" || key == "fobrelay" || key == "mines" || key == "minesai" || key == "fortify" || key == "fortifyai")

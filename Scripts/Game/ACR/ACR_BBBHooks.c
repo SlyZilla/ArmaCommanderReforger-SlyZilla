@@ -100,6 +100,15 @@ class ACR_BBBHooks : BBB_Hooks
   return !squad || (!ACR_AirLift.Busy(squad) && !squad.m_bMortar && !squad.m_ActiveRoadblock && !squad.m_Fortification);
  }
 
+ // Gunners stay on the static guns at the spot a squad holds (ACR_GunHold; BBB_HeldGuns keeps
+ // them there and mans an empty one again).
+ override void GetHeldGuns(SCR_AIGroup group, notnull array<IEntity> guns)
+ {
+  guns.Clear();
+  ACR_Squad squad = SquadOf(group);
+  if (squad) ACR_GunHold.HeldGuns(squad, guns);
+ }
+
  // Radio contact reports (BBB_ContactRelay) can make vanilla send fireteams to look. Only
  // squads waiting in place take them: free, posted or defending, on foot, not under a player's
  // own command. Movers, riders, attackers, builders and squads walking back to refit keep
