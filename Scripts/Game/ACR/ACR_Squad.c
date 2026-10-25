@@ -1381,7 +1381,14 @@ class ACR_Squad : Managed
   float dt = (now - plan.m_fLastTick) / 1000.0;
   plan.m_fLastTick = now;
   if (dt <= 0) return;
-  if (dt > 5.0) dt = 1.0;
+  if (dt > 5.0)
+  {
+   // The order was set aside (a regroup, a player taking the squad): that time counts for
+   // neither the walk's limit nor the give-up timer.
+   plan.m_fDeadline += (dt - 1.0) * 1000;
+   plan.m_fLastProgress += (dt - 1.0) * 1000;
+   dt = 1.0;
+  }
   if (CountAlive() <= 0)
   {
    CancelMineWork("abandoned: the squad is gone");
