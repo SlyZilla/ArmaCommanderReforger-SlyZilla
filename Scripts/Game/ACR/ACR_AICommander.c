@@ -891,25 +891,38 @@ class ACR_AICommander : Managed
  // Retreat (a squad in contact) and abort (a whole attack) ratios: the doctrine's, 0.4 / 0.35 standard.
  static const int SUPPORT_RESERVE = 15;    // RP the AI keeps back when calling supports
 
- // Engineering budget (-acrAIBuildShare N, 0 = off by default): N% (at most 30) of what the
- // side's RP gains between strategy ticks is set aside for roadblocks and minefields (and
- // Fortify positions where that order exists); unit purchases leave it alone, and what those
- // orders spend comes out of it. At most BUILD_BUDGET_MAX, never more than the side holds.
+ // Engineering budget (-acrAIBuildShare N, 0 = off by default): N% (at most 30, times the
+ // doctrine's m_fBuildShare) of what the side's RP gains between strategy ticks is set aside for
+ // roadblocks and minefields (and Fortify positions where that order exists), and at least
+ // BUILD_TRICKLE each strategy tick; unit purchases leave it alone, those orders are paid out of
+ // it (CanBuild). At most BUILD_BUDGET_MAX, never more than the side holds.
  static const int BUILD_BUDGET_MAX = 100;
+ static const float BUILD_TRICKLE = 2;
  float m_fBuildBudget;
  protected int m_iBuildLastRP = -1;
  static int BuildShare() { return Math.ClampInt(ACR_LogisticsRules.Choice("acrAIBuildShare", "0").ToInt(), 0, 30); }
  int BuildBudget() { return (int)m_fBuildBudget; }
+ float EffectiveShare() { return Math.Min(BuildShare() * m_Doctrine.m_fBuildShare, 50); }
 
  // At the start of a strategy tick: the share of the RP gained since the last one.
  void AccrueBuildBudget()
  {
   int rp = m_Manager.m_Bases.GetRP(m_sFaction);
-  int share = BuildShare();
+  float share = EffectiveShare();
   if (share <= 0) m_fBuildBudget = 0;
   else if (m_iBuildLastRP >= 0 && rp > m_iBuildLastRP) m_fBuildBudget += (rp - m_iBuildLastRP) * share / 100.0;
   m_fBuildBudget = Math.Clamp(m_fBuildBudget, 0, Math.Min(BUILD_BUDGET_MAX, rp));
   m_iBuildLastRP = rp;
+ }
+
+ // Each strategy tick while the share is on: at least a trickle goes in, so a side with a small
+ // income still builds (playtest 25 Oct: 15% of a small income held 0-32 RP, and the AI built
+ // one roadblock and one hasty position all game).
+ void TrickleBuildBudget()
+ {
+  if (BuildShare() <= 0) return;
+  int rp = m_Manager.m_Bases.GetRP(m_sFaction);
+  m_fBuildBudget = Math.Clamp(m_fBuildBudget + BUILD_TRICKLE * m_Doctrine.m_fBuildShare, 0, Math.Min(BUILD_BUDGET_MAX, rp));
  }
 
  void SpendBuildBudget(int spent)
@@ -927,7 +940,12 @@ class ACR_AICommander : Managed
  string BuildStatus()
  {
   if (BuildShare() <= 0) return "";
-  return string.Format(" | build budget %1 RP (%2%% of income)", BuildBudget(), BuildShare());
+  int holders;
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (squad && squad.GetFaction() && squad.GetFaction().GetFactionKey() == m_sFaction && IsHolder(squad)) holders++;
+  }
+  return string.Format(" | build budget %1 RP (%2%% of income), holding %3 of %4", BuildBudget(), (int)EffectiveShare(), holders, m_Doctrine.m_iHolders);
  }
  static const int MAX_GRABS = 3;           // empty bases it goes for at the same time (at least)
  static const int MAX_GRABS_BIG = 8;       // ... at most, on maps with many empty bases
@@ -974,6 +992,7 @@ class ACR_AICommander : Managed
   int t = System.GetTickCount();
   m_iTickStarted = t;
   AccrueBuildBudget();
+  TrickleBuildBudget();
   ReleaseRoadblockBuilders();
   Assess();
   t = ACR_Perf.Lap("ai.assess", t);
@@ -992,7 +1011,11 @@ class ACR_AICommander : Managed
   ManageFobUpgrades();
   int beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
   ManageRoadblocks();
+  SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
+  beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
   ManageMinefields();
+  SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
+  beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
   ManageFortify();
   SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
   t = ACR_Perf.Lap("ai.logistics", t);
@@ -1569,6 +1592,21 @@ class ACR_AICommander : Managed
     qrf.m_AITarget = base;
     needed -= qrf.Strength();
     PrintFormat("[ACR] AI %1: QRF reserve %2 committed to defend %3 (threat %4)", m_sFaction, qrf.GetName(), base.m_sName, threat);
+   }
+   // Still short: the builders holding our roadblocks and positions nearby, as a last resort
+   // (never a Fortress's, whose defences stay manned).
+   if (needed <= 0 || m_Doctrine.m_bHoldersStay) continue;
+   foreach (ACR_Squad holder : m_Manager.m_Squads)
+   {
+    if (needed <= 0) break;
+    if (!IsHolder(holder) || !holder.GetFaction() || holder.GetFaction().GetFactionKey() != m_sFaction || holder.HasPlayer() || holder.m_Commander != 0) continue;
+    if (vector.DistanceXZ(PositionOf(holder), base.GetOrigin()) > DEFENSE_DISTANCE * 3) continue;
+    holder.SetMode(ACR_EMoveMode.FAST);
+    Travel(holder, base.GetOrigin(), true, 0);
+    holder.m_iAITask = ACR_EAITask.DEFEND;
+    holder.m_AITarget = base;
+    needed -= holder.Strength();
+    PrintFormat("[ACR] AI %1: %2 leaves what it holds to defend %3 (threat %4)", m_sFaction, holder.GetName(), base.m_sName, threat);
    }
   }
   DefendInDepth();
@@ -4433,9 +4471,10 @@ class ACR_AICommander : Managed
  void SetFobBuilderForTest(ACR_Squad builder) { m_FobBuilder = builder; }
  ACR_Base GetHomeBase() { return HomeBase(); }
 
- // Construction temporarily owns an AI squad. A finished checkpoint is just an
- // idle defensive post: normal attacks/defence may recall its entire squad.
- // Also repairs completed ROADBLOCK tasks left by the earlier implementation.
+ // Construction temporarily owns an AI squad. A finished checkpoint keeps its builder holding
+ // it while KeepsHolding (the defences manned, playtest 25 Oct: the AI's roadblock and position
+ // stood empty); otherwise it is an idle post again that attacks and defence may recall. Also
+ // repairs completed ROADBLOCK tasks left by the earlier implementation.
  protected void ReleaseRoadblockBuilders()
  {
   foreach (ACR_Squad squad : m_Manager.m_Squads)
@@ -4444,125 +4483,163 @@ class ACR_AICommander : Managed
    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
    if (squad.m_Commander != 0 || squad.HasPlayer()) continue;
    if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) continue;
+   if (squad.m_ActiveRoadblock && KeepsHolding(squad)) continue;
    squad.m_iAITask = ACR_EAITask.POSTED;
    PrintFormat("[ACR] AI %1: %2 available for reassignment after roadblock construction", m_sFaction, squad.GetName());
   }
  }
+ void ReleaseBuildersForTest() { ReleaseRoadblockBuilders(); }
 
- // Manage roadblocks / observation posts (aca-f23)
+ // Holding a roadblock or a position it built (not building one).
+ static bool IsHolder(ACR_Squad squad)
+ {
+  if (!squad) return false;
+  if (squad.m_iAITask == ACR_EAITask.ROADBLOCK) return squad.m_ActiveRoadblock && squad.OrderState() != ACR_EOrderState.BUILD_ROADBLOCK;
+  if (squad.m_iAITask == ACR_EAITask.FORTIFY) return squad.m_Fortification && !squad.m_FortifyPlan;
+  return false;
+ }
+
+ // A builder stays on what it built while it holds it (its order), is fit to fight, and fewer
+ // than the doctrine's m_iHolders other squads of ours do: those aren't sent on attacks, and
+ // defend a base only as a last resort (AssignDefenders; a Fortress's never).
+ protected bool KeepsHolding(ACR_Squad squad)
+ {
+  if (squad.OrderState() != ACR_EOrderState.DEFEND || squad.StrengthRatio() < RetreatRatio()) return false;
+  int others;
+  foreach (ACR_Squad other : m_Manager.m_Squads)
+  {
+   if (other && other != squad && other.GetFaction() && other.GetFaction().GetFactionKey() == m_sFaction && IsHolder(other)) others++;
+  }
+  return others < m_Doctrine.m_iHolders;
+ }
+
+ // Engineering may spend 'cost' now: out of the build budget while the share is on (it is set
+ // aside already), else with 'reserve' RP to spare as well.
+ bool CanBuild(int cost, int reserve)
+ {
+  if (BuildShare() > 0) return BuildBudget() >= cost;
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  return data && data.m_iRP >= cost + reserve;
+ }
+
+ // Our uncontested bases nearest to an enemy base, nearest first (at most 'most'), each with
+ // that enemy base's position: where roadblocks, minefields and fortified positions go. (The one
+ // base nearest the enemy only, before: a side held one roadblock all game, playtest 25 Oct.)
+ static const int FRONT_BASES = 3;
+ protected void FrontBases(notnull array<ACR_Base> bases, notnull array<vector> enemies, int most)
+ {
+  bases.Clear();
+  enemies.Clear();
+  array<float> gaps = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner != m_sFaction || base.m_bContested) continue;
+   float nearest = float.MAX;
+   vector enemyAt;
+   foreach (ACR_Base other : ACR_Base.s_All)
+   {
+    if (!other || other.m_bRetired || other.m_sOwner == m_sFaction || other.m_sOwner.IsEmpty()) continue;
+    float d = vector.DistanceXZ(base.GetOrigin(), other.GetOrigin());
+    if (d >= nearest) continue;
+    nearest = d;
+    enemyAt = other.GetOrigin();
+   }
+   if (nearest == float.MAX) continue;
+   int at = 0;
+   while (at < gaps.Count() && gaps[at] <= nearest) at++;
+   gaps.InsertAt(nearest, at);
+   bases.InsertAt(base, at);
+   enemies.InsertAt(enemyAt, at);
+  }
+  while (bases.Count() > most)
+  {
+   bases.Remove(bases.Count() - 1);
+   enemies.Remove(enemies.Count() - 1);
+  }
+ }
+ void FrontBasesForTest(notnull array<ACR_Base> bases, notnull array<vector> enemies) { FrontBases(bases, enemies, FRONT_BASES); }
+
+ // Manage roadblocks / observation posts (aca-f23). Every 15 s, one build at a time, while it
+ // holds fewer than its doctrine's m_iRoadblocks and engineering can pay (CanBuild): at the first
+ // of our front bases (FrontBases) with no roadblock of ours within 400 m, a free squad within
+ // 450 m of it establishes one on the road 250-380 m out towards the nearest enemy base.
  void ManageRoadblocks()
  {
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextRoadblockEval) return;
   m_fNextRoadblockEval = now + 15000;
+  if (!CanBuild(ACR_Roadblocks.ROADBLOCK_COST, 25)) return;
 
-  // Economy gate: at least 45 RP (20 RP cost + 25 RP reserve)
-  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
-  if (!data || data.m_iRP < 45) return;
-
-  // Cap: 2 active roadblocks per faction (the doctrine may change it)
   int activeCount = 0;
   foreach (ACR_Roadblock rb : ACR_Roadblocks.s_aRoadblocks)
   {
    if (rb && rb.m_sFaction == m_sFaction) activeCount++;
   }
   if (activeCount >= m_Doctrine.m_iRoadblocks) return;
-
-  // Find frontline base to protect
-  ACR_Base frontlineBase = null;
-  float minEnemyDist = 999999.0;
-  vector enemyBasePos = vector.Zero;
-
-  foreach (ACR_Base base : ACR_Base.s_All)
+  foreach (ACR_Squad builder : m_Manager.m_Squads)
   {
-   if (!base || base.m_bRetired || base.m_sOwner != m_sFaction || base.m_bContested) continue;
-   foreach (ACR_Base other : ACR_Base.s_All)
-   {
-    if (!other || other.m_bRetired || other.m_sOwner == m_sFaction || other.m_sOwner.IsEmpty()) continue;
-    float d = vector.DistanceXZ(base.GetOrigin(), other.GetOrigin());
-    if (d < minEnemyDist)
-    {
-     minEnemyDist = d;
-     frontlineBase = base;
-     enemyBasePos = other.GetOrigin();
-    }
-   }
+   if (builder && builder.m_iAITask == ACR_EAITask.ROADBLOCK && builder.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK && builder.GetFaction() && builder.GetFaction().GetFactionKey() == m_sFaction) return;
   }
 
-  if (!frontlineBase || enemyBasePos == vector.Zero) return;
-
-  // Check if this base already has a roadblock within 400 m
-  foreach (ACR_Roadblock rb2 : ACR_Roadblocks.s_aRoadblocks)
-  {
-   if (rb2 && rb2.m_sFaction == m_sFaction && vector.DistanceXZ(rb2.m_vPos, frontlineBase.GetOrigin()) < 400.0)
-    return;
-  }
-
-  // Find road corridor between frontlineBase and enemyBasePos (250m to 380m out)
   ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
   if (!aiWorld || !aiWorld.GetRoadNetworkManager()) return;
-
-  vector basePos = frontlineBase.GetOrigin();
-  vector toEnemy = enemyBasePos - basePos;
-  toEnemy[1] = 0;
-  toEnemy.Normalize();
-
-  vector targetRoadPos = vector.Zero;
-  float targetYaw = 0;
-  bool foundRoad = false;
-
-  for (float testDist = 250.0; testDist <= 380.0; testDist += 30.0)
-  {
-   vector samplePos = basePos + toEnemy * testDist;
-   samplePos[1] = GetGame().GetWorld().GetSurfaceY(samplePos[0], samplePos[2]);
-
-   vector validPos;
-   float validYaw;
-   string refusal;
-   if (ACR_Roadblocks.ValidateSite(samplePos, validPos, validYaw, refusal, m_sFaction, enemyBasePos))
-   {
-    targetRoadPos = validPos;
-    targetYaw = validYaw;
-    foundRoad = true;
-    break;
-   }
-  }
-
-  if (!foundRoad) return;
-
-  // Find an idle or posted squad near this base
-  ACR_Squad candidate = null;
+  array<ACR_Base> fronts = {};
+  array<vector> enemies = {};
+  FrontBases(fronts, enemies, FRONT_BASES);
   array<ACR_Squad> squads = {};
   MySquads(squads, true);
-  foreach (ACR_Squad squad : squads)
+  foreach (int f, ACR_Base frontlineBase : fronts)
   {
-   if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0 || squad.IsVehicle() || IsSupportTeam(squad)) continue;
-   if (squad == m_ReserveSquad || squad.m_Commander != 0) continue;
-   if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
-   if (squad.m_iAITask == ACR_EAITask.POSTED || squad.m_iAITask == ACR_EAITask.FREE)
+   bool covered = false;
+   foreach (ACR_Roadblock rb2 : ACR_Roadblocks.s_aRoadblocks)
    {
-    float dist = vector.DistanceXZ(PositionOf(squad), basePos);
-    if (dist < 450.0)
-    {
-     candidate = squad;
-     break;
-    }
+    if (rb2 && rb2.m_sFaction == m_sFaction && vector.DistanceXZ(rb2.m_vPos, frontlineBase.GetOrigin()) < 400.0) covered = true;
    }
-  }
+   if (covered) continue;
 
-  if (!candidate) return;
+   // Find road corridor between frontlineBase and the enemy base (250m to 380m out)
+   vector enemyBasePos = enemies[f];
+   vector basePos = frontlineBase.GetOrigin();
+   vector toEnemy = enemyBasePos - basePos;
+   toEnemy[1] = 0;
+   toEnemy.Normalize();
+   vector targetRoadPos = vector.Zero;
+   float targetYaw = 0;
+   bool foundRoad = false;
+   for (float testDist = 250.0; testDist <= 380.0 && !foundRoad; testDist += 30.0)
+   {
+    vector samplePos = basePos + toEnemy * testDist;
+    samplePos[1] = GetGame().GetWorld().GetSurfaceY(samplePos[0], samplePos[2]);
+    string refusal;
+    foundRoad = ACR_Roadblocks.ValidateSite(samplePos, targetRoadPos, targetYaw, refusal, m_sFaction, enemyBasePos);
+   }
+   if (!foundRoad) continue;
 
-  if (candidate.EstablishRoadblock(targetRoadPos, targetYaw, ACR_ERoadblockType.MEDIUM, false))
-  {
+   // Find an idle or posted squad near this base
+   ACR_Squad candidate = null;
+   foreach (ACR_Squad squad : squads)
+   {
+    if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0 || squad.IsVehicle() || IsSupportTeam(squad)) continue;
+    if (squad == m_ReserveSquad || squad.m_Commander != 0) continue;
+    if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
+    if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
+    if (vector.DistanceXZ(PositionOf(squad), basePos) >= 450.0) continue;
+    candidate = squad;
+    break;
+   }
+   if (!candidate) continue;
+   if (!candidate.EstablishRoadblock(targetRoadPos, targetYaw, ACR_ERoadblockType.MEDIUM, false)) continue;
    candidate.m_iAITask = ACR_EAITask.ROADBLOCK;
    PrintFormat("[ACR] AI %1: dispatched %2 to establish roadblock on approach to %3 at %4", m_sFaction, candidate.GetName(), frontlineBase.m_sName, targetRoadPos);
+   return;
   }
  }
 
- // Minefields on the approaches (-acrMinesAI 1; off by default). Every 30 s, with RP to spare
- // and fewer than two fields down, a free infantry squad near the frontline base (sappers
- // first) lays one 150-270 m out towards the nearest enemy base: mixed on a road, AP mines on
- // open ground.
+ // Minefields on the approaches (-acrMinesAI 1; off by default). Every 30 s, one field at a
+ // time, while it has fewer than its doctrine's m_iMinefields down and engineering can pay: at the
+ // first of our front bases with no field of ours within 300 m, a free infantry squad within 600 m
+ // of it (sappers first) lays one 150-270 m out towards the nearest enemy base: mixed on a road,
+ // AP mines on open ground.
  void ManageMinefields()
  {
   foreach (ACR_Squad layer : m_Manager.m_Squads)
@@ -4577,44 +4654,57 @@ class ACR_AICommander : Managed
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextMinefieldEval) return;
   m_fNextMinefieldEval = now + 30000;
-  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
-  if (!data || data.m_iRP < ACR_Minefields.Cost(ACR_EMineKind.MIXED) + 30) return;
+  if (!CanBuild(ACR_Minefields.Cost(ACR_EMineKind.MIXED), 30)) return;
   if (ACR_Minefields.CountFields(m_sFaction) >= m_Doctrine.m_iMinefields) return;
+  // One field at a time: any squad of ours on its way to lay one. (The free squads alone leave
+  // out the one already laying, so two were sent to the same spot, playtest 25 Oct.)
+  foreach (ACR_Squad laying : m_Manager.m_Squads)
+  {
+   if (laying && laying.m_MinePlan && laying.GetFaction() && laying.GetFaction().GetFactionKey() == m_sFaction) return;
+  }
 
-  vector enemyPos;
-  ACR_Base front = FrontlineBase(enemyPos);
-  if (!front) return;
-
-  ACR_Squad candidate;
+  array<ACR_Base> fronts = {};
+  array<vector> enemies = {};
+  FrontBases(fronts, enemies, FRONT_BASES);
   array<ACR_Squad> squads = {};
   MySquads(squads, true);
-  foreach (ACR_Squad squad : squads)
+  foreach (int f, ACR_Base front : fronts)
   {
-   if (!squad || squad.HasPlayer() || squad.m_Commander != 0 || squad == m_ReserveSquad || IsSupportTeam(squad) || !ACR_Minefields.CanLay(squad)) continue;
-   if (squad.m_MinePlan) return; // one field at a time
-   if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
-   if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
-   if (vector.DistanceXZ(PositionOf(squad), front.GetOrigin()) > 600) continue;
-   if (!candidate || (ACR_SapperDemo.IsSapperSquad(squad) && !ACR_SapperDemo.IsSapperSquad(candidate))) candidate = squad;
-  }
-  if (!candidate) return;
+   if (ACR_Minefields.FieldNear(m_sFaction, front.GetOrigin(), 300)) continue;
+   ACR_Squad candidate = null;
+   foreach (ACR_Squad squad : squads)
+   {
+    if (!squad || squad.HasPlayer() || squad.m_Commander != 0 || squad == m_ReserveSquad || IsSupportTeam(squad) || !ACR_Minefields.CanLay(squad)) continue;
+    if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
+    if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
+    if (vector.DistanceXZ(PositionOf(squad), front.GetOrigin()) > 600) continue;
+    if (!candidate || (ACR_SapperDemo.IsSapperSquad(squad) && !ACR_SapperDemo.IsSapperSquad(candidate))) candidate = squad;
+   }
+   if (!candidate) continue;
 
-  vector toEnemy = enemyPos - front.GetOrigin();
-  toEnemy[1] = 0;
-  toEnemy.Normalize();
-  for (float reach = 150; reach <= 270; reach += 40)
-  {
-   vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach);
-   vector roadPoint, roadDir;
-   float roadWidth;
-   ACR_EMineKind kind = ACR_EMineKind.AP;
-   if (ACR_Minefields.Snap(sample, ACR_Minefields.ROAD_SNAP, roadPoint, roadDir, roadWidth)) kind = ACR_EMineKind.MIXED;
-   string refusal;
-   if (!ACR_Minefields.Order(candidate, kind, sample, refusal)) continue;
-   candidate.m_iAITask = ACR_EAITask.MINES;
-   PrintFormat("[ACR] AI %1: %2 laying %3 on the approach to %4 at %5", m_sFaction, candidate.GetName(), ACR_Minefields.Name(kind), front.m_sName, sample);
-   return;
+   vector toEnemy = enemies[f] - front.GetOrigin();
+   toEnemy[1] = 0;
+   toEnemy.Normalize();
+   for (float reach = 150; reach <= 270; reach += 40)
+   {
+    vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach);
+    vector roadPoint, roadDir;
+    float roadWidth;
+    ACR_EMineKind kind = ACR_EMineKind.AP;
+    if (ACR_Minefields.Snap(sample, ACR_Minefields.ROAD_SNAP, roadPoint, roadDir, roadWidth)) kind = ACR_EMineKind.MIXED;
+    string refusal;
+    if (!ACR_Minefields.Order(candidate, kind, sample, refusal)) continue;
+    candidate.m_iAITask = ACR_EAITask.MINES;
+    PrintFormat("[ACR] AI %1: %2 laying %3 on the approach to %4 at %5", m_sFaction, candidate.GetName(), ACR_Minefields.Name(kind), front.m_sName, sample);
+    return;
+   }
   }
+ }
+ void ResetBuildTimersForTest()
+ {
+  m_fNextRoadblockEval = 0;
+  m_fNextMinefieldEval = 0;
+  m_fNextFortifyEval = 0;
  }
 
  // Our uncontested base nearest to an enemy base, and that enemy base's position.
@@ -4638,17 +4728,21 @@ class ACR_AICommander : Managed
   return front;
  }
 
- // Fortified positions on the approaches (-acrFortifyAI 1; off by default). Every 60 s, with RP
- // to spare and one order at a time: upgrade our position nearest the frontline base, else (fewer
- // than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base,
- // facing it, where its upgrades would fit if such a site is near. The squad is released
- // (posted) once the work is done.
+ // Fortified positions on the approaches (-acrFortifyAI 1; off by default). Every 60 s, one
+ // order at a time, while engineering can pay: first upgrade our lowest-tier position below tier
+ // III (nearest the front first), worked by the squad holding it or a free one within 500 m; else,
+ // with fewer than its doctrine's m_iFortifyPositions, dig a free infantry squad in 80-160 m out
+ // from the first of our front bases with no position of ours within 300 m, facing the enemy, where
+ // its upgrades would fit if such a site is near. A position whose upgrade was refused is left
+ // alone for a while (ACR_Fortify.HoldUpgrades). The squad then holds it while KeepsHolding, else
+ // it is posted again.
  void ManageFortify()
  {
   foreach (ACR_Squad digger : m_Manager.m_Squads)
   {
    if (!digger || digger.m_iAITask != ACR_EAITask.FORTIFY || digger.m_FortifyPlan) continue;
    if (!digger.GetFaction() || digger.GetFaction().GetFactionKey() != m_sFaction) continue;
+   if (digger.m_Fortification && KeepsHolding(digger)) continue;
    digger.m_iAITask = ACR_EAITask.POSTED;
   }
   // Planning a position queries the terrain round it: it waits for a tick with budget left.
@@ -4656,21 +4750,84 @@ class ACR_AICommander : Managed
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextFortifyEval) return;
   m_fNextFortifyEval = now + 60000;
-  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
-  vector enemyPos;
-  ACR_Base front = FrontlineBase(enemyPos);
-  if (!data || !front) return;
   foreach (ACR_Squad busy : m_Manager.m_Squads)
+  {
    if (busy && busy.m_FortifyPlan && busy.GetFaction() && busy.GetFaction().GetFactionKey() == m_sFaction) return;
+  }
+  array<ACR_Base> fronts = {};
+  array<vector> enemies = {};
+  FrontBases(fronts, enemies, FRONT_BASES);
+  if (fronts.IsEmpty()) return;
+  string refusal;
 
-  ACR_Fortification nearFront = ACR_Fortify.NearestOwn(m_sFaction, front.GetOrigin(), 300);
-  // A position whose upgrade was refused is left alone for a while (ACR_Fortify.HoldUpgrades).
-  bool upgrading = nearFront && nearFront.m_iTier < ACR_Fortify.MAX_TIER && !ACR_Fortify.UpgradesHeld(nearFront);
-  if (!upgrading && ACR_Fortify.CountPositions(m_sFaction) >= 2) return;
-  int tier = 1;
-  if (upgrading) tier = nearFront.m_iTier + 1;
-  if (data.m_iRP < ACR_Fortify.Cost(tier) + 30) return;
+  ACR_Fortification target;
+  foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
+  {
+   if (fort.m_sFaction != m_sFaction || fort.m_iTier >= ACR_Fortify.MAX_TIER || ACR_Fortify.BeingBuilt(fort) || ACR_Fortify.UpgradesHeld(fort)) continue;
+   if (target && fort.m_iTier > target.m_iTier) continue;
+   if (target && fort.m_iTier == target.m_iTier && vector.DistanceXZ(fort.m_vPos, fronts[0].GetOrigin()) >= vector.DistanceXZ(target.m_vPos, fronts[0].GetOrigin())) continue;
+   target = fort;
+  }
+  if (target && CanBuild(ACR_Fortify.Cost(target.m_iTier + 1), 30))
+  {
+   ACR_Squad worker = HolderOf(target);
+   if (!worker) worker = FortifyWorkerNear(target.m_vPos);
+   if (worker && ACR_Fortify.Order(worker, target.m_vPos, refusal))
+   {
+    worker.m_iAITask = ACR_EAITask.FORTIFY;
+    PrintFormat("[ACR] AI %1: %2 upgrading the position at %3 to %4", m_sFaction, worker.GetName(), target.m_vPos, ACR_Fortify.TierName(target.m_iTier + 1));
+    return;
+   }
+  }
 
+  if (ACR_Fortify.CountPositions(m_sFaction) >= m_Doctrine.m_iFortifyPositions || !CanBuild(ACR_Fortify.Cost(1), 30)) return;
+  foreach (int f, ACR_Base front : fronts)
+  {
+   if (ACR_Fortify.NearestOwn(m_sFaction, front.GetOrigin(), 300)) continue;
+   ACR_Squad candidate = FortifyWorkerNear(front.GetOrigin());
+   if (!candidate) continue;
+   vector toEnemy = enemies[f] - front.GetOrigin();
+   toEnemy[1] = 0;
+   toEnemy.Normalize();
+   vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
+   // First a site where tiers II and III would fit as well (its upgrades then go in), also 40 m
+   // to either side; then any site that takes tier I, as before.
+   array<float> laterals = {0, -40, 40};
+   for (int pass = 0; pass < 2; pass++)
+   {
+    for (float reach = 80; reach <= 160; reach += 40)
+    {
+     foreach (float lateral : laterals)
+     {
+      if (pass == 1 && lateral != 0) continue;
+      vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
+      if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemies[f]))) continue;
+      if (!ACR_Fortify.Order(candidate, sample, refusal, enemies[f])) continue;
+      candidate.m_iAITask = ACR_EAITask.FORTIFY;
+      string fit = "";
+      if (pass == 0) fit = ", its upgrades fit";
+      PrintFormat("[ACR] AI %1: %2 digging in on the approach to %3 at %4%5", m_sFaction, candidate.GetName(), front.m_sName, sample, fit);
+      return;
+     }
+    }
+   }
+  }
+ }
+
+ // The squad of ours holding this position, if any.
+ protected ACR_Squad HolderOf(ACR_Fortification fort)
+ {
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (squad && squad.m_Fortification == fort && IsHolder(squad) && !squad.HasPlayer() && squad.m_Commander == 0) return squad;
+  }
+  return null;
+ }
+
+ // The nearest free infantry squad within 500 m of 'pos' that can dig in (not off a roadblock or
+ // position it holds).
+ protected ACR_Squad FortifyWorkerNear(vector pos)
+ {
   ACR_Squad candidate;
   float candidateDistance = 500;
   array<ACR_Squad> squads = {};
@@ -4678,50 +4835,14 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : squads)
   {
    if (!squad || squad.HasPlayer() || squad.m_Commander != 0 || squad == m_ReserveSquad || IsSupportTeam(squad) || !ACR_Fortify.CanFortify(squad)) continue;
-   if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
    if (squad.m_MinePlan || squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
-   // Not off a roadblock or position it holds (the one being upgraded aside).
-   if (squad.m_ActiveRoadblock || (squad.m_Fortification && (!upgrading || squad.m_Fortification != nearFront))) continue;
-   float d = vector.DistanceXZ(PositionOf(squad), front.GetOrigin());
+   if (squad.m_ActiveRoadblock || squad.m_Fortification) continue;
+   float d = vector.DistanceXZ(PositionOf(squad), pos);
    if (d >= candidateDistance) continue;
    candidateDistance = d;
    candidate = squad;
   }
-  if (!candidate) return;
-
-  string refusal;
-  if (upgrading)
-  {
-   if (!ACR_Fortify.Order(candidate, nearFront.m_vPos, refusal)) return;
-   candidate.m_iAITask = ACR_EAITask.FORTIFY;
-   PrintFormat("[ACR] AI %1: %2 upgrading the position near %3 to %4", m_sFaction, candidate.GetName(), front.m_sName, ACR_Fortify.TierName(tier));
-   return;
-  }
-  vector toEnemy = enemyPos - front.GetOrigin();
-  toEnemy[1] = 0;
-  toEnemy.Normalize();
-  vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
-  // First a site where tiers II and III would fit as well (its upgrades then go in), also 40 m
-  // to either side; then any site that takes tier I, as before.
-  array<float> laterals = {0, -40, 40};
-  for (int pass = 0; pass < 2; pass++)
-  {
-   for (float reach = 80; reach <= 160; reach += 40)
-   {
-    foreach (float lateral : laterals)
-    {
-     if (pass == 1 && lateral != 0) continue;
-     vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
-     if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemyPos))) continue;
-     if (!ACR_Fortify.Order(candidate, sample, refusal, enemyPos)) continue;
-     candidate.m_iAITask = ACR_EAITask.FORTIFY;
-     string fit = "";
-     if (pass == 0) fit = ", its upgrades fit";
-     PrintFormat("[ACR] AI %1: %2 digging in on the approach to %3 at %4%5", m_sFaction, candidate.GetName(), front.m_sName, sample, fit);
-     return;
-    }
-   }
-  }
+  return candidate;
  }
 
  // ---------------------------------------------------------------- hand-over

@@ -89,10 +89,13 @@ class ACR_Fortify
 
  static bool Enabled() { return ACR_LogisticsRules.Choice("acrFortify", "1") != "0"; }
  static bool AIUses() { return ACR_Options.Flag("acrFortifyAI"); }
- // Defenders held in reserve at a position of this tier: tier II 2, tier III 4 by default
- // (-acrFortifyDefenders2 / -acrFortifyDefenders3, 0 = none, at most 12).
+ // Defenders held in reserve at a position of this tier: tier I 1, tier II 2, tier III 4 by
+ // default (-acrFortifyDefenders1 / 2 / 3, 0 = none, at most 12). (Tier I had none: an AI's hasty
+ // position stood empty once its squad moved on, playtest 25 Oct.)
  static int Defenders(int tier)
  {
+  if (tier <= 0) return 0;
+  if (tier == 1) return Math.ClampInt(ACR_LogisticsRules.Choice("acrFortifyDefenders1", "1").ToInt(), 0, 12);
   if (tier == 2) return Math.ClampInt(ACR_LogisticsRules.Choice("acrFortifyDefenders2", "2").ToInt(), 0, 12);
   if (tier >= 3) return Math.ClampInt(ACR_LogisticsRules.Choice("acrFortifyDefenders3", "4").ToInt(), 0, 12);
   return 0;

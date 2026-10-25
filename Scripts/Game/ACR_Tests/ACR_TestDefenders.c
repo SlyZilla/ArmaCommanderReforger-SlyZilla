@@ -1,5 +1,5 @@
 // -acrDefendersTest 1 (server-capable, ~1 min): defenders for Fortify positions. A position built
-// at tier I, II and III (straight from plans, no work): none at tier I, 2 in reserve at tier II,
+// at tier I, II and III (straight from plans, no work): 1 in reserve at tier I, 2 at tier II,
 // 4 at tier III, the option sizes; an enemy fire team (holding its fire) 300 m out deploys them
 // (their own group, not a squad, defending the position); one killed, then every enemy dead:
 // they pack up with 3 back in reserve; a position that is gone takes its reserve with it.
@@ -49,7 +49,7 @@ class ACR_TestDefenders
    }
    string why;
    s_Fort = BuildTier(alpha, site, why);
-   ACR_TestRegress.Check("defenders: a tier I position has none", s_Fort && s_Fort.m_iTier == 1 && !s_Fort.m_Defenders, string.Format("position %1 (%2)", s_Fort != null, why));
+   ACR_TestRegress.Check("defenders: a tier I position holds 1 in reserve", s_Fort && s_Fort.m_iTier == 1 && s_Fort.m_Defenders && s_Fort.m_Defenders.m_iReserve == 1, string.Format("position %1 (%2), reserve %3", s_Fort != null, why, ReserveOf(s_Fort)));
    if (!s_Fort) { ACR_TestRegress.Abort("defenders", "tier I not built: " + why); return; }
    bool second = BuildTier(alpha, s_Fort.m_vPos, why) == s_Fort && s_Fort.m_iTier == 2;
    s_Post = s_Fort.m_Defenders;
@@ -57,12 +57,14 @@ class ACR_TestDefenders
    bool third = BuildTier(alpha, s_Fort.m_vPos, why) == s_Fort && s_Fort.m_iTier == 3;
    ACR_TestRegress.Check("defenders: tier III adds the difference (4 in reserve)", third && s_Post && s_Post.m_iReserve == 4, string.Format("tier %1 (%2), reserve %3", s_Fort.m_iTier, why, Reserve()));
    // The sizes are options.
+   ACR_Options.Set("acrFortifyDefenders1", "0");
    ACR_Options.Set("acrFortifyDefenders2", "0");
    ACR_Options.Set("acrFortifyDefenders3", "20");
    bool sized = ACR_Fortify.Defenders(1) == 0 && ACR_Fortify.Defenders(2) == 0 && ACR_Fortify.Defenders(3) == 12;
+   ACR_Options.Unset("acrFortifyDefenders1");
    ACR_Options.Unset("acrFortifyDefenders2");
    ACR_Options.Unset("acrFortifyDefenders3");
-   ACR_TestRegress.Check("defenders: the sizes per tier are options (0 none, at most 12)", sized && ACR_Fortify.Defenders(2) == 2 && ACR_Fortify.Defenders(3) == 4, "");
+   ACR_TestRegress.Check("defenders: the sizes per tier are options (0 none, at most 12)", sized && ACR_Fortify.Defenders(0) == 0 && ACR_Fortify.Defenders(1) == 1 && ACR_Fortify.Defenders(2) == 2 && ACR_Fortify.Defenders(3) == 4, "");
    // An enemy fire team 300 m out.
    vector enemyAt = ACR_Manager.Ground(s_Fort.m_vPos + Vector(300, 0, 0));
    s_Enemy = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(h.FireTeamOf(manager, s_sEnemy), enemyAt));
@@ -151,6 +153,12 @@ class ACR_TestDefenders
  {
   if (!s_Post) return -1;
   return s_Post.m_iReserve;
+ }
+
+ protected static int ReserveOf(ACR_Fortification fort)
+ {
+  if (!fort || !fort.m_Defenders) return -1;
+  return fort.m_Defenders.m_iReserve;
  }
 
  protected static void HoldFire(SCR_AIGroup group)

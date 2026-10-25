@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrAIBuildShare", "acrCapScale", "acrHoldGuns", "acrFortify", "acrFortifyAI", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
   foreach (string name : names)
   {
    string value;
@@ -157,6 +157,8 @@ class ACR_MissionHeader : SCR_MissionHeader
  int m_iAcrFortify;
  [Attribute("-1", UIWidgets.EditBox, "AI commanders fortify: 0 default, 1 enables (-acrFortifyAI)")]
  int m_iAcrFortifyAI;
+ [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a Fortify tier I position: 1 default, 0 none (-acrFortifyDefenders1)")]
+ int m_iAcrFortifyDefenders1;
  [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a Fortify tier II position: 2 default, 0 none (-acrFortifyDefenders2)")]
  int m_iAcrFortifyDefenders2;
  [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a Fortify tier III position: 4 default, 0 none (-acrFortifyDefenders3)")]
@@ -203,6 +205,7 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrMinesAI", m_iAcrMinesAI);
   Number(values, "acrFortify", m_iAcrFortify);
   Number(values, "acrFortifyAI", m_iAcrFortifyAI);
+  Number(values, "acrFortifyDefenders1", m_iAcrFortifyDefenders1);
   Number(values, "acrFortifyDefenders2", m_iAcrFortifyDefenders2);
   Number(values, "acrFortifyDefenders3", m_iAcrFortifyDefenders3);
   Number(values, "acrRoadblockDefenders", m_iAcrRoadblockDefenders);
