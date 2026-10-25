@@ -5,10 +5,11 @@
 // either order; a builder holds what it built while fewer
 // than its doctrine's holders do, and a lower cap keeps those holding longest; a tier I position
 // holds a defender; with no free squad near a front base, one 1 km out still builds a roadblock,
-// lays a field and digs in.
+// lays a field and digs in; a Fortress's holder goes to defend a base outnumbered there, and stays
+// while it isn't.
 class ACR_TestAIDefences
 {
- static const int CHECKS = 14;
+ static const int CHECKS = 16;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -216,12 +217,80 @@ class ACR_TestAIDefences
   ACR_TestRegress.Check("aidefences: a tier I position holds 1 defender (tier II 2)", tierOne, string.Format("tier I %1, tier II %2", ACR_Fortify.Defenders(1), ACR_Fortify.Defenders(2)));
 
   FarBuilder(manager, ai, alpha, fronts, us, fortress);
+  OutnumberedHolder(manager, ai, bravo, fronts, fortress);
   ACR_TestRegress.Complete("aidefences", CHECKS);
+ }
+
+ // 12-13. Review of #16: holders go when their side is outnumbered at a threatened base, a
+ // Fortress's too. Bravo holds a roadblock near our first front base, every other squad of ours is
+ // busy; with threat 6 against defence 2 there it is sent to defend the base; with 5 against 5
+ // (still short of 1.1x, not outnumbered) a Fortress's holder stays.
+ protected static void OutnumberedHolder(ACR_Manager manager, ACR_AICommander ai, ACR_Squad bravo, array<ACR_Base> fronts, ACR_AIDoctrine fortress)
+ {
+  string goesName = "aidefences: a Fortress's holder defends a base its side is outnumbered at";
+  string staysName = "aidefences: a Fortress's holder stays while its side isn't outnumbered there";
+  if (fronts.IsEmpty() || !bravo.GetAnchor())
+  {
+   ACR_TestRegress.Skip(goesName, "no front base");
+   ACR_TestRegress.Skip(staysName, "no front base");
+   return;
+  }
+  ACR_Base base = fronts[0];
+  array<ACR_Squad> others = {};
+  array<int> tasks = {};
+  foreach (ACR_Squad other : manager.m_Squads)
+  {
+   if (!other || other == bravo || !other.GetFaction() || other.GetFaction().GetFactionKey() != "US") continue;
+   others.Insert(other);
+   tasks.Insert(other.m_iAITask);
+   other.m_iAITask = ACR_EAITask.ATTACK;
+  }
+  ai.SetDoctrineForTest(fortress);
+  float gap = vector.DistanceXZ(bravo.GetAnchor().GetOrigin(), base.GetOrigin());
+
+  Hold(bravo);
+  ai.SetThreatForTest(base, 6, 2);
+  ai.AssignDefendersForTest();
+  bool went = bravo.m_iAITask == ACR_EAITask.DEFEND && bravo.m_AITarget == base;
+  string wentDetail = string.Format("threat 6, defence 2, Bravo %1 m from %2: task %3", (int)gap, base.m_sName, typename.EnumToString(ACR_EAITask, bravo.m_iAITask));
+  Unhold(bravo);
+
+  Hold(bravo);
+  ai.SetThreatForTest(base, 5, 5);
+  ai.AssignDefendersForTest();
+  bool stayed = bravo.m_iAITask == ACR_EAITask.ROADBLOCK && ACR_AICommander.IsHolder(bravo);
+  string stayedDetail = string.Format("threat 5, defence 5: task %1", typename.EnumToString(ACR_EAITask, bravo.m_iAITask));
+  Unhold(bravo);
+  ai.SetThreatForTest(base, 0, 0);
+
+  foreach (int i, ACR_Squad squad : others)
+  {
+   if (squad) squad.m_iAITask = tasks[i];
+  }
+  ACR_TestRegress.Check(goesName, went, wentDetail);
+  ACR_TestRegress.Check(staysName, stayed, stayedDetail);
+ }
+
+ protected static void Hold(ACR_Squad squad)
+ {
+  squad.m_iAITask = ACR_EAITask.ROADBLOCK;
+  squad.m_ActiveRoadblock = new ACR_Roadblock();
+  squad.SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+ }
+
+ protected static void Unhold(ACR_Squad squad)
+ {
+  squad.m_ActiveRoadblock = null;
+  squad.m_iAITask = ACR_EAITask.FREE;
+  squad.m_AITarget = null;
+  squad.Halt("Holding");
  }
 
  // 9-11. No free squad near any front base: every other squad of ours busy, Alpha's leader 1 km
  // from the first and 650 m or more from all of them (pn5, 25 Oct: no AI field or USSR position all
- // game, 11 notes of a roadblock site waiting for a free squad within 450 m). It still builds each.
+ // game, 11 notes of a roadblock site waiting for a free squad within 450 m). It still builds each:
+// at once on foot, or, with a truck free to take it (over the doctrine's ride distance), once out
+// of its ride (the ride cancelled here, as if it had been dropped where it stands).
  protected static void FarBuilder(ACR_Manager manager, ACR_AICommander ai, ACR_Squad alpha, array<ACR_Base> fronts, ACR_FactionData us, ACR_AIDoctrine fortress)
  {
   string roadblockName = "aidefences: with no free squad near a front base, one 1 km out establishes the roadblock";
@@ -270,6 +339,7 @@ class ACR_TestAIDefences
   ai.StartTickForTest();
   ai.ResetBuildTimersForTest();
   ai.ManageRoadblocks();
+  string rideRoadblock = Arrive(manager, ai, alpha);
   bool roadblock = alpha.m_iAITask == ACR_EAITask.ROADBLOCK && alpha.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK;
   alpha.Halt("Holding");
 
@@ -279,6 +349,7 @@ class ACR_TestAIDefences
   ai.StartTickForTest();
   ai.ResetBuildTimersForTest();
   ai.ManageMinefields();
+  string rideMines = Arrive(manager, ai, alpha);
   ACR_Options.Unset("acrMinesAI");
   bool mines = alpha.m_iAITask == ACR_EAITask.MINES && alpha.m_MinePlan != null;
   alpha.Halt("Holding");
@@ -289,6 +360,7 @@ class ACR_TestAIDefences
   ai.StartTickForTest();
   ai.ResetBuildTimersForTest();
   ai.ManageFortify();
+  string rideDig = Arrive(manager, ai, alpha);
   ACR_Options.Unset("acrFortifyAI");
   bool dig = alpha.m_iAITask == ACR_EAITask.FORTIFY && alpha.m_FortifyPlan != null;
   alpha.Halt("Holding");
@@ -299,9 +371,20 @@ class ACR_TestAIDefences
   {
    if (squad) squad.m_iAITask = tasks[i];
   }
-  ACR_TestRegress.Check(roadblockName, roadblock, where);
-  ACR_TestRegress.Check(minesName, mines, where);
-  ACR_TestRegress.Check(fortifyName, dig, where);
+  ACR_TestRegress.Check(roadblockName, roadblock, where + rideRoadblock);
+  ACR_TestRegress.Check(minesName, mines, where + rideMines);
+  ACR_TestRegress.Check(fortifyName, dig, where + rideDig);
+ }
+
+ // A squad sent to ride out to a build: its ride called off (as if it had been dropped where it
+ // stands) and the pending job given. Says which way it went.
+ protected static string Arrive(ACR_Manager manager, ACR_AICommander ai, ACR_Squad squad)
+ {
+  if (!ai.PendingBuildForTest(squad)) return ", on foot";
+  manager.m_Rides.CancelFor(squad);
+  ai.StartTickForTest();
+  ai.ManagePendingBuildsForTest();
+  return ", by ride (the job given once out of it)";
  }
 
  protected static vector LayingAt(ACR_Manager manager)

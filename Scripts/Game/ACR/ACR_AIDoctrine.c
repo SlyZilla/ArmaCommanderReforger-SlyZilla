@@ -51,7 +51,7 @@ class ACR_AIDoctrine : Managed
  int m_iFortifyPositions = 2;   // most fortified positions it digs (it upgrades them first)
  float m_fBuildShare = 1;       // x the build budget's share of income and its trickle
  int m_iHolders = 2;            // most builders that stay on what they built
- bool m_bHoldersStay;           // its holders aren't sent to defend bases (else a last resort)
+ bool m_bHoldersStay;           // its holders defend a base only when outnumbered there (else also as a last resort)
  float m_fFobFront = 1500;      // m from the nearest deploy base before a front base wants a FOB
  float m_fFireBaseSeconds = 240; // s a base of fire supports before it joins the assault
  float m_fPocketScore = 2.5;    // x attack score of FIA pockets in the way (lower = sooner)

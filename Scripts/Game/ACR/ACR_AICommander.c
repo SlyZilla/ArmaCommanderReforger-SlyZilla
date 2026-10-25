@@ -822,6 +822,19 @@ class ACR_AIAttack
 // under threat, attacks the weakest enemy or empty border base, posts idle
 // squads to the front, and spends RP on reinforcements. It stands down while a
 // player of its faction is in command.
+// A build job a far squad rides out to (ACR_AICommander.RideToBuild): given, and paid, once it is
+// out at the drop.
+class ACR_PendingBuild
+{
+ ACR_Squad m_Squad;
+ int m_iTask;        // ACR_EAITask.ROADBLOCK, MINES or FORTIFY
+ ACR_Base m_Base;    // the front base it is for
+ vector m_vEnemy;    // that base's enemy base
+ vector m_vSite;     // a roadblock's road site (m_fYaw its facing); else where the ride goes (the base)
+ float m_fYaw;
+ float m_fDeadline;  // world ms
+}
+
 class ACR_AICommander : Managed
 {
  static const int TICK_SECONDS = 15;          // STRATEGY_TICK
@@ -1010,6 +1023,7 @@ class ACR_AICommander : Managed
   ManageFobBuild();
   ManageFobUpgrades();
   int beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
+  ManagePendingBuilds();
   ManageRoadblocks();
   SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
   beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
@@ -1529,6 +1543,19 @@ class ACR_AICommander : Managed
 
  protected int DefenceOf(ACR_Base base) { int v; m_Defence.Find(base, v); return v; }
  protected int ThreatTo(ACR_Base base) { int v; m_Threat.Find(base, v); return v; }
+ void SetThreatForTest(ACR_Base base, int threat, int defence) { m_Threat.Set(base, threat); m_Defence.Set(base, defence); }
+ void AssignDefendersForTest() { AssignDefenders(); }
+
+ // The AI-led squads of ours holding a roadblock or position within 'reach' of 'pos' (added to 'into').
+ protected void HoldersNear(vector pos, float reach, notnull array<ACR_Squad> into)
+ {
+  foreach (ACR_Squad holder : m_Manager.m_Squads)
+  {
+   if (!IsHolder(holder) || !holder.GetFaction() || holder.GetFaction().GetFactionKey() != m_sFaction || holder.HasPlayer() || holder.m_Commander != 0) continue;
+   if (vector.DistanceXZ(PositionOf(holder), pos) > reach) continue;
+   into.Insert(holder);
+  }
+ }
 
  // ---------------------------------------------------------------- 2. defence
 
@@ -1567,20 +1594,34 @@ class ACR_AICommander : Managed
    if (threat > defence * CONCEDE_RATIO * m_Doctrine.m_fConcedeRatio && defence > 0) continue; // lost cause
    float needed = threat * DEFENSE_RATIO * m_Doctrine.m_fDefenseRatio - defence;
    if (needed <= 0) continue;
-   SortByDistance(free, base.GetOrigin());
+   // Outnumbered there (the attackers outweigh all we have within DEFENSE_DISTANCE, its garrison
+   // included): the squads holding our roadblocks and positions nearby go too, nearest first with
+   // the free squads and before the reserve, a Fortress's included (review of #16: on a weak side,
+   // holders that stay lock its few squads into static positions). Else they go only as a last
+   // resort, below.
+   bool outnumbered = threat > defence;
+   array<ACR_Squad> pool = {};
+   foreach (ACR_Squad spare : free) pool.Insert(spare);
+   if (outnumbered) HoldersNear(base.GetOrigin(), DEFENSE_DISTANCE * 3, pool);
+   SortByDistance(pool, base.GetOrigin());
    int k = 0;
-   while (k < free.Count() && needed > 0)
+   while (k < pool.Count() && needed > 0)
    {
-    ACR_Squad squad = free[k];
+    ACR_Squad squad = pool[k];
     if (vector.DistanceXZ(PositionOf(squad), base.GetOrigin()) > DEFENSE_DISTANCE * 3) { k++; continue; }
     if (IsSupportTeam(squad) && free.Count() > 1) { k++; continue; }
+    bool holding = IsHolder(squad);
     squad.SetMode(ACR_EMoveMode.FAST);
     Travel(squad, base.GetOrigin(), true, 0);
     squad.m_iAITask = ACR_EAITask.DEFEND;
     squad.m_AITarget = base;
     needed -= squad.Strength();
-    free.RemoveOrdered(k);
-    PrintFormat("[ACR] AI %1: %2 defends %3 (threat %4)", m_sFaction, squad.GetName(), base.m_sName, threat);
+    pool.RemoveOrdered(k);
+    free.RemoveItem(squad);
+    if (holding)
+     PrintFormat("[ACR] AI %1: %2 leaves what it holds to defend %3 (threat %4, outnumbered: defence %5)", m_sFaction, squad.GetName(), base.m_sName, threat, defence);
+    else
+     PrintFormat("[ACR] AI %1: %2 defends %3 (threat %4)", m_sFaction, squad.GetName(), base.m_sName, threat);
    }
    if (needed > 0 && m_ReserveSquad && !m_ReserveSquad.HasPlayer() && m_ReserveSquad.CountAlive() > 0 && m_ReserveSquad.KnownEnemies(250) == 0)
    {
@@ -1594,13 +1635,13 @@ class ACR_AICommander : Managed
     PrintFormat("[ACR] AI %1: QRF reserve %2 committed to defend %3 (threat %4)", m_sFaction, qrf.GetName(), base.m_sName, threat);
    }
    // Still short: the builders holding our roadblocks and positions nearby, as a last resort
-   // (never a Fortress's, whose defences stay manned).
+   // (never a Fortress's while it isn't outnumbered there: its defences stay manned).
    if (needed <= 0 || m_Doctrine.m_bHoldersStay) continue;
-   foreach (ACR_Squad holder : m_Manager.m_Squads)
+   array<ACR_Squad> holders = {};
+   HoldersNear(base.GetOrigin(), DEFENSE_DISTANCE * 3, holders);
+   foreach (ACR_Squad holder : holders)
    {
     if (needed <= 0) break;
-    if (!IsHolder(holder) || !holder.GetFaction() || holder.GetFaction().GetFactionKey() != m_sFaction || holder.HasPlayer() || holder.m_Commander != 0) continue;
-    if (vector.DistanceXZ(PositionOf(holder), base.GetOrigin()) > DEFENSE_DISTANCE * 3) continue;
     holder.SetMode(ACR_EMoveMode.FAST);
     Travel(holder, base.GetOrigin(), true, 0);
     holder.m_iAITask = ACR_EAITask.DEFEND;
@@ -4482,7 +4523,7 @@ class ACR_AICommander : Managed
    if (!squad || squad.m_iAITask != ACR_EAITask.ROADBLOCK) continue;
    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
    if (squad.m_Commander != 0 || squad.HasPlayer()) continue;
-   if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) continue;
+   if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || PendingBuildOf(squad)) continue;
    if (squad.m_ActiveRoadblock && KeepsHolding(squad)) continue;
    squad.m_iAITask = ACR_EAITask.POSTED;
    PrintFormat("[ACR] AI %1: %2 available for reassignment after roadblock construction", m_sFaction, squad.GetName());
@@ -4501,8 +4542,8 @@ class ACR_AICommander : Managed
 
  // A builder stays on what it built while it holds it (its order), is fit to fight, and fewer
  // than the doctrine's m_iHolders other squads of ours fit to hold have held theirs longer:
- // those aren't sent on attacks, and defend a base only as a last resort (AssignDefenders; a
- // Fortress's never). Counting all the other holders instead released every one of them when a
+ // those aren't sent on attacks, and defend a base when outnumbered there or as a last resort
+ // (AssignDefenders; a Fortress's only when outnumbered). Counting all the other holders instead released every one of them when a
  // doctrine switch lowered the cap below their number (Fortress 4 -> Firepower 2: each saw 3).
  protected bool KeepsHolding(ACR_Squad squad)
  {
@@ -4602,6 +4643,7 @@ class ACR_AICommander : Managed
   {
    if (builder && builder.m_iAITask == ACR_EAITask.ROADBLOCK && builder.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK && builder.GetFaction() && builder.GetFaction().GetFactionKey() == m_sFaction) return;
   }
+  if (PendingBuilds(ACR_EAITask.ROADBLOCK) > 0) return;
 
   ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
   if (!aiWorld || !aiWorld.GetRoadNetworkManager()) return;
@@ -4666,6 +4708,11 @@ class ACR_AICommander : Managed
      NoteBuild("roadblock squad " + frontlineBase.m_sName, string.Format("[ACR] AI %1: a roadblock site at %2 waits for a free squad within %3 m", m_sFaction, frontlineBase.m_sName, FAR_BUILDER));
      continue;
     }
+    if (RideToBuild(candidate, ACR_EAITask.ROADBLOCK, frontlineBase, enemyBasePos, targetRoadPos, targetYaw))
+    {
+     PrintFormat("[ACR] AI %1: %2 rides out to a roadblock site on the approach to %3 at %4: of %5 road sites, %6", m_sFaction, candidate.GetName(), frontlineBase.m_sName, targetRoadPos, considered, ACR_RoadblockSiting.Breakdown(site));
+     return;
+    }
     if (!candidate.EstablishRoadblock(targetRoadPos, targetYaw, ACR_ERoadblockType.MEDIUM, false))
     {
      NoteBuild("roadblock order " + frontlineBase.m_sName, string.Format("[ACR] AI %1: %2 can't take the roadblock order at %3", m_sFaction, candidate.GetName(), frontlineBase.m_sName));
@@ -4706,6 +4753,107 @@ class ACR_AICommander : Managed
   return string.Format(" (none nearer: from %1 m away)", (int)d);
  }
 
+ // A far builder (more than the doctrine's m_fRideDistance from 'site') rides out in a truck when
+ // one is free: the job is given, and paid, once the squad is out at the drop (ManagePendingBuilds;
+ // a job given aboard would end the ride at once). False: no ride needed or none to be had, the
+ // job is given now and the squad walks.
+ protected ref array<ref ACR_PendingBuild> m_aPendingBuilds = {};
+ protected bool RideToBuild(ACR_Squad squad, int task, ACR_Base base, vector enemy, vector site, float yaw)
+ {
+  if (!m_Manager.m_Rides || squad.IsMounted()) return false;
+  float distance = vector.DistanceXZ(PositionOf(squad), site);
+  if (distance <= m_Doctrine.m_fRideDistance) return false;
+  string why;
+  if (!m_Manager.m_Rides.Request(squad, site, 0, ACR_Squad.WP_MOVE, -1, "Riding out to build", 0, why, true))
+  {
+   NoteBuild("ride " + squad.GetName(), string.Format("[ACR] AI %1: no ride for %2 to build at %3, %4 m out (%5): it walks", m_sFaction, squad.GetName(), base.m_sName, (int)distance, why));
+   return false;
+  }
+  ACR_PendingBuild pending = new ACR_PendingBuild();
+  pending.m_Squad = squad;
+  pending.m_iTask = task;
+  pending.m_Base = base;
+  pending.m_vEnemy = enemy;
+  pending.m_vSite = site;
+  pending.m_fYaw = yaw;
+  pending.m_fDeadline = GetGame().GetWorld().GetWorldTime() + distance / ACR_Minefields.TRAVEL_SPEED * 1000 + ACR_Squad.FOB_GIVE_UP_MS;
+  m_aPendingBuilds.Insert(pending);
+  squad.m_iAITask = task;
+  if (task != ACR_EAITask.ROADBLOCK) PrintFormat("[ACR] AI %1: %2 rides out to %3 to %4 there (%5 m)", m_sFaction, squad.GetName(), base.m_sName, BuildName(task), (int)distance);
+  return true;
+ }
+
+ protected static string BuildName(int task)
+ {
+  if (task == ACR_EAITask.ROADBLOCK) return "build a roadblock";
+  if (task == ACR_EAITask.MINES) return "lay a minefield";
+  return "dig in";
+ }
+
+ protected ACR_PendingBuild PendingBuildOf(ACR_Squad squad)
+ {
+  foreach (ACR_PendingBuild pending : m_aPendingBuilds)
+  {
+   if (pending.m_Squad == squad) return pending;
+  }
+  return null;
+ }
+
+ protected int PendingBuilds(int task)
+ {
+  int count;
+  foreach (ACR_PendingBuild pending : m_aPendingBuilds)
+  {
+   if (pending.m_iTask == task) count++;
+  }
+  return count;
+ }
+
+ // Squads riding out to build: once out of the truck (the ride over, or fallen through and it
+ // walked on), the job as if it stood there; given up past the deadline, or when the squad was
+ // re-tasked, taken over or its base lost.
+ protected void ManagePendingBuilds()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  for (int i = m_aPendingBuilds.Count() - 1; i >= 0; i--)
+  {
+   ACR_PendingBuild pending = m_aPendingBuilds[i];
+   ACR_Squad squad = pending.m_Squad;
+   string what = BuildName(pending.m_iTask);
+   bool gone = !squad || !m_Manager.m_Squads.Contains(squad) || squad.CountAlive() <= 0 || squad.HasPlayer() || squad.m_Commander != 0 || squad.m_iAITask != pending.m_iTask;
+   if (gone || !pending.m_Base || pending.m_Base.m_sOwner != m_sFaction || now > pending.m_fDeadline)
+   {
+    m_aPendingBuilds.Remove(i);
+    if (gone) continue;
+    squad.m_iAITask = ACR_EAITask.POSTED;
+    PrintFormat("[ACR] AI %1: %2 no longer rides out to %3 (base lost or past its deadline)", m_sFaction, squad.GetName(), what);
+    continue;
+   }
+   if (m_Manager.m_Rides.RideOf(squad) || squad.IsMounted()) continue;
+   m_aPendingBuilds.Remove(i);
+   string from = string.Format(" (out of its ride, %1 m from %2)", (int)vector.DistanceXZ(PositionOf(squad), pending.m_Base.GetOrigin()), pending.m_Base.m_sName);
+   bool ordered;
+   if (pending.m_iTask == ACR_EAITask.ROADBLOCK)
+   {
+    ordered = CanBuild(ACR_Roadblocks.ROADBLOCK_COST, 25) && squad.EstablishRoadblock(pending.m_vSite, pending.m_fYaw, ACR_ERoadblockType.MEDIUM, false);
+    if (ordered) PrintFormat("[ACR] AI %1: %2%3 establishing the roadblock at %4", m_sFaction, squad.GetName(), from, pending.m_vSite);
+   }
+   else if (pending.m_iTask == ACR_EAITask.MINES)
+   {
+    ordered = CanBuild(ACR_Minefields.Cost(ACR_EMineKind.MIXED), 30) && LayMines(squad, pending.m_Base, pending.m_vEnemy, from);
+   }
+   else
+   {
+    ordered = CanBuild(ACR_Fortify.Cost(1), 30) && DigIn(squad, pending.m_Base, pending.m_vEnemy, from);
+   }
+   if (ordered) continue;
+   squad.m_iAITask = ACR_EAITask.POSTED;
+   PrintFormat("[ACR] AI %1: %2 out of its ride, but no %3 now (RP or site)", m_sFaction, squad.GetName(), what);
+  }
+ }
+ void ManagePendingBuildsForTest() { ManagePendingBuilds(); }
+ bool PendingBuildForTest(ACR_Squad squad) { return PendingBuildOf(squad) != null; }
+
  // Minefields on the approaches (-acrMinesAI 1; off by default). Every 30 s, one field at a
  // time, while it has fewer than its doctrine's m_iMinefields down and engineering can pay: at the
  // first of our front bases with no field of ours within 300 m, a free infantry squad within 600 m
@@ -4716,7 +4864,7 @@ class ACR_AICommander : Managed
  {
   foreach (ACR_Squad layer : m_Manager.m_Squads)
   {
-   if (!layer || layer.m_iAITask != ACR_EAITask.MINES || layer.m_MinePlan) continue;
+   if (!layer || layer.m_iAITask != ACR_EAITask.MINES || layer.m_MinePlan || PendingBuildOf(layer)) continue;
    if (!layer.GetFaction() || layer.GetFaction().GetFactionKey() != m_sFaction) continue;
    layer.m_iAITask = ACR_EAITask.POSTED;
    PrintFormat("[ACR] AI %1: %2 available for reassignment after laying mines", m_sFaction, layer.GetName());
@@ -4744,6 +4892,7 @@ class ACR_AICommander : Managed
   {
    if (laying && laying.m_MinePlan && laying.GetFaction() && laying.GetFaction().GetFactionKey() == m_sFaction) return;
   }
+  if (PendingBuilds(ACR_EAITask.MINES) > 0) return;
 
   array<ACR_Base> fronts = {};
   array<vector> enemies = {};
@@ -4780,39 +4929,49 @@ class ACR_AICommander : Managed
     continue;
    }
 
-   vector toEnemy = enemies[f] - front.GetOrigin();
-   toEnemy[1] = 0;
-   toEnemy.Normalize();
-   array<vector> samples = {};
-   MineSamples(front.GetOrigin(), toEnemy, samples);
-   int crowded = 0;
-   int refused = 0;
-   string refusal = "";
-   foreach (vector sample : samples)
-   {
-    if (!ClearOfOwnDefences(sample))
-    {
-     crowded++;
-     continue;
-    }
-    vector roadPoint, roadDir;
-    float roadWidth;
-    ACR_EMineKind kind = ACR_EMineKind.AP;
-    if (ACR_Minefields.Snap(sample, ACR_Minefields.ROAD_SNAP, roadPoint, roadDir, roadWidth)) kind = ACR_EMineKind.MIXED;
-    if (!ACR_Minefields.Order(candidate, kind, sample, refusal))
-    {
-     refused++;
-     continue;
-    }
-    candidate.m_iAITask = ACR_EAITask.MINES;
-    PrintFormat("[ACR] AI %1: %2%3 laying %4 on the approach to %5 at %6", m_sFaction, candidate.GetName(), FromFar(candidate, front.GetOrigin(), 600), ACR_Minefields.Name(kind), front.m_sName, sample);
-    return;
-   }
-   string why = string.Format("%1 of %2 spots too near our own defences or bases", crowded, samples.Count());
-   if (refused > 0) why += string.Format(", %1 refused (last: %2)", refused, refusal);
-   NoteBuild("mines site " + front.m_sName, string.Format("[ACR] AI %1: no minefield site at %2: %3", m_sFaction, front.m_sName, why));
+   if (RideToBuild(candidate, ACR_EAITask.MINES, front, enemies[f], front.GetOrigin(), 0)) return;
+   if (LayMines(candidate, front, enemies[f], FromFar(candidate, front.GetOrigin(), 600))) return;
   }
  }
+
+ // Lays a field round 'front' with 'candidate' (MineSamples: the first spot it may lay at); true
+ // if ordered, else notes why not.
+ protected bool LayMines(ACR_Squad candidate, ACR_Base front, vector enemyPos, string from)
+ {
+  vector toEnemy = enemyPos - front.GetOrigin();
+  toEnemy[1] = 0;
+  toEnemy.Normalize();
+  array<vector> samples = {};
+  MineSamples(front.GetOrigin(), toEnemy, samples);
+  int crowded = 0;
+  int refused = 0;
+  string refusal = "";
+  foreach (vector sample : samples)
+  {
+   if (!ClearOfOwnDefences(sample))
+   {
+    crowded++;
+    continue;
+   }
+   vector roadPoint, roadDir;
+   float roadWidth;
+   ACR_EMineKind kind = ACR_EMineKind.AP;
+   if (ACR_Minefields.Snap(sample, ACR_Minefields.ROAD_SNAP, roadPoint, roadDir, roadWidth)) kind = ACR_EMineKind.MIXED;
+   if (!ACR_Minefields.Order(candidate, kind, sample, refusal))
+   {
+    refused++;
+    continue;
+   }
+   candidate.m_iAITask = ACR_EAITask.MINES;
+   PrintFormat("[ACR] AI %1: %2%3 laying %4 on the approach to %5 at %6", m_sFaction, candidate.GetName(), from, ACR_Minefields.Name(kind), front.m_sName, sample);
+   return true;
+  }
+  string why = string.Format("%1 of %2 spots too near our own defences or bases", crowded, samples.Count());
+  if (refused > 0) why += string.Format(", %1 refused (last: %2)", refused, refusal);
+  NoteBuild("mines site " + front.m_sName, string.Format("[ACR] AI %1: no minefield site at %2: %3", m_sFaction, front.m_sName, why));
+  return false;
+ }
+
  // Our defences keep apart (playtest 25 Oct: twice an AI minefield 10 m from one of its own
  // positions, laid or dug in either order; the AI is spared its own mines, its players are not):
  // a field's centre DEFENCE_STANDOFF m from our positions and roadblocks (also those on their way)
@@ -4830,6 +4989,10 @@ class ACR_AICommander : Managed
    if (!squad || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
    if (squad.m_FortifyPlan && vector.DistanceXZ(squad.m_FortifyPlan.m_vSite, pos) < DEFENCE_STANDOFF) return false;
    if (squad.RoadblockPending() && vector.DistanceXZ(squad.m_vRoadblockSite, pos) < DEFENCE_STANDOFF) return false;
+  }
+  foreach (ACR_PendingBuild pending : m_aPendingBuilds)
+  {
+   if (pending.m_iTask == ACR_EAITask.ROADBLOCK && vector.DistanceXZ(pending.m_vSite, pos) < DEFENCE_STANDOFF) return false;
   }
   foreach (ACR_Base base : ACR_Base.s_All)
   {
@@ -4902,7 +5065,7 @@ class ACR_AICommander : Managed
  {
   foreach (ACR_Squad digger : m_Manager.m_Squads)
   {
-   if (!digger || digger.m_iAITask != ACR_EAITask.FORTIFY || digger.m_FortifyPlan) continue;
+   if (!digger || digger.m_iAITask != ACR_EAITask.FORTIFY || digger.m_FortifyPlan || PendingBuildOf(digger)) continue;
    if (!digger.GetFaction() || digger.GetFaction().GetFactionKey() != m_sFaction) continue;
    if (digger.m_Fortification && KeepsHolding(digger)) continue;
    digger.m_iAITask = ACR_EAITask.POSTED;
@@ -4921,6 +5084,7 @@ class ACR_AICommander : Managed
   {
    if (busy && busy.m_FortifyPlan && busy.GetFaction() && busy.GetFaction().GetFactionKey() == m_sFaction) return;
   }
+  if (PendingBuilds(ACR_EAITask.FORTIFY) > 0) return;
   array<ACR_Base> fronts = {};
   array<vector> enemies = {};
   FrontBases(fronts, enemies, FRONT_BASES);
@@ -4975,48 +5139,59 @@ class ACR_AICommander : Managed
     NoteBuild("fortify squad " + front.m_sName, string.Format("[ACR] AI %1: a position at %2 waits for a free squad within %3 m", m_sFaction, front.m_sName, FAR_BUILDER));
     continue;
    }
-   vector toEnemy = enemies[f] - front.GetOrigin();
-   toEnemy[1] = 0;
-   toEnemy.Normalize();
-   vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
-   // First a site where tiers II and III would fit as well (its upgrades then go in), then any
-   // that takes tier I; on the line out and DEFENCE_STANDOFF to either side, never within
-   // DEFENCE_STANDOFF of our own fields.
-   array<float> laterals = {0, -DEFENCE_STANDOFF, DEFENCE_STANDOFF};
-   int spots = 0;
-   int nearFields = 0;
-   int refused = 0;
-   for (int pass = 0; pass < 2; pass++)
+   if (RideToBuild(candidate, ACR_EAITask.FORTIFY, front, enemies[f], front.GetOrigin(), 0)) return;
+   if (DigIn(candidate, front, enemies[f], FromFar(candidate, front.GetOrigin(), FORTIFY_NEAR))) return;
+  }
+ }
+
+ // Digs 'candidate' in 80-160 m out from 'front' towards 'enemyPos' (first where its upgrades fit,
+ // on the line out and DEFENCE_STANDOFF to either side, clear of our fields); true if ordered, else
+ // notes why not.
+ protected bool DigIn(ACR_Squad candidate, ACR_Base front, vector enemyPos, string from)
+ {
+  string refusal = "";
+  vector toEnemy = enemyPos - front.GetOrigin();
+  toEnemy[1] = 0;
+  toEnemy.Normalize();
+  vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
+  // First a site where tiers II and III would fit as well (its upgrades then go in), then any
+  // that takes tier I; on the line out and DEFENCE_STANDOFF to either side, never within
+  // DEFENCE_STANDOFF of our own fields.
+  array<float> laterals = {0, -DEFENCE_STANDOFF, DEFENCE_STANDOFF};
+  int spots = 0;
+  int nearFields = 0;
+  int refused = 0;
+  for (int pass = 0; pass < 2; pass++)
+  {
+   foreach (float lateral : laterals)
    {
-    foreach (float lateral : laterals)
+    for (float reach = 80; reach <= 160; reach += 40)
     {
-     for (float reach = 80; reach <= 160; reach += 40)
+     vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
+     if (pass == 0) spots++;
+     if (ACR_Minefields.FieldNear(m_sFaction, sample, DEFENCE_STANDOFF))
      {
-      vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
-      if (pass == 0) spots++;
-      if (ACR_Minefields.FieldNear(m_sFaction, sample, DEFENCE_STANDOFF))
-      {
-       if (pass == 0) nearFields++;
-       continue;
-      }
-      if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemies[f]))) continue;
-      if (!ACR_Fortify.Order(candidate, sample, refusal, enemies[f]))
-      {
-       refused++;
-       continue;
-      }
-      candidate.m_iAITask = ACR_EAITask.FORTIFY;
-      string fit = "";
-      if (pass == 0) fit = ", its upgrades fit";
-      PrintFormat("[ACR] AI %1: %2%3 digging in on the approach to %4 at %5%6", m_sFaction, candidate.GetName(), FromFar(candidate, front.GetOrigin(), FORTIFY_NEAR), front.m_sName, sample, fit);
-      return;
+      if (pass == 0) nearFields++;
+      continue;
      }
+     if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemyPos))) continue;
+     if (!ACR_Fortify.Order(candidate, sample, refusal, enemyPos))
+     {
+      refused++;
+      continue;
+     }
+     candidate.m_iAITask = ACR_EAITask.FORTIFY;
+     string fit = "";
+     if (pass == 0) fit = ", its upgrades fit";
+     PrintFormat("[ACR] AI %1: %2%3 digging in on the approach to %4 at %5%6", m_sFaction, candidate.GetName(), from, front.m_sName, sample, fit);
+     return true;
     }
    }
-   string why = string.Format("%1 of %2 spots near our own fields", nearFields, spots);
-   if (refused > 0) why += string.Format(", %1 refused (last: %2)", refused, refusal);
-   NoteBuild("fortify site " + front.m_sName, string.Format("[ACR] AI %1: no position site at %2: %3", m_sFaction, front.m_sName, why));
   }
+  string why = string.Format("%1 of %2 spots near our own fields", nearFields, spots);
+  if (refused > 0) why += string.Format(", %1 refused (last: %2)", refused, refusal);
+  NoteBuild("fortify site " + front.m_sName, string.Format("[ACR] AI %1: no position site at %2: %3", m_sFaction, front.m_sName, why));
+  return false;
  }
 
  // The squad of ours holding this position, if any.
