@@ -4,7 +4,7 @@
 // and at what the side holds; engineering spending comes out of it.
 class ACR_TestBuildBudget
 {
- static const int CHECKS = 5;
+ static const int CHECKS = 6;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -55,6 +55,13 @@ class ACR_TestBuildBudget
   bool clamped = ACR_AICommander.BuildShare() == 30;
   ACR_Options.Unset("acrAIBuildShare");
   ACR_TestRegress.Check("budget: the share is at most 30%", clamped, "");
+
+  // The setup screen's row: off by default, 15% when set.
+  string offRow = ACR_Setup.Rows();
+  ACR_Options.Set("acrAIBuildShare", "15");
+  string onRow = ACR_Setup.Rows();
+  ACR_Options.Unset("acrAIBuildShare");
+  ACR_TestRegress.Check("budget: a setup row, off by default", offRow.Contains("aibuild\tAI build budget: off") && onRow.Contains("aibuild\tAI build budget: 15% of income") && ACR_Setup.Option("aibuild") == "acrAIBuildShare", "");
   ACR_TestRegress.Complete("budget", CHECKS);
  }
 }

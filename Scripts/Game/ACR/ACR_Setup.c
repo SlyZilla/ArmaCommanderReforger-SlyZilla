@@ -206,7 +206,7 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "startrp", "income", "shared", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
   foreach (string key : keys)
   {
    if (key == "seed" && !generated) continue;
@@ -243,6 +243,7 @@ class ACR_Setup
   if (key == "doctrineeast") return "Red AI doctrine";
   if (key == "doctrineadapt") return "AI doctrines adapt";
   if (key == "unitcap") return "AI squad cap";
+  if (key == "aibuild") return "AI build budget";
   if (key == "startrp") return "Starting RP";
   if (key == "income") return "Income";
   if (key == "shared") return "Shared command";
@@ -301,6 +302,7 @@ class ACR_Setup
   else if (key == "doctrinewest" || key == "doctrineeast") values = {"", "random", "balanced", "blitz", "firepower", "fortress", "raider"};
   else if (key == "doctrineadapt") values = {"1", "0"};
   else if (key == "unitcap") values = {"", "4", "6", "8", "12", "16", "24"};
+  else if (key == "aibuild") values = {"0", "10", "15", "25"};
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
   else if (key == "income") values = {"", "0.5", "1", "1.5", "2", "3"};
   else if (key == "shared") values = {"1", "0"};
@@ -326,6 +328,7 @@ class ACR_Setup
   if (key == "doctrineeast") return "acrDoctrineEast";
   if (key == "doctrineadapt") return "acrDoctrineAdapt";
   if (key == "unitcap") return "acrUnitCap";
+  if (key == "aibuild") return "acrAIBuildShare";
   if (key == "startrp") return "acrStartRP";
   if (key == "income") return "acrIncome";
   if (key == "shared") return "acrSharedCommand";
@@ -382,6 +385,7 @@ class ACR_Setup
    if (key == "rpservice") return "3";
    if (key == "mines" || key == "doctrineadapt" || key == "fortify") return "1";
    if (key == "minesreal" || key == "minesai" || key == "fortifyai") return "0";
+   if (key == "aibuild") return "0";
   }
   if (key == "threat" && value == "") return "normal";
   if (key == "pricing" && value == "") return "";
@@ -443,6 +447,8 @@ class ACR_Setup
   if (key == "reinforcement" && value == "settlements") return "settlements + deployment bases";
   if (key == "reinforcement" && value == "deployment") return "deployment bases only";
   if (key == "reinforcement" && value == "all") return "all reinforcement-enabled points";
+  if (key == "aibuild" && value == "0") return "off";
+  if (key == "aibuild") return value + "% of income";
   if (key == "minesreal" && value == "1") return "dangerous to all";
   if (key == "minesreal") return "safe for our AI";
   if (key == "shared" || key == "fobrelay" || key == "mines" || key == "minesai" || key == "fortify" || key == "fortifyai")
@@ -844,7 +850,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  // The tab a row belongs to; rows nobody sorted yet land on the first tab, where they are seen.
  static int Tab(string key)
  {
-  if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap") return 1;
+  if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "aibuild") return 1;
   if (key == "pricing" || key == "startrp" || key == "income") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
   if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai") return 4;
