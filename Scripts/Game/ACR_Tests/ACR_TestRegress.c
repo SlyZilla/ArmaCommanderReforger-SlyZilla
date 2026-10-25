@@ -996,7 +996,7 @@ class ACR_TestRegress
  static void RecoveryChecks(ACR_Manager manager, IEntity truck)
  {
   ACR_Squad squad = manager.FindSquadByGroup(s_RecoveryGroup);
-  bool queuedKept, restored, halted;
+  bool queuedKept, restored, halted, heldGoes;
   if (squad && squad.GetAnchor())
   {
    vector first = ACR_Manager.Ground(squad.GetAnchor().GetOrigin() + Vector(600, 0, 0));
@@ -1016,11 +1016,17 @@ class ACR_TestRegress
    squad.Halt("Holding");
    squad.Tactics(50, GetGame().GetWorld().GetWorldTime() + 11000);
    halted = !squad.m_Group.GetCurrentWaypoint() && squad.OrderState() == ACR_EOrderState.HOLD;
+   // Holding where it arrived (the hold Defend never completes): a Shift + right-click goes now.
+   squad.IssueWaypoint(ACR_Squad.WP_DEFEND, squad.GetAnchor().GetOrigin(), 20);
+   squad.SetOrder("Holding position", ACR_EOrderState.DEFEND);
+   squad.Queue(first, false);
+   heldGoes = squad.m_Order == "Moving" && squad.m_MoveTarget == first && squad.m_Group.GetCurrentWaypoint() != null;
    if (truck) squad.BoardCargo(truck, 10000, true, true);
   }
   Check("dropped waypoint keeps the queued destination behind the current move", queuedKept, "no silent skip");
   Check("dropped move is reissued without changing issuer or order serial", restored, "recovery preserves attribution");
   Check("Halt never recovers an old move", halted, "explicit cancellation");
+  Check("a Shift + right-click on a squad holding where it arrived sends it at once", heldGoes, "not queued behind the hold for good");
   ACR_FeedFrame frame = ACR_MapFeed.Build(manager, GetGame().GetFactionManager().GetFactionByKey("US"));
   int count = frame.m_Leaders.Count();
   Check("friendly map feed keeps all parallel marker arrays aligned", frame.m_LeaderPos.Count() == count && frame.m_GroupNames.Count() == count && frame.m_Symbols.Count() == count * 4 && frame.m_Status.Count() == count * 6 && frame.m_GroupIds.Count() == count && frame.m_Commandable.Count() == count && frame.m_LeaderStates.Count() == count && frame.m_Details.Count() == count, count.ToString());
