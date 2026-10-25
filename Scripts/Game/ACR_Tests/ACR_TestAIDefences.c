@@ -3,10 +3,12 @@
 // front bases nearest the enemy first; no second minefield where a squad of ours is already on its
 // way to lay one, and the AI sends one layer at a time; its fields and positions keep 60 m apart,
 // either order; a builder holds what it built while fewer
-// than its doctrine's holders do; a tier I position holds a defender.
+// than its doctrine's holders do, and a lower cap keeps those holding longest; a tier I position
+// holds a defender; with no free squad near a front base, one 1 km out still builds a roadblock,
+// lays a field and digs in.
 class ACR_TestAIDefences
 {
- static const int CHECKS = 10;
+ static const int CHECKS = 14;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -183,10 +185,123 @@ class ACR_TestAIDefences
   bravo.Halt("Holding");
   ACR_TestRegress.Check("aidefences: a builder holds its roadblock while fewer than its doctrine's holders do (none allowed: posted again)", held && released, string.Format("held %1, released %2", held, released));
 
+  // 7b. A cap lowered below the holders (a doctrine switch, Fortress 4 -> Firepower 2) keeps those
+  // holding longest: each counted all the others before, so every holder was released.
+  float now = GetGame().GetWorld().GetWorldTime();
+  array<ACR_Squad> pair = {alpha, bravo};
+  foreach (ACR_Squad holder : pair)
+  {
+   holder.m_iAITask = ACR_EAITask.ROADBLOCK;
+   holder.m_ActiveRoadblock = new ACR_Roadblock();
+   holder.SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+  }
+  alpha.m_fOrderedAt = now - 60000;
+  bravo.m_fOrderedAt = now;
+  ACR_AIDoctrine oneHolder = new ACR_AIDoctrine();
+  oneHolder.m_iHolders = 1;
+  ai.SetDoctrineForTest(oneHolder);
+  ai.ReleaseBuildersForTest();
+  bool oldestStays = alpha.m_iAITask == ACR_EAITask.ROADBLOCK && bravo.m_iAITask == ACR_EAITask.POSTED;
+  string holdDetail = string.Format("cap 1 of 2 holders: Alpha (longer) task %1, Bravo task %2", typename.EnumToString(ACR_EAITask, alpha.m_iAITask), typename.EnumToString(ACR_EAITask, bravo.m_iAITask));
+  foreach (ACR_Squad holder2 : pair)
+  {
+   holder2.m_ActiveRoadblock = null;
+   holder2.m_iAITask = ACR_EAITask.FREE;
+   holder2.Halt("Holding");
+  }
+  ACR_TestRegress.Check("aidefences: a cap lowered below the holders keeps those holding longest (not none)", oldestStays, holdDetail);
+
   // 8. A tier I position holds a defender.
   bool tierOne = ACR_Fortify.Defenders(0) == 0 && ACR_Fortify.Defenders(1) == 1 && ACR_Fortify.Defenders(2) == 2;
   ACR_TestRegress.Check("aidefences: a tier I position holds 1 defender (tier II 2)", tierOne, string.Format("tier I %1, tier II %2", ACR_Fortify.Defenders(1), ACR_Fortify.Defenders(2)));
+
+  FarBuilder(manager, ai, alpha, fronts, us, fortress);
   ACR_TestRegress.Complete("aidefences", CHECKS);
+ }
+
+ // 9-11. No free squad near any front base: every other squad of ours busy, Alpha's leader 1 km
+ // from the first and 650 m or more from all of them (pn5, 25 Oct: no AI field or USSR position all
+ // game, 11 notes of a roadblock site waiting for a free squad within 450 m). It still builds each.
+ protected static void FarBuilder(ACR_Manager manager, ACR_AICommander ai, ACR_Squad alpha, array<ACR_Base> fronts, ACR_FactionData us, ACR_AIDoctrine fortress)
+ {
+  string roadblockName = "aidefences: with no free squad near a front base, one 1 km out establishes the roadblock";
+  string minesName = "aidefences: with no free squad near a front base, one 1 km out lays the field";
+  string fortifyName = "aidefences: with no free squad near a front base, one 1 km out digs the position";
+  vector spot;
+  bool found = false;
+  for (int k = 0; k < 16 && !found && !fronts.IsEmpty(); k++)
+  {
+   float angle = k * 22.5 * Math.DEG2RAD;
+   vector at = ACR_Manager.Ground(fronts[0].GetOrigin() + Vector(Math.Sin(angle) * 1000, 0, Math.Cos(angle) * 1000));
+   if (at[1] < 2) continue;
+   bool clear = true;
+   foreach (ACR_Base front : fronts)
+   {
+    if (vector.DistanceXZ(at, front.GetOrigin()) < 650) clear = false;
+   }
+   if (!clear) continue;
+   spot = at;
+   found = true;
+  }
+  IEntity anchor = alpha.GetAnchor();
+  if (!found || !anchor)
+  {
+   ACR_TestRegress.Skip(roadblockName, "no dry spot 1 km from the first front base and 650 m from every front base");
+   ACR_TestRegress.Skip(minesName, "no dry spot");
+   ACR_TestRegress.Skip(fortifyName, "no dry spot");
+   return;
+  }
+  array<ACR_Squad> others = {};
+  array<int> tasks = {};
+  foreach (ACR_Squad other : manager.m_Squads)
+  {
+   if (!other || other == alpha || !other.GetFaction() || other.GetFaction().GetFactionKey() != "US") continue;
+   others.Insert(other);
+   tasks.Insert(other.m_iAITask);
+   other.m_iAITask = ACR_EAITask.ATTACK;
+  }
+  vector home = anchor.GetOrigin();
+  anchor.SetOrigin(spot);
+  ai.SetDoctrineForTest(fortress);
+  string where = string.Format("Alpha %1 m from %2", (int)vector.DistanceXZ(spot, fronts[0].GetOrigin()), fronts[0].m_sName);
+
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  us.m_iRP = 500;
+  ai.StartTickForTest();
+  ai.ResetBuildTimersForTest();
+  ai.ManageRoadblocks();
+  bool roadblock = alpha.m_iAITask == ACR_EAITask.ROADBLOCK && alpha.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK;
+  alpha.Halt("Holding");
+
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  ACR_Options.Set("acrMinesAI", "1");
+  us.m_iRP = 500;
+  ai.StartTickForTest();
+  ai.ResetBuildTimersForTest();
+  ai.ManageMinefields();
+  ACR_Options.Unset("acrMinesAI");
+  bool mines = alpha.m_iAITask == ACR_EAITask.MINES && alpha.m_MinePlan != null;
+  alpha.Halt("Holding");
+
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  ACR_Options.Set("acrFortifyAI", "1");
+  us.m_iRP = 500;
+  ai.StartTickForTest();
+  ai.ResetBuildTimersForTest();
+  ai.ManageFortify();
+  ACR_Options.Unset("acrFortifyAI");
+  bool dig = alpha.m_iAITask == ACR_EAITask.FORTIFY && alpha.m_FortifyPlan != null;
+  alpha.Halt("Holding");
+
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  anchor.SetOrigin(home);
+  foreach (int i, ACR_Squad squad : others)
+  {
+   if (squad) squad.m_iAITask = tasks[i];
+  }
+  ACR_TestRegress.Check(roadblockName, roadblock, where);
+  ACR_TestRegress.Check(minesName, mines, where);
+  ACR_TestRegress.Check(fortifyName, dig, where);
  }
 
  protected static vector LayingAt(ACR_Manager manager)
