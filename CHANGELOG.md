@@ -4,7 +4,7 @@
 
 - Shift + right-click on a squad that is holding where it arrived now sends it there at once. Before, the point was queued behind its hold, which never ends, so it never went (the panel said "waypoint added" and the squad stood still).
 
-- The setup screen's settings come in pages that fit the screen, so every row can be reached as more options are added. Before, the list could run off a 1080p screen, hiding "Show the layout on the map" and the way to the logistics page.
+- The setup screen is sorted into tabs: **Battlefield** (sides, battlefield, seed, the map preview, FIA resistance and threat), **Commanders**, **Economy**, **Logistics** and **Engineers**. The map preview now sits right under the seed it shows, and a line at the top sums up the match (sides, battlefield, seed) from every tab. Before, the list could run off a 1080p screen, and the map preview was a page away from the seed. A screen too short for a tab still gets a page button.
 
 - Minefield, roadblock and Fortify orders given to a squad still riding in a vehicle now carry on once the squad is out. Before, getting out cancelled the order and refunded it.
 
