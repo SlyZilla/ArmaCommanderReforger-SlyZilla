@@ -71,6 +71,8 @@ class ACR_TestHarness : Managed
  static const int MODE_AIM = 62; // 55-61: patrol, ambush, QRF, FOB AI, defenders, budget, cap scale (own branches)
  static const int MODE_SQUADAI = 63; // 59-62: defenders, budget, cap scale, aim (own branches)
  static const int MODE_GUNHOLD = 64; // 52-63: Fortify, roadblocks, patrol, ambush, QRF, FOB AI, defenders, budget, cap scale, aim, squad AI (own branches)
+ static const int MODE_DEFENDERS = 59;
+ static const int MODE_BUDGET = 60;
  static const int MODE_AIDEFENCES = 65;
 
  ACR_TestRange m_Range;
@@ -133,10 +135,6 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRideJobTest", flag)) mode = MODE_RIDEJOB;
   if (System.GetCLIParam("acrDefendersTest", flag)) mode = MODE_DEFENDERS;
   if (System.GetCLIParam("acrBuildBudgetTest", flag)) mode = MODE_BUDGET;
-  if (System.GetCLIParam("acrCapScaleTest", flag)) mode = MODE_CAPSCALE;
-  if (System.GetCLIParam("acrAimTest", flag)) mode = MODE_AIM;
-  if (System.GetCLIParam("acrSquadAITest", flag)) mode = MODE_SQUADAI;
-  if (System.GetCLIParam("acrGunHoldTest", flag)) mode = MODE_GUNHOLD;
   if (System.GetCLIParam("acrAIDefencesTest", flag)) mode = MODE_AIDEFENCES;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
@@ -257,10 +255,6 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_RIDEJOB) { ACR_TestRideJob.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_DEFENDERS) { ACR_TestDefenders.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BUDGET) { ACR_TestBuildBudget.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_CAPSCALE) { ACR_TestCapScale.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_AIM) { ACR_TestAim.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_SQUADAI) { ACR_TestSquadAI.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_GUNHOLD) { ACR_TestGunHold.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_AIDEFENCES) { ACR_TestAIDefences.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }

@@ -109,9 +109,6 @@ fortify|-acrFortifyTest 1|420
 fortifyfit|-acrFortifyFitTest 1|200
 ridejob|-acrRideJobTest 1|340
 budget|-acrBuildBudgetTest 1|120
-capscale|-acrCapScaleTest 1|120
-squadai|-acrSquadAITest 1|200
-gunhold|-acrGunHoldTest 1|200
 aidefences|-acrAIDefencesTest 1|120
 bbbfiremaneuver|-acrBbbFireManeuverTest 1|500|Worlds/BBB_TestArland.ent
 bbbfiremaneuverperf|-acrBbbFireManeuverPerfTest 1|160|Worlds/BBB_TestArland.ent
