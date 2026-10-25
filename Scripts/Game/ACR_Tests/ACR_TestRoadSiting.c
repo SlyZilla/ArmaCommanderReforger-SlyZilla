@@ -11,10 +11,12 @@
 // - never fewer roadblocks: at every base where the old first-fit found a site the new siting
 //   does too; with the fan finding nothing it falls back to the first-fit, and below its floor
 //   the best is still taken;
+// - on the enemy's road route (BBB_Roads) a site scores more, the route's points are candidates (the
+//   real routes are logged: on the test range every one is a long way round, which drivers skip);
 // - ManageRoadblocks sends a free squad to the scored site.
 class ACR_TestRoadSiting
 {
- static const int CHECKS = 7;
+ static const int CHECKS = 8;
  static const float MIN_SIGHT = 80;
 
  static void Run(ACR_TestHarness h, int tick)
@@ -52,6 +54,34 @@ class ACR_TestRoadSiting
   PrintFormat("[ACR] ROADSITING old first-fit site for %1: %2", fronts[0].m_sName, ACR_RoadblockSiting.Breakdown(ACR_RoadblockSiting.FirstFit(basePos, enemyPos, "US")));
   bool good = best && best.m_fBreak >= ACR_RoadblockSiting.JUNCTION_CLEAR && best.m_fSight >= MIN_SIGHT && best.m_fFacing > 0.3;
   ACR_TestRegress.Check("roadsiting: the AI's site keeps 30 m from junctions and road ends, sees 80 m down the road and faces the enemy", good, string.Format("%1 at %2 of %3 sites: %4 %5", fronts[0].m_sName, PosOf(best), considered, ACR_RoadblockSiting.Breakdown(best), none));
+
+  // 1b. The enemy's road route (BBB_Roads): where the bases have a sensible one, the site is on
+  // it; where the road is a long way round, BBB's drivers go direct and the fan covers that.
+  string routeDetail;
+  bool routeUsed = RouteUsed(routeDetail);
+  PrintFormat("[ACR] ROADSITING road routes: %1 (%2)", routeUsed, routeDetail);
+  // The route's part of the score, with a route made up through the best site (on the test range
+  // every road route between bases is a long way round, which BBB's drivers don't take).
+  bool routeScored;
+  string routeScoreDetail = "no site";
+  if (best)
+  {
+   array<vector> madeUp = {enemyPos, best.m_vPos, basePos};
+   ACR_RoadSite again = ACR_RoadblockSiting.Describe(best.m_vPos, best.m_fYaw, basePos, enemyPos);
+   float plain = again.m_fScore;
+   ACR_RoadblockSiting.MarkRoute(again, madeUp);
+   array<vector> routeSamples = {};
+   ACR_RoadblockSiting.RouteSamples(madeUp, basePos, routeSamples);
+   bool inBand = !routeSamples.IsEmpty();
+   foreach (vector rs : routeSamples)
+   {
+    float fromBase = vector.DistanceXZ(rs, basePos);
+    if (fromBase < ACR_RoadblockSiting.NEAR_OUT || fromBase > ACR_RoadblockSiting.FAR_OUT) inBand = false;
+   }
+   routeScored = again.m_bOnRoute && Math.AbsFloat(again.m_fScore - plain - ACR_RoadblockSiting.ON_ROUTE) < 0.01 && inBand;
+   routeScoreDetail = string.Format("on it %1, score %2 -> %3, %4 route candidates 200-450 m out (all in the band %5)", again.m_bOnRoute, plain, again.m_fScore, routeSamples.Count(), inBand);
+  }
+  ACR_TestRegress.Check("roadsiting: a site on the enemy's road route scores more, and the route's points 200-450 m out are candidates", routeScored, routeScoreDetail);
 
   // 2. The cost: a base's first scoring, then the cached second look.
   int t1 = System.GetTickCount();
@@ -139,6 +169,34 @@ class ACR_TestRoadSiting
   {
    if (base && !base.m_bRetired) bases.Insert(base);
   }
+ }
+
+ // The bases and their nearest other base: the first pair with a sensible road route must have
+ // its site on that route; the pairs without one are counted.
+ protected static bool RouteUsed(out string detail)
+ {
+  array<ACR_Base> bases = {};
+  LiveBases(bases);
+  int longWay;
+  foreach (ACR_Base base : bases)
+  {
+   ACR_Base enemy = NearestOther(base, bases);
+   if (!enemy) continue;
+   int considered;
+   string none;
+   ACR_RoadSite site = ACR_RoadblockSiting.Best(base.GetOrigin(), enemy.GetOrigin(), "US", false, considered, none);
+   int length, ms;
+   if (!ACR_RoadblockSiting.RouteFor(base.GetOrigin(), enemy.GetOrigin(), "US", length, ms))
+   {
+    longWay++;
+    continue;
+   }
+   bool onRoute = site && site.m_bOnRoute;
+   detail = string.Format("%1 from %2: road route %3 m, %4 ms; site on it %5 (%6); %7 pairs before it a long way round", base.m_sName, enemy.m_sName, length, ms, onRoute, ACR_RoadblockSiting.Breakdown(site), longWay);
+   return onRoute && ms < 150;
+  }
+  detail = string.Format("no pair of %1 bases has a sensible road route (%2 a long way round: BBB's drivers go direct, the fan covers it)", bases.Count(), longWay);
+  return false;
  }
 
  // Every base and its nearest other base 600 m+ away: the old first-fit against the new siting.

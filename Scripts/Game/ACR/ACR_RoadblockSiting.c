@@ -10,7 +10,9 @@
 // - a junction, dead end or side road joining within JUNCTION_CLEAR m costs score, and the site
 //   is also tried that far along the road the other way (nudged);
 // - a road that already has one of our roadblocks on it costs score (a second road into a base
-//   first).
+//   first);
+// - on the enemy's road route to the base (BBB_Roads.Route) scores more, and that route's points
+//   200-450 m out are candidates too.
 // Better siting never means fewer roadblocks (the user: "they are already kinda rare"): scores
 // never refuse a site; below FLOOR the best valid one is still taken, and with no candidate at all
 // the old straight-line first-fit is tried. Scored candidates are kept per base for CACHE_S.
@@ -28,6 +30,7 @@ class ACR_RoadSite : Managed
  string m_sChoke;
  bool m_bNudged;         // moved along the road, away from a junction
  bool m_bBlocked;        // one of our roadblocks is on its road (set by Best)
+ bool m_bOnRoute;        // on the enemy's road route to the base
  string m_sHow;          // how Best picked it: "scored", "below the floor", "first-fit fallback"
 }
 
@@ -36,6 +39,8 @@ class ACR_RoadSiteCache : Managed
  float m_fAt;
  ref array<ref ACR_RoadSite> m_aSites = {};
  string m_sNone;         // why no candidate came up ("" some did)
+ ref array<vector> m_aRoute = {}; // the enemy's road route to the base (empty: none)
+ int m_iRouteMs;
 }
 
 class ACR_RoadblockSiting
@@ -49,6 +54,8 @@ class ACR_RoadblockSiting
  static const float NEAR_OUT = 200;
  static const float FAR_OUT = 450;
  static const float FLOOR = 3;            // below this the best is still taken, logged so
+ static const float ON_ROUTE = 2;         // the bonus for a site on the enemy's road route
+ static const float ROUTE_NEAR = 15;      // m from the route that counts as on it
  static float s_fFloor = FLOOR;           // tests raise it
  static bool s_bNoFanForTest;             // tests: the fan finds nothing (the first-fit fallback)
  static int s_iEvaluated;                 // tests and the log
@@ -96,6 +103,7 @@ class ACR_RoadblockSiting
   if (site.m_sChoke.Contains("woods")) score += 1;
   if (site.m_sChoke.Contains("town")) score -= 2;
   if (site.m_fBreak < JUNCTION_CLEAR) score -= 4 * (1 - site.m_fBreak / JUNCTION_CLEAR); // up to -4
+  if (site.m_bOnRoute) score += ON_ROUTE;
   return score;
  }
 
@@ -131,7 +139,14 @@ class ACR_RoadblockSiting
   cache = new ACR_RoadSiteCache();
   cache.m_fAt = now;
   array<vector> samples = {};
-  if (!s_bNoFanForTest) ACR_SiteScore.Fan(basePos, enemyPos, NEAR_OUT, FAR_OUT, 50, 45, 15, samples);
+  if (!s_bNoFanForTest)
+  {
+   ACR_SiteScore.Fan(basePos, enemyPos, NEAR_OUT, FAR_OUT, 50, 45, 15, samples);
+   // The way the enemy's vehicles would come: its road route to the base, sampled 200-450 m out.
+   int nodes;
+   if (BBB_Roads.Route(enemyPos, basePos, cache.m_aRoute, nodes, cache.m_iRouteMs)) RouteSamples(cache.m_aRoute, basePos, samples);
+   else cache.m_aRoute.Clear();
+  }
   map<string, int> refused = new map<string, int>();
   foreach (vector sample : samples)
   {
@@ -145,6 +160,7 @@ class ACR_RoadblockSiting
    }
    if (Seen(cache, pos)) continue;
    ACR_RoadSite site = Describe(pos, yaw, basePos, enemyPos);
+   MarkRoute(site, cache.m_aRoute);
    cache.m_aSites.Insert(site);
    // Near a junction: also the spot that far along the road the other way.
    if (site.m_Road && site.m_fBreak < JUNCTION_CLEAR)
@@ -159,6 +175,7 @@ class ACR_RoadblockSiting
     {
      ACR_RoadSite nudged = Describe(movedPos, movedYaw, basePos, enemyPos);
      nudged.m_bNudged = true;
+     MarkRoute(nudged, cache.m_aRoute);
      cache.m_aSites.Insert(nudged);
     }
    }
@@ -176,6 +193,43 @@ class ACR_RoadblockSiting
   none = cache.m_sNone;
   if (!s_bNoFanForTest) s_mCache.Set(key, cache);
   foreach (ACR_RoadSite fresh : cache.m_aSites) sites.Insert(fresh);
+ }
+
+ // Points every 25 m along the route (legs run from the enemy to the base) 200-450 m from the base.
+ static void RouteSamples(notnull array<vector> route, vector basePos, notnull array<vector> samples)
+ {
+  for (int i = 1; i < route.Count(); i++)
+  {
+   vector a = route[i - 1];
+   vector b = route[i];
+   float len = vector.DistanceXZ(a, b);
+   for (float s = 0; s < len; s += 25)
+   {
+    vector p = a + (b - a) * (s / Math.Max(len, 0.01));
+    float fromBase = vector.DistanceXZ(p, basePos);
+    if (fromBase >= NEAR_OUT && fromBase <= FAR_OUT) samples.Insert(p);
+   }
+  }
+ }
+
+ static void MarkRoute(ACR_RoadSite site, notnull array<vector> route)
+ {
+  if (route.Count() < 2) return;
+  site.m_bOnRoute = ACR_SiteScore.OnPath(site.m_vPos, route) <= ROUTE_NEAR;
+  site.m_fScore = Score(site);
+ }
+
+ // The enemy's road route cached for a base (false when none): its length and what it cost to find.
+ static bool RouteFor(vector basePos, vector enemyPos, string faction, out int length, out int ms)
+ {
+  string key = string.Format("%1|%2|%3", faction, Snap(basePos), Snap(enemyPos));
+  ACR_RoadSiteCache cache;
+  length = 0;
+  ms = 0;
+  if (!s_mCache.Find(key, cache) || cache.m_aRoute.Count() < 2) return false;
+  for (int i = 1; i < cache.m_aRoute.Count(); i++) length += vector.DistanceXZ(cache.m_aRoute[i - 1], cache.m_aRoute[i]);
+  ms = cache.m_iRouteMs;
+  return true;
  }
 
  protected static bool Seen(ACR_RoadSiteCache cache, vector pos)
@@ -276,6 +330,7 @@ class ACR_RoadblockSiting
   string extra = "";
   if (site.m_bNudged) extra += ", nudged off a junction";
   if (site.m_bBlocked) extra += ", its road already blocked";
+  if (site.m_bOnRoute) extra += ", on the enemy's road route";
   if (!site.m_sHow.IsEmpty()) extra += ", " + site.m_sHow;
   return string.Format("score %1 (sight %2 m, straight %3 m, faces enemy %4, width %5 m, %6 m out, nearest break %7, choke %8%9)", Math.Round(site.m_fScore * 10) / 10, (int)site.m_fSight, (int)straight, Math.Round(site.m_fFacing * 100) / 100, Math.Round(width * 10) / 10, (int)site.m_fOut, road, choke, extra);
  }

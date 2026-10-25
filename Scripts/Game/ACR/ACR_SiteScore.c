@@ -69,6 +69,7 @@ class ACR_SiteScore
  static const float CONNECT = 4;          // road pieces this close at their ends continue each other
  static const float STRAIGHT_TURN = 20;   // degrees
  static const float WALK = 400;           // m walked along a road each way
+ static const float TALL = 1000;          // road queries' box height (pieces' bounds don't sit at the ground)
  static int s_iRoadsLooked;               // tests and the log
 
  static RoadNetworkManager Roads()
@@ -201,7 +202,7 @@ class ACR_SiteScore
   RoadNetworkManager roads = Roads();
   if (!roads) return;
   array<BaseRoad> near = {};
-  roads.GetRoadsInAABB(end - Vector(CONNECT + 2, 50, CONNECT + 2), end + Vector(CONNECT + 2, 50, CONNECT + 2), near);
+  roads.GetRoadsInAABB(end - Vector(CONNECT + 2, TALL, CONNECT + 2), end + Vector(CONNECT + 2, TALL, CONNECT + 2), near);
   foreach (BaseRoad other : near)
   {
    if (!other || other == road) continue;
@@ -291,9 +292,10 @@ class ACR_SiteScore
  {
   RoadNetworkManager roads = Roads();
   if (!roads) return null;
+  // Real road pieces only (navlinks are the network's invisible junction links).
   BaseRoad road;
   float distance;
-  roads.GetClosestRoad(pos, road, distance);
+  roads.GetClosestRoad(pos, road, distance, true);
   if (!road) return null;
   s_iRoadsLooked++;
   ACR_RoadInfo info = new ACR_RoadInfo();
@@ -332,7 +334,7 @@ class ACR_SiteScore
   RoadNetworkManager roads = Roads();
   if (!roads) return WALK;
   array<BaseRoad> near = {};
-  roads.GetRoadsInAABB(pos - Vector(reach, 50, reach), pos + Vector(reach, 50, reach), near);
+  roads.GetRoadsInAABB(pos - Vector(reach, TALL, reach), pos + Vector(reach, TALL, reach), near);
   float best = WALK;
   foreach (BaseRoad other : near)
   {
