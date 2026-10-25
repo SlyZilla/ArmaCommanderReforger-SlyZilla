@@ -10,9 +10,11 @@
 // - The AI's site check (tiers II and III fit) finds a site near Alpha, and says no when blocked.
 // - A gun aims up a gentle rise a level trace runs into.
 // - A refusal after the work (something changed) is said in the side's feed, refunded.
+// - The playtest's two refused sites (Arland, facings from its log): the Airfield tier I's tier II
+//   goes in now; at Heide (a nest facing an 11 degree rise) the order and the build agree.
 class ACR_TestFortifyFit
 {
- static const int CHECKS = 10;
+ static const int CHECKS = 12;
  static int s_iStep;
  static int s_iStepAt;
  static int s_iRP;
@@ -44,6 +46,7 @@ class ACR_TestFortifyFit
   {
    ACR_Fortify.WORK_SCALE = 0.15;
    us.m_iRP = 500;
+   PlaytestSites(alpha);
    RoadChecks(alpha);
    NestChecks(alpha, us);
    SiteAndAimChecks(alpha);
@@ -108,6 +111,7 @@ class ACR_TestFortifyFit
   if (upgrade) built = ACR_Fortify.Build(upgrade, buildWhy);
   IEntity post = fort.m_aPieces[4];
   IEntity nest = fort.m_aPieces[2];
+  if (post) PrintFormat("[ACR] FORTIFYFIT covered post (tier II) reaches %1 m from its centre", Reach(post, post.GetOrigin()));
   bool offRoad = post && ClearOfRoads(post.GetOrigin(), ACR_Fortify.SpotRadius(4));
   float behind;
   if (post) behind = LocalZ(fort, post.GetOrigin());
@@ -176,7 +180,8 @@ class ACR_TestFortifyFit
   BaseRoad road;
   float distance;
   aiWorld.GetRoadNetworkManager().GetClosestRoad(pos, road, distance);
-  return !road || distance - road.GetWidth() * 0.5 >= radius + 1.0;
+  // Fortify's rule: the footprint keeps off the road surface (it may reach the edge).
+  return !road || distance - road.GetWidth() * 0.5 >= radius;
  }
 
  protected static float LocalZ(ACR_Fortification fort, vector pos)
@@ -324,6 +329,100 @@ class ACR_TestFortifyFit
   }
   detail = string.Format("no fixture (%1 candidates with rising ground)", candidates);
   return false;
+ }
+
+ // The two sites refused in the 25 Oct playtest (logs_2026-10-25_19-46-30), checked first while
+ // nothing else stands near them.
+ protected static void PlaytestSites(ACR_Squad alpha)
+ {
+  string detail;
+  ACR_Fortification airfield = TierOneAt(alpha, "1288.13 36.5863 2993.74", 71, detail);
+  string why;
+  ACR_FortifyPlan upgrade;
+  if (airfield) upgrade = ACR_Fortify.Plan(alpha, airfield.m_vPos, why);
+  ACR_Fortification built;
+  string buildWhy;
+  if (upgrade) built = ACR_Fortify.Build(upgrade, buildWhy);
+  string roads = RoadClearance("1288.13 36.5863 2993.74", 71);
+  ACR_TestRegress.Check("fortifyfit: playtest site, Airfield: tier II goes in now (its covered post was on the road)", built && built.m_iTier == 2, string.Format("%1; order '%2', build '%3'; %4", detail, why, buildWhy, roads));
+  ACR_Fortification heide = TierOneAt(alpha, "3034.92 19.8646 2682.11", -126, detail);
+  string heideWhy;
+  ACR_FortifyPlan heideUpgrade;
+  if (heide) heideUpgrade = ACR_Fortify.Plan(alpha, heide.m_vPos, heideWhy);
+  string heideBuildWhy;
+  ACR_Fortification heideBuilt;
+  if (heideUpgrade) heideBuilt = ACR_Fortify.Build(heideUpgrade, heideBuildWhy);
+  // Passed when ordered: the build goes in. Refused when ordered: nothing paid, the AI holds off.
+  bool agree = heide && ((heideUpgrade && heideBuilt) || (!heideUpgrade && heideWhy.StartsWith("upgrade not possible here") && ACR_Fortify.UpgradesHeld(heide)));
+  string outcome = "refused when ordered";
+  if (heideUpgrade) outcome = "passed when ordered";
+  ACR_TestRegress.Check("fortifyfit: playtest site, Heide: the order's check and the build agree (no paid upgrade refused later)", agree, string.Format("%1; %2 '%3', build '%4'", detail, outcome, heideWhy, heideBuildWhy));
+ }
+
+ // Diagnostics: the best road clearance (distance to the road's edge) among the covered post's
+ // places, near and wide, at a site.
+ protected static string RoadClearance(vector at, float yaw)
+ {
+  ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  if (!aiWorld || !aiWorld.GetRoadNetworkManager()) return "no road network";
+  vector site = ACR_Manager.Ground(at);
+  array<vector> offsets = {};
+  array<float> across = {0, 2, -2, 4, -4};
+  array<float> along = {0, -2, 2};
+  foreach (float dz : along)
+  {
+   foreach (float dx : across) offsets.Insert(Vector(dx, 0, dz));
+  }
+  ACR_Fortify.WideOffsets(4, offsets);
+  float best = -100;
+  vector bestOffset;
+  float atSpot;
+  foreach (int k, vector offset : offsets)
+  {
+   vector pos = ACR_Fortify.ToWorld(site, yaw, ACR_Fortify.SpotOffset(4) + offset);
+   BaseRoad road;
+   float distance;
+   aiWorld.GetRoadNetworkManager().GetClosestRoad(pos, road, distance);
+   float clear = 100;
+   if (road) clear = distance - road.GetWidth() * 0.5;
+   if (k == 0) atSpot = clear;
+   if (clear <= best) continue;
+   best = clear;
+   bestOffset = offset;
+  }
+  return string.Format("covered post road clearance: %1 m at its spot, best %2 m at offset %3 (needs %4)", atSpot, best, bestOffset, ACR_Fortify.SpotRadius(4));
+ }
+
+ // How far a composition's parts reach from 'centre' on the ground (its root has no bounds).
+ protected static float Reach(IEntity e, vector centre)
+ {
+  float most;
+  vector mins, maxs;
+  e.GetWorldBounds(mins, maxs);
+  if (maxs[0] > mins[0])
+  {
+   array<vector> corners = {Vector(mins[0], 0, mins[2]), Vector(mins[0], 0, maxs[2]), Vector(maxs[0], 0, mins[2]), Vector(maxs[0], 0, maxs[2])};
+   foreach (vector c : corners) most = Math.Max(most, vector.DistanceXZ(c, centre));
+  }
+  IEntity child = e.GetChildren();
+  while (child)
+  {
+   most = Math.Max(most, Reach(child, centre));
+   child = child.GetSibling();
+  }
+  return most;
+ }
+
+ protected static ACR_Fortification TierOneAt(ACR_Squad alpha, vector at, float yaw, out string detail)
+ {
+  vector site = ACR_Manager.Ground(at);
+  float rad = yaw * Math.DEG2RAD;
+  string why;
+  ACR_FortifyPlan plan = ACR_Fortify.Plan(alpha, site, why, site + Vector(Math.Sin(rad), 0, Math.Cos(rad)) * 100);
+  ACR_Fortification fort;
+  if (plan && plan.m_iTier == 1) fort = ACR_Fortify.Build(plan, why);
+  detail = string.Format("tier I at %1 facing %2: %3 (%4)", site, yaw, fort != null, why);
+  return fort;
  }
 
  protected static void NextStep(int tick)

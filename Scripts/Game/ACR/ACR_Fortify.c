@@ -416,7 +416,9 @@ class ACR_Fortify
      else candidate = ToWorld(site, yaw, around + offset);
      if (pass == 0 && !kept && !s_bSkipSpotChecksForTest && HardSurface(candidate)) continue;
      string why;
-     if (!s_bSkipSpotChecksForTest && !ACR_FobBuild.FootprintClear(candidate, SpotRadius(spot), ignore, why, true, MAX_RISE))
+     // A piece may reach a road's edge, not onto it (FOB buildings keep 1 m more for access; the
+     // playtest's Airfield covered post fitted only there).
+     if (!s_bSkipSpotChecksForTest && !ACR_FobBuild.FootprintClear(candidate, SpotRadius(spot), ignore, why, true, MAX_RISE, 0))
      {
       if (reason.IsEmpty()) reason = why;
       continue;
