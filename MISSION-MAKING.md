@@ -180,6 +180,34 @@ centre. The owning side's AI never sets off its own mines; its players do. USSR,
 FIA factions lay PMN-4 / TM-62M mines, the others M14 / M15. Hosts change the three options below
 on the startup Logistics settings page.
 
+### Roadblocks
+
+Infantry squads build roadblocks on the commander's orders (map panel: **Roadblock S**,
+**Roadblock M**, **Roadblock L**, **Barricade**, then right-click a road). The roadblock snaps to
+the road centre within 20 m of the click and faces the nearest enemy your side knows of within
+600 m, else the nearest enemy base your side can see, else along the road.
+
+| Order | Builds | RP | Truck supplies | Work |
+|---|---|---|---|---|
+| Roadblock S | small checkpoint, no machine gun | 12 | 75 | 35 s |
+| Roadblock M | checkpoint with a machine gun | 20 | 225 | 45 s |
+| Roadblock L | large checkpoint with a heavy machine gun | 30 | 350 | 70 s |
+| Barricade | barricade sized to the road (small up to 6 m wide, medium up to 9 m, else large), no gun | 8 | 40 | 25 s |
+
+USSR, Russian (also RHS AFRF) and SLA sides build the Soviet compositions, the others the US ones.
+FIA has no checkpoints: it builds log barricades sized to the road at the barricade's price, and
+its panel shows only **Barricade**. A construction truck within 50 m of the squad pays in supplies
+when it holds enough (never one another squad has reserved for a FOB); otherwise the side pays RP.
+Like any new order, a roadblock order replaces the squad's current job, and what that job gives
+back counts towards the price. An order called off before the roadblock goes in (a new order, Halt,
+the squad lost, 3 minutes at the road without progress, or a walk there that takes too long) is
+refunded where it was paid from; a destroyed truck's supplies are lost. Time while a regroup or a
+player has set the order aside doesn't count. The squad waits beside the road, clear of the spot.
+Work pauses in contact, and the roadblock goes in once no vehicle stands on the spot. The squad
+then holds it and mans its gun; the roadblock stays when the squad leaves. Roadblocks are refused
+within 120 m of a base and 180 m of another roadblock. AI commanders build medium checkpoints paid
+in RP, and the 3D commander camera's **Roadblock** button orders a medium checkpoint.
+
 ### AI world and navmesh
 
 On the `SCR_AIWorld` object, choose the navigation files for your terrain: one for soldiers (`NavmeshWorld`),

@@ -1505,8 +1505,15 @@ modded class SCR_PlayerController
   if (!canEstablishFob && m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB)
    m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   bool canRoadblock = friendly && (modeAndFlags & 64) != 0 && m_ACR_Data.m_Selected.Count() <= 1;
-  if (!canRoadblock && m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK)
+  int roadblock = ACR_CommandPanel.RoadblockOfMode(m_ACR_CursorMode);
+  if (!canRoadblock && roadblock >= 0)
+  {
    m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+   roadblock = -1;
+  }
+  string roadblockFaction = "";
+  Faction roadblockSide = SCR_FactionManager.SGetPlayerFaction(GetPlayerId());
+  if (roadblockSide) roadblockFaction = roadblockSide.GetFactionKey();
   bool canMines = friendly && (modeAndFlags & 128) != 0 && m_ACR_Data.m_Selected.Count() <= 1;
   if (!canMines && m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES)
    m_ACR_CursorMode = ACR_ECursorMode.MOVE;
@@ -1519,7 +1526,7 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.LZ) hint = "Right-click the landing zone: they jump out when their ride sets down there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) hint = "Right-click the destination: a free truck nearby picks them up and drops them there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) hint = "Right-click a clear site: establish forward base (click Establish FOB again to cancel)";
-  else if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK) hint = "Right-click a road: establish fortified roadblock (20 RP; click Roadblock again to cancel)";
+  else if (roadblock >= 0) hint = ACR_Roadblocks.Hint(roadblock, roadblockFaction);
   else if (m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES) hint = ACR_Minefields.Hint(ACR_Minefields.KindOfCursor(m_ACR_CursorMode));
   else hint = "Right-click: move there";
   string title = m_ACR_Data.m_GroupNames[index];
@@ -1543,7 +1550,7 @@ modded class SCR_PlayerController
   m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, modeAndFlags & 15, m_ACR_CursorMode, hint);
   m_ACR_Panel.SetGunner(friendly && (modeAndFlags & 16) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
   m_ACR_Panel.SetEstablishFob(canEstablishFob);
-  m_ACR_Panel.SetRoadblock(canRoadblock);
+  m_ACR_Panel.SetRoadblock(canRoadblock, !ACR_Roadblocks.IsFia(roadblockFaction));
   m_ACR_Panel.SetMines(canMines);
   // Also for a full squad low on ammo: inside a deploy base Reinforce restocks it
   // (the server says so when it isn't in one).
@@ -1601,10 +1608,10 @@ modded class SCR_PlayerController
     if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
     else m_ACR_CursorMode = ACR_ECursorMode.ESTABLISH_FOB;
     return;
-   case ACR_EPanelAction.ROADBLOCK:
-    if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
-    else m_ACR_CursorMode = ACR_ECursorMode.ROADBLOCK;
-    return;
+   case ACR_EPanelAction.ROADBLOCK: ACR_ToggleCursor(ACR_ECursorMode.ROADBLOCK); return;
+   case ACR_EPanelAction.ROADBLOCK_S: ACR_ToggleCursor(ACR_ECursorMode.ROADBLOCK_S); return;
+   case ACR_EPanelAction.ROADBLOCK_L: ACR_ToggleCursor(ACR_ECursorMode.ROADBLOCK_L); return;
+   case ACR_EPanelAction.BARRICADE: ACR_ToggleCursor(ACR_ECursorMode.BARRICADE); return;
    case ACR_EPanelAction.MINES_AP: ACR_ToggleCursor(ACR_ECursorMode.MINES_AP); return;
    case ACR_EPanelAction.MINES_AT: ACR_ToggleCursor(ACR_ECursorMode.MINES_AT); return;
    case ACR_EPanelAction.MINES_MIXED: ACR_ToggleCursor(ACR_ECursorMode.MINES_MIXED); return;
@@ -1739,6 +1746,9 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.MINES_AT) command = ACR_ERequest.ORDER_MINES_AT;
   if (m_ACR_CursorMode == ACR_ECursorMode.MINES_MIXED) command = ACR_ERequest.ORDER_MINES_MIXED;
   if (m_ACR_CursorMode == ACR_ECursorMode.DISARM_MINES) command = ACR_ERequest.ORDER_DISARM_MINES;
+  if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK_S) command = ACR_ERequest.ORDER_ROADBLOCK_S;
+  if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK_L) command = ACR_ERequest.ORDER_ROADBLOCK_L;
+  if (m_ACR_CursorMode == ACR_ECursorMode.BARRICADE) command = ACR_ERequest.ORDER_BARRICADE;
   vector target = Vector(x, 0, z);
   // Right-click on a spotted enemy: hunt it down.
   if (m_ACR_CursorMode == ACR_ECursorMode.MOVE && !append)

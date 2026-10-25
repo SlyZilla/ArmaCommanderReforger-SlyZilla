@@ -213,6 +213,9 @@ class ACR_Requests : Managed
    case ACR_ERequest.ORDER_MINES_AT: return "laying AT mines";
    case ACR_ERequest.ORDER_MINES_MIXED: return "laying mines";
    case ACR_ERequest.ORDER_DISARM_MINES: return "disarming mines";
+   case ACR_ERequest.ORDER_ROADBLOCK_S: return "establishing roadblock";
+   case ACR_ERequest.ORDER_ROADBLOCK_L: return "establishing roadblock";
+   case ACR_ERequest.ORDER_BARRICADE: return "building barricade";
   }
   return "moving";
  }
@@ -236,7 +239,7 @@ class ACR_Requests : Managed
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return outcome.Refuse("Only the commander can give map orders. Take command first.");
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return outcome.Refuse("That squad is not ready");
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB || command == ACR_ERequest.ORDER_ROADBLOCK || ACR_Minefields.IsRequest(command);
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB || ACR_Roadblocks.TypeOfRequest(command) >= 0 || ACR_Minefields.IsRequest(command);
   // Reject nonsense coordinates from a client.
   if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !ACR_Manager.OnMap(point))) return outcome.Refuse("Order is too far away");
   // Map clicks made inside Game Master / build mode are not orders (the client checks too).
@@ -258,6 +261,8 @@ class ACR_Requests : Managed
    PrintFormat("[ACR] MINEFIELD order player=%1 squad=%2 %3 at %4", pc.GetPlayerId(), name, ACR_Minefields.Name(mineKind), point);
    return outcome.Accept(name + ": " + OrderWords(command));
   }
+  int roadblock = ACR_Roadblocks.TypeOfRequest(command);
+  if (roadblock >= 0) return OrderRoadblock(pc, squad, point, roadblock, outcome);
   switch (command)
   {
    case ACR_ERequest.ADVANCE:
@@ -372,28 +377,31 @@ class ACR_Requests : Managed
     }
     return outcome.Refuse(name + ": unable to establish FOB");
    }
-   case ACR_ERequest.ORDER_ROADBLOCK:
-   {
-    string rbWhy;
-    if (!ACR_Roadblocks.CanOrder(squad, rbWhy)) return outcome.Refuse(name + ": " + rbWhy);
-    vector validRoadPos;
-    float validYaw;
-    string siteWhy;
-    string squadFaction = "";
-    if (squad.GetFaction()) squadFaction = squad.GetFaction().GetFactionKey();
-    // Face the threat, as the AI commander's roadblocks face the enemy base.
-    if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction, ACR_Intel.ThreatPoint(squadFaction, point))) return outcome.Refuse(name + ": " + siteWhy);
-    if (squad.EstablishRoadblock(validRoadPos, validYaw))
-    {
-     PrintFormat("[ACR] ESTABLISH ROADBLOCK player=%1 squad=%2 target=%3", pc.GetPlayerId(), name, validRoadPos);
-     return outcome.Accept(name + ": establishing roadblock");
-    }
-    return outcome.Refuse(name + ": unable to establish roadblock");
-   }
    default:
     return outcome.Refuse("Unknown command");
   }
   return outcome.Refuse(name + ": could not create that order");
+ }
+
+ // A roadblock order of any size (ACR_ERoadblockType).
+ protected ACR_OrderOutcome OrderRoadblock(SCR_PlayerController pc, ACR_Squad squad, vector point, int type, ACR_OrderOutcome outcome)
+ {
+  string name = squad.GetName();
+  string rbWhy;
+  if (!ACR_Roadblocks.CanOrder(squad, rbWhy, type)) return outcome.Refuse(name + ": " + rbWhy);
+  vector validRoadPos;
+  float validYaw;
+  string siteWhy;
+  string squadFaction = "";
+  if (squad.GetFaction()) squadFaction = squad.GetFaction().GetFactionKey();
+  // Face the threat, as the AI commander's roadblocks face the enemy base.
+  if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction, ACR_Intel.ThreatPoint(squadFaction, point))) return outcome.Refuse(name + ": " + siteWhy);
+  if (squad.EstablishRoadblock(validRoadPos, validYaw, type))
+  {
+   PrintFormat("[ACR] ESTABLISH ROADBLOCK player=%1 squad=%2 target=%3 type=%4", pc.GetPlayerId(), name, validRoadPos, ACR_Roadblocks.Name(squad.m_iRoadblockType));
+   return outcome.Accept(string.Format("%1: building %2", name, ACR_Roadblocks.Name(squad.m_iRoadblockType)));
+  }
+  return outcome.Refuse(name + ": unable to establish roadblock");
  }
 
  // A free transport nearby (never fetched from far away) picks the squad up,

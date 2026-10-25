@@ -32,6 +32,9 @@ enum ACR_EPanelAction
  MINES_AT,
  MINES_MIXED,
  DISARM_MINES,
+ ROADBLOCK_S,
+ ROADBLOCK_L,
+ BARRICADE,
  DEBUG_TOGGLE = 50,
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
@@ -48,11 +51,14 @@ enum ACR_ECursorMode
  RIDE,
  GARRISON,
  ESTABLISH_FOB,
- ROADBLOCK,
+ ROADBLOCK,   // medium checkpoint
  MINES_AP,    // MINES_AP..DISARM_MINES: the minefield orders (ACR_Minefields.KindOfCursor)
  MINES_AT,
  MINES_MIXED,
- DISARM_MINES
+ DISARM_MINES,
+ ROADBLOCK_S,
+ ROADBLOCK_L,
+ BARRICADE
 }
 
 // Arma Commander side panel on the fullscreen map. Built from script out of the
@@ -114,10 +120,11 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_RideButton;
  protected SCR_ButtonTextComponent m_EstablishFobButton;
  protected Widget m_EstablishFobWidget;
- protected SCR_ButtonTextComponent m_RoadblockButton;
+ protected ref array<SCR_ButtonTextComponent> m_RoadblockButtons = {}; // by ACR_ERoadblockType
  protected Widget m_RoadblockWidget;
  protected Widget m_MinesWidget;
  protected ref array<SCR_ButtonTextComponent> m_MineButtons = {};
+ protected Widget m_RoadblockSizes;
  protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
  protected SCR_PlayerController m_Owner;
  protected Widget m_DebugRoot;
@@ -233,8 +240,13 @@ class ACR_CommandPanel : Managed
   m_EstablishFobButton = AddButton(m_OrderSection, "Establish FOB", ACR_EPanelAction.ESTABLISH_FOB);
   m_EstablishFobWidget = m_LastButtonWidget;
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
-  m_RoadblockButton = AddButton(m_OrderSection, "Roadblock", ACR_EPanelAction.ROADBLOCK);
-  m_RoadblockWidget = m_LastButtonWidget;
+  // Roadblocks: the three checkpoint sizes in a row, a barricade under them.
+  m_RoadblockWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_RoadblockSizes = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_RoadblockWidget);
+  m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.SMALL), ACR_EPanelAction.ROADBLOCK_S, true));
+  m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.MEDIUM), ACR_EPanelAction.ROADBLOCK, true));
+  m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.LARGE), ACR_EPanelAction.ROADBLOCK_L, true));
+  m_RoadblockButtons.Insert(AddButton(m_RoadblockWidget, ACR_Roadblocks.Button(ACR_ERoadblockType.BARRICADE), ACR_EPanelAction.BARRICADE));
   if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(false);
   m_MinesWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
   Widget layMines = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_MinesWidget);
@@ -549,10 +561,12 @@ class ACR_CommandPanel : Managed
    if (cursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_EstablishFobButton.SetText("[Establish FOB]");
    else m_EstablishFobButton.SetText("Establish FOB");
   }
-  if (m_RoadblockButton)
+  int armed = RoadblockOfMode(cursorMode);
+  foreach (int type, SCR_ButtonTextComponent roadblockButton : m_RoadblockButtons)
   {
-   if (cursorMode == ACR_ECursorMode.ROADBLOCK) m_RoadblockButton.SetText("[Roadblock]");
-   else m_RoadblockButton.SetText("Roadblock");
+   if (!roadblockButton) continue;
+   if (type == armed) roadblockButton.SetText("[" + ACR_Roadblocks.Button(type) + "]");
+   else roadblockButton.SetText(ACR_Roadblocks.Button(type));
   }
   foreach (int mineKind, SCR_ButtonTextComponent mineButton : m_MineButtons)
   {
@@ -775,9 +789,24 @@ class ACR_CommandPanel : Managed
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(visible);
  }
 
- void SetRoadblock(bool visible)
+ // sizes false: only the barricade (FIA builds log barricades whatever the order).
+ void SetRoadblock(bool visible, bool sizes = true)
  {
   if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(visible);
+  if (m_RoadblockSizes) m_RoadblockSizes.SetVisible(sizes);
+ }
+
+ // The roadblock a cursor mode arms (-1: none).
+ static int RoadblockOfMode(int mode)
+ {
+  switch (mode)
+  {
+   case ACR_ECursorMode.ROADBLOCK: return ACR_ERoadblockType.MEDIUM;
+   case ACR_ECursorMode.ROADBLOCK_S: return ACR_ERoadblockType.SMALL;
+   case ACR_ECursorMode.ROADBLOCK_L: return ACR_ERoadblockType.LARGE;
+   case ACR_ECursorMode.BARRICADE: return ACR_ERoadblockType.BARRICADE;
+  }
+  return -1;
  }
 
  void SetMines(bool visible)

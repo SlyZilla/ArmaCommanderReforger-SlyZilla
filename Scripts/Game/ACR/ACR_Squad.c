@@ -639,6 +639,13 @@ class ACR_Squad : Managed
  IEntity m_RoadblockTurret;
  ref ACR_Roadblock m_ActiveRoadblock;
  ref ACR_MinePlan m_MinePlan;  // the Lay minefield / Disarm mines order at work
+ int m_iRoadblockType = ACR_ERoadblockType.MEDIUM;
+ int m_iRoadblockPaidRP;       // RP the build in progress was paid with (refunded if called off)
+ IEntity m_RoadblockTruck;     // ... or the construction truck it took supplies from
+ float m_fRoadblockLoads;
+ bool m_bRoadblockArrived;     // the give-up timer runs from the squad's arrival
+ float m_fRoadblockDeadline;   // world ms by which the squad must reach the road
+ vector m_vRoadblockStage;     // beside the road, where the squad (and a truck it brings) waits
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -739,9 +746,11 @@ class ACR_Squad : Managed
  protected void NewOrder()
  {
   if (m_fReservedLoads > 0 || OrderState() == ACR_EOrderState.BUILD_FOB) CancelEstablishFob();
-  if (OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) CancelRoadblock();
+  // By payment, not state: Halt sets its own state first.
+  if (RoadblockPending() || OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) CancelRoadblock("replaced by a new order");
   if (m_RoadblockTurret) VacateRoadblockTurret();
   if (m_MinePlan) CancelMineWork();
+  m_ActiveRoadblock = null; // a barricade or small checkpoint has no gun to vacate
   m_CombatFlank.Cancel();
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
@@ -1122,50 +1131,131 @@ class ACR_Squad : Managed
  bool IsVehicle() { return ACR_Transport.CrewedVehicle(this) != null; }
 
  // ================================================================ roadblocks (aca-f23)
- bool EstablishRoadblock(vector site, float yaw)
+ // type: ACR_ERoadblockType. A construction truck with the squad pays in supplies when it has
+ // them (truckMayPay: the AI commander pays RP, as before), otherwise RP.
+ bool EstablishRoadblock(vector site, float yaw, int type = ACR_ERoadblockType.MEDIUM, bool truckMayPay = true)
  {
   string refusal;
-  if (!ACR_Roadblocks.CanOrder(this, refusal)) return false;
+  if (!ACR_Roadblocks.CanOrder(this, refusal, type, truckMayPay)) return false;
   string factionKey = "";
   if (GetFaction()) factionKey = GetFaction().GetFactionKey();
+  type = ACR_Roadblocks.TypeFor(type, factionKey);
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!manager || !manager.m_Bases.Spend(factionKey, ACR_Roadblocks.ROADBLOCK_COST)) return false;
+  if (!manager) return false;
+  // Who pays is settled first, counting what NewOrder gives back from the current job, so that
+  // job is only replaced once this order is sure to be paid for.
+  IEntity truck;
+  float loads;
+  if (!ACR_Roadblocks.Payer(this, type, truckMayPay, truck, loads)) return false;
+  vector from = site;
+  if (GetAnchor()) from = GetAnchor().GetOrigin();
 
   NewOrder();
   ClearPlans();
   m_bRegrouping = false;
 
+  string paid;
+  if (truck && manager.m_Logistics.Use(truck, loads))
+  {
+   m_RoadblockTruck = truck;
+   m_fRoadblockLoads = loads;
+   paid = string.Format("%1 supplies from the construction truck at %2", ACR_Roadblocks.Supplies(type), truck.GetOrigin());
+  }
+  else if (manager.m_Bases.Spend(factionKey, ACR_Roadblocks.Cost(type)))
+  {
+   m_iRoadblockPaidRP = ACR_Roadblocks.Cost(type);
+   paid = string.Format("%1 RP", m_iRoadblockPaidRP);
+  }
+  else
+  {
+   // Payer counted only what NewOrder gave back, so this should not happen.
+   SetOrder("Holding position", ACR_EOrderState.HOLD);
+   PrintFormat("[ACR] SQUAD %1: could not pay for the %2", m_Name, ACR_Roadblocks.Name(type));
+   return false;
+  }
+
+  m_iRoadblockType = type;
   m_vRoadblockSite = site;
   m_fRoadblockYaw = yaw;
   m_fRoadblockProgress = 0.0;
   m_fRoadblockLastTick = GetGame().GetWorld().GetWorldTime();
   m_fRoadblockLastProgress = m_fRoadblockLastTick;
+  m_bRoadblockArrived = false;
+  m_fRoadblockDeadline = m_fRoadblockLastTick + vector.DistanceXZ(from, site) / ACR_Roadblocks.TRAVEL_SPEED * 1000 + FOB_GIVE_UP_MS;
+  m_vRoadblockStage = ACR_Roadblocks.Stage(site, yaw, type, from);
   m_RoadblockTurret = null;
   m_ActiveRoadblock = null;
 
-  SetOrder("Building Roadblock (0%)", ACR_EOrderState.BUILD_ROADBLOCK);
+  SetOrder(RoadblockLabel(), ACR_EOrderState.BUILD_ROADBLOCK);
   m_OrderKind = ACR_EOrderKind.MOVE;
-  m_MoveTarget = site;
-  IssueWaypoint(WP_MOVE, site, 4.0);
-  PrintFormat("[ACR] SQUAD %1: building roadblock at %2 (yaw %3), paid %4 RP", m_Name, site, yaw, ACR_Roadblocks.ROADBLOCK_COST);
+  m_MoveTarget = m_vRoadblockStage;
+  IssueWaypoint(WP_MOVE, m_vRoadblockStage, 4.0);
+  PrintFormat("[ACR] SQUAD %1: building %2 at %3 (yaw %4), paid %5", m_Name, ACR_Roadblocks.Name(type), site, yaw, paid);
   return true;
  }
 
- void CancelRoadblock()
+ // "Building Roadblock L (40% - contact)"
+ protected string RoadblockLabel(string status = "")
  {
-  if (OrderState() == ACR_EOrderState.BUILD_ROADBLOCK)
+  int pct = Math.ClampInt((int)(m_fRoadblockProgress / ACR_Roadblocks.Duration(m_iRoadblockType) * 100), 0, 100);
+  string label = string.Format("Building %1 (%2%%", ACR_Roadblocks.Name(m_iRoadblockType), pct);
+  if (status != "") label += " - " + status;
+  return label + ")";
+ }
+
+ bool RoadblockPending() { return m_iRoadblockPaidRP > 0 || m_fRoadblockLoads > 0; }
+
+ // What NewOrder gives back from the squad's current job, so a new order can count it: RP from
+ // a roadblock or minefield order ...
+ int PendingRP()
+ {
+  int rp = m_iRoadblockPaidRP;
+  if (m_MinePlan) rp += ACR_Minefields.Refund(m_MinePlan);
+  return rp;
+ }
+
+ // ... and loads back to this truck from a roadblock or FOB build.
+ float PendingLoads(IEntity truck)
+ {
+  if (!truck) return 0;
+  float loads;
+  if (m_RoadblockTruck == truck) loads += m_fRoadblockLoads;
+  if (m_ReservedTruck == truck) loads += m_fReservedLoads;
+  return loads;
+ }
+
+ // Called off before the composition went in: the price goes back where it came from (a
+ // destroyed truck's supplies are lost).
+ void CancelRoadblock(string why = "cancelled")
+ {
+  bool working = OrderState() == ACR_EOrderState.BUILD_ROADBLOCK;
+  if (!working && !RoadblockPending()) return;
+  string refund = "nothing";
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (m_iRoadblockPaidRP > 0 && manager)
   {
    string factionKey = "";
    if (GetFaction()) factionKey = GetFaction().GetFactionKey();
-   ACR_Manager manager = ACR_Manager.GetInstance();
-   if (manager) manager.m_Bases.Refund(factionKey, ACR_Roadblocks.ROADBLOCK_COST);
-   EquipShovels(false);
-   m_fRoadblockProgress = 0.0;
-   if (m_iAITask == ACR_EAITask.ROADBLOCK) m_iAITask = ACR_EAITask.FREE;
+   manager.m_Bases.Refund(factionKey, m_iRoadblockPaidRP);
+   refund = string.Format("%1 RP", m_iRoadblockPaidRP);
+  }
+  if (m_fRoadblockLoads > 0 && m_RoadblockTruck && ACR_Logistics.Health(m_RoadblockTruck) > 0 && manager && manager.m_Logistics)
+  {
+   manager.m_Logistics.AddStock(m_RoadblockTruck, m_fRoadblockLoads);
+   refund = string.Format("%1 supplies to the construction truck", Math.Round(m_fRoadblockLoads * ACR_Logistics.SUPPLIES_PER_LOAD_CONSTRUCTION));
+  }
+  m_iRoadblockPaidRP = 0;
+  m_RoadblockTruck = null;
+  m_fRoadblockLoads = 0;
+  m_fRoadblockProgress = 0.0;
+  EquipShovels(false);
+  if (m_iAITask == ACR_EAITask.ROADBLOCK) m_iAITask = ACR_EAITask.FREE;
+  if (working)
+  {
    ClearOrders();
    SetOrder("Holding position", ACR_EOrderState.HOLD);
-   PrintFormat("[ACR] SQUAD %1: cancelled roadblock build, refunded %2 RP", m_Name, ACR_Roadblocks.ROADBLOCK_COST);
   }
+  PrintFormat("[ACR] SQUAD %1: roadblock build %2, refunded %3", m_Name, why, refund);
  }
 
  void TickEstablishRoadblock(float now)
@@ -1174,11 +1264,18 @@ class ACR_Squad : Managed
   float dt = (now - m_fRoadblockLastTick) / 1000.0;
   m_fRoadblockLastTick = now;
   if (dt <= 0) return;
-  if (dt > 5.0) dt = 1.0;
+  if (dt > 5.0)
+  {
+   // The order was set aside (a regroup, a player taking the squad): that time counts for
+   // neither the walk's limit nor the give-up timer.
+   m_fRoadblockDeadline += (dt - 1.0) * 1000;
+   m_fRoadblockLastProgress += (dt - 1.0) * 1000;
+   dt = 1.0;
+  }
 
   if (CountAlive() <= 0)
   {
-   CancelRoadblock();
+   CancelRoadblock("abandoned: the squad is gone");
    return;
   }
 
@@ -1189,27 +1286,36 @@ class ACR_Squad : Managed
   {
    IEntity body = agent.GetControlledEntity();
    if (!body || !ACR_Respawn.IsAlive(body)) continue;
-   if (vector.DistanceXZ(body.GetOrigin(), m_vRoadblockSite) <= ACR_Roadblocks.CP_RADIUS)
+   if (vector.DistanceXZ(body.GetOrigin(), m_vRoadblockSite) <= ACR_Roadblocks.CP_RADIUS || vector.DistanceXZ(body.GetOrigin(), m_vRoadblockStage) <= 6)
    {
     squadPresent = true;
     break;
    }
   }
 
-  bool contested = KnownEnemies(60, true) > 0;
-  int pct = (int)((m_fRoadblockProgress / ACR_Roadblocks.BUILD_DURATION_S) * 100);
-
-  if (now - m_fRoadblockLastProgress >= FOB_GIVE_UP_MS)
+  // The give-up timer runs from the squad's arrival; the walk there has its own limit.
+  if (squadPresent && !m_bRoadblockArrived)
+  {
+   m_bRoadblockArrived = true;
+   m_fRoadblockLastProgress = now;
+  }
+  if (!m_bRoadblockArrived && m_fRoadblockDeadline > 0 && now > m_fRoadblockDeadline)
+  {
+   CancelRoadblock("abandoned: the squad could not reach the road");
+   return;
+  }
+  if (m_bRoadblockArrived && now - m_fRoadblockLastProgress >= FOB_GIVE_UP_MS)
   {
    PrintFormat("[ACR] SQUAD %1: roadblock at %2 abandoned after 3 minutes without progress", m_Name, m_vRoadblockSite);
-   CancelRoadblock();
+   CancelRoadblock("abandoned");
    return;
   }
 
+  bool contested = KnownEnemies(60, true) > 0;
   if (contested)
   {
    EquipShovels(false);
-   SetOrder(string.Format("Building Roadblock (%1%% - contact)", pct), ACR_EOrderState.BUILD_ROADBLOCK);
+   SetOrder(RoadblockLabel("contact"), ACR_EOrderState.BUILD_ROADBLOCK);
    return;
   }
 
@@ -1217,22 +1323,32 @@ class ACR_Squad : Managed
   {
    if (m_Group && !m_Group.GetCurrentWaypoint() && !HasPlayer())
    {
-    IssueWaypoint(WP_MOVE, m_vRoadblockSite, 4.0);
+    IssueWaypoint(WP_MOVE, m_vRoadblockStage, 4.0);
    }
-   SetOrder(string.Format("Building Roadblock (%1%% - moving to road)", pct), ACR_EOrderState.BUILD_ROADBLOCK);
+   SetOrder(RoadblockLabel("moving to road"), ACR_EOrderState.BUILD_ROADBLOCK);
    return;
   }
 
-  EquipShovels(true);
-  m_fRoadblockLastProgress = now;
-  m_fRoadblockProgress += dt;
-  pct = Math.ClampInt((int)((m_fRoadblockProgress / ACR_Roadblocks.BUILD_DURATION_S) * 100), 0, 100);
-  SetOrder(string.Format("Building Roadblock (%1%%)", pct), ACR_EOrderState.BUILD_ROADBLOCK);
-
-  if (m_fRoadblockProgress >= ACR_Roadblocks.BUILD_DURATION_S)
+  float duration = ACR_Roadblocks.Duration(m_iRoadblockType);
+  if (m_fRoadblockProgress < duration)
   {
-   CompleteRoadblock();
+   EquipShovels(true);
+   m_fRoadblockLastProgress = now;
+   m_fRoadblockProgress = Math.Min(m_fRoadblockProgress + dt, duration);
   }
+  if (m_fRoadblockProgress < duration)
+  {
+   SetOrder(RoadblockLabel(), ACR_EOrderState.BUILD_ROADBLOCK);
+   return;
+  }
+  // Done: it goes in once no vehicle stands on the spot (3 minutes, then it gives up).
+  if (ACR_FobSlots.VehicleOnSpot(m_vRoadblockSite, ACR_Roadblocks.Footprint(m_iRoadblockType)))
+  {
+   EquipShovels(false);
+   SetOrder(RoadblockLabel("move vehicles off the road"), ACR_EOrderState.BUILD_ROADBLOCK);
+   return;
+  }
+  CompleteRoadblock();
  }
 
  void CompleteRoadblock()
@@ -1244,12 +1360,18 @@ class ACR_Squad : Managed
   // builders, and a move still running there fails natively (Everon soak 23 Oct: VM exception
   // "Failed move ... to waypoint" 1.7 s after a roadblock completed).
   ClearOrders();
-  ACR_Roadblock rb = ACR_Roadblocks.SpawnRoadblock(factionKey, m_vRoadblockSite, m_fRoadblockYaw, m_Name);
+  ACR_Roadblock rb = ACR_Roadblocks.SpawnRoadblock(factionKey, m_vRoadblockSite, m_fRoadblockYaw, m_Name, m_iRoadblockType);
   if (!rb)
   {
-   CancelRoadblock();
+   CancelRoadblock("failed: the composition did not spawn");
    return;
   }
+  // Built: nothing left to refund (a dismantle gives half back to whoever paid).
+  rb.m_PaidTruck = m_RoadblockTruck;
+  rb.m_fPaidLoads = m_fRoadblockLoads;
+  m_iRoadblockPaidRP = 0;
+  m_RoadblockTruck = null;
+  m_fRoadblockLoads = 0;
 
   m_ActiveRoadblock = rb;
   m_RoadblockTurret = rb.m_Turret;
@@ -1258,7 +1380,7 @@ class ACR_Squad : Managed
   SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0);
-  PrintFormat("[ACR] SQUAD %1: completed roadblock at %2", m_Name, m_vRoadblockSite);
+  PrintFormat("[ACR] SQUAD %1: completed %2 at %3", m_Name, ACR_Roadblocks.Name(rb.m_iType), m_vRoadblockSite);
  }
 
  void ManRoadblockTurret()
@@ -1284,8 +1406,46 @@ class ACR_Squad : Managed
    ACR_Roadblocks.VacateTurret(m_RoadblockTurret);
    m_RoadblockTurret = null;
    m_ActiveRoadblock = null;
+   StepOntoNavmeshSoon();
    PrintFormat("[ACR] SQUAD %1: vacated roadblock machine gun", m_Name);
   }
+ }
+
+ // After a gunner's teleport get-out (a roadblock's or a fortified position's gun). The exit can
+ // be inside the gun's sandbags, and Defend can leave a soldier on top of them: with the leader at
+ // either spot, the next order's move failed natively ("Failed move ... to waypoint", within 8
+ // leave-the-gun cycles in each Fortify stress run). Once the get-out has landed, everyone off
+ // the navmesh steps onto the closest point of it.
+ void StepOntoNavmeshSoon()
+ {
+  GetGame().GetCallqueue().Remove(StepOntoNavmesh);
+  GetGame().GetCallqueue().CallLater(StepOntoNavmesh, 100, false, 0);
+ }
+
+ protected void StepOntoNavmesh(int tries)
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  bool seated = false;
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   if (ACR_Transport.VehicleOf(body))
+   {
+    seated = true;
+    continue;
+   }
+   AIPathfindingComponent pathing = AIPathfindingComponent.Cast(agent.FindComponent(AIPathfindingComponent));
+   vector at = body.GetOrigin();
+   vector onMesh;
+   if (!pathing || !pathing.GetClosestPositionOnNavmesh(at, Vector(3, 3, 3), onMesh)) continue;
+   if (vector.DistanceXZ(onMesh, at) < 0.5 && Math.AbsFloat(onMesh[1] - at[1]) < 0.6) continue;
+   PrintFormat("[ACR] SQUAD %1: soldier off the navmesh by a gun stepped %2 m onto it", m_Name, vector.Distance(onMesh, at));
+   body.SetOrigin(onMesh);
+  }
+  // A gunner still getting off: again shortly.
+  if (seated && tries < 4) GetGame().GetCallqueue().CallLater(StepOntoNavmesh, 250, false, tries + 1);
  }
 
  void TickRoadblockDefence(float now)
@@ -1745,8 +1905,12 @@ class ACR_Squad : Managed
   WatchCrew();
   // A builder fights normally (Jacob, 18 Oct); its progress pauses while in contact.
   if (OrderState() == ACR_EOrderState.BUILD_FOB) TickEstablishFob(now);
+  // A regroup or a player taking the squad sets the order aside and restores it: the build
+  // pauses meanwhile and stays paid for (NewOrder refunds it).
   if (OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) TickEstablishRoadblock(now);
-  if (m_ActiveRoadblock && m_RoadblockTurret) TickRoadblockDefence(now);
+  // ... but a squad wiped out meanwhile still gets the payment back.
+  else if (RoadblockPending() && CountAlive() <= 0) CancelRoadblock("abandoned: the squad is gone");
+  if (m_ActiveRoadblock) TickRoadblockDefence(now);
   if (m_MinePlan) TickMineWork(now);
   if (!m_Group || m_Commander != 0) return;
   array<AIAgent> agents = {};
@@ -3227,6 +3391,7 @@ class ACR_Squad : Managed
   m_Aside = null; // being removed: nothing to resume
   Release();
   GetGame().GetCallqueue().Remove(LinkSquad);
+  GetGame().GetCallqueue().Remove(StepOntoNavmesh);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);
   GetGame().GetCallqueue().Remove(EnsureGetOut);
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
@@ -3244,6 +3409,7 @@ class ACR_Squad : Managed
  {
   if (!GetGame()) return;
   GetGame().GetCallqueue().Remove(LinkSquad);
+  GetGame().GetCallqueue().Remove(StepOntoNavmesh);
   GetGame().GetCallqueue().Remove(HoldAfterDismount);
   GetGame().GetCallqueue().Remove(EnsureGetOut);
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);

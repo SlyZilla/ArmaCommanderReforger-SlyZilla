@@ -28,11 +28,14 @@ enum ACR_ERequest
  QUEUE_GARRISON,   // ... garrison there after the current order
  ORDER_FIRE_AT_WILL, // toggle: observers call mortar fire on what they see, mortar teams fire on their own
  ORDER_ESTABLISH_FOB, // establish a forward base at site
- ORDER_ROADBLOCK,    // establish a fortified roadblock on road at point
+ ORDER_ROADBLOCK,    // establish a fortified roadblock on road at point (medium checkpoint)
  ORDER_MINES_AP,     // lay a minefield at point (ACR_Minefields)
  ORDER_MINES_AT,
  ORDER_MINES_MIXED,
- ORDER_DISARM_MINES  // disarm the armed mines round point
+ ORDER_DISARM_MINES, // disarm the armed mines round point
+ ORDER_ROADBLOCK_S,  // ... a small checkpoint (no machine gun)
+ ORDER_ROADBLOCK_L,  // ... a large checkpoint (heavy machine gun)
+ ORDER_BARRICADE     // ... a barricade sized to the road
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
