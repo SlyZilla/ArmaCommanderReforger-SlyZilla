@@ -150,7 +150,7 @@ class ACR_AIDoctrine : Managed
   ACR_AIDoctrine fortress = new ACR_AIDoctrine();
   fortress.m_sKey = "fortress";
   fortress.m_sName = "Fortress";
-  fortress.m_sSummary = "defends in depth, counterattacks lost bases at once";
+  fortress.m_sSummary = "defends in depth behind manned roadblocks, minefields and positions, counterattacks lost bases at once";
   fortress.m_fAttackRatio = 1.1;
   fortress.m_fDefenseRatio = 1.35;
   fortress.m_fConcedeRatio = 1.5;
@@ -167,6 +167,12 @@ class ACR_AIDoctrine : Managed
   fortress.m_iDefensiveAirThreat = 6;
   fortress.m_iRoadblocks = 3;
   fortress.m_iMinefields = 4;
+  // Builds and mans more (user, 25 Oct): twice the build share, up to four positions, and the
+  // builders stay on what they built.
+  fortress.m_fBuildShare = 2;
+  fortress.m_iFortifyPositions = 4;
+  fortress.m_iHolders = 4;
+  fortress.m_bHoldersStay = true;
   fortress.m_fPocketScore = 1.5;
   fortress.m_fRideDistance = 1100;
   fortress.m_fAirLiftDistance = 2400;

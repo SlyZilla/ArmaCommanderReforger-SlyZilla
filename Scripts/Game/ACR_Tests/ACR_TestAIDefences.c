@@ -49,9 +49,9 @@ class ACR_TestAIDefences
   fort.TrickleBuildBudget();
   int fortressTrickle = fort.BuildBudget() - share;
   ACR_Options.Unset("acrAIBuildShare");
-  bool fortressMore = true;
+  bool fortressMore = share == 40 && fortressTrickle == 4 && fortress.m_iRoadblocks == 3 && fortress.m_iMinefields == 4 && fortress.m_iFortifyPositions == 4 && fortress.m_iHolders == 4 && fortress.m_bHoldersStay;
   bool balancedSame = balanced.m_fBuildShare == 1 && balanced.m_iRoadblocks == 2 && balanced.m_iMinefields == 2 && balanced.m_iFortifyPositions == 2 && balanced.m_iHolders == 2 && !balanced.m_bHoldersStay;
-  ACR_TestRegress.Check("aidefences: Balanced keeps the old engineering values", fortressMore && balancedSame, string.Format("Fortress: 200 RP gain at 10%% -> %1, trickle %2, roadblocks %3, fields %4, positions %5, holders %6 (stay %7); Balanced same %8", share, fortressTrickle, fortress.m_iRoadblocks, fortress.m_iMinefields, fortress.m_iFortifyPositions, fortress.m_iHolders, fortress.m_bHoldersStay, balancedSame));
+  ACR_TestRegress.Check("aidefences: Fortress sets twice the share and trickle aside and builds more; Balanced as before", fortressMore && balancedSame, string.Format("Fortress: 200 RP gain at 10%% -> %1, trickle %2, roadblocks %3, fields %4, positions %5, holders %6 (stay %7); Balanced same %8", share, fortressTrickle, fortress.m_iRoadblocks, fortress.m_iMinefields, fortress.m_iFortifyPositions, fortress.m_iHolders, fortress.m_bHoldersStay, balancedSame));
 
   // 3. Engineering is paid from the budget while the share is on, else from RP with a reserve.
   ACR_Options.Set("acrAIBuildShare", "10");
