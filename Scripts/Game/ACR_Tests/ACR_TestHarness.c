@@ -74,7 +74,7 @@ class ACR_TestHarness : Managed
  static const int MODE_DEFENDERS = 59;
  static const int MODE_BUDGET = 60;
  static const int MODE_AIDEFENCES = 65;
- static const int MODE_ROADSITING = 67; // 66: srv:fortifyfit (fortify-upgrade-fix)
+ static const int MODE_ROADSITING = 67;
 
  ACR_TestRange m_Range;
  int m_Mode;
