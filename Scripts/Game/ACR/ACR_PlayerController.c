@@ -1517,6 +1517,9 @@ modded class SCR_PlayerController
   bool canMines = friendly && (modeAndFlags & 128) != 0 && m_ACR_Data.m_Selected.Count() <= 1;
   if (!canMines && m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES)
    m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+  bool canFortify = friendly && (modeAndFlags & 256) != 0 && m_ACR_Data.m_Selected.Count() <= 1;
+  if (!canFortify && m_ACR_CursorMode == ACR_ECursorMode.FORTIFY)
+   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   string hint;
   if (!friendly) hint = "Player group: not commandable";
   else if (!m_ACR_IsCommander) hint = "Take command to give orders";
@@ -1527,6 +1530,7 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) hint = "Right-click the destination: a free truck nearby picks them up and drops them there";
   else if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) hint = "Right-click a clear site: establish forward base (click Establish FOB again to cancel)";
   else if (roadblock >= 0) hint = ACR_Roadblocks.Hint(roadblock, roadblockFaction);
+  else if (m_ACR_CursorMode == ACR_ECursorMode.FORTIFY) hint = ACR_Fortify.Hint();
   else if (m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES) hint = ACR_Minefields.Hint(ACR_Minefields.KindOfCursor(m_ACR_CursorMode));
   else hint = "Right-click: move there";
   string title = m_ACR_Data.m_GroupNames[index];
@@ -1552,6 +1556,7 @@ modded class SCR_PlayerController
   m_ACR_Panel.SetEstablishFob(canEstablishFob);
   m_ACR_Panel.SetRoadblock(canRoadblock, !ACR_Roadblocks.IsFia(roadblockFaction));
   m_ACR_Panel.SetMines(canMines);
+  m_ACR_Panel.SetFortify(canFortify);
   // Also for a full squad low on ammo: inside a deploy base Reinforce restocks it
   // (the server says so when it isn't in one).
   string details = m_ACR_GroupDetails[index];
@@ -1616,6 +1621,7 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.MINES_AT: ACR_ToggleCursor(ACR_ECursorMode.MINES_AT); return;
    case ACR_EPanelAction.MINES_MIXED: ACR_ToggleCursor(ACR_ECursorMode.MINES_MIXED); return;
    case ACR_EPanelAction.DISARM_MINES: ACR_ToggleCursor(ACR_ECursorMode.DISARM_MINES); return;
+   case ACR_EPanelAction.FORTIFY: ACR_ToggleCursor(ACR_ECursorMode.FORTIFY); return;
    case ACR_EPanelAction.HALT: ACR_RequestSelected(ACR_ERequest.ORDER_HALT); return;
    case ACR_EPanelAction.FIRE_AT_WILL: ACR_RequestSelected(ACR_ERequest.ORDER_FIRE_AT_WILL); return;
    case ACR_EPanelAction.PING_LOOK: ACR_PickPing(ACR_EPing.LOOK); return;
@@ -1749,6 +1755,7 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK_S) command = ACR_ERequest.ORDER_ROADBLOCK_S;
   if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK_L) command = ACR_ERequest.ORDER_ROADBLOCK_L;
   if (m_ACR_CursorMode == ACR_ECursorMode.BARRICADE) command = ACR_ERequest.ORDER_BARRICADE;
+  if (m_ACR_CursorMode == ACR_ECursorMode.FORTIFY) command = ACR_ERequest.ORDER_FORTIFY;
   vector target = Vector(x, 0, z);
   // Right-click on a spotted enemy: hunt it down.
   if (m_ACR_CursorMode == ACR_ECursorMode.MOVE && !append)
