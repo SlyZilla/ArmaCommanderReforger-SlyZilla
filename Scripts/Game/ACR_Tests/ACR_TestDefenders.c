@@ -3,9 +3,11 @@
 // 4 at tier III, the option sizes; an enemy fire team (holding its fire) 300 m out deploys them
 // (their own group, not a squad, defending the position); one killed, then every enemy dead:
 // they pack up with 3 back in reserve; a position that is gone takes its reserve with it.
+// Checkpoints: none by default, -acrRoadblockDefenders 2 gives one 2 (a barricade none), and a
+// dismantled one takes them with it.
 class ACR_TestDefenders
 {
- static const int CHECKS = 7;
+ static const int CHECKS = 8;
  static int s_iStep;
  static int s_iStepAt;
  static ACR_Fortification s_Fort;
@@ -101,6 +103,19 @@ class ACR_TestDefenders
    bool gone = !ACR_Defenders.s_Posts.Contains(s_Post);
    if (!gone && waited < 15) return;
    ACR_TestRegress.Check("defenders: a position that is gone takes its reserve with it", gone && s_Post.m_bGone && s_Post.m_iReserve == 0 && !ACR_Fortify.s_Positions.Contains(s_Fort), string.Format("post kept %1, gone %2, reserve %3", !gone, s_Post.m_bGone, s_Post.m_iReserve));
+   // Checkpoints (option, off by default).
+   vector rbAt = ACR_Manager.Ground(alpha.GetAnchor().GetOrigin() + Vector(-60, 0, 40));
+   ACR_Roadblock plain = ACR_Roadblocks.SpawnRoadblock(us, rbAt, 0, "test");
+   ACR_Options.Set("acrRoadblockDefenders", "2");
+   ACR_Roadblock held = ACR_Roadblocks.SpawnRoadblock(us, rbAt + Vector(0, 0, 40), 0, "test");
+   bool barricade = ACR_Roadblocks.Defenders(ACR_ERoadblockType.BARRICADE) == 0;
+   ACR_Options.Unset("acrRoadblockDefenders");
+   ACR_DefenderPost rbPost;
+   if (held) rbPost = held.m_Defenders;
+   bool sized = plain && !plain.m_Defenders && rbPost && rbPost.m_iReserve == 2 && barricade;
+   if (plain) ACR_Roadblocks.DismantleRoadblock(plain);
+   if (held) ACR_Roadblocks.DismantleRoadblock(held);
+   ACR_TestRegress.Check("defenders: a checkpoint gets them only with -acrRoadblockDefenders (2 here, a barricade none), dismantled they go", sized && rbPost.m_bGone, string.Format("plain %1 (defenders %2), held %3 (reserve %4, gone %5), barricade %6", plain != null, plain && plain.m_Defenders != null, held != null, rbPost && rbPost.m_iReserve, rbPost && rbPost.m_bGone, barricade));
    ACR_TestRegress.Complete("defenders", CHECKS);
    s_iStep = 4;
   }

@@ -1,4 +1,5 @@
-// Defenders for built positions (Fortify tier II and III, ACR_Fortify.Defenders): soldiers from
+// Defenders for built positions (Fortify tier II and III, ACR_Fortify.Defenders; checkpoints with
+// -acrRoadblockDefenders, ACR_Roadblocks.Defenders): soldiers from
 // the side's garrison pool held in reserve at the position, like a base's garrison
 // (ACR_BaseSystem). They deploy when an enemy comes within SPAWN_RANGE and defend the position,
 // pack up (survivors back to the reserve) once no enemy is within DESPAWN_RANGE, and are used up

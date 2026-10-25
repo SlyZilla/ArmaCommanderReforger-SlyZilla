@@ -728,6 +728,7 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrFortifyAI` | `-acrFortifyAI 0` (default) or `1`; AI commanders dig in and upgrade positions on their approaches |
 | `m_iAcrFortifyDefenders2` | `-acrFortifyDefenders2 2` default, 0–12; defenders in reserve at a Fortify tier II position (0: none) |
 | `m_iAcrFortifyDefenders3` | `-acrFortifyDefenders3 4` default, 0–12; defenders in reserve at a tier III position |
+| `m_iAcrRoadblockDefenders` | `-acrRoadblockDefenders 0` default (none), 0–8; defenders in reserve at a checkpoint |
 
 The header describes the scenario; it does not publish, package or copy the world. Workbench creates
 the `.meta` files beside the world and header. Keep them there and do not edit them. When you choose
@@ -836,6 +837,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrFortify 0` | Turn off the commander's Fortify order (on by default; see [Fortify position](#fortify-position)) |
 | `-acrFortifyAI 1` | AI commanders fortify: every 60 s, with RP to spare, one order at a time, they upgrade their position nearest the frontline base or (fewer than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base (off by default) |
 | `-acrFortifyDefenders2 N` / `-acrFortifyDefenders3 N` | Defenders held in reserve at a Fortify tier II / III position (2 / 4 by default, 0 none, at most 12; see [Fortify position](#fortify-position)) |
+| `-acrRoadblockDefenders N` | Defenders held in reserve at every checkpoint (small, medium, large; not a plain barricade), as at a Fortify position: they deploy when an enemy comes within 400 m and are used up as they die (0, none, by default; at most 8) |
 | `-acrMinesAI 1` | AI commanders lay minefields: every 30 s, with RP to spare and fewer than two fields down, a free infantry squad (sappers first) mines the approach 150-270 m out from its frontline base towards the nearest enemy base (off by default) |
 | `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual Play and Host launchers pass `-acrSetup 1` and leave match settings to this screen |
 | `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default for ordinary dedicated servers; Host-ACA enables it for its separate local server, so the launching host must connect before friends. Configured admins remain trusted, and authority does not transfer after the first player disconnects |

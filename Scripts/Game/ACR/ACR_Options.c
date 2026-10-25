@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrFortify", "acrFortifyAI", "acrFortifyDefenders2", "acrFortifyDefenders3"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrFortify", "acrFortifyAI", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
   foreach (string name : names)
   {
    string value;
@@ -161,6 +161,8 @@ class ACR_MissionHeader : SCR_MissionHeader
  int m_iAcrFortifyDefenders2;
  [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a Fortify tier III position: 4 default, 0 none (-acrFortifyDefenders3)")]
  int m_iAcrFortifyDefenders3;
+ [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a checkpoint: 0 default (none), at most 8 (-acrRoadblockDefenders)")]
+ int m_iAcrRoadblockDefenders;
 
  void Fill(map<string, string> values)
  {
@@ -201,6 +203,7 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrFortifyAI", m_iAcrFortifyAI);
   Number(values, "acrFortifyDefenders2", m_iAcrFortifyDefenders2);
   Number(values, "acrFortifyDefenders3", m_iAcrFortifyDefenders3);
+  Number(values, "acrRoadblockDefenders", m_iAcrRoadblockDefenders);
  }
 
  protected static void Text(map<string, string> values, string name, string value)
