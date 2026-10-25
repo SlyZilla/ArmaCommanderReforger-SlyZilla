@@ -3134,7 +3134,7 @@ class ACR_Squad : Managed
  // An order of its own the squad works at (paid when given, refunded if a new order ends it).
  bool HasJob()
  {
-  return m_MinePlan != null || RoadblockPending() || OrderState() == ACR_EOrderState.BUILD_ROADBLOCK;
+  return m_MinePlan != null || m_FortifyPlan != null || RoadblockPending() || OrderState() == ACR_EOrderState.BUILD_ROADBLOCK;
  }
 
  protected int GetEveryoneOut()

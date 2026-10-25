@@ -3,10 +3,10 @@
 // same second as the ride ended). A truck taxi carries Alpha towards a road point; once Alpha is
 // aboard it is ordered to lay an AP minefield (as a player's order does): the ride ends, Alpha
 // gets out, and the minefield order must still stand, paid. Then a second ride, and a roadblock
-// order the same way.
+// order the same way; a third, and a Fortify order (review of #18: it was still refunded).
 class ACR_TestRideJob
 {
- static const int CHECKS = 2;
+ static const int CHECKS = 3;
  static ACR_Squad s_Taxi;
  static vector s_Dest;
  static int s_iStep;
@@ -33,7 +33,7 @@ class ACR_TestRideJob
   }
   ACR_Squad alpha = manager.FindSquadByGroup(h.m_Range.m_Group);
   if (!alpha || !alpha.GetAnchor()) return;
-  if (tick > 200) ACR_TestRegress.Abort("ridejob", string.Format("timed out in step %1 (%2)", s_iStep, s_sDetail));
+  if (tick > 300) ACR_TestRegress.Abort("ridejob", string.Format("timed out in step %1 (%2)", s_iStep, s_sDetail));
   ACR_FactionData us = manager.m_Bases.GetFaction("US");
   int waited = tick - s_iStepAt;
   if (tick == 4)
@@ -47,8 +47,9 @@ class ACR_TestRideJob
   if (!crew) return;
   us.m_iRP = 500;
 
-  // Steps 0 / 3: a ride for Alpha; 1 / 4: once aboard, the job; 2 / 5: 15 s on, the job must stand.
-  if (s_iStep == 0 || s_iStep == 3)
+  // Steps 0 / 3 / 6: a ride for Alpha; 1 / 4 / 7: once aboard, the job; 2 / 5 / 8: 15 s on, the
+  // job must stand.
+  if (s_iStep == 0 || s_iStep == 3 || s_iStep == 6)
   {
    if (s_Dest == vector.Zero) s_Dest = Destination(alpha);
    if (s_Dest == vector.Zero)
@@ -66,7 +67,7 @@ class ACR_TestRideJob
    NextStep(tick);
    return;
   }
-  if (s_iStep == 1 || s_iStep == 4)
+  if (s_iStep == 1 || s_iStep == 4 || s_iStep == 7)
   {
    s_sDetail = string.Format("Alpha '%1' aboard %2", alpha.m_Order, alpha.IsMountedAsCargo());
    if (!alpha.IsMountedAsCargo() && waited < 90) return;
@@ -78,11 +79,20 @@ class ACR_TestRideJob
     vector field = ACR_Manager.Ground(alpha.GetAnchor().GetOrigin() + Vector(0, 0, -120));
     ordered = ACR_Minefields.Order(alpha, ACR_EMineKind.AP, field, why);
    }
-   else
+   else if (s_iStep == 4)
    {
     vector site;
     float yaw;
     ordered = ACR_Roadblocks.ValidateSite(s_Dest, site, yaw, why, "US") && alpha.EstablishRoadblock(site, yaw, ACR_ERoadblockType.MEDIUM, false);
+   }
+   else
+   {
+    // A spot off the road the Fortify footprint fits (the first of a ring round the drop point).
+    for (int k = 0; k < 12 && !ordered; k++)
+    {
+     float angle = Math.PI2 * k / 12;
+     ordered = ACR_Fortify.Order(alpha, ACR_Manager.Ground(s_Dest + Vector(Math.Cos(angle) * 40, 0, Math.Sin(angle) * 40)), why);
+    }
    }
    s_iRP = us.m_iRP;
    s_sDetail = string.Format("ordered aboard %1: %2 (%3), rp %4 -> %5", alpha.IsMountedAsCargo(), ordered, why, before, s_iRP);
@@ -90,7 +100,7 @@ class ACR_TestRideJob
    NextStep(tick);
    return;
   }
-  if (s_iStep == 2 || s_iStep == 5)
+  if (s_iStep == 2 || s_iStep == 5 || s_iStep == 8)
   {
    if (waited < 15) return;
    // (A refund is what ends a paid job: the job still being there means it wasn't refunded. RP
@@ -103,9 +113,15 @@ class ACR_TestRideJob
     ACR_TestRegress.Check("ridejob: a minefield ordered to a squad aboard a ride still stands once it is out, paid", alpha.m_MinePlan != null && gotOut, now);
     alpha.Halt("Holding");
    }
-   else
+   else if (s_iStep == 5)
    {
     ACR_TestRegress.Check("ridejob: a roadblock ordered to a squad aboard a ride still stands once it is out, paid", (alpha.RoadblockPending() || alpha.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) && gotOut, now);
+    alpha.Halt("Holding");
+   }
+   else
+   {
+    ACR_TestRegress.Check("ridejob: a Fortify order given to a squad aboard a ride still stands once it is out, paid", alpha.m_FortifyPlan != null && gotOut, now);
+    alpha.Halt("Holding");
     ACR_TestRegress.Complete("ridejob", CHECKS);
    }
    NextStep(tick);
