@@ -2165,10 +2165,14 @@ class ACR_Squad : Managed
  }
 
  // Add an order after the current one (or carry it out now if there's nothing to do).
+ // Waiting where it ended up ("Holding position": arrived, dismounted, a build done): its hold
+ // waypoint never completes, so nothing queued behind it would ever start.
+ bool HoldingInPlace() { return m_Order == "Holding position"; }
+
  bool Queue(vector position, bool defend, bool garrison = false)
  {
   if (!m_Group) return false;
-  bool busy = m_Group.GetCurrentWaypoint() != null || !m_aRoute.IsEmpty() || !m_aQueuePos.IsEmpty();
+  bool busy = (m_Group.GetCurrentWaypoint() != null && !HoldingInPlace()) || !m_aRoute.IsEmpty() || !m_aQueuePos.IsEmpty();
   if (!busy)
   {
    if (garrison) { Garrison(position); return true; }
