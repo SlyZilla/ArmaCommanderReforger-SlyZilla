@@ -795,8 +795,37 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  protected ref map<SCR_ButtonBaseComponent, string> m_Keys = new map<SCR_ButtonBaseComponent, string>();
  protected Widget m_wRows;
  protected bool m_bLogisticsPage;
+ protected int m_iPage;
+ protected int m_iPages = 1;
  protected string m_sRows;
  protected string m_sInfo;
+
+ // Rows a page holds (25 Oct: with the doctrine and AI rows the match settings ran off a 1080p
+ // screen, hiding "Show the layout on the map" and the way to the logistics page): what fits
+ // under the dialog's title, text and buttons (CHROME, in UI units) at ROW_HEIGHT each, less two
+ // for the page buttons.
+ static const float ROW_HEIGHT = 44;
+ static const float CHROME = 380;
+ static int PageRows(float height)
+ {
+  int fit = (int)((height - CHROME) / ROW_HEIGHT) - 2;
+  if (fit < 6) fit = 6;
+  return fit;
+ }
+
+ // The screen's height in UI units (1080 for any 16:9 screen).
+ static float ScreenHeight()
+ {
+  WorkspaceWidget workspace = GetGame().GetWorkspace();
+  if (!workspace || workspace.GetHeight() <= 0) return 1080;
+  return workspace.DPIUnscale(workspace.GetHeight());
+ }
+
+ // The rows on the logistics page; the rest are match settings.
+ static bool IsLogisticsRow(string key)
+ {
+  return key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice" || key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai";
+ }
 
  void Fill(string rows, string info)
  {
@@ -817,40 +846,52 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   m_Keys.Clear();
   array<string> lines = {};
   rows.Split("\n", lines, true);
+  array<string> keys = {};
+  array<string> texts = {};
   foreach (string line : lines)
   {
    array<string> parts = {};
    line.Split("\t", parts, false);
-   if (parts.Count() < 2) continue;
-   bool logistics = parts[0] == "deployment" || parts[0] == "reinforcement" || parts[0] == "fobservices" || parts[0] == "fobrelay" || parts[0] == "depotcapacity" || parts[0] == "servicecost" || parts[0] == "rpservice" || parts[0] == "mines" || parts[0] == "minesreal" || parts[0] == "minesai" || parts[0] == "fortify" || parts[0] == "fortifyai";
-   if (logistics != m_bLogisticsPage) continue;
-   Widget widget = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, m_wRows);
-   if (!widget) continue;
-   AlignableSlot.SetPadding(widget, 2, 2, 2, 2);
-   SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(widget);
-   if (!button) continue;
-   button.SetText(parts[1]);
-   button.m_OnClicked.Insert(OnRow);
-   m_Keys.Set(button, parts[0]);
+   if (parts.Count() < 2 || IsLogisticsRow(parts[0]) != m_bLogisticsPage) continue;
+   keys.Insert(parts[0]);
+   texts.Insert(parts[1]);
   }
-  Widget page = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, m_wRows);
-  if (!page) return;
-  SCR_ButtonTextComponent pageButton = SCR_ButtonTextComponent.FindButtonTextComponent(page);
-  if (pageButton)
+  // This page's rows, then the page buttons.
+  int perPage = PageRows(ScreenHeight());
+  m_iPages = (keys.Count() + perPage - 1) / perPage;
+  if (m_iPages < 1) m_iPages = 1;
+  if (m_iPage >= m_iPages) m_iPage = m_iPages - 1;
+  int first = m_iPage * perPage;
+  for (int i = first; i < keys.Count() && i < first + perPage; i++) AddRow(keys[i], texts[i]);
+  if (m_iPages > 1)
   {
-   string caption = "Logistics settings...";
-   if (m_bLogisticsPage) caption = "Back to match settings";
-   pageButton.SetText(caption);
-   pageButton.m_OnClicked.Insert(OnRow);
-   m_Keys.Set(pageButton, "logistics_page");
+   string more = string.Format("More settings (page %1 of %2)...", m_iPage + 1, m_iPages);
+   if (m_iPage == m_iPages - 1) more = string.Format("Back to the first page (page %1 of %2)", m_iPage + 1, m_iPages);
+   AddRow("next_page", more);
   }
+  string caption = "Logistics settings...";
+  if (m_bLogisticsPage) caption = "Back to match settings";
+  AddRow("logistics_page", caption);
+ }
+
+ protected void AddRow(string key, string text)
+ {
+  Widget widget = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, m_wRows);
+  if (!widget) return;
+  AlignableSlot.SetPadding(widget, 2, 2, 2, 2);
+  SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(widget);
+  if (!button) return;
+  button.SetText(text);
+  button.m_OnClicked.Insert(OnRow);
+  m_Keys.Set(button, key);
  }
 
  protected void OnRow(SCR_ButtonBaseComponent button)
  {
   string key;
   if (!m_Keys.Find(button, key)) return;
-  if (key == "logistics_page") { m_bLogisticsPage = !m_bLogisticsPage; Fill(m_sRows, m_sInfo); return; }
+  if (key == "logistics_page") { m_bLogisticsPage = !m_bLogisticsPage; m_iPage = 0; Fill(m_sRows, m_sInfo); return; }
+  if (key == "next_page") { m_iPage = (m_iPage + 1) % m_iPages; Fill(m_sRows, m_sInfo); return; }
   if (key == "map") { ACR_SetupClient.OpenPreviewMap(); return; }
   ACR_SetupClient.Request(key);
  }

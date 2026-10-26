@@ -5,7 +5,7 @@
 // Start applies them (threat high reaches the game, starting units spawn).
 class ACR_TestSetup
 {
- static const int CHECKS = 22;
+ static const int CHECKS = 23;
  protected static int s_iStartedAt = -1;
 
  static bool Wanted() { return System.IsCLIParam("acrSetupTest"); }
@@ -25,6 +25,21 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup: nothing starts before Start", ACR_Setup.Wanted() && !ACR_Setup.Started() && !ACR_Skirmish.Applied() && agents == 0, string.Format("wanted %1, started %2, layout applied %3, AI agents %4", ACR_Setup.Wanted(), ACR_Setup.Started(), ACR_Skirmish.Applied(), agents));
    string rows = ACR_Setup.Rows();
    ACR_TestRegress.Check("setup: the dialog rows list the options", rows.Contains("threat\tThreat: normal") && rows.Contains("ai\tAI commanders") && rows.Contains("shared\tShared command: on"), rows);
+   // Pages: every match-settings row on a page that fits a 1080p screen (25 Oct: the list ran
+   // off it, hiding the map preview row and the way to the logistics page).
+   int mainRows;
+   array<string> lines = {};
+   rows.Split("\n", lines, true);
+   foreach (string line : lines)
+   {
+    array<string> parts = {};
+    line.Split("\t", parts, false);
+    if (parts.Count() >= 2 && !ACR_SetupDialog.IsLogisticsRow(parts[0])) mainRows++;
+   }
+   int perPage = ACR_SetupDialog.PageRows(1080);
+   int pages = (mainRows + perPage - 1) / perPage;
+   float used = (perPage + 2) * ACR_SetupDialog.ROW_HEIGHT + ACR_SetupDialog.CHROME;
+   ACR_TestRegress.Check("setup: the match settings come in pages that fit a 1080p screen", perPage >= 10 && used <= 1080 && pages * perPage >= mainRows, string.Format("%1 rows, %2 a page (%3 of 1080 used), %4 pages", mainRows, perPage, used, pages));
    ACR_MissionHeader logisticsHeader = new ACR_MissionHeader();
    logisticsHeader.m_sAcrDeployment = "military";
    logisticsHeader.m_sAcrReinforcement = "deployment";
