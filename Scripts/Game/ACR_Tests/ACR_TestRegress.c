@@ -285,6 +285,164 @@ class ACR_TestRegress
   crew.SetOrder(savedLabel, savedState);
  }
 
+ // A roadblock click by a joint of two road pieces, or on a side road by a T-crossing, stays on
+ // the piece clicked (25 Oct: the piece GetClosestRoad gave could be the neighbour, and the click
+ // slid to its end: the joint or the T).
+ static void CheckRoadblockSnap(vector origin)
+ {
+  ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  array<BaseRoad> roads = {};
+  if (aiWorld && aiWorld.GetRoadNetworkManager())
+   aiWorld.GetRoadNetworkManager().GetRoadsInAABB(origin - Vector(1500, 1000, 1500), origin + Vector(1500, 1000, 1500), roads);
+  string joint = "no joint found";
+  string tee = "no T-crossing found";
+  bool jointOk, teeOk, jointFound, teeFound;
+  foreach (BaseRoad road : roads)
+  {
+   if (jointFound && teeFound) break;
+   array<vector> points = {};
+   road.GetPoints(points);
+   if (points.Count() < 2 || PieceLength(points) < 30) continue;
+   for (int e = 0; e < 2; e++)
+   {
+    // The piece's end and the way into the piece from it.
+    vector end = points[0];
+    vector inward = points[1] - points[0];
+    if (e == 1)
+    {
+     end = points[points.Count() - 1];
+     inward = points[points.Count() - 2] - end;
+    }
+    inward[1] = 0;
+    if (inward.Length() < 9) continue;
+    inward.Normalize();
+    int touchingEnds, touchingInside;
+    foreach (BaseRoad other : roads)
+    {
+     if (other == road) continue;
+     array<vector> otherPoints = {};
+     other.GetPoints(otherPoints);
+     if (otherPoints.Count() < 2) continue;
+     int segment;
+     vector near;
+     bool inside;
+     if (ACR_Roadblocks.NearestOnPiece(otherPoints, end, segment, near, inside) > 3) continue;
+     if (vector.DistanceXZ(otherPoints[0], end) < 3 || vector.DistanceXZ(otherPoints[otherPoints.Count() - 1], end) < 3) touchingEnds++;
+     else touchingInside++;
+    }
+    // A click 8 m into this piece from its end, 1.5 m to the side.
+    vector side = Vector(inward[2], 0, -inward[0]);
+    vector click = ACR_Manager.Ground(end + inward * 8 + side * 1.5);
+    vector snapped;
+    float heading;
+    string refusal;
+    ACR_Roadblocks.ValidateSite(click, snapped, heading, refusal, "US");
+    int seg;
+    vector onPiece;
+    bool inPiece;
+    float off = ACR_Roadblocks.NearestOnPiece(points, snapped, seg, onPiece, inPiece);
+    bool stays = snapped != vector.Zero && off < 0.3 && vector.DistanceXZ(snapped, end) > 5;
+    BaseRoad closest;
+    float closestDist;
+    aiWorld.GetRoadNetworkManager().GetClosestRoad(click, closest, closestDist);
+    string what = string.Format("click %1 snapped %2: %3 m off the piece clicked, %4 m from its end (GetClosestRoad gave the piece clicked: %5)", click, snapped, Math.Round(off * 10) / 10, (int)vector.DistanceXZ(snapped, end), closest == road);
+    if (!jointFound && touchingEnds == 1 && touchingInside == 0)
+    {
+     jointFound = true;
+     jointOk = stays;
+     joint = what;
+    }
+    else if (!teeFound && touchingEnds == 0 && touchingInside == 1)
+    {
+     teeFound = true;
+     teeOk = stays;
+     tee = what;
+    }
+   }
+  }
+  Check("roadblock click by a joint of two road pieces stays on the piece clicked", jointFound && jointOk, joint);
+  Check("roadblock click on a side road by a T-crossing stays on the side road", teeFound && teeOk, tee);
+  // Clicks 2-10 m into pieces from their ends, up to 3.5 m to the side: where GetClosestRoad
+  // gives another piece than the one under the click (the old snap then slid to that piece's
+  // end), the new snap must land on the piece under it.
+  int probes, other, stayed;
+  string example = "";
+  int ends;
+  foreach (BaseRoad road : roads)
+  {
+   if (ends >= 300) break;
+   array<vector> points = {};
+   road.GetPoints(points);
+   if (points.Count() < 2 || PieceLength(points) < 20) continue;
+   for (int e = 0; e < 2; e++)
+   {
+    ends++;
+    vector end = points[0];
+    vector inward = points[1] - points[0];
+    if (e == 1)
+    {
+     end = points[points.Count() - 1];
+     inward = points[points.Count() - 2] - end;
+    }
+    inward[1] = 0;
+    if (inward.Length() < 11) continue;
+    inward.Normalize();
+    vector side = Vector(inward[2], 0, -inward[0]);
+    array<float> intos = {2, 4, 6, 10};
+    array<float> offs = {0, 2, -2, 3.5, -3.5};
+    foreach (float into : intos)
+    {
+     foreach (float off : offs)
+     {
+      vector click = end + inward * into + side * off;
+      int seg;
+      vector onPiece;
+      bool inPiece;
+      float mine = ACR_Roadblocks.NearestOnPiece(points, click, seg, onPiece, inPiece);
+      if (mine > 4) continue;
+      // Only clicks clearly on this piece: every other piece round the click at least 1 m farther.
+      float others = float.MAX;
+      array<BaseRoad> around = {};
+      aiWorld.GetRoadNetworkManager().GetRoadsInAABB(click - Vector(25, 1000, 25), click + Vector(25, 1000, 25), around);
+      foreach (BaseRoad near : around)
+      {
+       if (near == road) continue;
+       array<vector> nearPoints = {};
+       near.GetPoints(nearPoints);
+       if (nearPoints.Count() < 2) continue;
+       int nearSeg;
+       vector nearPoint;
+       bool nearInside;
+       others = Math.Min(others, ACR_Roadblocks.NearestOnPiece(nearPoints, click, nearSeg, nearPoint, nearInside));
+      }
+      if (others < mine + 1) continue;
+      probes++;
+      BaseRoad closest;
+      float closestDist;
+      aiWorld.GetRoadNetworkManager().GetClosestRoad(click, closest, closestDist);
+      if (closest == road) continue;
+      other++;
+      // (Loop locals keep their last value in Enforce: start them afresh.)
+      vector snapped = vector.Zero;
+      float heading = 0;
+      string refusal = "";
+      ACR_Roadblocks.ValidateSite(ACR_Manager.Ground(click), snapped, heading, refusal, "US");
+      if (snapped != vector.Zero && ACR_Roadblocks.NearestOnPiece(points, snapped, seg, onPiece, inPiece) < 0.3) stayed++;
+      else if (example.IsEmpty()) example = string.Format(" (first miss: click %1 snapped %2, %3 m from the piece clicked, the next piece %4 m)", click, snapped, mine, others);
+     }
+    }
+   }
+  }
+  Check("roadblock clicks where GetClosestRoad gives a neighbouring piece land on the piece clicked", stayed == other, string.Format("%1 clear clicks by %2 piece ends: GetClosestRoad gave another piece %3 times, the new snap stayed on the piece clicked %4 times%5", probes, ends, other, stayed, example));
+ }
+
+ protected static float PieceLength(notnull array<vector> points)
+ {
+  float length;
+  for (int i = 1; i < points.Count(); i++) length += vector.DistanceXZ(points[i - 1], points[i]);
+  return length;
+ }
+
  // Real road + composition checks: clicking the verge must not build on the verge.
  static void CheckRoadblockPlacement(vector origin)
  {
@@ -423,6 +581,7 @@ class ACR_TestRegress
   if (tick == 4)
   {
    CheckRoadblockPlacement(harness.m_Range.GetOrigin());
+   CheckRoadblockSnap(harness.m_Range.GetOrigin());
    ACR_TestOptions.Run();
    ACR_TestDoctrine.Run(manager);
    ACR_TestAccess.Run();
