@@ -42,6 +42,7 @@ class ACR_MortarTeam : Managed
  int m_iFired;
  int m_iLoadingDismounts; // observed native aiming -> on-foot loading transitions
  int m_iReserveRounds; // paid mission rounds not yet issued to a gunner
+ int m_iDryMissions;   // missions in a row that timed out with nothing fired (reset when the tube goes up again)
  bool m_bNoSpotLogged;
  ref map<IEntity, ResourceName> m_Backpacks = new map<IEntity, ResourceName>(); // carriers' own packs while they carry parts
  bool m_bPartsChecked;
@@ -64,6 +65,7 @@ class ACR_Mortars : Managed
  static const float MIN_ELEVATION = 45;
  static const float MAX_ELEVATION = 85;
  static const float MISSION_TIMEOUT = 150;
+ static const int DRY_MISSIONS = 2;      // missions in a row that fire nothing before the team is taken off fire missions
  static const float MIN_RANGE = 100;
  static const int COST = 30;
  static const int TUBE_COST = 10; // a new mortar with a Reinforce, after the old one was destroyed
@@ -592,6 +594,7 @@ class ACR_Mortars : Managed
   SCR_AIGroupUtilityComponent utility = team.m_Group.GetGroupUtilityComponent();
   if (usage && utility) utility.AddUsableVehicle(usage);
   PrintFormat("[ACR] MORTAR %1 tube up at %2, slope %3 deg, usable %4", team.m_sName, team.m_Spot, SlopeAt(team.m_Spot), usage != null);
+  team.m_iDryMissions = 0;
   return tube;
  }
 
@@ -703,6 +706,10 @@ class ACR_Mortars : Managed
   if (!team.m_Squad || team.m_Squad.HasPlayer()) { reason = team.m_sName + " is led by a player"; return false; }
   if (team.m_eState != ACR_EMortarState.DEPLOYED || !team.m_Tube) { reason = string.Format("%1 is not set up (%2)", team.m_sName, team.m_sStatus); return false; }
   if (team.m_bFiring) { reason = team.m_sName + " is busy with a fire mission"; return false; }
+  // Two missions in a row that fired nothing: the crew can't work the tube where it stands
+  // (Everon night soak 26 Oct: free fire kept queueing 0-of-2 missions every 2.5 min). It takes
+  // missions again once the tube has been set up anew (a move, shoot-and-scoot, Reinforce).
+  if (team.m_iDryMissions >= DRY_MISSIONS) { reason = team.m_sName + " isn't firing (its last two missions fired nothing); move it to set up again"; return false; }
   ResourceName shell = ShellFor(team, type);
   if (shell.IsEmpty()) { reason = team.m_sName + " has no shells of that kind"; return false; }
   float distance = vector.DistanceXZ(team.m_Tube.GetOrigin(), target);
@@ -895,6 +902,8 @@ class ACR_Mortars : Managed
   team.m_iReserveRounds = 0;
   team.m_fLastFinished = GetGame().GetWorld().GetWorldTime() / 1000;
   s_iLastFired = team.m_iFired;
+  if (team.m_iFired > 0) team.m_iDryMissions = 0;
+  else if (why == "timed out") team.m_iDryMissions++;
   PrintFormat("[ACR] MORTAR %1 fire mission %2 %3: %4 of %5 rounds fired", team.m_sName, team.m_sMission, why, s_iLastFired, team.m_iRounds);
   ACR_Squad squad = team.m_Squad;
   if (squad && team.m_eState == ACR_EMortarState.DEPLOYED && why != "packing up")
@@ -906,6 +915,17 @@ class ACR_Mortars : Managed
    squad.m_OrderKind = ACR_EOrderKind.DEFEND;
   }
   team.m_sStatus = "ready";
+  // After the idle order above: an AI commander's team sets up again a little way off, as after
+  // shoot-and-scoot (a team in range never moves on its own); a player's team waits for an order.
+  bool relocate = team.m_iDryMissions == DRY_MISSIONS && team.m_Squad && !team.m_Squad.HasPlayer() && team.m_Squad.m_iOrderedBy == 0;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  ACR_AICommander ai;
+  if (manager) ai = manager.AICommanderFor(team.m_sFaction);
+  if (relocate && ai && ai.m_bActive)
+  {
+   team.m_Squad.MoveTo(ACR_Manager.Ground(team.m_Spot + Vector(Math.RandomFloat(-40, 40), 0, Math.RandomFloat(-40, 40))));
+   PrintFormat("[ACR] MORTAR %1 fired nothing in %2 missions: setting up again nearby", team.m_sName, DRY_MISSIONS);
+  }
  }
 
  // ---------------------------------------------------------------- map and panel

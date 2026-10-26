@@ -11,6 +11,7 @@
 
 ### Support
 
+- A mortar team whose last two fire missions fired nothing takes no more missions until its tube is set up again (the support list says why). An AI commander's team moves a short way and sets up again by itself. Before, the AI kept paying for or queueing missions on a team that couldn't fire, every few minutes.
 - A helicopter whose engine or rotor was shot up while it stood on its pad is repaired by servicing. Before, it looked fully healthy, wasn't repaired, and went back into servicing every minute for the rest of the game (the side couldn't use it or buy another). Vehicles serviced at depots and on reinforcement get the same full repair.
 
 ### Intel

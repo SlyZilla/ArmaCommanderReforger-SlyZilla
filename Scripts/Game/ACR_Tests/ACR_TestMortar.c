@@ -139,6 +139,11 @@ class ACR_TestMortar
    if (s_Team.m_Tube) PrintFormat("[ACR] MORTAR tube at %1, slope %2 deg, height above ground %3", s_Team.m_Tube.GetOrigin(), ACR_Mortars.SlopeAt(s_Team.m_Tube.GetOrigin()), s_Team.m_Tube.GetOrigin()[1] - GetGame().GetWorld().GetSurfaceY(s_Team.m_Tube.GetOrigin()[0], s_Team.m_Tube.GetOrigin()[2]));
    string far = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 4200)));
    ACR_TestRegress.Check("mortar: out of range refused", far.Contains("out of range"), far);
+   // Two missions in a row that fired nothing: no more missions until it sets up again.
+   s_Team.m_iDryMissions = ACR_Mortars.DRY_MISSIONS;
+   string dry = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 700)));
+   s_Team.m_iDryMissions = 0;
+   ACR_TestRegress.Check("mortar: a team whose last two missions fired nothing is refused", dry.Contains("isn't firing"), dry);
    ACR_Mortars.s_iLastFired = -1;
    s_iCrewDepartures = s_Team.m_Squad.m_iUnexpectedCrewDepartures;
    string near = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 700)));
@@ -218,7 +223,7 @@ class ACR_TestMortar
   {
    string dead = Call(manager, ACR_ESupportType.MORTAR_HE_SMALL, ACR_Manager.Ground(home + Vector(0, 0, 600)));
    ACR_TestRegress.Check("mortar: no calls once the team is dead", dead.Contains("no mortar team"), dead);
-   ACR_TestRegress.Complete("mortar", 22);
+   ACR_TestRegress.Complete("mortar", 23);
    s_iPhase = 7;
   }
  }
