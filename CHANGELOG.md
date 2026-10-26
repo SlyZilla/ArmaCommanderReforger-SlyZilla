@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.5.7 — unreleased
+## 0.5.8 — unreleased
+
+## 0.5.7 — released
 
 Dig in and read the enemy. Fortify positions, mine the approaches, size your checkpoints, and face AI commanders that fight to their own doctrine and change it when it fails.
 
