@@ -3247,7 +3247,16 @@ class ACR_Squad : Managed
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent() || FindController(character) != 0) continue;
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
-   if (m_iDismountSweeps >= 2)
+   // Still aboard on the third sweep (9 s): the teleport through a door left him in too (an LAV's
+   // rear seats, 25 Oct): out without a door, as vanilla clears a seat (SCR_AIChangeCompartment).
+   if (m_iDismountSweeps >= 3)
+   {
+    vector spot[4];
+    access.FindSuitableTeleportLocation(spot);
+    access.GetOutVehicle_NoDoor(spot, false, false);
+    PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, taken out without a door", m_Name, character);
+   }
+   else if (m_iDismountSweeps >= 2)
    {
     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
     PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, placed out", m_Name, character);
