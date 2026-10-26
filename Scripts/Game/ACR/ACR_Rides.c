@@ -510,6 +510,10 @@ class ACR_Rides : Managed
    ACR_Squad rider = ride.m_Rider;
    if (ride.m_State == ACR_ERideState.TO_DROP && rider.OrderState() == ACR_EOrderState.DISMOUNT)
     rider.ContinueAfterDismount(ride.m_sFinalPrefab, ride.m_Final, ride.m_fFinalRadius, ride.m_sFinalOrder, ride.m_iFinalKind);
+   // Riders given a job while aboard (mines, a roadblock, a Fortify order): out, the job left to carry on on foot
+   // (DismountAndContinue's Halt would end it, refunded).
+   else if (aboard > 0 && riderReordered && rider.HasJob())
+    rider.GetOutForJob();
    // Riders given a new order while aboard: out first, then carry it out on foot.
    else if (aboard > 0 && riderReordered && rider.m_sOrderPrefab != ACR_Squad.WP_GET_OUT)
     rider.DismountAndContinue(rider.m_sOrderPrefab, rider.m_MoveTarget, rider.m_fOrderRadius, rider.m_Order, rider.m_OrderKind);

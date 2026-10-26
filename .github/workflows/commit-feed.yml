@@ -1,0 +1,28 @@
+name: Discord commit feed
+
+# Replaces the repository's push webhook to #aca-commits so the Workshop relay's ledger
+# branch stays out of the channel. Discord's /github endpoint renders the forwarded push
+# exactly like a native GitHub webhook.
+on:
+  push:
+    branches-ignore: [workshop-relay-state]
+
+permissions: {}
+
+jobs:
+  forward:
+    if: github.repository == 'propst-design/ArmaCommanderReforger'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Forward the push to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_COMMITS_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "DISCORD_COMMITS_WEBHOOK_URL is not set; skipping."
+            exit 0
+          fi
+          curl --fail-with-body -sS -X POST "${WEBHOOK%/github}/github" \
+            -H 'Content-Type: application/json' -H 'X-GitHub-Event: push' \
+            --data-binary @"$GITHUB_EVENT_PATH"

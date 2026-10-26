@@ -26,7 +26,7 @@ reports in [Discord](https://discord.gg/WK8xGSztB) under **#issues** and ideas u
 **#suggestions**; no GitHub account needed. This repository's issue tracker remains
 available as an alternative.
 
-The current Workshop release is **0.5.6**, with **Better Battle Buddies 0.1.5**.
+The current Workshop release is **0.5.7**, with **Better Battle Buddies 0.1.6**.
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Playing from Workshop

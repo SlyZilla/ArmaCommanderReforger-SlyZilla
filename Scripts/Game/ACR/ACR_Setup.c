@@ -204,21 +204,28 @@ class ACR_Setup
  static string Rows()
  {
   string rows;
-  array<string> keys = {"west", "east", "layout", "seed", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "startrp", "income", "shared", "holdguns", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
+  bool generated = Current("layout").StartsWith("gen:");
+  // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "startrp", "income", "shared", "holdguns", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
   foreach (string key : keys)
   {
-   if (key == "seed" && !Current("layout").StartsWith("gen:")) continue;
+   if (key == "seed" && !generated) continue;
+   // Opens the map on the host's own screen with the layout drawn on it (client side).
+   if (key == "map")
+   {
+    if (s_PreviewNames.IsEmpty()) continue;
+    if (generated) rows += string.Format("map\tShow and edit the layout on the map (%1 bases)\n", s_PreviewNames.Count());
+    else rows += string.Format("map\tShow the layout on the map (%1 bases)\n", s_PreviewNames.Count());
+    continue;
+   }
+   if (key == "undo")
+   {
+    int moves = ACR_Generator.MoveCount();
+    if (generated && moves > 0) rows += string.Format("undo\tUndo layout edits (%1)\n", moves);
+    continue;
+   }
    rows += key + "\t" + Label(key) + ": " + ValueName(key, Current(key)) + "\n";
   }
-  // Opens the map on the host's own screen with the layout drawn on it (client side).
-  bool generated = Current("layout").StartsWith("gen:");
-  if (!s_PreviewNames.IsEmpty())
-  {
-   if (generated) rows += string.Format("map\tShow and edit the layout on the map (%1 bases)\n", s_PreviewNames.Count());
-   else rows += string.Format("map\tShow the layout on the map (%1 bases)\n", s_PreviewNames.Count());
-  }
-  int moves = ACR_Generator.MoveCount();
-  if (generated && moves > 0) rows += string.Format("undo\tUndo layout edits (%1)\n", moves);
   return rows;
  }
 
@@ -799,8 +806,9 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  static const ResourceName PRESETS = "{AC230926A00100F0}Configs/ACR_Dialogs.conf";
  protected static const ResourceName LAYOUT_BUTTON = "{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout";
  protected ref map<SCR_ButtonBaseComponent, string> m_Keys = new map<SCR_ButtonBaseComponent, string>();
+ protected Widget m_wTabs;
  protected Widget m_wRows;
- protected bool m_bLogisticsPage;
+ protected int m_iTab;
  protected int m_iPage;
  protected int m_iPages = 1;
  protected string m_sRows;
@@ -809,7 +817,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  // Rows a page holds (25 Oct: with the doctrine and AI rows the match settings ran off a 1080p
  // screen, hiding "Show the layout on the map" and the way to the logistics page): what fits
  // under the dialog's title, text and buttons (CHROME, in UI units) at ROW_HEIGHT each, less two
- // for the page buttons.
+ // for the tab bar and a page button. Tabs normally fit on one page; pages remain for small screens.
  static const float ROW_HEIGHT = 44;
  static const float CHROME = 380;
  static int PageRows(float height)
@@ -827,10 +835,50 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   return workspace.DPIUnscale(workspace.GetHeight());
  }
 
- // The rows on the logistics page; the rest are match settings.
- static bool IsLogisticsRow(string key)
+ // The tabs across the top (25 Oct redesign): the battlefield first, with its seed and map
+ // preview together, then who commands, money, logistics and engineering.
+ static const int TABS = 5;
+ static string TabName(int tab)
  {
-  return key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice" || key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai";
+  if (tab == 1) return "Command";
+  if (tab == 2) return "Economy";
+  if (tab == 3) return "Logistics";
+  if (tab == 4) return "Engineers";
+  return "Battlefield";
+ }
+
+ // The tab a row belongs to; rows nobody sorted yet land on the first tab, where they are seen.
+ static int Tab(string key)
+ {
+  if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "holdguns") return 1;
+  if (key == "pricing" || key == "startrp" || key == "income") return 2;
+  if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
+  if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai") return 4;
+  return 0;
+ }
+
+ // "US vs USSR, generated, whole map, seed 123": the main choices, seen from every tab.
+ static string Summary(string rows)
+ {
+  map<string, string> values = new map<string, string>();
+  array<string> lines = {};
+  rows.Split("\n", lines, true);
+  foreach (string line : lines)
+  {
+   array<string> parts = {};
+   line.Split("\t", parts, false);
+   if (parts.Count() < 2) continue;
+   int colon = parts[1].IndexOf(": ");
+   if (colon >= 0) values.Set(parts[0], parts[1].Substring(colon + 2, parts[1].Length() - colon - 2));
+  }
+  string summary = values.Get("west") + " vs " + values.Get("east") + ", " + values.Get("layout");
+  string seed;
+  if (values.Find("seed", seed))
+  {
+   if (seed.StartsWith("random")) summary += ", random seed";
+   else summary += ", seed " + seed;
+  }
+  return summary;
  }
 
  void Fill(string rows, string info)
@@ -840,16 +888,25 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   Widget root = GetRootWidget();
   if (!root) return;
   SetTitle("AC: Actual - match setup");
-  SetMessage("Click an option to change it, then press Start. " + info + "\n\nAC: Actual is built and tested by one person. AI agents help write it, but I can't catch every bug or polish every feature alone, so please report any problem you hit: discord.gg/WK8xGSztB (issues channel; no GitHub account needed).");
+  SetMessage(Summary(rows) + "\nPick a tab, click an option to change it, then press Start. " + info + "\n\nAC: Actual is built and tested by one person. AI agents help write it, but I can't catch every bug or polish every feature alone, so please report any problem you hit: discord.gg/WK8xGSztB (issues channel; no GitHub account needed).");
   if (!m_wRows)
   {
    Widget content = root.FindAnyWidget("ContentVerticalLayout");
    if (!content) content = root.FindAnyWidget("ContentLayoutContainer");
    if (!content) return;
+   m_wTabs = GetGame().GetWorkspace().CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, content);
    m_wRows = GetGame().GetWorkspace().CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, content);
+   AlignableSlot.SetPadding(m_wRows, 0, 8, 0, 0);
   }
+  while (m_wTabs.GetChildren()) m_wTabs.GetChildren().RemoveFromHierarchy();
   while (m_wRows.GetChildren()) m_wRows.GetChildren().RemoveFromHierarchy();
   m_Keys.Clear();
+  for (int tab = 0; tab < TABS; tab++)
+  {
+   string name = TabName(tab);
+   if (tab == m_iTab) name = "[" + name + "]";
+   AddButton(m_wTabs, "tab:" + tab.ToString(), name, true);
+  }
   array<string> lines = {};
   rows.Split("\n", lines, true);
   array<string> keys = {};
@@ -858,45 +915,64 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   {
    array<string> parts = {};
    line.Split("\t", parts, false);
-   if (parts.Count() < 2 || IsLogisticsRow(parts[0]) != m_bLogisticsPage) continue;
+   if (parts.Count() < 2 || Tab(parts[0]) != m_iTab) continue;
    keys.Insert(parts[0]);
    texts.Insert(parts[1]);
   }
-  // This page's rows, then the page buttons.
+  // This tab's rows, then a page button if the screen is too short for them all.
   int perPage = PageRows(ScreenHeight());
   m_iPages = (keys.Count() + perPage - 1) / perPage;
   if (m_iPages < 1) m_iPages = 1;
   if (m_iPage >= m_iPages) m_iPage = m_iPages - 1;
   int first = m_iPage * perPage;
-  for (int i = first; i < keys.Count() && i < first + perPage; i++) AddRow(keys[i], texts[i]);
+  for (int i = first; i < keys.Count() && i < first + perPage; i++) AddButton(m_wRows, keys[i], texts[i]);
   if (m_iPages > 1)
   {
    string more = string.Format("More settings (page %1 of %2)...", m_iPage + 1, m_iPages);
    if (m_iPage == m_iPages - 1) more = string.Format("Back to the first page (page %1 of %2)", m_iPage + 1, m_iPages);
-   AddRow("next_page", more);
+   AddButton(m_wRows, "next_page", more);
   }
-  string caption = "Logistics settings...";
-  if (m_bLogisticsPage) caption = "Back to match settings";
-  AddRow("logistics_page", caption);
  }
 
- protected void AddRow(string key, string text)
+ void ShowTab(int tab)
  {
-  Widget widget = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, m_wRows);
-  if (!widget) return;
+  m_iTab = tab;
+  m_iPage = 0;
+  Fill(m_sRows, m_sInfo);
+ }
+
+ // A row on screen now (the setup UI test).
+ bool ShowsRow(string key)
+ {
+  foreach (SCR_ButtonBaseComponent button, string shown : m_Keys) if (shown == key) return true;
+  return false;
+ }
+
+ protected SCR_ButtonTextComponent AddButton(Widget parent, string key, string text, bool fill = false)
+ {
+  Widget widget = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, parent);
+  if (!widget) return null;
   AlignableSlot.SetPadding(widget, 2, 2, 2, 2);
+  if (fill) LayoutSlot.SetSizeMode(widget, LayoutSizeMode.Fill);
   SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(widget);
-  if (!button) return;
+  if (!button) return null;
   button.SetText(text);
+  // The command panel's blue: the vanilla hover is white behind white text, hiding the row.
+  Color normal = new Color(0.16, 0.42, 0.80, 0.40);
+  button.SetBackgroundColors(normal, new Color(0.26, 0.56, 0.96, 0.70), new Color(0.30, 0.62, 1.0, 0.95), new Color(0.36, 0.68, 1.0, 1.0), new Color(0.30, 0.62, 1.0, 0.95));
+  if (button.m_wBackground) button.m_wBackground.SetColor(normal);
+  Widget border = widget.FindAnyWidget("Border");
+  if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
   button.m_OnClicked.Insert(OnRow);
   m_Keys.Set(button, key);
+  return button;
  }
 
  protected void OnRow(SCR_ButtonBaseComponent button)
  {
   string key;
   if (!m_Keys.Find(button, key)) return;
-  if (key == "logistics_page") { m_bLogisticsPage = !m_bLogisticsPage; m_iPage = 0; Fill(m_sRows, m_sInfo); return; }
+  if (key.StartsWith("tab:")) { ShowTab(key.Substring(4, key.Length() - 4).ToInt()); return; }
   if (key == "next_page") { m_iPage = (m_iPage + 1) % m_iPages; Fill(m_sRows, m_sInfo); return; }
   if (key == "map") { ACR_SetupClient.OpenPreviewMap(); return; }
   ACR_SetupClient.Request(key);

@@ -1,54 +1,65 @@
 # Changelog
 
-## 0.5.7 — unreleased
-
-- Shift + right-click on a squad that is holding where it arrived now sends it there at once. Before, the point was queued behind its hold, which never ends, so it never went (the panel said "waypoint added" and the squad stood still).
-
-- The setup screen's settings come in pages that fit the screen, so every row can be reached as more options are added. Before, the list could run off a 1080p screen, hiding "Show the layout on the map" and the way to the logistics page.
-
-- Roadblock sizes and barricades (a port of the ACA Field Engineering add-on): the map panel's Roadblock button becomes **Roadblock S / M / L** and **Barricade**. The small checkpoint has no machine gun (12 RP, 35 s), the medium is the old roadblock (20 RP, 45 s), the large carries a heavy machine gun (30 RP, 70 s), and barricades are sized to the road (8 RP, 25 s). RHS AFRF now builds the Soviet set, and FIA builds log barricades. A construction truck with the squad pays in supplies (75 / 225 / 350 / 40) when it has them, else RP. A build called off is refunded where it was paid from, Halt included (it used not to refund). The 3-minute give-up timer starts when the squad reaches the road (the walk has its own limit), and the roadblock waits for vehicles to leave the spot. AI commanders still build medium checkpoints paid in RP.
+## 0.5.8 — unreleased
 
 - Gunners stay on held guns (on by default; setup row **Gunners stay on held guns**, `-acrHoldGuns 0` for vanilla): a squad holding a spot (Defend, a checkpoint, a Fortify position, FOB defences) keeps its men on the static guns there. Vanilla took a gunner off his gun whenever anything he knew of, even a minute old, or just the sound of firing, was outside the gun's arc, so checkpoint and nest guns kept standing empty. Now he leaves only for an enemy he saw in the last 10 s within 60 m (a real flank), and a held gun that stands empty for 8 s is manned again by the nearest man of the squad.
 
+## 0.5.7 — released
+
+Dig in and read the enemy. Fortify positions, mine the approaches, size your checkpoints, and face AI commanders that fight to their own doctrine and change it when it fails.
+
+### Engineering
+
+- Fortify position: a commander order that digs an infantry squad in where you right-click, facing the nearest known enemy or enemy base. Ordering it again on the position upgrades it from hasty (a line of three sandbag positions behind a barbed-tape fence, 10 RP) to dug in (an MG nest in place of the middle position, so the gun is in the centre of the line, and a sandbag bunker under a camo net, 15 RP) to a strongpoint (a bunker, and a heavy MG on a flank turned in across the front for crossfire, 25 RP). Pieces avoid big rocks, and each gun is placed where nothing but wire blocks its line of fire (a gun may aim a little up rising ground). An upgrade goes in whole or not at all: its pieces look further afield when their usual places are blocked (a road, rocks, a slope), and an upgrade that still can't fit is refused when you order it, with the reason and nothing charged. The AI commander picks sites where its upgrades will fit and leaves a position alone for a while after an upgrade there is refused. Work pauses while contested and runs twice as fast with engineers; the squad then holds the position and mans its guns, and the position shows on its side's map until its pieces are gone. `-acrFortify 0` turns the order off and `-acrFortifyAI 1` lets AI commanders fortify their approaches; both are on the startup Logistics settings page and in the mission header.
+- Commander minefield orders: infantry squads lay AP, AT or mixed minefields (15 / 20 / 25 RP) and disarm and lift mines (3 RP) from the map panel. AT mines go in both lanes of the road through the field and AP mines off it, minefield signs mark the corners, and the area shows on the owning side's command map. Work pauses while contested and runs twice as fast with engineers or a construction truck; a cancelled order refunds the share not laid. The owning side's AI never sets off its own mines unless `-acrMinesRealistic 1`. `-acrMines 0` turns the orders off and `-acrMinesAI 1` lets AI commanders mine their approaches; all three are on the startup Logistics settings page and in the mission header.
+- Minefield orders survive a regroup: a squad that stops to regroup on the way to its field now carries on and lays it afterwards. Before, the regroup cancelled the order and refunded it, and the squad then stood at the site doing nothing until it got a new order.
+- Minefield orders no longer time out after a long pause: time with the order set aside (a regroup, a player holding the squad) doesn't count towards the walk limit or the 3-minute give-up timer, so the order isn't abandoned when it resumes.
+- Roadblock sizes and barricades (a port of the ACA Field Engineering add-on): the map panel's Roadblock button becomes **Roadblock S / M / L** and **Barricade**. The small checkpoint has no machine gun (12 RP, 35 s), the medium is the old roadblock (20 RP, 45 s), the large carries a heavy machine gun (30 RP, 70 s), and barricades are sized to the road (8 RP, 25 s). RHS AFRF now builds the Soviet set, and FIA builds log barricades. A construction truck with the squad pays in supplies (75 / 225 / 350 / 40) when it has them, else RP. A build called off is refunded where it was paid from, Halt included (it used not to refund). The 3-minute give-up timer starts when the squad reaches the road (the walk has its own limit), and the roadblock waits for vehicles to leave the spot. AI commanders still build medium checkpoints paid in RP.
 - Roadblocks ordered by a player face the threat: the nearest enemy their side knows of within 600 m, else the nearest enemy base it can see (the AI commander's already faced the enemy base). Before, the checkpoint faced whichever way the road happened to run.
+- Roadblocks snap to the road centre instead of staying at the clicked position; clearance checks use the actual construction site.
+- Minefield, roadblock and Fortify orders given to a squad still riding in a vehicle now carry on once the squad is out. Before, getting out cancelled the order and refunded it.
+
+### AI commanders
 
 - AI commander doctrines: each AI side fights to one of five styles for the whole match. Balanced is the old commander; Blitz goes mechanised and attacks early; Firepower leans on mortars, gunships and preparation fire; Fortress defends in depth and counterattacks lost bases at once; Raider sends small teams after weak bases and FOBs. New setup rows "Blue AI doctrine" and "Red AI doctrine" (random by default). No doctrine fields a bigger army.
 - Doctrines now shape the whole commander: rides and air lifts, defence in depth and how long defenders hold, defensive air strikes, mortar fire missions and forward observers, base-of-fire time, minefields, FOB placement, refits and FIA pockets. Firepower really keeps RP for two fire missions now, and Raider no longer re-attacks the base that just beat it or fields fewer men than the others.
 - Enemy doctrines can be discovered: contacts, enemy FOBs found and bases changing hands build up intel until the side gets a hint ("Blitz or Raider?") and then a confirmed doctrine, shown in the map panel's Report. Players under an AI commander see their own commander's doctrine there.
 - AI commanders change doctrine when theirs isn't working (losing ground, heavy losses, stalemate), or to counter an enemy doctrine they have confirmed. The other side only notices once fresh intel shows the change. New setup row "AI doctrines adapt" / `-acrDoctrineAdapt 0` to keep the first doctrine.
+- AI commanders keep spending in long games: the squad cap counts only fighting units (trucks, ambulances and 1-man remnants no longer fill it), and badly hurt idle squads walk back from the front to a quiet base to refill instead of staying at their post at a third of their strength.
+- AI squads become available for combat orders after finishing a roadblock, instead of being tied to it indefinitely. Roadblock construction leaves the commander's reserve squad available.
+- Recon teams (snipers, scouts, spotters) take overwatch on the front, armoured vehicles hold a standoff ring around an objective instead of driving into it, and mortars move 15 seconds after a fire mission. Heavily defended targets get gunship and rocket preparation fire.
+
+### The battlefield
 
 - FIA pockets of resistance: on whole-map and half-map battles a few empty bases away from both HQs start held by an FIA garrison (bigger at military sites, which also keep a small patrol). They look unclaimed until your units get close, so a squad sent to grab an empty village may have a fight on its hands. Clear one to capture it. New setup row "FIA resistance": few (default), many or off.
+- Generated battles vary tactical objectives and select later income sites together while preserving opening income, earning-site count, total RP and spacing. Consecutive seeds cycle evenly through small complete sets of valid income arrangements. Flashpoints vary their local area and objective mix, keeping 5-7 accessible sites and protected opening objectives.
+- Generated half-map battles use varied diagonal, shifted and compact regions, with more suitable HQ arrangements across seeds. Existing objective access, spacing and opening-income safeguards remain in place.
+- RU, UA and RHS USMC requisitions use distinct infantry formations with revised prices, dedicated support ammunition and role-specific replacement kits. UA keeps mostly Soviet equipment alongside Western-equipped squads and fire teams. Rare Special Forces carry suppressed weapons, modern armor and night vision without thermal sights; AI selection does not increase with their price. Marines use combat optics, dedicated scout/engineer/sniper teams and rare suppressed MARSOC; shared utility and logistics vehicles use aligned prices.
+- Fixed UA and Russian Typhoon purchases failing to deploy because their driver and gunner crews never spawned.
 
-- AI commanders keep spending in long games: the squad cap counts only fighting units (trucks, ambulances and 1-man remnants no longer fill it), and badly hurt idle squads walk back from the front to a quiet base to refill instead of staying at their post at a third of their strength.
+### Command and setup
 
-- Fortify position: a commander order that digs an infantry squad in where you right-click, facing the nearest known enemy or enemy base. Ordering it again on the position upgrades it from hasty (a line of three sandbag positions behind a barbed-tape fence, 10 RP) to dug in (an MG nest in place of the middle position, so the gun is in the centre of the line, and a sandbag bunker under a camo net, 15 RP) to a strongpoint (a bunker, and a heavy MG on a flank turned in across the front for crossfire, 25 RP). Pieces avoid big rocks, and each gun is placed where nothing but wire blocks its line of fire (a gun may aim a little up rising ground). An upgrade goes in whole or not at all: its pieces look further afield when their usual places are blocked (a road, rocks, a slope), and an upgrade that still can't fit is refused when you order it, with the reason and nothing charged. The AI commander picks sites where its upgrades will fit and leaves a position alone for a while after an upgrade there is refused. Work pauses while contested and runs twice as fast with engineers; the squad then holds the position and mans its guns, and the position shows on its side's map until its pieces are gone. `-acrFortify 0` turns the order off and `-acrFortifyAI 1` lets AI commanders fortify their approaches; both are on the startup Logistics settings page and in the mission header.
+- The setup screen is sorted into tabs: **Battlefield** (sides, battlefield, seed, the map preview, FIA resistance and threat), **Command**, **Economy**, **Logistics** and **Engineers**. The map preview now sits right under the seed it shows, and a line at the top sums up the match (sides, battlefield, seed) from every tab. Before, the list could run off a 1080p screen, and the map preview was a page away from the seed. A screen too short for a tab still gets a page button. The tabs and rows use the command panel's blue buttons, so the row under the mouse no longer turns white on white.
+- Shift + right-click on a squad that is holding where it arrived now sends it there at once. Before, the point was queued behind its hold, which never ends, so it never went (the panel said "waypoint added" and the squad stood still).
+- Fixed the 3D commander camera missing its mouse cursor and movement controls. WASD pans, right-drag rotates and the wheel changes altitude; exiting restores the previous view.
+- 3D commander camera: each mouse-wheel notch is a small altitude step, panning speeds up with height, and friendly squads and bases get on-screen markers with name and distance that you can click to select.
+- Taking over a soldier in a squad on a ride no longer ends the ride and sends the transport home. The truck waits at the pickup and drop-off for a player rider, and F8 puts the riders back on the ride's order. After death you return to the squad you possessed, not the last squad you ordered.
+- Host and Play launchers start every Better Battle Buddies behaviour switched on, and its options sit in one BBB submenu instead of separate main-menu toggles.
 
-- Commander minefield orders: infantry squads lay AP, AT or mixed minefields (15 / 20 / 25 RP) and disarm and lift mines (3 RP) from the map panel. AT mines go in both lanes of the road through the field and AP mines off it, minefield signs mark the corners, and the area shows on the owning side's command map. Work pauses while contested and runs twice as fast with engineers or a construction truck; a cancelled order refunds the share not laid. The owning side's AI never sets off its own mines unless `-acrMinesRealistic 1`. `-acrMines 0` turns the orders off and `-acrMinesAI 1` lets AI commanders mine their approaches; all three are on the startup Logistics settings page and in the mission header.
-- Minefield orders survive a regroup: a squad that stops to regroup on the way to its field now carries on and lays it afterwards. Before, the regroup cancelled the order and refunded it, and the squad then stood at the site doing nothing until it got a new order.
-- Minefield orders no longer time out after a long pause: time with the order set aside (a regroup, a player holding the squad) doesn't count towards the walk limit or the 3-minute give-up timer, so the order isn't abandoned when it resumes.
+### Air lifts
+
+- Off-map lift helicopters arrive already airborne with rotors spun up, saving about 20 seconds. When a squad needs two helicopters and only one landing spot fits, the second holds short until the first has unloaded and left.
+- Air-lift passengers receive individual boarding assignments for both helicopters, so soldiers who cannot fit in the first Huey walk to the second. Scripted placement is reserved for stalled boarding.
+- Two air lifts no longer pick landing spots within 40 m of each other, and loose weapons and gear dropped at a landing zone no longer stop a helicopter touching down.
+
+### Fixes
 
 - Fixed late-game match stalls and infinite supply truck pathfinding loops: AI commanders scale active attack fronts (up to 8) and unit caps on large maps when holding surplus territory and RP, dismounted infantry no longer embark on multi-kilometer cross-island grabs on foot, and supply trucks en route to bases avoid redundant 15-second route recalculations.
 - Replaced 4-point map status bar polygons with paired triangles, eliminating Enfusion canvas ear-clipping triangulation errors when viewing the command map.
 - Fixed player movement stall false alarms caused by evaluating active input contexts while stationary.
-
-- Air-lift passengers receive individual boarding assignments for both helicopters, so soldiers who cannot fit in the first Huey walk to the second. Scripted placement is reserved for stalled boarding.
-
-- Host and Play launchers start every Better Battle Buddies behaviour switched on, and its options sit in one BBB submenu instead of separate main-menu toggles.
-
-- Fixed the 3D commander camera missing its mouse cursor and movement controls. WASD pans, right-drag rotates and the wheel changes altitude; exiting restores the previous view.
-
-- Roadblocks snap to the road centre instead of staying at the clicked position; clearance checks use the actual construction site.
-- AI squads become available for combat orders after finishing a roadblock, instead of being tied to it indefinitely. Roadblock construction leaves the commander's reserve squad available.
-
-- RU, UA and RHS USMC requisitions use distinct infantry formations with revised prices, dedicated support ammunition and role-specific replacement kits. UA keeps mostly Soviet equipment alongside Western-equipped squads and fire teams. Rare Special Forces carry suppressed weapons, modern armor and night vision without thermal sights; AI selection does not increase with their price. Marines use combat optics, dedicated scout/engineer/sniper teams and rare suppressed MARSOC; shared utility and logistics vehicles use aligned prices.
-
-- Fixed UA and Russian Typhoon purchases failing to deploy because their driver and gunner crews never spawned.
-
+- No more "Defend Waypoint not provided" script errors when a defending squad is given a new order (an ambush ending, a roadblock squad sent elsewhere).
 - Fixed persistent AI vehicle horn audio loops: AI drivers cap continuous warning honks at 0.8 s with a 5 s silence cooldown, vacant/incapacitated vehicles immediately mute their audio signals, and per-frame post-simulation enforcement silences audio loops on dedicated servers, listen servers, and remote clients.
-
-- Generated battles vary tactical objectives and select later income sites together while preserving opening income, earning-site count, total RP and spacing. Consecutive seeds cycle evenly through small complete sets of valid income arrangements. Flashpoints vary their local area and objective mix, keeping 5-7 accessible sites and protected opening objectives.
-
-- Generated half-map battles use varied diagonal, shifted and compact regions, with more suitable HQ arrangements across seeds. Existing objective access, spacing and opening-income safeguards remain in place.
+- A squad recalled from manning its own roadblock gun now walks to its new order instead of finishing it on the spot.
 
 ## 0.5.6 — released
 

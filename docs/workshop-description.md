@@ -6,13 +6,13 @@ Command squads from the map, take over a friendly soldier and fight alongside th
 
 Requires the separate Better Battle Buddies (BBB) addon. Vanilla sides need no faction mods.
 
-## In 0.5.6: take the fight forward
+## In 0.5.7: dig in and read the enemy
 
-- Build a FOB with a construction truck, 500 supplies and a squad on site for 90 seconds. Develop eight upgrade spots for medical care, maintenance, ammunition, fuel, helicopters, communications, barracks and storage.
-- Fortify the perimeter with sandbags, machine-gun nests, then bunkers and guard towers. Barracks provide defenders and perimeter patrols.
-- Keep it supplied: order deliveries, expand storage and maintain a friendly radio relay for deployment and reinforcement. Upgrades spend local supplies and pause under contest.
-- Raid enemy headquarters with demolition charges, disarm a sapper's charge before it fires, or capture the surviving buildings. A lost headquarters shuts the FOB down; rebuild it with Establish FOB.
-- Face AI commanders that build and supply forward bases, coordinate attacks from several approaches, hold supporting fire in overwatch and defend in depth.
+- Fortify position: dig a squad in where you right-click, then upgrade it from a sandbag line to an MG nest and bunker, and a strongpoint with crossfire.
+- Lay AP, AT or mixed minefields and lift them again. Build small, medium or large roadblocks and road barricades, paid from a construction truck's supplies when one is with the squad.
+- AI commanders fight to one of five doctrines: Balanced, Blitz, Firepower, Fortress or Raider. Gather intel to identify theirs; they change it when it fails.
+- FIA pockets of resistance hold some empty bases until you clear them.
+- Match setup is sorted into tabs. RU, UA and RHS USMC get distinct formations and kits.
 
 ## Command and fight
 
@@ -20,11 +20,12 @@ Requires the separate Better Battle Buddies (BBB) addon. Vanilla sides need no f
 - Move, defend, hunt, queue waypoints and garrison buildings. Possess a soldier whenever you want to join the action.
 - Capture bases for RP; buy infantry, vehicles, mortar crews and observers.
 - Call artillery, combat helicopters and off-map squad air lifts.
+- Build, supply and upgrade FOBs behind your advance; raid or capture the enemy's.
 - BBB adds combat, medical and vehicle behaviour. Player orders and ACA's command rules take priority over autonomous features.
 
 ## Pick your battlefield
 
-Choose an AC: Actual scenario in Scenarios or Host. Before Start, the host/admin sets sides, layout, threat, prices, commanders, unit caps, starting RP, income and logistics. Joiners wait for the host; no external launcher is needed.
+Choose an AC: Actual scenario in Scenarios or Host. Before Start, the host/admin sets sides, layout, threat, AI doctrines, FIA resistance, prices, commanders, unit caps, starting RP, income and logistics. Joiners wait for the host; no external launcher is needed.
 
 Everon includes a hand-built island layout, halves and flashpoints. Generated layouts place bases and HQs around named locations: preview, reroll the seed or move bases before Start. Kolguyev uses generated layouts. Other terrains need an AC: Actual scenario setup.
 
