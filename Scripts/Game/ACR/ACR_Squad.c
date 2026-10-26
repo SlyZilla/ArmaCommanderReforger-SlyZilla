@@ -114,7 +114,7 @@ class ACR_Squad : Managed
  int m_iStatusPhase; // stable registration phase; removals never shift other squads
  string m_Name;
  vector m_Home;               // position at registration; used by the test RALLY order
- AIWaypoint m_Waypoint;       // last waypoint we spawned, deleted when replaced
+ AIWaypoint m_Waypoint;       // last waypoint we spawned, deleted soon after it is replaced
  ref array<IEntity> m_Numbering = {}; // soldiers in first-seen order; gives stable "Alpha 1-2" labels
 
  void ACR_Squad(SCR_AIGroup group, int number)
@@ -739,7 +739,7 @@ class ACR_Squad : Managed
   array<AIWaypoint> previousOrders = {};
   m_Group.GetWaypoints(previousOrders);
   foreach (AIWaypoint previousOrder : previousOrders) m_Group.RemoveWaypoint(previousOrder);
-  if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
+  DeleteWaypointSoon(m_Waypoint);
   m_Waypoint = waypoint;
   m_Group.AddWaypoint(waypoint);
   return waypoint;
@@ -795,8 +795,22 @@ class ACR_Squad : Managed
   array<AIWaypoint> previousOrders = {};
   m_Group.GetWaypoints(previousOrders);
   foreach (AIWaypoint previousOrder : previousOrders) m_Group.RemoveWaypoint(previousOrder);
-  if (m_Waypoint) SCR_EntityHelper.DeleteEntityAndChildren(m_Waypoint);
+  DeleteWaypointSoon(m_Waypoint);
   m_Waypoint = null;
+ }
+
+ // A replaced waypoint goes a moment later, not in the frame it is removed: the group's running
+ // activity (a Defend) still reads it until it notices the removal (crash.log 25 Oct: "Defend
+ // Waypoint not provided to the node!" as an ambush ended and as a roadblock squad was re-tasked).
+ static const int WAYPOINT_DELETE_DELAY_MS = 1000;
+ protected static void DeleteWaypointSoon(AIWaypoint waypoint)
+ {
+  if (waypoint) GetGame().GetCallqueue().CallLater(DeleteWaypointNow, WAYPOINT_DELETE_DELAY_MS, false, waypoint);
+ }
+
+ protected static void DeleteWaypointNow(AIWaypoint waypoint)
+ {
+  if (waypoint) SCR_EntityHelper.DeleteEntityAndChildren(waypoint);
  }
 
  bool MoveTo(vector destination)
