@@ -4833,22 +4833,28 @@ class ACR_AICommander : Managed
    m_aPendingBuilds.Remove(i);
    string from = string.Format(" (out of its ride, %1 m from %2)", (int)vector.DistanceXZ(PositionOf(squad), pending.m_Base.GetOrigin()), pending.m_Base.m_sName);
    bool ordered;
+   bool paid;
    if (pending.m_iTask == ACR_EAITask.ROADBLOCK)
    {
-    ordered = CanBuild(ACR_Roadblocks.ROADBLOCK_COST, 25) && squad.EstablishRoadblock(pending.m_vSite, pending.m_fYaw, ACR_ERoadblockType.MEDIUM, false);
+    paid = CanBuild(ACR_Roadblocks.ROADBLOCK_COST, 25);
+    ordered = paid && squad.EstablishRoadblock(pending.m_vSite, pending.m_fYaw, ACR_ERoadblockType.MEDIUM, false);
     if (ordered) PrintFormat("[ACR] AI %1: %2%3 establishing the roadblock at %4", m_sFaction, squad.GetName(), from, pending.m_vSite);
    }
    else if (pending.m_iTask == ACR_EAITask.MINES)
    {
-    ordered = CanBuild(ACR_Minefields.Cost(ACR_EMineKind.MIXED), 30) && LayMines(squad, pending.m_Base, pending.m_vEnemy, from);
+    paid = CanBuild(ACR_Minefields.Cost(ACR_EMineKind.MIXED), 30);
+    ordered = paid && LayMines(squad, pending.m_Base, pending.m_vEnemy, from);
    }
    else
    {
-    ordered = CanBuild(ACR_Fortify.Cost(1), 30) && DigIn(squad, pending.m_Base, pending.m_vEnemy, from);
+    paid = CanBuild(ACR_Fortify.Cost(1), 30);
+    ordered = paid && DigIn(squad, pending.m_Base, pending.m_vEnemy, from);
    }
    if (ordered) continue;
    squad.m_iAITask = ACR_EAITask.POSTED;
-   PrintFormat("[ACR] AI %1: %2 out of its ride, but no %3 now (RP or site)", m_sFaction, squad.GetName(), what);
+   string why = "engineering can't pay now";
+   if (paid) why = "the order was refused there";
+   PrintFormat("[ACR] AI %1: %2 out of its ride, but can't %3 now (%4)", m_sFaction, squad.GetName(), what, why);
   }
  }
  void ManagePendingBuildsForTest() { ManagePendingBuilds(); }
