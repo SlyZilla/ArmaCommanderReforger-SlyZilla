@@ -3112,6 +3112,47 @@ class ACR_Squad : Managed
  // the normal dismount first, a teleport-out if that is refused.
  int DismountNow()
  {
+  int dropped = GetEveryoneOut();
+  m_bHasLZ = false;
+  Halt("Dismounting", ACR_EOrderState.DISMOUNT);
+  m_iDismountSweeps = 0;
+  // One follow-up per squad: a second dismount (bail-out during a ride, F6 twice)
+  // used to leave two queued, and the later one replaced the resumed order with
+  // "Holding position".
+  GetGame().GetCallqueue().Remove(HoldAfterDismount);
+  GetGame().GetCallqueue().CallLater(HoldAfterDismount, 3000, false);
+  return dropped;
+ }
+
+ // A job (mines, a roadblock) given while aboard a ride: everyone out, the job left as it is to
+ // carry on on foot. DismountNow's Halt would end it, refunded (25 Oct playtest: a minefield
+ // ordered to a squad on a truck was paid and refunded in the same second, the squad then
+ // staying aboard under the job's label).
+ void GetOutForJob()
+ {
+  GetEveryoneOut();
+  m_bHasLZ = false;
+  m_iDismountSweeps = 0;
+  GetGame().GetCallqueue().Remove(SweepOutForJob);
+  GetGame().GetCallqueue().CallLater(SweepOutForJob, 3000, false);
+ }
+
+ protected void SweepOutForJob()
+ {
+  if (!IsMounted() || m_iDismountSweeps >= 3) return;
+  m_iDismountSweeps++;
+  PushOutStillAboard();
+  GetGame().GetCallqueue().CallLater(SweepOutForJob, 3000, false);
+ }
+
+ // An order of its own the squad works at (paid when given, refunded if a new order ends it).
+ bool HasJob()
+ {
+  return m_MinePlan != null || m_FortifyPlan != null || RoadblockPending() || OrderState() == ACR_EOrderState.BUILD_ROADBLOCK;
+ }
+
+ protected int GetEveryoneOut()
+ {
   int dropped;
   array<IEntity> leaving = {};
   GetVehicles(leaving);
@@ -3134,14 +3175,6 @@ class ACR_Squad : Managed
     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
    dropped++;
   }
-  m_bHasLZ = false;
-  Halt("Dismounting", ACR_EOrderState.DISMOUNT);
-  m_iDismountSweeps = 0;
-  // One follow-up per squad: a second dismount (bail-out during a ride, F6 twice)
-  // used to leave two queued, and the later one replaced the resumed order with
-  // "Holding position".
-  GetGame().GetCallqueue().Remove(HoldAfterDismount);
-  GetGame().GetCallqueue().CallLater(HoldAfterDismount, 3000, false);
   return dropped;
  }
 
@@ -3203,28 +3236,33 @@ class ACR_Squad : Managed
  protected int m_iDismountSweeps;
 
  // Once out, take positions where they landed (sweeping out any late boarder first).
+ // Members still aboard after a dismount: out again, placed out from the second sweep (6 s: the
+ // animated exit was accepted but never happened, 5 Oct: LAV passengers stayed in after a drop-off).
+ protected void PushOutStillAboard()
+ {
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent() || FindController(character) != 0) continue;
+   CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+   if (m_iDismountSweeps >= 2)
+   {
+    access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+    PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, placed out", m_Name, character);
+   }
+   else if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
+    access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+  }
+ }
+
  void HoldAfterDismount()
  {
   if (IsMounted() && m_iDismountSweeps < 3)
   {
    m_iDismountSweeps++;
-   array<AIAgent> agents = {};
-   GetAgents(agents);
-   foreach (AIAgent agent : agents)
-   {
-    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
-    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent() || FindController(character) != 0) continue;
-    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
-    // Still aboard on the second sweep (6 s): the animated exit was accepted but never
-    // happened (5 Oct: LAV passengers stayed in after a drop-off): teleport out.
-    if (m_iDismountSweeps >= 2)
-    {
-     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
-     PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, placed out", m_Name, character);
-    }
-    else if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
-     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
-   }
+   PushOutStillAboard();
    GetGame().GetCallqueue().CallLater(HoldAfterDismount, 3000, false);
    return;
   }
