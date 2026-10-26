@@ -3214,7 +3214,19 @@ class ACR_AICommander : Managed
   return false;
  }
 
- // The own, safe base closest to the enemy (but not right on top of it).
+ // What a mortar is there to cover: a base it knows the enemy (or a pocket) holds, or one this
+ // side is attacking. Unclaimed sites don't count (Everon night soak 26 Oct: hidden unclaimed
+ // sites next to each HQ kept both teams there all game; one fire mission in an hour).
+ protected bool MortarTarget(ACR_Base base)
+ {
+  if (base.m_sOwner == m_sFaction) return false;
+  foreach (ACR_AIAttack attack : m_Attacks) if (attack.m_Target == base) return true;
+  string seen = SeenOwner(base);
+  return !seen.IsEmpty() && seen != m_sFaction;
+ }
+
+ // The own, safe base closest to what the mortar covers (but not right on top of any base
+ // that isn't ours).
  protected ACR_Base MortarBase()
  {
   ACR_Base best;
@@ -3223,9 +3235,15 @@ class ACR_AICommander : Managed
   {
    if (base.m_sOwner != m_sFaction || base.m_bContested || ThreatTo(base) > 0) continue;
    float front = float.MAX;
+   float nearest = float.MAX;
    foreach (ACR_Base other : ACR_Base.s_All)
-    if (other.m_sOwner != m_sFaction) front = Math.Min(front, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
-   if (front < MORTAR_MIN_STANDOFF || front >= bestFront) continue;
+   {
+    if (other.m_sOwner == m_sFaction) continue;
+    float d = vector.DistanceXZ(base.GetOrigin(), other.GetOrigin());
+    nearest = Math.Min(nearest, d);
+    if (MortarTarget(other)) front = Math.Min(front, d);
+   }
+   if (nearest < MORTAR_MIN_STANDOFF || front >= bestFront) continue;
    bestFront = front;
    best = base;
   }
@@ -3257,11 +3275,11 @@ class ACR_AICommander : Managed
    vector here = PositionOf(squad);
    if (team.m_eState == ACR_EMortarState.DEPLOYED) here = team.m_Spot;
    else if (ACR_Mortars.IsMoving(squad, here)) continue; // on its way
-   // Stays while it can reach a base that isn't ours (with some margin).
+   // Stays while it can reach something it covers (with some margin).
    float reach = ACR_Mortars.MaxRange(team.m_sTube) * 0.85;
    bool inReach = false;
    foreach (ACR_Base other : ACR_Base.s_All)
-    if (other.m_sOwner != m_sFaction && vector.DistanceXZ(here, other.GetOrigin()) < reach) inReach = true;
+    if (MortarTarget(other) && vector.DistanceXZ(here, other.GetOrigin()) < reach) inReach = true;
    if (inReach) continue;
    ACR_Base front = MortarBase();
    if (!front || vector.DistanceXZ(here, front.GetOrigin()) < front.m_fRadius + 80) continue;
