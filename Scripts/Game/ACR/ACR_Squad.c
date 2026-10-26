@@ -3267,13 +3267,13 @@ class ACR_Squad : Managed
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent() || FindController(character) != 0) continue;
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
-   // A seat whose exits are all refused (the LAV-25's CARGO seat Passenger_r02, #23: animated,
-   // teleport through the door the game picks and no-door alike): the game's own eject, through
-   // the seat's nearest door on the fourth sweep and where he sits on the fifth; on the sixth he
-   // moves to a free seat, to go out from there. (A move to another seat alone was refused too.)
+   // A seat whose exits are all refused (the LAV-25's CARGO seats, #23: animated, teleport,
+   // no-door and the game's own eject alike, 26 Oct): what the game says of him, then his vehicle
+   // action queue cleared (a stuck action blocks every new one) and out by teleport on the fourth
+   // sweep, without a door on the fifth; on the sixth he moves to a free seat, to go out from there.
    if (m_iDismountSweeps == 4 || m_iDismountSweeps == 5)
    {
-    if (Eject(character, access, m_iDismountSweeps == 5)) continue;
+    if (ClearAndGetOut(character, access, m_iDismountSweeps == 5)) continue;
    }
    if (m_iDismountSweeps == 6 && MoveToFreeSeat(character, access)) continue;
    // Still aboard on the third sweep (9 s): the teleport through a door left him in too (an LAV's
@@ -3295,16 +3295,28 @@ class ACR_Squad : Managed
   }
  }
 
- // The game's eject (BaseCompartmentSlot.EjectOccupant, forced): out of the seat's nearest door,
- // or where he sits (onTheSpot). True when it was taken.
- protected bool Eject(ChimeraCharacter character, CompartmentAccessComponent access, bool onTheSpot)
+ // His vehicle action queue cleared, then out by teleport (noDoor: without a door, where the game
+ // finds room). Logs what the game says of him first. True when the exit was taken.
+ protected bool ClearAndGetOut(ChimeraCharacter character, CompartmentAccessComponent access, bool noDoor)
  {
   BaseCompartmentSlot seat = access.GetCompartment();
-  if (!seat) return false;
-  bool immediately;
-  bool ejected = seat.EjectOccupant(true, false, immediately, onTheSpot);
-  PrintFormat("[ACR] GET OUT %1: %2 ejected from seat %3 (on the spot %4): %5, at once %6", m_Name, character, seat.GetCompartmentName(), onTheSpot, ejected, immediately);
-  return ejected;
+  string seatName = "none";
+  if (seat) seatName = seat.GetCompartmentName();
+  IEntity vehicle = CompartmentAccessComponent.GetVehicleIn(character);
+  float speed = -1;
+  if (vehicle && vehicle.GetPhysics()) speed = vehicle.GetPhysics().GetVelocity().Length();
+  PrintFormat("[ACR] GET OUT %1: %2 in seat %3: can get out %4, can jump out %5, getting in %6, getting out %7, switching seats %8, vehicle speed %9 m/s", m_Name, character, seatName, access.CanGetOutVehicle(), access.CanJumpOutVehicle(), access.IsGettingIn(), access.IsGettingOut(), access.IsSwitchingSeatsAnim(), speed);
+  access.InterruptVehicleActionQueue(true, true, true);
+  bool gotOut;
+  if (noDoor)
+  {
+   vector spot[4];
+   access.FindSuitableTeleportLocation(spot);
+   gotOut = access.GetOutVehicle_NoDoor(spot, false, false);
+  }
+  else gotOut = access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+  PrintFormat("[ACR] GET OUT %1: %2 action queue cleared, out (no door %3): %4", m_Name, character, noDoor, gotOut);
+  return gotOut;
  }
 
  // Into another free passenger seat of the same vehicle (one in his own section first), as the
@@ -3332,8 +3344,8 @@ class ACR_Squad : Managed
 
  void HoldAfterDismount()
  {
-  // Seven sweeps: the fourth and fifth eject a man no exit gets out, the sixth moves him to
-  // another seat, the seventh gets him out from there.
+  // Seven sweeps: the fourth and fifth clear the action queue of a man no exit gets out, the
+  // sixth moves him to another seat, the seventh gets him out from there.
   if (IsMounted() && m_iDismountSweeps < 7)
   {
    m_iDismountSweeps++;
