@@ -2,6 +2,8 @@
 
 ## 0.5.8 — unreleased
 
+- A ride waits at the drop until its AI riders are out (up to 20 s, as it already did for a player). Before, the transport drove home as soon as it dropped them off, and an LAV, whose rear seats don't let men out once it moves, carried some of them home (#23). A man still aboard after the dismount's second try is taken out without a door.
+
 ## 0.5.7 — released
 
 Dig in and read the enemy. Fortify positions, mine the approaches, size your checkpoints, and face AI commanders that fight to their own doctrine and change it when it fails.
