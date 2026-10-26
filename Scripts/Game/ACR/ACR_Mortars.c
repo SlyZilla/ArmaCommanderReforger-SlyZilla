@@ -61,7 +61,9 @@ class ACR_Mortars : Managed
  static float DEPLOY_WAIT = 3;          // holding still this long before setting up
  static const float MAX_SLOPE_DEG = 8;  // steeper ground: the baseplate floats or sinks visibly
  static const float PLATE_RADIUS = 0.7;
- static const float SEARCH_RADIUS = 24;
+ static const float SEARCH_RADIUS = 40;  // m: wide enough to step out of a base's vehicle ring (CLEAR_OF_BASE)
+ static const float CLEAR_OF_ROAD = 5;   // m from a road's edge (#33)
+ static const float CLEAR_OF_BASE = 30;  // m from a base's centre: bought vehicles appear 10-25 m out (#33)
  static const float MIN_ELEVATION = 45;
  static const float MAX_ELEVATION = 85;
  static const float MISSION_TIMEOUT = 150;
@@ -499,10 +501,31 @@ class ACR_Mortars : Managed
   if (high - low > Math.Tan(MAX_SLOPE_DEG * Math.DEG2RAD) * PLATE_RADIUS * 2) return false;
   // On open ground, not on or under an object (a hangar's sloping roof sits on level terrain).
   if (OnObject(free)) return false;
+  // Out of the way of traffic: off the roads and clear of where a base's bought vehicles appear.
+  if (InTheWay(free) != "") return false;
   spot = free;
   // Between the lowest point and the average: no gap under the downhill edge.
   spot[1] = (low + mean) * 0.5;
   return true;
+ }
+
+ // Why a baseplate at 'at' would be in the way of vehicles ("" when it isn't): on or by a road,
+ // or in the ring round a base's centre where bought vehicles appear (ACR_Requisition.SpawnPoint).
+ static string InTheWay(vector at)
+ {
+  ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  if (aiWorld && aiWorld.GetRoadNetworkManager())
+  {
+   BaseRoad road;
+   float distance;
+   aiWorld.GetRoadNetworkManager().GetClosestRoad(at, road, distance);
+   if (road && distance - road.GetWidth() * 0.5 < CLEAR_OF_ROAD + PLATE_RADIUS) return "by a road";
+  }
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base && !base.m_bRetired && vector.DistanceXZ(base.GetOrigin(), at) < CLEAR_OF_BASE) return "where vehicles appear at " + base.m_sName;
+  }
+  return "";
  }
 
  // Anything solid (not people) over the ground at the plate's centre or edge.
