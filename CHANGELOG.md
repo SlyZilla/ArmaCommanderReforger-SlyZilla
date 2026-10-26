@@ -2,6 +2,8 @@
 
 ## 0.5.8 — unreleased
 
+- A mortar team sets up out of the way of vehicles: not on or within 5 m of a road, and not within 30 m of a base's centre, where bought vehicles appear (#33). It looks up to 40 m round for such a spot (24 m before).
+
 ## 0.5.7 — released
 
 Dig in and read the enemy. Fortify positions, mine the approaches, size your checkpoints, and face AI commanders that fight to their own doctrine and change it when it fails.
