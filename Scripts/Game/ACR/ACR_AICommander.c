@@ -1026,9 +1026,11 @@ class ACR_AICommander : Managed
  // What a review decides over one review window: the doctrine key to change to, "" to keep.
  static string PickDoctrine(string current, string enemyKnown, int won, int basesLost, int lost, int kills, out string why)
  {
-  bool winning = won >= basesLost + 2 || (kills >= 12 && kills > lost * 1.6);
   bool losingGround = basesLost >= won + 2;
   bool bleeding = lost >= 12 && lost > kills * 1.6;
+  // Bases gained count as winning only while not bleeding: early on they are mostly empty
+  // sites (Everon night soak 26 Oct: "+3 -0, lost 20 killed 4: it is working").
+  bool winning = (won >= basesLost + 2 && !bleeding) || (kills >= 12 && kills > lost * 1.6);
   bool stuck = won == 0 && basesLost == 0;
   if (winning)
   {
