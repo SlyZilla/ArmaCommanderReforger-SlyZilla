@@ -155,8 +155,9 @@ class ACR_Rides : Managed
   return string.Format(" (nearest: %1, %2 m, %3)", nearest.GetName(), (int)best, why);
  }
 
- // Nearest free transport with room for everyone, within the fetch limits.
- ACR_Squad FindTransport(string faction, vector pickup, float trip, int seatsNeeded, out float distance, bool wideFetch = false)
+ // Nearest free transport with room for everyone, within the fetch limits ('except': taxis already
+ // counted for others, ACR_AICommander.Reach).
+ ACR_Squad FindTransport(string faction, vector pickup, float trip, int seatsNeeded, out float distance, bool wideFetch = false, array<ACR_Squad> except = null)
  {
   float maxFetch = MAX_PICKUP;
   float shareFetch = PICKUP_SHARE;
@@ -172,6 +173,7 @@ class ACR_Rides : Managed
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
    if (!IsFreeTransport(squad, faction)) continue;
+   if (except && except.Contains(squad)) continue;
    IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
    float d = vector.DistanceXZ(vehicle.GetOrigin(), pickup);
    if (d > limit) continue;

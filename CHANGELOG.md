@@ -2,6 +2,8 @@
 
 ## 0.5.8 — unreleased
 
+- AI attacks only count the squads that can get there: on foot within 2.1 km, in their own vehicles, by a taxi they can actually get (each taxi counted once), or by a ready air lift. A target beyond their reach is skipped, and the forming up waits for the slowest squad's walk or ride, up to 20 minutes. Before, squads 2-3 km off were sent on foot and the attack went in before they came (#27).
+
 ## 0.5.7 — released
 
 Dig in and read the enemy. Fortify positions, mine the approaches, size your checkpoints, and face AI commanders that fight to their own doctrine and change it when it fails.
