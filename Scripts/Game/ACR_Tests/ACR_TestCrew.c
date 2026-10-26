@@ -158,6 +158,19 @@ class ACR_TestCrew
    PrintFormat("[ACR] CREW service: %1 magazines, cost %2 RP, served %3, ammo now %4, health %5", magazines.Count(), cost, served, ammo, ACR_Logistics.Health(s_Lav));
    ACR_TestRegress.Check("crew: rearm + repair priced by what's missing", cost > 5, string.Format("%1 RP", cost));
    ACR_TestRegress.Check("crew: vehicle rearmed and repaired", served == 1 && ammo > 0.99 && ACR_Logistics.Health(s_Lav) > 0.98, string.Format("ammo %1 health %2", ammo, ACR_Logistics.Health(s_Lav)));
+   // Engine damage at full health (Everon night soak 26 Oct: a gunship serviced on its pad
+   // every minute for 36 min, never repaired) is repaired too.
+   int movedServed = 0;
+   float moveBefore = -1;
+   if (damage)
+   {
+    damage.SetMovementDamage(0.7);
+    moveBefore = damage.GetMovementDamage();
+    movedServed = manager.m_Requisition.ServiceVehicles(list);
+   }
+   float moveAfter = -1;
+   if (damage) moveAfter = damage.GetMovementDamage();
+   ACR_TestRegress.Check("crew: service repairs engine damage on a vehicle at full health", movedServed == 1 && moveAfter >= 0 && moveAfter < 0.01, string.Format("served %1, movement damage %2 -> %3, health %4", movedServed, moveBefore, moveAfter, ACR_Logistics.Health(s_Lav)));
    // As if a player had dropped control and left the driver's and the vehicle's AI parked.
    ChimeraCharacter driver = ChimeraCharacter.Cast(DriverOf(s_Lav));
    AIControlComponent driverAI;
@@ -192,7 +205,7 @@ class ACR_TestCrew
     PrintFormat("[ACR] CREW recall diag: anchor %1 from %2, target %3 (%4 m from post), waypoint %5 (%6), mounted %7 | %8", postSquad.GetAnchor(), s_PostFrom, target, vector.DistanceXZ(target, s_PostFrom), waypointAt, postSquad.m_Group.GetCurrentWaypoint(), postSquad.IsMounted(), postSquad.Describe());
    }
    ACR_TestRegress.Check("roadblock: recalled squad physically leaves its post", postSquad && postSquad.m_iAITask == ACR_EAITask.DEFEND && postMoved > 3, string.Format("moved %1 m", postMoved));
-   ACR_TestRegress.Complete("crew", 16);
+   ACR_TestRegress.Complete("crew", 17);
   }
  }
 }
