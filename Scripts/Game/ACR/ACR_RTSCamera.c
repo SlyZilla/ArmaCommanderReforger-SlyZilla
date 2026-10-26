@@ -70,6 +70,9 @@ class ACR_RTSCameraManager : Managed
 	protected SCR_ButtonTextComponent m_HaltBtn;
 	protected SCR_ButtonTextComponent m_RoadblockBtn;
 	protected bool m_bRoadblockMode = false;
+	// The Minefield button (#4): -1 off, else the ACR_EMineKind a right-click lays (AP, AT, mixed).
+	protected SCR_ButtonTextComponent m_MinesBtn;
+	protected int m_iMineKind = -1;
 
 	protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
 	protected ref ACR_RTSCameraHandler m_Handler;
@@ -287,6 +290,7 @@ class ACR_RTSCameraManager : Managed
 		m_SwitchBtn = AddButton(m_UnitActionsRow, "Take Over", 5, true);
 		m_HaltBtn = AddButton(m_UnitActionsRow, "Halt", 6, true);
 		m_RoadblockBtn = AddButton(m_UnitActionsRow, "Roadblock", 7, true);
+		m_MinesBtn = AddButton(m_UnitActionsRow, "Minefield", 8, true);
 
 		AddText(botCol, LAYOUT_TEXT, "[WASD] Pan  |  [RMB Drag] Rotate  |  [Scroll] Zoom  |  [LMB] Select  |  [RMB Click] Order  |  [Shift+RMB] Queue  |  [F10/Esc] Exit");
 
@@ -349,6 +353,7 @@ class ACR_RTSCameraManager : Managed
 				if (m_bDefendMode)
 				{
 					m_bRoadblockMode = false;
+					m_iMineKind = -1;
 					if (m_RoadblockBtn) m_RoadblockBtn.SetText("Roadblock");
 				}
 				if (m_DefendBtn)
@@ -363,12 +368,14 @@ class ACR_RTSCameraManager : Managed
     m_iPointCommand = ACR_ERequest.ORDER_GARRISON;
     m_bDefendMode = false;
     m_bRoadblockMode = false;
+    m_iMineKind = -1;
     ShowToast("Right-click a building to garrison");
     return;
    case 4: // Get in: choose the vehicle in the scene.
     m_iPointCommand = ACR_ERequest.ORDER_GET_IN;
     m_bDefendMode = false;
     m_bRoadblockMode = false;
+    m_iMineKind = -1;
     ShowToast("Right-click a vehicle to board");
     return;
 			case 5: // Switch / Possess
@@ -391,6 +398,7 @@ class ACR_RTSCameraManager : Managed
 				if (m_bRoadblockMode)
 				{
 					m_bDefendMode = false;
+					m_iMineKind = -1;
 					if (m_DefendBtn) m_DefendBtn.SetText("Defend");
 				}
 				if (m_RoadblockBtn)
@@ -401,7 +409,45 @@ class ACR_RTSCameraManager : Managed
 				if (m_bRoadblockMode) ShowToast(string.Format("Roadblock mode armed: Right-click road to construct (%1 RP or %2 truck supplies)", ACR_Roadblocks.Cost(ACR_ERoadblockType.MEDIUM), ACR_Roadblocks.Supplies(ACR_ERoadblockType.MEDIUM)));
 				else ShowToast("Roadblock mode off");
 				return;
+			case 8: // Minefield: off, AP, AT, mixed in turn (#4)
+				m_iPointCommand = 0;
+				m_bDefendMode = false;
+				m_bRoadblockMode = false;
+				m_iMineKind = NextMineKind(m_iMineKind);
+				if (m_MinesBtn) m_MinesBtn.SetText(MineButton(m_iMineKind));
+				ShowToast(MineToast(m_iMineKind));
+				return;
 		}
+	}
+
+	// ---------------------------------------------------------------- the Minefield button (#4)
+	// Off, then AP, AT and mixed mines in turn; a right-click lays them with the selected squad
+	// through the map panel's order path (ACR_IssueOrder, ACR_Minefields), at the same price.
+	static int NextMineKind(int kind)
+	{
+		if (kind < 0) return ACR_EMineKind.AP;
+		if (kind == ACR_EMineKind.AP) return ACR_EMineKind.AT;
+		if (kind == ACR_EMineKind.AT) return ACR_EMineKind.MIXED;
+		return -1;
+	}
+
+	static int MineCommand(int kind)
+	{
+		if (kind == ACR_EMineKind.AT) return ACR_ERequest.ORDER_MINES_AT;
+		if (kind == ACR_EMineKind.MIXED) return ACR_ERequest.ORDER_MINES_MIXED;
+		return ACR_ERequest.ORDER_MINES_AP;
+	}
+
+	static string MineButton(int kind)
+	{
+		if (kind < 0) return "Minefield";
+		return ACR_Minefields.Button(kind) + " [ON]";
+	}
+
+	static string MineToast(int kind)
+	{
+		if (kind < 0) return "Minefield mode off";
+		return string.Format("%1 armed: right-click ground to lay them (%2 RP); click Minefield again for the next kind", ACR_Minefields.Button(kind), ACR_Minefields.Cost(kind));
 	}
 
 	// ---------------------------------------------------------------- screen raycasting
@@ -528,7 +574,12 @@ class ACR_RTSCameraManager : Managed
 		int command = ACR_ERequest.MOVE_TO;
 		string actionName = "Move";
 
-		if (m_bRoadblockMode)
+		if (m_iMineKind >= 0)
+		{
+			command = MineCommand(m_iMineKind);
+			actionName = ACR_Minefields.Button(m_iMineKind);
+		}
+		else if (m_bRoadblockMode)
 		{
 			command = ACR_ERequest.ORDER_ROADBLOCK;
 			actionName = "Roadblock";
@@ -826,6 +877,7 @@ class ACR_RTSCameraManager : Managed
    if (m_bRoadblockMode) m_RoadblockBtn.SetText("Roadblock [ON]");
    else m_RoadblockBtn.SetText("Roadblock");
   }
+  if (m_MinesBtn) m_MinesBtn.SetText(MineButton(m_iMineKind));
   if (m_GarrisonBtn)
   {
    if (m_iPointCommand == ACR_ERequest.ORDER_GARRISON) m_GarrisonBtn.SetText("Garrison [ON]");

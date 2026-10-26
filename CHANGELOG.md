@@ -10,6 +10,10 @@
 - A changed AI doctrine gets one review to settle in before it is judged, so doctrines change at most every 20 minutes. Before, a side taking losses could flip between Firepower and Fortress every 10 minutes.
 - AI doctrine reviews don't count bases taken as winning while the side is losing men heavily: early on most bases taken are empty, and a commander losing 20 men for 4 kills used to think its doctrine was working.
 
+### Command and setup
+
+- The RTS camera has a Minefield button next to Roadblock: it cycles AP, AT and mixed mines (and off), the toast gives the price, and a right-click lays them with the selected squad, as the map panel's minefield orders do (#4).
+
 ### Support
 
 - A mortar team sets up out of the way of vehicles: not on or within 5 m of a road, and not within 30 m of a base's centre, where bought vehicles appear (#33). It looks up to 40 m round for such a spot (24 m before).
