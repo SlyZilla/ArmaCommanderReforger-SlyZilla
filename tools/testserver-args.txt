@@ -4,4 +4,5 @@
 # Port: -bindPort/-bindIP/-gameConfig are all ignored in -server mode (always 2001, tried 2 Oct).
 # -config honours bindPort but can't be combined with -addons, and doesn't mount our unpacked
 # mod from -addonsDir (even with -addonsForceLocal): "Unable to read the mission header".
+# pak: requests use packed copies with -config instead (port 2302) and ignore this file.
 -server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend -acrAdminPassword 1

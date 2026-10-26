@@ -1052,6 +1052,7 @@ class ACR_AICommander : Managed
  protected float m_fNextDoctrineReview = -1;
  protected int m_iReviewLost, m_iReviewKills, m_iReviewWon, m_iReviewBasesLost;
  protected int m_iDoctrineChanges;
+ protected bool m_bDoctrineSettling; // changed at the last review: the next one only snapshots
 
  protected void SnapshotReview()
  {
@@ -1077,6 +1078,16 @@ class ACR_AICommander : Managed
   m_fNextDoctrineReview = now + DOCTRINE_REVIEW_MIN * 60000;
   ACR_SideStats s = ACR_Report.Of(m_sFaction);
   if (!s) return;
+  // A new doctrine is judged on what it does once settled in, not on the purchases and plans
+  // of the old one still arriving (Everon night soak 26 Oct: Balanced -> Firepower ->
+  // Fortress, ten minutes apart, both for losses).
+  if (m_bDoctrineSettling)
+  {
+   m_bDoctrineSettling = false;
+   SnapshotReview();
+   PrintFormat("[ACR] AI commander %1 doctrine review: %2 settling in, judged from now", m_sFaction, m_Doctrine.m_sName);
+   return;
+  }
   int lost = s.m_iLost - m_iReviewLost;
   int kills = s.m_iKills - m_iReviewKills;
   int won = s.m_iBasesWon - m_iReviewWon;
@@ -1095,9 +1106,11 @@ class ACR_AICommander : Managed
  // What a review decides over one review window: the doctrine key to change to, "" to keep.
  static string PickDoctrine(string current, string enemyKnown, int won, int basesLost, int lost, int kills, out string why)
  {
-  bool winning = won >= basesLost + 2 || (kills >= 12 && kills > lost * 1.6);
   bool losingGround = basesLost >= won + 2;
   bool bleeding = lost >= 12 && lost > kills * 1.6;
+  // Bases gained count as winning only while not bleeding: early on they are mostly empty
+  // sites (Everon night soak 26 Oct: "+3 -0, lost 20 killed 4: it is working").
+  bool winning = (won >= basesLost + 2 && !bleeding) || (kills >= 12 && kills > lost * 1.6);
   bool stuck = won == 0 && basesLost == 0;
   if (winning)
   {
@@ -1145,6 +1158,7 @@ class ACR_AICommander : Managed
   m_Doctrine = doctrine;
   m_sDoctrineSource = "changed";
   m_iDoctrineChanges++;
+  m_bDoctrineSettling = true;
   PrintFormat("[ACR] AI commander %1 doctrine: %2 -> %3 (%4; %5)", m_sFaction, was.m_sName, doctrine.m_sName, why, doctrine.m_sSummary);
   // Its own side hears it (players fighting under this commander); the enemy has to notice.
   string line = string.Format("Commander: switching to %1 (%2)", doctrine.m_sName, why);
@@ -1526,6 +1540,7 @@ class ACR_AICommander : Managed
     if (faction.GetFactionKey() != base.m_sOwner && d < THREAT_DISTANCE + base.m_fRadius) threat += PLAYER_STRENGTH;
    }
    if (!base.m_sOwner.IsEmpty()) defence += base.m_iGarrisonLeft;
+   if (!base.m_sOwner.IsEmpty()) defence += FortifiedCredit(base);
    if (!ours && !base.m_sOwner.IsEmpty()) defence += UNKNOWN_DEFENCE; // fog of war: expect more than we've seen
    m_Defence.Set(base, defence);
    m_Threat.Set(base, threat);
@@ -1543,6 +1558,42 @@ class ACR_AICommander : Managed
 
  protected int DefenceOf(ACR_Base base) { int v; m_Defence.Find(base, v); return v; }
  protected int ThreatTo(ACR_Base base) { int v; m_Threat.Find(base, v); return v; }
+ int DefenceOfForTest(ACR_Base base) { return DefenceOf(base); }
+
+ // A manned tier II or III position within DEFENSE_DISTANCE of a base counts its holders again,
+ // half (tier II) or whole (tier III), on top of the squad itself (and +5 a gun with a gunner in it,
+ // as for any armed vehicle): dug in, they hold more than a squad posted at the base (Jacob, #25).
+ // An enemy's counts only where we know its holders are. Threat is left alone: a position holds
+ // ground, it doesn't take a base.
+ static const float MANNED_REACH = 60; // m: its holders this close to it count as manning it
+ protected int FortifiedCredit(ACR_Base base)
+ {
+  int credit;
+  bool ours = base.m_sOwner == m_sFaction;
+  foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
+  {
+   if (fort.m_sFaction != base.m_sOwner || fort.m_iTier < 2 || vector.DistanceXZ(fort.m_vPos, base.GetOrigin()) > DEFENSE_DISTANCE) continue;
+   ACR_Squad holder = ManningSquad(fort);
+   if (!holder) continue;
+   vector where = PositionOf(holder);
+   if (!ours && !KnownPosition(holder, where)) continue;
+   if (vector.DistanceXZ(where, fort.m_vPos) > MANNED_REACH) continue;
+   int men = holder.CountAlive();
+   if (fort.m_iTier >= 3) credit += men;
+   else credit += men / 2;
+  }
+  return credit;
+ }
+
+ // The squad (AI or player) holding a position, on its way back to one included.
+ protected ACR_Squad ManningSquad(ACR_Fortification fort)
+ {
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (squad && squad.m_Fortification == fort && squad.CountAlive() > 0) return squad;
+  }
+  return null;
+ }
  void SetThreatForTest(ACR_Base base, int threat, int defence) { m_Threat.Set(base, threat); m_Defence.Set(base, defence); }
  void AssignDefendersForTest() { AssignDefenders(); }
 
@@ -1978,6 +2029,8 @@ class ACR_AICommander : Managed
     if (!SeenOwner(candidate).IsEmpty() || !Visible(candidate) || IsAttacking(candidate) || CoolingDown(candidate)) continue;
     foreach (ACR_Squad squad : free)
     {
+     // A medic or other support team stays out of it, as out of attacks (#34).
+     if (IsSupportTeam(squad)) continue;
      float dist = vector.DistanceXZ(PositionOf(squad), candidate.GetOrigin());
      if (!squad.IsMounted() && dist > 1500) continue;
      float speed = 3;
@@ -2800,6 +2853,21 @@ class ACR_AICommander : Managed
  // True when an assault or grab has gone on too long without taking the base.
  protected bool Stalled(ACR_AIAttack attack)
  {
+  // Every squad left gave up on a spot it can't reach: don't wait out the time limit
+  // (Everon night soak 26 Oct: a grab's only squad held "unreachable" for 17 min).
+  int live = 0;
+  bool allGaveUp = true;
+  foreach (ACR_Squad member : attack.m_Squads)
+  {
+   if (!member || member.Strength() <= 0) continue;
+   live++;
+   if (!member.GaveUpUnreachable()) allGaveUp = false;
+  }
+  if (live > 0 && allGaveUp)
+  {
+   PrintFormat("[ACR] AI %1: every squad on %2 found it unreachable", m_sFaction, attack.m_Target.m_sName);
+   return true;
+  }
   if (!attack.m_bAssaulting || attack.m_fAssaultStart <= 0) return false;
   float seconds = (GetGame().GetWorld().GetWorldTime() - attack.m_fAssaultStart) / 1000;
   if (attack.m_bGrab && !s_bGrabByDistance) return seconds > GRAB_TIMEOUT;
@@ -2964,7 +3032,16 @@ class ACR_AICommander : Managed
     }
     if (stalled)
     {
-     outcome = "called off (stalled)";
+     // Where the attackers got to (night soak 26 Oct: 46 of 118 grabs and attacks stalled).
+     float closest = -1;
+     string closestOrder;
+     foreach (ACR_Squad stuck : attack.m_Squads)
+     {
+      if (!stuck) continue;
+      float gap = vector.DistanceXZ(PositionOf(stuck), target.GetOrigin());
+      if (closest < 0 || gap < closest) { closest = gap; closestOrder = stuck.m_Order; }
+     }
+     outcome = string.Format("called off (stalled; nearest squad %1 m out, '%2')", (int)closest, closestOrder);
      m_StalledUntil.Set(target, GetGame().GetWorld().GetWorldTime() + STALLED_COOLDOWN * 1000);
     }
     if (target) PrintFormat("[ACR] AI %1: attack on %2 %3", m_sFaction, target.m_sName, outcome);
@@ -3321,7 +3398,19 @@ class ACR_AICommander : Managed
   return false;
  }
 
- // The own, safe base closest to the enemy (but not right on top of it).
+ // What a mortar is there to cover: a base it knows the enemy (or a pocket) holds, or one this
+ // side is attacking. Unclaimed sites don't count (Everon night soak 26 Oct: hidden unclaimed
+ // sites next to each HQ kept both teams there all game; one fire mission in an hour).
+ protected bool MortarTarget(ACR_Base base)
+ {
+  if (base.m_sOwner == m_sFaction) return false;
+  foreach (ACR_AIAttack attack : m_Attacks) if (attack.m_Target == base) return true;
+  string seen = SeenOwner(base);
+  return !seen.IsEmpty() && seen != m_sFaction;
+ }
+
+ // The own, safe base closest to what the mortar covers (but not right on top of any base
+ // that isn't ours).
  protected ACR_Base MortarBase()
  {
   ACR_Base best;
@@ -3330,9 +3419,15 @@ class ACR_AICommander : Managed
   {
    if (base.m_sOwner != m_sFaction || base.m_bContested || ThreatTo(base) > 0) continue;
    float front = float.MAX;
+   float nearest = float.MAX;
    foreach (ACR_Base other : ACR_Base.s_All)
-    if (other.m_sOwner != m_sFaction) front = Math.Min(front, vector.DistanceXZ(base.GetOrigin(), other.GetOrigin()));
-   if (front < MORTAR_MIN_STANDOFF || front >= bestFront) continue;
+   {
+    if (other.m_sOwner == m_sFaction) continue;
+    float d = vector.DistanceXZ(base.GetOrigin(), other.GetOrigin());
+    nearest = Math.Min(nearest, d);
+    if (MortarTarget(other)) front = Math.Min(front, d);
+   }
+   if (nearest < MORTAR_MIN_STANDOFF || front >= bestFront) continue;
    bestFront = front;
    best = base;
   }
@@ -3364,11 +3459,11 @@ class ACR_AICommander : Managed
    vector here = PositionOf(squad);
    if (team.m_eState == ACR_EMortarState.DEPLOYED) here = team.m_Spot;
    else if (ACR_Mortars.IsMoving(squad, here)) continue; // on its way
-   // Stays while it can reach a base that isn't ours (with some margin).
+   // Stays while it can reach something it covers (with some margin).
    float reach = ACR_Mortars.MaxRange(team.m_sTube) * 0.85;
    bool inReach = false;
    foreach (ACR_Base other : ACR_Base.s_All)
-    if (other.m_sOwner != m_sFaction && vector.DistanceXZ(here, other.GetOrigin()) < reach) inReach = true;
+    if (MortarTarget(other) && vector.DistanceXZ(here, other.GetOrigin()) < reach) inReach = true;
    if (inReach) continue;
    ACR_Base front = MortarBase();
    if (!front || vector.DistanceXZ(here, front.GetOrigin()) < front.m_fRadius + 80) continue;
@@ -4506,6 +4601,7 @@ class ACR_AICommander : Managed
 
  void SetFobEvalTimeForTest(float time) { m_fNextFobEval = time; }
  void StartTickForTest() { m_iTickStarted = System.GetTickCount(); }
+ void AssignAttacksForTest() { m_iTickStarted = System.GetTickCount(); AssignAttacks(); }
  ACR_Squad FobBuilder() { return m_FobBuilder; }
  ACR_Squad FobEscort() { return m_FobEscort; }
  vector FobTargetSite() { return m_vFobTargetSite; }
@@ -5028,9 +5124,10 @@ class ACR_AICommander : Managed
  }
 
  // Fortified positions on the approaches (-acrFortifyAI 1; off by default). Every 60 s, one
- // order at a time, while engineering can pay: first upgrade our lowest-tier position below tier
- // III (nearest the front first), worked by the squad holding it or the nearest free one within
- // FAR_BUILDER; else, with fewer than its doctrine's m_iFortifyPositions, dig the nearest free
+ // order at a time: first man an empty position at a front base (ManPositions, free); then, while
+ // engineering can pay, upgrade our lowest-tier position in use below tier III (nearest the front
+ // first), worked by the squad holding it or the nearest free one within FAR_BUILDER; else, with
+ // fewer than its doctrine's m_iFortifyPositions in use (PositionsInUse), dig the nearest free
  // infantry squad (within FAR_BUILDER) in 80-160 m out from the first of our front bases with no
  // position of ours within 300 m, facing the enemy, where its upgrades would fit if such a site is
  // near (also to either side, never within DEFENCE_STANDOFF of our own fields). A position whose
@@ -5055,21 +5152,24 @@ class ACR_AICommander : Managed
    return;
   }
   m_fNextFortifyEval = now + 60000;
+  array<ACR_Base> fronts = {};
+  array<vector> enemies = {};
+  FrontBases(fronts, enemies, FRONT_BASES);
+  if (fronts.IsEmpty()) return;
+  // An empty position first: manning it costs nothing.
+  if (ManPositions(fronts)) return;
   foreach (ACR_Squad busy : m_Manager.m_Squads)
   {
    if (busy && busy.m_FortifyPlan && busy.GetFaction() && busy.GetFaction().GetFactionKey() == m_sFaction) return;
   }
   if (PendingBuilds(ACR_EAITask.FORTIFY) > 0) return;
-  array<ACR_Base> fronts = {};
-  array<vector> enemies = {};
-  FrontBases(fronts, enemies, FRONT_BASES);
-  if (fronts.IsEmpty()) return;
   string refusal;
 
   ACR_Fortification target;
   foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
   {
    if (fort.m_sFaction != m_sFaction || fort.m_iTier >= ACR_Fortify.MAX_TIER || ACR_Fortify.BeingBuilt(fort) || ACR_Fortify.UpgradesHeld(fort)) continue;
+   if (!InUse(fort, fronts)) continue; // left behind by the front, empty: not worth RP
    if (target && fort.m_iTier > target.m_iTier) continue;
    if (target && fort.m_iTier == target.m_iTier && vector.DistanceXZ(fort.m_vPos, fronts[0].GetOrigin()) >= vector.DistanceXZ(target.m_vPos, fronts[0].GetOrigin())) continue;
    target = fort;
@@ -5099,7 +5199,7 @@ class ACR_AICommander : Managed
    }
   }
 
-  if (ACR_Fortify.CountPositions(m_sFaction) >= m_Doctrine.m_iFortifyPositions) return;
+  if (PositionsInUse(fronts) >= m_Doctrine.m_iFortifyPositions) return;
   if (!CanBuild(ACR_Fortify.Cost(1), 30))
   {
    NoteBuild("fortify pay", string.Format("[ACR] AI %1: no new position for now: engineering can't pay %2 RP", m_sFaction, ACR_Fortify.Cost(1)));
@@ -5117,6 +5217,70 @@ class ACR_AICommander : Managed
    if (RideToBuild(candidate, ACR_EAITask.FORTIFY, front, enemies[f], front.GetOrigin(), 0)) return;
    if (DigIn(candidate, front, enemies[f], FromFar(candidate, front.GetOrigin(), FORTIFY_NEAR))) return;
   }
+ }
+
+ // A position of ours at a front base that stands empty (its holder killed, gone to defend or
+ // posted) gets the nearest free squad within FAR_BUILDER sent back to hold it, while fewer than
+ // the doctrine's m_iHolders squads hold what we built (roadblocks included; more would be posted
+ // again at once). Before, nothing sent anyone back (Jacob, #25). True if a squad was sent.
+ static const float FRONT_POSITION_REACH = 600; // m from a front base: a position there is part of its defence
+ protected bool ManPositions(array<ACR_Base> fronts)
+ {
+  int holding;
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (squad && squad.GetFaction() && squad.GetFaction().GetFactionKey() == m_sFaction && IsHolder(squad) && FitToHold(squad)) holding++;
+  }
+  if (holding >= m_Doctrine.m_iHolders) return false;
+  foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
+  {
+   if (fort.m_sFaction != m_sFaction || ManningSquad(fort) != null || ACR_Fortify.BeingBuilt(fort) || !AtFront(fort, fronts)) continue;
+   ACR_Squad worker = FortifyWorkerNear(fort.m_vPos);
+   if (!worker)
+   {
+    NoteBuild("man " + fort.m_iId.ToString(), string.Format("[ACR] AI %1: the empty position at %2 waits for a free squad within %3 m", m_sFaction, fort.m_vPos, FAR_BUILDER));
+    continue;
+   }
+   if (!worker.ManFortification(fort)) continue;
+   worker.m_iAITask = ACR_EAITask.FORTIFY;
+   PrintFormat("[ACR] AI %1: %2%3 mans the empty %4 at %5", m_sFaction, worker.GetName(), FromFar(worker, fort.m_vPos, FORTIFY_NEAR), ACR_Fortify.TierName(fort.m_iTier), fort.m_vPos);
+   return true;
+  }
+  return false;
+ }
+
+ protected bool AtFront(ACR_Fortification fort, array<ACR_Base> fronts)
+ {
+  foreach (ACR_Base front : fronts)
+  {
+   if (vector.DistanceXZ(fort.m_vPos, front.GetOrigin()) <= FRONT_POSITION_REACH) return true;
+  }
+  return false;
+ }
+
+ // Manned, or at a front base (to be manned): an empty one the front has left behind is not.
+ protected bool InUse(ACR_Fortification fort, array<ACR_Base> fronts)
+ {
+  return ManningSquad(fort) != null || AtFront(fort, fronts);
+ }
+
+ // Our positions that count towards the doctrine's m_iFortifyPositions: those in use. Empty ones
+ // the front left behind no longer stop new ones at the front.
+ protected int PositionsInUse(array<ACR_Base> fronts)
+ {
+  int count;
+  foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
+  {
+   if (fort.m_sFaction == m_sFaction && InUse(fort, fronts)) count++;
+  }
+  return count;
+ }
+ int PositionsInUseForTest()
+ {
+  array<ACR_Base> fronts = {};
+  array<vector> enemies = {};
+  FrontBases(fronts, enemies, FRONT_BASES);
+  return PositionsInUse(fronts);
  }
 
  // Digs 'candidate' in 80-160 m out from 'front' towards 'enemyPos' (first where its upgrades fit,

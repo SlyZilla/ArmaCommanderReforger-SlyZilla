@@ -9,7 +9,7 @@
 // while it isn't.
 class ACR_TestAIDefences
 {
- static const int CHECKS = 17;
+ static const int CHECKS = 20;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -218,7 +218,107 @@ class ACR_TestAIDefences
 
   FarBuilder(manager, ai, alpha, fronts, us, fortress);
   OutnumberedHolder(manager, ai, bravo, fronts, fortress);
+  Positions(manager, ai, alpha, fronts, enemies, us, balanced);
   ACR_TestRegress.Complete("aidefences", CHECKS);
+ }
+
+ // 18-20. Review of #25: an empty position of ours at a front base is manned again; an empty one
+ // the front has left behind doesn't count towards the cap; a manned tier II / III position adds
+ // half / all its holders to the base's defence. Every other squad of ours is busy; Alpha is free.
+ protected static void Positions(ACR_Manager manager, ACR_AICommander ai, ACR_Squad alpha, array<ACR_Base> fronts, array<vector> enemies, ACR_FactionData us, ACR_AIDoctrine balanced)
+ {
+  string manName = "aidefences: an empty position of ours at a front base is manned again by a free squad";
+  string capName = "aidefences: an empty position the front has left behind doesn't count towards the cap";
+  string creditName = "aidefences: a manned tier II position adds half its holders to its base's defence, a tier III all of them";
+  IEntity anchor = alpha.GetAnchor();
+  if (fronts.IsEmpty() || !anchor)
+  {
+   ACR_TestRegress.Skip(manName, "no front base or no Alpha");
+   ACR_TestRegress.Skip(capName, "no front base");
+   ACR_TestRegress.Skip(creditName, "no front base");
+   return;
+  }
+  ai.SetDoctrineForTest(balanced);
+  array<ACR_Squad> others = {};
+  array<int> tasks = {};
+  foreach (ACR_Squad other : manager.m_Squads)
+  {
+   if (!other || other == alpha || !other.GetFaction() || other.GetFaction().GetFactionKey() != "US") continue;
+   others.Insert(other);
+   tasks.Insert(other.m_iAITask);
+   other.m_iAITask = ACR_EAITask.ATTACK;
+  }
+  vector toEnemy = enemies[0] - fronts[0].GetOrigin();
+  toEnemy[1] = 0;
+  toEnemy.Normalize();
+  ACR_Fortification fort = new ACR_Fortification();
+  fort.m_sFaction = "US";
+  fort.m_iTier = 2;
+  fort.m_vPos = ACR_Manager.Ground(fronts[0].GetOrigin() + toEnemy * 150);
+  for (int s = 0; s < ACR_Fortify.SPOT_COUNT; s++) fort.m_aPieces.Insert(null);
+  ACR_Fortify.s_Positions.Insert(fort);
+  vector home = anchor.GetOrigin();
+
+  // 18. Alpha, 200 m off, is sent back to it.
+  anchor.SetOrigin(ACR_Manager.Ground(fort.m_vPos - toEnemy * 200));
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  ACR_Options.Set("acrFortifyAI", "1");
+  us.m_iRP = 500;
+  ai.StartTickForTest();
+  ai.ResetBuildTimersForTest();
+  ai.ManageFortify();
+  ACR_Options.Unset("acrFortifyAI");
+  bool manned = alpha.m_Fortification == fort && alpha.m_iAITask == ACR_EAITask.FORTIFY && alpha.OrderState() == ACR_EOrderState.DEFEND && !alpha.m_FortifyPlan;
+  string manDetail = string.Format("Alpha: holds it %1, task %2, order '%3', plan %4", alpha.m_Fortification == fort, typename.EnumToString(ACR_EAITask, alpha.m_iAITask), alpha.m_Order, alpha.m_FortifyPlan != null);
+
+  // 20. Alpha at the position, holding it at tier II, then III; then gone.
+  anchor.SetOrigin(fort.m_vPos);
+  alpha.m_Fortification = fort;
+  ai.AssessForTest();
+  int tierTwo = ai.DefenceOfForTest(fronts[0]);
+  fort.m_iTier = 3;
+  ai.AssessForTest();
+  int tierThree = ai.DefenceOfForTest(fronts[0]);
+  alpha.Halt("Holding");
+  ai.AssessForTest();
+  int empty = ai.DefenceOfForTest(fronts[0]);
+  int men = alpha.CountAlive();
+  bool credit = alpha.m_Fortification == null && tierTwo - empty == men / 2 && tierThree - empty == men;
+  string creditDetail = string.Format("%1 defence: empty %2, manned tier II %3, tier III %4 (Alpha %5 men)", fronts[0].m_sName, empty, tierTwo, tierThree, men);
+
+  // 19. Empty at the front it counts; moved 700 m or more from every front base, it doesn't.
+  int atFront = ai.PositionsInUseForTest();
+  vector behind = vector.Zero;
+  for (int k = 0; k < 8 && behind == vector.Zero; k++)
+  {
+   float angle = k * 45 * Math.DEG2RAD;
+   vector at = fronts[0].GetOrigin() + Vector(Math.Sin(angle) * 2500, 0, Math.Cos(angle) * 2500);
+   bool clear = true;
+   foreach (ACR_Base front : fronts)
+   {
+    if (vector.DistanceXZ(at, front.GetOrigin()) < 700) clear = false;
+   }
+   if (clear) behind = at;
+  }
+  int leftBehind = -1;
+  if (behind != vector.Zero)
+  {
+   fort.m_vPos = behind;
+   leftBehind = ai.PositionsInUseForTest();
+  }
+  bool cap = leftBehind >= 0 && atFront == leftBehind + 1;
+  string capDetail = string.Format("in use: at the front %1, left behind %2", atFront, leftBehind);
+
+  ACR_Fortify.s_Positions.RemoveItem(fort);
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  anchor.SetOrigin(home);
+  foreach (int i, ACR_Squad squad : others)
+  {
+   if (squad) squad.m_iAITask = tasks[i];
+  }
+  ACR_TestRegress.Check(manName, manned, manDetail);
+  ACR_TestRegress.Check(capName, cap, capDetail);
+  ACR_TestRegress.Check(creditName, credit, creditDetail);
  }
 
  // 12-13. Review of #16: holders go when their side is outnumbered at a threatened base, a
