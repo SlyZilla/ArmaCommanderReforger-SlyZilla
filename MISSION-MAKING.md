@@ -320,7 +320,10 @@ commander's doctrine there too. An AI commander gets the same picture and nothin
 **Changing doctrine.** From 15 minutes in and every 10 minutes after, an AI commander reviews the
 last window from its side's report: two or more bases lost net means Fortress (Firepower if already
 Fortress), heavy losses (12+ and 1.6x what it killed) mean Firepower (or Fortress), nothing changing
-hands means Blitz (or Raider); a commander that is winning keeps its doctrine. If its intel has
+hands means Blitz (or Raider); a commander that is winning keeps its doctrine (bases gained don't count as winning while it
+loses men that heavily). After a change the
+next review only lets the new doctrine settle in, so it is judged on its own 10 minutes (changes
+at most every 20 minutes). If its intel has
 confirmed the enemy's doctrine and it isn't winning, it picks the counter instead: Fortress against
 Blitz, Firepower against Fortress, Raider against Firepower, Blitz against Raider. Its own side is told
 (feed, notice, report). The enemy's picture goes out of date without them knowing: they keep seeing

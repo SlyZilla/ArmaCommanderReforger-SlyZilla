@@ -106,10 +106,13 @@ class ACR_TestDoctrine
   string counter = ACR_AICommander.PickDoctrine("balanced", "blitz", 1, 1, 6, 6, why);
   string even = ACR_AICommander.PickDoctrine("raider", "", 2, 1, 8, 8, why);
   string countering = ACR_AICommander.PickDoctrine("fortress", "blitz", 0, 0, 6, 6, why);
+  // Taking empty bases while losing men 5:1 is not winning (night soak 26 Oct).
+  string grabbingBleeding = ACR_AICommander.PickDoctrine("balanced", "", 3, 0, 20, 4, why);
   bool ok = winning == "" && losing == "fortress" && losingFortress == "firepower" && bleeding == "firepower";
   ok = ok && stuck == "blitz" && stuckBlitz == "raider" && counter == "fortress" && even == "" && countering == "";
+  ok = ok && grabbingBleeding == "firepower";
   ACR_TestRegress.Check("doctrine: reviews keep a winning doctrine, change a failing one, counter a known enemy", ok,
-   string.Format("winning [%1] losing %2/%3 bleeding %4 stuck %5/%6 counter %7 even [%8] countering [%9]", winning, losing, losingFortress, bleeding, stuck, stuckBlitz, counter, even, countering));
+   string.Format("winning [%1] losing %2/%3 bleeding %4 stuck %5/%6 counter %7 even [%8] countering [%9]", winning, losing, losingFortress, bleeding, stuck, stuckBlitz, counter, even, countering) + " grabbing-bleeding " + grabbingBleeding);
  }
 
  protected static void CheckDiscovery(ACR_Manager manager)
