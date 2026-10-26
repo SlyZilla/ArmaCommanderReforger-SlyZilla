@@ -2,6 +2,8 @@
 
 ## 0.5.8 — unreleased
 
+- The AI commander doesn't send a medic team or another support team to grab an empty base any more, as it already kept them out of attacks (#34).
+
 ## 0.5.7 — released
 
 Dig in and read the enemy. Fortify positions, mine the approaches, size your checkpoints, and face AI commanders that fight to their own doctrine and change it when it fails.
