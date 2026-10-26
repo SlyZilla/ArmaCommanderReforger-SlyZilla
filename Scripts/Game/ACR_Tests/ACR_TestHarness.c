@@ -64,18 +64,12 @@ class ACR_TestHarness : Managed
  static const int MODE_FORTIFY = 52;
  static const int MODE_ROADBLOCKS = 53;
  static const int MODE_FORTIFYFIT = 66;
- static const int MODE_RIDEJOB = 68; // 54-67: Fortify and the playtest branches
- static const int MODE_DEFENDERS = 59; // 55-58: patrol, ambush, QRF, FOB to the AI (own branches)
- static const int MODE_BUDGET = 60; // 52-59: Fortify, roadblocks, patrol, ambush, QRF, FOB AI, defenders (own branches)
- static const int MODE_CAPSCALE = 61; // 52-60: Fortify, roadblocks, patrol, ambush, QRF, FOB AI, defenders, budget (own branches)
- static const int MODE_AIM = 62; // 55-61: patrol, ambush, QRF, FOB AI, defenders, budget, cap scale (own branches)
- static const int MODE_SQUADAI = 63; // 59-62: defenders, budget, cap scale, aim (own branches)
- static const int MODE_GUNHOLD = 64; // 52-63: Fortify, roadblocks, patrol, ambush, QRF, FOB AI, defenders, budget, cap scale, aim, squad AI (own branches)
  static const int MODE_DEFENDERS = 59;
  static const int MODE_BUDGET = 60;
  static const int MODE_AIDEFENCES = 65;
  static const int MODE_ROADSITING = 67;
- static const int MODE_BUILDRIDE = 73; // 68-72: ride job, defend swap, LAV ride, mine and position siting (own branches)
+ static const int MODE_BUILDRIDE = 73;
+ static const int MODE_RIDEJOB = 68; // 54-67: Fortify and the playtest branches
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -134,12 +128,12 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRoadblocksTest", flag)) mode = MODE_ROADBLOCKS;
   if (System.GetCLIParam("acrFortifyTest", flag)) mode = MODE_FORTIFY;
   if (System.GetCLIParam("acrFortifyFitTest", flag)) mode = MODE_FORTIFYFIT;
-  if (System.GetCLIParam("acrRideJobTest", flag)) mode = MODE_RIDEJOB;
   if (System.GetCLIParam("acrDefendersTest", flag)) mode = MODE_DEFENDERS;
   if (System.GetCLIParam("acrBuildBudgetTest", flag)) mode = MODE_BUDGET;
   if (System.GetCLIParam("acrAIDefencesTest", flag)) mode = MODE_AIDEFENCES;
   if (System.GetCLIParam("acrRoadSitingTest", flag)) mode = MODE_ROADSITING;
   if (System.GetCLIParam("acrBuildRideTest", flag)) mode = MODE_BUILDRIDE;
+  if (System.GetCLIParam("acrRideJobTest", flag)) mode = MODE_RIDEJOB;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -256,12 +250,12 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_ROADBLOCKS) { ACR_TestRoadblocks.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FORTIFY) { ACR_TestFortify.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FORTIFYFIT) { ACR_TestFortifyFit.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_RIDEJOB) { ACR_TestRideJob.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_DEFENDERS) { ACR_TestDefenders.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BUDGET) { ACR_TestBuildBudget.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_AIDEFENCES) { ACR_TestAIDefences.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADSITING) { ACR_TestRoadSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BUILDRIDE) { ACR_TestBuildRide.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RIDEJOB) { ACR_TestRideJob.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }
