@@ -86,9 +86,11 @@ class ACR_DoctrineIntel : Managed
   if (m_bStale && !m_bChangeNoticed && m_fPoints >= CHANGE_NOTICE)
   {
    m_bChangeNoticed = true;
-   string was = ACR_AIDoctrine.NameOf(m_sOldKey);
-   if (m_iOldLevel < 2) was = Hint(m_sOldKey);
-   Announce(string.Format("Intel: the enemy commander has changed tactics (no longer %1)", was), "enemy changed tactics");
+   // Only a confirmed doctrine is named: a hint ("Firepower or Fortress") may cover the new
+   // one too (Everon night soak 26 Oct: "no longer Firepower or Fortress" as it went Fortress).
+   string line = "Intel: the enemy commander has changed tactics";
+   if (m_iOldLevel >= 2) line += string.Format(" (no longer %1)", ACR_AIDoctrine.NameOf(m_sOldKey));
+   Announce(line, "enemy changed tactics");
   }
   if (m_iLevel < 1 && m_fPoints >= HINT)
   {
@@ -179,9 +181,8 @@ class ACR_DoctrineIntel : Managed
   string line = Describe(enemy.m_sKey, m_iLevel, m_fPoints);
   if (m_bStale)
   {
-   string was = ACR_AIDoctrine.NameOf(m_sOldKey);
-   if (m_iOldLevel < 2) was = Hint(m_sOldKey);
-   line += "\nTactics changed: no longer " + was;
+   if (m_iOldLevel >= 2) line += "\nTactics changed: no longer " + ACR_AIDoctrine.NameOf(m_sOldKey);
+   else line += "\nTactics changed";
   }
   return line;
  }

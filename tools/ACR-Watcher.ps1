@@ -160,46 +160,104 @@ function Get-TestMissionId($world) {
     return $null
 }
 
-# Runs a test preset on a hidden dedicated server (own profile, port 2302).
-function Invoke-ServerTest($id, $preset, $config) {
+# pak: runs (25 Oct). -config honours bindPort but only mounts packed mods, so ACA and BBB are
+# packed headlessly (Workbench -packAddon) to $PackRoot, outside Workbench\addons so Workbench
+# and the game never see duplicate GUIDs. A mod is repacked only when its source listing changed.
+$PackRoot = Join-Path $env:LOCALAPPDATA 'ACA-TestPack'
+$PackServerProfile = Join-Path $PackRoot 'server'
+# resourceDatabase.rdb is skipped too: Workbench rewrites it in the source on every pack.
+$PackSkipDirs = '^((\.git|\.local-[^\\]*|\.acr-requests|dist|docs|tools)(\\|$)|resourceDatabase\.rdb$)'
+function Update-TestPack($name, $source) {
+    $files = Get-ChildItem -LiteralPath $source -Recurse -File | ForEach-Object {
+        $rel = $_.FullName.Substring($source.Length + 1)
+        if ($rel -notmatch $PackSkipDirs) { "$rel|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)" }
+    }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $stamp = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($files | Sort-Object) -join "`n"))).Replace('-', '') } finally { $sha.Dispose() }
+    $out = Join-Path $PackRoot "addons\$name"
+    $stampFile = Join-Path $PackRoot "$name.stamp"
+    if ((Test-Path -LiteralPath (Join-Path $out 'data.pak')) -and (Test-Path -LiteralPath $stampFile) -and (Get-Content -LiteralPath $stampFile -Raw).Trim() -eq $stamp) { return $null }
+    $wb = Find-Workbench
+    $gameAddons = Join-Path (Split-Path (Find-Game) -Parent) 'addons'
+    # Pack into a fresh folder and swap it in, so a failed pack leaves the last good one.
+    $tmp = "$out.new"
+    $wbProfile = Join-Path $PackRoot 'workbench'
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $tmp, $wbProfile | Out-Null
+    $wbArgs = '-gproj "' + (Join-Path $source 'addon.gproj') + '" -addonsDir "' + $gameAddons + ',' + $AddonsDir + '" -profile "' + $wbProfile + '" -noThrow -wbModule=ResourceManager -packAddon -packAddonDir "' + $tmp + '"'
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Packing $name for the pak: server..." -ForegroundColor Cyan
+    $proc = Start-Process -FilePath $wb -ArgumentList $wbArgs -WindowStyle Hidden -PassThru
+    if (!$proc.WaitForExit(900000)) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; return "packing $name timed out" }
+    if (!(Test-Path -LiteralPath (Join-Path $tmp 'data.pak'))) { return "packing $name failed (Workbench log: $wbProfile\logs)" }
+    Remove-Item -LiteralPath $out -Recurse -Force -ErrorAction SilentlyContinue
+    Move-Item -LiteralPath $tmp -Destination $out
+    Set-Content -LiteralPath $stampFile -Value $stamp -Encoding ASCII
+    return $null
+}
+
+function Test-UdpPortBusy($port) {
+    return @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object Port -eq $port).Count -gt 0
+}
+
+# Runs a test preset on a hidden dedicated server: srv: from the unpacked source with -server
+# (always port 2001), pak: from packed copies with -config (port from tools/testserver.json).
+function Invoke-ServerTest($id, $preset, $config, $packed) {
     $time = Get-Date -Format 'HH:mm:ss'
+    $prefix = 'srv'; if ($packed) { $prefix = 'pak' }
     if ($config.Workbench) { Write-Result $id @('status=refused', 'reason=inspect cannot run on the server'); return }
     # Never two test servers at once (an old one is closed first).
     if ($script:TestServerPid) { Stop-Process -Id $script:TestServerPid -ErrorAction SilentlyContinue; $script:TestServerPid = 0 }
     $server = Find-SteamApp 'Arma Reforger Server' 'ArmaReforgerServer.exe'
     if (!$server) { Write-Result $id @('status=refused', 'reason=Arma Reforger Server not found'); return }
-    # Another dedicated server (the AiO Command Menu's test launcher, or a hosted game) holds
-    # port 2001: wait up to 10 min for it to close instead of failing at once (13 Oct).
-    $waited = 0
-    while ((Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) -and $waited -lt 600) { Start-Sleep -Seconds 5; $waited += 5 }
-    if (Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) { Write-Result $id @('status=refused', 'reason=another Reforger server kept running (port 2001)'); return }
-    if ($waited -gt 0) { Write-Host "[$time] Waited $waited s for another server to close" -ForegroundColor Yellow }
     $world = 'Worlds/ACR_TestRange.ent'
     if ($config.World) { $world = $config.World }
-    New-Item -ItemType Directory -Force $TestServerProfile | Out-Null
+    $mission = Get-TestMissionId $world
+    $cfgTemplate = Join-Path $PSScriptRoot 'testserver.json'
+    if ($packed) {
+        if (!$mission) { Write-Result $id @('status=refused', "reason=no mission header found for $world (pak: starts from the mission)"); return }
+        $port = [int]((Get-Content -LiteralPath $cfgTemplate -Raw | ConvertFrom-Json).bindPort)
+        if (Test-UdpPortBusy $port) { Write-Result $id @('status=refused', "reason=port $port is in use"); return }
+        $started = Get-Date
+        foreach ($mod in @(@('BBB', (Join-Path $AddonsDir 'BetterBattleBuddies')), @('ACA', $ProjectRoot))) {
+            $err = Update-TestPack $mod[0] $mod[1]
+            if ($err) { Write-Result $id @('status=pack failed', "reason=$err"); return }
+        }
+        $packSeconds = [int]((Get-Date) - $started).TotalSeconds
+        $profileDir = $PackServerProfile
+        $serverAddons = Join-Path $PackRoot 'addons'
+        $template = '-config "{config}" -addonsDir "{addonsDir}" -profile "{profile}" -maxFPS 60 -acrAdminPassword 1'
+    } else {
+        # Another dedicated server (the AiO Command Menu's test launcher, or a hosted game) holds
+        # port 2001: wait up to 10 min for it to close instead of failing at once (13 Oct).
+        $waited = 0
+        while ((Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) -and $waited -lt 600) { Start-Sleep -Seconds 5; $waited += 5 }
+        if (Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) { Write-Result $id @('status=refused', 'reason=another Reforger server kept running (port 2001)'); return }
+        if ($waited -gt 0) { Write-Host "[$time] Waited $waited s for another server to close" -ForegroundColor Yellow }
+        $profileDir = $TestServerProfile
+        $serverAddons = $AddonsDir
+        $template = '-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend -acrAdminPassword 1'
+    }
+    New-Item -ItemType Directory -Force $profileDir | Out-Null
     # -bindPort is ignored in -server mode (it listens on 2001 and clashes with a hosted
     # server). The start line and server config come from tools/testserver-args.txt and
     # tools/testserver.json, re-read per request so they can change without a restart.
-    # Placeholders: {world} {mission} {profile} {addonsDir} {config}.
-    $mission = Get-TestMissionId $world
+    # Placeholders: {world} {mission} {profile} {addonsDir} {config}. pak: runs ignore the args file.
     $argsFile = Join-Path $PSScriptRoot 'testserver-args.txt'
-    $template = '-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend -acrAdminPassword 1'
-    if ($mission -and (Test-Path -LiteralPath $argsFile)) {
+    if (!$packed -and $mission -and (Test-Path -LiteralPath $argsFile)) {
         $line = Get-Content -LiteralPath $argsFile | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' } | Select-Object -First 1
         if ($line) { $template = $line.Trim() }
     }
-    $cfgPath = Join-Path $TestServerProfile 'testserver.json'
-    $cfgTemplate = Join-Path $PSScriptRoot 'testserver.json'
+    $cfgPath = Join-Path $profileDir 'testserver.json'
     if ($template -match '\{config\}' -and (Test-Path -LiteralPath $cfgTemplate)) {
         $json = (Get-Content -LiteralPath $cfgTemplate -Raw).Replace('{mission}', $mission)
         Set-Content -LiteralPath $cfgPath -Value $json -Encoding ASCII
     }
-    $serverArgs = $template.Replace('{world}', $world).Replace('{mission}', [string]$mission).Replace('{profile}', $TestServerProfile).Replace('{addonsDir}', $AddonsDir).Replace('{config}', $cfgPath) + ' ' + $config.Flags
-    Write-Host "[$time] Running '$preset' on a hidden test server..." -ForegroundColor Cyan
+    $serverArgs = $template.Replace('{world}', $world).Replace('{mission}', [string]$mission).Replace('{profile}', $profileDir).Replace('{addonsDir}', $serverAddons).Replace('{config}', $cfgPath) + ' ' + $config.Flags
+    Write-Host "[$time] Running '$preset' on a hidden test server ($prefix)..." -ForegroundColor Cyan
     $started = Get-Date
     $proc = Start-Process -FilePath $server -ArgumentList $serverArgs -WorkingDirectory (Split-Path $server -Parent) -WindowStyle Hidden -PassThru
     $script:TestServerPid = $proc.Id
-    $serverLogs = Join-Path $TestServerProfile 'logs'
+    $serverLogs = Join-Path $profileDir 'logs'
     $outcome = 'timeout'
     $log = $null
     while ($true) {
@@ -221,14 +279,16 @@ function Invoke-ServerTest($id, $preset, $config) {
     }
     if (!$proc.HasExited) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue }
     $script:TestServerPid = 0
-    $result = @("status=$outcome", "preset=srv:$preset", "started=$($started.ToString('s'))", "seconds=$([int]((Get-Date) - $started).TotalSeconds)", "log=$log", '---')
+    $result = @("status=$outcome", "preset=${prefix}:$preset", "started=$($started.ToString('s'))", "seconds=$([int]((Get-Date) - $started).TotalSeconds)", "log=$log")
+    if ($packed) { $result += "packSeconds=$packSeconds" }
+    $result += '---'
     if ($log -and (Test-Path -LiteralPath $log)) {
         $result += Get-Content -LiteralPath $log | Where-Object { $_ -match '\[ACR\]|SCRIPT\s+\(E\)|SCRIPT\s+\(W\).*ACR|Can.t compile' }
     } else {
         $result += 'No server console.log was found for this run.'
     }
     Write-Result $id $result
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 'srv:$preset' finished: $outcome" -ForegroundColor Green
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] '${prefix}:$preset' finished: $outcome" -ForegroundColor Green
 }
 
 # Known harmless vanilla errors, shared by game and server tests.
@@ -257,7 +317,9 @@ function Invoke-Request($file) {
     $id = [IO.Path]::GetFileNameWithoutExtension($file.Name)
     $preset = (Get-Content -LiteralPath $file.FullName -Raw).Trim().ToLower()
     $onServer = $false
+    $packed = $false
     if ($preset.StartsWith('srv:')) { $onServer = $true; $preset = $preset.Substring(4) }
+    elseif ($preset.StartsWith('pak:')) { $onServer = $true; $packed = $true; $preset = $preset.Substring(4) }
     Remove-Item -LiteralPath $file.FullName
     $time = Get-Date -Format 'HH:mm:ss'
     # Extra test presets from tools\test-presets.txt ("name|-acrSomethingTest 1|timeoutSec"),
@@ -281,7 +343,7 @@ function Invoke-Request($file) {
         Write-Result $id @("status=refused", "reason=unknown preset '$preset'")
         return
     }
-    if ($onServer) { Invoke-ServerTest $id $preset $Presets[$preset]; return }
+    if ($onServer) { Invoke-ServerTest $id $preset $Presets[$preset] $packed; return }
     # A game the previous test just stopped can take a few seconds to close.
     for ($w = 0; $w -lt 15 -and (Get-Process -Name 'ArmaReforgerSteam', 'ArmaReforger_BE' -ErrorAction SilentlyContinue); $w++) { Start-Sleep -Seconds 2 }
     if (Get-Process -Name 'ArmaReforgerSteam', 'ArmaReforger_BE' -ErrorAction SilentlyContinue) {

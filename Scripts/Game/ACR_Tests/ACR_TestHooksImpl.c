@@ -40,6 +40,8 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrLiftClearanceTest")) ACR_TestLiftClearance.Run(seconds);
   if (System.IsCLIParam("acrLzBenchTest")) ACR_TestLzBench.Run(seconds);
   if (System.IsCLIParam("acrSlopesTest")) ACR_TestSlopes.Run(seconds);
+  // -acrPathProbeTest: can foot squads reach Gallows Base's centre (ACR_TestPathProbe).
+  if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
   // -acrPocketsTest: FIA pockets of resistance (ACR_TestPockets).

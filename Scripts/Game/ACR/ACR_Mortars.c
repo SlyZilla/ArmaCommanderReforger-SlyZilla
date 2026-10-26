@@ -42,6 +42,7 @@ class ACR_MortarTeam : Managed
  int m_iFired;
  int m_iLoadingDismounts; // observed native aiming -> on-foot loading transitions
  int m_iReserveRounds; // paid mission rounds not yet issued to a gunner
+ int m_iDryMissions;   // missions in a row that timed out with nothing fired (reset when the tube goes up again)
  bool m_bNoSpotLogged;
  ref map<IEntity, ResourceName> m_Backpacks = new map<IEntity, ResourceName>(); // carriers' own packs while they carry parts
  bool m_bPartsChecked;
@@ -60,10 +61,13 @@ class ACR_Mortars : Managed
  static float DEPLOY_WAIT = 3;          // holding still this long before setting up
  static const float MAX_SLOPE_DEG = 8;  // steeper ground: the baseplate floats or sinks visibly
  static const float PLATE_RADIUS = 0.7;
- static const float SEARCH_RADIUS = 24;
+ static const float SEARCH_RADIUS = 40;  // m: wide enough to step out of a base's vehicle ring (CLEAR_OF_BASE)
+ static const float CLEAR_OF_ROAD = 5;   // m from a road's edge (#33)
+ static const float CLEAR_OF_BASE = 30;  // m from a base's centre: bought vehicles appear 10-25 m out (#33)
  static const float MIN_ELEVATION = 45;
  static const float MAX_ELEVATION = 85;
  static const float MISSION_TIMEOUT = 150;
+ static const int DRY_MISSIONS = 2;      // missions in a row that fire nothing before the team is taken off fire missions
  static const float MIN_RANGE = 100;
  static const int COST = 30;
  static const int TUBE_COST = 10; // a new mortar with a Reinforce, after the old one was destroyed
@@ -497,10 +501,31 @@ class ACR_Mortars : Managed
   if (high - low > Math.Tan(MAX_SLOPE_DEG * Math.DEG2RAD) * PLATE_RADIUS * 2) return false;
   // On open ground, not on or under an object (a hangar's sloping roof sits on level terrain).
   if (OnObject(free)) return false;
+  // Out of the way of traffic: off the roads and clear of where a base's bought vehicles appear.
+  if (InTheWay(free) != "") return false;
   spot = free;
   // Between the lowest point and the average: no gap under the downhill edge.
   spot[1] = (low + mean) * 0.5;
   return true;
+ }
+
+ // Why a baseplate at 'at' would be in the way of vehicles ("" when it isn't): on or by a road,
+ // or in the ring round a base's centre where bought vehicles appear (ACR_Requisition.SpawnPoint).
+ static string InTheWay(vector at)
+ {
+  ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  if (aiWorld && aiWorld.GetRoadNetworkManager())
+  {
+   BaseRoad road;
+   float distance;
+   aiWorld.GetRoadNetworkManager().GetClosestRoad(at, road, distance);
+   if (road && distance - road.GetWidth() * 0.5 < CLEAR_OF_ROAD + PLATE_RADIUS) return "by a road";
+  }
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base && !base.m_bRetired && vector.DistanceXZ(base.GetOrigin(), at) < CLEAR_OF_BASE) return "where vehicles appear at " + base.m_sName;
+  }
+  return "";
  }
 
  // Anything solid (not people) over the ground at the plate's centre or edge.
@@ -592,6 +617,7 @@ class ACR_Mortars : Managed
   SCR_AIGroupUtilityComponent utility = team.m_Group.GetGroupUtilityComponent();
   if (usage && utility) utility.AddUsableVehicle(usage);
   PrintFormat("[ACR] MORTAR %1 tube up at %2, slope %3 deg, usable %4", team.m_sName, team.m_Spot, SlopeAt(team.m_Spot), usage != null);
+  team.m_iDryMissions = 0;
   return tube;
  }
 
@@ -703,6 +729,10 @@ class ACR_Mortars : Managed
   if (!team.m_Squad || team.m_Squad.HasPlayer()) { reason = team.m_sName + " is led by a player"; return false; }
   if (team.m_eState != ACR_EMortarState.DEPLOYED || !team.m_Tube) { reason = string.Format("%1 is not set up (%2)", team.m_sName, team.m_sStatus); return false; }
   if (team.m_bFiring) { reason = team.m_sName + " is busy with a fire mission"; return false; }
+  // Two missions in a row that fired nothing: the crew can't work the tube where it stands
+  // (Everon night soak 26 Oct: free fire kept queueing 0-of-2 missions every 2.5 min). It takes
+  // missions again once the tube has been set up anew (a move, shoot-and-scoot, Reinforce).
+  if (team.m_iDryMissions >= DRY_MISSIONS) { reason = team.m_sName + " isn't firing (its last two missions fired nothing); move it to set up again"; return false; }
   ResourceName shell = ShellFor(team, type);
   if (shell.IsEmpty()) { reason = team.m_sName + " has no shells of that kind"; return false; }
   float distance = vector.DistanceXZ(team.m_Tube.GetOrigin(), target);
@@ -895,6 +925,8 @@ class ACR_Mortars : Managed
   team.m_iReserveRounds = 0;
   team.m_fLastFinished = GetGame().GetWorld().GetWorldTime() / 1000;
   s_iLastFired = team.m_iFired;
+  if (team.m_iFired > 0) team.m_iDryMissions = 0;
+  else if (why == "timed out") team.m_iDryMissions++;
   PrintFormat("[ACR] MORTAR %1 fire mission %2 %3: %4 of %5 rounds fired", team.m_sName, team.m_sMission, why, s_iLastFired, team.m_iRounds);
   ACR_Squad squad = team.m_Squad;
   if (squad && team.m_eState == ACR_EMortarState.DEPLOYED && why != "packing up")
@@ -906,6 +938,17 @@ class ACR_Mortars : Managed
    squad.m_OrderKind = ACR_EOrderKind.DEFEND;
   }
   team.m_sStatus = "ready";
+  // After the idle order above: an AI commander's team sets up again a little way off, as after
+  // shoot-and-scoot (a team in range never moves on its own); a player's team waits for an order.
+  bool relocate = team.m_iDryMissions == DRY_MISSIONS && team.m_Squad && !team.m_Squad.HasPlayer() && team.m_Squad.m_iOrderedBy == 0;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  ACR_AICommander ai;
+  if (manager) ai = manager.AICommanderFor(team.m_sFaction);
+  if (relocate && ai && ai.m_bActive)
+  {
+   team.m_Squad.MoveTo(ACR_Manager.Ground(team.m_Spot + Vector(Math.RandomFloat(-40, 40), 0, Math.RandomFloat(-40, 40))));
+   PrintFormat("[ACR] MORTAR %1 fired nothing in %2 missions: setting up again nearby", team.m_sName, DRY_MISSIONS);
+  }
  }
 
  // ---------------------------------------------------------------- map and panel
