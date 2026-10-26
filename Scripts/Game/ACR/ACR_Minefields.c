@@ -236,6 +236,18 @@ class ACR_Minefields
    plan.m_fDuration = Duration(kind) * WORK_SCALE;
   }
   else if (!PlanField(plan, point, refusal)) return null;
+  // Not where another squad of ours is already on its way to lay a field (the AI once sent two
+  // squads to the same spot, playtest 25 Oct).
+  if (kind != ACR_EMineKind.DISARM)
+  {
+   foreach (ACR_Squad other : manager.m_Squads)
+   {
+    if (!other || other == squad || !other.m_MinePlan || other.m_MinePlan.m_eKind == ACR_EMineKind.DISARM || other.m_MinePlan.m_sFaction != faction) continue;
+    if (vector.DistanceXZ(other.m_MinePlan.m_vSite, plan.m_vSite) >= SIZE * 1.5) continue;
+    refusal = "another squad of ours is already laying mines there";
+    return null;
+   }
+  }
   if (BBB_Terrain.IsWaterAt(plan.m_vStage)) plan.m_vStage = plan.m_vSite;
   float now = GetGame().GetWorld().GetWorldTime();
   plan.m_fLastTick = now;
@@ -692,6 +704,22 @@ class ACR_Minefields
   foreach (ACR_Minefield field : s_Fields)
    if (faction.IsEmpty() || field.m_sFaction == faction) count += field.m_aMines.Count();
   return count;
+ }
+
+ // A field of this side within radius of pos (laid, or a squad of its on its way to lay it).
+ static bool FieldNear(string faction, vector pos, float radius)
+ {
+  foreach (ACR_Minefield field : s_Fields)
+  {
+   if (field.m_sFaction == faction && vector.DistanceXZ(field.m_vPos, pos) < radius) return true;
+  }
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return false;
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (squad && squad.m_MinePlan && squad.m_MinePlan.m_eKind != ACR_EMineKind.DISARM && squad.m_MinePlan.m_sFaction == faction && vector.DistanceXZ(squad.m_MinePlan.m_vSite, pos) < radius) return true;
+  }
+  return false;
  }
 
  static int CountFields(string faction)
