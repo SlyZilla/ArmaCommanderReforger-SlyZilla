@@ -36,7 +36,7 @@ class ACR_Ride
  // A player in the riders (possession, 23 Oct; Jacob: taking over a riding squad cancelled the ride).
  bool m_bLedByPlayer;           // a player took over their leader: they follow him, the ride goes on
  bool m_bPlayerAboard;          // a player rider has been in the transport this leg
- float m_fUnloadSince = -1;     // dropped off with a player still aboard: the transport waits for him
+ float m_fUnloadSince = -1;     // dropped off with riders still aboard: the transport waits for them
 }
 
 class ACR_Rides : Managed
@@ -61,10 +61,11 @@ class ACR_Rides : Managed
  static const float ESCORT_DROP_NEAR = 250;    // m: an assault carrier stopped this close drops its riders
  static const float ESCORT_STOPPED_MS = 15000;
  static const float PLAYER_UNLOAD_MS = 60000;  // dropped off: the transport waits this long for a player to get out
+ static const float RIDERS_UNLOAD_MS = 20000;  // ...and this long for AI riders (the dismount's sweeps take 9 s)
 
  protected ACR_Manager m_Manager;
  ref array<ref ACR_Ride> m_Rides = {};
- ref array<ref ACR_Ride> m_Unloading = {};    // rides over, transport waiting for a player rider to get out
+ ref array<ref ACR_Ride> m_Unloading = {};    // rides over, transport waiting for its riders to get out
  ref map<string, float> m_NoTransportAt = new map<string, float>(); // faction -> last time a ride found no transport
 
  void ACR_Rides(ACR_Manager manager)
@@ -355,7 +356,7 @@ class ACR_Rides : Managed
   for (int u = m_Unloading.Count() - 1; u >= 0; u--)
   {
    ACR_Ride unload = m_Unloading[u];
-   if (!WaitForPlayerOut(unload)) m_Unloading.RemoveOrdered(u);
+   if (!WaitForRidersOut(unload)) m_Unloading.RemoveOrdered(u);
   }
  }
 
@@ -396,15 +397,24 @@ class ACR_Rides : Managed
   return inside;
  }
 
- // Dropped off with a player aboard: the transport stays put until he is out (or a minute), then home.
- protected bool WaitForPlayerOut(ACR_Ride ride)
+ // Dropped off with riders aboard: the transport stays put until they are out (a player up to a
+ // minute, AI riders up to RIDERS_UNLOAD_MS), then home. Before, it drove home with AI riders still
+ // getting out, and an LAV's rear seats don't let them out while it moves (#23).
+ protected bool WaitForRidersOut(ACR_Ride ride)
  {
   ACR_Squad taxi = ride.m_Taxi;
   if (!taxi || !ride.m_Vehicle || !m_Manager.m_Squads.Contains(taxi) || taxi.m_iOrderSerial != ride.m_iTaxiSerial) return false;
-  int outside;
-  bool waiting = ride.m_Rider != null && m_Manager.m_Squads.Contains(ride.m_Rider) && PlayersAboard(ride, outside) > 0;
-  if (waiting && GetGame().GetWorld().GetWorldTime() - ride.m_fUnloadSince < PLAYER_UNLOAD_MS) return true;
-  if (waiting) Log(ride, "a player is still aboard, the transport leaves with him");
+  bool riders = ride.m_Rider != null && m_Manager.m_Squads.Contains(ride.m_Rider);
+  int outside, alive;
+  bool player = riders && PlayersAboard(ride, outside) > 0;
+  int aboard = 0;
+  if (riders) aboard = Aboard(ride, alive);
+  float waited = GetGame().GetWorld().GetWorldTime() - ride.m_fUnloadSince;
+  if (player && waited < PLAYER_UNLOAD_MS) return true;
+  if (aboard > 0 && !player && waited < RIDERS_UNLOAD_MS) return true;
+  if (player) Log(ride, "a player is still aboard, the transport leaves with him");
+  else if (aboard > 0) Log(ride, string.Format("%1 still aboard after %2 s, the transport leaves with them", aboard, (int)(waited / 1000)));
+  else Log(ride, string.Format("riders out after %1 s, the transport goes", (int)(waited / 1000)));
   SendHome(ride);
   return false;
  }
@@ -622,8 +632,8 @@ class ACR_Rides : Managed
      if (arrived) Log(ride, "dropped off");
      else Log(ride, "drive took too long, getting out here");
      Finish(ride, true);
-     // A player aboard gets out himself: wait for him rather than drive off with him.
-     if (playersOn > 0 && !ride.m_bEscort)
+     // Wait for the riders to get out rather than drive off with them (a player gets out himself).
+     if (aboard > 0 && !ride.m_bEscort)
      {
       ride.m_Taxi.Halt("Unloading");
       ride.m_iTaxiSerial = ride.m_Taxi.m_iOrderSerial;
