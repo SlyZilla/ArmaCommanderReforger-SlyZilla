@@ -730,6 +730,7 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrServiceSupplyCost` | `-acrServiceSupplyCost 10` default, 0–100; supply cost per service load (turret magazines half, disposable launchers double) |
 | `m_iAcrFobRPServiceCost` | `-acrFobRPServiceCost 3` default, 0–100; RP per soldier actually serviced instantly at a FOB in supplied mode; zero makes this fallback free |
 | `m_iAcrMines` | `-acrMines 1` (default) or `0`; the commander's minefield orders (see [Minefields](#minefields)) |
+| `m_iAcrHoldGuns` | `-acrHoldGuns 1` (default) or `0`; gunners stay on the static guns of a spot their squad holds |
 | `m_iAcrMinesRealistic` | `-acrMinesRealistic 0` (default) or `1`; with 1 the owning side's AI sets off its own mines too |
 | `m_iAcrMinesAI` | `-acrMinesAI 0` (default) or `1`; AI commanders lay minefields on their approaches |
 | `m_iAcrFortify` | `-acrFortify 1` (default) or `0`; the commander's Fortify order (see [Fortify position](#fortify-position)) |
@@ -843,6 +844,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrRespawnSeconds N` | Overrides `m_iRespawnSeconds` |
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
 | `-acrMines 0` | Turn off the commander's minefield orders (on by default; see [Minefields](#minefields)) |
+| `-acrHoldGuns 0` | Vanilla gunners: by default a squad holding a spot (Defend, a checkpoint, a Fortify position) keeps its men on the static guns there, unless an enemy seen in the last 10 s is within 60 m; an empty held gun is manned again after 8 s. Vanilla gets a gunner out whenever anything he knows of is outside the gun's arc. Setup row **Gunners stay on held guns** |
 | `-acrMinesRealistic 1` | Mines go off for everyone. By default the owning side's AI never sets off its own mines; its players do |
 | `-acrFortify 0` | Turn off the commander's Fortify order (on by default; see [Fortify position](#fortify-position)) |
 | `-acrFortifyAI 1` | AI commanders fortify: every 60 s, with RP to spare, one order at a time, they upgrade their position nearest the frontline base or (fewer than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base (off by default) |

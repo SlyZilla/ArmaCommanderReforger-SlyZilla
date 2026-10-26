@@ -26,6 +26,10 @@
 
 - Fortify positions get defenders: tier I holds 1 of the side's garrison soldiers in reserve at the position, tier II 2 and tier III 4 (an upgrade adds the difference). Like a base's garrison they deploy when an enemy comes within 400 m, defend the position, pack up once none is within 450 m and are used up as they die; a position that is gone takes its reserve with it. Sizes: `-acrFortifyDefenders1` / `-acrFortifyDefenders2` / `-acrFortifyDefenders3` (0 for none). Checkpoints can get them too with `-acrRoadblockDefenders N` (off by default).
 
+### The battlefield
+
+- Gunners stay on held guns (on by default; setup row **Gunners stay on held guns**, `-acrHoldGuns 0` for vanilla): a squad holding a spot (Defend, a checkpoint, a Fortify position, FOB defences) keeps its men on the static guns there. Vanilla took a gunner off his gun whenever anything he knew of, even a minute old, or just the sound of firing, was outside the gun's arc, so checkpoint and nest guns kept standing empty. Now he leaves only for an enemy he saw in the last 10 s within 60 m (a real flank), and a held gun that stands empty for 8 s is manned again by the nearest man of the squad.
+
 ### Fixes
 
 - A ride waits at the drop until its AI riders are out (up to 20 s, as it already did for a player). Before, the transport drove home as soon as it dropped them off, and an LAV, whose rear seats don't let men out once it moves, carried some of them home (#23). A man still aboard after the dismount's second try is taken out without a door; in the LAV's rear seats, where every exit was refused (the game said nothing was pending), his vehicle action queue is cleared first, and as a last resort he moves to another seat and gets out from there.

@@ -107,6 +107,7 @@ defenders|-acrDefendersTest 1|200
 roadblocks|-acrRoadblocksTest 1|420
 fortify|-acrFortifyTest 1|420
 fortifyfit|-acrFortifyFitTest 1|200
+gunhold|-acrGunHoldTest 1|200
 ridejob|-acrRideJobTest 1|340
 attackreach|-acrAttackReachTest 1|120
 budget|-acrBuildBudgetTest 1|120
