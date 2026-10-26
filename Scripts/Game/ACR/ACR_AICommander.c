@@ -2871,7 +2871,16 @@ class ACR_AICommander : Managed
     }
     if (stalled)
     {
-     outcome = "called off (stalled)";
+     // Where the attackers got to (night soak 26 Oct: 46 of 118 grabs and attacks stalled).
+     float closest = -1;
+     string closestOrder;
+     foreach (ACR_Squad stuck : attack.m_Squads)
+     {
+      if (!stuck) continue;
+      float gap = vector.DistanceXZ(PositionOf(stuck), target.GetOrigin());
+      if (closest < 0 || gap < closest) { closest = gap; closestOrder = stuck.m_Order; }
+     }
+     outcome = string.Format("called off (stalled; nearest squad %1 m out, '%2')", (int)closest, closestOrder);
      m_StalledUntil.Set(target, GetGame().GetWorld().GetWorldTime() + STALLED_COOLDOWN * 1000);
     }
     if (target) PrintFormat("[ACR] AI %1: attack on %2 %3", m_sFaction, target.m_sName, outcome);
