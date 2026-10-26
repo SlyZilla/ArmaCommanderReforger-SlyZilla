@@ -2,6 +2,20 @@
 
 ## 0.5.8 — unreleased
 
+### AI commanders
+
+- An AI attack or grab whose squads all report the target unreachable is called off at once, so they get new orders within seconds. Before, the commander waited out the attack's full time limit: on Everon a grab of Gallows Base, which can't be walked into from the south, kept its squad standing idle for 17 minutes.
+- AI mortar teams follow the fighting: they move up to the own base nearest the enemy's known bases and the bases being attacked, instead of staying at the HQ whenever any unclaimed site happened to be in range (on Everon both teams sat at their HQs all game and fired one mission in two hours).
+- A changed AI doctrine gets one review to settle in before it is judged, so doctrines change at most every 20 minutes. Before, a side taking losses could flip between Firepower and Fortress every 10 minutes.
+
+### Support
+
+- A helicopter whose engine or rotor was shot up while it stood on its pad is repaired by servicing. Before, it looked fully healthy, wasn't repaired, and went back into servicing every minute for the rest of the game (the side couldn't use it or buy another). Vehicles serviced at depots and on reinforcement get the same full repair.
+
+### Intel
+
+- "The enemy commander has changed tactics" only names the old doctrine when it had been confirmed. A hint such as "Firepower or Fortress" could include the new doctrine, so the line could say "no longer Fortress" as the enemy switched to Fortress.
+
 ## 0.5.7 — released
 
 Dig in and read the enemy. Fortify positions, mine the approaches, size your checkpoints, and face AI commanders that fight to their own doctrine and change it when it fails.
