@@ -972,6 +972,7 @@ class ACR_AICommander : Managed
  protected float m_fNextDoctrineReview = -1;
  protected int m_iReviewLost, m_iReviewKills, m_iReviewWon, m_iReviewBasesLost;
  protected int m_iDoctrineChanges;
+ protected bool m_bDoctrineSettling; // changed at the last review: the next one only snapshots
 
  protected void SnapshotReview()
  {
@@ -997,6 +998,16 @@ class ACR_AICommander : Managed
   m_fNextDoctrineReview = now + DOCTRINE_REVIEW_MIN * 60000;
   ACR_SideStats s = ACR_Report.Of(m_sFaction);
   if (!s) return;
+  // A new doctrine is judged on what it does once settled in, not on the purchases and plans
+  // of the old one still arriving (Everon night soak 26 Oct: Balanced -> Firepower ->
+  // Fortress, ten minutes apart, both for losses).
+  if (m_bDoctrineSettling)
+  {
+   m_bDoctrineSettling = false;
+   SnapshotReview();
+   PrintFormat("[ACR] AI commander %1 doctrine review: %2 settling in, judged from now", m_sFaction, m_Doctrine.m_sName);
+   return;
+  }
   int lost = s.m_iLost - m_iReviewLost;
   int kills = s.m_iKills - m_iReviewKills;
   int won = s.m_iBasesWon - m_iReviewWon;
@@ -1065,6 +1076,7 @@ class ACR_AICommander : Managed
   m_Doctrine = doctrine;
   m_sDoctrineSource = "changed";
   m_iDoctrineChanges++;
+  m_bDoctrineSettling = true;
   PrintFormat("[ACR] AI commander %1 doctrine: %2 -> %3 (%4; %5)", m_sFaction, was.m_sName, doctrine.m_sName, why, doctrine.m_sSummary);
   // Its own side hears it (players fighting under this commander); the enemy has to notice.
   string line = string.Format("Commander: switching to %1 (%2)", doctrine.m_sName, why);
