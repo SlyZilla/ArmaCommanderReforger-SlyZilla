@@ -30,6 +30,7 @@ class ACR_Roadblock : Managed
 	int m_iType = ACR_ERoadblockType.MEDIUM;
 	IEntity m_PaidTruck;  // the construction truck that paid for it (none: RP)
 	float m_fPaidLoads;
+	ACR_DefenderPost m_Defenders; // its defenders (-acrRoadblockDefenders, ACR_Defenders)
 }
 
 class ACR_Roadblocks : Managed
@@ -56,6 +57,7 @@ class ACR_Roadblocks : Managed
 	static const int DISMANTLE_REFUND = 10;
 	static const float BUILD_DURATION_S = 45.0;
 	static const float MAX_ROAD_DIST = 20.0;
+	static const float SNAP_END_SLACK = 2.0; // m: a piece the click falls inside of beats a nearer piece end by this
 	static const float MIN_BASE_DIST = 120.0;
 	static const float MIN_ROADBLOCK_DIST = 180.0;
 	static const float CP_RADIUS = 15.0;
@@ -289,6 +291,37 @@ class ACR_Roadblocks : Managed
 		return true;
 	}
 
+	// A road piece's nearest point to pos (XZ): its segment, the point (at pos's height) and the
+	// distance; 'inside' unless the point is clamped to the piece's very first or last point.
+	static float NearestOnPiece(notnull array<vector> points, vector pos, out int segment, out vector point, out bool inside)
+	{
+		segment = -1;
+		inside = false;
+		float best = float.MAX;
+		int last = points.Count() - 2;
+		for (int i = 0; i <= last; i++)
+		{
+			vector p1 = points[i];
+			vector seg = points[i + 1] - p1;
+			seg[1] = 0;
+			float lenSq = seg.LengthSq();
+			if (lenSq < 0.01) continue;
+			vector v = pos - p1;
+			v[1] = 0;
+			float raw = (v[0] * seg[0] + v[2] * seg[2]) / lenSq;
+			float t = Math.Clamp(raw, 0.0, 1.0);
+			vector proj = p1 + seg * t;
+			proj[1] = pos[1];
+			float d = vector.DistanceXZ(pos, proj);
+			if (d >= best) continue;
+			best = d;
+			segment = i;
+			point = proj;
+			inside = !((i == 0 && raw <= 0) || (i == last && raw >= 1));
+		}
+		return best;
+	}
+
 	static bool ValidateSite(vector pos, out vector outRoadPos, out float outYaw, out string refusal, string faction = "", vector facing = vector.Zero)
 	{
 		ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
@@ -298,55 +331,52 @@ class ACR_Roadblocks : Managed
 			return false;
 		}
 
+		// Real road pieces only: navlinks (the network's invisible junction links) put the
+		// roadblock in the middle of the junction.
 		BaseRoad road;
 		float roadDist;
-		aiWorld.GetRoadNetworkManager().GetClosestRoad(pos, road, roadDist);
-		if (!road || roadDist > MAX_ROAD_DIST)
+		aiWorld.GetRoadNetworkManager().GetClosestRoad(pos, road, roadDist, true);
+
+		// The road piece the click is on: of the pieces near it, the one whose line is nearest,
+		// one the click falls inside of before one it only meets at an end. The piece
+		// GetClosestRoad gives can be the neighbouring one, and clamped to its end a click by a
+		// joint or a T-crossing slid to the joint or the T, off the road clicked (25 Oct).
+		array<BaseRoad> nearRoads = {};
+		// (A tall box: road pieces' bounds don't sit at the ground's height.)
+		aiWorld.GetRoadNetworkManager().GetRoadsInAABB(pos - Vector(MAX_ROAD_DIST, 1000, MAX_ROAD_DIST), pos + Vector(MAX_ROAD_DIST, 1000, MAX_ROAD_DIST), nearRoads);
+		// (GetClosestRoad can give a piece 40 m off with one 2 m from the click: its distance
+		// decides nothing.)
+		if (road && !nearRoads.Contains(road)) nearRoads.Insert(road);
+		array<vector> points = {};
+		int bestIdx = -1;
+		float bestDist = float.MAX;
+		bool bestInside;
+		vector bestProj = pos;
+		foreach (BaseRoad piece : nearRoads)
+		{
+			if (!piece) continue;
+			array<vector> piecePoints = {};
+			piece.GetPoints(piecePoints);
+			int idx;
+			vector proj;
+			bool inside;
+			float dist = NearestOnPiece(piecePoints, pos, idx, proj, inside);
+			if (idx < 0) continue;
+			// Inside a piece wins unless a piece's end is more than SNAP_END_SLACK m nearer.
+			bool better = dist < bestDist;
+			if (inside && !bestInside) better = dist < bestDist + SNAP_END_SLACK;
+			else if (!inside && bestInside) better = dist + SNAP_END_SLACK < bestDist;
+			if (!better) continue;
+			bestDist = dist;
+			bestIdx = idx;
+			bestProj = proj;
+			bestInside = inside;
+			points = piecePoints;
+		}
+
+		if (bestIdx < 0 || bestDist > MAX_ROAD_DIST)
 		{
 			refusal = "target position must be on or near a road";
-			return false;
-		}
-
-		// Calculate spline alignment
-		array<vector> points = {};
-		road.GetPoints(points);
-		if (points.Count() < 2)
-		{
-			refusal = "road alignment unavailable";
-			return false;
-		}
-
-		// Find closest segment
-		int bestIdx = -1;
-		float bestDistSq = float.MAX;
-		vector bestProj = pos;
-		for (int i = 0; i < points.Count() - 1; i++)
-		{
-			vector p1 = points[i];
-			vector p2 = points[i + 1];
-			vector seg = p2 - p1;
-			seg[1] = 0;
-			float lenSq = seg.LengthSq();
-			if (lenSq < 0.01) continue;
-
-			vector v = pos - p1;
-			v[1] = 0;
-			float t = (v[0] * seg[0] + v[2] * seg[2]) / lenSq;
-			t = Math.Clamp(t, 0.0, 1.0);
-			vector proj = p1 + seg * t;
-			proj[1] = pos[1];
-			float distSq = vector.DistanceSqXZ(pos, proj);
-			if (distSq < bestDistSq)
-			{
-				bestDistSq = distSq;
-				bestIdx = i;
-				bestProj = proj;
-			}
-		}
-
-		if (bestIdx < 0 || bestDistSq > MAX_ROAD_DIST * MAX_ROAD_DIST)
-		{
-			refusal = "road alignment unavailable";
 			return false;
 		}
 
@@ -401,6 +431,14 @@ class ACR_Roadblocks : Managed
 		return true;
 	}
 
+	// Defenders held in reserve at a checkpoint (not a plain barricade), as at a Fortify position
+	// (ACR_Defenders): -acrRoadblockDefenders N, 0 (off) by default, at most 8.
+	static int Defenders(int type)
+	{
+		if (type == ACR_ERoadblockType.BARRICADE) return 0;
+		return Math.ClampInt(ACR_LogisticsRules.Choice("acrRoadblockDefenders", "0").ToInt(), 0, 8);
+	}
+
 	static ACR_Roadblock SpawnRoadblock(string factionKey, vector pos, float yaw, string squadName = "", int type = ACR_ERoadblockType.MEDIUM)
 	{
 		ResourceName prefab = PrefabFor(type, factionKey, RoadWidthAt(pos));
@@ -439,6 +477,12 @@ class ACR_Roadblocks : Managed
 		rb.m_sBuilderSquad = squadName;
 		rb.m_fSpawnedAt = GetGame().GetWorld().GetWorldTime();
 		rb.m_iType = type;
+		int defenders = Defenders(type);
+		if (defenders > 0)
+		{
+			rb.m_Defenders = ACR_Defenders.Add(factionKey, pos, string.Format("%1 roadblock", factionKey), 15);
+			rb.m_Defenders.m_iReserve = defenders;
+		}
 
 		s_aRoadblocks.Insert(rb);
 		PrintFormat("[ACR] ROADBLOCK spawned for %1 at %2 (%3, turret=%4)", factionKey, pos, Name(type), rb.m_Turret != null);
@@ -473,6 +517,7 @@ class ACR_Roadblocks : Managed
 		// Removing it from the list frees it when the caller holds no strong reference.
 		vector pos = rb.m_vPos;
 		string faction = rb.m_sFaction;
+		ACR_Defenders.Remove(rb.m_Defenders);
 		s_aRoadblocks.RemoveItem(rb);
 		PrintFormat("[ACR] ROADBLOCK dismantled at %1, refunded %2 to %3", pos, refund, faction);
 	}
@@ -547,6 +592,7 @@ class ACR_Roadblocks : Managed
 			ACR_Roadblock rb = s_aRoadblocks[i];
 			if (!rb || !rb.m_Entity || rb.m_Entity.IsDeleted())
 			{
+				if (rb) ACR_Defenders.Remove(rb.m_Defenders);
 				s_aRoadblocks.RemoveOrdered(i);
 			}
 		}

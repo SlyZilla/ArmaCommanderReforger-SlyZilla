@@ -233,8 +233,12 @@ job gives back counts) and refunded in full if it is called off before the piece
 are refused within 30 m of a base centre and 40 m of another of your positions. The squad then
 holds the position and mans its guns; the pieces stay when it leaves. The position shows on its
 side's command map as a pale ring until every piece is destroyed or dismantled, and its wire goes
-with it then. Hosts change the options below on the startup Logistics
-settings page.
+with it then. Tier II and III hold defenders in reserve at the position, from the side's garrison
+soldiers (2 at tier II, 4 at tier III; an upgrade adds the difference). Like a base's garrison
+they deploy when an enemy comes within 400 m, defend the position, pack up once none is within
+450 m and are used up as they die; a position that is gone takes its reserve with it. Hosts
+change the options below on the startup Logistics settings page; the defender sizes are launch
+flags and header fields only.
 
 ### AI world and navmesh
 
@@ -306,7 +310,7 @@ half a squad-cap slot each, so it fields about as many men; the soldier cap stil
 | Balanced | The standard commander |
 | Blitz | Buys about twice as many armed vehicles and an extra truck, rides from 600 m and air-lifts from 1.7 km, grabs more empty bases, attacks on thinner odds and sooner after a lull, shorter base of fire, presses on with heavier losses, builds FOBs closer to the front, lays one minefield at most, refits late, fires fewer mortar missions, keeps little RP for fire missions, keeps a reserve only with a bigger force |
 | Firepower | Buys mortar teams, gunships and forward observers first and keeps the RP for two fire missions (air and rocket strikes too), air or rocket preparation on more targets and on defence against smaller attacks, mortars fire more often, longer base of fire, wants better odds, one extra front at most, defenders hold the point, falls back sooner |
-| Fortress | Sends more defenders, most of them out to a forward line, and they hold to 25% strength, gives a base up only against 6x its defence, counterattacks a lost base on 55% of the usual force for 10 minutes, keeps a reserve sooner, up to three roadblocks and four minefields, clears FIA pockets near its bases sooner, refits early, walks farther before a ride, fewer grabs and fronts |
+| Fortress | Sends more defenders, most of them out to a forward line, and they hold to 25% strength, gives a base up only against 6x its defence, counterattacks a lost base on 55% of the usual force for 10 minutes, keeps a reserve sooner, up to three roadblocks and four minefields, clears FIA pockets near its bases sooner, refits early, walks farther before a ride, fewer grabs and fronts. Builds and mans more: twice the AI build budget's share and trickle, up to four Fortify positions, and up to four builders that stay on what they built (never pulled away to defend a base) |
 | Raider | More small teams, goes for weakly held bases and FOBs first, opens many fronts with two squads each, air-lifts from 1.5 km, breaks off an attack at half strength (and leaves that base alone for 5 minutes), defenders slip away at half strength, leaves FIA pockets alone longer, fewer vehicles and minefields |
 
 **Discovering a doctrine.** The other side can work out an AI commander's doctrine from what it sees:
@@ -320,7 +324,10 @@ commander's doctrine there too. An AI commander gets the same picture and nothin
 **Changing doctrine.** From 15 minutes in and every 10 minutes after, an AI commander reviews the
 last window from its side's report: two or more bases lost net means Fortress (Firepower if already
 Fortress), heavy losses (12+ and 1.6x what it killed) mean Firepower (or Fortress), nothing changing
-hands means Blitz (or Raider); a commander that is winning keeps its doctrine. If its intel has
+hands means Blitz (or Raider); a commander that is winning keeps its doctrine (bases gained don't count as winning while it
+loses men that heavily). After a change the
+next review only lets the new doctrine settle in, so it is judged on its own 10 minutes (changes
+at most every 20 minutes). If its intel has
 confirmed the enemy's doctrine and it isn't winning, it picks the counter instead: Fortress against
 Blitz, Firepower against Fortress, Raider against Firepower, Blitz against Raider. Its own side is told
 (feed, notice, report). The enemy's picture goes out of date without them knowing: they keep seeing
@@ -723,6 +730,11 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrMinesAI` | `-acrMinesAI 0` (default) or `1`; AI commanders lay minefields on their approaches |
 | `m_iAcrFortify` | `-acrFortify 1` (default) or `0`; the commander's Fortify order (see [Fortify position](#fortify-position)) |
 | `m_iAcrFortifyAI` | `-acrFortifyAI 0` (default) or `1`; AI commanders dig in and upgrade positions on their approaches |
+| `m_iAcrFortifyDefenders1` | `-acrFortifyDefenders1 1` default, 0–12; defenders in reserve at a Fortify tier I position (0: none) |
+| `m_iAcrFortifyDefenders2` | `-acrFortifyDefenders2 2` default, 0–12; defenders in reserve at a Fortify tier II position (0: none) |
+| `m_iAcrFortifyDefenders3` | `-acrFortifyDefenders3 4` default, 0–12; defenders in reserve at a tier III position |
+| `m_iAcrRoadblockDefenders` | `-acrRoadblockDefenders 0` default (none), 0–8; defenders in reserve at a checkpoint |
+| `m_iAcrAIBuildShare` | `-acrAIBuildShare 0` (default, off) to `30`; percent of each AI commander's income set aside for roadblocks, minefields and Fortify positions |
 
 The header describes the scenario; it does not publish, package or copy the world. Workbench creates
 the `.meta` files beside the world and header. Keep them there and do not edit them. When you choose
@@ -831,6 +843,9 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrMinesRealistic 1` | Mines go off for everyone. By default the owning side's AI never sets off its own mines; its players do |
 | `-acrFortify 0` | Turn off the commander's Fortify order (on by default; see [Fortify position](#fortify-position)) |
 | `-acrFortifyAI 1` | AI commanders fortify: every 60 s, with RP to spare, one order at a time, they upgrade their position nearest the frontline base or (fewer than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base (off by default) |
+| `-acrFortifyDefenders1 N` / `-acrFortifyDefenders2 N` / `-acrFortifyDefenders3 N` | Defenders held in reserve at a Fortify tier I / II / III position (1 / 2 / 4 by default, 0 none, at most 12; see [Fortify position](#fortify-position)) |
+| `-acrRoadblockDefenders N` | Defenders held in reserve at every checkpoint (small, medium, large; not a plain barricade), as at a Fortify position: they deploy when an enemy comes within 400 m and are used up as they die (0, none, by default; at most 8) |
+| `-acrAIBuildShare N` | AI commanders set N% (at most 30) of the RP they gain aside as an engineering budget, up to 100 RP: unit purchases leave it alone, so their roadblocks, minefields (`-acrMinesAI`) and Fortify positions (`-acrFortifyAI`) get built even when they would otherwise spend everything on units; those orders are paid out of it, and it gets at least 2 RP every strategy tick (15 s) on top of the share (twice both for a Fortress). Shown in the AI status log line. Off by default; the setup screen's **AI build budget** row sets it (off, 10, 15 or 25%) |
 | `-acrMinesAI 1` | AI commanders lay minefields: every 30 s, with RP to spare and fewer than two fields down, a free infantry squad (sappers first) mines the approach 150-270 m out from its frontline base towards the nearest enemy base (off by default) |
 | `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual Play and Host launchers pass `-acrSetup 1` and leave match settings to this screen |
 | `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default for ordinary dedicated servers; Host-ACA enables it for its separate local server, so the launching host must connect before friends. Configured admins remain trusted, and authority does not transfer after the first player disconnects |
