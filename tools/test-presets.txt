@@ -103,10 +103,15 @@ flank|-acrFlankTest 1|160
 attackplan|-acrAttackPlanTest 1|150
 drivelessgun|-acrDrivelessGunTest 1|100
 minefields|-acrMinefieldsTest 1|330
+defenders|-acrDefendersTest 1|200
 roadblocks|-acrRoadblocksTest 1|420
 fortify|-acrFortifyTest 1|420
 fortifyfit|-acrFortifyFitTest 1|200
 ridejob|-acrRideJobTest 1|340
+budget|-acrBuildBudgetTest 1|120
+aidefences|-acrAIDefencesTest 1|120
+roadsiting|-acrRoadSitingTest 1|120
+buildride|-acrBuildRideTest 1|540
 grabs|-acrGrabsTest 1|60
 mortarspot|-acrMortarSpotTest 1|60
 bbbfiremaneuver|-acrBbbFireManeuverTest 1|500|Worlds/BBB_TestArland.ent

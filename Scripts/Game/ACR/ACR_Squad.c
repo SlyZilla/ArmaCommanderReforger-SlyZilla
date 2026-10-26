@@ -1833,6 +1833,20 @@ class ACR_Squad : Managed
   IssueWaypoint(WP_DEFEND, fort.m_vPos, ACR_Fortify.HOLD_RADIUS);
  }
 
+ // Back to a position of ours that stands empty (ACR_AICommander.ManPositions): hold it as its
+ // builder did, gunners on its guns (native Defend).
+ bool ManFortification(ACR_Fortification fort)
+ {
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  if (!IssueWaypoint(WP_DEFEND, fort.m_vPos, ACR_Fortify.HOLD_RADIUS)) return false;
+  m_Fortification = fort;
+  SetOrder("Holding position", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  return true;
+ }
+
  // A new order: the position stays; our gunners leave its guns (as from a roadblock's).
  void LeaveFortification()
  {

@@ -10,11 +10,12 @@
 // - The AI's site check (tiers II and III fit) finds a site near Alpha, and says no when blocked.
 // - A gun aims up a gentle rise a level trace runs into.
 // - A refusal after the work (something changed) is said in the side's feed, refunded.
+// - Refused twice for one reason, the AI gives a position's upgrades up (players still may).
 // - The playtest's two refused sites (Arland, facings from its log): the Airfield tier I's tier II
 //   goes in now; at Heide (a nest facing an 11 degree rise) the order and the build agree.
 class ACR_TestFortifyFit
 {
- static const int CHECKS = 12;
+ static const int CHECKS = 13;
  static int s_iStep;
  static int s_iStepAt;
  static int s_iRP;
@@ -241,6 +242,16 @@ class ACR_TestFortifyFit
   bool fireOrdered = ACR_Fortify.Order(alpha, site, fireWhy);
   ACR_Fortify.s_bBlockFireForTest = false;
   ACR_TestRegress.Check("fortifyfit: a gun with no line of fire is refused when ordered, nothing charged", !fireOrdered && us.m_iRP == rp && !alpha.m_FortifyPlan && fireWhy.Contains("no clear line of fire"), string.Format("'%1', rp %2 -> %3", fireWhy, rp, us.m_iRP));
+  // The same refusal again: the AI gives the position up for good (playtest: an AI upgrade by big
+  // rocks refused every 15 min all game); a player can still order it.
+  bool heldBefore = fort.m_fUpgradeHeldUntil < float.MAX;
+  ACR_Fortify.s_bBlockFireForTest = true;
+  string againWhy;
+  ACR_Fortify.Order(alpha, site, againWhy);
+  ACR_Fortify.s_bBlockFireForTest = false;
+  bool givenUp = fort.m_fUpgradeHeldUntil == float.MAX;
+  ACR_FortifyPlan playerStill = ACR_Fortify.Plan(alpha, site, why);
+  ACR_TestRegress.Check("fortifyfit: refused twice for the same reason the AI gives the upgrade up for good, a player can still order it", heldBefore && givenUp && playerStill != null, string.Format("held for a while before %1, given up %2 after %3 refusals ('%4'), planned for a player %5", heldBefore, givenUp, fort.m_iUpgradeRefusals, fort.m_sUpgradeRefused, playerStill != null));
  }
 
  // The AI's site check, a gun aiming up a rise, and the site for the late refusal.

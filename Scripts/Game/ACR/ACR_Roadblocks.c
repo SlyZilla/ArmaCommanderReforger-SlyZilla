@@ -30,6 +30,7 @@ class ACR_Roadblock : Managed
 	int m_iType = ACR_ERoadblockType.MEDIUM;
 	IEntity m_PaidTruck;  // the construction truck that paid for it (none: RP)
 	float m_fPaidLoads;
+	ACR_DefenderPost m_Defenders; // its defenders (-acrRoadblockDefenders, ACR_Defenders)
 }
 
 class ACR_Roadblocks : Managed
@@ -430,6 +431,14 @@ class ACR_Roadblocks : Managed
 		return true;
 	}
 
+	// Defenders held in reserve at a checkpoint (not a plain barricade), as at a Fortify position
+	// (ACR_Defenders): -acrRoadblockDefenders N, 0 (off) by default, at most 8.
+	static int Defenders(int type)
+	{
+		if (type == ACR_ERoadblockType.BARRICADE) return 0;
+		return Math.ClampInt(ACR_LogisticsRules.Choice("acrRoadblockDefenders", "0").ToInt(), 0, 8);
+	}
+
 	static ACR_Roadblock SpawnRoadblock(string factionKey, vector pos, float yaw, string squadName = "", int type = ACR_ERoadblockType.MEDIUM)
 	{
 		ResourceName prefab = PrefabFor(type, factionKey, RoadWidthAt(pos));
@@ -468,6 +477,12 @@ class ACR_Roadblocks : Managed
 		rb.m_sBuilderSquad = squadName;
 		rb.m_fSpawnedAt = GetGame().GetWorld().GetWorldTime();
 		rb.m_iType = type;
+		int defenders = Defenders(type);
+		if (defenders > 0)
+		{
+			rb.m_Defenders = ACR_Defenders.Add(factionKey, pos, string.Format("%1 roadblock", factionKey), 15);
+			rb.m_Defenders.m_iReserve = defenders;
+		}
 
 		s_aRoadblocks.Insert(rb);
 		PrintFormat("[ACR] ROADBLOCK spawned for %1 at %2 (%3, turret=%4)", factionKey, pos, Name(type), rb.m_Turret != null);
@@ -502,6 +517,7 @@ class ACR_Roadblocks : Managed
 		// Removing it from the list frees it when the caller holds no strong reference.
 		vector pos = rb.m_vPos;
 		string faction = rb.m_sFaction;
+		ACR_Defenders.Remove(rb.m_Defenders);
 		s_aRoadblocks.RemoveItem(rb);
 		PrintFormat("[ACR] ROADBLOCK dismantled at %1, refunded %2 to %3", pos, refund, faction);
 	}
@@ -576,6 +592,7 @@ class ACR_Roadblocks : Managed
 			ACR_Roadblock rb = s_aRoadblocks[i];
 			if (!rb || !rb.m_Entity || rb.m_Entity.IsDeleted())
 			{
+				if (rb) ACR_Defenders.Remove(rb.m_Defenders);
 				s_aRoadblocks.RemoveOrdered(i);
 			}
 		}
