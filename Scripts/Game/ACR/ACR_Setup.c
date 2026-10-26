@@ -834,7 +834,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  static const int TABS = 5;
  static string TabName(int tab)
  {
-  if (tab == 1) return "Commanders";
+  if (tab == 1) return "Command";
   if (tab == 2) return "Economy";
   if (tab == 3) return "Logistics";
   if (tab == 4) return "Engineers";
@@ -899,13 +899,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   {
    string name = TabName(tab);
    if (tab == m_iTab) name = "[" + name + "]";
-   SCR_ButtonTextComponent tabButton = AddButton(m_wTabs, "tab:" + tab.ToString(), name, true);
-   if (!tabButton) continue;
-   if (tab == m_iTab)
-   {
-    tabButton.SetToggleable(true);
-    tabButton.SetToggled(true, false, false, true);
-   }
+   AddButton(m_wTabs, "tab:" + tab.ToString(), name, true);
   }
   array<string> lines = {};
   rows.Split("\n", lines, true);
@@ -934,6 +928,20 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   }
  }
 
+ void ShowTab(int tab)
+ {
+  m_iTab = tab;
+  m_iPage = 0;
+  Fill(m_sRows, m_sInfo);
+ }
+
+ // A row on screen now (the setup UI test).
+ bool ShowsRow(string key)
+ {
+  foreach (SCR_ButtonBaseComponent button, string shown : m_Keys) if (shown == key) return true;
+  return false;
+ }
+
  protected SCR_ButtonTextComponent AddButton(Widget parent, string key, string text, bool fill = false)
  {
   Widget widget = GetGame().GetWorkspace().CreateWidgets(LAYOUT_BUTTON, parent);
@@ -952,7 +960,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  {
   string key;
   if (!m_Keys.Find(button, key)) return;
-  if (key.StartsWith("tab:")) { m_iTab = key.Substring(4, key.Length() - 4).ToInt(); m_iPage = 0; Fill(m_sRows, m_sInfo); return; }
+  if (key.StartsWith("tab:")) { ShowTab(key.Substring(4, key.Length() - 4).ToInt()); return; }
   if (key == "next_page") { m_iPage = (m_iPage + 1) % m_iPages; Fill(m_sRows, m_sInfo); return; }
   if (key == "map") { ACR_SetupClient.OpenPreviewMap(); return; }
   ACR_SetupClient.Request(key);

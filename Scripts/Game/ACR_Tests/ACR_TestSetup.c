@@ -152,8 +152,17 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup UI: the host sees the setup dialog with the options", dialog != null && ACR_SetupClient.s_bAllowed && ACR_SetupClient.s_sRows.Contains("Threat: normal") && !ACR_Setup.Started(), string.Format("dialog %1, allowed %2", dialog != null, ACR_SetupClient.s_bAllowed));
    ACR_SetupClient.Request("threat");
   }
+  if (second == 11)
+  {
+   ACR_SetupDialog tabbed = ACR_SetupDialog.Cast(SCR_ConfigurableDialogUi.GetCurrentDialog());
+   if (tabbed) tabbed.ShowTab(1);
+  }
   if (second == 12)
+  {
    ACR_TestRegress.Check("setup UI: a click reaches the server and the dialog refreshes", ACR_SetupClient.s_sRows.Contains("Threat: high") && ACR_Manager.ThreatOption() == 2, ACR_SetupClient.s_sRows);
+   ACR_SetupDialog shown = ACR_SetupDialog.Cast(SCR_ConfigurableDialogUi.GetCurrentDialog());
+   ACR_TestRegress.Check("setup UI: the Command tab shows the AI rows, not the battlefield's", shown && shown.ShowsRow("ai") && shown.ShowsRow("doctrinewest") && !shown.ShowsRow("threat") && !shown.ShowsRow("map") && shown.ShowsRow("tab:0"), "");
+  }
   if (second == 13) ACR_SetupClient.Request("start");
   if (second == 25)
   {
@@ -161,7 +170,7 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup UI: Start closes the dialog and the match begins", ACR_Setup.Started() && !ACR_SetupClient.s_bActive && open == null && ACR_Skirmish.Applied(), string.Format("started %1, dialog open %2", ACR_Setup.Started(), open != null));
    PlayerController pc = GetGame().GetPlayerController();
    ACR_TestRegress.Check("setup UI: the host spawns after Start", pc && pc.GetControlledEntity() != null, "");
-   ACR_TestRegress.Complete("setupui", 4);
+   ACR_TestRegress.Complete("setupui", 5);
   }
  }
 
