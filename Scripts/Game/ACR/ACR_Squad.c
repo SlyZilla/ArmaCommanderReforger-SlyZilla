@@ -3267,6 +3267,10 @@ class ACR_Squad : Managed
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent() || FindController(character) != 0) continue;
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+   // A seat whose exits are all refused (the LAV-25's CARGO seat Passenger_r02, #23: animated,
+   // teleport and no-door exits alike): still aboard at the fourth sweep, he moves to a free seat
+   // first and goes out from there on the fifth.
+   if (m_iDismountSweeps == 4 && MoveToFreeSeat(character, access)) continue;
    // Still aboard on the third sweep (9 s): the teleport through a door left him in too (an LAV's
    // rear seats, 25 Oct): out without a door, as vanilla clears a seat (SCR_AIChangeCompartment).
    if (m_iDismountSweeps >= 3)
@@ -3286,9 +3290,33 @@ class ACR_Squad : Managed
   }
  }
 
+ // Into another free passenger seat of the same vehicle (one in his own section first), as the
+ // game's switch-seat action does it (GetInVehicle while aboard); false when there is none.
+ protected bool MoveToFreeSeat(ChimeraCharacter character, CompartmentAccessComponent access)
+ {
+  BaseCompartmentSlot current = access.GetCompartment();
+  IEntity vehicle = CompartmentAccessComponent.GetVehicleIn(character);
+  if (!current || !vehicle) return false;
+  BaseCompartmentManagerComponent seats = BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(BaseCompartmentManagerComponent));
+  if (!seats) return false;
+  array<BaseCompartmentSlot> slots = {};
+  seats.GetCompartments(slots);
+  BaseCompartmentSlot pick;
+  foreach (BaseCompartmentSlot slot : slots)
+  {
+   if (!slot || slot == current || slot.IsOccupied() || !slot.IsCompartmentAccessible() || slot.GetType() != ECompartmentType.CARGO) continue;
+   if (!pick || (slot.GetCompartmentSection() == current.GetCompartmentSection() && pick.GetCompartmentSection() != current.GetCompartmentSection())) pick = slot;
+  }
+  if (!pick) return false;
+  bool moved = access.GetInVehicle(vehicle, pick, true, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+  PrintFormat("[ACR] GET OUT %1: %2 can't leave seat %3, moved to seat %4 first: %5", m_Name, character, current.GetCompartmentName(), pick.GetCompartmentName(), moved);
+  return moved;
+ }
+
  void HoldAfterDismount()
  {
-  if (IsMounted() && m_iDismountSweeps < 3)
+  // Five sweeps: the fifth gets out a man moved to another seat on the fourth (MoveToFreeSeat).
+  if (IsMounted() && m_iDismountSweeps < 5)
   {
    m_iDismountSweeps++;
    PushOutStillAboard();
