@@ -951,6 +951,12 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(widget);
   if (!button) return null;
   button.SetText(text);
+  // The command panel's blue: the vanilla hover is white behind white text, hiding the row.
+  Color normal = new Color(0.16, 0.42, 0.80, 0.40);
+  button.SetBackgroundColors(normal, new Color(0.26, 0.56, 0.96, 0.70), new Color(0.30, 0.62, 1.0, 0.95), new Color(0.36, 0.68, 1.0, 1.0), new Color(0.30, 0.62, 1.0, 0.95));
+  if (button.m_wBackground) button.m_wBackground.SetColor(normal);
+  Widget border = widget.FindAnyWidget("Border");
+  if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
   button.m_OnClicked.Insert(OnRow);
   m_Keys.Set(button, key);
   return button;
