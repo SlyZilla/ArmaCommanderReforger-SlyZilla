@@ -1,4 +1,4 @@
-// -acrMineSitingTest 1 (server-capable, ~40 s): the AI's minefield spots (ACR_MineSiting). With a
+// -acrMineSitingTest 1 (server-capable, ~40 s; from tick 8, once Alpha 1 is registered): the AI's minefield spots (ACR_MineSiting). With a
 // (pretend) roadblock of ours at the best road site of our first front base: the best spot is on
 // the road ahead of it, mixed; no spot lies within DEFENCE_STANDOFF of it; the AI lays its field at
 // one of the best spots. With no defence of ours there, the old ring still gives spots and the AI
@@ -6,11 +6,21 @@
 class ACR_TestMineSiting
 {
  static const int CHECKS = 5;
+ static bool s_bRan;
 
  static void Run(ACR_TestHarness h, int tick)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!manager || !h.m_Range || tick != 8) return;
+  if (!manager || !h.m_Range || s_bRan || tick < 8) return;
+  // The AI lays with the range's squads: wait until Alpha 1 is registered (it can come a few
+  // ticks after the world starts).
+  ACR_Squad alpha = manager.FindSquadByGroup(h.m_Range.m_Group);
+  if (!alpha || !alpha.GetAnchor())
+  {
+   if (tick > 60) { s_bRan = true; ACR_TestRegress.Abort("minesiting", "Alpha 1 never registered"); }
+   return;
+  }
+  s_bRan = true;
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All) settings.m_bAICommander = false;
   ACR_FactionData us = manager.m_Bases.GetFaction("US");
   if (!us)
