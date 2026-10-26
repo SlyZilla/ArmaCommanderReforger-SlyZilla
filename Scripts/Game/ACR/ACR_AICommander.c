@@ -4692,6 +4692,7 @@ class ACR_AICommander : Managed
      if (squad == m_ReserveSquad || squad.m_Commander != 0) continue;
      if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
      if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
+     if (DueForRefit(squad)) continue;
      float d = vector.DistanceXZ(PositionOf(squad), basePos);
      if (d < 450.0)
      {
@@ -4918,6 +4919,7 @@ class ACR_AICommander : Managed
     if (!squad || squad.HasPlayer() || squad.m_Commander != 0 || squad == m_ReserveSquad || IsSupportTeam(squad) || !ACR_Minefields.CanLay(squad)) continue;
     if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
     if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
+    if (DueForRefit(squad)) continue;
     float d = vector.DistanceXZ(PositionOf(squad), front.GetOrigin());
     if (d > 600)
     {
@@ -5224,12 +5226,27 @@ class ACR_AICommander : Managed
    if (!squad || squad.HasPlayer() || squad.m_Commander != 0 || squad == m_ReserveSquad || IsSupportTeam(squad) || !ACR_Fortify.CanFortify(squad)) continue;
    if (squad.m_MinePlan || squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
    if (squad.m_ActiveRoadblock || squad.m_Fortification) continue;
+   if (DueForRefit(squad)) continue;
    float d = vector.DistanceXZ(PositionOf(squad), pos);
    if (d >= candidateDistance) continue;
    candidateDistance = d;
    candidate = squad;
   }
   return candidate;
+ }
+
+ // A squad walking back to refill, or weak enough that it soon will (ManageReinforcements), isn't
+ // sent to build: the refit would take it off the job. Soak, 26 Oct: a 3-man squad, still on its
+ // way to refill, was posted, rode out to dig in and was called back a minute later.
+ protected bool DueForRefit(ACR_Squad squad)
+ {
+  return m_Refitting.Contains(squad) || squad.StrengthRatio() < m_Doctrine.m_fRefitRatio;
+ }
+
+ void SetRefittingForTest(ACR_Squad squad, bool on)
+ {
+  if (on) m_Refitting.Set(squad, GetGame().GetWorld().GetWorldTime() + REFIT_GIVE_UP_MS);
+  else m_Refitting.Remove(squad);
  }
 
  // ---------------------------------------------------------------- hand-over

@@ -9,7 +9,7 @@
 // while it isn't.
 class ACR_TestAIDefences
 {
- static const int CHECKS = 16;
+ static const int CHECKS = 17;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -296,6 +296,7 @@ class ACR_TestAIDefences
   string roadblockName = "aidefences: with no free squad near a front base, one 1 km out establishes the roadblock";
   string minesName = "aidefences: with no free squad near a front base, one 1 km out lays the field";
   string fortifyName = "aidefences: with no free squad near a front base, one 1 km out digs the position";
+  string refitName = "aidefences: a squad on its way to refill isn't sent to build";
   vector spot;
   bool found = false;
   for (int k = 0; k < 16 && !found && !fronts.IsEmpty(); k++)
@@ -318,6 +319,7 @@ class ACR_TestAIDefences
    ACR_TestRegress.Skip(roadblockName, "no dry spot 1 km from the first front base and 650 m from every front base");
    ACR_TestRegress.Skip(minesName, "no dry spot");
    ACR_TestRegress.Skip(fortifyName, "no dry spot");
+   ACR_TestRegress.Skip(refitName, "no dry spot");
    return;
   }
   array<ACR_Squad> others = {};
@@ -333,6 +335,24 @@ class ACR_TestAIDefences
   anchor.SetOrigin(spot);
   ai.SetDoctrineForTest(fortress);
   string where = string.Format("Alpha %1 m from %2", (int)vector.DistanceXZ(spot, fronts[0].GetOrigin()), fronts[0].m_sName);
+
+  // On its way to refill, the only free squad is left out of every build.
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  ai.SetRefittingForTest(alpha, true);
+  ACR_Options.Set("acrMinesAI", "1");
+  ACR_Options.Set("acrFortifyAI", "1");
+  us.m_iRP = 500;
+  ai.StartTickForTest();
+  ai.ResetBuildTimersForTest();
+  ai.ManageRoadblocks();
+  ai.ManageMinefields();
+  ai.ManageFortify();
+  ACR_Options.Unset("acrMinesAI");
+  ACR_Options.Unset("acrFortifyAI");
+  ai.SetRefittingForTest(alpha, false);
+  bool refitLeft = alpha.m_iAITask == ACR_EAITask.FREE && !ai.PendingBuildForTest(alpha) && !alpha.m_MinePlan && !alpha.m_FortifyPlan && alpha.OrderState() != ACR_EOrderState.BUILD_ROADBLOCK;
+  string refitDetail = string.Format("refitting: task %1, pending %2, mine plan %3, Fortify plan %4, order '%5'", typename.EnumToString(ACR_EAITask, alpha.m_iAITask), ai.PendingBuildForTest(alpha), alpha.m_MinePlan != null, alpha.m_FortifyPlan != null, alpha.m_Order);
+  if (!refitLeft) alpha.Halt("Holding");
 
   alpha.m_iAITask = ACR_EAITask.FREE;
   us.m_iRP = 500;
@@ -374,6 +394,7 @@ class ACR_TestAIDefences
   ACR_TestRegress.Check(roadblockName, roadblock, where + rideRoadblock);
   ACR_TestRegress.Check(minesName, mines, where + rideMines);
   ACR_TestRegress.Check(fortifyName, dig, where + rideDig);
+  ACR_TestRegress.Check(refitName, refitLeft, where + "; " + refitDetail);
  }
 
  // A squad sent to ride out to a build: its ride called off (as if it had been dropped where it
