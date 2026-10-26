@@ -224,6 +224,7 @@ class ACR_Manager : Managed
   ACR_Generator.Reset();
   ACR_Minefields.Reset();
   ACR_Fortify.Reset();
+  ACR_SpawnPoints.Reset();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
@@ -440,6 +441,12 @@ class ACR_Manager : Managed
  {
   // Setup phase: nothing runs until the host or an admin presses Start (ACR_Setup).
   if (!ACR_Setup.Started()) { ACR_Setup.Tick(); return; }
+  // A solo game pauses the world in menus (Esc, and the deploy screen, which a player now sits
+  // in before spawning): nothing spawns or moves then, so the AI commanders, purchases and timers
+  // wait too (else bought squads timed out unspawned and were refunded, GitHub #39).
+  ChimeraWorld world = GetGame().GetWorld();
+  // The deploy map's spawn points still update, so a paused player has somewhere to deploy.
+  if (world && world.IsGameTimePaused()) { ACR_SpawnPoints.Tick(this); return; }
   int t = System.GetTickCount();
   int tickStarted = t;
   if (!m_bHostOptionsApplied) ApplyHostOptions();

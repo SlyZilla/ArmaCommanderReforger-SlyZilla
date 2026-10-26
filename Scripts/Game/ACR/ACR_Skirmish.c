@@ -207,7 +207,7 @@ class ACR_Skirmish : GenericEntity
   // Spawn points follow their side's HQ.
   foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
   {
-   if (!point) continue;
+   if (!point || ACR_SpawnPoints.IsBasePoint(point)) continue;
    string side = SelectedSide(point.GetFactionKey());
    ACR_Base target = hqs.Get(side);
    if (!target) continue;
@@ -276,7 +276,7 @@ class ACR_Skirmish : GenericEntity
   vector home;
   bool found;
   foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
-   if (point && SelectedSide(point.GetFactionKey()) == side) { home = point.GetOrigin(); found = true; break; }
+   if (point && !ACR_SpawnPoints.IsBasePoint(point) && SelectedSide(point.GetFactionKey()) == side) { home = point.GetOrigin(); found = true; break; }
   ACR_Base best;
   float bestDistance = float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)

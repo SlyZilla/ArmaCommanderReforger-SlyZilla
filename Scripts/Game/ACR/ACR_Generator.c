@@ -1154,7 +1154,7 @@ class ACR_Generator
   // Player spawn points go to their side's HQ.
   foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
   {
-   if (!point) continue;
+   if (!point || ACR_SpawnPoints.IsBasePoint(point)) continue;
    string key = point.GetFactionKey();
    if (key == "US") key = westSide;
    else if (key == "USSR") key = eastSide;

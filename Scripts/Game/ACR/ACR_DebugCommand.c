@@ -29,7 +29,7 @@ class ACR_DebugCommand : Managed
 		commandLine = commandLine.Trim();
 		if (commandLine.IsEmpty() || commandLine == "help")
 		{
-			return "Commands: rp <amt> [side], time <0-24>, heal [all], kill [all], fob supply <amt>, fob finish, fob build <slot>, capture <base> [side], attack <base>, reveal, pause [enemy/us], tp [base], defences [base|clear], unbound";
+			return "Commands: rp <amt> [side], time <0-24>, heal [all], kill [all], fob supply <amt>, fob finish, fob build <slot>, capture <base> [side], attack <base>, reveal, pause [enemy/us], tp [base], defences [base|clear], side <west|east> [player], unbound";
 		}
 
 		array<string> tokens = {};
@@ -324,6 +324,41 @@ class ACR_DebugCommand : Managed
 			Physics phys = playerBody.GetPhysics();
 			if (phys) phys.SetVelocity(vector.Zero);
 			return string.Format("[ACR] Teleported to %1 %2", (int)targetPos[0], (int)targetPos[2]);
+		}
+
+		// SIDE <west|east> [player name]: move a player (default: yourself) to a side, past the
+		// match-long side lock (ACR_SpawnPoints). Someone alive in the field moves on redeploying.
+		if (cmd == "side")
+		{
+			if (tokens.Count() < 2) return "Usage: side <west|east> [player name]";
+			string wanted = tokens[1];
+			wanted.ToLower();
+			string sideKey = ACR_FactionSelection.West();
+			if (wanted == "east") sideKey = ACR_FactionSelection.East();
+			else if (wanted != "west") return "Usage: side <west|east> [player name]";
+			int targetId = playerId;
+			if (tokens.Count() >= 3)
+			{
+				string namePart = tokens[2];
+				namePart.ToLower();
+				targetId = 0;
+				array<int> ids = {};
+				GetGame().GetPlayerManager().GetPlayers(ids);
+				foreach (int id : ids)
+				{
+					string playerName = GetGame().GetPlayerManager().GetPlayerName(id);
+					playerName.ToLower();
+					if (playerName.Contains(namePart)) { targetId = id; break; }
+				}
+				if (targetId == 0) return "No player named " + tokens[2];
+			}
+			string who = GetGame().GetPlayerManager().GetPlayerName(targetId);
+			string forced = ACR_PlayerSide.Key();
+			if (forced != "" && forced != sideKey) return "The host option -acrPlayers keeps everyone on " + forced;
+			ACR_SpawnPoints.Assign(targetId, sideKey);
+			SCR_PlayerController movedPc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(targetId));
+			if (movedPc && !ACR_Respawn.IsAlive(movedPc.GetMainEntity())) return string.Format("[ACR] %1 moved to %2", who, ACR_FactionSelection.DisplayName(sideKey));
+			return string.Format("[ACR] %1 joins %2 when they next redeploy", who, ACR_FactionSelection.DisplayName(sideKey));
 		}
 
 		return "Unknown command '" + cmd + "'. Type '/acr help' for available commands.";

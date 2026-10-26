@@ -2949,8 +2949,10 @@ class ACR_Squad : Managed
   float stalled = (now - m_fStallSince) / 1000;
   bool armed = HasGunner(vehicle);
   // Fighting vehicles (anything with a turret: LAV, BTR, BRDM, gun trucks) keep
-  // their crew aboard; only soft, unarmed vehicles are abandoned.
-  bool fightingVehicle = HasTurret(vehicle);
+  // their crew aboard; only soft, unarmed vehicles are abandoned. A taxi isn't one: a ride never
+  // takes a vehicle with a manned gun, so holding it stuck only stranded its riders (#23: a stuck
+  // LAV taxi held, a new order that dropped the ride); it re-routes like a soft vehicle.
+  bool fightingVehicle = HasTurret(vehicle) && !(manager && manager.m_Rides && manager.m_Rides.RideOf(this) != null);
 
   if (underFire && speed < 3.5 && manager)
   {
@@ -3279,7 +3281,25 @@ class ACR_Squad : Managed
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent() || FindController(character) != 0) continue;
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
-   if (m_iDismountSweeps >= 2)
+   // A seat whose exits are all refused (the LAV-25's CARGO seats, #23: animated, teleport,
+   // no-door and the game's own eject alike, 26 Oct): what the game says of him, then his vehicle
+   // action queue cleared (a stuck action blocks every new one) and out by teleport on the fourth
+   // sweep, without a door on the fifth; on the sixth he moves to a free seat, to go out from there.
+   if (m_iDismountSweeps == 4 || m_iDismountSweeps == 5)
+   {
+    if (ClearAndGetOut(character, access, m_iDismountSweeps == 5)) continue;
+   }
+   if (m_iDismountSweeps == 6 && MoveToFreeSeat(character, access)) continue;
+   // Still aboard on the third sweep (9 s): the teleport through a door left him in too (an LAV's
+   // rear seats, 25 Oct): out without a door, as vanilla clears a seat (SCR_AIChangeCompartment).
+   if (m_iDismountSweeps >= 3)
+   {
+    vector spot[4];
+    access.FindSuitableTeleportLocation(spot);
+    access.GetOutVehicle_NoDoor(spot, false, false);
+    PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, taken out without a door", m_Name, character);
+   }
+   else if (m_iDismountSweeps >= 2)
    {
     access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
     PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, placed out", m_Name, character);
@@ -3289,9 +3309,58 @@ class ACR_Squad : Managed
   }
  }
 
+ // His vehicle action queue cleared, then out by teleport (noDoor: without a door, where the game
+ // finds room). Logs what the game says of him first. True when the exit was taken.
+ protected bool ClearAndGetOut(ChimeraCharacter character, CompartmentAccessComponent access, bool noDoor)
+ {
+  BaseCompartmentSlot seat = access.GetCompartment();
+  string seatName = "none";
+  if (seat) seatName = seat.GetCompartmentName();
+  IEntity vehicle = CompartmentAccessComponent.GetVehicleIn(character);
+  float speed = -1;
+  if (vehicle && vehicle.GetPhysics()) speed = vehicle.GetPhysics().GetVelocity().Length();
+  PrintFormat("[ACR] GET OUT %1: %2 in seat %3: can get out %4, can jump out %5, getting in %6, getting out %7, switching seats %8, vehicle speed %9 m/s", m_Name, character, seatName, access.CanGetOutVehicle(), access.CanJumpOutVehicle(), access.IsGettingIn(), access.IsGettingOut(), access.IsSwitchingSeatsAnim(), speed);
+  access.InterruptVehicleActionQueue(true, true, true);
+  bool gotOut;
+  if (noDoor)
+  {
+   vector spot[4];
+   access.FindSuitableTeleportLocation(spot);
+   gotOut = access.GetOutVehicle_NoDoor(spot, false, false);
+  }
+  else gotOut = access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+  PrintFormat("[ACR] GET OUT %1: %2 action queue cleared, out (no door %3): %4", m_Name, character, noDoor, gotOut);
+  return gotOut;
+ }
+
+ // Into another free passenger seat of the same vehicle (one in his own section first), as the
+ // game's switch-seat action does it (GetInVehicle while aboard); false when there is none.
+ protected bool MoveToFreeSeat(ChimeraCharacter character, CompartmentAccessComponent access)
+ {
+  BaseCompartmentSlot current = access.GetCompartment();
+  IEntity vehicle = CompartmentAccessComponent.GetVehicleIn(character);
+  if (!current || !vehicle) return false;
+  BaseCompartmentManagerComponent seats = BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(BaseCompartmentManagerComponent));
+  if (!seats) return false;
+  array<BaseCompartmentSlot> slots = {};
+  seats.GetCompartments(slots);
+  BaseCompartmentSlot pick;
+  foreach (BaseCompartmentSlot slot : slots)
+  {
+   if (!slot || slot == current || slot.IsOccupied() || !slot.IsCompartmentAccessible() || slot.GetType() != ECompartmentType.CARGO) continue;
+   if (!pick || (slot.GetCompartmentSection() == current.GetCompartmentSection() && pick.GetCompartmentSection() != current.GetCompartmentSection())) pick = slot;
+  }
+  if (!pick) return false;
+  bool moved = access.GetInVehicle(vehicle, pick, true, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+  PrintFormat("[ACR] GET OUT %1: %2 can't leave seat %3, moved to seat %4 first: %5", m_Name, character, current.GetCompartmentName(), pick.GetCompartmentName(), moved);
+  return moved;
+ }
+
  void HoldAfterDismount()
  {
-  if (IsMounted() && m_iDismountSweeps < 3)
+  // Seven sweeps: the fourth and fifth clear the action queue of a man no exit gets out, the
+  // sixth moves him to another seat, the seventh gets him out from there.
+  if (IsMounted() && m_iDismountSweeps < 7)
   {
    m_iDismountSweeps++;
    PushOutStillAboard();

@@ -2,6 +2,15 @@
 
 ## 0.5.8 — unreleased
 
+### Players and spawning
+
+- Choose your side: players now pick a side, an officer loadout and where to deploy on the game's deploy screen once the host presses Start, so both sides can be played by people (#39). Before, everyone spawned as a West commander unless the host forced the whole lobby onto one side. An AI commander still runs any side with no player in command, so player-vs-player, co-op and mixed games all work from the same scenario.
+- Deploy at any base your side holds that can deploy units (HQs, military sites and built FOBs by default): each has a spawn point named after it on the deploy map, closed while the base is contested or the FOB is offline. The HQ is the default, and a side that has lost everywhere else can always fall back to its HQ point.
+- Each player has their own respawn timer (the host's respawn delay), shown on the deploy screen. Before, one dead commander held up the whole side's spawn point.
+- You stay on the side you first deployed on for the whole match, reconnects included. Hosts and admins can move a player with `/acr side west|east <player>`.
+- The scenarios offer 16 player slots (8 per side). They advertised 8 before.
+- In a solo game, the war now waits while the game is paused (the Esc menu, and the deploy screen in a solo game). Before, AI commanders kept buying squads that couldn't appear while paused, and those purchases timed out and were refunded.
+
 ### AI commanders
 
 - The AI commander doesn't send a medic team or another support team to grab an empty base any more, as it already kept them out of attacks (#34).
@@ -12,10 +21,16 @@
 - AI defences are built, upgraded and manned (playtest: one roadblock and one empty hasty position all game). Roadblocks, minefields and new Fortify positions go to whichever of the side's three bases nearest the enemy lacks one, not only the single nearest base. Its positions are upgraded (lowest tier first) before new ones are dug. One minefield is laid at a time, and no squad (AI or player) is sent to lay a field where another of its side is already on its way to lay one. With no free squad near the base (450 m for a roadblock, 600 m for mines, 500 m for Fortify), the nearest free squad within 1.5 km takes the job; past the doctrine's ride distance it rides out in a truck when one is free and is given, and pays for, the job at the drop. A squad on its way to refill isn't sent. A builder now stays on the roadblock or position it built (up to 2 per side); those squads aren't sent on attacks, and leave to defend a base only when their side is outnumbered there, or as a last resort. A lower cap keeps those holding longest. An empty position at a front base (its holder killed, or gone to defend) is manned again by the nearest free squad while the doctrine's holders allow, and only positions in use (manned, or at a front base) count towards the doctrine's number, so ones the front has left behind no longer stop new ones. A manned tier II position counts its holders half again towards its base's defence, a tier III twice, so the AI values keeping it manned. With the build budget on, engineering is paid out of it, and it gets at least 2 RP every 15 s on top of its share. A **Fortress** AI builds and mans more: twice the budget's share and trickle, up to four Fortify positions, and up to four builders that stay on what they built, pulled away only when their side is outnumbered at a base. A position whose upgrade was refused twice for the same reason is given up by the AI. Rate-limited log lines say what held a build up.
 - AI building budget (host option, off by default): `-acrAIBuildShare N` makes each AI commander set N% (at most 30) of the RP it gains aside for engineering, up to 100 RP. Unit purchases leave that money alone, so its roadblocks, minefields (`-acrMinesAI`) and Fortify positions (`-acrFortifyAI`) get built instead of losing out to the next squad. The AI status log line shows the budget. The setup screen has a row for it: **AI build budget** (off, 10, 15 or 25% of income).
 - AI minefields go where they do most: mixed fields across the road 60-150 m ahead of the side's own roadblock, where its gunners cover them, more on the enemy's road route and at chokepoints; AP fields in dead ground and tree lines in front of its positions. The spots are scored and tried best first, the old ring last, so the AI never lays fewer fields than before.
+- AI attacks only count the squads that can get there: on foot within 2.1 km, in their own vehicles, by a taxi they can actually get (each taxi counted once), or by a ready air lift. A target beyond their reach is skipped, and the forming up waits for the slowest squad's walk or ride, up to 20 minutes. Before, squads 2-3 km off were sent on foot and the attack went in before they came (#27).
 
 ### Engineering
 
 - Fortify positions get defenders: tier I holds 1 of the side's garrison soldiers in reserve at the position, tier II 2 and tier III 4 (an upgrade adds the difference). Like a base's garrison they deploy when an enemy comes within 400 m, defend the position, pack up once none is within 450 m and are used up as they die; a position that is gone takes its reserve with it. Sizes: `-acrFortifyDefenders1` / `-acrFortifyDefenders2` / `-acrFortifyDefenders3` (0 for none). Checkpoints can get them too with `-acrRoadblockDefenders N` (off by default).
+
+### Fixes
+
+- A ride waits at the drop until its AI riders are out (up to 20 s, as it already did for a player). Before, the transport drove home as soon as it dropped them off, and an LAV, whose rear seats don't let men out once it moves, carried some of them home (#23). A man still aboard after the dismount's second try is taken out without a door; in the LAV's rear seats, where every exit was refused (the game said nothing was pending), his vehicle action queue is cleared first, and as a last resort he moves to another seat and gets out from there.
+- A stuck vehicle giving a ride re-routes like a soft vehicle instead of holding where it is like a fighting one. A ride never takes a vehicle with a manned gun, so an LAV taxi that held only dropped the ride, with its riders still aboard (#23).
 
 ### Support
 
