@@ -158,7 +158,7 @@ class ACR_Minefields
  // Infantry that could take the order (the map feed's flag for the panel buttons).
  static bool CanLay(ACR_Squad squad)
  {
-  return Enabled() && squad && !squad.IsVehicle() && squad.CountAlive() > 0;
+  return Enabled() && squad && ACR_Fortify.Infantry(squad) && squad.CountAlive() > 0;
  }
 
  // Sappers / engineers, or a construction truck with the squad, work twice as fast.
@@ -197,7 +197,8 @@ class ACR_Minefields
    refusal = "squad is unavailable";
    return null;
   }
-  if (squad.IsVehicle())
+  // A gunner on one of our fortified positions' guns still counts as infantry.
+  if (!ACR_Fortify.Infantry(squad))
   {
    refusal = "vehicles cannot lay or disarm mines";
    return null;

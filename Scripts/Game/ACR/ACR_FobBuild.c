@@ -83,7 +83,9 @@ class ACR_FobBuild
 	// other compositions (built or blueprint), and trees when they cannot be felled.
 	// ignoreTrees: place over trees that cannot be felled (FOB defences clip through vegetation).
 	// maxRise: allowed terrain rise across the footprint (0 = the default for its size).
-	static bool FootprintClear(vector spot, float radius, array<IEntity> ignore, out string reason, bool ignoreTrees = false, float maxRise = 0)
+	// roadMargin: how far past its radius a footprint must stay from a road's edge (a building's
+	// access; Fortify's sandbags only keep off the road itself).
+	static bool FootprintClear(vector spot, float radius, array<IEntity> ignore, out string reason, bool ignoreTrees = false, float maxRise = 0, float roadMargin = 1.0)
 	{
 		reason = "";
 		if (!ACR_Manager.OnMap(spot))
@@ -130,7 +132,7 @@ class ACR_FobBuild
 			BaseRoad road;
 			float roadDist;
 			aiWorld.GetRoadNetworkManager().GetClosestRoad(spot, road, roadDist);
-			if (road && roadDist - road.GetWidth() * 0.5 < radius + 1.0)
+			if (road && roadDist - road.GetWidth() * 0.5 < radius + roadMargin)
 			{
 				reason = "on a road";
 				return false;

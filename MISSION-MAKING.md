@@ -208,6 +208,34 @@ then holds it and mans its gun; the roadblock stays when the squad leaves. Roadb
 within 120 m of a base and 180 m of another roadblock. AI commanders build medium checkpoints paid
 in RP, and the 3D commander camera's **Roadblock** button orders a medium checkpoint.
 
+### Fortify position
+
+**Fortify** (map panel) sends an infantry squad to dig in where you right-click. The position
+faces the nearest enemy your side knows of within 600 m of the spot, else the nearest enemy base
+your side can see, else away from the squad (the way it was going). Ordering Fortify again within 25 m of one of your positions upgrades it:
+
+| Tier | Pieces | Cost | Work |
+|---|---|---|---|
+| I, hasty | a line of three sandbag positions, a barbed-tape fence about 12 m in front (the guns fire through it) | 10 RP | 45 s |
+| II, dug in | a machine-gun nest in place of the middle position (the gun in the centre of the line), a sandbag bunker under a camo net behind it | 15 RP | 60 s |
+| III, strongpoint | a bunker instead of the covered post, a heavy MG past the right end of the line turned in across the front for crossfire (the left end when the right has no clear place or line of fire) | 25 RP | 90 s |
+
+The pieces are the side's own (US, USSR and Russian, or FIA). They go in when the work is done
+and no vehicle stands on a spot. A blocked spot tries points beside it, under the same rules as
+FOB defences, and never stands on a big rock; asphalt and concrete (a runway, a car park) take a
+piece only when no other spot will. The guns sit a little ahead of the posts, and each needs a
+clear line of fire: nothing but wire within 15 m in front (another piece, a building, a tree or
+rising ground makes it try the next point, never one further back). A new position skips a spot that stays blocked but needs at least one piece besides its
+wire; an upgrade needs every new piece to fit, or nothing goes in and it is refunded, so it can be
+ordered again. Work pauses while the site is contested and runs twice as fast with
+sappers / engineers or a construction truck. The order is paid up front (what the squad's current
+job gives back counts) and refunded in full if it is called off before the pieces go in. Positions
+are refused within 30 m of a base centre and 40 m of another of your positions. The squad then
+holds the position and mans its guns; the pieces stay when it leaves. The position shows on its
+side's command map as a pale ring until every piece is destroyed or dismantled, and its wire goes
+with it then. Hosts change the options below on the startup Logistics
+settings page.
+
 ### AI world and navmesh
 
 On the `SCR_AIWorld` object, choose the navigation files for your terrain: one for soldiers (`NavmeshWorld`),
@@ -692,6 +720,8 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrMines` | `-acrMines 1` (default) or `0`; the commander's minefield orders (see [Minefields](#minefields)) |
 | `m_iAcrMinesRealistic` | `-acrMinesRealistic 0` (default) or `1`; with 1 the owning side's AI sets off its own mines too |
 | `m_iAcrMinesAI` | `-acrMinesAI 0` (default) or `1`; AI commanders lay minefields on their approaches |
+| `m_iAcrFortify` | `-acrFortify 1` (default) or `0`; the commander's Fortify order (see [Fortify position](#fortify-position)) |
+| `m_iAcrFortifyAI` | `-acrFortifyAI 0` (default) or `1`; AI commanders dig in and upgrade positions on their approaches |
 
 The header describes the scenario; it does not publish, package or copy the world. Workbench creates
 the `.meta` files beside the world and header. Keep them there and do not edit them. When you choose
@@ -797,6 +827,8 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
 | `-acrMines 0` | Turn off the commander's minefield orders (on by default; see [Minefields](#minefields)) |
 | `-acrMinesRealistic 1` | Mines go off for everyone. By default the owning side's AI never sets off its own mines; its players do |
+| `-acrFortify 0` | Turn off the commander's Fortify order (on by default; see [Fortify position](#fortify-position)) |
+| `-acrFortifyAI 1` | AI commanders fortify: every 60 s, with RP to spare, one order at a time, they upgrade their position nearest the frontline base or (fewer than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base (off by default) |
 | `-acrMinesAI 1` | AI commanders lay minefields: every 30 s, with RP to spare and fewer than two fields down, a free infantry squad (sappers first) mines the approach 150-270 m out from its frontline base towards the nearest enemy base (off by default) |
 | `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual Play and Host launchers pass `-acrSetup 1` and leave match settings to this screen |
 | `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default for ordinary dedicated servers; Host-ACA enables it for its separate local server, so the launching host must connect before friends. Configured admins remain trusted, and authority does not transfer after the first player disconnects |

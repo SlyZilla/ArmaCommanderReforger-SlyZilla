@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrFortify", "acrFortifyAI"};
   foreach (string name : names)
   {
    string value;
@@ -153,6 +153,10 @@ class ACR_MissionHeader : SCR_MissionHeader
  int m_iAcrMinesRealistic;
  [Attribute("-1", UIWidgets.EditBox, "AI commanders lay minefields: 0 default, 1 enables (-acrMinesAI)")]
  int m_iAcrMinesAI;
+ [Attribute("-1", UIWidgets.EditBox, "Commander Fortify orders: 1 default, 0 disables (-acrFortify)")]
+ int m_iAcrFortify;
+ [Attribute("-1", UIWidgets.EditBox, "AI commanders fortify: 0 default, 1 enables (-acrFortifyAI)")]
+ int m_iAcrFortifyAI;
 
  void Fill(map<string, string> values)
  {
@@ -189,6 +193,8 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrMines", m_iAcrMines);
   Number(values, "acrMinesRealistic", m_iAcrMinesRealistic);
   Number(values, "acrMinesAI", m_iAcrMinesAI);
+  Number(values, "acrFortify", m_iAcrFortify);
+  Number(values, "acrFortifyAI", m_iAcrFortifyAI);
  }
 
  protected static void Text(map<string, string> values, string name, string value)

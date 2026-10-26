@@ -216,6 +216,7 @@ class ACR_Requests : Managed
    case ACR_ERequest.ORDER_ROADBLOCK_S: return "establishing roadblock";
    case ACR_ERequest.ORDER_ROADBLOCK_L: return "establishing roadblock";
    case ACR_ERequest.ORDER_BARRICADE: return "building barricade";
+   case ACR_ERequest.ORDER_FORTIFY: return "fortifying";
   }
   return "moving";
  }
@@ -239,7 +240,7 @@ class ACR_Requests : Managed
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return outcome.Refuse("Only the commander can give map orders. Take command first.");
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return outcome.Refuse("That squad is not ready");
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB || ACR_Roadblocks.TypeOfRequest(command) >= 0 || ACR_Minefields.IsRequest(command);
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB || ACR_Roadblocks.TypeOfRequest(command) >= 0 || ACR_Minefields.IsRequest(command) || command == ACR_ERequest.ORDER_FORTIFY;
   // Reject nonsense coordinates from a client.
   if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !ACR_Manager.OnMap(point))) return outcome.Refuse("Order is too far away");
   // Map clicks made inside Game Master / build mode are not orders (the client checks too).
@@ -263,6 +264,14 @@ class ACR_Requests : Managed
   }
   int roadblock = ACR_Roadblocks.TypeOfRequest(command);
   if (roadblock >= 0) return OrderRoadblock(pc, squad, point, roadblock, outcome);
+  // Fortify: ACR_Fortify plans the tier (a new position, or an upgrade of ours there).
+  if (command == ACR_ERequest.ORDER_FORTIFY)
+  {
+   string fortifyWhy;
+   if (!ACR_Fortify.Order(squad, point, fortifyWhy)) return outcome.Refuse(name + ": " + fortifyWhy);
+   PrintFormat("[ACR] FORTIFY order player=%1 squad=%2 at %3", pc.GetPlayerId(), name, point);
+   return outcome.Accept(name + ": " + OrderWords(command));
+  }
   switch (command)
   {
    case ACR_ERequest.ADVANCE:
