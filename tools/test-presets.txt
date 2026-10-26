@@ -114,6 +114,7 @@ budget|-acrBuildBudgetTest 1|120
 aidefences|-acrAIDefencesTest 1|120
 roadsiting|-acrRoadSitingTest 1|120
 buildride|-acrBuildRideTest 1|540
+minesiting|-acrMineSitingTest 1|120
 grabs|-acrGrabsTest 1|60
 mortarspot|-acrMortarSpotTest 1|60
 ridelav|-acrRideLavTest 1|400

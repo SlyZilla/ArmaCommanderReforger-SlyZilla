@@ -232,6 +232,17 @@ class ACR_RoadblockSiting
   return true;
  }
 
+ // The enemy's road route cached for a base into 'route' (false, empty, when none is cached).
+ static bool RouteOf(vector basePos, vector enemyPos, string faction, notnull array<vector> route)
+ {
+  route.Clear();
+  string key = string.Format("%1|%2|%3", faction, Snap(basePos), Snap(enemyPos));
+  ACR_RoadSiteCache cache;
+  if (!s_mCache.Find(key, cache) || cache.m_aRoute.Count() < 2) return false;
+  foreach (vector p : cache.m_aRoute) route.Insert(p);
+  return true;
+ }
+
  protected static bool Seen(ACR_RoadSiteCache cache, vector pos)
  {
   foreach (ACR_RoadSite other : cache.m_aSites)
