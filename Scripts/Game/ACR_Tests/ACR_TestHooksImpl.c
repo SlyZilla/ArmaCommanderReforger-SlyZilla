@@ -39,6 +39,8 @@ modded class ACR_TestHooks
   // -acrGenerateTest / -acrGenerateEveronTest: the scenario generator (ACR_TestGenerate).
   if (System.IsCLIParam("acrLiftClearanceTest")) ACR_TestLiftClearance.Run(seconds);
   if (System.IsCLIParam("acrLzBenchTest")) ACR_TestLzBench.Run(seconds);
+  // -acrShoreRoutesTest: BBB land routes keep legs off the shore (ACR_TestShoreRoutes).
+  if (System.IsCLIParam("acrShoreRoutesTest")) ACR_TestShoreRoutes.Run(seconds);
   if (System.IsCLIParam("acrSlopesTest")) ACR_TestSlopes.Run(seconds);
   // -acrPathProbeTest: can foot squads reach Gallows Base's centre (ACR_TestPathProbe).
   if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
