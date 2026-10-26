@@ -2,9 +2,28 @@
 
 ## 0.5.8 — unreleased
 
-- A ride waits at the drop until its AI riders are out (up to 20 s, as it already did for a player). Before, the transport drove home as soon as it dropped them off, and an LAV, whose rear seats don't let men out once it moves, carried some of them home (#23). A man still aboard after the dismount's second try is taken out without a door.
+### AI commanders
 
+- The AI commander doesn't send a medic team or another support team to grab an empty base any more, as it already kept them out of attacks (#34).
+- An AI attack or grab whose squads all report the target unreachable is called off at once, so they get new orders within seconds. Before, the commander waited out the attack's full time limit: on Everon a grab of Gallows Base, which can't be walked into from the south, kept its squad standing idle for 17 minutes.
+- AI mortar teams follow the fighting: they move up to the own base nearest the enemy's known bases and the bases being attacked, instead of staying at the HQ whenever any unclaimed site happened to be in range (on Everon both teams sat at their HQs all game and fired one mission in two hours).
+- A changed AI doctrine gets one review to settle in before it is judged, so doctrines change at most every 20 minutes. Before, a side taking losses could flip between Firepower and Fortress every 10 minutes.
+- AI doctrine reviews don't count bases taken as winning while the side is losing men heavily: early on most bases taken are empty, and a commander losing 20 men for 4 kills used to think its doctrine was working.
+
+### Fixes
+
+- A ride waits at the drop until its AI riders are out (up to 20 s, as it already did for a player). Before, the transport drove home as soon as it dropped them off, and an LAV, whose rear seats don't let men out once it moves, carried some of them home (#23). A man still aboard after the dismount's second try is taken out without a door.
 - A stuck vehicle giving a ride re-routes like a soft vehicle instead of holding where it is like a fighting one. A ride never takes a vehicle with a manned gun, so an LAV taxi that held only dropped the ride, with its riders still aboard (#23).
+
+### Support
+
+- A mortar team sets up out of the way of vehicles: not on or within 5 m of a road, and not within 30 m of a base's centre, where bought vehicles appear (#33). It looks up to 40 m round for such a spot (24 m before).
+- A mortar team whose last two fire missions fired nothing takes no more missions until its tube is set up again (the support list says why). An AI commander's team moves a short way and sets up again by itself. Before, the AI kept paying for or queueing missions on a team that couldn't fire, every few minutes.
+- A helicopter whose engine or rotor was shot up while it stood on its pad is repaired by servicing. Before, it looked fully healthy, wasn't repaired, and went back into servicing every minute for the rest of the game (the side couldn't use it or buy another). Vehicles serviced at depots and on reinforcement get the same full repair.
+
+### Intel
+
+- "The enemy commander has changed tactics" only names the old doctrine when it had been confirmed. A hint such as "Firepower or Fortress" could include the new doctrine, so the line could say "no longer Fortress" as the enemy switched to Fortress.
 
 ## 0.5.7 — released
 

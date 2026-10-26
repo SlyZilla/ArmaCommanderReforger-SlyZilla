@@ -2526,7 +2526,7 @@ class ACR_Squad : Managed
    }
   }
   IssueWaypoint(m_sOrderPrefab, target, m_fOrderRadius, m_bForced);
-  PrintFormat("[ACR] MOVE %1: waypoint disappeared before arrival; recovery %2/4 (%3)", m_Name, m_iWaypointRecoveries, how);
+  PrintFormat("[ACR] MOVE %1: waypoint disappeared before arrival; recovery %2/4 (%3), group vehicles %4", m_Name, m_iWaypointRecoveries, how, GroupVehicleCount());
   if (m_iWaypointRecoveries >= 4) m_bRecoveryLast = true;
  }
 
@@ -2542,6 +2542,24 @@ class ACR_Squad : Managed
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager && m_iOrderedBy > 0) manager.Notify(m_iOrderedBy, message);
   Halt("Holding (unreachable)");
+  m_iUnreachableSerial = m_iOrderSerial;
+ }
+
+ // Holding since its last order turned out unreachable (no order since): the AI commander
+ // gives up on that attack at once instead of waiting out its time limit (Everon night soak
+ // 26 Oct: Gallows Base can't be pathed into from the south; a grab's only squad held there
+ // "unreachable" for 17 min). Moving the target short of the spot instead was tried and
+ // dropped: the squad then "arrived" without moving, outside the base (srv:pathprobe).
+ protected int m_iUnreachableSerial = -1;
+ bool GaveUpUnreachable() { return m_iUnreachableSerial == m_iOrderSerial; }
+
+ // Vehicles the game's group AI counts as its own (it plans moves with them).
+ int GroupVehicleCount()
+ {
+  if (!m_Group) return 0;
+  SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+  if (!utility || !utility.m_VehicleMgr) return 0;
+  return utility.m_VehicleMgr.GetVehiclesCount();
  }
 
  // The nearest point on the soldiers' navmesh or road within radius of 'at'.

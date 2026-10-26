@@ -107,6 +107,8 @@ roadblocks|-acrRoadblocksTest 1|420
 fortify|-acrFortifyTest 1|420
 fortifyfit|-acrFortifyFitTest 1|200
 ridejob|-acrRideJobTest 1|340
+grabs|-acrGrabsTest 1|60
+mortarspot|-acrMortarSpotTest 1|60
 ridelav|-acrRideLavTest 1|400
 ridelavkill|-acrRideLavKillTest 1|400
 ridelavgetout|-acrRideLavGetOutTest 1|400
@@ -138,3 +140,6 @@ basedefencessurveyarland|-acrBaseDefencesSurveyTest 1|90|Worlds/ACR_Arland.ent
 basedefencessurveykolguyev|-acrBaseDefencesSurveyTest 1|90|Worlds/ACR_Kolguyev.ent
 basedefencesmodels|-acrBaseDefencesModelsTest 1|120|Worlds/ACR_Everon.ent
 basedefencesmodelskolguyev|-acrBaseDefencesModelsTest 1|120|Worlds/ACR_Kolguyev.ent
+longsoakkolguyev|-acrLongSoakTest 1|7380|Worlds/ACR_Kolguyev.ent
+pathprobe|-acrPathProbeTest 1|240|Worlds/ACR_Everon.ent
+kolguyevsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Kolguyev.ent

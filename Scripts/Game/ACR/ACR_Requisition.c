@@ -671,10 +671,15 @@ class ACR_Requisition : Managed
     needed = true;
    }
    SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(vehicle.FindComponent(SCR_DamageManagerComponent));
-   if (damage && !damage.IsDestroyed() && damage.GetHealthScaled() < 0.99)
+   // Engine, rotor or wheel damage counts too: a gunship at full health with its engine
+   // shot was "damaged on its pad" again after every service (Everon night soak 26 Oct:
+   // 36 cycles in 36 min, the side never had it back or bought another).
+   if (damage && !damage.IsDestroyed() && (damage.GetHealthScaled() < 0.99 || damage.GetMovementDamage() > 0.01))
    {
     damage.HealHitZones(damage.GetMaxHealth() * 10);
+    damage.FullHeal();
     damage.SetHealthScaled(1);
+    damage.SetMovementDamage(0);
     needed = true;
    }
    if (needed) served++;

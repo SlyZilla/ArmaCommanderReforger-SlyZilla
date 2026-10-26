@@ -32,6 +32,12 @@ class ACR_TestRoadblocks
  static ref array<vector> s_aSquadAt = {};
  static int s_iGunRounds, s_iGunCycles, s_iGunMoved;
 
+ protected static string Healing(bool healing, bool moving)
+ {
+  if (healing && !moving) return " (still healing: not judged)";
+  return "";
+ }
+
  static void Run(ACR_TestHarness h, int tick)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -278,8 +284,18 @@ class ACR_TestRoadblocks
     if (counted > 0) step /= counted;
     float leaderStep = vector.DistanceXZ(alpha.GetLeader().GetOrigin(), s_vLeaderAt);
     bool moving = !ACR_Roadblocks.IsTurretOccupied(s_GunPost.m_Turret) && (leaderStep > 2 || step > 2);
+    // What the group is doing. A wounded man's vanilla heal activity outranks the new order, so a
+    // group still healing hasn't failed its move: that round isn't judged (the check's flake).
+    string doing = "-";
+    SCR_AIGroupUtilityComponent groupUtility = SCR_AIGroupUtilityComponent.Cast(alpha.m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+    if (groupUtility && groupUtility.GetCurrentAction()) doing = groupUtility.GetCurrentAction().ClassName();
+    string current = "none";
+    AIWaypoint currentWp = alpha.m_Group.GetCurrentWaypoint();
+    if (currentWp) current = currentWp.ClassName();
+    bool healing = groupUtility && SCR_AIHealActivity.Cast(groupUtility.GetCurrentAction()) != null;
     if (moving) s_iGunMoved++;
-    PrintFormat("[ACR] ROADBLOCKS test: gun round %1: moving %2 (state %3, gun manned %4), leader %5 m on, squad %6 m on average", s_iGunRounds, moving, alpha.OrderState(), ACR_Roadblocks.IsTurretOccupied(s_GunPost.m_Turret), leaderStep, step);
+    else if (healing) s_iGunCycles--;
+    PrintFormat("[ACR] ROADBLOCKS test: gun round %1: moving %2 (state %3, gun manned %4), leader %5 m on, squad %6 m on average; group action %7, waypoint %8%9", s_iGunRounds, moving, alpha.OrderState(), ACR_Roadblocks.IsTurretOccupied(s_GunPost.m_Turret), leaderStep, step, doing, current, Healing(healing, moving));
    }
    s_vLeaderAt = vector.Zero;
    s_iGunRounds++;
