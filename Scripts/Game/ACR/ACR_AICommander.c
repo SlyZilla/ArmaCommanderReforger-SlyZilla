@@ -1870,6 +1870,8 @@ class ACR_AICommander : Managed
     if (!SeenOwner(candidate).IsEmpty() || !Visible(candidate) || IsAttacking(candidate) || CoolingDown(candidate)) continue;
     foreach (ACR_Squad squad : free)
     {
+     // A medic or other support team stays out of it, as out of attacks (#34).
+     if (IsSupportTeam(squad)) continue;
      float dist = vector.DistanceXZ(PositionOf(squad), candidate.GetOrigin());
      if (!squad.IsMounted() && dist > 1500) continue;
      float speed = 3;
@@ -4439,6 +4441,7 @@ class ACR_AICommander : Managed
 
  void SetFobEvalTimeForTest(float time) { m_fNextFobEval = time; }
  void StartTickForTest() { m_iTickStarted = System.GetTickCount(); }
+ void AssignAttacksForTest() { m_iTickStarted = System.GetTickCount(); AssignAttacks(); }
  ACR_Squad FobBuilder() { return m_FobBuilder; }
  ACR_Squad FobEscort() { return m_FobEscort; }
  vector FobTargetSite() { return m_vFobTargetSite; }
