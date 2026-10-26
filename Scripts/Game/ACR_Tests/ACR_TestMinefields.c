@@ -3,10 +3,11 @@
 // a mixed field laid by Alpha (cost, a regroup on the way pausing it without a refund and
 // lasting ten minutes without timing it out, every mine, signs, armed, its side's map area), the
 // friendly-fire rule with a soldier of each side dropped onto a mine, a cancelled order's refund,
-// Disarm mines lifting the field, and the AI commander laying one only with -acrMinesAI.
+// Disarm mines lifting the field, the AI commander laying one only with -acrMinesAI, and the RTS
+// camera's Minefield button (#4): off, AP, AT, mixed in turn, each the map's order at its price.
 class ACR_TestMinefields
 {
- static const int CHECKS = 32;
+ static const int CHECKS = 33;
  static int s_iStep;
  static int s_iStepAt;
  static int s_iRP;
@@ -234,6 +235,7 @@ class ACR_TestMinefields
    ACR_TestRegress.Check("minefields: with -acrMinesAI 1 it sends a squad to mine an approach", layer && layer.m_iAITask == ACR_EAITask.MINES && layer.OrderState() == ACR_EOrderState.LAY_MINES, where);
    if (layer) layer.Halt("Holding");
    ACR_Options.Unset("acrMinesAI");
+   CheckCameraButton();
    ACR_TestRegress.Complete("minefields", CHECKS);
    s_iStep = 7;
   }
@@ -396,5 +398,23 @@ class ACR_TestMinefields
   foreach (ACR_Squad squad : manager.m_Squads)
    if (squad.m_MinePlan && squad.GetFaction() && squad.GetFaction().GetFactionKey() == faction) return squad;
   return null;
+ }
+
+ // The RTS camera's Minefield button (#4): from off, AP, AT and mixed mines in turn and off again;
+ // each kind a right-click lays is the map panel's request for it, and the toast gives its price.
+ protected static void CheckCameraButton()
+ {
+  array<int> kinds = {};
+  int kind = -1;
+  for (int i = 0; i < 4; i++)
+  {
+   kind = ACR_RTSCameraManager.NextMineKind(kind);
+   kinds.Insert(kind);
+  }
+  bool cycle = kinds[0] == ACR_EMineKind.AP && kinds[1] == ACR_EMineKind.AT && kinds[2] == ACR_EMineKind.MIXED && kinds[3] == -1;
+  bool requests = ACR_RTSCameraManager.MineCommand(ACR_EMineKind.AP) == ACR_ERequest.ORDER_MINES_AP && ACR_RTSCameraManager.MineCommand(ACR_EMineKind.AT) == ACR_ERequest.ORDER_MINES_AT && ACR_RTSCameraManager.MineCommand(ACR_EMineKind.MIXED) == ACR_ERequest.ORDER_MINES_MIXED;
+  string toast = ACR_RTSCameraManager.MineToast(ACR_EMineKind.MIXED);
+  bool price = toast.Contains(ACR_Minefields.Cost(ACR_EMineKind.MIXED).ToString() + " RP") && ACR_RTSCameraManager.MineToast(-1) == "Minefield mode off";
+  ACR_TestRegress.Check("minefields: the RTS camera's Minefield button: AP, AT, mixed, off, each the map's order at its price", cycle && requests && price, string.Format("cycle %1 %2 %3 %4; requests %5; '%6'", kinds[0], kinds[1], kinds[2], kinds[3], requests, toast));
  }
 }

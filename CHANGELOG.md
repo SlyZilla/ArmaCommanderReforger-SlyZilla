@@ -37,6 +37,10 @@
 - A stuck vehicle giving a ride re-routes like a soft vehicle instead of holding where it is like a fighting one. A ride never takes a vehicle with a manned gun, so an LAV taxi that held only dropped the ride, with its riders still aboard (#23).
 - Arland now starts on a dedicated server set up with a server config (the usual way to host). The Arland scenario and the Western medic shared one resource ID, so the server loaded the medic instead of the mission and stopped (#41). The medic has its own ID now; the scenario's ID is unchanged.
 
+### Command and setup
+
+- The RTS camera has a Minefield button next to Roadblock: it cycles AP, AT and mixed mines (and off), the toast gives the price, and a right-click lays them with the selected squad, as the map panel's minefield orders do (#4).
+
 ### Support
 
 - A mortar team sets up out of the way of vehicles: not on or within 5 m of a road, and not within 30 m of a base's centre, where bought vehicles appear (#33). It looks up to 40 m round for such a spot (24 m before).
