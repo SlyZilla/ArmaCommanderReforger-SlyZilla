@@ -84,6 +84,7 @@ class ACR_TestRideLav
   {
    if (aboard > 0 && waited < 45) return;
    bool gotOut = s_iAboardMax > 0 && aboard == 0;
+   s_sDetail += ", still aboard in: " + Seats(alpha);
    ACR_TestRegress.Check(string.Format("ridelav: a ride's passengers get out at its end (%1)", kind), gotOut, string.Format("%1; %2 s on: %3 of Alpha's soldiers still aboard (most aboard %4), order '%5', %6 m from the drop", s_sDetail, waited, aboard, s_iAboardMax, alpha.m_Order, (int)vector.DistanceXZ(alpha.GetAnchor().GetOrigin(), s_Dest)));
    ACR_TestRegress.Complete("ridelav", CHECKS);
    NextStep(tick);
@@ -108,6 +109,23 @@ class ACR_TestRideLav
   }
   if (count > 0) PrintFormat("[ACR] RIDELAV LAV: %1 turret crew taken out of the taxi", count);
   return count;
+ }
+
+ // The compartment types Alpha's men still aboard sit in (cargo, turret, pilot).
+ protected static string Seats(ACR_Squad squad)
+ {
+  string seats = "";
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent()) continue;
+   BaseCompartmentSlot slot = character.GetCompartmentAccessComponent().GetCompartment();
+   if (slot) seats += typename.EnumToString(ECompartmentType, slot.GetType()) + " ";
+   else seats += "? ";
+  }
+  return seats;
  }
 
  protected static int Aboard(ACR_Squad squad)
