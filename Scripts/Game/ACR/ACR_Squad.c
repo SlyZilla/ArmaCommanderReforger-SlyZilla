@@ -2917,8 +2917,10 @@ class ACR_Squad : Managed
   float stalled = (now - m_fStallSince) / 1000;
   bool armed = HasGunner(vehicle);
   // Fighting vehicles (anything with a turret: LAV, BTR, BRDM, gun trucks) keep
-  // their crew aboard; only soft, unarmed vehicles are abandoned.
-  bool fightingVehicle = HasTurret(vehicle);
+  // their crew aboard; only soft, unarmed vehicles are abandoned. A taxi isn't one: a ride never
+  // takes a vehicle with a manned gun, so holding it stuck only stranded its riders (#23: a stuck
+  // LAV taxi held, a new order that dropped the ride); it re-routes like a soft vehicle.
+  bool fightingVehicle = HasTurret(vehicle) && !(manager && manager.m_Rides && manager.m_Rides.RideOf(this) != null);
 
   if (underFire && speed < 3.5 && manager)
   {
