@@ -6,6 +6,10 @@
 
 - The setup screen's settings come in pages that fit the screen, so every row can be reached as more options are added. Before, the list could run off a 1080p screen, hiding "Show the layout on the map" and the way to the logistics page.
 
+- Minefield, roadblock and Fortify orders given to a squad still riding in a vehicle now carry on once the squad is out. Before, getting out cancelled the order and refunded it.
+
+- No more "Defend Waypoint not provided" script errors when a defending squad is given a new order (an ambush ending, a roadblock squad sent elsewhere).
+
 - Roadblock sizes and barricades (a port of the ACA Field Engineering add-on): the map panel's Roadblock button becomes **Roadblock S / M / L** and **Barricade**. The small checkpoint has no machine gun (12 RP, 35 s), the medium is the old roadblock (20 RP, 45 s), the large carries a heavy machine gun (30 RP, 70 s), and barricades are sized to the road (8 RP, 25 s). RHS AFRF now builds the Soviet set, and FIA builds log barricades. A construction truck with the squad pays in supplies (75 / 225 / 350 / 40) when it has them, else RP. A build called off is refunded where it was paid from, Halt included (it used not to refund). The 3-minute give-up timer starts when the squad reaches the road (the walk has its own limit), and the roadblock waits for vehicles to leave the spot. AI commanders still build medium checkpoints paid in RP.
 
 - Roadblocks ordered by a player face the threat: the nearest enemy their side knows of within 600 m, else the nearest enemy base it can see (the AI commander's already faced the enemy base). Before, the checkpoint faced whichever way the road happened to run.
