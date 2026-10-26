@@ -2678,6 +2678,21 @@ class ACR_AICommander : Managed
  // True when an assault or grab has gone on too long without taking the base.
  protected bool Stalled(ACR_AIAttack attack)
  {
+  // Every squad left gave up on a spot it can't reach: don't wait out the time limit
+  // (Everon night soak 26 Oct: a grab's only squad held "unreachable" for 17 min).
+  int live = 0;
+  bool allGaveUp = true;
+  foreach (ACR_Squad member : attack.m_Squads)
+  {
+   if (!member || member.Strength() <= 0) continue;
+   live++;
+   if (!member.GaveUpUnreachable()) allGaveUp = false;
+  }
+  if (live > 0 && allGaveUp)
+  {
+   PrintFormat("[ACR] AI %1: every squad on %2 found it unreachable", m_sFaction, attack.m_Target.m_sName);
+   return true;
+  }
   if (!attack.m_bAssaulting || attack.m_fAssaultStart <= 0) return false;
   float seconds = (GetGame().GetWorld().GetWorldTime() - attack.m_fAssaultStart) / 1000;
   if (attack.m_bGrab && !s_bGrabByDistance) return seconds > GRAB_TIMEOUT;
