@@ -14,9 +14,15 @@ class ACR_TestPathProbe
  static const vector DROP = "5292.18 34.6188 10703.3"; // the ride drop-off of the soak's first grab
  static const float START_M = 180;
  static const float ARRIVED_M = 60;
- static ref array<string> s_aNames = {"Probe Drop", "Probe East", "Probe South", "Probe West"};
- static ref array<float> s_aBest = {100000, 100000, 100000, 100000};
- static ref array<bool> s_aStarted = {false, false, false, false};
+ // 4 and 5 start beside the drop-off one: "Probe Rode" with a truck 1.3 km away counted as its
+ // own (as after a ride), "Probe Plain" without (does a stale group vehicle break its moves?).
+ static const int COUNT = 6;
+ static const ResourceName TRUCK = "{92264FF932676C13}Prefabs/Vehicles/Wheeled/M923A1/M923A1_ammo.et";
+ static const vector TRUCK_AT = "4960 28.4 11880"; // by the Airbase
+ static ref array<string> s_aNames = {"Probe Drop", "Probe East", "Probe South", "Probe West", "Probe Rode", "Probe Plain"};
+ static ref array<float> s_aBest = {100000, 100000, 100000, 100000, 100000, 100000};
+ static ref array<bool> s_aStarted = {false, false, false, false, false, false};
+ static IEntity s_Truck;
  static vector s_Centre;
  static ref map<string, int> s_mNear = new map<string, int>();
 
@@ -38,16 +44,30 @@ class ACR_TestPathProbe
   if (second == 6)
   {
    manager.m_sSpawningFaction = "US";
-   for (int i = 0; i < 4; i++)
+   for (int i = 0; i < COUNT; i++)
    {
     vector at = Start(i);
     manager.SpawnUnit(s_aNames[i], FIRE_TEAM, "", false, "", at, at);
    }
    manager.m_sSpawningFaction = "";
+   EntitySpawnParams parameters = new EntitySpawnParams();
+   parameters.TransformMode = ETransformMode.WORLD;
+   parameters.Transform[3] = ACR_Manager.Ground(TRUCK_AT);
+   s_Truck = GetGame().SpawnEntityPrefab(Resource.Load(TRUCK), GetGame().GetWorld(), parameters);
+  }
+  if (second == 13)
+  {
+   ACR_Squad rode = Squad(manager, s_aNames[4]);
+   SCR_AIGroupUtilityComponent utility;
+   if (rode && rode.m_Group) utility = SCR_AIGroupUtilityComponent.Cast(rode.m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+   SCR_AIVehicleUsageComponent usage;
+   if (s_Truck) usage = SCR_AIVehicleUsageComponent.Cast(s_Truck.FindComponent(SCR_AIVehicleUsageComponent));
+   if (utility && usage) utility.AddUsableVehicle(usage);
+   if (rode) PrintFormat("[ACR] PROBE %1 group vehicles %2 (truck %3 m away)", s_aNames[4], rode.GroupVehicleCount(), (int)vector.DistanceXZ(TRUCK_AT, Start(4)));
   }
   if (second == 14)
   {
-   for (int j = 0; j < 4; j++)
+   for (int j = 0; j < COUNT; j++)
    {
     ACR_Squad squad = Squad(manager, s_aNames[j]);
     if (!squad) continue;
@@ -57,7 +77,7 @@ class ACR_TestPathProbe
   }
   if (second > 14)
   {
-   for (int k = 0; k < 4; k++)
+   for (int k = 0; k < COUNT; k++)
    {
     ACR_Squad probe = Squad(manager, s_aNames[k]);
     if (!probe) continue;
@@ -69,21 +89,21 @@ class ACR_TestPathProbe
   if (second == 175)
   {
    int reached = 0;
-   for (int n = 0; n < 4; n++)
+   for (int n = 0; n < COUNT; n++)
    {
     ACR_Squad done = Squad(manager, s_aNames[n]);
     if (!s_aStarted[n] || !done) { PrintFormat("[ACR] PROBE %1 never started", s_aNames[n]); continue; }
     bool inside = s_aBest[n] < ARRIVED_M;
     if (inside) reached++;
-    PrintFormat("[ACR] PROBE DIAG %1: best %2 m, order '%3', gave up unreachable %4", s_aNames[n], (int)s_aBest[n], done.m_Order, done.GaveUpUnreachable());
+    PrintFormat("[ACR] PROBE DIAG %1: best %2 m, order '%3', gave up unreachable %4, group vehicles %5", s_aNames[n], (int)s_aBest[n], done.m_Order, done.GaveUpUnreachable(), done.GroupVehicleCount());
     // Either it gets there, or it says it can't (the AI then drops that attack): never a
     // squad holding short of the base as though it had arrived.
     ACR_TestRegress.Check(string.Format("pathprobe: %1 arrives or reports it can't", s_aNames[n]), inside != done.GaveUpUnreachable(), string.Format("best %1 m, order '%2'", (int)s_aBest[n], done.m_Order));
    }
    // 26 Oct: reachable from the drop-off (north-west), east and west; the south side isn't.
    ACR_TestRegress.Check("pathprobe: the drop-off approach the AI's rides use reaches the centre", s_aBest[0] < ARRIVED_M, string.Format("best %1 m", (int)s_aBest[0]));
-   PrintFormat("[ACR] PROBE DIAG %1 of 4 approaches reach Gallows Base's centre", reached);
-   ACR_TestRegress.Complete("pathprobe", 5);
+   PrintFormat("[ACR] PROBE DIAG %1 of %2 probes reach Gallows Base's centre (rode %3 m, plain %4 m)", reached, COUNT, (int)s_aBest[4], (int)s_aBest[5]);
+   ACR_TestRegress.Complete("pathprobe", 7);
   }
  }
 
@@ -91,7 +111,8 @@ class ACR_TestPathProbe
  static vector Start(int i)
  {
   vector dir = Vector(1, 0, 0);
-  if (i == 0) { dir = DROP - s_Centre; dir[1] = 0; dir = dir.Normalized(); }
+  if (i == 0 || i >= 4) { dir = DROP - s_Centre; dir[1] = 0; dir = dir.Normalized(); }
+  if (i >= 4) return ACR_Manager.Ground(s_Centre + dir * START_M + Vector(dir[2], 0, -dir[0]) * (i - 3) * 12);
   else if (i == 2) dir = Vector(0, 0, -1);
   else if (i == 3) dir = Vector(-1, 0, 0);
   return ACR_Manager.Ground(s_Centre + dir * START_M);

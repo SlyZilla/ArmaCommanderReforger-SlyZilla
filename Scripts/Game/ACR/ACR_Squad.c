@@ -2526,7 +2526,7 @@ class ACR_Squad : Managed
    }
   }
   IssueWaypoint(m_sOrderPrefab, target, m_fOrderRadius, m_bForced);
-  PrintFormat("[ACR] MOVE %1: waypoint disappeared before arrival; recovery %2/4 (%3)", m_Name, m_iWaypointRecoveries, how);
+  PrintFormat("[ACR] MOVE %1: waypoint disappeared before arrival; recovery %2/4 (%3), group vehicles %4", m_Name, m_iWaypointRecoveries, how, GroupVehicleCount());
   if (m_iWaypointRecoveries >= 4) m_bRecoveryLast = true;
  }
 
@@ -2552,6 +2552,15 @@ class ACR_Squad : Managed
  // dropped: the squad then "arrived" without moving, outside the base (srv:pathprobe).
  protected int m_iUnreachableSerial = -1;
  bool GaveUpUnreachable() { return m_iUnreachableSerial == m_iOrderSerial; }
+
+ // Vehicles the game's group AI counts as its own (it plans moves with them).
+ int GroupVehicleCount()
+ {
+  if (!m_Group) return 0;
+  SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+  if (!utility || !utility.m_VehicleMgr) return 0;
+  return utility.m_VehicleMgr.GetVehiclesCount();
+ }
 
  // The nearest point on the soldiers' navmesh or road within radius of 'at'.
  protected bool ReachableNear(vector at, float radius, out vector result)
