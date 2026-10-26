@@ -12,7 +12,7 @@
 // takes a piece when nothing else will. Work pauses while contested and goes twice as fast with
 // sappers / engineers or a construction truck. The squad then holds the position and mans its
 // guns; the pieces stay when it leaves. A position shows on its own side's command map until
-// every piece is gone.
+// every piece is gone. Tier II and III hold defenders in reserve there (ACR_Defenders).
 class ACR_Fortification : Managed
 {
  int m_iId;
@@ -23,7 +23,10 @@ class ACR_Fortification : Managed
  ref array<IEntity> m_aPieces = {};  // one per spot (null: none)
  ref array<IEntity> m_aWire = {};    // the wire line's segments (tier I)
  ref array<IEntity> m_aTurrets = {}; // the guns among its pieces (ACR_Fortify.RefreshTurrets)
+ ACR_DefenderPost m_Defenders;       // its defenders (tier II and III, ACR_Defenders)
  float m_fUpgradeHeldUntil;          // world ms: an upgrade here was refused, the AI leaves it till then
+ string m_sUpgradeRefused;           // why the last upgrade here was refused
+ int m_iUpgradeRefusals;             // ... and how many times in a row for that reason
 }
 
 // One Fortify order: the tier it builds and how far the work is. The squad keeps it while it
@@ -80,6 +83,7 @@ class ACR_Fortify
  static const float MUZZLE_UP = 1.1;       // a gun's muzzle above the ground (measured, 25 Oct)
  static const float MAX_AIM_UP = 15;       // a gun aims this far up rising ground in front of it
  static const float UPGRADE_HOLD_S = 900;  // a refused upgrade: the AI leaves the position this long
+ static const int UPGRADE_GIVE_UP = 2;     // ... and for good once refused this often for one reason
  static const float HOLD_RADIUS = 24;      // the holding squad's Defend: every gun's place inside
  static const float FLANK_TURN = 20;       // the heavy MG turns in this far from its flank
  static float WORK_SCALE = 1;              // tests shorten the work
@@ -88,6 +92,17 @@ class ACR_Fortify
 
  static bool Enabled() { return ACR_LogisticsRules.Choice("acrFortify", "1") != "0"; }
  static bool AIUses() { return ACR_Options.Flag("acrFortifyAI"); }
+ // Defenders held in reserve at a position of this tier: tier I 1, tier II 2, tier III 4 by
+ // default (-acrFortifyDefenders1 / 2 / 3, 0 = none, at most 12). (Tier I had none: an AI's hasty
+ // position stood empty once its squad moved on, playtest 25 Oct.)
+ static int Defenders(int tier)
+ {
+  if (tier <= 0) return 0;
+  if (tier == 1) return Math.ClampInt(ACR_LogisticsRules.Choice("acrFortifyDefenders1", "1").ToInt(), 0, 12);
+  if (tier == 2) return Math.ClampInt(ACR_LogisticsRules.Choice("acrFortifyDefenders2", "2").ToInt(), 0, 12);
+  if (tier >= 3) return Math.ClampInt(ACR_LogisticsRules.Choice("acrFortifyDefenders3", "4").ToInt(), 0, 12);
+  return 0;
+ }
 
  // Infantry that could take the order (the map feed's flag for the panel button).
  static bool CanFortify(ACR_Squad squad)
@@ -625,11 +640,23 @@ class ACR_Fortify
   return UpgradeBlocker(site, yaw, 2, null).IsEmpty() && UpgradeBlocker(site, yaw, 3, null).IsEmpty();
  }
 
- // A refused upgrade: the AI commander leaves the position alone for a while (players may order
- // it again at any time).
- static void HoldUpgrades(ACR_Fortification fort)
+ // A refused upgrade: the AI commander leaves the position alone for a while, and for good once
+ // it has been refused UPGRADE_GIVE_UP times in a row for the same reason (playtest 25 Oct: an AI
+ // tier I by big rocks was refused, nothing charged, every 15 min all game). Players may order it
+ // again at any time.
+ static void HoldUpgrades(ACR_Fortification fort, string why)
  {
-  if (fort) fort.m_fUpgradeHeldUntil = GetGame().GetWorld().GetWorldTime() + UPGRADE_HOLD_S * 1000;
+  if (!fort) return;
+  if (why == fort.m_sUpgradeRefused) fort.m_iUpgradeRefusals++;
+  else
+  {
+   fort.m_sUpgradeRefused = why;
+   fort.m_iUpgradeRefusals = 1;
+  }
+  fort.m_fUpgradeHeldUntil = GetGame().GetWorld().GetWorldTime() + UPGRADE_HOLD_S * 1000;
+  if (fort.m_iUpgradeRefusals < UPGRADE_GIVE_UP) return;
+  if (fort.m_fUpgradeHeldUntil < float.MAX) PrintFormat("[ACR] FORTIFY %1 position at %2: the AI gives up upgrading it (refused %3 times: %4)", fort.m_sFaction, fort.m_vPos, fort.m_iUpgradeRefusals, why);
+  fort.m_fUpgradeHeldUntil = float.MAX;
  }
 
  static bool UpgradesHeld(ACR_Fortification fort)
@@ -746,7 +773,7 @@ class ACR_Fortify
    if (!blocker.IsEmpty())
    {
     refusal = "upgrade not possible here: " + blocker;
-    HoldUpgrades(plan.m_Target);
+    HoldUpgrades(plan.m_Target, blocker);
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused when ordered: %4", faction, TierName(plan.m_iTier), plan.m_vSite, blocker);
     return null;
    }
@@ -845,7 +872,7 @@ class ACR_Fortify
    if (!created)
    {
     reason = string.Format("%1 has no clear place (%2)", PieceName(spot, plan.m_iTier), why);
-    HoldUpgrades(fort);
+    HoldUpgrades(fort, reason);
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused: spot %4 blocked (%5)", fort.m_sFaction, TierName(plan.m_iTier), fort.m_vPos, spot, why);
     return null;
    }
@@ -909,7 +936,7 @@ class ACR_Fortify
     PrintFormat("[ACR] FORTIFY %1 upgrade to %2 at %3 refused: no clear line of fire for spot %4", fort.m_sFaction, TierName(plan.m_iTier), fort.m_vPos, s);
     if (reason.IsEmpty()) reason = "no clear line of fire";
     reason = string.Format("%1 has no clear line of fire (%2)", PieceName(s, plan.m_iTier), reason);
-    HoldUpgrades(fort);
+    HoldUpgrades(fort, reason);
     return null;
    }
    fort.m_aPieces[s] = piece;
@@ -925,6 +952,7 @@ class ACR_Fortify
   }
   if (plan.m_iTier == 1) LayWire(fort);
   RefreshTurrets(fort);
+  int wasTier = fort.m_iTier;
   fort.m_iTier = plan.m_iTier;
   if (created)
   {
@@ -933,6 +961,7 @@ class ACR_Fortify
    s_Positions.Insert(fort);
   }
   PrintFormat("[ACR] FORTIFY %1 %2 at %3 facing %4: %5 placed (+%6 wire), %7 skipped", fort.m_sFaction, TierName(fort.m_iTier), fort.m_vPos, (int)fort.m_fYaw, placed, fort.m_aWire.Count(), skipped);
+  RaiseDefenders(fort, wasTier);
   return fort;
  }
 
@@ -1051,6 +1080,16 @@ class ACR_Fortify
   }
  }
 
+ // A tier with defenders adds its share to the position's reserve (an upgrade: the difference).
+ static void RaiseDefenders(ACR_Fortification fort, int wasTier)
+ {
+  int more = Defenders(fort.m_iTier) - Defenders(wasTier);
+  if (more <= 0) return;
+  if (!fort.m_Defenders) fort.m_Defenders = ACR_Defenders.Add(fort.m_sFaction, fort.m_vPos, string.Format("%1 position %2", fort.m_sFaction, fort.m_iId), HOLD_RADIUS);
+  fort.m_Defenders.m_iReserve += more;
+  PrintFormat("[ACR] FORTIFY %1 %2 at %3: %4 defenders in reserve", fort.m_sFaction, TierName(fort.m_iTier), fort.m_vPos, fort.m_Defenders.m_iReserve);
+ }
+
  static int Standing(ACR_Fortification fort)
  {
   int count;
@@ -1065,7 +1104,9 @@ class ACR_Fortify
  static void Tick()
  {
   s_iTicks++;
-  if (s_iTicks % 5 != 0 || s_Positions.IsEmpty()) return;
+  if (s_iTicks % 5 != 0) return;
+  ACR_Defenders.Tick();
+  if (s_Positions.IsEmpty()) return;
   for (int f = s_Positions.Count() - 1; f >= 0; f--)
   {
    ACR_Fortification fort = s_Positions[f];
@@ -1079,6 +1120,7 @@ class ACR_Fortify
    // Its wire goes with it.
    foreach (IEntity segment : fort.m_aWire) DeletePiece(segment);
    fort.m_aWire.Clear();
+   ACR_Defenders.Remove(fort.m_Defenders);
    s_Positions.RemoveOrdered(f);
   }
  }
@@ -1098,6 +1140,7 @@ class ACR_Fortify
  static void Reset()
  {
   s_Positions.Clear();
+  ACR_Defenders.Reset();
   s_iNextId = 0;
   s_iTicks = 0;
   WORK_SCALE = 1;
