@@ -123,6 +123,12 @@ Do not merge it back to main, delete it, reset it or overwrite it from an old cl
 Back it up through Git history. Polling refuses to recreate a missing branch/file;
 `initialize` is an explicit first-install operation, not an outage repair command.
 
+Each delivered part costs two ledger commits. To keep them out of the commits channel,
+this repository has no Discord push webhook; `.github/workflows/commit-feed.yml`
+forwards pushes from every branch except `workshop-relay-state` to Discord's `/github`
+endpoint using the `DISCORD_COMMITS_WEBHOOK_URL` Actions secret. Do not re-add a
+repository push webhook for that channel.
+
 The workflow serializes runs without cancelling active work. Before **each** Discord
 POST, it commits the send intent; after `wait=true` returns a message ID, it commits
 the acknowledgement. GitHub writes use the previous blob SHA as compare-and-swap.
