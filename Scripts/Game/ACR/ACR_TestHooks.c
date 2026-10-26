@@ -23,4 +23,6 @@ class ACR_TestHooks
  string Pockets() { return ""; }
  // AI doctrine a test asks for (ACR_AIDoctrine key), "" = the host option or random.
  string AIDoctrine(string factionKey) { return ""; }
+ // Side a test's player deploys on without the deploy screen ("west" / "east"), "" = the menu.
+ string AutoDeploySide() { return ""; }
 }

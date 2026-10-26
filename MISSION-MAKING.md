@@ -77,7 +77,7 @@ Workbench's browser. Paths starting with `ACR_` are part of AC: Actual; the othe
 | Game mode | `Prefabs/MP/Modes/Plain/GameMode_Plain.et` | Yes | Lets the game handle spawning, the map, and construction components (below) |
 | Faction manager | e.g. `Prefabs/MP/Managers/Factions/FactionManager_USxUSSR.et` | Yes | Sets the sides in the match. Their faction keys must match the AC: Actual settings |
 | Loadout manager | e.g. `Prefabs/MP/Managers/Loadouts/LoadoutManager_USxUSSR.et` | Yes | Sets what players spawn with (AC: Actual uses officer gear; see [Current limits](#current-limits)) |
-| Player spawn point | e.g. `Prefabs/MP/Spawning/SpawnPoint_US.et` | Yes, one per playable side | Shows where that side's HQ is. Command units respawn at the nearest base it owns |
+| Player spawn point | e.g. `Prefabs/MP/Spawning/SpawnPoint_US.et` | Yes, one per playable side | Marks that side's HQ. Players can also deploy at every other base their side can deploy units at; the mode adds those spawn points itself |
 | AI world | `Prefabs/AI/SCR_AIWorld.et` with the map's navigation files | Yes | Gives AI soldiers and vehicles routes they can use |
 | Perception manager | `Prefabs/World/Game/PerceptionManager.et` | Yes | Lets AI notice other units |
 | Radio manager | `Prefabs/Systems/Radio/RadioManager.et` | Yes | Radio system |
@@ -91,8 +91,13 @@ Workbench's browser. Paths starting with `ACR_` are part of AC: Actual; the othe
 
 Add these components to the game mode object. The Arland map has working examples you can copy:
 
-- **`SCR_RespawnSystemComponent`** with an `SCR_AutoSpawnLogic`. Set its forced faction to the side that
-  has a spawn point if only one side does. Players then spawn straight into their command unit.
+- **`SCR_RespawnSystemComponent`** with an `SCR_MenuSpawnLogic` (leave its forced faction empty), plus an
+  **`SCR_RespawnTimerComponent`**, and untick **Allow Faction Change** on the game mode. Players then pick
+  their side, an officer loadout and where to deploy on the game's deploy screen, after the host presses
+  Start; the respawn timer uses `m_iRespawnSeconds`. A player stays on the side they first deployed on for
+  the whole match, reconnects included; an admin can move them with the chat command
+  `/acr side west|east <player>`. A world with an `SCR_AutoSpawnLogic` still works, but everyone spawns on
+  its forced side.
 - **`SCR_MapConfigComponent`** (optional): gadget map config
   `{AC230926A0010098}Configs/Map/ACR_MapFullscreen.conf` gives the command map finer contour lines.
 - **`SCR_CampaignBuildingManagerComponent`** (optional): lets construction trucks build. Without it,
@@ -264,7 +269,7 @@ One per world. Place it anywhere.
 | `m_bSharedCommand` | on | Every player of a side may command all its squads. Off: one commander per side |
 | `m_iAISkill` | 70 (Veteran) | Skill of all AI soldiers in the mode |
 | `m_fAIPerception` | 1.6 | How fast AI spot and identify targets (game default 1) |
-| `m_iRespawnSeconds` | 15 | Delay before a killed command unit respawns |
+| `m_iRespawnSeconds` | 15 | Delay before a player whose command unit was killed can redeploy |
 
 ### ACR_FactionSettings
 
@@ -677,7 +682,7 @@ ACR_MissionHeader {
  m_sAuthor "<you>"
  m_sDescription "<one line>"
  m_sGameMode "Arma Commander Actual"
- m_iPlayerCount 8
+ m_iPlayerCount 16
  m_iAcrSetup 1
  m_sAcrSize "half"
 }
@@ -816,7 +821,7 @@ mission makers, automated tests and server operators; players choose match setti
 
 | Option | What it does |
 |---|---|
-| `-acrPlayers US` / `USSR` / `any` | Put every player on one side. The mode places a spawn point for that side at one of its bases |
+| `-acrPlayers US` / `USSR` / `any` | Put every player on one side (the deploy screen skips the side choice). The mode places a spawn point for that side at one of its bases if the world has none |
 | `-acrFactions vanilla` / `ru_us` / `ru_ua` / `us_ua` / `<west>,<east>` | Select the playable faction pair: a named pair or any two faction keys your world's faction manager lists, e.g. `US,FIA`. The world's US-side bases and units go to the first, USSR-side to the second. A faction is playable when the world lists it and its catalog has soldiers and groups; a side without an `ACR_FactionSettings` entity copies the replaced side's settings (RP, AI commander, caps, supports) and builds its buy list from its catalog |
 | `-acrMarksmen 0` | Disable the automatic DMR carrier in full UA/Russian rifle squads (enabled by default; keeps squad size and support weapons) |
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |

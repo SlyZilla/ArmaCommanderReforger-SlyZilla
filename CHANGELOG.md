@@ -2,6 +2,15 @@
 
 ## 0.5.8 — unreleased
 
+### Players and spawning
+
+- Choose your side: players now pick a side, an officer loadout and where to deploy on the game's deploy screen once the host presses Start, so both sides can be played by people (#39). Before, everyone spawned as a West commander unless the host forced the whole lobby onto one side. An AI commander still runs any side with no player in command, so player-vs-player, co-op and mixed games all work from the same scenario.
+- Deploy at any base your side holds that can deploy units (HQs, military sites and built FOBs by default): each has a spawn point named after it on the deploy map, closed while the base is contested or the FOB is offline. The HQ is the default, and a side that has lost everywhere else can always fall back to its HQ point.
+- Each player has their own respawn timer (the host's respawn delay), shown on the deploy screen. Before, one dead commander held up the whole side's spawn point.
+- You stay on the side you first deployed on for the whole match, reconnects included. Hosts and admins can move a player with `/acr side west|east <player>`.
+- The scenarios offer 16 player slots (8 per side). They advertised 8 before.
+- In a solo game, the war now waits while the game is paused (the Esc menu, and the deploy screen in a solo game). Before, AI commanders kept buying squads that couldn't appear while paused, and those purchases timed out and were refunded.
+
 ### AI commanders
 
 - The AI commander doesn't send a medic team or another support team to grab an empty base any more, as it already kept them out of attacks (#34).

@@ -2399,7 +2399,7 @@ class ACR_AICommander : Managed
  bool IsHQ(ACR_Base base)
  {
   foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
-   if (point && point.GetFactionKey() == m_sFaction && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
+   if (point && !ACR_SpawnPoints.IsBasePoint(point) && point.GetFactionKey() == m_sFaction && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
   return false;
  }
 

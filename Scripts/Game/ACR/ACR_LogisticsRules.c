@@ -44,7 +44,7 @@ class ACR_LogisticsRules
   if (base.m_eLogisticsRole == ACR_EBaseRole.HQ) return true;
   if (base.m_eLogisticsRole != ACR_EBaseRole.AUTHORED) return false;
   foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
-   if (point && point.GetFactionKey() == base.m_sOwner && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
+   if (point && !ACR_SpawnPoints.IsBasePoint(point) && point.GetFactionKey() == base.m_sOwner && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
   return false;
  }
 
