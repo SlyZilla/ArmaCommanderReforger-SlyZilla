@@ -3,6 +3,9 @@
 // LAV taxi, "GET OUT" issued again and again, while a truck's got out). A taxi carries Alpha about
 // 500 m down a road (the LAV's turret crew taken out first: rides never take a vehicle with a
 // manned gun); once the ride is over, every soldier of Alpha's must be out within 45 s.
+// How the turret is emptied (Jacob, #23: deleting the crew may be what re-tasks the driver):
+// -acrRideLavTest deletes them, -acrRideLavKillTest kills them in their seats (as a fight would)
+// and -acrRideLavGetOutTest has them get out through the game's own exit (as an order would).
 class ACR_TestRideLav
 {
  static const int CHECKS = 1;
@@ -32,6 +35,8 @@ class ACR_TestRideLav
    kind = "truck";
    prefab = TRUCK;
   }
+  else if (System.IsCLIParam("acrRideLavKillTest")) kind = "LAV, turret crew killed";
+  else if (System.IsCLIParam("acrRideLavGetOutTest")) kind = "LAV, turret crew got out";
   if (tick > 330) ACR_TestRegress.Abort("ridelav", string.Format("%1: timed out in step %2 (%3)", kind, s_iStep, s_sDetail));
   int waited = tick - s_iStepAt;
   if (tick == 4)
@@ -50,7 +55,7 @@ class ACR_TestRideLav
   // 0: the ride; 1: on the way until it is over; 2: everyone out within 45 s.
   if (s_iStep == 0)
   {
-   if (prefab == LAV && TurretCrewOut(s_Taxi) > 0) return;
+   if (prefab == LAV && TurretCrewOut(h, s_Taxi, tick) > 0) return;
    s_Dest = Destination(alpha);
    if (s_Dest == vector.Zero)
    {
@@ -84,17 +89,23 @@ class ACR_TestRideLav
   {
    if (aboard > 0 && waited < 45) return;
    bool gotOut = s_iAboardMax > 0 && aboard == 0;
-   s_sDetail += ", still aboard in: " + Seats(alpha);
+   s_sDetail += ", still aboard in: " + Seats(alpha) + "; the LAV's crew in: " + Seats(s_Taxi);
    ACR_TestRegress.Check(string.Format("ridelav: a ride's passengers get out at its end (%1)", kind), gotOut, string.Format("%1; %2 s on: %3 of Alpha's soldiers still aboard (most aboard %4), order '%5', %6 m from the drop", s_sDetail, waited, aboard, s_iAboardMax, alpha.m_Order, (int)vector.DistanceXZ(alpha.GetAnchor().GetOrigin(), s_Dest)));
    ACR_TestRegress.Complete("ridelav", CHECKS);
    NextStep(tick);
   }
  }
 
- // The taxi crew's men in turret seats deleted (a ride never takes a vehicle with a manned gun);
- // how many there were.
- protected static int TurretCrewOut(ACR_Squad taxi)
+ // The taxi crew's live men in turret seats taken out (a ride never takes a vehicle with a manned
+ // gun): deleted, killed or told to get out (see the header); how many are still in. A getting-out
+ // that never ends aborts the test.
+ static bool s_bExitAsked;
+ static int s_iExitAt;
+ protected static int TurretCrewOut(ACR_TestHarness h, ACR_Squad taxi, int tick)
  {
+  bool kill = System.IsCLIParam("acrRideLavKillTest");
+  bool getOut = System.IsCLIParam("acrRideLavGetOutTest");
+  if (getOut && s_bExitAsked && tick - s_iExitAt > 40) ACR_TestRegress.Abort("ridelav", "the turret crew never got out");
   int count;
   array<AIAgent> agents = {};
   taxi.GetAgents(agents);
@@ -103,12 +114,26 @@ class ACR_TestRideLav
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent()) continue;
    BaseCompartmentSlot slot = character.GetCompartmentAccessComponent().GetCompartment();
-   if (!slot || slot.GetType() != ECompartmentType.TURRET) continue;
-   SCR_EntityHelper.DeleteEntityAndChildren(character);
+   if (!slot || slot.GetType() != ECompartmentType.TURRET || !ACR_Respawn.IsAlive(character)) continue;
    count++;
+   if (kill) h.Kill(character);
+   else if (!getOut) SCR_EntityHelper.DeleteEntityAndChildren(character);
+   else if (!s_bExitAsked) character.GetCompartmentAccessComponent().GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.CLOSE_DOOR, false);
   }
-  if (count > 0) PrintFormat("[ACR] RIDELAV LAV: %1 turret crew taken out of the taxi", count);
+  if (count > 0 && (!getOut || !s_bExitAsked)) PrintFormat("[ACR] RIDELAV LAV: %1 turret crew %2", count, TurretVerb(kill, getOut));
+  if (getOut && count > 0 && !s_bExitAsked)
+  {
+   s_bExitAsked = true;
+   s_iExitAt = tick;
+  }
   return count;
+ }
+
+ protected static string TurretVerb(bool kill, bool getOut)
+ {
+  if (kill) return "killed in their seats";
+  if (getOut) return "told to get out";
+  return "deleted from the taxi";
  }
 
  // The compartment types Alpha's men still aboard sit in (cargo, turret, pilot).
