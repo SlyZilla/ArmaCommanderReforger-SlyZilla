@@ -793,6 +793,7 @@ class ACR_AIAttack
  float m_fAssaultStart;              // world time the assault (or grab) began
  float m_fNextPush;                  // next time idle attackers are sent in again
  float m_fGrabSeconds;               // a grab's own time limit: the trip there plus slack (big maps)
+ float m_fTravelSeconds;             // the slowest squad's way there on foot or by ride (#27): the forming up waits for it
  bool m_bFobRaid;                    // demolition raid against an enemy forward operating base
  ref ACR_SapperDemo m_SapperDemo;
 
@@ -865,6 +866,16 @@ class ACR_AICommander : Managed
  // live: a regrouping reserve was re-posted every 15 s for 15 min and never arrived).
  static bool ReserveMoving(ACR_EOrderState state) { return state == ACR_EOrderState.RIDE || state == ACR_EOrderState.REGROUP; }
  static const float REINFORCE_ATTACK_DISTANCE = 1400;
+ // How far a squad can get to an attack (#27, long attacks stalled: squads 2-3 km off were sent
+ // on foot because an air lift was ready or rides existed, and the attack went in before they
+ // came): on foot WALK_REACH (1.5 times REINFORCE_ATTACK_DISTANCE, as before); further only in its
+ // own vehicle, a taxi it can get, or a ready air lift. The forming up waits for the slowest.
+ static const float WALK_REACH = 2100;
+ static const float WALK_SPEED = 1.2;        // m/s on foot, as a grab's time limit counts it
+ static const float RIDE_SPEED = 4;          // m/s by truck door to door (ACR_Rides.Request's estimate)
+ static const float MOUNTED_SPEED = 6;
+ static const float AIR_LIFT_SECONDS = 240;
+ static const float STAGE_TRAVEL_MAX = 1200; // s: the most the forming up waits
  static const float REINFORCE_ATTACK_MOUNTED = 2200;
  static const float ASSAULT_JOIN_EXTRA = 400; // m past the staging ring a squad may be to join an assault already going in
  static const float STAGE_STRETCH = 0.5;      // late joiners may stretch the forming up by half of STAGING_TIMEOUT
@@ -1861,6 +1872,80 @@ class ACR_AICommander : Managed
 
  // ---------------------------------------------------------------- 3. attacks
 
+ static const int REACH_NONE = 0;
+ static const int REACH_WALK = 1;
+ static const int REACH_OWN = 2;
+ static const int REACH_TAXI = 3;
+ static const int REACH_AIR_LIFT = 4;
+
+ // How a free squad would get to 'target' for an attack, and in how many seconds: in its own
+ // vehicle; on foot within the doctrine's ride distance; by a taxi it can get (a free transport
+ // within the pickup range ACR_Rides.Request fetches from, not counted for another squad of this
+ // attack: added to 'taxis'); on foot within WALK_REACH; by a ready air lift (one squad an attack,
+ // 'liftTaken'); else REACH_NONE.
+ protected int Reach(ACR_Squad squad, vector target, notnull array<ACR_Squad> taxis, bool liftTaken, out float seconds)
+ {
+  float dist = vector.DistanceXZ(PositionOf(squad), target);
+  seconds = 0;
+  if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad))
+  {
+   seconds = dist / MOUNTED_SPEED;
+   return REACH_OWN;
+  }
+  if (dist <= m_Doctrine.m_fRideDistance || !m_Manager.m_Rides)
+  {
+   if (dist > WALK_REACH) return REACH_NONE;
+   seconds = dist / WALK_SPEED;
+   return REACH_WALK;
+  }
+  float fetch;
+  ACR_Squad taxi = m_Manager.m_Rides.FindTransport(m_sFaction, PositionOf(squad), dist, squad.CountAlive(), fetch, true, taxis);
+  if (taxi)
+  {
+   taxis.Insert(taxi);
+   seconds = fetch / RIDE_SPEED + 45 + dist / RIDE_SPEED;
+   return REACH_TAXI;
+  }
+  if (dist <= WALK_REACH)
+  {
+   seconds = dist / WALK_SPEED;
+   return REACH_WALK;
+  }
+  if (!liftTaken && SupportReady(ACR_ESupportType.AIR_LIFT))
+  {
+   seconds = AIR_LIFT_SECONDS;
+   return REACH_AIR_LIFT;
+  }
+  return REACH_NONE;
+ }
+
+ // The strength of the free squads that can get to 'target' (Reach), each taxi counted once.
+ protected int ReachableStrength(array<ACR_Squad> free, vector target)
+ {
+  int strength;
+  array<ACR_Squad> taxis = {};
+  bool liftTaken = false;
+  foreach (ACR_Squad squad : free)
+  {
+   float seconds;
+   int how = Reach(squad, target, taxis, liftTaken, seconds);
+   if (how == REACH_NONE) continue;
+   if (how == REACH_AIR_LIFT) liftTaken = true;
+   strength += squad.Strength();
+  }
+  return strength;
+ }
+
+ // How long an attack's forming up waits: STAGING_TIMEOUT, or its slowest squad's way there and
+ // a minute, at most STAGE_TRAVEL_MAX.
+ static float StageSeconds(float travel)
+ {
+  return Math.Max(STAGING_TIMEOUT, Math.Min(STAGE_TRAVEL_MAX, travel + 60));
+ }
+
+ int ReachForTest(ACR_Squad squad, vector target, notnull array<ACR_Squad> taxis, bool liftTaken, out float seconds) { return Reach(squad, target, taxis, liftTaken, seconds); }
+ int ReachableStrengthForTest(array<ACR_Squad> free, vector target) { return ReachableStrength(free, target); }
+
  static bool IsSupportTeam(ACR_Squad squad)
  {
   if (!squad || squad.FirePower() == 0) return true;
@@ -2081,6 +2166,7 @@ class ACR_AICommander : Managed
   ACR_Base wanted;
   float required = 1;
   float wantedRequired;
+  int wantedReach;
   vector from = PositionOf(free[0]);
   array<ACR_Base> candidates = {};
   array<float> scores = {};
@@ -2125,8 +2211,10 @@ class ACR_AICommander : Managed
    if (counterDue) need = need * m_Doctrine.m_fCounterNeed; // strike before they dig in
    need = need * pressure;
    if (ACR_Manager.ThreatOption() == 2) need = need * 0.85; // High: launch a viable force sooner
-   if (!wanted) { wanted = candidate; wantedRequired = need; }
-   if (available >= need) { target = candidate; required = need; break; }
+   // Only the squads that can get there count (#27): a target beyond their reach is skipped.
+   int reachable = ReachableStrength(free, candidate.GetOrigin());
+   if (!wanted) { wanted = candidate; wantedRequired = need; wantedReach = reachable; }
+   if (reachable >= need) { target = candidate; required = need; break; }
   }
   if (!target)
   {
@@ -2134,7 +2222,7 @@ class ACR_AICommander : Managed
    if (wanted && now >= m_fNextWeakLog)
    {
     m_fNextWeakLog = now + 60000;
-    PrintFormat("[ACR] AI %1: not strong enough for any target (best: %2, %3/%4, pressure x%5)", m_sFaction, wanted.m_sName, available, (int)wantedRequired, pressure);
+    PrintFormat("[ACR] AI %1: not strong enough for any target (best: %2, %3/%4 in reach of %5 free, pressure x%6)", m_sFaction, wanted.m_sName, wantedReach, (int)wantedRequired, available, pressure);
    }
    return; // Requisition() will add troops
   }
@@ -2172,7 +2260,8 @@ class ACR_AICommander : Managed
   float goal = Math.Max(required * margin, AttackNeed(target) * 1.15);
   if (target.m_sOwner.IsEmpty()) goal = required * margin;
   int remainingPool = available;
-  bool airLiftReady = SupportReady(ACR_ESupportType.AIR_LIFT);
+  array<ACR_Squad> taxis = {};
+  bool liftTaken = false;
   foreach (ACR_Squad squad : free)
   {
    int sqStrength = squad.Strength();
@@ -2186,10 +2275,13 @@ class ACR_AICommander : Managed
     if (squad.IsMounted()) reach = REINFORCE_ATTACK_MOUNTED;
     if (distToTarget > reach || IsSupportTeam(squad)) continue;
    }
-   else if (!squad.IsMounted() && !airLiftReady && distToTarget > REINFORCE_ATTACK_DISTANCE * 1.5 && strength >= required)
-   {
-    continue;
-   }
+   // A squad that can't get there stays out (no taxi to be had, no air lift); one that can sets
+   // how long the forming up waits.
+   float travel;
+   int how = Reach(squad, target.GetOrigin(), taxis, liftTaken, travel);
+   if (how == REACH_NONE) continue;
+   if (how == REACH_AIR_LIFT) liftTaken = true;
+   attack.m_fTravelSeconds = Math.Max(attack.m_fTravelSeconds, travel);
    attack.m_Squads.Insert(squad);
    strength += sqStrength;
   }
@@ -2251,7 +2343,7 @@ class ACR_AICommander : Managed
     if (firepower > bestFire) { bestFire = firepower; attack.m_Suppressor = fireCandidate; }
    }
   }
-  attack.m_fStageDeadline = GetGame().GetWorld().GetWorldTime() + STAGING_TIMEOUT * 1000;
+  attack.m_fStageDeadline = GetGame().GetWorld().GetWorldTime() + StageSeconds(attack.m_fTravelSeconds) * 1000;
   attack.m_fStageLimit = attack.m_fStageDeadline + STAGING_TIMEOUT * STAGE_STRETCH * 1000;
   // Motorized assault: an armed carrier (APC) in the attack takes an infantry squad to the
   // staging point and stays there with it as base of fire.
@@ -2399,7 +2491,7 @@ class ACR_AICommander : Managed
  bool IsHQ(ACR_Base base)
  {
   foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
-   if (point && point.GetFactionKey() == m_sFaction && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
+   if (point && !ACR_SpawnPoints.IsBasePoint(point) && point.GetFactionKey() == m_sFaction && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
   return false;
  }
 

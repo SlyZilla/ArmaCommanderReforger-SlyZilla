@@ -52,6 +52,14 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrBaseDefencesModelsTest")) ACR_TestBaseDefences.RunModels(seconds);
  }
 
+ // Game tests (launched straight into a world) deploy their player at once, as the old
+ // auto-spawn did; -acrDeployMenuTest keeps the deploy screen (GitHub #39).
+ override string AutoDeploySide()
+ {
+  if (!System.IsCLIParam("world") || System.IsCLIParam("acrDeployMenuTest")) return "";
+  return "west";
+ }
+
  // Tests keep their worlds as authored; the pocket test and the balance soaks get pockets.
  override string Pockets()
  {

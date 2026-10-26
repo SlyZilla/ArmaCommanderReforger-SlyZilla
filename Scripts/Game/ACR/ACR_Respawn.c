@@ -1,10 +1,9 @@
 // Command-unit respawn (server).
-//  - Killed in your command unit: the normal (auto) respawn happens after a delay, at
-//    the owned base closest to your side's placed spawn point (your HQ while you
-//    hold it), otherwise at the spawn point itself.
+//  - Killed in your command unit: the deploy screen opens after the respawn delay and you
+//    pick one of your side's open spawn points (ACR_SpawnPoints).
 //  - Command unit killed while you control another soldier: you stay in that
-//    soldier; after the delay a new command unit appears at that base and F8
-//    takes you there.
+//    soldier; after the delay a new command unit appears at your side's best open
+//    spawn point (the HQ first) and F8 takes you there.
 //  - A possessed soldier dies: you go back to your command unit (or wait for the
 //    new one), never into the Game Master editor.
 class ACR_PendingPossession : Managed
@@ -23,7 +22,6 @@ class ACR_Respawn : Managed
  protected ACR_Manager m_Manager;
  protected ref map<int, float> m_DueAt = new map<int, float>();         // player -> world time the new unit is ready
  protected ref map<int, bool> m_ReturnWhenReady = new map<int, bool>();
- protected ref map<IEntity, vector> m_SpawnPointOrigins = new map<IEntity, vector>();
  protected ref map<int, ref ACR_PendingPossession> m_mPendingPossession = new map<int, ref ACR_PendingPossession>();
 
  void ACR_Respawn(ACR_Manager manager) { m_Manager = manager; }
@@ -35,99 +33,33 @@ class ACR_Respawn : Managed
   return seconds * 1000;
  }
 
- // Where this faction's placed spawn point was at mission start (its HQ).
- protected ref map<string, vector> m_Home = new map<string, vector>();
- protected vector HomeOf(string factionKey, out bool found)
- {
-  vector home;
-  found = m_Home.Find(factionKey, home);
-  if (found) return home;
-  array<SCR_SpawnPoint> points = SCR_SpawnPoint.GetSpawnPointsForFaction(factionKey);
-  if (points.IsEmpty()) return vector.Zero;
-  home = points[0].GetOrigin();
-  m_Home.Set(factionKey, home);
-  found = true;
-  return home;
- }
-
- // Spawn points withheld during a respawn delay: the native auto-spawn finds none,
- // retries every second, and succeeds once they are given back at the new base.
- protected ref map<SCR_SpawnPoint, string> m_Withheld = new map<SCR_SpawnPoint, string>();
- protected ref map<string, float> m_ReleaseAt = new map<string, float>();
-
- // Called just before the native kill handling of a player's command unit.
+ // The command unit died (not while controlling a soldier): the deploy screen opens, with
+ // the respawn timer (ACR_SpawnPoints.SetTimer) and the side's open spawn points.
  void OnCommandUnitKilled(int playerId)
  {
-  Faction faction = SCR_FactionManager.SGetPlayerFaction(playerId);
-  if (!faction) return;
-  string key = faction.GetFactionKey();
-  bool found;
-  HomeOf(key, found);
-  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPointsForFaction(key))
-  {
-   m_Withheld.Set(point, key);
-   point.SetFactionKey("");
-  }
-  m_ReleaseAt.Set(key, GetGame().GetWorld().GetWorldTime() + DelayMs());
-  m_Manager.Notify(playerId, string.Format("Command unit killed. Respawning at %1 in %2 s.", BaseName(key), m_Manager.m_iRespawnSeconds));
+  m_Manager.Notify(playerId, string.Format("Command unit killed. Choose where to redeploy in %1 s.", m_Manager.m_iRespawnSeconds));
   PrintFormat("[ACR] COMMAND UNIT KILLED player=%1, respawn in %2 s", playerId, m_Manager.m_iRespawnSeconds);
  }
 
- protected void ReleaseSpawnPoints(float now)
- {
-  array<string> released = {};
-  foreach (string key, float at : m_ReleaseAt)
-  {
-   if (now < at) continue;
-   released.Insert(key);
-   vector position = RespawnPosition(key);
-   foreach (SCR_SpawnPoint point, string owner : m_Withheld)
-   {
-    if (owner != key || !point) continue;
-    point.SetOrigin(position);
-    point.SetFactionKey(key);
-   }
-   PrintFormat("[ACR] RESPAWN %1 at %2 %3", key, BaseName(key), position);
-  }
-  foreach (string key : released)
-  {
-   m_ReleaseAt.Remove(key);
-   array<SCR_SpawnPoint> done = {};
-   foreach (SCR_SpawnPoint point, string owner : m_Withheld) if (owner == key) done.Insert(point);
-   foreach (SCR_SpawnPoint point : done) m_Withheld.Remove(point);
-  }
- }
-
- ACR_Base ChooseBase(string factionKey)
- {
-  bool found;
-  vector home = HomeOf(factionKey, found);
-  ACR_Base best;
-  float bestDistance = float.MAX;
-  foreach (ACR_Base base : ACR_Base.s_All)
-  {
-   if (base.m_sOwner != factionKey || !base.m_bAllowSpawn || base.m_bContested) continue;
-   float distance = 0;
-   if (found) distance = vector.Distance(base.GetOrigin(), home);
-   if (distance < bestDistance) { bestDistance = distance; best = base; }
-  }
-  return best;
- }
-
+ // Where a new command unit goes when nobody picks (its player is controlling a soldier):
+ // the side's best open spawn point (its HQ first).
  string BaseName(string factionKey)
  {
-  ACR_Base base = ChooseBase(factionKey);
+  SCR_SpawnPoint point = ACR_SpawnPoints.Best(factionKey);
+  if (!point) return "your start point";
+  ACR_Base base = ACR_SpawnPoints.BaseOf(point);
   if (base) return base.m_sName;
-  return "your start point";
+  return point.GetSpawnPointName();
  }
 
- protected vector RespawnPosition(string factionKey)
+ protected bool RespawnPosition(string factionKey, out vector position)
  {
-  ACR_Base base = ChooseBase(factionKey);
-  if (base) return m_Manager.ClearSpotNear(base, 4, 12, 1);
-  bool found;
-  vector home = HomeOf(factionKey, found);
-  return ACR_Manager.Ground(home);
+  SCR_SpawnPoint point = ACR_SpawnPoints.Best(factionKey);
+  if (!point) return false;
+  ACR_Base base = ACR_SpawnPoints.BaseOf(point);
+  if (base) position = m_Manager.ClearSpotNear(base, 4, 12, 1);
+  else position = ACR_Manager.Ground(point.GetOrigin());
+  return true;
  }
 
  // A soldier the player controlled died: Tarkov-style fall and fade to black,
@@ -331,7 +263,7 @@ class ACR_Respawn : Managed
  void Tick()
  {
   float now = GetGame().GetWorld().GetWorldTime();
-  ReleaseSpawnPoints(now);
+  ACR_SpawnPoints.Tick(m_Manager);
   array<int> players = {};
   GetGame().GetPlayerManager().GetPlayers(players);
   foreach (int id : players)
@@ -388,7 +320,8 @@ class ACR_Respawn : Managed
    if (loadout) prefab = loadout.GetLoadoutResource();
   }
   if (prefab.IsEmpty()) return null;
-  vector position = RespawnPosition(faction.GetFactionKey());
+  vector position;
+  if (!RespawnPosition(faction.GetFactionKey(), position)) return null; // nowhere open: retry next second
   IEntity unit = ACR_Manager.SpawnPrefab(prefab, position);
   if (!unit) return null;
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(unit.FindComponent(FactionAffiliationComponent));

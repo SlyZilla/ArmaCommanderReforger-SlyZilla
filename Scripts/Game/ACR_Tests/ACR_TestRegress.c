@@ -10,6 +10,36 @@ class ACR_TestRegress
  static int s_iReportLost;
  static int s_iPassed, s_iFailed, s_iSkipped;
  static bool s_bCompleted;
+ // GitHub #39: every base a side can deploy at has an open spawn point named after it, the HQ
+ // keeps its world-placed point (HQ detection still finds one HQ per side), and a new command
+ // unit has somewhere to go.
+ static void SpawnPointCheck(ACR_Manager manager)
+ {
+  ACR_SpawnPoints.Tick(manager);
+  string west = ACR_FactionSelection.West();
+  string east = ACR_FactionSelection.East();
+  int bases;
+  int missing;
+  int hqs;
+  string missed = "";
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_bRetired || (base.m_sOwner != west && base.m_sOwner != east)) continue;
+   if (ACR_LogisticsRules.IsHQ(base)) hqs++;
+   if (base.m_bContested || !ACR_LogisticsRules.CanDeploy(base) || (base.m_bBuilt && !base.FobOnline())) continue;
+   bases++;
+   bool found = ACR_LogisticsRules.IsHQ(base);
+   foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
+    if (point && ACR_SpawnPoints.IsBasePoint(point) && point.IsSpawnPointEnabled() && point.GetFactionKey() == base.m_sOwner && point.GetSpawnPointName() == base.m_sName) found = true;
+   if (!found) { missing++; missed += " " + base.m_sName; }
+  }
+  Check("every base a side can deploy at has an open spawn point", bases > 0 && missing == 0, string.Format("%1 deploy bases, missing:%2", bases, missed));
+  Check("base spawn points don't make bases look like HQs", hqs >= 1 && hqs <= 2, string.Format("%1 HQs", hqs));
+  SCR_SpawnPoint bestWest = ACR_SpawnPoints.Best(west);
+  SCR_SpawnPoint bestEast = ACR_SpawnPoints.Best(east);
+  Check("each side has an open spawn point for a new command unit", bestWest && bestEast && bestWest.IsSpawnPointEnabled() && bestEast.IsSpawnPointEnabled(), string.Format("%1 / %2", bestWest != null, bestEast != null));
+ }
+
  static void Check(string name, bool ok, string detail = "")
  {
   string verdict = "FAIL";
@@ -111,7 +141,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 120; // includes seven BBB order-leash, five roadblock placement and thirteen doctrine checks
+ static const int EXPECTED = 123; // includes seven BBB order-leash, five roadblock placement and thirteen doctrine checks
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -822,11 +852,11 @@ class ACR_TestRegress
    ACR_PlayerSide.s_bSpawnChecked = false;
    ACR_PlayerSide.EnsureSpawnPoint();
    bool point = SCR_SpawnPoint.GetSpawnPointCountForFaction("USSR") > 0;
-   SCR_AutoSpawnLogic autoSpawn = new SCR_AutoSpawnLogic();
+   SCR_MenuSpawnLogic menuSpawn = new SCR_MenuSpawnLogic();
    Faction forced;
-   if (autoSpawn) forced = autoSpawn.ACR_ForcedFaction();
+   if (menuSpawn) forced = menuSpawn.ACR_ForcedFaction();
    bool faction = forced && forced.GetFactionKey() == "USSR";
-   Check("players forced onto USSR get a spawn point and spawn as USSR", point && faction, string.Format("spawn point %1, auto-spawn %2, logic %3", point, faction, autoSpawn != null));
+   Check("players forced onto USSR get a spawn point and spawn as USSR", point && faction, string.Format("spawn point %1, deploy screen side %2, logic %3", point, faction, menuSpawn != null));
    foreach (SCR_SpawnPoint added : SCR_SpawnPoint.GetSpawnPointsForFaction("USSR")) SCR_EntityHelper.DeleteEntityAndChildren(added);
    ACR_PlayerSide.Force("");
   }
@@ -1090,6 +1120,7 @@ class ACR_TestRegress
     Check("reinforce refused with enemy troops close, explained", refused.Contains("enemy troops within") && allowed == "", string.Format("nearest %1 m: '%2' / '%3'", gap, refused, allowed));
    }
   }
+  if (tick == 50) SpawnPointCheck(manager);
   if (tick == 50)
   {
    bool kept = s_Defender && s_Defender.m_iAITask == ACR_EAITask.DEFEND;

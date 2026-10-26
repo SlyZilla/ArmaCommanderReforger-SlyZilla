@@ -109,12 +109,17 @@ fortify|-acrFortifyTest 1|420
 fortifyfit|-acrFortifyFitTest 1|200
 gunhold|-acrGunHoldTest 1|200
 ridejob|-acrRideJobTest 1|340
+attackreach|-acrAttackReachTest 1|120
 budget|-acrBuildBudgetTest 1|120
 aidefences|-acrAIDefencesTest 1|120
 roadsiting|-acrRoadSitingTest 1|120
 buildride|-acrBuildRideTest 1|540
 grabs|-acrGrabsTest 1|60
 mortarspot|-acrMortarSpotTest 1|60
+ridelav|-acrRideLavTest 1|400
+ridelavkill|-acrRideLavKillTest 1|400
+ridelavgetout|-acrRideLavGetOutTest 1|400
+ridetruck|-acrRideTruckTest 1|400
 bbbfiremaneuver|-acrBbbFireManeuverTest 1|500|Worlds/BBB_TestArland.ent
 bbbfiremaneuverperf|-acrBbbFireManeuverPerfTest 1|160|Worlds/BBB_TestArland.ent
 bbbfiremaneuverprobe|-acrBbbFireManeuverProbeTest 1|170|Worlds/BBB_TestArland.ent
@@ -145,3 +150,4 @@ basedefencesmodelskolguyev|-acrBaseDefencesModelsTest 1|120|Worlds/ACR_Kolguyev.
 longsoakkolguyev|-acrLongSoakTest 1|7380|Worlds/ACR_Kolguyev.ent
 pathprobe|-acrPathProbeTest 1|240|Worlds/ACR_Everon.ent
 kolguyevsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Kolguyev.ent
+deploymenu|-acrDeployMenuTest 1|180|Worlds/ACR_Arland.ent

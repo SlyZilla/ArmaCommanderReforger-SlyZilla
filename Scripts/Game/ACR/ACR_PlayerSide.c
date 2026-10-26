@@ -7,6 +7,18 @@ class ACR_PlayerSide
  protected static bool s_bRead;
  protected static string s_sKey;
 
+ // Side that players deploy on without the deploy screen (tests), "" = the menu.
+ static string AutoDeploySide()
+ {
+  string side = ACR_TestHooks.Get().AutoDeploySide();
+  if (side.IsEmpty()) return "";
+  string forced = Key();
+  if (forced != "") return forced;
+  side.ToLower();
+  if (side == "east") return ACR_FactionSelection.East();
+  return ACR_FactionSelection.West();
+ }
+
  static void Force(string key)
  {
   s_bRead = true;
@@ -291,7 +303,106 @@ modded class SCR_PlayerFactionAffiliationComponent
  {
   string key = ACR_PlayerSide.Key();
   if (key != "" && faction && faction.GetFactionKey() != key) return false;
+  // Deployed once: on that side for the rest of the match (ACR_SpawnPoints side lock).
+  if (!GetPlayerController()) return super.CanRequestFaction_S(faction);
+  int playerId = GetPlayerController().GetPlayerId();
+  string locked = ACR_SpawnPoints.LockedSide(playerId);
+  if (locked != "" && faction && faction.GetFactionKey() != locked)
+  {
+   ACR_Manager manager = ACR_Manager.GetInstance();
+   if (manager) manager.Notify(playerId, string.Format("You are on %1 for this match.", ACR_FactionSelection.DisplayName(locked)));
+   return false;
+  }
   return super.CanRequestFaction_S(faction);
+ }
+}
+
+// Players choose their side, loadout and spawn point on the game's deploy screen (Jacob 26 Oct,
+// GitHub #39; the worlds use SCR_MenuSpawnLogic). The menu opens once the host presses Start;
+// the host option -acrPlayers still puts everyone on one side, and a player locked to a side
+// (ACR_SpawnPoints) gets it back on reconnecting. Tests deploy straight away instead
+// (ACR_TestHooks.AutoDeploySide).
+[BaseContainerProps(category: "Respawn")]
+modded class SCR_MenuSpawnLogic
+{
+ override protected bool GetForcedFaction(out Faction faction)
+ {
+  string key = ACR_PlayerSide.Key();
+  if (key == "") return false;
+  faction = GetGame().GetFactionManager().GetFactionByKey(key);
+  return faction != null;
+ }
+
+ override protected void DoSpawn_S(int playerId)
+ {
+  PlayerController pc = GetGame().GetPlayerManager().GetPlayerController(playerId);
+  if (!pc) return;
+  // Setup phase: players deploy once the host presses Start (ACR_Setup).
+  if (!ACR_Setup.Started())
+  {
+   GetGame().GetCallqueue().CallLater(DoSpawn_S, 1000, false, playerId);
+   return;
+  }
+  // A hosting player registers before the first frame, where the skirmish layout moves the
+  // spawn points to its HQs: set it up now (11 Oct).
+  if (Replication.IsServer()) ACR_Skirmish.ApplyOnce();
+  if (ACR_AutoDeploy(playerId)) return;
+  ACR_SpawnPoints.ApplyLock(playerId);
+  super.DoSpawn_S(playerId);
+ }
+
+ override void OnPlayerEntityLost_S(int playerId)
+ {
+  // The command unit died while its player controls a soldier: ACR_Respawn sends a new one,
+  // the deploy screen stays shut.
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(playerId));
+  if (pc && pc.IsPossessing() && ACR_Respawn.IsAlive(pc.GetControlledEntity())) return;
+  if (!ACR_PlayerSide.AutoDeploySide().IsEmpty())
+  {
+   DoSpawn_S(playerId);
+   return;
+  }
+  ACR_SpawnPoints.ApplyLock(playerId);
+  super.OnPlayerEntityLost_S(playerId);
+ }
+
+ override protected void OnPlayerSpawnFailed_S(int playerId)
+ {
+  super.OnPlayerSpawnFailed_S(playerId);
+  // Auto deploy retries (respawn timer still running, no spawn point yet).
+  if (!ACR_PlayerSide.AutoDeploySide().IsEmpty()) GetGame().GetCallqueue().CallLater(DoSpawn_S, 1000, false, playerId);
+ }
+
+ // For the regression test.
+ Faction ACR_ForcedFaction()
+ {
+  Faction faction;
+  GetForcedFaction(faction);
+  return faction;
+ }
+
+ // Tests: spawn on a side's best spawn point without the menu. Returns false when the menu is used.
+ protected bool ACR_AutoDeploy(int playerId)
+ {
+  string side = ACR_PlayerSide.AutoDeploySide();
+  if (side.IsEmpty()) return false;
+  Faction faction = GetGame().GetFactionManager().GetFactionByKey(side);
+  if (!faction) return false;
+  SCR_PlayerFactionAffiliationComponent factionComponent = GetPlayerFactionComponent_S(playerId);
+  if (factionComponent.GetAffiliatedFaction() != faction) factionComponent.RequestFaction(faction);
+  if (factionComponent.GetAffiliatedFaction() != faction) { OnPlayerSpawnFailed_S(playerId); return true; }
+  SCR_PlayerLoadoutComponent loadoutComponent = GetPlayerLoadoutComponent_S(playerId);
+  SCR_FactionPlayerLoadout current = SCR_FactionPlayerLoadout.Cast(loadoutComponent.GetLoadout());
+  if (!current || current.GetFactionKey() != side)
+   loadoutComponent.RequestLoadout(GetGame().GetLoadoutManager().GetRandomFactionLoadout(faction));
+  SCR_BasePlayerLoadout loadout = loadoutComponent.GetLoadout();
+  SCR_SpawnPoint point = ACR_SpawnPoints.Best(side);
+  if (!point) point = SCR_SpawnPoint.GetRandomSpawnPointForFaction(side);
+  if (!loadout || !point) { OnPlayerSpawnFailed_S(playerId); return true; }
+  SCR_SpawnPointSpawnData data = new SCR_SpawnPointSpawnData(loadout.GetLoadoutResource(), point.GetRplId());
+  if (!GetPlayerRespawnComponent_S(playerId).CanSpawn(data)) { OnPlayerSpawnFailed_S(playerId); return true; }
+  GetPlayerRespawnComponent_S(playerId).RequestSpawn(data);
+  return true;
  }
 }
 
