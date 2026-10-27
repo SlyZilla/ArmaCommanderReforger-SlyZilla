@@ -13,6 +13,7 @@
 
 ### AI commanders
 
+- AI attacks on a held base need infantry that can walk in and take it: recon teams don't make up an attack, an attack whose infantry is killed or falls back is called off at once, one whose squads never got near their staging point is called off instead of sending a lone squad in from far out, and a base of fire goes in itself when it is the last squad left. Before, a counterattack could be a single recon vehicle 2.5 km away that overwatched 400 m short of the base until the attack timed out.
 - AI squads on foot take a covered way to their staging point: when the direct line runs in view of the objective, they swing round it out of sight (behind a rise, through dead ground) as long as the detour stays reasonable, and the forming up waits for the longer walk. Staging points move a little further round or out where the objective can't see them. Before, a flanking squad walked the shortest path across the front of the objective.
 - A soldier stranded off walkable ground (on top of a sandbag pile, say) steps back onto it when his move order keeps getting dropped, and an AI squad that can't reach the base it was sent to for reinforcements gives up after a minute instead of being re-sent every 15 seconds. Before, one RU machine gunner on a FOB's sandbags lost every order for over half an hour.
 - The AI commander doesn't send a medic team or another support team to grab an empty base any more, as it already kept them out of attacks (#34).

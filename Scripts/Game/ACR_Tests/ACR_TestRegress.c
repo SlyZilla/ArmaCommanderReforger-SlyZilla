@@ -141,7 +141,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 127; // includes seven BBB order-leash, five roadblock placement, thirteen doctrine and two covered-approach checks
+ static const int EXPECTED = 128; // includes seven BBB order-leash, five roadblock placement, thirteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -212,6 +212,23 @@ class ACR_TestRegress
   ACR_AICommander.ObjectiveEyes(origin, 60, eyes);
   bool seen = ACR_AICommander.GroundSeen(eyes, origin + Vector(8, 0, 0));
   Check("covered approach: the objective's eyes see open ground next to them", eyes.Count() == 5 && seen, string.Format("eyes %1, seen %2", eyes.Count(), seen));
+ }
+
+ // Everon 26 Oct (Meaux): an attack needs a squad that can walk in and take the base; a lone
+ // recon vehicle overwatching 400 m out isn't one.
+ static void AttackTakersCheck(ACR_Manager manager)
+ {
+  ACR_Squad infantry;
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (!squad.IsMounted() && !ACR_AICommander.IsSupportTeam(squad) && !ACR_AICommander.IsReconTeam(squad) && ACR_AICommander.Dismounts(squad) > 0) { infantry = squad; break; }
+  }
+  if (!infantry) { Check("attack takers: infantry takes a base, an attack without it has none", true, "no foot squad found"); return; }
+  ACR_AIAttack attack = new ACR_AIAttack();
+  attack.m_Squads.Insert(infantry);
+  ACR_AIAttack empty = new ACR_AIAttack();
+  bool ok = ACR_AICommander.CanTakeBase(infantry, false) && ACR_AICommander.TakersIn(attack) == 1 && ACR_AICommander.TakersIn(attack, infantry) == 0 && ACR_AICommander.TakersIn(empty) == 0;
+  Check("attack takers: infantry takes a base, an attack without it has none", ok, string.Format("%1 dismounts %2", infantry.GetName(), ACR_AICommander.Dismounts(infantry)));
  }
 
  // aca-f22 part 2: AI commander air lift checks (geometry, half-cost discount, decision logic).
@@ -1194,6 +1211,7 @@ class ACR_TestRegress
    SupportCloneCheck(manager);
    AirLiftAICheck(manager);
    CoveredApproachCheck(harness.m_Range.GetOrigin());
+   AttackTakersCheck(manager);
    Check("air lift accelerates gently and brakes at a bounded rate", Math.AbsFloat(ACR_HeliRun.ApproachSpeed(0, 55, 1) - 1.5) < 0.01 && Math.AbsFloat(ACR_HeliRun.ApproachSpeed(55, 0, 1) - 52) < 0.01 && ACR_HeliRun.ApproachSpeed(1, 0, 1) == 0);
    Check("air lift slows for climb time and holds below a nearby ridge", ACR_HeliRun.ClimbSafeSpeed(200, 100) < 9 && ACR_HeliRun.ClimbSafeSpeed(20, 100) == 0 && ACR_HeliRun.ClimbSafeSpeed(1000, 0) == ACR_HeliRun.SPEED_RUN);
    // Jacob 20 Oct (Kolguyev): a reserve was ordered on and called back to regroup every 15 s.

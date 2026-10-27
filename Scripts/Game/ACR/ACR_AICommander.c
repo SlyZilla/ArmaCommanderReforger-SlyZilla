@@ -1309,6 +1309,43 @@ class ACR_AICommander : Managed
   return name.Contains("recon") || name.Contains("scout") || name.Contains("sniper") || name.Contains("observer") || name.Contains("spotter");
  }
 
+ // Soldiers who can walk in and take a base: alive and on foot or riding as passengers
+ // (not a vehicle's driver or gunner).
+ static int Dismounts(ACR_Squad squad)
+ {
+  if (!squad) return 0;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  int count = 0;
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   if (ACR_Transport.VehicleOf(body) && !ACR_Transport.Passenger(body)) continue;
+   count++;
+  }
+  return count;
+ }
+
+ // A squad that can take a held base: fighting infantry, not recon, support, a crew without
+ // dismounts, aircraft or mortar (sappers count on a FOB raid). Everon 26 Oct: a counterattack
+ // on Meaux was one recon BRDM from 2.5 km out; its infantry partner died on the way, and the
+ // BRDM overwatched 400 m short for 14 min until the attack stalled out.
+ static bool CanTakeBase(ACR_Squad squad, bool fobRaid)
+ {
+  if (!squad || squad.Aircraft() || squad.m_bMortar || Dismounts(squad) == 0) return false;
+  if (fobRaid && ACR_SapperDemo.IsSapperSquad(squad)) return true;
+  return !IsReconTeam(squad) && !IsSupportTeam(squad);
+ }
+
+ static int TakersIn(ACR_AIAttack attack, ACR_Squad except = null)
+ {
+  int count = 0;
+  foreach (ACR_Squad squad : attack.m_Squads)
+   if (squad && squad != except && CanTakeBase(squad, attack.m_bFobRaid)) count++;
+  return count;
+ }
+
  // Own bases nearest to anything not ours: where fights happen.
  protected void FrontlineBases(array<ACR_Base> result)
  {
@@ -2272,6 +2309,8 @@ class ACR_AICommander : Managed
   {
    int sqStrength = squad.Strength();
    remainingPool -= sqStrength;
+   // Recon teams watch from overwatch; they never go in, so they don't make up an attack.
+   if (!target.m_sOwner.IsEmpty() && IsReconTeam(squad)) continue;
    if (squad.StrengthRatio() < 0.55 && strength + remainingPool >= required) continue;
    float distToTarget = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
    if (strength >= required * margin)
@@ -2295,6 +2334,16 @@ class ACR_AICommander : Managed
   {
    Say(string.Format("[ACR] AI %1: not strong enough for %2 (%3/%4)", m_sFaction, target.m_sName, strength, required));
    return; // Requisition() will add troops
+  }
+  if (!target.m_sOwner.IsEmpty() && TakersIn(attack) == 0)
+  {
+   float noTakersAt = GetGame().GetWorld().GetWorldTime();
+   if (noTakersAt >= m_fNextWeakLog)
+   {
+    m_fNextWeakLog = noTakersAt + 60000;
+    Say(string.Format("[ACR] AI %1: not attacking %2: no infantry in reach to take it (only crews, recon or support teams)", m_sFaction, target.m_sName));
+   }
+   return;
   }
   LaunchAttack(attack, from, strength, required, pressure);
  }
@@ -3007,6 +3056,14 @@ class ACR_AICommander : Managed
  {
   float now = GetGame().GetWorld().GetWorldTime();
   if (attack.m_bGrab || now < attack.m_fNextPush) return;
+  // The others fell: the base of fire is the last squad that can take the base, so it goes in
+  // instead of covering an assault that isn't coming.
+  if (attack.m_Suppressor && TakersIn(attack, attack.m_Suppressor) == 0 && CanTakeBase(attack.m_Suppressor, attack.m_bFobRaid))
+  {
+   Say(string.Format("[ACR] AI %1: base of fire %2 goes in on %3 (no other squad left to take it)", m_sFaction, attack.m_Suppressor.GetName(), attack.m_Target.m_sName));
+   attack.m_Suppressor = null;
+   attack.m_fNextPush = 1; // re-issue below now
+  }
   if (attack.m_fNextPush > 0)
   {
    foreach (ACR_Squad squad : attack.m_Squads)
@@ -3188,10 +3245,14 @@ class ACR_AICommander : Managed
    bool fusePrimed = attack.m_SapperDemo && attack.m_SapperDemo.InProgress();
    bool broken = !fusePrimed && attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * m_Doctrine.m_fAbortRatio;
    bool stalled = !fusePrimed && !won && target && Stalled(attack);
-   if (!target || won || (attack.m_Squads.IsEmpty() && !fusePrimed) || broken || stalled)
+   // Nobody left who can walk in (the infantry died or fell back): vehicles and support teams
+   // alone never take it, so stop now instead of waiting out the time limit.
+   bool noTakers = !fusePrimed && !won && target && !attack.m_bGrab && !target.m_sOwner.IsEmpty() && !attack.m_Squads.IsEmpty() && TakersIn(attack) == 0;
+   if (!target || won || (attack.m_Squads.IsEmpty() && !fusePrimed) || broken || stalled || noTakers)
    {
     string outcome = "failed";
     if (won) outcome = "won";
+    if (noTakers) outcome = "called off (no infantry left to take it)";
     if (broken)
     {
      outcome = "called off (too many losses)";
@@ -3248,9 +3309,33 @@ class ACR_AICommander : Managed
     if (ACR_AirLift.Busy(squad)) { anyAirLift = true; gathered = false; continue; }
     if (vector.DistanceXZ(PositionOf(squad), attack.StagingOf(squad)) > 120) gathered = false;
    }
-   if (gathered || (!anyAirLift && GetGame().GetWorld().GetWorldTime() > attack.m_fStageDeadline))
+   float stageNow = GetGame().GetWorld().GetWorldTime();
+   // Out of time with nobody who can take the base anywhere near their staging point (a slow
+   // drive by road, held up on the way): going in would be a lone squad far out, so call it off;
+   // the base waits out the stall cooldown and the next plan picks squads that can get there.
+   if (!gathered && !anyAirLift && stageNow > attack.m_fStageDeadline)
+   {
+    float nearestTaker = -1;
+    foreach (ACR_Squad formingUp : attack.m_Squads)
+    {
+     if (!CanTakeBase(formingUp, attack.m_bFobRaid)) continue;
+     float lateGap = vector.DistanceXZ(PositionOf(formingUp), attack.StagingOf(formingUp));
+     if (nearestTaker < 0 || lateGap < nearestTaker) nearestTaker = lateGap;
+    }
+    if (nearestTaker > ASSAULT_JOIN_EXTRA)
+    {
+     Say(string.Format("[ACR] AI %1: attack on %2 called off (never formed up; nearest squad %3 m from its staging point)", m_sFaction, target.m_sName, (int)nearestTaker));
+     m_StalledUntil.Set(target, stageNow + STALLED_COOLDOWN * 1000);
+     foreach (ACR_Squad released : attack.m_Squads) released.m_iAITask = ACR_EAITask.FREE;
+     m_Attacks.RemoveOrdered(i);
+     continue;
+    }
+   }
+   if (gathered || (!anyAirLift && stageNow > attack.m_fStageDeadline))
    {
     attack.m_bAssaulting = true;
+    // The base of fire goes in too when it is the only squad left that can take the base.
+    if (attack.m_Suppressor && TakersIn(attack, attack.m_Suppressor) == 0) attack.m_Suppressor = null;
     attack.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
     // Preparation: shell the objective with heavy assets against fortified FOBs
     bool heavyPrep = target.m_bBuilt || DefenceOf(target) >= m_Doctrine.m_iHeavyPrep;
