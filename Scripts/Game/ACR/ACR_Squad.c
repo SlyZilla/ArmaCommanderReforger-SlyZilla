@@ -2447,13 +2447,16 @@ class ACR_Squad : Managed
  // point it is moving to now included; Defend and Garrison points are walked through. With one
  // point only it walks between where it stands and that point. A squad that isn't moving
  // (holding where it arrived, say) sets off at once. A new order ends it, as does toggling it
- // again.
+ // again: then it finishes the current leg only (the loop's points are dropped, #65 review: they
+ // were all still queued, so it walked one more lap).
  bool TogglePatrol(out string refusal)
  {
   refusal = "";
   if (m_bPatrol)
   {
    m_bPatrol = false;
+   m_aQueuePos.Clear();
+   m_aQueueKind.Clear();
    return true;
   }
   bool moving = OrderState() == ACR_EOrderState.MOVE && m_Group && m_Group.GetCurrentWaypoint() && m_MoveTarget != vector.Zero && !m_aQueuePos.Contains(m_MoveTarget);
@@ -2471,7 +2474,8 @@ class ACR_Squad : Managed
    m_aQueuePos.Insert(anchor.GetOrigin());
    m_aQueueKind.Insert(0);
   }
-  if (moving && m_aQueuePos.Count() < MAX_QUEUED)
+  // Past MAX_QUEUED if need be: the point it is heading for is never left out of the loop.
+  if (moving)
   {
    m_aQueuePos.Insert(m_MoveTarget);
    m_aQueueKind.Insert(0);
