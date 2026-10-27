@@ -298,13 +298,22 @@ function Remove-KnownNoise($text) {
     # Vanilla AI bug: a group whose members all died processes a failed move (null leader).
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_AIProcessFailedMovementResult'", 'vanilla AI null-leader exception (ignored)')
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: No suppression volume provided!", 'vanilla suppression exception (ignored)')
+    # Vanilla SCR_AIOccupyDriversInUsedVehicles: a vehicle crew's member list still holds a soldier
+    # killed that frame when it looks for a new driver (Everon long soak 27 Oct, armed off-road crew).
+    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer to instance\. Variable 'agent'\s+Class:\s+'SCR_AIOccupyDriversInUsedVehicles'", 'vanilla AI replacement-driver exception (ignored)')
     # Vanilla failed-move report (NodeErrorOnce in SCR_AIProcessFailedMovementResult), e.g. when a
     # built composition cuts the navmesh under a group still walking (Everon long soak 23 Oct).
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: Failed move from[^\r\n]*(?:\r?\n(?!\d\d:\d\d:)[^\r\n]*)*?SCR_AIProcessFailedMovementResult\.c", 'vanilla AI failed-move report (ignored)')
     # Vanilla SCR_AIGetFireTimes: RandomFloat(0.1, m_fShotSpan * 1.9) when the shot span is 0.
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Math\.RandomFloat: invalid parameters min = 0\.100000 max = 0\.000000", 'vanilla AI fire-time warning (ignored)')
+    # Vanilla SCR_AILookAtThreatSystemLogic: RandomFloat(x, coefficient * x) with its default coefficient 1
+    # (Kolguyev long soak 27 Oct, after an air strike). Equal min and max only.
+    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Math\.RandomFloat: invalid parameters min = ([\d.]+) max = \1(?!\d)", 'vanilla AI look-timer warning (ignored)')
     # Vanilla ammo storage (built composition) on a dedicated server: its resupply action has no storage manager.
     $text = ($text -split "`n" | Where-Object { $_ -notmatch "SCR_ResupplySelfSupportStationAction.*no storage manager found" }) -join "`n"
+    # Vanilla AI comms: a contact report whose target is gone by the time it is spoken (Everon long
+    # soak 27 Oct), and the failed request it reports in turn.
+    $text = ($text -split "`n" | Where-Object { $_ -notmatch "SCR_AISoundHandling: SetSignalsAndTransmit: Missing entity or position for|SCR_AICommsHandler: SCR_AISoundHandling\.SetSignalsAndTransmit failed for request" }) -join "`n"
     return $text
 }
 

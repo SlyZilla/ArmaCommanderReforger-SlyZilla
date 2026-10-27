@@ -947,6 +947,16 @@ class ACR_AICommander : Managed
   return 1 + Math.Clamp(over, 0, 1);
  }
 
+ // A rich side fires more (#28 step 2), by the same x1..x2 surplus factor: the RP held for fire
+ // missions and the missions it counts rise, while the threat that earns defensive fire or air
+ // strikes and the defenders that earn heavy preparation fall, and its observers call sooner.
+ float FireFactor() { return SurplusFactor(m_Manager.m_Bases.GetRP(m_sFaction)); }
+ static int Lowered(int threshold, float factor)
+ {
+  float lowered = (1.0 / factor) * threshold;
+  return Math.Max(1, (int)Math.Round(lowered));
+ }
+
  // The share (percent of RP gained) with 'rp' banked.
  float ShareAt(int rp) { return Math.Min(BuildShare() * m_Doctrine.m_fBuildShare * SurplusFactor(rp), 50); }
 
@@ -1098,6 +1108,12 @@ class ACR_AICommander : Managed
  protected int m_iReviewLost, m_iReviewKills, m_iReviewWon, m_iReviewBasesLost;
  protected int m_iDoctrineChanges;
  protected bool m_bDoctrineSettling; // changed at the last review: the next one only snapshots
+ // A changed doctrine is kept DOCTRINE_HOLD_MIN, and the one just left can't come straight back
+ // for the same kind of reason (Jacob, #29: a bleeding side swapped Fortress <-> Firepower at
+ // every judged review, and counters chased each other all match).
+ static const float DOCTRINE_HOLD_MIN = 30;
+ protected float m_fDoctrineSince = -1;
+ protected string m_sDoctrineLeft, m_sDoctrineLeftWhy;
 
  protected void SnapshotReview()
  {
@@ -1145,7 +1161,35 @@ class ACR_AICommander : Managed
   string pick = PickDoctrine(m_Doctrine.m_sKey, enemyKnown, won, basesLost, lost, kills, why);
   Say(string.Format("[ACR] AI commander %1 doctrine review: %2, bases +%3 -%4, lost %5 killed %6, enemy doctrine '%7': %8", m_sFaction, m_Doctrine.m_sName, won, basesLost, lost, kills, enemyKnown, why));
   if (pick.IsEmpty() || pick == m_Doctrine.m_sKey) return;
+  float heldMin = -1;
+  if (m_fDoctrineSince >= 0) heldMin = (now - m_fDoctrineSince) / 60000;
+  string blocked = DoctrineChangeBlocked(pick, why, heldMin, m_sDoctrineLeft, m_sDoctrineLeftWhy);
+  if (!blocked.IsEmpty())
+  {
+   Say(string.Format("[ACR] AI commander %1 doctrine: keeps %2 instead of %3 (%4)", m_sFaction, m_Doctrine.m_sName, ACR_AIDoctrine.NameOf(pick), blocked));
+   return;
+  }
   ChangeDoctrine(ACR_AIDoctrine.Find(pick), why);
+ }
+
+ // Reasons that lead to the same answer count as one: losing ground and heavy losses both pick
+ // whichever of Fortress and Firepower the side isn't on; every counter is a counter.
+ static string DoctrineReasonKind(string why)
+ {
+  if (why.StartsWith("countering")) return "counter";
+  if (why == "losing ground" || why == "losses too heavy") return "going badly";
+  return why;
+ }
+
+ // Why a picked change can't happen yet, "" when it can. heldMin < 0: never changed this match
+ // (the starting doctrine has had the first review's wait).
+ static string DoctrineChangeBlocked(string pick, string why, float heldMin, string left, string leftWhy)
+ {
+  if (heldMin >= 0 && heldMin < DOCTRINE_HOLD_MIN)
+   return string.Format("held %1 of %2 min", Math.Floor(heldMin), DOCTRINE_HOLD_MIN);
+  if (!left.IsEmpty() && pick == left && DoctrineReasonKind(why) == DoctrineReasonKind(leftWhy))
+   return "just left it for the same reason: " + why;
+  return "";
  }
 
  // What a review decides over one review window: the doctrine key to change to, "" to keep.
@@ -1204,6 +1248,9 @@ class ACR_AICommander : Managed
   m_sDoctrineSource = "changed";
   m_iDoctrineChanges++;
   m_bDoctrineSettling = true;
+  m_fDoctrineSince = GetGame().GetWorld().GetWorldTime();
+  m_sDoctrineLeft = was.m_sKey;
+  m_sDoctrineLeftWhy = why;
   Say(string.Format("[ACR] AI commander %1 doctrine: %2 -> %3 (%4; %5)", m_sFaction, was.m_sName, doctrine.m_sName, why, doctrine.m_sSummary));
   // Its own side hears it (players fighting under this commander); the enemy has to notice.
   string line = string.Format("Commander: switching to %1 (%2)", doctrine.m_sName, why);
@@ -1430,21 +1477,28 @@ class ACR_AICommander : Managed
  // the doctrine's dearest few (mortars; with m_bAirBudget the off-map air and rocket strikes
  // too) plus the usual reserve, capped by the doctrine. (Before 24 Oct pass 2 only the dearest
  // mortar counted: 25 + 15 RP, under every doctrine's cap, so the cap never changed anything.)
+ // A rich side (FireFactor > 1) keeps RP for one more mission, counts air strikes whatever its
+ // doctrine, and its cap rises with the factor.
  protected int SupportBudget()
  {
+  float factor = FireFactor();
+  bool rich = factor > 1;
   array<int> costs = {};
   foreach (ACR_SupportEntry entry : m_Manager.m_Bases.GetFaction(m_sFaction).m_aSupports)
   {
    if (!entry.m_bEnabled) continue;
    bool planned = entry.m_eType == ACR_ESupportType.MORTAR_HE_SMALL || entry.m_eType == ACR_ESupportType.MORTAR_HE_LARGE || entry.m_eType == ACR_ESupportType.MORTAR_SMOKE;
-   if (m_Doctrine.m_bAirBudget && (entry.m_eType == ACR_ESupportType.BOMB_RUN || entry.m_eType == ACR_ESupportType.ROCKET_STRIKE)) planned = true;
+   if ((m_Doctrine.m_bAirBudget || rich) && (entry.m_eType == ACR_ESupportType.BOMB_RUN || entry.m_eType == ACR_ESupportType.ROCKET_STRIKE)) planned = true;
    if (planned && entry.m_iCost > 0) costs.Insert(entry.m_iCost);
   }
   if (costs.IsEmpty()) return 0;
   costs.Sort(true);
+  int missions = m_Doctrine.m_iSupportMissions;
+  if (rich) missions++;
   int budget = SUPPORT_RESERVE;
-  for (int i = 0; i < costs.Count() && i < m_Doctrine.m_iSupportMissions; i++) budget += costs[i];
-  return Math.Min(m_Doctrine.m_iSupportBudgetMax, budget);
+  for (int i = 0; i < costs.Count() && i < missions; i++) budget += costs[i];
+  int cap = factor * m_Doctrine.m_iSupportBudgetMax;
+  return Math.Min(cap, budget);
  }
  int SupportBudgetForTest() { return SupportBudget(); }
 
@@ -1784,14 +1838,16 @@ class ACR_AICommander : Managed
    }
   }
   DefendInDepth();
-  // Defensive fires: shell the attackers of a base that is losing the fight.
+  // Defensive fires: shell the attackers of a base that is losing the fight (a rich side: one
+  // that is merely in a fight, down to half its defence at the RP cap).
+  float fireFactor = FireFactor();
   foreach (ACR_Base held : ACR_Base.s_All)
   {
-   if (held.m_sOwner != m_sFaction || ThreatTo(held) <= DefenceOf(held)) continue;
+   if (held.m_sOwner != m_sFaction || fireFactor * ThreatTo(held) <= DefenceOf(held)) continue;
    vector seenAt;
    ACR_Squad attacker = EnemyNear(held.GetOrigin(), THREAT_DISTANCE + held.m_fRadius, seenAt);
    if (!attacker) continue;
-   int airThreat = m_Doctrine.m_iDefensiveAirThreat;
+   int airThreat = Lowered(m_Doctrine.m_iDefensiveAirThreat, fireFactor);
    if (ThreatTo(held) >= airThreat && CallSupport(ACR_ESupportType.HELI_GUN_RUN, seenAt, "gun run at " + held.m_sName)) break;
    if (ThreatTo(held) >= airThreat && CallSupport(ACR_ESupportType.ROCKET_STRIKE, seenAt, "rocket strike at " + held.m_sName)) break;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, seenAt, "defensive fire at " + held.m_sName)) break;
@@ -3372,7 +3428,7 @@ class ACR_AICommander : Managed
     if (attack.m_Suppressor && TakersIn(attack, attack.m_Suppressor) == 0) attack.m_Suppressor = null;
     attack.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
     // Preparation: shell the objective with heavy assets against fortified FOBs
-    bool heavyPrep = target.m_bBuilt || DefenceOf(target) >= m_Doctrine.m_iHeavyPrep;
+    bool heavyPrep = target.m_bBuilt || DefenceOf(target) >= Lowered(m_Doctrine.m_iHeavyPrep, FireFactor());
     if (!heavyPrep || !CallSupport(ACR_ESupportType.BOMB_RUN, target.GetOrigin(), "airstrike preparation on " + target.m_sName))
      if (!heavyPrep || !CallSupport(ACR_ESupportType.ROCKET_STRIKE, target.GetOrigin(), "rocket strike preparation on " + target.m_sName))
       if (!heavyPrep || !CallSupport(ACR_ESupportType.HELI_GUN_RUN, target.GetOrigin(), "gun run preparation on " + target.m_sName))
@@ -4181,9 +4237,17 @@ class ACR_AICommander : Managed
   maxTransports += m_Doctrine.m_iTransports;
   if (m_Manager.m_Rides && m_Manager.m_Rides.ShortOfTransport(m_sFaction) && m_Manager.m_Rides.CountTransports(m_sFaction) < maxTransports)
   {
+   // The cheapest truck; a rich side (#28) takes an armed one (an APC) when it has one.
+   bool armedRide = FireFactor() > 1;
    int truck = -1;
    foreach (int t, ACR_RequisitionEntry candidate : data.m_aRequisitions)
-    if (candidate.m_bTransport && !IsServiceVehicle(candidate) && candidate.m_iRemaining > 0 && candidate.m_iCost <= data.m_iRP && (truck < 0 || candidate.m_iCost < data.m_aRequisitions[truck].m_iCost)) truck = t;
+   {
+    if (!candidate.m_bTransport || IsServiceVehicle(candidate) || candidate.m_iRemaining <= 0 || candidate.m_iCost > data.m_iRP) continue;
+    if (truck < 0) { truck = t; continue; }
+    ACR_RequisitionEntry held = data.m_aRequisitions[truck];
+    if (armedRide && candidate.m_bArmed != held.m_bArmed) { if (candidate.m_bArmed) truck = t; continue; }
+    if (candidate.m_iCost < held.m_iCost) truck = t;
+   }
    if (truck >= 0)
    {
     Say(string.Format("[ACR] AI %1 requisition (transport): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, truck, spawn)));
@@ -4248,6 +4312,7 @@ class ACR_AICommander : Managed
   else m_iSaveForEntry = -1;
 
   bool boughtSF;
+  float richFactor = FireFactor();
   // The cap counts fighting units only (as above): trucks, ambulances, crewless
   // vehicles and 1-man remnants filled it on Everon and the AI sat on 1000 RP.
   for (int n = 0; n < 2 && capUsed < cap; n++)
@@ -4303,8 +4368,9 @@ class ACR_AICommander : Managed
       weight *= 0.3;
       if (entry.m_bObserverTeam) weight *= m_Doctrine.m_fObserverWeight;
      }
-     // Keep infantry the backbone.
-     if (!entry.m_sVehicle.IsEmpty()) weight *= 0.5;
+     // Keep infantry the backbone (less so for a rich side, which buys quality: #28).
+     if (!entry.m_sVehicle.IsEmpty()) weight *= Math.Min(1, 0.5 * richFactor);
+     weight *= QualityWeight(entry, richFactor);
      // A low-threat war is mostly fought on foot.
      if (!entry.m_sVehicle.IsEmpty() && ACR_Manager.ThreatOption() == 0) weight *= 0.4;
      // Price-weighting favours dear units; halve those not yet affordable so saving stays the exception.
@@ -4343,6 +4409,17 @@ class ACR_AICommander : Managed
    if (m_Doctrine.m_bSmallTeamsFree && IsSmallTeamEntry(chosen)) capUsed += 0.5;
    else capUsed += 1;
   }
+ }
+
+ // Quality over quantity (#28 step 3): a rich side (factor over 1) weighs units by their base price
+ // once more, scaled to the factor: at the RP cap a 76 RP APC weighs three times, a 12 RP team half.
+ static float QualityWeight(ACR_RequisitionEntry entry, float factor)
+ {
+  if (factor <= 1) return 1;
+  float price = entry.m_iBaseCost;
+  if (price <= 0) price = entry.m_iCost;
+  if (price <= 0) return 1;
+  return Math.Pow(price / 25.0, factor - 1);
  }
 
  // Share of the AI squad cap a fighting unit takes: one, or half for a 2-3 man team of a
