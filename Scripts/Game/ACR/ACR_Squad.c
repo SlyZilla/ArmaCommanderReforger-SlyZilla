@@ -1847,6 +1847,8 @@ class ACR_Squad : Managed
   m_bRegrouping = false;
   if (!IssueWaypoint(WP_DEFEND, fort.m_vPos, ACR_Fortify.HOLD_RADIUS)) return false;
   m_Fortification = fort;
+  // Its reserve's gun crew, if any, steps back (ACR_Defenders).
+  if (fort.m_Defenders) ACR_Defenders.StandDownCrew(fort.m_Defenders);
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   return true;
@@ -1874,6 +1876,8 @@ class ACR_Squad : Managed
    }
    if (ours) ACR_Roadblocks.VacateTurret(turret);
   }
+  // Off to another job: the position's reserve defenders man its guns while it is away.
+  if (fort.m_Defenders && CountAlive() > 0) ACR_Defenders.CrewGuns(fort.m_Defenders, turrets);
   // Off the nest's sandbags and onto the navmesh (the shared helper, as for roadblock guns).
   StepOntoNavmeshSoon();
  }

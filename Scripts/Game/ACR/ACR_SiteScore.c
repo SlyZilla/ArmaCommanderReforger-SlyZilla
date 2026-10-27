@@ -153,9 +153,16 @@ class ACR_SiteScore
  // An eye at 'eyePos' sees a man's head (1 m over the ground) at 'ground'.
  static bool Visible(vector eyePos, vector ground)
  {
+  return VisibleAt(eyePos, ground, 1.0);
+ }
+
+ // ... a point 'height' m over the ground at 'ground' (over a roadblock's own logs or sandbags, say,
+ // which would otherwise hide the point inside them).
+ static bool VisibleAt(vector eyePos, vector ground, float height)
+ {
   BaseWorld world = GetGame().GetWorld();
   vector target = ground;
-  target[1] = world.GetSurfaceY(ground[0], ground[2]) + 1.0;
+  target[1] = world.GetSurfaceY(ground[0], ground[2]) + height;
   TraceParam trace = new TraceParam();
   trace.Start = eyePos;
   trace.End = target;

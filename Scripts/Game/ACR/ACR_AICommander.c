@@ -5607,11 +5607,11 @@ class ACR_AICommander : Managed
  // engineering can pay, upgrade our lowest-tier position in use below tier III (nearest the front
  // first), worked by the squad holding it or the nearest free one within FAR_BUILDER; else, with
  // fewer than its doctrine's m_iFortifyPositions in use (PositionsInUse), dig the nearest free
- // infantry squad (within FAR_BUILDER) in 80-160 m out from the first of our front bases with no
- // position of ours within 300 m, facing the enemy, where its upgrades would fit if such a site is
- // near (also to either side, never within DEFENCE_STANDOFF of our own fields). A position whose
- // upgrade was refused is left alone for a while (ACR_Fortify.HoldUpgrades). The squad then holds
- // it while KeepsHolding, else it is posted again.
+ // infantry squad (within FAR_BUILDER) in at the best scored spot out from the first of our front
+ // bases with no position of ours within 300 m, facing the enemy (DigIn, ACR_PositionSiting), never
+ // within DEFENCE_STANDOFF of our own fields. A position whose upgrade was refused is left alone
+ // for a while (ACR_Fortify.HoldUpgrades). The squad then holds it while KeepsHolding, else it is
+ // posted again.
  void ManageFortify()
  {
   foreach (ACR_Squad digger : m_Manager.m_Squads)
@@ -5762,51 +5762,32 @@ class ACR_AICommander : Managed
   return PositionsInUse(fronts);
  }
 
- // Digs 'candidate' in 80-160 m out from 'front' towards 'enemyPos' (first where its upgrades fit,
- // on the line out and DEFENCE_STANDOFF to either side, clear of our fields); true if ordered, else
- // notes why not.
+ // Digs 'candidate' in at the best scored spot out from 'front' towards 'enemyPos' that takes it
+ // (ACR_PositionSiting: field of fire, slight high ground, no dead ground close in front, cover
+ // behind, its upgrades fit, overlooking our roadblock or field; the old line spots too), clear of
+ // our fields; true if ordered, else notes why not.
  protected bool DigIn(ACR_Squad candidate, ACR_Base front, vector enemyPos, string from)
  {
-  string refusal = "";
-  vector toEnemy = enemyPos - front.GetOrigin();
-  toEnemy[1] = 0;
-  toEnemy.Normalize();
-  vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
-  // First a site where tiers II and III would fit as well (its upgrades then go in), then any
-  // that takes tier I; on the line out and DEFENCE_STANDOFF to either side, never within
-  // DEFENCE_STANDOFF of our own fields.
-  array<float> laterals = {0, -DEFENCE_STANDOFF, DEFENCE_STANDOFF};
-  int spots = 0;
-  int nearFields = 0;
+  array<ref ACR_PositionSite> sites = {};
+  int nearFields;
+  ACR_PositionSiting.Candidates(candidate, m_sFaction, front.GetOrigin(), enemyPos, sites, nearFields);
   int refused = 0;
-  for (int pass = 0; pass < 2; pass++)
+  string refusal = "";
+  foreach (ACR_PositionSite site : sites)
   {
-   foreach (float lateral : laterals)
+   if (!ACR_Fortify.Order(candidate, site.m_vPos, refusal, enemyPos))
    {
-    for (float reach = 80; reach <= 160; reach += 40)
-    {
-     vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
-     if (pass == 0) spots++;
-     if (ACR_Minefields.FieldNear(m_sFaction, sample, DEFENCE_STANDOFF))
-     {
-      if (pass == 0) nearFields++;
-      continue;
-     }
-     if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemyPos))) continue;
-     if (!ACR_Fortify.Order(candidate, sample, refusal, enemyPos))
-     {
-      refused++;
-      continue;
-     }
-     candidate.m_iAITask = ACR_EAITask.FORTIFY;
-     string fit = "";
-     if (pass == 0) fit = ", its upgrades fit";
-     Say(string.Format("[ACR] AI %1: %2%3 digging in on the approach to %4 at %5%6", m_sFaction, candidate.GetName(), from, front.m_sName, sample, fit));
-     return true;
-    }
+    refused++;
+    continue;
    }
+   candidate.m_iAITask = ACR_EAITask.FORTIFY;
+   // Better spots the order refused, so a low score can be told from poor ground.
+   string skipped = "";
+   if (refused > 0) skipped = string.Format("; %1 better spots refused (last: %2)", refused, refusal);
+   Say(string.Format("[ACR] AI %1: %2%3 digging in on the approach to %4 at %5: of %6 spots, %7%8", m_sFaction, candidate.GetName(), from, front.m_sName, site.m_vPos, sites.Count(), ACR_PositionSiting.Breakdown(site), skipped));
+   return true;
   }
-  string why = string.Format("%1 of %2 spots near our own fields", nearFields, spots);
+  string why = string.Format("%1 spots, %2 more near our own fields", sites.Count(), nearFields);
   if (refused > 0) why += string.Format(", %1 refused (last: %2)", refused, refusal);
   NoteBuild("fortify site " + front.m_sName, string.Format("[ACR] AI %1: no position site at %2: %3", m_sFaction, front.m_sName, why));
   return false;
