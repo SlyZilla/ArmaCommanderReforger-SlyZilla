@@ -457,6 +457,7 @@ class ACR_Roadblocks : Managed
 		if (!ent) return null;
 
 		ent.SetYawPitchRoll(Vector(yaw, 0, 0));
+		ACR_GroundTilt.Place(ent, prefab, pos, yaw); // barricades lie on the ground; checkpoints stay upright
 
 		SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(ent.FindComponent(SCR_CampaignBuildingCompositionComponent));
 		if (comp)

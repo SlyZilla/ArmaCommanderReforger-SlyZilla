@@ -878,6 +878,7 @@ class ACR_FobSlots : Managed
 		}
 		if (!ent) return null;
 		ent.SetYawPitchRoll(Vector(yaw, 0, 0));
+		ACR_GroundTilt.Place(ent, prefab, pos, yaw); // FOB sandbags lie on the ground; buildings stay upright
 		SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(ent.FindComponent(SCR_CampaignBuildingCompositionComponent));
 		if (comp)
 		{

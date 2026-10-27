@@ -34,6 +34,7 @@
 ### Engineering
 
 - Fortify positions get defenders: tier I holds 1 of the side's garrison soldiers in reserve at the position, tier II 2 and tier III 4 (an upgrade adds the difference). Like a base's garrison they deploy when an enemy comes within 400 m, defend the position, pack up once none is within 450 m and are used up as they die; a position that is gone takes its reserve with it. Sizes: `-acrFortifyDefenders1` / `-acrFortifyDefenders2` / `-acrFortifyDefenders3` (0 for none). Checkpoints can get them too with `-acrRoadblockDefenders N` (off by default).
+- Sandbag positions, barbed wire and barricades lie on sloping ground instead of standing dead level: tilted to the ground under the ends of their footprint, at most 12 degrees. On a slope the site checks accept, one end used to float while the other was buried. Tents, buildings, bunkers, towers, checkpoints and gun nests stay upright. `-acrGroundTilt 0` places everything level as before.
 
 ### The battlefield
 
