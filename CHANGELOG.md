@@ -69,6 +69,7 @@
 ### Intel
 
 - "The enemy commander has changed tactics" only names the old doctrine when it had been confirmed. A hint such as "Firepower or Fortress" could include the new doctrine, so the line could say "no longer Fortress" as the enemy switched to Fortress.
+- Patrol (map panel, a new row of standing orders): a squad walks its queued points in a loop. Give it a move order, Shift + right-click more points, then click **Patrol**; the point it is heading for joins the loop, and Defend or Garrison points are walked through. With one point it walks between where it stands and that point; a squad standing still sets off at once. A new order or clicking Patrol again ends it. The squad's status shows "patrolling N points".
 
 ## 0.5.7 — released
 

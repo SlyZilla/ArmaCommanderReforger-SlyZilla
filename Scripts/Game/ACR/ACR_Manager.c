@@ -36,7 +36,8 @@ enum ACR_ERequest
  ORDER_ROADBLOCK_S,  // ... a small checkpoint (no machine gun)
  ORDER_ROADBLOCK_L,  // ... a large checkpoint (heavy machine gun)
  ORDER_BARRICADE,    // ... a barricade sized to the road
- ORDER_FORTIFY       // dig in at point, or upgrade our position there (ACR_Fortify)
+ ORDER_FORTIFY,      // dig in at point, or upgrade our position there (ACR_Fortify)
+ ORDER_PATROL        // toggle: the squad walks its queued points in a loop
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
