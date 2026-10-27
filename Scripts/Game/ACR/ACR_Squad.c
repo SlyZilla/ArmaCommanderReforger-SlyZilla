@@ -1436,7 +1436,9 @@ class ACR_Squad : Managed
  // be inside the gun's sandbags, and Defend can leave a soldier on top of them: with the leader at
  // either spot, the next order's move failed natively ("Failed move ... to waypoint", within 8
  // leave-the-gun cycles in each Fortify stress run). Once the get-out has landed, everyone off
- // the navmesh steps onto the closest point of it.
+ // the navmesh steps onto the closest point of it. Waypoint recovery runs it too: a post's
+ // Defend can leave a soldier on sandbags long after any gun (Everon 26 Oct: an RU MG team's
+ // last man on a FOB 1 sandbag pile lost every move order for 34 min).
  void StepOntoNavmeshSoon()
  {
   GetGame().GetCallqueue().Remove(StepOntoNavmesh);
@@ -1451,7 +1453,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    IEntity body = agent.GetControlledEntity();
-   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   if (!body || !ACR_Respawn.IsAlive(body) || EntityUtils.IsPlayer(body)) continue;
    if (ACR_Transport.VehicleOf(body))
    {
     seated = true;
@@ -1462,7 +1464,7 @@ class ACR_Squad : Managed
    vector onMesh;
    if (!pathing || !pathing.GetClosestPositionOnNavmesh(at, Vector(3, 3, 3), onMesh)) continue;
    if (vector.DistanceXZ(onMesh, at) < 0.5 && Math.AbsFloat(onMesh[1] - at[1]) < 0.6) continue;
-   PrintFormat("[ACR] SQUAD %1: soldier off the navmesh by a gun stepped %2 m onto it", m_Name, vector.Distance(onMesh, at));
+   PrintFormat("[ACR] SQUAD %1: soldier off the navmesh stepped %2 m onto it", m_Name, vector.Distance(onMesh, at));
    body.SetOrigin(onMesh);
   }
   // A gunner still getting off: again shortly.
@@ -2529,6 +2531,8 @@ class ACR_Squad : Managed
   // Jacob 18 Oct: orders were dropped after four identical reissues to a spot the
   // engine could not path to. The first retry repeats the order (a transient drop);
   // later ones aim for the nearest walkable point round it, searching wider each time.
+  // The start can be the problem as much as the target: a soldier stranded off the navmesh.
+  if (!IsMounted()) StepOntoNavmesh(0);
   vector target = m_MoveTarget;
   string how = "same spot";
   if (m_iWaypointRecoveries >= 2)
@@ -2568,6 +2572,9 @@ class ACR_Squad : Managed
  // dropped: the squad then "arrived" without moving, outside the base (srv:pathprobe).
  protected int m_iUnreachableSerial = -1;
  bool GaveUpUnreachable() { return m_iUnreachableSerial == m_iOrderSerial; }
+ // Its last move order still stands, though the engine may have dropped the waypoint: the
+ // squad's own recovery owns it, and a fresh order would reset that recovery.
+ bool MovePending() { return MovementStillPending() && !GaveUpUnreachable(); }
 
  // Vehicles the game's group AI counts as its own (it plans moves with them).
  int GroupVehicleCount()

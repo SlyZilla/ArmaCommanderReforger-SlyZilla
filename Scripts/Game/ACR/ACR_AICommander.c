@@ -2028,7 +2028,7 @@ class ACR_AICommander : Managed
      Travel(squad, stage, false, 0);
     }
     free.RemoveOrdered(k);
-    PrintFormat("[ACR] AI %1: %2 reinforces the attack on %3 (%4/%5)", m_sFaction, squad.GetName(), target.m_sName, strength, (int)need);
+    PrintFormat("[ACR] AI %1: %2 reinforces the attack on %3 (%4/%5), staging at grid %6", m_sFaction, squad.GetName(), target.m_sName, strength, (int)need, ACR_Manager.Grid(stage));
    }
   }
  }
@@ -2366,6 +2366,11 @@ class ACR_AICommander : Managed
   string kind = "attacking";
   if (attack.m_bCounter) { kind = "COUNTERATTACKING"; m_CounterTarget = null; }
   PrintFormat("[ACR] AI %1: %2 %3 with %4 squad(s), strength %5/%6", m_sFaction, kind, target.m_sName, attack.m_Squads.Count(), strength, required);
+  if (empty) return;
+  string stagingAt;
+  foreach (ACR_Squad staged : attack.m_Squads)
+   stagingAt += string.Format(" %1 grid %2,", staged.GetName(), ACR_Manager.Grid(attack.StagingOf(staged)));
+  PrintFormat("[ACR] AI %1: staging for %2 at%3", m_sFaction, target.m_sName, stagingAt);
  }
 
  // Each armed carrier with room (gun manned, 4+ free seats) picks the nearest infantry squad of the
@@ -3646,7 +3651,9 @@ class ACR_AICommander : Managed
    // others wait until they pass a base.
    if (!inside)
    {
-    if (refitting && now >= giveUpAt)
+    // Re-sending the walk every tick reset the squad's waypoint recovery, so an unreachable
+    // walk never ended until the 15-min limit (Everon 26 Oct: 200 dropped waypoints).
+    if (refitting && (now >= giveUpAt || squad.GaveUpUnreachable()))
     {
      m_Refitting.Remove(squad);
      if (squad.m_iAITask == ACR_EAITask.RESUPPLY) squad.m_iAITask = ACR_EAITask.FREE;
@@ -3654,7 +3661,7 @@ class ACR_AICommander : Managed
      PrintFormat("[ACR] AI %1: %2 gave up walking back to reinforce", m_sFaction, squad.GetName());
      continue;
     }
-    if (refitting && squad.m_Group && squad.m_Group.GetCurrentWaypoint()) continue;
+    if (refitting && squad.m_Group && (squad.m_Group.GetCurrentWaypoint() || squad.MovePending())) continue;
     // Don't cut short a walk to a service vehicle (ManageLogistics).
     if (!refitting && squad.m_iAITask == ACR_EAITask.RESUPPLY && squad.m_Group && squad.m_Group.GetCurrentWaypoint()) continue;
     bool idle = squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED || squad.m_iAITask == ACR_EAITask.RESUPPLY;

@@ -13,6 +13,7 @@
 
 ### AI commanders
 
+- A soldier stranded off walkable ground (on top of a sandbag pile, say) steps back onto it when his move order keeps getting dropped, and an AI squad that can't reach the base it was sent to for reinforcements gives up after a minute instead of being re-sent every 15 seconds. Before, one RU machine gunner on a FOB's sandbags lost every order for over half an hour.
 - The AI commander doesn't send a medic team or another support team to grab an empty base any more, as it already kept them out of attacks (#34).
 - An AI attack or grab whose squads all report the target unreachable is called off at once, so they get new orders within seconds. Before, the commander waited out the attack's full time limit: on Everon a grab of Gallows Base, which can't be walked into from the south, kept its squad standing idle for 17 minutes.
 - AI mortar teams follow the fighting: they move up to the own base nearest the enemy's known bases and the bases being attacked, instead of staying at the HQ whenever any unclaimed site happened to be in range (on Everon both teams sat at their HQs all game and fired one mission in two hours).
