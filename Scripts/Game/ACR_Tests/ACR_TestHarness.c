@@ -81,6 +81,9 @@ class ACR_TestHarness : Managed
  static const int MODE_GRABS = 77; // 69-76: the playtest branches
  static const int MODE_MORTARSPOT = 78; // 69-77: the playtest branches
  static const int MODE_RIDELAV = 70; // 69: the playtest branches
+ static const int MODE_FOBAI = 58; // 52 / 53 / 55 / 56 / 57: Fortify / roadblocks / patrol / ambush / QRF
+ static const int MODE_SQUADAI = 63; // 59-62: defenders, budget, cap scale, aim (own branches)
+ static const int MODE_TWOIC = 75; // 74: the slope tilt (own branch)
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -157,6 +160,9 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrMortarSpotTest", flag)) mode = MODE_MORTARSPOT;
   if (System.GetCLIParam("acrRideLavTest", flag) || System.GetCLIParam("acrRideTruckTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrRideLavKillTest", flag) || System.GetCLIParam("acrRideLavGetOutTest", flag)) mode = MODE_RIDELAV;
+  if (System.GetCLIParam("acrFobAITest", flag)) mode = MODE_FOBAI;
+  if (System.GetCLIParam("acrSquadAITest", flag)) mode = MODE_SQUADAI;
+  if (System.GetCLIParam("acrTwoICTest", flag)) mode = MODE_TWOIC;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -290,6 +296,9 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_GRABS) { ACR_TestGrabs.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MORTARSPOT) { ACR_TestMortarSpot.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDELAV) { ACR_TestRideLav.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_FOBAI) { ACR_TestFobAI.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_SQUADAI) { ACR_TestSquadAI.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOIC) { ACR_TestTwoIC.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

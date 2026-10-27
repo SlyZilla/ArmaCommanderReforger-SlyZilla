@@ -324,6 +324,7 @@ class ACR_MapFeed
    IEntity ridden = ACR_Transport.VehicleOf(leader);
    if (ridden) markerAnchor = ridden;
    frame.m_LeaderPos.Insert(markerAnchor.GetOrigin());
+   if (squad && squad.m_bAICommanded) name += " [AI]";
    frame.m_GroupNames.Insert(name);
    frame.m_Symbols.Insert(icons);
    frame.m_Symbols.Insert(dimension);
@@ -335,7 +336,8 @@ class ACR_MapFeed
    if (squad && !squad.IsVehicle() && squad.CountAlive() > 0) mode |= 64; // + flag: can build roadblock
    if (ACR_Minefields.CanLay(squad)) mode |= 128; // + flag: can lay / disarm mines
    if (ACR_Fortify.CanFortify(squad)) mode |= 256; // + flag: can fortify
-   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB, +64 roadblock, +128 minefields, +256 fortify)
+   if (squad && squad.m_bAICommanded) mode |= 1024; // + flag: handed to the AI (ACR_SquadAI)
+   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB, +64 roadblock, +128 minefields, +256 fortify, +1024 handed to the AI)
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    frame.m_LeaderStates.Insert(state);
@@ -472,6 +474,7 @@ class ACR_MapFeed
    frame.m_BaseRadii.Insert(base.m_fRadius);
    int flag = 0;
    if (base.m_bContested) flag = 1;
+   if (base.m_sOwner == frame.m_sKey) flag += ACR_FobAI.FeedFlag(base); // +2: handed to the AI
    frame.m_BaseContested.Insert(flag);
    int stock = -1;
    if (base.m_bBuilt && base.m_sOwner == frame.m_sKey && base.m_FobSupply) stock = ACR_FobSupply.Stock(base.m_FobSupply);

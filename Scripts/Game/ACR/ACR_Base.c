@@ -49,6 +49,8 @@ class ACR_Base : GenericEntity
  ref ACR_FobSlot m_FobDefences;     // the defences upgrade (ACR_FobDefences)
  float m_fFobSlotsLastTick;
  bool m_bHqLost;                    // built FOB whose HQ was destroyed: offline, capturable, rebuildable
+ bool m_bAIManaged;                 // handed to the AI (FOB panel, ACR_FobAI)...
+ string m_sAIManagedFor;            // ...by this side
  bool m_bPocket;                    // FIA pocket of resistance (ACR_Pockets) until someone captures it
 
  // A built FOB keeps its upgrades when its HQ is destroyed (Jacob, 18 Oct): no deployment,

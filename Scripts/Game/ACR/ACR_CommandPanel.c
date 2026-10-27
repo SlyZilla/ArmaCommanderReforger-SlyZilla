@@ -26,6 +26,8 @@ enum ACR_EPanelAction
  TOGGLE_RTS_CAMERA,
  FOB_SUPPLY,
  FOB_BUILD,
+ FOB_AI,                  // "AI manages this FOB" (ACR_FobAI)
+ SQUAD_AI,                // "AI commands this squad" (ACR_SquadAI)
  ESTABLISH_FOB,
  ROADBLOCK,
  MINES_AP,                // the minefield buttons
@@ -101,6 +103,9 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_ReinforceButton;
  protected Widget m_FobSection;
  protected SCR_ButtonTextComponent m_FobSupplyButton;
+ protected SCR_ButtonTextComponent m_FobAIButton;
+ protected SCR_ButtonTextComponent m_SquadAIButton;
+ protected Widget m_SquadAIWidget;
  protected SCR_ButtonTextComponent m_FobBuildButton;
  protected Widget m_FobUpgradesLayout;
  protected ref array<SCR_ButtonTextComponent> m_aFobUpgradeButtons = {};
@@ -206,6 +211,7 @@ class ACR_CommandPanel : Managed
   m_FobSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_GroupSection);
   m_FobSupplyButton = AddButton(m_FobSection, "Order 500 supplies - 20 RP / 60 s", ACR_EPanelAction.FOB_SUPPLY);
   m_FobBuildButton = AddButton(m_FobSection, "Build at FOB (stand inside its circle)", ACR_EPanelAction.FOB_BUILD);
+  m_FobAIButton = AddButton(m_FobSection, "AI manages this FOB: off", ACR_EPanelAction.FOB_AI);
   m_FobUpgradesLayout = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_FobSection);
   AddText(m_FobUpgradesLayout, LAYOUT_TEXT, "FOB Upgrades");
   for (int s = 0; s < ACR_FobSlots.UPGRADE_COUNT; s++)
@@ -219,6 +225,8 @@ class ACR_CommandPanel : Managed
   m_SwitchWidget = m_LastButtonWidget;
   AddButton(m_GroupSection, "Take over gunner", ACR_EPanelAction.TAKE_GUNNER);
   m_GunnerWidget = m_LastButtonWidget;
+  m_SquadAIButton = AddButton(m_GroupSection, "AI commands this squad: off", ACR_EPanelAction.SQUAD_AI);
+  m_SquadAIWidget = m_LastButtonWidget;
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
 
   m_OrderSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_GroupSection);
@@ -686,6 +694,15 @@ class ACR_CommandPanel : Managed
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(visible);
  }
 
+ // "AI commands this squad" (ACR_SquadAI): one friendly squad selected; on or off.
+ void SetSquadAI(bool visible, bool on)
+ {
+  if (m_SquadAIWidget) m_SquadAIWidget.SetVisible(visible);
+  if (!m_SquadAIButton) return;
+  if (on) m_SquadAIButton.SetText("[AI commands this squad: on]");
+  else m_SquadAIButton.SetText("AI commands this squad: off");
+ }
+
  void SetReinforce(string text, bool enabled)
  {
   if (!m_ReinforceButton) return;
@@ -722,6 +739,15 @@ class ACR_CommandPanel : Managed
   if (m_FortifyWidget) m_FortifyWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
   if (m_Hint) m_Hint.SetText("");
+ }
+
+ // "AI manages this FOB" (ACR_FobAI): on or off; only the commander can change it.
+ void SetFobAI(bool canToggle, bool on)
+ {
+  if (!m_FobAIButton) return;
+  m_FobAIButton.SetEnabled(canToggle, false);
+  if (on) m_FobAIButton.SetText("[AI manages this FOB: on]");
+  else m_FobAIButton.SetText("AI manages this FOB: off");
  }
 
  // Upgrade states: ACR_FobSlots.FeedState (decoded with FeedBuilding / FeedBuilt).

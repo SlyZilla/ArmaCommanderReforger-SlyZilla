@@ -36,7 +36,8 @@ enum ACR_ERequest
  ORDER_ROADBLOCK_S,  // ... a small checkpoint (no machine gun)
  ORDER_ROADBLOCK_L,  // ... a large checkpoint (heavy machine gun)
  ORDER_BARRICADE,    // ... a barricade sized to the road
- ORDER_FORTIFY       // dig in at point, or upgrade our position there (ACR_Fortify)
+ ORDER_FORTIFY,      // dig in at point, or upgrade our position there (ACR_Fortify)
+ ORDER_SQUAD_AI      // toggle: the AI commander commands this squad (ACR_SquadAI)
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -50,6 +51,7 @@ class ACR_Manager : Managed
  ref ACR_BaseSystem m_Bases = new ACR_BaseSystem();
  ref ACR_Debug m_Debug = new ACR_Debug(); // debug menu state (pause, reveal)
  protected ref map<string, ref ACR_AICommander> m_AICommanders = new map<string, ref ACR_AICommander>();
+ protected ref map<string, ref ACR_AICommander> m_FobAIOnly = new map<string, ref ACR_AICommander>(); // sides with no AI commander, for ACR_FobAI
  protected ref map<string, ref ACR_Intel> m_Intel = new map<string, ref ACR_Intel>();
  string m_sSpawningFaction; // side paying for the unit being spawned
  ref map<int, ACR_Squad> m_LastSquad = new map<int, ACR_Squad>();
@@ -843,6 +845,42 @@ class ACR_Manager : Managed
    if (m_Debug.IsPaused(settings.m_sFaction)) continue; // debug menu: frozen, squads keep their orders
    ai.Tick(noCommander && !hold);
   }
+  // FOBs handed to the AI (FOB panel) on a side a player commands (ACR_FobAI).
+  foreach (ACR_FactionSettings handed : ACR_FactionSettings.s_All)
+  {
+   if (!ACR_FobAI.AnyFor(handed.m_sFaction)) continue;
+   ACR_AICommander fobAI = FobAICommanderFor(handed.m_sFaction);
+   // In command, the AI runs every FOB already.
+   if (fobAI && !(handed.m_bAICommander && fobAI.m_bActive)) fobAI.ManageHandedFobs();
+  }
+  // Squads handed to the AI (squad panel) on a side a player commands (ACR_SquadAI); with the
+  // 2IC on, every squad of that side no player has claimed.
+  foreach (ACR_FactionSettings squads : ACR_FactionSettings.s_All)
+  {
+   ACR_AICommander squadAI;
+   if (ACR_SquadAI.TwoIC())
+   {
+    squadAI = FobAICommanderFor(squads.m_sFaction);
+    bool twoICRuns = squadAI && ACR_SquadAI.Runs(this, squads.m_sFaction);
+    if (twoICRuns) ACR_SquadAI.Adopt(squads.m_sFaction);
+   }
+   if (!ACR_SquadAI.AnyFor(squads.m_sFaction)) continue;
+   squadAI = FobAICommanderFor(squads.m_sFaction);
+   if (squadAI && !(squads.m_bAICommander && squadAI.m_bActive)) squadAI.TickHanded();
+  }
+ }
+
+ // The side's AI commander, or (a side without one) one made only to run its handed FOBs.
+ ACR_AICommander FobAICommanderFor(string factionKey)
+ {
+  ACR_AICommander ai;
+  if (m_AICommanders.Find(factionKey, ai)) return ai;
+  if (!m_FobAIOnly.Find(factionKey, ai))
+  {
+   ai = new ACR_AICommander(this, factionKey);
+   m_FobAIOnly.Insert(factionKey, ai);
+  }
+  return ai;
  }
 
  // The AI commander waits while players may still be loading in, so it doesn't spend

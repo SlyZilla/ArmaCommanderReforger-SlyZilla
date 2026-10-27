@@ -154,10 +154,13 @@ class ACR_Requests : Managed
    PrintFormat("[ACR] ORDER refused player=%1 command=%2: %3", pc.GetPlayerId(), command, why);
    return why;
   }
+  // A squad handed to the AI: the player's order takes it back first (ACR_SquadAI).
+  bool tookBack = ACR_SquadAI.TakeBack(squad, command);
   int serial = squad.m_iOrderSerial;
   int previous = squad.m_iOrderedBy;
   float previousAt = squad.m_fOrderedAt;
   ACR_OrderOutcome outcome = GiveOrderTo(pc, command, squad, point);
+  if (tookBack) outcome.m_sMessage += " (taken back from the AI)";
   s_LastOutcome = outcome;
   Credit(pc.GetPlayerId(), squad, command, point, outcome, serial, previous, previousAt);
   return outcome.m_sMessage;
@@ -357,6 +360,13 @@ class ACR_Requests : Managed
    case ACR_ERequest.MODE_FAST:
     squad.SetMode(ACR_EMoveMode.FAST);
     return outcome.Accept(name + ": fast");
+   case ACR_ERequest.ORDER_SQUAD_AI:
+   {
+    string handed = ACR_SquadAI.Toggle(squad);
+    PrintFormat("[ACR] SQUAD AI player=%1 %2: %3", pc.GetPlayerId(), name, squad.m_bAICommanded);
+    if (squad.m_bAICommanded || handed.Contains("back under your command")) return outcome.Accept(handed);
+    return outcome.Refuse(handed);
+   }
    case ACR_ERequest.ORDER_FIRE_AT_WILL:
    {
     bool mortar = m_Manager.Mortars().TeamOf(squad) != null;

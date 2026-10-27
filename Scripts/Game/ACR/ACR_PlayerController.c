@@ -1478,7 +1478,7 @@ modded class SCR_PlayerController
      int capacity = m_ACR_Data.m_BaseSupply[supplyOffset + 1];
      int delivery = m_ACR_Data.m_BaseSupply[supplyOffset + 2];
      // delivery -1: the FOB's HQ is destroyed and it is offline until rebuilt.
-     bool ready = m_ACR_IsCommander && m_ACR_Data.m_BaseContested[baseIndex] == 0 && delivery >= 0;
+     bool ready = m_ACR_IsCommander && (m_ACR_Data.m_BaseContested[baseIndex] & 1) == 0 && delivery >= 0;
      string factionKey = "";
      Faction myFaction = SCR_FactionManager.SGetPlayerFaction(GetPlayerId());
      if (myFaction) factionKey = myFaction.GetFactionKey();
@@ -1488,13 +1488,14 @@ modded class SCR_PlayerController
       slotStates.Insert(m_ACR_Data.m_BaseSupply[supplyOffset + 3 + s]);
      }
      m_ACR_Panel.SetFob(stock >= 0, ready && capacity - stock >= ACR_FobSupply.DELIVERY_AMOUNT && delivery == 0 && m_ACR_RP >= ACR_FobSupply.DELIVERY_COST, ready && stock > 0, slotStates, stock, ready, factionKey);
+     m_ACR_Panel.SetFobAI(m_ACR_IsCommander && delivery >= 0, (m_ACR_Data.m_BaseContested[baseIndex] & 2) != 0);
     }
     else if (m_ACR_Data.m_BaseSupply.Count() > supplyOffset + 2)
     {
      int stock = m_ACR_Data.m_BaseSupply[supplyOffset];
      int capacity = m_ACR_Data.m_BaseSupply[supplyOffset + 1];
      int delivery = m_ACR_Data.m_BaseSupply[supplyOffset + 2];
-     bool ready = m_ACR_IsCommander && m_ACR_Data.m_BaseContested[baseIndex] == 0;
+     bool ready = m_ACR_IsCommander && (m_ACR_Data.m_BaseContested[baseIndex] & 1) == 0;
      m_ACR_Panel.SetFob(stock >= 0, ready && capacity - stock >= ACR_FobSupply.DELIVERY_AMOUNT && delivery == 0 && m_ACR_RP >= ACR_FobSupply.DELIVERY_COST, ready && stock > 0);
     }
     return;
@@ -1563,6 +1564,7 @@ modded class SCR_PlayerController
   if (friendly && m_ACR_IsCommander && m_ACR_CursorMode == ACR_ECursorMode.MOVE) hint += "  |  Shift+right-click: add waypoint  |  Ctrl+drag: select squads";
   m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, modeAndFlags & 15, m_ACR_CursorMode, hint);
   m_ACR_Panel.SetGunner(friendly && (modeAndFlags & 16) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
+  m_ACR_Panel.SetSquadAI(friendly && m_ACR_IsCommander && m_ACR_Data.m_Selected.Count() <= 1, (modeAndFlags & 1024) != 0);
   m_ACR_Panel.SetEstablishFob(canEstablishFob);
   m_ACR_Panel.SetRoadblock(canRoadblock, !ACR_Roadblocks.IsFia(roadblockFaction));
   m_ACR_Panel.SetMines(canMines);
@@ -1619,6 +1621,8 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.REINFORCE: ACR_RequestSelected(ACR_ERequest.REINFORCE); return;
    case ACR_EPanelAction.FOB_SUPPLY: Rpc(ACR_FobServer, m_ACR_SelectedBase, false); return;
    case ACR_EPanelAction.FOB_BUILD: Rpc(ACR_FobServer, m_ACR_SelectedBase, true); return;
+   case ACR_EPanelAction.FOB_AI: Rpc(ACR_FobAIServer, m_ACR_SelectedBase); return;
+   case ACR_EPanelAction.SQUAD_AI: ACR_RequestSelected(ACR_ERequest.ORDER_SQUAD_AI); return;
    case ACR_EPanelAction.ESTABLISH_FOB:
     if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
     else m_ACR_CursorMode = ACR_ECursorMode.ESTABLISH_FOB;
@@ -2148,6 +2152,16 @@ modded class SCR_PlayerController
   if (now - m_ACR_LastFobRequest < 500) return;
   m_ACR_LastFobRequest = now;
   Rpc(ACR_FeedbackOwner, ACR_FobSupply.Request(this, label, build));
+ }
+
+ // FOB panel: "AI manages this FOB" (ACR_FobAI).
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_FobAIServer(string label)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastFobRequest < 500) return;
+  m_ACR_LastFobRequest = now;
+  Rpc(ACR_FeedbackOwner, ACR_FobAI.Toggle(this, label));
  }
 
  void ACR_SelectBase(string label)
