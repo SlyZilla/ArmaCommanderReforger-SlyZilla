@@ -36,7 +36,8 @@ class ACR_MinePlan : Managed
  ACR_EMineKind m_eKind;
  string m_sFaction;
  vector m_vSite;              // field centre (on the road through it for AT / mixed)
- vector m_vForward;           // along that road, else the squad's approach
+ vector m_vForward;           // along that road, else the squad's approach (or the dragged facing)
+ bool m_bAimed;               // a player dragged its facing
  vector m_vStage;             // where the squad gathers, outside the near edge
  float m_fRadius;             // squad members this close to the site work
  float m_fDuration;           // seconds of work (disarming: at least this long)
@@ -172,9 +173,10 @@ class ACR_Minefields
  // squad pays and starts; like any new order it replaces the squad's current job (laying,
  // a FOB or roadblock build), which refunds itself. false + refusal, nothing charged, when it
  // can't.
- static bool Order(ACR_Squad squad, ACR_EMineKind kind, vector point, out string refusal)
+ // faceTowards: a player's dragged facing (vector.Zero: the squad's approach, as before).
+ static bool Order(ACR_Squad squad, ACR_EMineKind kind, vector point, out string refusal, vector faceTowards = vector.Zero)
  {
-  ACR_MinePlan plan = Plan(squad, kind, point, refusal);
+  ACR_MinePlan plan = Plan(squad, kind, point, refusal, faceTowards);
   if (!plan) return false;
   if (!squad.LayMinefield(plan))
   {
@@ -184,7 +186,7 @@ class ACR_Minefields
   return true;
  }
 
- static ACR_MinePlan Plan(ACR_Squad squad, ACR_EMineKind kind, vector point, out string refusal)
+ static ACR_MinePlan Plan(ACR_Squad squad, ACR_EMineKind kind, vector point, out string refusal, vector faceTowards = vector.Zero)
  {
   refusal = "";
   if (!Enabled())
@@ -219,6 +221,8 @@ class ACR_Minefields
   }
   vector from = squad.GetAnchor().GetOrigin();
   vector approach = point - from;
+  bool aimed = faceTowards != vector.Zero && kind != ACR_EMineKind.DISARM;
+  if (aimed) approach = faceTowards - point;
   approach[1] = 0;
   if (approach.Length() < 1) approach = "0 0 1";
   approach.Normalize();
@@ -228,6 +232,7 @@ class ACR_Minefields
   plan.m_sFaction = faction;
   plan.m_iCost = cost;
   plan.m_vForward = approach;
+  plan.m_bAimed = aimed;
   if (kind == ACR_EMineKind.DISARM)
   {
    plan.m_vSite = point;
@@ -264,6 +269,8 @@ class ACR_Minefields
   bool onRoad = Snap(click, ROAD_SNAP, roadPoint, roadDir, roadWidth);
   // The field lies along the road through it, else square to the squad's approach.
   vector approach = plan.m_vForward;
+  // Dragged: along the road the way it was dragged.
+  if (onRoad && plan.m_bAimed && vector.Dot(roadDir, approach) < 0) roadDir = roadDir * -1;
   if (onRoad) plan.m_vForward = roadDir;
   plan.m_vSite = click;
   if (onRoad && plan.m_eKind != ACR_EMineKind.AP) plan.m_vSite = roadPoint;

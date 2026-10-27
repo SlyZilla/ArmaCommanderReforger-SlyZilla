@@ -59,6 +59,7 @@ class ACR_OrderDisplay : Managed
   DrawStatusBars(mapEntity, data);
   DrawPending(mapEntity, data);
   if (boxing) DrawBox(mapEntity, boxStart);
+  if (data.m_bAiming) DrawAim(mapEntity, data.m_vAimFrom, data.m_vAimTo);
   ACR_PingDisplay.DrawOnMap(this, mapEntity, data);
   m_Canvas.SetDrawCommands(m_Commands);
  }
@@ -340,6 +341,23 @@ class ACR_OrderDisplay : Managed
    mapEntity.WorldToScreen(data.m_PendingFrom[i][0], data.m_PendingFrom[i][2], x0, y0, true);
    mapEntity.WorldToScreen(data.m_PendingTo[i][0], data.m_PendingTo[i][2], x1, y1, true);
    Line(x0, y0, x1, y1, faint.PackToInt(), 2);
+  }
+ }
+
+ // Drag to aim: an arrow from where the order goes to where it will face.
+ protected void DrawAim(SCR_MapEntity mapEntity, vector from, vector to)
+ {
+  int x0, y0, x1, y1;
+  mapEntity.WorldToScreen(from[0], from[2], x0, y0, true);
+  mapEntity.WorldToScreen(to[0], to[2], x1, y1, true);
+  Color gold = new Color(1, 0.85, 0.2, 0.95);
+  int color = gold.PackToInt();
+  Line(x0, y0, x1, y1, color, 3);
+  float angle = Math.Atan2(y1 - y0, x1 - x0);
+  for (int side = -1; side <= 1; side += 2)
+  {
+   float back = angle + Math.PI + side * 0.5;
+   Line(x1, y1, x1 + Math.Cos(back) * 14, y1 + Math.Sin(back) * 14, color, 3);
   }
  }
 

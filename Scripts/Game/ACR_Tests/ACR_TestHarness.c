@@ -84,6 +84,7 @@ class ACR_TestHarness : Managed
  static const int MODE_FOBAI = 58; // 52 / 53 / 55 / 56 / 57: Fortify / roadblocks / patrol / ambush / QRF
  static const int MODE_SQUADAI = 63; // 59-62: defenders, budget, cap scale, aim (own branches)
  static const int MODE_TWOIC = 75; // 74: the slope tilt (own branch)
+ static const int MODE_AIM = 62; // 55-61: patrol, ambush, QRF, FOB AI, defenders, budget, cap scale (own branches)
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -163,6 +164,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrFobAITest", flag)) mode = MODE_FOBAI;
   if (System.GetCLIParam("acrSquadAITest", flag)) mode = MODE_SQUADAI;
   if (System.GetCLIParam("acrTwoICTest", flag)) mode = MODE_TWOIC;
+  if (System.GetCLIParam("acrAimTest", flag)) mode = MODE_AIM;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -299,6 +301,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_FOBAI) { ACR_TestFobAI.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_SQUADAI) { ACR_TestSquadAI.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_TWOIC) { ACR_TestTwoIC.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_AIM) { ACR_TestAim.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

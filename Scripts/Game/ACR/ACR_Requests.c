@@ -203,6 +203,35 @@ class ACR_Requests : Managed
  // The last order's outcome (tests read it).
  static ref ACR_OrderOutcome s_LastOutcome;
 
+ // Drag to aim: where the player dragged the order being handled to face (ACR_CommandServer
+ // sets it for the request), vector.Zero for none. Only player orders have one.
+ static vector s_vAim;
+
+ // The orders a drag can aim (ACR_PlayerController.ACR_Aimable): roadblocks, minefields, Fortify.
+ static bool TakesFacing(int command)
+ {
+  return ACR_Roadblocks.TypeOfRequest(command) >= 0 || ACR_Minefields.IsRequest(command) || command == ACR_ERequest.ORDER_FORTIFY;
+ }
+ static const float AIM_MIN = 5;
+ static const float AIM_MAX = 3000;
+
+ // The dragged facing for an order at point, or vector.Zero (none, or nonsense from a client).
+ static vector AimFor(vector point)
+ {
+  if (s_vAim == vector.Zero) return vector.Zero;
+  float d = vector.DistanceXZ(s_vAim, point);
+  if (d < AIM_MIN || d > AIM_MAX) return vector.Zero;
+  return s_vAim;
+ }
+
+ // What an order at point faces: the dragged facing, else the threat (ACR_Intel.ThreatPoint).
+ static vector FacingFor(string faction, vector point)
+ {
+  vector aim = AimFor(point);
+  if (aim != vector.Zero) return aim;
+  return ACR_Intel.ThreatPoint(faction, point);
+ }
+
  static string OrderWords(int command)
  {
   switch (command)
@@ -271,7 +300,7 @@ class ACR_Requests : Managed
   {
    string mineWhy;
    ACR_EMineKind mineKind = ACR_Minefields.KindOf(command);
-   if (!ACR_Minefields.Order(squad, mineKind, point, mineWhy)) return outcome.Refuse(name + ": " + mineWhy);
+   if (!ACR_Minefields.Order(squad, mineKind, point, mineWhy, AimFor(point))) return outcome.Refuse(name + ": " + mineWhy);
    PrintFormat("[ACR] MINEFIELD order player=%1 squad=%2 %3 at %4", pc.GetPlayerId(), name, ACR_Minefields.Name(mineKind), point);
    return outcome.Accept(name + ": " + OrderWords(command));
   }
@@ -281,8 +310,14 @@ class ACR_Requests : Managed
   if (command == ACR_ERequest.ORDER_FORTIFY)
   {
    string fortifyWhy;
-   if (!ACR_Fortify.Order(squad, point, fortifyWhy)) return outcome.Refuse(name + ": " + fortifyWhy);
-   PrintFormat("[ACR] FORTIFY order player=%1 squad=%2 at %3", pc.GetPlayerId(), name, point);
+   // An upgrade keeps the position's facing (a dragged one only turns a new position).
+   string fortifyFaction;
+   if (squad.GetFaction()) fortifyFaction = squad.GetFaction().GetFactionKey();
+   bool upgrade = ACR_Fortify.NearestOwn(fortifyFaction, point, ACR_Fortify.UPGRADE_RADIUS) != null;
+   vector fortifyAim = AimFor(point);
+   if (!ACR_Fortify.Order(squad, point, fortifyWhy, fortifyAim)) return outcome.Refuse(name + ": " + fortifyWhy);
+   PrintFormat("[ACR] FORTIFY order player=%1 squad=%2 at %3 aim %4", pc.GetPlayerId(), name, point, fortifyAim);
+   if (upgrade && fortifyAim != vector.Zero) return outcome.Accept(name + ": " + OrderWords(command) + " (an upgrade keeps the position's facing)");
    return outcome.Accept(name + ": " + OrderWords(command));
   }
   switch (command)
@@ -423,8 +458,8 @@ class ACR_Requests : Managed
   string siteWhy;
   string squadFaction = "";
   if (squad.GetFaction()) squadFaction = squad.GetFaction().GetFactionKey();
-  // Face the threat, as the AI commander's roadblocks face the enemy base.
-  if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction, ACR_Intel.ThreatPoint(squadFaction, point))) return outcome.Refuse(name + ": " + siteWhy);
+  // Face the threat, as the AI commander's roadblocks face the enemy base (or the dragged facing).
+  if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction, FacingFor(squadFaction, point))) return outcome.Refuse(name + ": " + siteWhy);
   if (squad.EstablishRoadblock(validRoadPos, validYaw, type))
   {
    PrintFormat("[ACR] ESTABLISH ROADBLOCK player=%1 squad=%2 target=%3 type=%4", pc.GetPlayerId(), name, validRoadPos, ACR_Roadblocks.Name(squad.m_iRoadblockType));

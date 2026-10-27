@@ -13,6 +13,19 @@ modded class SCR_MapMarkerManagerComponent
  }
 }
 
+// A marker is a draggable map element (vanilla MapMarkerBase.layout), and ACA rebuilds its unit,
+// group, vehicle, contact and order markers as they change. One removed while the player holds the
+// mouse on it left vanilla dragging a deleted widget: a NULL s_DraggedWidget exception every frame
+// until the button was let go (pn11, 27 Oct: a purchase, then a new contact).
+modded class SCR_MapToolInteractionUI
+{
+ override void Update(float timeSlice)
+ {
+  if (s_bIsDragging && !s_DraggedWidget) s_bIsDragging = false;
+  super.Update(timeSlice);
+ }
+}
+
 // Vanilla's SetTextVisible(true) enables hover text, then immediately hides the widget.
 // Keep compact base captions visible and expand them to full details on hover.
 // Other marker types retain their normal hover behaviour.

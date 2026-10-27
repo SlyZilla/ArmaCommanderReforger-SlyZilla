@@ -54,6 +54,7 @@
 - Arland now starts on a dedicated server set up with a server config (the usual way to host). The Arland scenario and the Western medic shared one resource ID, so the server loaded the medic instead of the mission and stopped (#41). The medic has its own ID now; the scenario's ID is unchanged.
 - AI FOB builds are no longer given up while the construction truck is still driving to a far site. The build's 3-minute give-up clock ran from when the truck was sent, so a site more than about 3 minutes' drive away was abandoned on the way. Now every 10 m the truck gets closer counts as progress, and a truck that stops getting closer (stuck or blocked) still gives up 3 minutes later. In Everon soaks, 8 builds were given up in 2 hours and USSR built no FOB; with the fix none was given up in 100 minutes, USSR had its FOB at 22 minutes and US had FOBs at 53 and 73 minutes.
 - An AI side no longer marks the site of a FOB it has just built as abandoned. For up to 2 seconds after a build finished, before the FOB appeared, the AI could take the build for one that was given up, so it avoided the new FOB's own site for 10 minutes and wouldn't rebuild a lost HQ there in that time.
+- A map marker removed while a player held the mouse on it (ACA rebuilds its markers as squads change) no longer throws an exception every frame: the drag just ends (pn11).
 
 ### Command and setup
 
@@ -70,6 +71,7 @@
 ### Intel
 
 - "The enemy commander has changed tactics" only names the old doctrine when it had been confirmed. A hint such as "Firepower or Fortress" could include the new doctrine, so the line could say "no longer Fortress" as the enemy switched to Fortress.
+- Drag to aim: roadblocks, Fortify and the minefields still face the threat on a plain right-click. Right-click and drag sets the facing instead: the order goes where you pressed and faces where you let go, with a gold arrow on the map while you drag (while one of these orders is armed, a right-drag aims instead of panning the map; the keyboard and the screen edges still pan). A dragged minefield off the road lies square to the arrow, one on a road runs along it the way you dragged; an upgrade of a Fortify position keeps its facing (the order says so). The facing is sent with the order, so it works the same for every player in multiplayer; the AI commander keeps facing the threat.
 
 ## 0.5.7 — released
 
