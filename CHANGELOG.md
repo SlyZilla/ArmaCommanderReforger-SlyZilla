@@ -54,6 +54,7 @@
 - Arland now starts on a dedicated server set up with a server config (the usual way to host). The Arland scenario and the Western medic shared one resource ID, so the server loaded the medic instead of the mission and stopped (#41). The medic has its own ID now; the scenario's ID is unchanged.
 - AI FOB builds are no longer given up while the construction truck is still driving to a far site. The build's 3-minute give-up clock ran from when the truck was sent, so a site more than about 3 minutes' drive away was abandoned on the way. Now every 10 m the truck gets closer counts as progress, and a truck that stops getting closer (stuck or blocked) still gives up 3 minutes later. In Everon soaks, 8 builds were given up in 2 hours and USSR built no FOB; with the fix none was given up in 100 minutes, USSR had its FOB at 22 minutes and US had FOBs at 53 and 73 minutes.
 - An AI side no longer marks the site of a FOB it has just built as abandoned. For up to 2 seconds after a build finished, before the FOB appeared, the AI could take the build for one that was given up, so it avoided the new FOB's own site for 10 minutes and wouldn't rebuild a lost HQ there in that time.
+- A map marker removed while a player held the mouse on it (ACA rebuilds its markers as squads change) no longer throws an exception every frame: the drag just ends (pn11).
 
 ### Command and setup
 
