@@ -884,6 +884,8 @@ class ACR_AICommander : Managed
  // so two AI sides don't sit facing each other forever. How long and how far: the doctrine.
  protected float m_fLastOffensive = -1;
  protected float m_fNextWeakLog;
+ ACR_Squad m_RefillWaiting;         // a squad at a base that could refill now but for the RP (Requisition holds purchases)
+ protected float m_fNextRefillLog;
 
  protected float Pressure()
  {
@@ -4023,7 +4025,11 @@ class ACR_AICommander : Managed
    int cost = missing.Count() * ACR_Requisition.REINFORCE_COST_PER_SOLDIER;
    ACR_Base depot = m_Manager.m_Requisition.DeployBaseAt(m_sFaction, PositionOf(squad));
    if (depot) cost += m_Manager.m_Requisition.InstantRestockCost(squad, depot);
-   if (data.m_iRP - keep < cost) continue;
+   if (data.m_iRP - keep < cost)
+   {
+    if (!m_RefillWaiting) m_RefillWaiting = squad;
+    continue;
+   }
    int score = missing.Count() * 10;
    if (remnant) score += 100;
    if (score > bestScore) { bestScore = score; best = squad; bestCost = cost; }
@@ -4059,7 +4065,23 @@ class ACR_AICommander : Managed
   if (banked > 150) cap += Math.Min(maxCapBonus, (banked - 100) / 50);
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   if (!data) return;
-  ReinforceDepleted(data, SupportBudget());
+  // Refills come first and are treated as urgent troops: they may spend the fire-support
+  // reserve (only the engineering budget is kept), and while a squad at a base waits for the
+  // RP to refill, no new units are bought. Everon 26 Oct: refills kept the whole 75 RP
+  // reserve the AI rarely had, so in nearly 3 h RU refilled 3 squads and bought 21 units
+  // while 4-7 squads per side sat at bases with 1-3 men.
+  m_RefillWaiting = null;
+  ReinforceDepleted(data, BuildKeep());
+  if (m_RefillWaiting)
+  {
+   float refillNow = GetGame().GetWorld().GetWorldTime();
+   if (refillNow >= m_fNextRefillLog)
+   {
+    m_fNextRefillLog = refillNow + 60000;
+    Say(string.Format("[ACR] AI %1: holding purchases until %2 can be refilled (%3 RP)", m_sFaction, m_RefillWaiting.GetName(), data.m_iRP));
+   }
+   return;
+  }
   array<ACR_Squad> mine = {};
   MySquads(mine, false);
   // Only fighting units count against the cap (trucks and lone drivers don't).
