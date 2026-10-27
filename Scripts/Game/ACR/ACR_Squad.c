@@ -3827,6 +3827,7 @@ class ACR_Squad : Managed
 
  void Dispose()
  {
+  ACR_SquadAI.Forget(this);
   CancelEstablishFob();
   CancelRoadblock();
   if (m_RoadblockTurret) VacateRoadblockTurret();

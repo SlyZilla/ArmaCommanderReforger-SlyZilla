@@ -5,7 +5,7 @@
 // after; the toggle takes it back halted; a handed squad that is wiped out is dropped cleanly.
 class ACR_TestSquadAI
 {
- static const int CHECKS = 8;
+ static const int CHECKS = 10;
  static int s_iStep;
  static int s_iStepAt;
  static int s_iBravoSerial;
@@ -62,6 +62,11 @@ class ACR_TestSquadAI
    // The AI ran it Fast (its attacks and rides do); handed back, it is on its own mode again.
    ACR_EMoveMode modeBefore = ACR_EMoveMode.COMBAT;
    alpha.SetMode(ACR_EMoveMode.FAST);
+   // #60 review: a refused order (here, no player) leaves it handed, not claimed, its own mode kept for its return.
+   string refused = manager.m_Requests.OrderSquad(null, ACR_ERequest.MOVE_TO, alpha, alpha.GetAnchor().GetOrigin() + Vector(-15, 0, 0)).m_sMessage;
+   bool stays = alpha.m_bAICommanded && !alpha.m_bClaimed && ACR_SquadAI.RemembersMode(alpha);
+   ACR_TestRegress.Check("squadai: a refused order to a handed squad leaves it handed (the AI runs it)", stays, string.Format("'%1': handed %2, claimed %3, mode %4", refused, alpha.m_bAICommanded, alpha.m_bClaimed, typename.EnumToString(ACR_EMoveMode, alpha.m_Mode)));
+   alpha.SetMode(ACR_EMoveMode.FAST);
    bool orderTakes = ACR_SquadAI.TakeBack(alpha, ACR_ERequest.MOVE_TO) && !alpha.m_bAICommanded && alpha.m_iAITask == ACR_EAITask.FREE;
    ACR_TestRegress.Check("squadai: taken back, it is on the mode it had before the AI (not the AI's Fast)", alpha.m_Mode == modeBefore, string.Format("mode %1", typename.EnumToString(ACR_EMoveMode, alpha.m_Mode)));
    alpha.MoveTo(alpha.GetAnchor().GetOrigin() + Vector(-15, 0, 0));
@@ -94,8 +99,10 @@ class ACR_TestSquadAI
   if (s_iStep == 3)
   {
    bool gone = !bravo || !manager.m_Squads.Contains(bravo) || bravo.CountAlive() == 0;
-   if ((!gone || ACR_SquadAI.CountFor("US") > 0) && waited < 40) return;
+   bool dropped = !bravo || !manager.m_Squads.Contains(bravo);
+   if ((!dropped || ACR_SquadAI.CountFor("US") > 0) && waited < 40) return;
    ACR_TestRegress.Check("squadai: a handed squad that is wiped out is dropped (the AI keeps running)", gone && ACR_SquadAI.CountFor("US") == 0, string.Format("Bravo gone %1, handed left %2 after %3 s", gone, ACR_SquadAI.CountFor("US"), waited));
+   ACR_TestRegress.Check("squadai: a handed squad that is gone keeps no mode for it", dropped && !ACR_SquadAI.RemembersMode(bravo), string.Format("dropped %1, mode kept %2", dropped, ACR_SquadAI.RemembersMode(bravo)));
    ACR_TestRegress.Complete("squadai", CHECKS);
    s_iStep = 4;
   }

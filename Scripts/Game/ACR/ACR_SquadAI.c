@@ -134,6 +134,32 @@ class ACR_SquadAI
   return Release(squad, false);
  }
 
+ // After a player's order (ACR_Requests.OrderSquad): refused, the squad is as it was before it:
+ // taken back from the AI, it is handed back (the AI runs it again); not handed, its claim is what
+ // it was (TakeBack claims it for the 2IC's sake).
+ static void AfterOrder(ACR_Squad squad, int command, bool accepted, bool tookBack, bool wasClaimed)
+ {
+  if (!squad || accepted || !TakesBack(command)) return;
+  if (tookBack)
+  {
+   Hand(squad);
+   PrintFormat("[ACR] SQUAD AI %1: the order was refused, so it stays the AI's", squad.GetName());
+   return;
+  }
+  squad.m_bClaimed = wasClaimed;
+ }
+
+ // A squad that is gone (wiped out, dropped): nothing kept for it (ACR_Squad.Dispose).
+ static void Forget(ACR_Squad squad)
+ {
+  if (squad) s_ModeBefore.Remove(squad);
+ }
+
+ static bool RemembersMode(ACR_Squad squad)
+ {
+  return squad && s_ModeBefore.Contains(squad);
+ }
+
  // A squad of this side is handed to the AI.
  static bool AnyFor(string faction)
  {
