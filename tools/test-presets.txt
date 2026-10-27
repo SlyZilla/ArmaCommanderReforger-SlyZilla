@@ -110,6 +110,7 @@ fortifyfit|-acrFortifyFitTest 1|200
 gunhold|-acrGunHoldTest 1|200
 ridejob|-acrRideJobTest 1|340
 attackreach|-acrAttackReachTest 1|120
+groundtilt|-acrGroundTiltTest 1|120
 budget|-acrBuildBudgetTest 1|120
 aidefences|-acrAIDefencesTest 1|120
 roadsiting|-acrRoadSitingTest 1|120

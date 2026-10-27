@@ -998,6 +998,7 @@ class ACR_Fortify
  // The wire segment's length and long axis, measured once from a segment spawned and removed.
  protected static float s_fWireLength = -1;
  protected static bool s_bWireAlongX;
+ static bool WireAlongX() { return s_bWireAlongX; }
  static float WireLength(vector at)
  {
   if (s_fWireLength > 0) return s_fWireLength;
@@ -1033,6 +1034,7 @@ class ACR_Fortify
   IEntity piece = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
   if (!piece) return null;
   piece.SetYawPitchRoll(Vector(yaw, 0, 0));
+  ACR_GroundTilt.Place(piece, prefab, pos, yaw); // on a slope sandbags and wire lie on the ground
   SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(piece.FindComponent(SCR_CampaignBuildingCompositionComponent));
   if (comp)
   {
