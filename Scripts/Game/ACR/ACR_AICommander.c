@@ -4566,6 +4566,7 @@ class ACR_AICommander : Managed
  static const float FOB_SITE_AVOID_MS = 600000;     // an abandoned site is skipped for 10 min
  static const float FOB_SITE_AVOID_RADIUS = 150;
  static const float FOB_SITE_RETRY_MS = 300000;     // after a failed site search
+ static const float FOB_SITE_STEP_MS = 5000;        // between the steps of a site search (ACR_FobSiting)
 
  protected ACR_Squad m_FobBuilder;
  protected ACR_Squad m_FobEscort;
@@ -4656,62 +4657,68 @@ class ACR_AICommander : Managed
   return null;
  }
 
+ // A FOB site behind 'front' (ACR_FobSiting: the old offsets, scored), the whole search at once.
  bool FindFobSite(ACR_Base front, out vector site)
  {
-  site = Vector(0, 0, 0);
+  bool pending;
+  return FindFobSiteStep(front, site, -1, pending);
+ }
+
+ // The scored search, 'most' more offsets validated (-1: all that are left); 'pending' while some
+ // are still to be validated (ManageFobBuild spreads a search over a few ticks).
+ protected string m_sFobSiteNone;
+ bool FindFobSiteStep(ACR_Base front, out vector site, int most, out bool pending)
+ {
+  site = vector.Zero;
+  pending = false;
+  m_sFobSiteNone = "";
   if (!front) return false;
   ACR_Base deployBase = NearestDeployBase(front);
-  vector dir;
+  vector dir = Vector(0, 0, -1);
   if (deployBase)
   {
-   dir = deployBase.GetOrigin() - front.GetOrigin();
-   dir[1] = 0;
-   if (dir.LengthSq() > 0.001) dir.Normalize();
-   else dir = Vector(0, 0, -1);
-  }
-  else
-  {
-   dir = Vector(0, 0, -1);
-  }
-
-  array<float> dists = {450.0, 550.0, 350.0, 650.0, 750.0};
-  array<float> angles = {0.0, 25.0, -25.0, 50.0, -50.0, 75.0, -75.0};
-
-  foreach (float d : dists)
-  {
-   foreach (float a : angles)
+   vector toDeploy = deployBase.GetOrigin() - front.GetOrigin();
+   toDeploy[1] = 0;
+   if (toDeploy.LengthSq() > 0.001)
    {
-    float rad = a * Math.DEG2RAD;
-    float cosA = Math.Cos(rad);
-    float sinA = Math.Sin(rad);
-    vector rotatedDir = Vector(dir[0] * cosA - dir[2] * sinA, 0, dir[0] * sinA + dir[2] * cosA);
-    vector candidate = front.GetOrigin() + rotatedDir * d;
-    candidate[1] = GetGame().GetWorld().GetSurfaceY(candidate[0], candidate[2]);
-
-    if (Avoided(candidate)) continue;
-    vector validSpot;
-    string refusal;
-    if (!ACR_FobBuild.ValidateSite(candidate, validSpot, refusal, "", 20)) continue;
-
-    bool safe = true;
-    foreach (ACR_Base b : ACR_Base.s_All)
-    {
-     if (b.m_sOwner != m_sFaction && !b.m_sOwner.IsEmpty() && !b.m_bRetired)
-     {
-      if (vector.DistanceXZ(b.GetOrigin(), validSpot) < 600.0)
-      {
-       safe = false;
-       break;
-      }
-     }
-    }
-    if (!safe || ACR_FobBuild.IsContested(validSpot, m_sFaction)) continue;
-
-    site = validSpot;
-    return true;
+    toDeploy.Normalize();
+    dir = toDeploy;
    }
   }
-  return false;
+  array<ref ACR_FobSite> sites = {};
+  string none;
+  if (!ACR_FobSiting.Step(m_sFaction, front, dir, NearestEnemyBaseTo(front), most, sites, none))
+  {
+   pending = true;
+   return false;
+  }
+  Avoided(vector.Zero); // drops the expired avoided sites
+  ACR_FobSite best = ACR_FobSiting.Best(sites, m_aAvoidSites, string.Format("%1 %2 %3", m_sFaction, front.m_sName, m_aAvoidSites.Count()));
+  if (!best)
+  {
+   m_sFobSiteNone = none;
+   if (none.IsEmpty()) m_sFobSiteNone = string.Format("all %1 clear sites abandoned recently", sites.Count());
+   return false;
+  }
+  site = best.m_vPos;
+  NoteBuild("fob site " + front.m_sName, string.Format("[ACR] AI %1: FOB site behind %2 at %3: of %4 clear sites, %5", m_sFaction, front.m_sName, site, sites.Count(), ACR_FobSiting.Breakdown(best)));
+  return true;
+ }
+
+ // The nearest base another side holds (vector.Zero: none).
+ protected vector NearestEnemyBaseTo(ACR_Base from)
+ {
+  vector best = vector.Zero;
+  float bestDistance = float.MAX;
+  foreach (ACR_Base b : ACR_Base.s_All)
+  {
+   if (!b || b.m_bRetired || b.m_sOwner.IsEmpty() || b.m_sOwner == m_sFaction) continue;
+   float d = vector.DistanceXZ(b.GetOrigin(), from.GetOrigin());
+   if (d >= bestDistance) continue;
+   bestDistance = d;
+   best = b.GetOrigin();
+  }
+  return best;
  }
 
  ACR_Squad FindConstructionSquad()
@@ -4801,11 +4808,18 @@ class ACR_AICommander : Managed
   {
    front = NeedsFob();
    if (!front) return;
-   if (!FindFobSite(front, site))
+   bool pending;
+   if (!FindFobSiteStep(front, site, ACR_FobSiting.VALIDATE_PER_STEP, pending))
    {
-    // Site searches are expensive (HQ and eight upgrade spots per candidate): back off.
+    // Site searches are expensive (an HQ and 15 spots per candidate): a few candidates a step,
+    // the next step soon; with none clear, back off.
+    if (pending)
+    {
+     m_fNextFobEval = now + FOB_SITE_STEP_MS;
+     return;
+    }
     m_fNextFobEval = now + FOB_SITE_RETRY_MS;
-    Say(string.Format("[ACR] AI %1: no clear FOB site near %2, next look in 5 minutes", m_sFaction, front.m_sName));
+    Say(string.Format("[ACR] AI %1: no clear FOB site near %2 (%3), next look in 5 minutes", m_sFaction, front.m_sName, m_sFobSiteNone));
     return;
    }
   }

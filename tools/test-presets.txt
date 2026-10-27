@@ -117,6 +117,7 @@ buildride|-acrBuildRideTest 1|540
 minesiting|-acrMineSitingTest 1|120
 grabs|-acrGrabsTest 1|60
 mortarspot|-acrMortarSpotTest 1|60
+fobsiting|-acrFobSitingTest 1|180
 ridelav|-acrRideLavTest 1|400
 ridelavkill|-acrRideLavKillTest 1|400
 ridelavgetout|-acrRideLavGetOutTest 1|400
