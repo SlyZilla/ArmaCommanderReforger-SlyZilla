@@ -2371,6 +2371,13 @@ class ACR_Squad : Managed
   NextLeg();
  }
 
+ // Walks a route the AI commander planned (a covered approach), leg by leg like a land route.
+ void WalkLegs(array<vector> legs, ResourceName prefab, float radius, string order, int kind)
+ {
+  if (!legs || legs.IsEmpty()) return;
+  StartRoute(legs, prefab, radius, order, kind);
+ }
+
  vector RouteDestination()
  {
   if (m_Route && m_Route.m_Target != vector.Zero) return m_Route.m_Target;

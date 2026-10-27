@@ -13,6 +13,7 @@
 
 ### AI commanders
 
+- AI squads on foot take a covered way to their staging point: when the direct line runs in view of the objective, they swing round it out of sight (behind a rise, through dead ground) as long as the detour stays reasonable, and the forming up waits for the longer walk. Staging points move a little further round or out where the objective can't see them. Before, a flanking squad walked the shortest path across the front of the objective.
 - A soldier stranded off walkable ground (on top of a sandbag pile, say) steps back onto it when his move order keeps getting dropped, and an AI squad that can't reach the base it was sent to for reinforcements gives up after a minute instead of being re-sent every 15 seconds. Before, one RU machine gunner on a FOB's sandbags lost every order for over half an hour.
 - The AI commander doesn't send a medic team or another support team to grab an empty base any more, as it already kept them out of attacks (#34).
 - An AI attack or grab whose squads all report the target unreachable is called off at once, so they get new orders within seconds. Before, the commander waited out the attack's full time limit: on Everon a grab of Gallows Base, which can't be walked into from the south, kept its squad standing idle for 17 minutes.

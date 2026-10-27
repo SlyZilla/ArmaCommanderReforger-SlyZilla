@@ -141,7 +141,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 125; // includes seven BBB order-leash, five roadblock placement and thirteen doctrine checks
+ static const int EXPECTED = 127; // includes seven BBB order-leash, five roadblock placement, thirteen doctrine and two covered-approach checks
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -187,6 +187,31 @@ class ACR_TestRegress
   us.m_aSupports = saved;
   manager.m_Bases.ForgetFactions();
   Check("R15 support entries are per faction", own && fresh == 0, string.Format("own copy %1, settings %2, after forget %3", own, configured.m_fReadyAt, fresh));
+ }
+
+ // Jacob 26 Oct (Provins): a flanking squad's way to its staging point goes round the objective,
+ // the side it was asked, never inside the staging ring; and the sight test sees open ground.
+ static void CoveredApproachCheck(vector origin)
+ {
+  array<vector> shortWay = {};
+  array<vector> longWay = {};
+  vector stage = Vector(0, 0, -270);
+  ACR_AICommander.ArcLegs(vector.Zero, Vector(600, 0, 0), stage, 270, -1, shortWay);
+  ACR_AICommander.ArcLegs(vector.Zero, Vector(600, 0, 0), stage, 270, 1, longWay);
+  bool outside = true;
+  bool north = false;
+  foreach (vector leg : shortWay) if (vector.DistanceXZ(leg, vector.Zero) < 269) outside = false;
+  foreach (vector way : longWay)
+  {
+   if (vector.DistanceXZ(way, vector.Zero) < 269) outside = false;
+   if (way[2] > 100) north = true;
+  }
+  bool ends = shortWay.Count() > 1 && longWay.Count() > shortWay.Count() && vector.DistanceXZ(shortWay[shortWay.Count() - 1], stage) < 0.01 && vector.DistanceXZ(longWay[longWay.Count() - 1], stage) < 0.01;
+  Check("covered approach: arcs round the objective either way, outside the staging ring", outside && north && ends, string.Format("short %1 legs, long %2 legs, outside %3, north %4", shortWay.Count(), longWay.Count(), outside, north));
+  array<vector> eyes = {};
+  ACR_AICommander.ObjectiveEyes(origin, 60, eyes);
+  bool seen = ACR_AICommander.GroundSeen(eyes, origin + Vector(8, 0, 0));
+  Check("covered approach: the objective's eyes see open ground next to them", eyes.Count() == 5 && seen, string.Format("eyes %1, seen %2", eyes.Count(), seen));
  }
 
  // aca-f22 part 2: AI commander air lift checks (geometry, half-cost discount, decision logic).
@@ -1168,6 +1193,7 @@ class ACR_TestRegress
    LostBoardingCheck(manager);
    SupportCloneCheck(manager);
    AirLiftAICheck(manager);
+   CoveredApproachCheck(harness.m_Range.GetOrigin());
    Check("air lift accelerates gently and brakes at a bounded rate", Math.AbsFloat(ACR_HeliRun.ApproachSpeed(0, 55, 1) - 1.5) < 0.01 && Math.AbsFloat(ACR_HeliRun.ApproachSpeed(55, 0, 1) - 52) < 0.01 && ACR_HeliRun.ApproachSpeed(1, 0, 1) == 0);
    Check("air lift slows for climb time and holds below a nearby ridge", ACR_HeliRun.ClimbSafeSpeed(200, 100) < 9 && ACR_HeliRun.ClimbSafeSpeed(20, 100) == 0 && ACR_HeliRun.ClimbSafeSpeed(1000, 0) == ACR_HeliRun.SPEED_RUN);
    // Jacob 20 Oct (Kolguyev): a reserve was ordered on and called back to regroup every 15 s.

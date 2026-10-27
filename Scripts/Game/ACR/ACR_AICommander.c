@@ -2025,7 +2025,13 @@ class ACR_AICommander : Managed
     else
     {
      squad.SetMode(ACR_EMoveMode.FAST);
-     Travel(squad, stage, false, 0);
+     Travel(squad, stage, false, 0, target);
+     // A covered way round is longer: the forming up waits for it (within limits).
+     if (m_fCoverDetour > 0)
+     {
+      float covered = now + ((vector.DistanceXZ(PositionOf(squad), stage) + m_fCoverDetour) / COVER_WALK_SPEED + 30) * 1000;
+      attack.m_fStageDeadline = Math.Max(attack.m_fStageDeadline, Math.Min(covered, attack.m_fStageLimit));
+     }
     }
     free.RemoveOrdered(k);
     Say(string.Format("[ACR] AI %1: %2 reinforces the attack on %3 (%4/%5), staging at grid %6", m_sFaction, squad.GetName(), target.m_sName, strength, (int)need, ACR_Manager.Grid(stage)));
@@ -2349,6 +2355,7 @@ class ACR_AICommander : Managed
   // staging point and stays there with it as base of fire.
   array<ACR_Squad> carried = {};
   if (!empty && m_Manager.m_Rides) PairCarriers(attack, carried);
+  float plannedDeadline = attack.m_fStageDeadline;
   foreach (ACR_Squad squad : attack.m_Squads)
   {
    squad.m_iAITask = ACR_EAITask.ATTACK;
@@ -2357,7 +2364,12 @@ class ACR_AICommander : Managed
    squad.SetMode(ACR_EMoveMode.FAST);
    // Nobody to fight at an empty base: go straight in.
    if (empty) Travel(squad, target.GetOrigin(), false, 100);
-   else Travel(squad, attack.StagingOf(squad), false, 0);
+   else
+   {
+    Travel(squad, attack.StagingOf(squad), false, 0, target);
+    // The travel estimate was the straight way: a covered way round adds its extra length.
+    if (m_fCoverDetour > 0) attack.m_fStageDeadline = Math.Max(attack.m_fStageDeadline, Math.Min(attack.m_fStageLimit, plannedDeadline + m_fCoverDetour / COVER_WALK_SPEED * 1000));
+   }
   }
   attack.m_bAssaulting = empty;
   m_Attacks.Insert(attack);
@@ -2702,8 +2714,10 @@ class ACR_AICommander : Managed
   return true;
  }
 
- protected void Travel(ACR_Squad squad, vector destination, bool defend, float dropShort)
+ // 'approach': the enemy base this is a staging move for, to walk a covered way there on foot.
+ protected void Travel(ACR_Squad squad, vector destination, bool defend, float dropShort, ACR_Base approach = null)
  {
+  m_fCoverDetour = 0;
   // Defending a base: infantry garrison its buildings (the one nearest the centre,
   // spilling into its neighbours); vehicle crews, and bases without buildings, defend.
   bool garrison;
@@ -2738,6 +2752,7 @@ class ACR_AICommander : Managed
     if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why, true)) return;
    }
   }
+  if (approach && !defend && !squad.IsMounted() && !ACR_Transport.CrewedVehicle(squad) && CoveredApproach(squad, approach, destination)) return;
   // On foot (or its own vehicle): round any water rather than across it.
   if (garrison) squad.RouteTo(destination, ACR_Squad.WP_GARRISON, 15, "Garrisoning", 1);
   else if (defend) squad.RouteTo(destination, ACR_Squad.WP_DEFEND, 15, "Defending", 1);
@@ -3388,6 +3403,191 @@ class ACR_AICommander : Managed
   return BBB_Terrain.DryApproach(target.GetOrigin(), dir, ring, point);
  }
 
+ // ---------------------------------------------------------------- covered approaches
+ // Jacob 26 Oct (Provins): a squad walking to its flank staging point took the shortest path,
+ // across the front of the objective in full view, while a route round behind the rise was
+ // hidden. A foot squad's way to its staging point is now chosen from the direct line and an arc
+ // round the objective either way, by length plus the stretch the objective's ground can see
+ // (terrain only: dead ground; houses and trees aren't counted). Rides and air lifts keep
+ // their own routes; contact on the way is BBB's (combat manoeuvre).
+ static const float COVER_ARC_STEP = 25;       // degrees between arc waypoints
+ static const float COVER_SAMPLE = 40;         // m between sight checks along a path
+ static const float COVER_RANGE = 800;         // m from the objective beyond which nothing counts as seen
+ static const float COVER_EXPOSED_WEIGHT = 4;  // an exposed metre costs this many extra metres
+ static const float COVER_SPIRAL_OUT = 250;    // m past the staging ring an arc may start
+ static const float COVER_MAX_STRETCH = 2.5;   // an arc longer than this times the direct way (+300 m) isn't walked
+ static const float COVER_MIN_GAIN = 0.15;     // the arc must cut the cost by this share
+ static const float COVER_WALK_SPEED = 2;      // m/s on foot, for the forming-up wait
+ protected float m_fCoverDetour;               // extra metres of the last covered route Travel chose (0: direct)
+
+ // Where the objective's defenders look from: its centre and four points half way out, 2.2 m up.
+ static void ObjectiveEyes(vector center, float radius, notnull array<vector> eyes)
+ {
+  eyes.Insert(EyeAt(center));
+  for (int i = 0; i < 4; i++)
+   eyes.Insert(EyeAt(center + Turned(Vector(0, 0, 1), i * 90) * (radius * 0.5)));
+ }
+
+ static vector EyeAt(vector point)
+ {
+  point[1] = GetGame().GetWorld().GetSurfaceY(point[0], point[2]) + 2.2;
+  return point;
+ }
+
+ // The ground at 'point' is in sight of an eye (terrain only).
+ static bool GroundSeen(notnull array<vector> eyes, vector point)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  vector body = point;
+  body[1] = world.GetSurfaceY(point[0], point[2]) + 1.0;
+  foreach (vector eye : eyes)
+  {
+   if (vector.DistanceXZ(eye, body) > COVER_RANGE) continue;
+   TraceParam trace = new TraceParam();
+   trace.Start = eye;
+   trace.End = body;
+   trace.Flags = TraceFlags.WORLD;
+   if (world.TraceMove(trace, null) >= 1) return true;
+  }
+  return false;
+ }
+
+ // Length and exposed length of the path from 'from' through 'legs', sampled every COVER_SAMPLE m.
+ static float PathExposure(notnull array<vector> eyes, vector from, notnull array<vector> legs, out float exposed)
+ {
+  float length = 0;
+  exposed = 0;
+  vector a = from;
+  foreach (vector b : legs)
+  {
+   float d = vector.DistanceXZ(a, b);
+   int steps = (int)Math.Ceil(d / COVER_SAMPLE);
+   if (steps < 1) steps = 1;
+   for (int i = 1; i <= steps; i++)
+   {
+    float t = i;
+    t /= steps;
+    if (GroundSeen(eyes, a + (b - a) * t)) exposed += d / steps;
+   }
+   length += d;
+   a = b;
+  }
+  return length;
+ }
+
+ // Waypoints round 'center' from 'from' to 'stage', turning one way (sense 1 or -1), one every
+ // COVER_ARC_STEP degrees. The radius runs from where the squad meets the arc (at most
+ // COVER_SPIRAL_OUT past 'ring') to the staging point's, so the squad never walks in closer than that.
+ static void ArcLegs(vector center, vector from, vector stage, float ring, int sense, notnull array<vector> legs)
+ {
+  vector a = from - center;
+  a[1] = 0;
+  vector b = stage - center;
+  b[1] = 0;
+  float startAngle = Math.Atan2(a[2], a[0]);
+  float sweep = Math.Atan2(b[2], b[0]) - startAngle;
+  if (sense > 0) { while (sweep <= 0) sweep += Math.PI2; }
+  else { while (sweep >= 0) sweep -= Math.PI2; }
+  float startRadius = Math.Clamp(a.Length(), ring, ring + COVER_SPIRAL_OUT);
+  float endRadius = b.Length();
+  int steps = (int)Math.Ceil(Math.AbsFloat(sweep) * Math.RAD2DEG / COVER_ARC_STEP);
+  if (steps < 1) steps = 1;
+  for (int i = 0; i < steps; i++)
+  {
+   float t = i;
+   t /= steps;
+   float angle = startAngle + sweep * t;
+   float r = startRadius + (endRadius - startRadius) * t;
+   vector point = center + Vector(Math.Cos(angle) * r, 0, Math.Sin(angle) * r);
+   if (i == 0 && vector.DistanceXZ(point, from) < 30) continue;
+   legs.Insert(point);
+  }
+  legs.Insert(stage);
+ }
+
+ // A covered way for a foot squad to its staging point for 'target', when one beats the direct
+ // line; sets m_fCoverDetour. False: walk the direct way (RouteTo).
+ protected bool CoveredApproach(ACR_Squad squad, ACR_Base target, vector stage)
+ {
+  int started = System.GetTickCount();
+  vector from = PositionOf(squad);
+  vector center = target.GetOrigin();
+  float ring = target.m_fRadius + STAGING_DISTANCE;
+  array<vector> eyes = {};
+  ObjectiveEyes(center, target.m_fRadius, eyes);
+  array<vector> direct = {stage};
+  float directSeen;
+  float directLength = PathExposure(eyes, from, direct, directSeen);
+  float directCost = directLength + directSeen * COVER_EXPOSED_WEIGHT;
+  array<vector> best;
+  float bestCost = directCost * (1 - COVER_MIN_GAIN);
+  float bestLength;
+  float bestSeen;
+  // Only when the squad isn't already inside the ring (a squad that close takes the short way).
+  if (directSeen > 0 && vector.DistanceXZ(from, center) > ring * 0.9)
+  {
+   for (int sense = -1; sense <= 1; sense += 2)
+   {
+    array<vector> arc = {};
+    ArcLegs(center, from, stage, ring, sense, arc);
+    bool usable = true;
+    vector prev = from;
+    foreach (int i, vector leg : arc)
+    {
+     arc[i] = ACR_Manager.Ground(leg);
+     if (BBB_Terrain.WaterAlong(prev, arc[i]) > 0 || (i < arc.Count() - 1 && NearOtherEnemyBase(arc[i], target))) { usable = false; break; }
+     prev = arc[i];
+    }
+    if (!usable) continue;
+    float seen;
+    float length = PathExposure(eyes, from, arc, seen);
+    if (length > directLength * COVER_MAX_STRETCH + 300) continue;
+    float cost = length + seen * COVER_EXPOSED_WEIGHT;
+    if (cost >= bestCost) continue;
+    best = arc;
+    bestCost = cost;
+    bestLength = length;
+    bestSeen = seen;
+   }
+  }
+  ACR_Perf.Lap("ai.coverRoute", started);
+  if (!best) return false;
+  m_fCoverDetour = bestLength - directLength;
+  squad.WalkLegs(best, ACR_Squad.WP_MOVE, -1, "Moving", 0);
+  Say(string.Format("[ACR] AI %1: %2 takes a covered way to its staging point for %3: %4 m, %5 m in sight (direct %6 m, %7 m in sight)", m_sFaction, squad.GetName(), target.m_sName, (int)bestLength, (int)bestSeen, (int)directLength, (int)directSeen));
+  return true;
+ }
+
+ // A staging point near 'point' on the same approach line that the objective's ground can't see:
+ // a little further round or further out, never closer than 150 m past the objective's edge.
+ protected vector HiddenStaging(ACR_Base target, vector point)
+ {
+  vector center = target.GetOrigin();
+  array<vector> eyes = {};
+  ObjectiveEyes(center, target.m_fRadius, eyes);
+  if (!GroundSeen(eyes, point)) return point;
+  vector dir = point - center;
+  dir[1] = 0;
+  float ring = dir.Length();
+  if (ring < 1) return point;
+  dir.Normalize();
+  array<float> turns = {0, -10, 10, -20, 20};
+  array<float> outs = {0, 60, -40, 120};
+  foreach (float outward : outs)
+  {
+   float r = ring + outward;
+   if (r < target.m_fRadius + 150) continue;
+   foreach (float turn : turns)
+   {
+    if (outward == 0 && turn == 0) continue;
+    vector candidate = ACR_Manager.Ground(center + Turned(dir, turn) * r);
+    if (BBB_Terrain.IsWaterAt(candidate) || NearOtherEnemyBase(candidate, target)) continue;
+    if (!GroundSeen(eyes, candidate)) return candidate;
+   }
+  }
+  return point;
+ }
+
  // Approach lines (Jacob 20 Oct, Etoupe: the big assault came down one main road and was shot
  // up there; reinforcements each staged on their own side, which was the same side). Every
  // squad of an attack gets a line turned off the main approach: the least-used line first, then
@@ -3445,6 +3645,8 @@ class ACR_AICommander : Managed
   {
    vector candidate;
    if (!StagingPoint(target, Turned(ahead, s_aApproachTurns[pick]), ring, candidate)) continue;
+   // Form up out of the objective's sight where the ground allows (Jacob 26 Oct, Provins).
+   if (!target.m_sOwner.IsEmpty()) candidate = HiddenStaging(target, candidate);
    bool apart = true;
    foreach (int i, int other : attack.m_aSlot)
    {
