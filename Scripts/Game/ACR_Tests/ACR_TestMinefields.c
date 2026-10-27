@@ -375,7 +375,7 @@ class ACR_TestMinefields
  }
 
  // A spot near the squad where the order plans (away from the bases, dry, clear of our fields).
- protected static bool FindSite(ACR_Squad squad, ACR_EMineKind kind, out vector site)
+ static bool FindSite(ACR_Squad squad, ACR_EMineKind kind, out vector site)
  {
   vector from = squad.GetAnchor().GetOrigin();
   for (int r = 0; r < 4; r++)

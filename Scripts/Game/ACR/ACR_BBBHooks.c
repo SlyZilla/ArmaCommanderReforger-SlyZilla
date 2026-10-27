@@ -107,6 +107,8 @@ class ACR_BBBHooks : BBB_Hooks
   guns.Clear();
   ACR_Squad squad = SquadOf(group);
   if (squad) ACR_GunHold.HeldGuns(squad, guns);
+  // A position's gun crew from its reserve (its squad away on another job).
+  else ACR_Defenders.CrewGunsOf(group, guns);
  }
 
  // Radio contact reports (BBB_ContactRelay) can make vanilla send fireteams to look. Only
