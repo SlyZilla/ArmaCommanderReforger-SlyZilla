@@ -49,11 +49,13 @@
 
 ### Fixes
 
+- The command map no longer floods the log with "DrawPolygon triangulation failed" (up to 2,000 lines a second when zoomed in on Everon): status bars and dots off the screen aren't drawn.
 - A ride waits at the drop until its AI riders are out (up to 20 s, as it already did for a player). Before, the transport drove home as soon as it dropped them off, and an LAV, whose rear seats don't let men out once it moves, carried some of them home (#23). A man still aboard after the dismount's second try is taken out without a door; in the LAV's rear seats, where every exit was refused (the game said nothing was pending), his vehicle action queue is cleared first, and as a last resort he moves to another seat and gets out from there.
 - A stuck vehicle giving a ride re-routes like a soft vehicle instead of holding where it is like a fighting one. A ride never takes a vehicle with a manned gun, so an LAV taxi that held only dropped the ride, with its riders still aboard (#23).
 - Arland now starts on a dedicated server set up with a server config (the usual way to host). The Arland scenario and the Western medic shared one resource ID, so the server loaded the medic instead of the mission and stopped (#41). The medic has its own ID now; the scenario's ID is unchanged.
 - AI FOB builds are no longer given up while the construction truck is still driving to a far site. The build's 3-minute give-up clock ran from when the truck was sent, so a site more than about 3 minutes' drive away was abandoned on the way. Now every 10 m the truck gets closer counts as progress, and a truck that stops getting closer (stuck or blocked) still gives up 3 minutes later. In Everon soaks, 8 builds were given up in 2 hours and USSR built no FOB; with the fix none was given up in 100 minutes, USSR had its FOB at 22 minutes and US had FOBs at 53 and 73 minutes.
 - An AI side no longer marks the site of a FOB it has just built as abandoned. For up to 2 seconds after a build finished, before the FOB appeared, the AI could take the build for one that was given up, so it avoided the new FOB's own site for 10 minutes and wouldn't rebuild a lost HQ there in that time.
+- A map marker removed while a player held the mouse on it (ACA rebuilds its markers as squads change) no longer throws an exception every frame: the drag just ends (pn11).
 
 ### Command and setup
 
@@ -70,6 +72,7 @@
 
 - "The enemy commander has changed tactics" only names the old doctrine when it had been confirmed. A hint such as "Firepower or Fortress" could include the new doctrine, so the line could say "no longer Fortress" as the enemy switched to Fortress.
 - Patrol (map panel, a new row of standing orders): a squad walks its queued points in a loop. Give it a move order, Shift + right-click more points, then click **Patrol**; the point it is heading for joins the loop, and Defend or Garrison points are walked through. With one point it walks between where it stands and that point; a squad standing still sets off at once. A new order or clicking Patrol again ends it. The squad's status shows "patrolling N points".
+- Drag to aim: roadblocks, Fortify and the minefields still face the threat on a plain right-click. Right-click and drag sets the facing instead: the order goes where you pressed and faces where you let go, with a gold arrow on the map while you drag (while one of these orders is armed, a right-drag aims instead of panning the map; the keyboard and the screen edges still pan). A dragged minefield off the road lies square to the arrow, one on a road runs along it the way you dragged; an upgrade of a Fortify position keeps its facing (the order says so). The facing is sent with the order, so it works the same for every player in multiplayer; the AI commander keeps facing the threat.
 
 ## 0.5.7 — released
 

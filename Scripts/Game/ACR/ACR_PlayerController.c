@@ -175,14 +175,16 @@ modded class SCR_PlayerController
  protected float m_ACR_LastCommand = -1000;
  protected float m_ACR_CommandWindow = -1000;
  protected int m_ACR_CommandsInWindow;
- void ACR_Request(int command, RplId targetId = RplId.Invalid(), vector point = vector.Zero)
+ protected ref ACR_SameClickGuard m_ACR_SameClick = new ACR_SameClickGuard();
+ // aim: where a player dragged the order to face (drag to aim), else vector.Zero.
+ void ACR_Request(int command, RplId targetId = RplId.Invalid(), vector point = vector.Zero, vector aim = vector.Zero)
  {
   if (!ACR_Manager.GetInstance()) return;
   if (command == ACR_ERequest.POSSESS || command == ACR_ERequest.RETURN) ACR_MapHandoff.Release(this, GetControlledEntity(), false);
-  Rpc(ACR_CommandServer, command, targetId, point);
+  Rpc(ACR_CommandServer, command, targetId, point, aim);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
- protected void ACR_CommandServer(int command, RplId targetId, vector point)
+ protected void ACR_CommandServer(int command, RplId targetId, vector point, vector aim)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
@@ -195,7 +197,15 @@ modded class SCR_PlayerController
   }
   m_ACR_CommandsInWindow++;
   if (m_ACR_CommandsInWindow > 24) return;
+  if (m_ACR_SameClick.Drop(command, targetId, now))
+  {
+   PrintFormat("[ACR] ORDER dropped: a move right after an order that takes a facing for the same squad (the same click), player %1", GetPlayerId());
+   return;
+  }
+  ACR_Requests.s_vAim = aim;
   string message = manager.HandleRequest(this, command, targetId, point);
+  ACR_Requests.s_vAim = vector.Zero;
+  m_ACR_SameClick.Note(command, targetId, now);
   if (command == ACR_ERequest.REINFORCE) Rpc(ACR_ReinforceFeedbackOwner, message);
   else Rpc(ACR_FeedbackOwner, message);
  }
@@ -1543,6 +1553,7 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.FORTIFY) hint = ACR_Fortify.Hint();
   else if (m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES) hint = ACR_Minefields.Hint(ACR_Minefields.KindOfCursor(m_ACR_CursorMode));
   else hint = "Right-click: move there";
+  if (friendly && m_ACR_IsCommander && ACR_Aimable()) hint += " Right-click and drag to set the way it faces (a right-drag aims while this is armed, it doesn't pan the map).";
   string title = m_ACR_Data.m_GroupNames[index];
   string detail = m_ACR_GroupDetails[index];
   string orderedBy = ACR_OrderedByText(m_ACR_SelectedGroup);
@@ -1702,8 +1713,100 @@ modded class SCR_PlayerController
   return editor && editor.IsOpened();
  }
 
+ // ---------------------------------------------------------------- drag to aim
+ // Roadblocks, Fortify and the minefields face the threat (ACR_Intel.ThreatPoint) on a plain
+ // right-click, as before. Right-click and drag sets the facing instead: the order goes where
+ // the hold began and faces where the button came up, with an arrow on the map while dragging
+ // (the map doesn't pan then: see SCR_MapCursorModule in ACR_CommandPanel).
+ // The facing goes with the order request (ACR_Requests.s_vAim), so it holds in multiplayer;
+ // the AI commander keeps ThreatPoint.
+ protected bool m_ACR_AimHeld;
+ protected vector m_ACR_AimFrom;
+ protected int m_ACR_AimFromX;
+ protected int m_ACR_AimFromY;
+ protected float m_ACR_AimAt;
+ static const int AIM_DEAD_ZONE = 12;     // px: a smaller move is a plain click
+ static const float AIM_MAX_MS = 15000;   // a press held longer is dropped
+ protected bool m_ACR_AimReleased;        // ACR_AimUp passes its facing to ACR_HandleMapRightClick
+ protected vector m_ACR_AimRelease;
+ protected ref ACR_ClickGate m_ACR_ClickGate = new ACR_ClickGate(); // one right-click, one order
+
+ // An order that takes a facing is armed for a squad we command: a right-drag aims it.
+ bool ACR_AimArmed()
+ {
+  return m_ACR_IsCommander && m_ACR_SelectedGroup.IsValid() && ACR_Aimable() && !ACR_EditorOpen();
+ }
+
+ bool ACR_Aimable()
+ {
+  if (ACR_CommandPanel.RoadblockOfMode(m_ACR_CursorMode) >= 0 || m_ACR_CursorMode == ACR_ECursorMode.FORTIFY) return true;
+  return m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.MINES_MIXED;
+ }
+
+ // The map's right button has been held for the hold time (MapPanDrag, SCR_MapRadialUI).
+ void ACR_AimDown()
+ {
+  m_ACR_AimHeld = false;
+  if (!ACR_AimArmed()) return;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity) return;
+  float wx, wz;
+  mapEntity.GetMapCursorWorldPosition(wx, wz);
+  m_ACR_AimFrom = Vector(wx, 0, wz);
+  WidgetManager.GetMousePos(m_ACR_AimFromX, m_ACR_AimFromY);
+  m_ACR_AimAt = System.GetTickCount();
+  m_ACR_AimHeld = true;
+ }
+
+ // While it is down and has moved past the dead zone: where the facing points now.
+ bool ACR_AimDrag(out vector to)
+ {
+  if (!m_ACR_AimHeld) return false;
+  if (System.GetTickCount() - m_ACR_AimAt > AIM_MAX_MS || !ACR_Aimable())
+  {
+   m_ACR_AimHeld = false;
+   return false;
+  }
+  int x, y;
+  WidgetManager.GetMousePos(x, y);
+  if (Math.AbsInt(x - m_ACR_AimFromX) <= AIM_DEAD_ZONE && Math.AbsInt(y - m_ACR_AimFromY) <= AIM_DEAD_ZONE) return false;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity) return false;
+  float wx, wz;
+  mapEntity.GetMapCursorWorldPosition(wx, wz);
+  to = Vector(wx, 0, wz);
+  return true;
+ }
+
+ // ...and came up: a drag orders with its facing, a long press without one is a plain
+ // right-click there.
+ void ACR_AimUp()
+ {
+  if (!m_ACR_AimHeld) return;
+  vector to;
+  bool dragged = ACR_AimDrag(to);
+  m_ACR_AimHeld = false;
+  m_ACR_AimReleased = dragged;
+  m_ACR_AimRelease = to;
+  if (ACR_HandleMapRightClick()) m_ACR_ClickGate.ReleaseOrdered(System.GetTickCount());
+  m_ACR_AimReleased = false;
+ }
+
+ // The map's right-click (MapContextualMenu, SCR_MapRadialUI): an order, unless it is the press
+ // a release has just ordered for (ACR_ClickGate).
+ bool ACR_HandleMapClick()
+ {
+  if (m_ACR_ClickGate.SwallowClick(System.GetTickCount())) return true;
+  return ACR_HandleMapRightClick();
+ }
+
  bool ACR_HandleMapRightClick()
  {
+  // A drag to aim ends in ACR_AimUp, which passes its facing here; a click has none.
+  vector aimTo = m_ACR_AimRelease;
+  bool aimed = m_ACR_AimReleased;
+  m_ACR_AimReleased = false;
+  m_ACR_AimHeld = false;
   if (!ACR_Manager.GetInstance()) return false;
   if (ACR_EditorOpen()) return false;
   if (ACR_ModifierHeld("ACR_MapAlt"))
@@ -1770,6 +1873,13 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.BARRICADE) command = ACR_ERequest.ORDER_BARRICADE;
   if (m_ACR_CursorMode == ACR_ECursorMode.FORTIFY) command = ACR_ERequest.ORDER_FORTIFY;
   vector target = Vector(x, 0, z);
+  // Dragged: the order goes where the button went down, facing where it came up.
+  vector aim;
+  if (aimed && ACR_Aimable())
+  {
+   aim = aimTo;
+   target = m_ACR_AimFrom;
+  }
   // Right-click on a spotted enemy: hunt it down.
   if (m_ACR_CursorMode == ACR_ECursorMode.MOVE && !append)
   {
@@ -1780,7 +1890,7 @@ modded class SCR_PlayerController
     target = m_ACR_ContactPositions[hunted];
    }
   }
-  ACR_IssueOrder(command, target, append);
+  ACR_IssueOrder(command, target, append, aim);
   return true;
  }
 
@@ -1791,7 +1901,7 @@ modded class SCR_PlayerController
   else m_ACR_CursorMode = mode;
  }
 
- bool ACR_IssueOrder(int command, vector target, bool append = false)
+ bool ACR_IssueOrder(int command, vector target, bool append = false, vector aim = vector.Zero)
  {
   bool spread = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_RIDE;
   // Several squads: a loose line across the direction of travel, 40 m apart,
@@ -1826,7 +1936,7 @@ modded class SCR_PlayerController
   {
    vector point = target;
    if (spread && squads.Count() > 1) point = target + side * ((k - (squads.Count() - 1) * 0.5) * 40);
-   ACR_Request(command, squadId, point);
+   ACR_Request(command, squadId, point, aim);
    if (spread) ACR_AddPending(m_ACR_Data.LeaderPos(m_ACR_Data.m_GroupIds.Find(squadId)), point);
   }
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
@@ -1858,6 +1968,10 @@ modded class SCR_PlayerController
  protected void ACR_DrawOrders(SCR_MapEntity mapEntity)
  {
   m_ACR_Data.m_iMyId = GetPlayerId();
+  vector aimTo;
+  m_ACR_Data.m_bAiming = ACR_AimDrag(aimTo);
+  m_ACR_Data.m_vAimFrom = m_ACR_AimFrom;
+  m_ACR_Data.m_vAimTo = aimTo;
   m_ACR_Display.Draw(mapEntity, m_ACR_Data, m_ACR_Boxing, m_ACR_BoxStart);
  }
 

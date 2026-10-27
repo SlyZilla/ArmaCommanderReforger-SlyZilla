@@ -28,6 +28,9 @@ class ACR_MapData : Managed
  ref array<int> m_BaseContested = {};
  ref array<int> m_BaseSupply = {};
  ref array<vector> m_ZonePositions = {};
+ bool m_bAiming;     // drag to aim in progress: an arrow from m_vAimFrom to m_vAimTo
+ vector m_vAimFrom;
+ vector m_vAimTo;
  ref array<float> m_ZoneRadii = {};
  ref array<string> m_ZoneLabels = {};
  // own selection, and the faint lines of orders just clicked
