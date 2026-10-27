@@ -49,6 +49,7 @@
 
 ### Fixes
 
+- The command map no longer floods the log with "DrawPolygon triangulation failed" (up to 2,000 lines a second when zoomed in on Everon): status bars and dots off the screen aren't drawn.
 - A ride waits at the drop until its AI riders are out (up to 20 s, as it already did for a player). Before, the transport drove home as soon as it dropped them off, and an LAV, whose rear seats don't let men out once it moves, carried some of them home (#23). A man still aboard after the dismount's second try is taken out without a door; in the LAV's rear seats, where every exit was refused (the game said nothing was pending), his vehicle action queue is cleared first, and as a last resort he moves to another seat and gets out from there.
 - A stuck vehicle giving a ride re-routes like a soft vehicle instead of holding where it is like a fighting one. A ride never takes a vehicle with a manned gun, so an LAV taxi that held only dropped the ride, with its riders still aboard (#23).
 - Arland now starts on a dedicated server set up with a server config (the usual way to host). The Arland scenario and the Western medic shared one resource ID, so the server loaded the medic instead of the mission and stopped (#41). The medic has its own ID now; the scenario's ID is unchanged.
