@@ -34,6 +34,7 @@
 ### The battlefield
 
 - Gunners stay on held guns (on by default; setup row **Gunners stay on held guns**, `-acrHoldGuns 0` for vanilla): a squad holding a spot (Defend, a checkpoint, a Fortify position, FOB defences) keeps its men on the static guns there. Vanilla took a gunner off his gun whenever anything he knew of, even a minute old, or just the sound of firing, was outside the gun's arc, so checkpoint and nest guns kept standing empty. Now he leaves only for an enemy he saw in the last 10 s within 60 m (a real flank), and a held gun that stands empty for 8 s is manned again by the nearest man of the squad.
+- A Fortify position's guns stay manned while its squad is away: when the squad holding a tier II or III position leaves it for another job (laying mines in front, say), men from the position's reserve defenders man its guns, and they go back into the reserve once a squad holds it again. The squad goes as ordered. Before, the nest stood empty until the squad came back (playtest).
 
 ### Fixes
 

@@ -657,7 +657,7 @@ class ACR_TestFortify
 
  // A spot near the squad where the order plans (away from the bases, clear for its pieces);
  // towards: only spots in that direction from the squad (zero: any).
- protected static bool FindSite(ACR_Squad squad, out vector site, vector towards = vector.Zero)
+ static bool FindSite(ACR_Squad squad, out vector site, vector towards = vector.Zero)
  {
   towards[1] = 0;
   if (towards != vector.Zero) towards.Normalize();

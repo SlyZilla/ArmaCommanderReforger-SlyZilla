@@ -70,6 +70,7 @@ class ACR_TestHarness : Managed
  static const int MODE_ROADSITING = 67;
  static const int MODE_BUILDRIDE = 73;
  static const int MODE_GUNHOLD = 64; // 54-63: the playtest branches
+ static const int MODE_POSITIONGUN = 88; // 80-87: the playtest branches, the 2IC and the LAV fixes
  static const int MODE_RIDEJOB = 68; // 54-67: Fortify and the playtest branches
  static const int MODE_MINESITING = 71; // 68-70: ride job, defend swap, LAV ride (own branches)
  static const int MODE_ATTACKREACH = 79; // 69-78: the playtest branches
@@ -140,6 +141,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRoadSitingTest", flag)) mode = MODE_ROADSITING;
   if (System.GetCLIParam("acrBuildRideTest", flag)) mode = MODE_BUILDRIDE;
   if (System.GetCLIParam("acrGunHoldTest", flag)) mode = MODE_GUNHOLD;
+  if (System.GetCLIParam("acrPositionGunTest", flag)) mode = MODE_POSITIONGUN;
   if (System.GetCLIParam("acrRideJobTest", flag)) mode = MODE_RIDEJOB;
   if (System.GetCLIParam("acrMineSitingTest", flag)) mode = MODE_MINESITING;
   if (System.GetCLIParam("acrAttackReachTest", flag)) mode = MODE_ATTACKREACH;
@@ -269,6 +271,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_ROADSITING) { ACR_TestRoadSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BUILDRIDE) { ACR_TestBuildRide.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GUNHOLD) { ACR_TestGunHold.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_POSITIONGUN) { ACR_TestPositionGun.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDEJOB) { ACR_TestRideJob.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MINESITING) { ACR_TestMineSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ATTACKREACH) { ACR_TestAttackReach.Run(this, m_Ticks); return; }
