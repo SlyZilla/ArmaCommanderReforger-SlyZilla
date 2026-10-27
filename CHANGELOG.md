@@ -40,6 +40,7 @@
 
 ### Command and setup
 
+- AC:A Think (hosts and admins): an **AC:A Think** button in the map's Debug box, or `/acr think [west|east|off] [log]` in chat anywhere, opens a card showing what each AI commander is thinking, live: squads free, defending and attacking, each attack's phase, staging points and base of fire, RP, support and build budget and doctrine; then either every squad of that side (task, order, target, how long since its last order and how many it got in 5 minutes, flagged when that looks like a loop, and whether it is recovering a dropped move) or the commander's last 20 decisions. The button cycles West squads, West decisions, East squads, East decisions and off. Only the player looking gets the updates, every 3 s while the card is open.
 - The RTS camera has a Minefield button next to Roadblock: it cycles AP, AT and mixed mines (and off), the toast gives the price, and a right-click lays them with the selected squad, as the map panel's minefield orders do (#4).
 
 ### Support

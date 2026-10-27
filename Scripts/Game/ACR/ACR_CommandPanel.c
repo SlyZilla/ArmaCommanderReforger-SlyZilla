@@ -37,6 +37,7 @@ enum ACR_EPanelAction
  BARRICADE,
  FORTIFY,
  DEBUG_TOGGLE = 50,
+ DEBUG_THINK,             // the AC:A Think card (ACR_Think)
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
  REQUISITION_ENTRY = 100, // + entry index (below 200)
  SUPPORT_ENTRY = 200,     // + entry index
@@ -309,6 +310,7 @@ class ACR_CommandPanel : Managed
   AddButton(misc, "Time +6h", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.TIME_STEP, true);
   AddButton(misc, "Reveal enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.REVEAL, true);
   AddButton(misc, "Reset supports", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RESET_SUPPORTS, true);
+  AddButton(m_DebugSection, "AC:A Think: what the AI commanders think", ACR_EPanelAction.DEBUG_THINK);
   AddText(m_DebugSection, LAYOUT_TEXT, "Console: type /acr [cmd] in chat (/acr help)");
   m_DebugSection.SetVisible(false);
  }

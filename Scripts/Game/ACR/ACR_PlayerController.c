@@ -1629,6 +1629,7 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.PING_DEFEND: ACR_PickPing(ACR_EPing.DEFEND); return;
    case ACR_EPanelAction.PING_SUPPORT: ACR_PickPing(ACR_EPing.SUPPORT); return;
    case ACR_EPanelAction.DEBUG_TOGGLE: m_ACR_DebugOpen = !m_ACR_DebugOpen; return;
+   case ACR_EPanelAction.DEBUG_THINK: ACR_Think.Cycle(); return;
    case ACR_EPanelAction.TOGGLE_REQUISITION:
     m_ACR_RequisitionOpen = !m_ACR_RequisitionOpen;
     if (m_ACR_RequisitionOpen) m_ACR_SupportOpen = false;

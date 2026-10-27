@@ -14,6 +14,16 @@ class ACR_DebugCommand : Managed
 
 	static void OnAcrChatCommand(SCR_ChatPanel panel, string data)
 	{
+		// "think ...": the AC:A Think card is client side; the server checks every request (ACR_Think).
+		array<string> words = {};
+		string line = data.Trim();
+		line.Split(" ", words, true);
+		if (!words.IsEmpty() && words[0] == "think")
+		{
+			words.RemoveOrdered(0);
+			ACR_Think.Command(words);
+			return;
+		}
 		SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
 		if (pc) pc.ACR_RequestDebugCommand(data.Trim());
 	}
@@ -29,7 +39,7 @@ class ACR_DebugCommand : Managed
 		commandLine = commandLine.Trim();
 		if (commandLine.IsEmpty() || commandLine == "help")
 		{
-			return "Commands: rp <amt> [side], time <0-24>, heal [all], kill [all], fob supply <amt>, fob finish, fob build <slot>, capture <base> [side], attack <base>, reveal, pause [enemy/us], tp [base], defences [base|clear], side <west|east> [player], unbound";
+			return "Commands: rp <amt> [side], time <0-24>, heal [all], kill [all], fob supply <amt>, fob finish, fob build <slot>, capture <base> [side], attack <base>, reveal, pause [enemy/us], tp [base], defences [base|clear], side <west|east> [player], unbound, think [west|east|off] [log]";
 		}
 
 		array<string> tokens = {};

@@ -991,7 +991,7 @@ class ACR_AICommander : Managed
   m_Manager = manager;
   m_sFaction = factionKey;
   m_Doctrine = ACR_AIDoctrine.Choose(factionKey, m_sDoctrineSource);
-  PrintFormat("[ACR] AI commander %1 doctrine: %2 (%3; %4)", m_sFaction, m_Doctrine.m_sName, m_sDoctrineSource, m_Doctrine.m_sSummary);
+  Say(string.Format("[ACR] AI commander %1 doctrine: %2 (%3; %4)", m_sFaction, m_Doctrine.m_sName, m_sDoctrineSource, m_Doctrine.m_sSummary));
  }
  protected float RetreatRatio() { return m_Doctrine.m_fRetreatRatio; }
  // Defenders of an overrun base hold to their own ratio (Fortress stands, Raider slips away).
@@ -1003,7 +1003,7 @@ class ACR_AICommander : Managed
   if (m_bActive != noPlayerCommander)
   {
    m_bActive = noPlayerCommander;
-   PrintFormat("[ACR] AI commander %1: %2", m_sFaction, m_bActive);
+   Say(string.Format("[ACR] AI commander %1: %2", m_sFaction, m_bActive));
    if (!m_bActive) ReleaseAll();
    // Back in command: judge its doctrine on what it does from now, not on the player's spell.
    m_fNextDoctrineReview = -1;
@@ -1096,7 +1096,7 @@ class ACR_AICommander : Managed
   {
    m_bDoctrineSettling = false;
    SnapshotReview();
-   PrintFormat("[ACR] AI commander %1 doctrine review: %2 settling in, judged from now", m_sFaction, m_Doctrine.m_sName);
+   Say(string.Format("[ACR] AI commander %1 doctrine review: %2 settling in, judged from now", m_sFaction, m_Doctrine.m_sName));
    return;
   }
   int lost = s.m_iLost - m_iReviewLost;
@@ -1109,7 +1109,7 @@ class ACR_AICommander : Managed
   if (intel) enemyKnown = intel.Doctrine().Believed();
   string why;
   string pick = PickDoctrine(m_Doctrine.m_sKey, enemyKnown, won, basesLost, lost, kills, why);
-  PrintFormat("[ACR] AI commander %1 doctrine review: %2, bases +%3 -%4, lost %5 killed %6, enemy doctrine '%7': %8", m_sFaction, m_Doctrine.m_sName, won, basesLost, lost, kills, enemyKnown, why);
+  Say(string.Format("[ACR] AI commander %1 doctrine review: %2, bases +%3 -%4, lost %5 killed %6, enemy doctrine '%7': %8", m_sFaction, m_Doctrine.m_sName, won, basesLost, lost, kills, enemyKnown, why));
   if (pick.IsEmpty() || pick == m_Doctrine.m_sKey) return;
   ChangeDoctrine(ACR_AIDoctrine.Find(pick), why);
  }
@@ -1170,7 +1170,7 @@ class ACR_AICommander : Managed
   m_sDoctrineSource = "changed";
   m_iDoctrineChanges++;
   m_bDoctrineSettling = true;
-  PrintFormat("[ACR] AI commander %1 doctrine: %2 -> %3 (%4; %5)", m_sFaction, was.m_sName, doctrine.m_sName, why, doctrine.m_sSummary);
+  Say(string.Format("[ACR] AI commander %1 doctrine: %2 -> %3 (%4; %5)", m_sFaction, was.m_sName, doctrine.m_sName, why, doctrine.m_sSummary));
   // Its own side hears it (players fighting under this commander); the enemy has to notice.
   string line = string.Format("Commander: switching to %1 (%2)", doctrine.m_sName, why);
   ACR_Intel own = m_Manager.IntelFor(m_sFaction);
@@ -1431,7 +1431,7 @@ class ACR_AICommander : Managed
   if (ACR_HeliStation.IsHeliType(type) && ACR_HeliStation.UsesPads(m_sFaction) && (!m_Manager.m_Supports || !m_Manager.m_Supports.Station().ReadyFor(m_sFaction, ACR_HeliStation.NeedsGunship(type), point))) return false;
   if (FriendliesNear(point, ACR_Supports.ZoneRadius(type) + 40)) return false;
   string result = m_Manager.m_Supports.Call(m_sFaction, SupportIndex(type), point, true);
-  PrintFormat("[ACR] AI %1 support (%2): %3", m_sFaction, why, result);
+  Say(string.Format("[ACR] AI %1 support (%2): %3", m_sFaction, why, result));
   return true;
  }
 
@@ -1561,7 +1561,7 @@ class ACR_AICommander : Managed
     // Hit back while the enemy is still thin on the ground.
     m_CounterTarget = base;
     m_fCounterUntil = GetGame().GetWorld().GetWorldTime() + m_Doctrine.m_fCounterMinutes * 60000;
-    PrintFormat("[ACR] AI %1: lost %2, planning a counterattack", m_sFaction, base.m_sName);
+    Say(string.Format("[ACR] AI %1: lost %2, planning a counterattack", m_sFaction, base.m_sName));
    }
    m_LastOwner.Set(base, base.m_sOwner);
   }
@@ -1681,9 +1681,9 @@ class ACR_AICommander : Managed
     pool.RemoveOrdered(k);
     free.RemoveItem(squad);
     if (holding)
-     PrintFormat("[ACR] AI %1: %2 leaves what it holds to defend %3 (threat %4, outnumbered: defence %5)", m_sFaction, squad.GetName(), base.m_sName, threat, defence);
+     Say(string.Format("[ACR] AI %1: %2 leaves what it holds to defend %3 (threat %4, outnumbered: defence %5)", m_sFaction, squad.GetName(), base.m_sName, threat, defence));
     else
-     PrintFormat("[ACR] AI %1: %2 defends %3 (threat %4)", m_sFaction, squad.GetName(), base.m_sName, threat);
+     Say(string.Format("[ACR] AI %1: %2 defends %3 (threat %4)", m_sFaction, squad.GetName(), base.m_sName, threat));
    }
    if (needed > 0 && m_ReserveSquad && !m_ReserveSquad.HasPlayer() && m_ReserveSquad.CountAlive() > 0 && m_ReserveSquad.KnownEnemies(250) == 0)
    {
@@ -1694,7 +1694,7 @@ class ACR_AICommander : Managed
     qrf.m_iAITask = ACR_EAITask.DEFEND;
     qrf.m_AITarget = base;
     needed -= qrf.Strength();
-    PrintFormat("[ACR] AI %1: QRF reserve %2 committed to defend %3 (threat %4)", m_sFaction, qrf.GetName(), base.m_sName, threat);
+    Say(string.Format("[ACR] AI %1: QRF reserve %2 committed to defend %3 (threat %4)", m_sFaction, qrf.GetName(), base.m_sName, threat));
    }
    // Still short: the builders holding our roadblocks and positions nearby, as a last resort
    // (never a Fortress's while it isn't outnumbered there: its defences stay manned).
@@ -1709,7 +1709,7 @@ class ACR_AICommander : Managed
     holder.m_iAITask = ACR_EAITask.DEFEND;
     holder.m_AITarget = base;
     needed -= holder.Strength();
-    PrintFormat("[ACR] AI %1: %2 leaves what it holds to defend %3 (threat %4)", m_sFaction, holder.GetName(), base.m_sName, threat);
+    Say(string.Format("[ACR] AI %1: %2 leaves what it holds to defend %3 (threat %4)", m_sFaction, holder.GetName(), base.m_sName, threat));
    }
   }
   DefendInDepth();
@@ -1788,7 +1788,7 @@ class ACR_AICommander : Managed
   if (!base) return;
   squad.SetMode(ACR_EMoveMode.FAST);
   Travel(squad, base.GetOrigin(), true, 0);
-  PrintFormat("[ACR] AI %1: %2 falls back from the forward line to %3 (%4)", m_sFaction, squad.GetName(), base.m_sName, why);
+  Say(string.Format("[ACR] AI %1: %2 falls back from the forward line to %3 (%4)", m_sFaction, squad.GetName(), base.m_sName, why));
  }
 
  void DefendInDepth()
@@ -1865,7 +1865,7 @@ class ACR_AICommander : Managed
     if (vector.DistanceXZ(PositionOf(goer), spot) > 220 && goer.KnownEnemies(350) == 0) goer.SetMode(ACR_EMoveMode.FAST);
     else goer.SetMode(ACR_EMoveMode.COMBAT);
     Travel(goer, spot, true, 0);
-    PrintFormat("[ACR] AI %1: %2 moves out to a forward line %3 m from %4 towards the attack (enemy seen %5 m out, %6 stay in reserve)", m_sFaction, goer.GetName(), Math.Round(depth), base.m_sName, Math.Round(enemyDistance), defenders.Count() - picked.Count());
+    Say(string.Format("[ACR] AI %1: %2 moves out to a forward line %3 m from %4 towards the attack (enemy seen %5 m out, %6 stay in reserve)", m_sFaction, goer.GetName(), Math.Round(depth), base.m_sName, Math.Round(enemyDistance), defenders.Count() - picked.Count()));
    }
   }
  }
@@ -2028,7 +2028,7 @@ class ACR_AICommander : Managed
      Travel(squad, stage, false, 0);
     }
     free.RemoveOrdered(k);
-    PrintFormat("[ACR] AI %1: %2 reinforces the attack on %3 (%4/%5), staging at grid %6", m_sFaction, squad.GetName(), target.m_sName, strength, (int)need, ACR_Manager.Grid(stage));
+    Say(string.Format("[ACR] AI %1: %2 reinforces the attack on %3 (%4/%5), staging at grid %6", m_sFaction, squad.GetName(), target.m_sName, strength, (int)need, ACR_Manager.Grid(stage)));
    }
   }
  }
@@ -2083,7 +2083,7 @@ class ACR_AICommander : Managed
       reserve.m_iAITask = ACR_EAITask.POSTED;
       reserve.SetMode(ACR_EMoveMode.COMBAT);
       Travel(reserve, home.GetOrigin(), true, 0);
-      PrintFormat("[ACR] AI %1: %2 held in reserve at %3", m_sFaction, reserve.GetName(), home.m_sName);
+      Say(string.Format("[ACR] AI %1: %2 held in reserve at %3", m_sFaction, reserve.GetName(), home.m_sName));
      }
     }
    }
@@ -2144,7 +2144,7 @@ class ACR_AICommander : Managed
    free.RemoveItem(runner);
    m_Attacks.Insert(grab);
    grabs++;
-   PrintFormat("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime);
+   Say(string.Format("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime));
   }
   if (PlanBudgetSpent()) return;
   ReinforceAttacks(free);
@@ -2222,7 +2222,7 @@ class ACR_AICommander : Managed
    if (wanted && now >= m_fNextWeakLog)
    {
     m_fNextWeakLog = now + 60000;
-    PrintFormat("[ACR] AI %1: not strong enough for any target (best: %2, %3/%4 in reach of %5 free, pressure x%6)", m_sFaction, wanted.m_sName, wantedReach, (int)wantedRequired, available, pressure);
+    Say(string.Format("[ACR] AI %1: not strong enough for any target (best: %2, %3/%4 in reach of %5 free, pressure x%6)", m_sFaction, wanted.m_sName, wantedReach, (int)wantedRequired, available, pressure));
    }
    return; // Requisition() will add troops
   }
@@ -2248,7 +2248,7 @@ class ACR_AICommander : Managed
   {
    attack.m_bFobRaid = true;
    attack.m_SapperDemo = new ACR_SapperDemo(m_Manager, this, attack);
-   PrintFormat("[ACR] AI %1: targeted enemy forward base %2 for sapper demolition", m_sFaction, target.m_sName);
+   Say(string.Format("[ACR] AI %1: targeted enemy forward base %2 for sapper demolition", m_sFaction, target.m_sName));
   }
   int strength;
   // With troops to spare, send a margin above the bare minimum.
@@ -2287,7 +2287,7 @@ class ACR_AICommander : Managed
   }
   if (strength < required)
   {
-   PrintFormat("[ACR] AI %1: not strong enough for %2 (%3/%4)", m_sFaction, target.m_sName, strength, required);
+   Say(string.Format("[ACR] AI %1: not strong enough for %2 (%3/%4)", m_sFaction, target.m_sName, strength, required));
    return; // Requisition() will add troops
   }
   LaunchAttack(attack, from, strength, required, pressure);
@@ -2362,15 +2362,15 @@ class ACR_AICommander : Managed
   attack.m_bAssaulting = empty;
   m_Attacks.Insert(attack);
   m_fLastOffensive = GetGame().GetWorld().GetWorldTime();
-  if (pressure < 1) PrintFormat("[ACR] AI %1: taking the initiative against %2 (accepting x%3 odds after a quiet spell)", m_sFaction, target.m_sName, pressure);
+  if (pressure < 1) Say(string.Format("[ACR] AI %1: taking the initiative against %2 (accepting x%3 odds after a quiet spell)", m_sFaction, target.m_sName, pressure));
   string kind = "attacking";
   if (attack.m_bCounter) { kind = "COUNTERATTACKING"; m_CounterTarget = null; }
-  PrintFormat("[ACR] AI %1: %2 %3 with %4 squad(s), strength %5/%6", m_sFaction, kind, target.m_sName, attack.m_Squads.Count(), strength, required);
+  Say(string.Format("[ACR] AI %1: %2 %3 with %4 squad(s), strength %5/%6", m_sFaction, kind, target.m_sName, attack.m_Squads.Count(), strength, required));
   if (empty) return;
   string stagingAt;
   foreach (ACR_Squad staged : attack.m_Squads)
    stagingAt += string.Format(" %1 grid %2,", staged.GetName(), ACR_Manager.Grid(attack.StagingOf(staged)));
-  PrintFormat("[ACR] AI %1: staging for %2 at%3", m_sFaction, target.m_sName, stagingAt);
+  Say(string.Format("[ACR] AI %1: staging for %2 at%3", m_sFaction, target.m_sName, stagingAt));
  }
 
  // Each armed carrier with room (gun manned, 4+ free seats) picks the nearest infantry squad of the
@@ -2401,7 +2401,7 @@ class ACR_AICommander : Managed
    string why;
    if (!m_Manager.m_Rides.RequestCarrier(best, carrier, stage, ACR_Squad.WP_MOVE, -1, "Moving", 0, why))
    {
-    PrintFormat("[ACR] AI %1: %2 can't carry %3 (%4)", m_sFaction, carrier.GetName(), best.GetName(), why);
+    Say(string.Format("[ACR] AI %1: %2 can't carry %3 (%4)", m_sFaction, carrier.GetName(), best.GetName(), why));
     continue;
    }
    if (c < attack.m_aStaging.Count()) attack.m_aStaging[c] = stage;
@@ -2409,7 +2409,7 @@ class ACR_AICommander : Managed
    if (c < attack.m_aSlot.Count() && riderAt >= 0 && riderAt < attack.m_aSlot.Count()) attack.m_aSlot[c] = attack.m_aSlot[riderAt];
    carried.Insert(best);
    carried.Insert(carrier);
-   PrintFormat("[ACR] AI %1: %2 carries %3 to the staging point for %4", m_sFaction, carrier.GetName(), best.GetName(), attack.m_Target.m_sName);
+   Say(string.Format("[ACR] AI %1: %2 carries %3 to the staging point for %4", m_sFaction, carrier.GetName(), best.GetName(), attack.m_Target.m_sName));
   }
  }
 
@@ -2446,7 +2446,7 @@ class ACR_AICommander : Managed
    attack.m_Squads.Insert(squad);
    strength += squad.Strength();
   }
-  PrintFormat("[ACR] AI %1: forced attack (debug menu)", m_sFaction);
+  Say(string.Format("[ACR] AI %1: forced attack (debug menu)", m_sFaction));
   LaunchAttack(attack, from, strength, strength, 1);
   return string.Format("%1 AI attacking %2 with %3 squad(s)", m_sFaction, target.m_sName, free.Count());
  }
@@ -2695,10 +2695,10 @@ class ACR_AICommander : Managed
   {
    // Refused (usually no landing spot): don't search again for every other long move.
    m_fNextAirLiftTry = now + AIRLIFT_RETRY_MS;
-   PrintFormat("[ACR] AI %1: no air lift for %2 (%3), next try in %4 s", m_sFaction, squad.GetName(), result, (int)(AIRLIFT_RETRY_MS / 1000));
+   Say(string.Format("[ACR] AI %1: no air lift for %2 (%3), next try in %4 s", m_sFaction, squad.GetName(), result, (int)(AIRLIFT_RETRY_MS / 1000)));
    return false;
   }
-  PrintFormat("[ACR] AI %1: air lift for %2 to %3 (%4 m): %5", m_sFaction, squad.GetName(), ACR_Manager.Grid(destination), (int)distance, result);
+  Say(string.Format("[ACR] AI %1: air lift for %2 to %3 (%4 m): %5", m_sFaction, squad.GetName(), ACR_Manager.Grid(destination), (int)distance, result));
   return true;
  }
 
@@ -2756,7 +2756,7 @@ class ACR_AICommander : Managed
   if (refuge) squad.RouteTo(ACR_Manager.Ground(refuge.GetOrigin()), ACR_Squad.WP_DEFEND, 15, "Falling back", 1);
   string where = "its position";
   if (refuge) where = refuge.m_sName;
-  PrintFormat("[ACR] AI %1: %2 falls back to %3 (%4)", m_sFaction, squad.GetName(), where, why);
+  Say(string.Format("[ACR] AI %1: %2 falls back to %3 (%4)", m_sFaction, squad.GetName(), where, why));
  }
 
  protected bool IsAttacking(ACR_Base base)
@@ -2808,7 +2808,7 @@ class ACR_AICommander : Managed
    attack.m_fFireBaseMoveSince = 0;
    if (fire.OrderState() == ACR_EOrderState.SUPPRESS && vector.DistanceXZ(fire.m_MoveTarget, seenAt) < 10) return;
    fire.Suppress(seenAt);
-   PrintFormat("[ACR] AI %1: %2 (base of fire) suppresses the enemy seen at %3 (%4 m)", m_sFaction, fire.GetName(), target.m_sName, Math.Round(distance));
+   Say(string.Format("[ACR] AI %1: %2 (base of fire) suppresses the enemy seen at %3 (%4 m)", m_sFaction, fire.GetName(), target.m_sName, Math.Round(distance)));
    return;
   }
   float stand = Math.Min(FIRE_BASE_STANDOFF, distance - 100);
@@ -2824,7 +2824,7 @@ class ACR_AICommander : Managed
   if (vector.DistanceXZ(from, spot) > 80 && fire.KnownEnemies(250) == 0) fire.SetMode(ACR_EMoveMode.FAST);
   else fire.SetMode(ACR_EMoveMode.COMBAT);
   fire.MoveTo(spot);
-  PrintFormat("[ACR] AI %1: %2 (base of fire) moves up to %3 m from the enemy at %4: %5", m_sFaction, fire.GetName(), Math.Round(stand), target.m_sName, spot);
+  Say(string.Format("[ACR] AI %1: %2 (base of fire) moves up to %3 m from the enemy at %4: %5", m_sFaction, fire.GetName(), Math.Round(stand), target.m_sName, spot));
  }
 
  // No enemy seen at the objective: hold (Defend) an overwatch spot facing it, so the squad
@@ -2860,7 +2860,7 @@ class ACR_AICommander : Managed
   if (fire.OrderState() == ACR_EOrderState.DEFEND && vector.DistanceXZ(fire.m_MoveTarget, spot) < 20) return;
   fire.SetMode(ACR_EMoveMode.COMBAT);
   fire.Defend(spot);
-  PrintFormat("[ACR] AI %1: %2 (base of fire) holds overwatch on %3 from %4 m (no enemy seen there yet): %5", m_sFaction, fire.GetName(), target.m_sName, Math.Round(vector.DistanceXZ(spot, target.GetOrigin())), spot);
+  Say(string.Format("[ACR] AI %1: %2 (base of fire) holds overwatch on %3 from %4 m (no enemy seen there yet): %5", m_sFaction, fire.GetName(), target.m_sName, Math.Round(vector.DistanceXZ(spot, target.GetOrigin())), spot));
  }
 
  // A spot within FIRE_BASE_RANGE of the objective with a clear fire line to it: where the
@@ -2921,12 +2921,12 @@ class ACR_AICommander : Managed
    dir.Normalize();
    vector perimeterSpot = ACR_Manager.Ground(attack.m_Target.GetOrigin() + dir * (attack.m_Target.m_fRadius + 80));
    fire.Defend(perimeterSpot);
-   PrintFormat("[ACR] AI %1: %2 (armed vehicle) holds perimeter standoff at %3 (%4)", m_sFaction, fire.GetName(), attack.m_Target.m_sName, reason);
+   Say(string.Format("[ACR] AI %1: %2 (armed vehicle) holds perimeter standoff at %3 (%4)", m_sFaction, fire.GetName(), attack.m_Target.m_sName, reason));
   }
   else
   {
    fire.Assault(attack.m_Target.GetOrigin());
-   PrintFormat("[ACR] AI %1: %2 lifts fire and joins the assault on %3 (%4)", m_sFaction, fire.GetName(), attack.m_Target.m_sName, reason);
+   Say(string.Format("[ACR] AI %1: %2 lifts fire and joins the assault on %3 (%4)", m_sFaction, fire.GetName(), attack.m_Target.m_sName, reason));
   }
   attack.m_Suppressor = null;
  }
@@ -2962,7 +2962,7 @@ class ACR_AICommander : Managed
   }
   if (live > 0 && allGaveUp)
   {
-   PrintFormat("[ACR] AI %1: every squad on %2 found it unreachable", m_sFaction, attack.m_Target.m_sName);
+   Say(string.Format("[ACR] AI %1: every squad on %2 found it unreachable", m_sFaction, attack.m_Target.m_sName));
    return true;
   }
   if (!attack.m_bAssaulting || attack.m_fAssaultStart <= 0) return false;
@@ -3013,6 +3013,13 @@ class ACR_AICommander : Managed
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextStatus) return;
   m_fNextStatus = now + 300000;
+  Print(StatusText());
+ }
+
+ // The status line (LogStatus; the AC:A Think view shows it live).
+ string StatusText()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
   array<ACR_Squad> all = {};
   MySquads(all, false);
   int nFree = 0;
@@ -3068,8 +3075,58 @@ class ACR_AICommander : Managed
   foreach (ACR_Base base : ACR_Base.s_All)
    if (base.m_sOwner != m_sFaction && !base.m_sOwner.IsEmpty() && Visible(base)) visible++;
   attacks += string.Format(" | support budget %1 | doctrine %2", SupportBudget(), m_Doctrine.m_sName) + BuildStatus();
-  PrintFormat("[ACR] AI %1 status: %2 squads (free %3, defending %4, attacking %5, other %6), attacks:%7, enemy bases known %8, RP %9",
+  return string.Format("[ACR] AI %1 status: %2 squads (free %3, defending %4, attacking %5, other %6), attacks:%7, enemy bases known %8, RP %9",
    m_sFaction, all.Count(), nFree, nDefend, nAttack, nOther, attacks, visible, m_Manager.m_Bases.GetRP(m_sFaction));
+ }
+
+ // ---------------------------------------------------------------- AC:A Think (ACR_Think)
+ // Every "[ACR] AI <side>:" decision goes through Say: printed as before, and the newest
+ // THINK_LINES kept (with the match clock) for the host's Think view.
+ static const int THINK_LINES = 20;
+ protected ref array<string> m_aThink = {};
+ void Say(string line)
+ {
+  Print(line);
+  string text = line;
+  if (text.StartsWith("[ACR] AI ")) text = text.Substring(9, text.Length() - 9);
+  if (text.StartsWith(m_sFaction + ": ")) text = text.Substring(m_sFaction.Length() + 2, text.Length() - m_sFaction.Length() - 2);
+  m_aThink.Insert(ACR_Think.Clock() + " " + text);
+  if (m_aThink.Count() > THINK_LINES) m_aThink.RemoveOrdered(0);
+ }
+ void ThinkDecisions(notnull array<string> lines) { lines.Copy(m_aThink); }
+
+ // One line per attack: phase, squads, time in that phase and where it forms up.
+ void ThinkAttacks(notnull array<string> lines)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   if (!attack.m_Target) continue;
+   string kind = "attack";
+   if (attack.m_bGrab) kind = "grab";
+   else if (attack.m_bCounter) kind = "counter";
+   else if (attack.m_bFobRaid) kind = "FOB raid";
+   string phase;
+   if (attack.m_bAssaulting || attack.m_bGrab) phase = string.Format("assault %1 min", (int)((now - attack.m_fAssaultStart) / 60000));
+   else phase = string.Format("staging, %1 s left", (int)Math.Max(0, (attack.m_fStageDeadline - now) / 1000));
+   string grids;
+   foreach (vector stage : attack.m_aStaging)
+   {
+    string grid = ACR_Manager.Grid(stage);
+    if (!grids.Contains(grid)) grids += " " + grid;
+   }
+   if (grids.IsEmpty()) grids = " " + ACR_Manager.Grid(attack.m_Staging);
+   string fire = "none";
+   if (attack.m_Suppressor) fire = attack.m_Suppressor.GetName();
+   lines.Insert(string.Format("%1 %2: %3, %4 squad(s), staging%5, base of fire %6", kind, attack.m_Target.m_sName, phase, attack.m_Squads.Count(), grids, fire));
+  }
+  if (m_Refitting.Count() > 0)
+  {
+   string refit;
+   foreach (ACR_Squad squad, float until : m_Refitting)
+    if (squad) refit += string.Format(" %1 (%2 s)", squad.GetName(), (int)Math.Max(0, (until - now) / 1000));
+   lines.Insert("refitting:" + refit);
+  }
  }
 
  protected void UpdateAttacks()
@@ -3106,7 +3163,7 @@ class ACR_AICommander : Managed
    bool won = target && (target.m_sOwner == m_sFaction || target.m_bRetired);
    if (attack.m_bGrab && target && !SeenOwner(target).IsEmpty() && !won)
    {
-    PrintFormat("[ACR] AI %1: %2 was taken first, grab cancelled", m_sFaction, target.m_sName);
+    Say(string.Format("[ACR] AI %1: %2 was taken first, grab cancelled", m_sFaction, target.m_sName));
     foreach (ACR_Squad late : attack.m_Squads) late.m_iAITask = ACR_EAITask.FREE;
     m_Attacks.RemoveOrdered(i);
     continue;
@@ -3141,7 +3198,7 @@ class ACR_AICommander : Managed
      outcome = string.Format("called off (stalled; nearest squad %1 m out, '%2')", (int)closest, closestOrder);
      m_StalledUntil.Set(target, GetGame().GetWorld().GetWorldTime() + STALLED_COOLDOWN * 1000);
     }
-    if (target) PrintFormat("[ACR] AI %1: attack on %2 %3", m_sFaction, target.m_sName, outcome);
+    if (target) Say(string.Format("[ACR] AI %1: attack on %2 %3", m_sFaction, target.m_sName, outcome));
     foreach (ACR_Squad squad : attack.m_Squads)
     {
      if (broken) FallBack(squad, "attack called off");
@@ -3215,7 +3272,7 @@ class ACR_AICommander : Managed
     if (attack.m_Suppressor) UpdateFireBase(attack);
     string suppressor = "none";
     if (attack.m_Suppressor) suppressor = attack.m_Suppressor.GetName();
-    PrintFormat("[ACR] AI %1: assaulting %2 with %3 squad(s) on %4 approach line(s), base of fire: %5", m_sFaction, target.m_sName, attack.m_Squads.Count(), ApproachLines(attack), suppressor);
+    Say(string.Format("[ACR] AI %1: assaulting %2 with %3 squad(s) on %4 approach line(s), base of fire: %5", m_sFaction, target.m_sName, attack.m_Squads.Count(), ApproachLines(attack), suppressor));
    }
   }
  }
@@ -3243,7 +3300,7 @@ class ACR_AICommander : Managed
       squad.m_iAITask = ACR_EAITask.POSTED;
       squad.SetMode(ACR_EMoveMode.SILENT);
       squad.Defend(vSpot);
-      PrintFormat("[ACR] AI %1: recon team %2 posted to overwatch at %3 (%4 m)", m_sFaction, squad.GetName(), enemyBase.m_sName, (int)vector.DistanceXZ(vSpot, enemyBase.GetOrigin()));
+      Say(string.Format("[ACR] AI %1: recon team %2 posted to overwatch at %3 (%4 m)", m_sFaction, squad.GetName(), enemyBase.m_sName, (int)vector.DistanceXZ(vSpot, enemyBase.GetOrigin())));
       continue;
      }
     }
@@ -3263,7 +3320,7 @@ class ACR_AICommander : Managed
    if (!nearest || best < 150) continue;
    squad.SetMode(ACR_EMoveMode.FAST);
    Travel(squad, nearest.GetOrigin(), true, 0);
-   PrintFormat("[ACR] AI %1: %2 posted to %3", m_sFaction, squad.GetName(), nearest.m_sName);
+   Say(string.Format("[ACR] AI %1: %2 posted to %3", m_sFaction, squad.GetName(), nearest.m_sName));
   }
   PositionTransports();
  }
@@ -3307,7 +3364,7 @@ class ACR_AICommander : Managed
    taxi.SetMode(ACR_EMoveMode.FAST);
    taxi.RouteTo(ACR_Manager.Ground(bestHub.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Returning", ACR_EOrderKind.MOVE);
    taxi.SetOrder("Returning", ACR_EOrderState.RETURN);
-   PrintFormat("[ACR] AI %1: motor pool %2 repositioning to %3 (%4 m)", m_sFaction, taxi.GetName(), bestHub.m_sName, (int)bestDist);
+   Say(string.Format("[ACR] AI %1: motor pool %2 repositioning to %3 (%4 m)", m_sFaction, taxi.GetName(), bestHub.m_sName, (int)bestDist));
   }
  }
 
@@ -3438,7 +3495,7 @@ class ACR_AICommander : Managed
    // Not back into a vehicle that just got stuck (the crew bailed, got back in, got stuck again).
    if (now - squad.m_fStuckAt < 600000) continue;
    m_NextRecrew.Set(squad, now + 90000);
-   if (squad.GetIn(vehicle.GetOrigin())) PrintFormat("[ACR] AI %1: %2 gets back into its vehicle", m_sFaction, squad.GetName());
+   if (squad.GetIn(vehicle.GetOrigin())) Say(string.Format("[ACR] AI %1: %2 gets back into its vehicle", m_sFaction, squad.GetName()));
   }
  }
 
@@ -3469,7 +3526,7 @@ class ACR_AICommander : Managed
   {
    if (!entry.m_bMortarTeam || entry.m_iRemaining <= 0) continue;
    if (data.m_iRP < entry.m_iCost + SUPPORT_RESERVE) return false;
-   PrintFormat("[ACR] AI %1 requisition (mortar team): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, i, spawn));
+   Say(string.Format("[ACR] AI %1 requisition (mortar team): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, i, spawn)));
    return true;
   }
   return false;
@@ -3489,7 +3546,7 @@ class ACR_AICommander : Managed
   {
    if (entry.m_iSupportHeli != 1 || entry.m_iRemaining <= 0) continue;
    if (data.m_iRP < entry.m_iCost + SUPPORT_RESERVE) return false;
-   PrintFormat("[ACR] AI %1 requisition (support gunship): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, i, base));
+   Say(string.Format("[ACR] AI %1 requisition (support gunship): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, i, base)));
    return true;
   }
   return false;
@@ -3550,7 +3607,7 @@ class ACR_AICommander : Managed
     vector scoot = ACR_Manager.Ground(team.m_Spot + Vector(Math.RandomFloat(-40, 40), 0, Math.RandomFloat(-40, 40)));
     squad.MoveTo(scoot);
     m_fNextMortarMove = now + MORTAR_MOVE_MS;
-    PrintFormat("[ACR] AI %1 mortar: %2 shoot-and-scoot displacement", m_sFaction, squad.GetName());
+    Say(string.Format("[ACR] AI %1 mortar: %2 shoot-and-scoot displacement", m_sFaction, squad.GetName()));
     continue;
    }
    vector here = PositionOf(squad);
@@ -3567,7 +3624,7 @@ class ACR_AICommander : Managed
    vector spot = ACR_Manager.Ground(front.GetOrigin() + Vector(Math.RandomFloat(-20, 20), 0, Math.RandomFloat(-20, 20)));
    squad.MoveTo(spot);
    m_fNextMortarMove = now + MORTAR_MOVE_MS;
-   PrintFormat("[ACR] AI %1 mortar: %2 moving to %3", m_sFaction, squad.GetName(), front.m_sName);
+   Say(string.Format("[ACR] AI %1 mortar: %2 moving to %3", m_sFaction, squad.GetName(), front.m_sName));
   }
  }
 
@@ -3658,7 +3715,7 @@ class ACR_AICommander : Managed
      m_Refitting.Remove(squad);
      if (squad.m_iAITask == ACR_EAITask.RESUPPLY) squad.m_iAITask = ACR_EAITask.FREE;
      m_ReinforceRetryAt.Set(squad, now + REINFORCE_RETRY_MS);
-     PrintFormat("[ACR] AI %1: %2 gave up walking back to reinforce", m_sFaction, squad.GetName());
+     Say(string.Format("[ACR] AI %1: %2 gave up walking back to reinforce", m_sFaction, squad.GetName()));
      continue;
     }
     if (refitting && squad.m_Group && (squad.m_Group.GetCurrentWaypoint() || squad.MovePending())) continue;
@@ -3670,7 +3727,7 @@ class ACR_AICommander : Managed
     squad.m_iAITask = ACR_EAITask.RESUPPLY;
     squad.SetMode(ACR_EMoveMode.FAST);
     Travel(squad, ACR_Manager.Ground(refit.GetOrigin()), false, 0);
-    PrintFormat("[ACR] AI %1: depleted squad %2 (%3% strength) moving to %4 to reinforce", m_sFaction, squad.GetName(), (int)(squad.StrengthRatio() * 100), refit.m_sName);
+    Say(string.Format("[ACR] AI %1: depleted squad %2 (%3% strength) moving to %4 to reinforce", m_sFaction, squad.GetName(), (int)(squad.StrengthRatio() * 100), refit.m_sName));
     continue;
    }
    if (m_Manager.m_Requisition.InContact(squad) != "") continue;
@@ -3692,12 +3749,12 @@ class ACR_AICommander : Managed
   {
    // Nothing joined: don't pick the same squad again every tick.
    m_ReinforceRetryAt.Set(best, now + REINFORCE_RETRY_MS);
-   PrintFormat("[ACR] AI %1 reinforce failed, retry in %2 s: %3", m_sFaction, (int)(REINFORCE_RETRY_MS / 1000), outcome);
+   Say(string.Format("[ACR] AI %1 reinforce failed, retry in %2 s: %3", m_sFaction, (int)(REINFORCE_RETRY_MS / 1000), outcome));
    return false;
   }
   if (best.m_iAITask == ACR_EAITask.RESUPPLY) best.m_iAITask = ACR_EAITask.FREE;
   m_Refitting.Remove(best);
-  PrintFormat("[ACR] AI %1 reinforce: %2", m_sFaction, outcome);
+  Say(string.Format("[ACR] AI %1 reinforce: %2", m_sFaction, outcome));
   return true;
  }
 
@@ -3773,7 +3830,7 @@ class ACR_AICommander : Managed
      if (pick < 0 || offer.m_iCost < data.m_aRequisitions[pick].m_iCost) pick = e;
     }
     if (pick < 0) continue;
-    PrintFormat("[ACR] AI %1 requisition (%2 support): %3", m_sFaction, ACR_Logistics.ServiceName(service), m_Manager.PurchaseAt(m_sFaction, pick, spawn));
+    Say(string.Format("[ACR] AI %1 requisition (%2 support): %3", m_sFaction, ACR_Logistics.ServiceName(service), m_Manager.PurchaseAt(m_sFaction, pick, spawn)));
     return;
    }
   }
@@ -3788,7 +3845,7 @@ class ACR_AICommander : Managed
     if (candidate.m_bTransport && !IsServiceVehicle(candidate) && candidate.m_iRemaining > 0 && candidate.m_iCost <= data.m_iRP && (truck < 0 || candidate.m_iCost < data.m_aRequisitions[truck].m_iCost)) truck = t;
    if (truck >= 0)
    {
-    PrintFormat("[ACR] AI %1 requisition (transport): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, truck, spawn));
+    Say(string.Format("[ACR] AI %1 requisition (transport): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, truck, spawn)));
     m_Manager.m_Rides.m_NoTransportAt.Remove(m_sFaction);
     return;
    }
@@ -3931,14 +3988,14 @@ class ACR_AICommander : Managed
     if (m_iLastSavedLog != pick)
     {
      m_iLastSavedLog = pick;
-     PrintFormat("[ACR] AI %1 saving RP for %2 (%3/%4 RP)", m_sFaction, chosen.m_sName, Math.Max(0, data.m_iRP - keep), chosen.m_iCost);
+     Say(string.Format("[ACR] AI %1 saving RP for %2 (%3/%4 RP)", m_sFaction, chosen.m_sName, Math.Max(0, data.m_iRP - keep), chosen.m_iCost));
     }
     return;
    }
    int stockBefore = chosen.m_iRemaining;
    string result = m_Manager.PurchaseAt(m_sFaction, pick, spawn);
    if (chosen.m_eFormation == ACR_EFormation.SF && chosen.m_iRemaining < stockBefore) boughtSF = true;
-   PrintFormat("[ACR] AI %1 requisition: %2", m_sFaction, result);
+   Say(string.Format("[ACR] AI %1 requisition: %2", m_sFaction, result));
    if (!chosen.m_sVehicle.IsEmpty()) vehicles++;
    else if (IsSmallTeamEntry(chosen)) smallTeams++;
    else lineSquads++;
@@ -4094,7 +4151,7 @@ class ACR_AICommander : Managed
    if (squad.m_iAITask == ACR_EAITask.RESUPPLY && need == 0 && !m_Refitting.Contains(squad))
    {
     squad.m_iAITask = ACR_EAITask.FREE;
-    PrintFormat("[ACR] AI %1: %2 resupplied", m_sFaction, squad.GetName());
+    Say(string.Format("[ACR] AI %1: %2 resupplied", m_sFaction, squad.GetName()));
    }
    if (need == 0 || InAssault(squad) || ACR_Logistics.ServiceOf(ACR_Transport.CrewedVehicle(squad)) != 0) continue;
    m_iNeeds |= need;
@@ -4122,7 +4179,7 @@ class ACR_AICommander : Managed
      crew.SetMode(ACR_EMoveMode.FAST);
      crew.RouteTo(ACR_Manager.Ground(PositionOf(squad)), ACR_Squad.WP_MOVE, -1, "Resupplying " + squad.GetName(), 0);
      m_ServiceJobs.Set(crew, squad);
-     PrintFormat("[ACR] AI %1: %2 drives out to %3 (%4)", m_sFaction, crew.GetName(), squad.GetName(), what);
+     Say(string.Format("[ACR] AI %1: %2 drives out to %3 (%4)", m_sFaction, crew.GetName(), squad.GetName(), what));
     }
     else if (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED)
     {
@@ -4130,7 +4187,7 @@ class ACR_AICommander : Managed
      squad.m_iAITask = ACR_EAITask.RESUPPLY;
      squad.SetMode(ACR_EMoveMode.FAST);
      Travel(squad, ACR_Manager.Ground(station.GetOrigin()), false, 0);
-     PrintFormat("[ACR] AI %1: %2 falls back to the %3 truck", m_sFaction, squad.GetName(), what);
+     Say(string.Format("[ACR] AI %1: %2 falls back to the %3 truck", m_sFaction, squad.GetName(), what));
     }
     break;
    }
@@ -4149,7 +4206,7 @@ class ACR_AICommander : Managed
    if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
    if (idleCrew.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(idleCrew.RouteDestination(), goal.GetOrigin()) < goal.m_fRadius + 80) continue;
    idleCrew.RouteTo(ACR_Manager.Ground(goal.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
-   PrintFormat("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(serviceMask));
+   Say(string.Format("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(serviceMask)));
   }
  }
 
@@ -4401,7 +4458,7 @@ class ACR_AICommander : Managed
   if (data.m_iRP < cost + FOB_RP_COMBAT_RESERVE) return false;
 
   string bought = m_Manager.PurchaseAt(m_sFaction, pick, spawn);
-  PrintFormat("[ACR] AI %1 requisition (FOB construction truck): %2", m_sFaction, bought);
+  Say(string.Format("[ACR] AI %1 requisition (FOB construction truck): %2", m_sFaction, bought));
   if (!bought.IsEmpty()) m_fFobTruckBoughtAt = now;
   return !bought.IsEmpty();
  }
@@ -4439,7 +4496,7 @@ class ACR_AICommander : Managed
    {
     // Site searches are expensive (HQ and eight upgrade spots per candidate): back off.
     m_fNextFobEval = now + FOB_SITE_RETRY_MS;
-    PrintFormat("[ACR] AI %1: no clear FOB site near %2, next look in 5 minutes", m_sFaction, front.m_sName);
+    Say(string.Format("[ACR] AI %1: no clear FOB site near %2, next look in 5 minutes", m_sFaction, front.m_sName));
     return;
    }
   }
@@ -4470,10 +4527,10 @@ class ACR_AICommander : Managed
    escort.m_iAITask = ACR_EAITask.DEFEND;
    escort.SetMode(ACR_EMoveMode.FAST);
    escort.RouteTo(site, ACR_Squad.WP_DEFEND, -1, "Escorting FOB construction", 0);
-   PrintFormat("[ACR] AI %1: %2 assigned as escort for FOB build at %3", m_sFaction, escort.GetName(), site);
+   Say(string.Format("[ACR] AI %1: %2 assigned as escort for FOB build at %3", m_sFaction, escort.GetName(), site));
   }
 
-  PrintFormat("[ACR] AI %1: dispatched %2 to establish forward FOB near %3 at %4", m_sFaction, builder.GetName(), front.m_sName, site);
+  Say(string.Format("[ACR] AI %1: dispatched %2 to establish forward FOB near %3 at %4", m_sFaction, builder.GetName(), front.m_sName, site));
  }
 
  // Our own FOB whose HQ is gone, quiet enough to rebuild.
@@ -4492,7 +4549,7 @@ class ACR_AICommander : Managed
  {
   m_aAvoidSites.Insert(site);
   m_aAvoidUntil.Insert(GetGame().GetWorld().GetWorldTime() + FOB_SITE_AVOID_MS);
-  PrintFormat("[ACR] AI %1: FOB site %2 abandoned, avoiding it for 10 minutes", m_sFaction, site);
+  Say(string.Format("[ACR] AI %1: FOB site %2 abandoned, avoiding it for 10 minutes", m_sFaction, site));
  }
 
  bool Avoided(vector site)
@@ -4541,7 +4598,7 @@ class ACR_AICommander : Managed
   best.m_AITarget = nearestBase;
   best.SetMode(ACR_EMoveMode.FAST);
   best.MoveTo(chargePos);
-  PrintFormat("[ACR] AI %1: %2 sent to defuse a demolition charge at %3 (%4 m)", m_sFaction, best.GetName(), chargePos, (int)bestDist);
+  Say(string.Format("[ACR] AI %1: %2 sent to defuse a demolition charge at %3 (%4 m)", m_sFaction, best.GetName(), chargePos, (int)bestDist));
   return true;
  }
 
@@ -4600,7 +4657,7 @@ class ACR_AICommander : Managed
   if (data.m_iRP < ACR_FobSupply.DELIVERY_COST + FOB_RP_COMBAT_RESERVE) return false;
 
   string result = ACR_FobSupply.Order(m_Manager, m_sFaction, base);
-  PrintFormat("[ACR] AI %1 ordered supplies for %2: %3", m_sFaction, base.m_sName, result);
+  Say(string.Format("[ACR] AI %1 ordered supplies for %2: %3", m_sFaction, base.m_sName, result));
   return base.m_iSupplyDelivery > 0;
  }
 
@@ -4666,7 +4723,7 @@ class ACR_AICommander : Managed
   string outcome = ACR_FobSlots.OrderUpgradeBase(m_Manager, m_sFaction, base, pickSlot, refusal);
   if (!outcome.IsEmpty())
   {
-   PrintFormat("[ACR] AI %1: ordered FOB %2 upgrade %3 (tier %4)", m_sFaction, base.m_sName, ACR_FobSlots.SlotName(pickSlot, targetTier), targetTier);
+   Say(string.Format("[ACR] AI %1: ordered FOB %2 upgrade %3 (tier %4)", m_sFaction, base.m_sName, ACR_FobSlots.SlotName(pickSlot, targetTier), targetTier));
    return true;
   }
   return false;
@@ -4691,7 +4748,7 @@ class ACR_AICommander : Managed
    {
     squad.SetMode(ACR_EMoveMode.FAST);
     squad.RouteTo(base.GetOrigin(), ACR_Squad.WP_MOVE, -1, "Assisting FOB upgrade construction", 0, true);
-    PrintFormat("[ACR] AI %1: dispatched %2 to assist upgrade construction at %3", m_sFaction, squad.GetName(), base.m_sName);
+    Say(string.Format("[ACR] AI %1: dispatched %2 to assist upgrade construction at %3", m_sFaction, squad.GetName(), base.m_sName));
     return squad;
    }
   }
@@ -4721,7 +4778,7 @@ class ACR_AICommander : Managed
    if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || PendingBuildOf(squad)) continue;
    if (squad.m_ActiveRoadblock && KeepsHolding(squad)) continue;
    squad.m_iAITask = ACR_EAITask.POSTED;
-   PrintFormat("[ACR] AI %1: %2 available for reassignment after roadblock construction", m_sFaction, squad.GetName());
+   Say(string.Format("[ACR] AI %1: %2 available for reassignment after roadblock construction", m_sFaction, squad.GetName()));
   }
  }
  void ReleaseBuildersForTest() { ReleaseRoadblockBuilders(); }
@@ -4906,7 +4963,7 @@ class ACR_AICommander : Managed
     }
     if (RideToBuild(candidate, ACR_EAITask.ROADBLOCK, frontlineBase, enemyBasePos, targetRoadPos, targetYaw))
     {
-     PrintFormat("[ACR] AI %1: %2 rides out to a roadblock site on the approach to %3 at %4: of %5 road sites, %6", m_sFaction, candidate.GetName(), frontlineBase.m_sName, targetRoadPos, considered, ACR_RoadblockSiting.Breakdown(site));
+     Say(string.Format("[ACR] AI %1: %2 rides out to a roadblock site on the approach to %3 at %4: of %5 road sites, %6", m_sFaction, candidate.GetName(), frontlineBase.m_sName, targetRoadPos, considered, ACR_RoadblockSiting.Breakdown(site)));
      return;
     }
     if (!candidate.EstablishRoadblock(targetRoadPos, targetYaw, ACR_ERoadblockType.MEDIUM, false))
@@ -4917,7 +4974,7 @@ class ACR_AICommander : Managed
     candidate.m_iAITask = ACR_EAITask.ROADBLOCK;
     string which = "";
     if (pass == 1) which = " (a second road)";
-    PrintFormat("[ACR] AI %1: dispatched %2%3 to establish roadblock on approach to %4 at %5%6: of %7 road sites, %8", m_sFaction, candidate.GetName(), FromFar(candidate, basePos, 450), frontlineBase.m_sName, targetRoadPos, which, considered, ACR_RoadblockSiting.Breakdown(site));
+    Say(string.Format("[ACR] AI %1: dispatched %2%3 to establish roadblock on approach to %4 at %5%6: of %7 road sites, %8", m_sFaction, candidate.GetName(), FromFar(candidate, basePos, 450), frontlineBase.m_sName, targetRoadPos, which, considered, ACR_RoadblockSiting.Breakdown(site)));
     return;
    }
   }
@@ -4934,7 +4991,7 @@ class ACR_AICommander : Managed
   float last;
   if (m_mBuildNotes.Find(key, last) && now - last < NOTE_S * 1000) return;
   m_mBuildNotes.Set(key, now);
-  PrintFormat("%1", line);
+  Say(line);
  }
 
  // With no free squad near a front base, a roadblock, minefield or position takes the nearest
@@ -4975,7 +5032,7 @@ class ACR_AICommander : Managed
   pending.m_fDeadline = GetGame().GetWorld().GetWorldTime() + distance / ACR_Minefields.TRAVEL_SPEED * 1000 + ACR_Squad.FOB_GIVE_UP_MS;
   m_aPendingBuilds.Insert(pending);
   squad.m_iAITask = task;
-  if (task != ACR_EAITask.ROADBLOCK) PrintFormat("[ACR] AI %1: %2 rides out to %3 to %4 there (%5 m)", m_sFaction, squad.GetName(), base.m_sName, BuildName(task), (int)distance);
+  if (task != ACR_EAITask.ROADBLOCK) Say(string.Format("[ACR] AI %1: %2 rides out to %3 to %4 there (%5 m)", m_sFaction, squad.GetName(), base.m_sName, BuildName(task), (int)distance));
   return true;
  }
 
@@ -5022,7 +5079,7 @@ class ACR_AICommander : Managed
     m_aPendingBuilds.Remove(i);
     if (gone) continue;
     squad.m_iAITask = ACR_EAITask.POSTED;
-    PrintFormat("[ACR] AI %1: %2 no longer rides out to %3 (base lost or past its deadline)", m_sFaction, squad.GetName(), what);
+    Say(string.Format("[ACR] AI %1: %2 no longer rides out to %3 (base lost or past its deadline)", m_sFaction, squad.GetName(), what));
     continue;
    }
    if (m_Manager.m_Rides.RideOf(squad) || squad.IsMounted()) continue;
@@ -5034,7 +5091,7 @@ class ACR_AICommander : Managed
    {
     paid = CanBuild(ACR_Roadblocks.ROADBLOCK_COST, 25);
     ordered = paid && squad.EstablishRoadblock(pending.m_vSite, pending.m_fYaw, ACR_ERoadblockType.MEDIUM, false);
-    if (ordered) PrintFormat("[ACR] AI %1: %2%3 establishing the roadblock at %4", m_sFaction, squad.GetName(), from, pending.m_vSite);
+    if (ordered) Say(string.Format("[ACR] AI %1: %2%3 establishing the roadblock at %4", m_sFaction, squad.GetName(), from, pending.m_vSite));
    }
    else if (pending.m_iTask == ACR_EAITask.MINES)
    {
@@ -5050,7 +5107,7 @@ class ACR_AICommander : Managed
    squad.m_iAITask = ACR_EAITask.POSTED;
    string why = "engineering can't pay now";
    if (paid) why = "the order was refused there";
-   PrintFormat("[ACR] AI %1: %2 out of its ride, but can't %3 now (%4)", m_sFaction, squad.GetName(), what, why);
+   Say(string.Format("[ACR] AI %1: %2 out of its ride, but can't %3 now (%4)", m_sFaction, squad.GetName(), what, why));
   }
  }
  void ManagePendingBuildsForTest() { ManagePendingBuilds(); }
@@ -5070,7 +5127,7 @@ class ACR_AICommander : Managed
    if (!layer || layer.m_iAITask != ACR_EAITask.MINES || layer.m_MinePlan || PendingBuildOf(layer)) continue;
    if (!layer.GetFaction() || layer.GetFaction().GetFactionKey() != m_sFaction) continue;
    layer.m_iAITask = ACR_EAITask.POSTED;
-   PrintFormat("[ACR] AI %1: %2 available for reassignment after laying mines", m_sFaction, layer.GetName());
+   Say(string.Format("[ACR] AI %1: %2 available for reassignment after laying mines", m_sFaction, layer.GetName()));
   }
   // Planning a field queries the roads and terrain: it waits for a tick with budget left.
   if (!ACR_Minefields.AIUses()) return;
@@ -5156,7 +5213,7 @@ class ACR_AICommander : Managed
     continue;
    }
    candidate.m_iAITask = ACR_EAITask.MINES;
-   PrintFormat("[ACR] AI %1: %2%3 laying %4 on the approach to %5 at %6: of %7 spots, %8", m_sFaction, candidate.GetName(), from, ACR_Minefields.Name(site.m_eKind), front.m_sName, site.m_vPos, sites.Count(), ACR_MineSiting.Breakdown(site));
+   Say(string.Format("[ACR] AI %1: %2%3 laying %4 on the approach to %5 at %6: of %7 spots, %8", m_sFaction, candidate.GetName(), from, ACR_Minefields.Name(site.m_eKind), front.m_sName, site.m_vPos, sites.Count(), ACR_MineSiting.Breakdown(site)));
    return true;
   }
   string why = string.Format("%1 spots, %2 more too near our own defences or bases", sites.Count(), crowded);
@@ -5289,7 +5346,7 @@ class ACR_AICommander : Managed
    else if (ACR_Fortify.Order(worker, target.m_vPos, refusal))
    {
     worker.m_iAITask = ACR_EAITask.FORTIFY;
-    PrintFormat("[ACR] AI %1: %2%3 upgrading the position at %4 to %5", m_sFaction, worker.GetName(), FromFar(worker, target.m_vPos, FORTIFY_NEAR), target.m_vPos, ACR_Fortify.TierName(target.m_iTier + 1));
+    Say(string.Format("[ACR] AI %1: %2%3 upgrading the position at %4 to %5", m_sFaction, worker.GetName(), FromFar(worker, target.m_vPos, FORTIFY_NEAR), target.m_vPos, ACR_Fortify.TierName(target.m_iTier + 1)));
     return;
    }
    else
@@ -5342,7 +5399,7 @@ class ACR_AICommander : Managed
    }
    if (!worker.ManFortification(fort)) continue;
    worker.m_iAITask = ACR_EAITask.FORTIFY;
-   PrintFormat("[ACR] AI %1: %2%3 mans the empty %4 at %5", m_sFaction, worker.GetName(), FromFar(worker, fort.m_vPos, FORTIFY_NEAR), ACR_Fortify.TierName(fort.m_iTier), fort.m_vPos);
+   Say(string.Format("[ACR] AI %1: %2%3 mans the empty %4 at %5", m_sFaction, worker.GetName(), FromFar(worker, fort.m_vPos, FORTIFY_NEAR), ACR_Fortify.TierName(fort.m_iTier), fort.m_vPos));
    return true;
   }
   return false;
@@ -5421,7 +5478,7 @@ class ACR_AICommander : Managed
      candidate.m_iAITask = ACR_EAITask.FORTIFY;
      string fit = "";
      if (pass == 0) fit = ", its upgrades fit";
-     PrintFormat("[ACR] AI %1: %2%3 digging in on the approach to %4 at %5%6", m_sFaction, candidate.GetName(), from, front.m_sName, sample, fit);
+     Say(string.Format("[ACR] AI %1: %2%3 digging in on the approach to %4 at %5%6", m_sFaction, candidate.GetName(), from, front.m_sName, sample, fit));
      return true;
     }
    }

@@ -141,7 +141,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 123; // includes seven BBB order-leash, five roadblock placement and thirteen doctrine checks
+ static const int EXPECTED = 125; // includes seven BBB order-leash, five roadblock placement and thirteen doctrine checks
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -1058,6 +1058,26 @@ class ACR_TestRegress
    Check("report: a dead soldier counts as lost", ussr2.m_iLost > s_iReportLost, string.Format("%1 -> %2", s_iReportLost, ussr2.m_iLost));
    Check("report: RP spent tallied and panel text built", us.m_iRPSpent > 0 && text.Contains("Bases won"), string.Format("spent %1 | %2", us.m_iRPSpent, text.Length()));
    ACR_Report.LogAll();
+  }
+  // AC:A Think (host view of the AI commanders): the AI's decisions are kept for the decision
+  // page, and the squads page lists the side's squads with task and order.
+  if (tick == 47)
+  {
+   int thinkEast = 1;
+   if (ACR_Think.SideKey(0) == "USSR") thinkEast = 0;
+   ACR_AICommander thinker = manager.AICommanderFor("USSR");
+   array<string> thinkSaid = {};
+   if (thinker) thinker.ThinkDecisions(thinkSaid);
+   string thinkLog = ACR_Think.Report(manager, thinkEast, 1);
+   string thinkSquads = ACR_Think.Report(manager, thinkEast, 0);
+   string thinkNewest;
+   if (!thinkSaid.IsEmpty()) thinkNewest = thinkSaid[thinkSaid.Count() - 1];
+   if (thinkNewest.Length() > 60) thinkNewest = thinkNewest.Substring(0, 60);
+   Check("think: AI decisions kept for the Think view", !thinkNewest.IsEmpty() && thinkLog.Contains("decisions") && thinkLog.Contains(thinkNewest), string.Format("%1 kept | %2", thinkSaid.Count(), thinkNewest));
+   Check("think: squads page shows task and order", thinkSquads.Contains("USSR") && thinkSquads.Contains(" squad(s)") && thinkSquads.Contains("% | "), thinkSquads.Length().ToString());
+   array<string> thinkRows = {};
+   thinkSquads.Split("\n", thinkRows, false);
+   foreach (string thinkRow : thinkRows) PrintFormat("[ACR] REGRESS think: %1", thinkRow);
   }
   // Stepped pricing (5 Oct, Jacob's threat = price climb): ordinary units unlimited, each
   // purchase raises that unit's price by the threat step; rare units keep a fixed stock.

@@ -767,6 +767,8 @@ class ACR_Squad : Managed
   m_iOrderSerial++;
   m_iOrderedBy = 0;
   m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
+  m_aRecentOrders.Insert(m_fOrderedAt);
+  if (m_aRecentOrders.Count() > THINK_ORDERS) m_aRecentOrders.RemoveOrdered(0);
   // A new order cut a regroup short: no new regroup for a while, or an order re-issued
   // on a timer and a regroup take turns for good (20 Oct live: a reserve stood at the
   // same door for 15 min, ordered on and called back every 15 s).
@@ -2609,6 +2611,38 @@ class ACR_Squad : Managed
    return pathing.GetClosestPositionOnNavmesh(at, Vector(radius, 10, radius), result);
   }
   return false;
+ }
+
+ // ---------------------------------------------------------------- AC:A Think (ACR_Think)
+ // When its newest orders came: a squad given a fresh order every few seconds is looping
+ // (Everon 26 Oct: an MG team re-ordered every 15 s for 34 min).
+ static const int THINK_ORDERS = 12;
+ protected ref array<float> m_aRecentOrders = {};
+ int OrdersSince(float since)
+ {
+  int count;
+  foreach (float at : m_aRecentOrders) if (at >= since) count++;
+  return count;
+ }
+
+ // Its movement state in a few words: waypoint recovery, regrouping, gave up.
+ string ThinkMovement()
+ {
+  string state;
+  if (m_bRegrouping) state += " regrouping";
+  if (m_bGarrisonPending) state += " garrison pending";
+  if (m_iWaypointRecoveries > 0) state += string.Format(" recovery %1/4", m_iWaypointRecoveries);
+  if (GaveUpUnreachable()) state += " GAVE UP (unreachable)";
+  else if (MovementStillPending()) state += string.Format(" moving, %1 m to go", (int)DistanceToOrder());
+  if (m_Group && !m_Group.GetCurrentWaypoint() && MovementStillPending()) state += " NO WAYPOINT";
+  return state.Trim();
+ }
+
+ protected float DistanceToOrder()
+ {
+  IEntity anchor = GetAnchor();
+  if (!anchor) return 0;
+  return vector.DistanceXZ(anchor.GetOrigin(), m_MoveTarget);
  }
 
  // ---------------------------------------------------------------- cohesion
