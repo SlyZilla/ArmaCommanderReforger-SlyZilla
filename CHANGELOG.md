@@ -69,6 +69,7 @@
 ### Intel
 
 - "The enemy commander has changed tactics" only names the old doctrine when it had been confirmed. A hint such as "Firepower or Fortress" could include the new doctrine, so the line could say "no longer Fortress" as the enemy switched to Fortress.
+- Drag to aim: roadblocks, Fortify and the minefields still face the threat on a plain right-click. Right-click and drag sets the facing instead: the order goes where you pressed and faces where you let go, with a gold arrow on the map while you drag (while one of these orders is armed, a right-drag aims instead of panning the map; the keyboard and the screen edges still pan). A dragged minefield off the road lies square to the arrow, one on a road runs along it the way you dragged; an upgrade of a Fortify position keeps its facing (the order says so). The facing is sent with the order, so it works the same for every player in multiplayer; the AI commander keeps facing the threat.
 
 ## 0.5.7 — released
 

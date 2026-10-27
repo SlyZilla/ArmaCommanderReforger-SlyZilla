@@ -104,6 +104,7 @@ attackplan|-acrAttackPlanTest 1|150
 drivelessgun|-acrDrivelessGunTest 1|100
 minefields|-acrMinefieldsTest 1|330
 defenders|-acrDefendersTest 1|200
+aim|-acrAimTest 1|120
 roadblocks|-acrRoadblocksTest 1|420
 fortify|-acrFortifyTest 1|420
 fortifyfit|-acrFortifyFitTest 1|200
