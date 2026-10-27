@@ -1,6 +1,7 @@
 // Tactical 3D Commander Camera (aca-f02).
 // Overhead RTS perspective hovering above the battlefield with smooth WASD ground movement,
-// terrain-following altitude (ATL 12m-160m), RMB orbit rotation, mouse wheel zoom, 300m proximity
+// terrain-following altitude (ATL 12m-160m), RMB orbit rotation (a drag to aim while an order that
+// takes a facing is armed), mouse wheel zoom, 300m proximity
 // leash to friendly squads and bases, and full 3D selection and authoritative order dispatching.
 
 class ACR_RTSCameraHandler : ScriptedWidgetEventHandler
@@ -47,10 +48,18 @@ class ACR_RTSCameraManager : Managed
  protected int m_iPointCommand;
  protected bool m_bOrbit;
  protected bool m_bDragged;
+ protected bool m_bAiming;        // drag to aim: this right-drag aims the armed order (AimArmed)
+ protected vector m_vAimFrom;     // ... from where the button went down
+ protected IEntity m_AimFromEnt;
+ protected bool m_bAimToastShown;
  protected int m_iMouseX;
  protected int m_iMouseY;
  protected int m_iDownX;
  protected int m_iDownY;
+ protected CanvasWidget m_AimCanvas;    // the drag-to-aim arrow, in native pixels
+ protected ref array<ref CanvasWidgetCommand> m_AimCommands = {};
+ protected ref array<RplId> m_LastSelected = {}; // last frame's selection: a change disarms the tool
+ protected static const float AIM_MIN_PX = 8;     // no arrow while its ends are this close
 	protected Widget m_RootWidget;
 	protected Widget m_InteractionLayer;
 	protected TextWidget m_HeadingText;
@@ -73,6 +82,9 @@ class ACR_RTSCameraManager : Managed
 	// The Minefield button (#4): -1 off, else the ACR_EMineKind a right-click lays (AP, AT, mixed).
 	protected SCR_ButtonTextComponent m_MinesBtn;
 	protected int m_iMineKind = -1;
+	// The Fortify button: a right-click digs the selected squad in there, or upgrades our position there.
+	protected SCR_ButtonTextComponent m_FortifyBtn;
+	protected bool m_bFortifyMode = false;
 
 	protected ref map<SCR_ButtonBaseComponent, int> m_Actions = new map<SCR_ButtonBaseComponent, int>();
 	protected ref ACR_RTSCameraHandler m_Handler;
@@ -230,6 +242,15 @@ class ACR_RTSCameraManager : Managed
 		FrameSlot.SetAnchorMax(m_MarkerLayer, 1, 1);
 		FrameSlot.SetOffsets(m_MarkerLayer, 0, 0, 0, 0);
 
+		// The drag-to-aim arrow, over the scene and ignoring the cursor like the markers.
+		m_AimCanvas = CanvasWidget.Cast(ws.CreateWidget(WidgetType.CanvasWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.BLEND, Color.FromInt(Color.WHITE), 0, m_RootWidget));
+		if (m_AimCanvas)
+		{
+			FrameSlot.SetAnchorMin(m_AimCanvas, 0, 0);
+			FrameSlot.SetAnchorMax(m_AimCanvas, 1, 1);
+			FrameSlot.SetOffsets(m_AimCanvas, 0, 0, 0, 0);
+		}
+
 		// Top Status Banner
 		Widget topOverlay = ws.CreateWidget(WidgetType.OverlayWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_RootWidget);
 		FrameSlot.SetAnchorMin(topOverlay, 0.5, 0);
@@ -244,12 +265,13 @@ class ACR_RTSCameraManager : Managed
 
 		SizeLayoutWidget topSize = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, topOverlay));
 		topSize.EnableWidthOverride(true);
-		topSize.SetWidthOverride(760);
+		topSize.SetWidthOverride(980); // the title and Exit Camera side by side without overlapping (27 Oct shots)
 		AlignableSlot.SetPadding(topSize, 16, 10, 16, 10);
 
 		Widget topContent = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, topSize);
 		Widget topLeft = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, topContent);
 		AlignableSlot.SetHorizontalAlign(topLeft, LayoutHorizontalAlign.Stretch);
+		LayoutSlot.SetSizeMode(topLeft, LayoutSizeMode.Fill);
 
 		m_HeadingText = AddText(topLeft, LAYOUT_HEADING, "AC: ACTUAL - 3D COMMAND CAMERA");
 		m_LeashText = AddText(topLeft, LAYOUT_TEXT, "LEASH: CONNECTED (0m / 300m)");
@@ -258,6 +280,7 @@ class ACR_RTSCameraManager : Managed
 
 		Widget topRight = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, topContent);
 		AlignableSlot.SetHorizontalAlign(topRight, LayoutHorizontalAlign.Right);
+		AlignableSlot.SetPadding(topRight, 24, 0, 0, 0);
 		m_ExitBtn = AddButton(topRight, "Exit Camera [F10]", 1);
 
 		// Bottom Tactical Bar
@@ -291,6 +314,7 @@ class ACR_RTSCameraManager : Managed
 		m_HaltBtn = AddButton(m_UnitActionsRow, "Halt", 6, true);
 		m_RoadblockBtn = AddButton(m_UnitActionsRow, "Roadblock", 7, true);
 		m_MinesBtn = AddButton(m_UnitActionsRow, "Minefield", 8, true);
+		m_FortifyBtn = AddButton(m_UnitActionsRow, "Fortify", 9, true);
 
 		AddText(botCol, LAYOUT_TEXT, "[WASD] Pan  |  [RMB Drag] Rotate  |  [Scroll] Zoom  |  [LMB] Select  |  [RMB Click] Order  |  [Shift+RMB] Queue  |  [F10/Esc] Exit");
 
@@ -326,6 +350,8 @@ class ACR_RTSCameraManager : Managed
 		}
 		if (small)
 		{
+			// A gap between the row's buttons: their labels ran together ("DefendGarrisonGet In...").
+			AlignableSlot.SetPadding(root, 4, 0, 4, 0);
 			SizeLayoutWidget size = SizeLayoutWidget.Cast(root);
 			if (size)
 			{
@@ -354,6 +380,7 @@ class ACR_RTSCameraManager : Managed
 				{
 					m_bRoadblockMode = false;
 					m_iMineKind = -1;
+					m_bFortifyMode = false;
 					if (m_RoadblockBtn) m_RoadblockBtn.SetText("Roadblock");
 				}
 				if (m_DefendBtn)
@@ -361,7 +388,7 @@ class ACR_RTSCameraManager : Managed
 					if (m_bDefendMode) m_DefendBtn.SetText("Defend [ON]");
 					else m_DefendBtn.SetText("Defend");
 				}
-				if (m_bDefendMode) ShowToast("Defend mode armed: Right-click ground to place defence");
+				if (m_bDefendMode) ShowToast("Defend mode armed: Right-click ground to place defence (on a road, an ambush); right-drag to set the way it faces");
 				else ShowToast("Defend mode off");
 				return;
    case 3: // Garrison: choose the building in the scene.
@@ -369,6 +396,7 @@ class ACR_RTSCameraManager : Managed
     m_bDefendMode = false;
     m_bRoadblockMode = false;
     m_iMineKind = -1;
+    m_bFortifyMode = false;
     ShowToast("Right-click a building to garrison");
     return;
    case 4: // Get in: choose the vehicle in the scene.
@@ -376,6 +404,7 @@ class ACR_RTSCameraManager : Managed
     m_bDefendMode = false;
     m_bRoadblockMode = false;
     m_iMineKind = -1;
+    m_bFortifyMode = false;
     ShowToast("Right-click a vehicle to board");
     return;
 			case 5: // Switch / Possess
@@ -399,6 +428,7 @@ class ACR_RTSCameraManager : Managed
 				{
 					m_bDefendMode = false;
 					m_iMineKind = -1;
+					m_bFortifyMode = false;
 					if (m_DefendBtn) m_DefendBtn.SetText("Defend");
 				}
 				if (m_RoadblockBtn)
@@ -413,9 +443,19 @@ class ACR_RTSCameraManager : Managed
 				m_iPointCommand = 0;
 				m_bDefendMode = false;
 				m_bRoadblockMode = false;
+				m_bFortifyMode = false;
 				m_iMineKind = NextMineKind(m_iMineKind);
 				if (m_MinesBtn) m_MinesBtn.SetText(MineButton(m_iMineKind));
 				ShowToast(MineToast(m_iMineKind));
+				return;
+			case 9: // Fortify: dig in where right-clicked, or upgrade our position there
+				m_iPointCommand = 0;
+				m_bDefendMode = false;
+				m_bRoadblockMode = false;
+				m_iMineKind = -1;
+				m_bFortifyMode = !m_bFortifyMode;
+				if (m_FortifyBtn) m_FortifyBtn.SetText(FortifyButton(m_bFortifyMode));
+				ShowToast(FortifyToast(m_bFortifyMode));
 				return;
 		}
 	}
@@ -448,6 +488,26 @@ class ACR_RTSCameraManager : Managed
 	{
 		if (kind < 0) return "Minefield mode off";
 		return string.Format("%1 armed: right-click ground to lay them (%2 RP); click Minefield again for the next kind", ACR_Minefields.Button(kind), ACR_Minefields.Cost(kind));
+	}
+
+	// ---------------------------------------------------------------- the Fortify button
+	// A right-click digs the selected squad in there, or upgrades our position there, through the map
+	// panel's order path (ACR_IssueOrder, ACR_Fortify plans the tier, the facing and the price).
+	static int FortifyCommand()
+	{
+		return ACR_ERequest.ORDER_FORTIFY;
+	}
+
+	static string FortifyButton(bool on)
+	{
+		if (on) return "Fortify [ON]";
+		return "Fortify";
+	}
+
+	static string FortifyToast(bool on)
+	{
+		if (!on) return "Fortify mode off";
+		return string.Format("Fortify armed: right-click ground to dig in (tier I, %1 RP), or near one of our positions to upgrade it; right-drag to set the way it faces", ACR_Fortify.Cost(1));
 	}
 
 	// ---------------------------------------------------------------- screen raycasting
@@ -560,7 +620,13 @@ class ACR_RTSCameraManager : Managed
 		vector hitPos;
 		IEntity hitEnt;
 		if (!ScreenToWorld(x, y, hitPos, hitEnt)) return;
+		OrderAt(hitPos, hitEnt, vector.Zero);
+	}
 
+	// The right-click's order at hitPos; aim: where a drag to aim came up (vector.Zero: none, the
+	// order faces the threat as before). The facing goes with the order (ACR_IssueOrder).
+	void OrderAt(vector hitPos, IEntity hitEnt, vector aim)
+	{
 		SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
 		if (!pc) return;
 		ACR_MapData data = pc.ACR_GetData();
@@ -574,7 +640,12 @@ class ACR_RTSCameraManager : Managed
 		int command = ACR_ERequest.MOVE_TO;
 		string actionName = "Move";
 
-		if (m_iMineKind >= 0)
+		if (m_bFortifyMode)
+		{
+			command = FortifyCommand();
+			actionName = "Fortify";
+		}
+		else if (m_iMineKind >= 0)
 		{
 			command = MineCommand(m_iMineKind);
 			actionName = ACR_Minefields.Button(m_iMineKind);
@@ -614,11 +685,121 @@ class ACR_RTSCameraManager : Managed
 			actionName = "Queued " + actionName;
 		}
 
-		if (pc.ACR_IssueOrder(command, hitPos, append))
+		if (pc.ACR_IssueOrder(command, hitPos, append, aim))
 		{
 			m_iPointCommand = 0;
-			ShowToast(actionName + " order requested");
+			if (aim != vector.Zero) ShowToast(string.Format("%1 order requested, facing %2 degrees", actionName, (int)Bearing(hitPos, aim)));
+			else ShowToast(actionName + " order requested");
 		}
+	}
+
+	// ---------------------------------------------------------------- drag to aim
+	// As on the map (#11): with Fortify, Roadblock, a minefield or Defend armed, a right-drag aims the
+	// order instead of turning the camera. The order goes where the button went down and faces where
+	// it came up, with an arrow on the ground while dragging; a plain right-click orders as before.
+	bool AimArmed()
+	{
+		return m_bFortifyMode || m_bRoadblockMode || m_bDefendMode || m_iMineKind >= 0;
+	}
+
+	// The gold arrow from where the button went down to the cursor (native pixels), drawn on the HUD
+	// as the map draws its own (ACR_OrderDisplay.DrawAim), over a dark edge for bright ground. It was a
+	// debug shape, which the game doesn't draw outside Workbench (pn12d: no arrow). Lines only, none
+	// while the ends are under AIM_MIN_PX apart or the start is behind the camera.
+	protected void AimArrow(int x, int y)
+	{
+		m_AimCommands.Clear();
+		WorkspaceWidget ws = GetGame().GetWorkspace();
+		vector from = ws.ProjWorldToScreenNative(m_vAimFrom + Vector(0, 0.5, 0), GetGame().GetWorld());
+		float dx = x - from[0];
+		float dy = y - from[1];
+		if (from[2] > 0 && dx * dx + dy * dy >= AIM_MIN_PX * AIM_MIN_PX)
+		{
+			float width = ws.DPIScale(3);
+			float head = ws.DPIScale(16);
+			float angle = Math.Atan2(dy, dx);
+			Color edge = new Color(0, 0, 0, 0.55);
+			Color gold = new Color(1, 0.85, 0.2, 0.95);
+			array<int> colors = {edge.PackToInt(), gold.PackToInt()};
+			array<float> widths = {width + ws.DPIScale(2), width};
+			foreach (int k, int color : colors)
+			{
+				AimLine(from[0], from[1], x, y, color, widths[k]);
+				for (int side = -1; side <= 1; side += 2)
+				{
+					float back = angle + Math.PI + side * 0.5;
+					AimLine(x, y, x + Math.Cos(back) * head, y + Math.Sin(back) * head, color, widths[k]);
+				}
+			}
+		}
+		if (m_AimCanvas) m_AimCanvas.SetDrawCommands(m_AimCommands);
+	}
+
+	protected void AimLine(float x0, float y0, float x1, float y1, int color, float width)
+	{
+		LineDrawCommand line = new LineDrawCommand();
+		line.m_iColor = color;
+		line.m_fWidth = width;
+		line.m_Vertices = {x0, y0, x1, y1};
+		m_AimCommands.Insert(line);
+	}
+
+	protected void ClearAim()
+	{
+		if (m_AimCommands.IsEmpty()) return;
+		m_AimCommands.Clear();
+		if (m_AimCanvas) m_AimCanvas.SetDrawCommands(m_AimCommands);
+	}
+
+	// pn12d: with Roadblock armed, deselecting the squad left the tool armed, so a right-drag aimed
+	// instead of turning the camera until a squad was reselected and the tool turned off. Emptying the
+	// selection or changing it disarms the tool; arming with nothing selected, then selecting, keeps it.
+	protected void WatchSelection(SCR_PlayerController pc)
+	{
+		ACR_MapData data = pc.ACR_GetData();
+		if (!data) return;
+		bool changed = data.m_Selected.Count() != m_LastSelected.Count();
+		foreach (RplId id : data.m_Selected) if (!m_LastSelected.Contains(id)) changed = true;
+		bool wasEmpty = m_LastSelected.IsEmpty();
+		m_LastSelected.Copy(data.m_Selected);
+		if (!changed || wasEmpty || (!AimArmed() && m_iPointCommand == 0)) return;
+		Disarm();
+		if (data.m_Selected.IsEmpty()) ShowToast("No squad selected: tool off");
+		else ShowToast("Selection changed: tool off");
+	}
+
+	// Every tool off (the buttons follow in UpdateTacticalUI); a drag under way stops aiming.
+	void Disarm()
+	{
+		m_bDefendMode = false;
+		m_bRoadblockMode = false;
+		m_iMineKind = -1;
+		m_bFortifyMode = false;
+		m_iPointCommand = 0;
+		m_bAiming = false;
+		ClearAim();
+	}
+
+	static float Bearing(vector from, vector to)
+	{
+		float bearing = Math.Atan2(to[0] - from[0], to[2] - from[2]) * Math.RAD2DEG;
+		if (bearing < 0) bearing += 360;
+		return bearing;
+	}
+
+	protected void DrawAim(int x, int y)
+	{
+		vector to;
+		IEntity toEnt;
+		if (!ScreenToWorld(x, y, to, toEnt))
+		{
+			ClearAim();
+			return;
+		}
+		AimArrow(x, y);
+		if (m_bAimToastShown) return;
+		m_bAimToastShown = true;
+		ShowToast("Aiming: let go where it should face");
 	}
 
  void BeginOrbit(int x, int y)
@@ -629,6 +810,9 @@ class ACR_RTSCameraManager : Managed
   m_iMouseY = y;
   m_iDownX = x;
   m_iDownY = y;
+  m_bAimToastShown = false;
+  ClearAim();
+  m_bAiming = AimArmed() && ScreenToWorld(x, y, m_vAimFrom, m_AimFromEnt);
  }
 
  void EndOrbit(int x, int y, bool onScene)
@@ -636,13 +820,24 @@ class ACR_RTSCameraManager : Managed
   if (!m_bOrbit) return;
   if (Math.AbsInt(x - m_iDownX) >= 8 || Math.AbsInt(y - m_iDownY) >= 8) m_bDragged = true;
   m_bOrbit = false;
+  bool aiming = m_bAiming;
+  m_bAiming = false;
+  ClearAim();
+  if (aiming && m_bDragged)
+  {
+   vector to;
+   IEntity toEnt;
+   if (ScreenToWorld(x, y, to, toEnt)) OrderAt(m_vAimFrom, m_AimFromEnt, to);
+   return;
+  }
   if (!m_bDragged && onScene) HandleRightClick(x, y);
  }
 
  protected void ApplyOrbit(int x, int y)
  {
   if (Math.AbsInt(x - m_iDownX) >= 8 || Math.AbsInt(y - m_iDownY) >= 8) m_bDragged = true;
-  if (m_bDragged)
+  if (m_bDragged && m_bAiming) DrawAim(x, y);
+  else if (m_bDragged)
   {
    vector angles = m_Camera.GetYawPitchRoll();
    angles[0] = angles[0] + (x - m_iMouseX) * 0.2;
@@ -821,6 +1016,7 @@ class ACR_RTSCameraManager : Managed
 			m_Camera.SetWorldTransform(trans);
 		}
 
+		WatchSelection(pc);
 		UpdateTacticalUI(pc);
 		UpdateMarkers(pc);
 
@@ -878,6 +1074,7 @@ class ACR_RTSCameraManager : Managed
    else m_RoadblockBtn.SetText("Roadblock");
   }
   if (m_MinesBtn) m_MinesBtn.SetText(MineButton(m_iMineKind));
+  if (m_FortifyBtn) m_FortifyBtn.SetText(FortifyButton(m_bFortifyMode));
   if (m_GarrisonBtn)
   {
    if (m_iPointCommand == ACR_ERequest.ORDER_GARRISON) m_GarrisonBtn.SetText("Garrison [ON]");
