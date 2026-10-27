@@ -10,6 +10,7 @@ class ACR_TestHarness : Managed
  ref ACR_TestBattle m_Battle = new ACR_TestBattle(this);
  ref ACR_TestLogistics m_Logistics = new ACR_TestLogistics(this);
 
+ static const int MODE_VARIETY = 89; // the dynamism picker (ACR_Variety)
  static const int MODE_AUTO = 1;
  static const int MODE_COMMAND = 2;
  static const int MODE_MAP_HANDOFF = 3;
@@ -72,6 +73,7 @@ class ACR_TestHarness : Managed
  static const int MODE_GUNHOLD = 64; // 54-63: the playtest branches
  static const int MODE_RIDEJOB = 68; // 54-67: Fortify and the playtest branches
  static const int MODE_MINESITING = 71; // 68-70: ride job, defend swap, LAV ride (own branches)
+ static const int MODE_POSSITING = 72; // 68-71: ride job, defend swap, LAV ride, mine siting (own branches)
  static const int MODE_ATTACKREACH = 79; // 69-78: the playtest branches
  static const int MODE_GRABS = 77; // 69-76: the playtest branches
  static const int MODE_MORTARSPOT = 78; // 69-77: the playtest branches
@@ -141,7 +143,9 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrBuildRideTest", flag)) mode = MODE_BUILDRIDE;
   if (System.GetCLIParam("acrGunHoldTest", flag)) mode = MODE_GUNHOLD;
   if (System.GetCLIParam("acrRideJobTest", flag)) mode = MODE_RIDEJOB;
+  if (System.GetCLIParam("acrVarietyTest", flag)) mode = MODE_VARIETY;
   if (System.GetCLIParam("acrMineSitingTest", flag)) mode = MODE_MINESITING;
+  if (System.GetCLIParam("acrPositionSitingTest", flag)) mode = MODE_POSSITING;
   if (System.GetCLIParam("acrAttackReachTest", flag)) mode = MODE_ATTACKREACH;
   if (System.GetCLIParam("acrGrabsTest", flag)) mode = MODE_GRABS;
   if (System.GetCLIParam("acrMortarSpotTest", flag)) mode = MODE_MORTARSPOT;
@@ -270,7 +274,9 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_BUILDRIDE) { ACR_TestBuildRide.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GUNHOLD) { ACR_TestGunHold.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDEJOB) { ACR_TestRideJob.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_VARIETY) { ACR_TestVariety.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MINESITING) { ACR_TestMineSiting.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_POSSITING) { ACR_TestPositionSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ATTACKREACH) { ACR_TestAttackReach.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GRABS) { ACR_TestGrabs.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MORTARSPOT) { ACR_TestMortarSpot.Run(this, m_Ticks); return; }
