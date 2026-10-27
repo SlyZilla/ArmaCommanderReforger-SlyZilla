@@ -1,16 +1,19 @@
 // -acrBuildBudgetTest 1 (server-capable, ~30 s): the AI building budget (-acrAIBuildShare). Off
 // by default (nothing set aside, unit purchases keep nothing back); at 10% a 200 RP gain puts
 // 20 RP in it, which unit purchases keep back and the status line shows; it stops at 100 RP
-// and at what the side holds; engineering spending comes out of it.
+// and at what the side holds; engineering spending comes out of it. #28: over 600 banked RP the
+// share rises with the surplus and the budget is topped up from it; at or below 600 nothing changes.
 class ACR_TestBuildBudget
 {
- static const int CHECKS = 6;
+ static const int CHECKS = 8;
 
  static void Run(ACR_TestHarness h, int tick)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager || tick != 8) return;
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All) settings.m_bAICommander = false;
+  // The checks are on the plain 600 RP: no variety (ACR_Variety).
+  ACR_Variety.s_bOff = true;
   ACR_AICommander ai = manager.AICommanderFor("US");
   if (!ai) ai = new ACR_AICommander(manager, "US");
   ACR_FactionData us = manager.m_Bases.GetFaction("US");
@@ -50,6 +53,8 @@ class ACR_TestBuildBudget
   ai.SpendBuildBudget(500);
   ACR_TestRegress.Check("budget: engineering spending comes out of it", afterSpend == 15 && ai.BuildBudget() == 0, string.Format("after 25: %1, after 500 more: %2", afterSpend, ai.BuildBudget()));
 
+  CheckSurplus(ai, us);
+
   // The share is clamped to 30%.
   ACR_Options.Set("acrAIBuildShare", "80");
   bool clamped = ACR_AICommander.BuildShare() == 30;
@@ -63,5 +68,50 @@ class ACR_TestBuildBudget
   ACR_Options.Unset("acrAIBuildShare");
   ACR_TestRegress.Check("budget: a setup row, off by default", offRow.Contains("aibuild\tAI build budget: off") && onRow.Contains("aibuild\tAI build budget: 15% of income") && ACR_Setup.Option("aibuild") == "acrAIBuildShare", "");
   ACR_TestRegress.Complete("budget", CHECKS);
+ }
+
+ // #28 at 15% (Balanced): the share at 300 and 600 banked RP is the plain 15% and a 200 RP gain up
+ // to 600 sets the same 30 RP aside as before; above 600 it rises (22.5% at 800, 30% at the
+ // 1000 RP cap, a Fortress's 50% at most), a gain sets more aside, and at the cap, with no gain
+ // and an empty budget, the budget is topped up from the surplus to its 100 RP cap.
+ protected static void CheckSurplus(ACR_AICommander ai, ACR_FactionData us)
+ {
+  ACR_Options.Set("acrAIBuildShare", "15");
+  ai.SetDoctrineForTest(ACR_AIDoctrine.Find("balanced"));
+  float at300 = ai.ShareAt(300);
+  float at600 = ai.ShareAt(600);
+  us.m_iRP = 400;
+  ai.AccrueBuildBudget();
+  ai.SpendBuildBudget(1000);
+  us.m_iRP = 600;
+  ai.AccrueBuildBudget();
+  int below = ai.BuildBudget();
+  bool same = at300 == 15 && at600 == 15 && below == 30 && ai.SurplusFloor(600) == 0 && !ai.BuildStatus().Contains("raised");
+  ACR_TestRegress.Check("budget: at or below 600 banked RP the share and the budget are as before", same,
+   string.Format("share at 300 %1%%, at 600 %2%%; 400 -> 600 RP puts %3 RP aside (30 before); floor at 600 %4", at300, at600, below, ai.SurplusFloor(600)));
+
+  float at800 = ai.ShareAt(800);
+  float atCap = ai.ShareAt(ACR_BaseSystem.POINTS_CAP);
+  ai.SpendBuildBudget(1000);
+  us.m_iRP = 600;
+  ai.AccrueBuildBudget();
+  us.m_iRP = 800;
+  ai.AccrueBuildBudget();
+  int above = ai.BuildBudget();
+  ai.SpendBuildBudget(1000);
+  us.m_iRP = ACR_BaseSystem.POINTS_CAP;
+  ai.AccrueBuildBudget();
+  ai.SpendBuildBudget(1000);
+  ai.AccrueBuildBudget();
+  int topped = ai.BuildBudget();
+  string status = ai.BuildStatus();
+  ai.SetDoctrineForTest(ACR_AIDoctrine.Find("fortress"));
+  float fortressCap = ai.ShareAt(ACR_BaseSystem.POINTS_CAP);
+  ai.SetDoctrineForTest(ACR_AIDoctrine.Find("balanced"));
+  ai.SpendBuildBudget(1000);
+  ACR_Options.Unset("acrAIBuildShare");
+  bool rises = at800 == 22.5 && atCap == 30 && fortressCap == 50 && above >= 45 && topped == 100 && status.Contains("raised by 400 RP banked over 600");
+  ACR_TestRegress.Check("budget: over 600 banked RP the share rises with the surplus, and at the RP cap the budget is topped up from it, within its caps", rises,
+   string.Format("share at 800 %1%%, at 1000 %2%% (Fortress %3%%); 600 -> 800 RP puts %4 RP aside; at 1000 with no gain, empty budget -> %5 RP; status '%6'", at800, atCap, fortressCap, above, topped, status));
  }
 }

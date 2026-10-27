@@ -928,15 +928,44 @@ class ACR_AICommander : Managed
  protected int m_iBuildLastRP = -1;
  static int BuildShare() { return Math.ClampInt(ACR_LogisticsRules.Choice("acrAIBuildShare", "0").ToInt(), 0, 30); }
  int BuildBudget() { return (int)m_fBuildBudget; }
- float EffectiveShare() { return Math.Min(BuildShare() * m_Doctrine.m_fBuildShare, 50); }
+ float EffectiveShare() { return ShareAt(m_Manager.m_Bases.GetRP(m_sFaction)); }
 
- // At the start of a strategy tick: the share of the RP gained since the last one.
+ // A rich side digs in (#28): over SURPLUS_FROM banked RP the share rises with the surplus, to twice
+ // the share at the RP cap (ACR_BaseSystem.POINTS_CAP), still at most 50%; and the budget is kept at
+ // least at that share of what is banked over SURPLUS_FROM, still at most BUILD_BUDGET_MAX. A side
+ // at the cap gains no RP to take a share of (overnight Everon games: the leading side sat at the
+ // cap from about 105 minutes with nothing left to buy). At or below SURPLUS_FROM nothing changes.
+ static const int SURPLUS_FROM = 600;
+ // SURPLUS_FROM varied by up to 15% per side (ACR_Variety, seeded from the match seed): a rich side
+ // starts digging in at a slightly different bank each match.
+ int SurplusFrom() { return (int)ACR_Variety.Jitter(SURPLUS_FROM, 0.15, "surplus " + m_sFaction); }
+
+ // x1 at or below SURPLUS_FROM, x2 at the RP cap.
+ float SurplusFactor(int rp)
+ {
+  float over = (rp - SurplusFrom()) / (float)(ACR_BaseSystem.POINTS_CAP - SurplusFrom());
+  return 1 + Math.Clamp(over, 0, 1);
+ }
+
+ // The share (percent of RP gained) with 'rp' banked.
+ float ShareAt(int rp) { return Math.Min(BuildShare() * m_Doctrine.m_fBuildShare * SurplusFactor(rp), 50); }
+
+ // The least the budget holds with 'rp' banked: that share of the surplus (0 at or below SURPLUS_FROM).
+ float SurplusFloor(int rp)
+ {
+  if (BuildShare() <= 0 || rp <= SurplusFrom()) return 0;
+  return Math.Min((rp - SurplusFrom()) * ShareAt(rp) / 100.0, BUILD_BUDGET_MAX);
+ }
+
+ // At the start of a strategy tick: the share of the RP gained since the last one, topped up to
+ // the surplus floor.
  void AccrueBuildBudget()
  {
   int rp = m_Manager.m_Bases.GetRP(m_sFaction);
-  float share = EffectiveShare();
+  float share = ShareAt(rp);
   if (share <= 0) m_fBuildBudget = 0;
   else if (m_iBuildLastRP >= 0 && rp > m_iBuildLastRP) m_fBuildBudget += (rp - m_iBuildLastRP) * share / 100.0;
+  m_fBuildBudget = Math.Max(m_fBuildBudget, SurplusFloor(rp));
   m_fBuildBudget = Math.Clamp(m_fBuildBudget, 0, Math.Min(BUILD_BUDGET_MAX, rp));
   m_iBuildLastRP = rp;
  }
@@ -971,7 +1000,10 @@ class ACR_AICommander : Managed
   {
    if (squad && squad.GetFaction() && squad.GetFaction().GetFactionKey() == m_sFaction && IsHolder(squad)) holders++;
   }
-  return string.Format(" | build budget %1 RP (%2%% of income), holding %3 of %4", BuildBudget(), (int)EffectiveShare(), holders, m_Doctrine.m_iHolders);
+  string surplus = "";
+  int rp = m_Manager.m_Bases.GetRP(m_sFaction);
+  if (rp > SurplusFrom()) surplus = string.Format(", raised by %1 RP banked over %2", rp - SurplusFrom(), SurplusFrom());
+  return string.Format(" | build budget %1 RP (%2%% of income%3), holding %4 of %5", BuildBudget(), (int)EffectiveShare(), surplus, holders, m_Doctrine.m_iHolders);
  }
  static const int MAX_GRABS = 3;           // empty bases it goes for at the same time (at least)
  static const int MAX_GRABS_BIG = 8;       // ... at most, on maps with many empty bases
