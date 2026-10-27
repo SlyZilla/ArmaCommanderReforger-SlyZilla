@@ -81,6 +81,7 @@ class ACR_TestHarness : Managed
  static const int MODE_GRABS = 77; // 69-76: the playtest branches
  static const int MODE_MORTARSPOT = 78; // 69-77: the playtest branches
  static const int MODE_RIDELAV = 70; // 69: the playtest branches
+ static const int MODE_AIM = 62; // 55-61: patrol, ambush, QRF, FOB AI, defenders, budget, cap scale (own branches)
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -157,6 +158,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrMortarSpotTest", flag)) mode = MODE_MORTARSPOT;
   if (System.GetCLIParam("acrRideLavTest", flag) || System.GetCLIParam("acrRideTruckTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrRideLavKillTest", flag) || System.GetCLIParam("acrRideLavGetOutTest", flag)) mode = MODE_RIDELAV;
+  if (System.GetCLIParam("acrAimTest", flag)) mode = MODE_AIM;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -290,6 +292,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_GRABS) { ACR_TestGrabs.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MORTARSPOT) { ACR_TestMortarSpot.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDELAV) { ACR_TestRideLav.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_AIM) { ACR_TestAim.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }
