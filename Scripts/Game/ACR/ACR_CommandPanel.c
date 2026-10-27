@@ -859,7 +859,54 @@ modded class SCR_MapRadialUI
  override protected void OnInputMenuOpen(float value, EActionTrigger reason)
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
-  if (pc && pc.ACR_HandleMapRightClick()) return;
+  if (pc && pc.ACR_HandleMapClick()) return;
   super.OnInputMenuOpen(value, reason);
+ }
+
+ // Drag to aim. The right button is two actions in the game's input config: a click is
+ // MapContextualMenu (above: the order), a hold of 100 ms is MapPanDrag (map panning), so a
+ // drag never makes a click. With an order that takes a facing armed, the hold aims instead
+ // (SCR_MapCursorModule below doesn't pan then): it starts when the hold does and the order
+ // goes out when the button comes up (ACR_AimDown / ACR_AimUp).
+ override void OnMapOpen(MapConfiguration config)
+ {
+  super.OnMapOpen(config);
+  GetGame().GetInputManager().AddActionListener("MapPanDrag", EActionTrigger.DOWN, ACR_OnHoldDown);
+  GetGame().GetInputManager().AddActionListener("MapPanDrag", EActionTrigger.UP, ACR_OnHoldUp);
+ }
+
+ override void OnMapClose(MapConfiguration config)
+ {
+  GetGame().GetInputManager().RemoveActionListener("MapPanDrag", EActionTrigger.DOWN, ACR_OnHoldDown);
+  GetGame().GetInputManager().RemoveActionListener("MapPanDrag", EActionTrigger.UP, ACR_OnHoldUp);
+  super.OnMapClose(config);
+ }
+
+ protected void ACR_OnHoldDown(float value, EActionTrigger reason)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (pc) pc.ACR_AimDown();
+ }
+
+ protected void ACR_OnHoldUp(float value, EActionTrigger reason)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (pc) pc.ACR_AimUp();
+ }
+}
+
+// Drag to aim: while an order that takes a facing is armed, holding the right button aims it
+// (ACR_PlayerController.ACR_AimArmed) and doesn't pan the map. Any other time it pans as usual;
+// the keyboard and the screen edges pan either way.
+// (The container attribute must be repeated on a modded config class: without it the map
+// configs no longer know the class, and the map opens with no cursor module: no pan, no zoom.)
+[BaseContainerProps()]
+modded class SCR_MapCursorModule
+{
+ override protected void OnInputPanDrag(float value, EActionTrigger reason)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (pc && pc.ACR_AimArmed()) return;
+  super.OnInputPanDrag(value, reason);
  }
 }
