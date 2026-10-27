@@ -1124,6 +1124,7 @@ class ACR_Squad : Managed
   m_fReservedLoads = 0;
   m_ReservedTruck = null;
   m_FobRestore = null;
+  m_FobBuiltHq = hq;
   if (hq)
   {
    SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(hq.FindComponent(SCR_CampaignBuildingCompositionComponent));
@@ -1141,6 +1142,12 @@ class ACR_Squad : Managed
   m_OrderKind = ACR_EOrderKind.DEFEND;
   IssueWaypoint(WP_DEFEND, m_vFobSite, 20);
  }
+
+ // The HQ this squad's last FOB build spawned. Its FOB only appears on the next structures tick
+ // (every 2 s), so until then this is how the AI commander knows the build was finished.
+ protected IEntity m_FobBuiltHq;
+ bool BuiltFobAt(vector site) { return m_FobBuiltHq && vector.DistanceXZ(m_FobBuiltHq.GetOrigin(), site) < 20; }
+ IEntity FobBuiltHqForTest() { return m_FobBuiltHq; }
 
  float FobBuildProgress() { return m_fFobBuildProgress; }
  void SetFobLastProgressForTest(float time) { m_fFobLastProgress = time; }
