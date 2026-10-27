@@ -5926,9 +5926,11 @@ class ACR_AICommander : Managed
  // goes back to it once that defence is over, before new attacks take it: the pn9 playtest
  // (26 Oct) had two Military Hill holders go to defend it, then onto an attack, and the positions
  // stood empty for 15 minutes. Only while the position is still ours, standing and unmanned, the
- // doctrine's holders allow it, and within RETURN_MS of leaving.
+ // doctrine's holders allow it, and within RETURN_MS of leaving. A roadblock's holder the same
+ // (#64 review): it has m_ActiveRoadblock, not m_Fortification.
  static const float RETURN_MS = 1200000;
  protected ref map<ACR_Squad, ACR_Fortification> m_LeftPost = new map<ACR_Squad, ACR_Fortification>();
+ protected ref map<ACR_Squad, ACR_Roadblock> m_LeftRoadblock = new map<ACR_Squad, ACR_Roadblock>();
  protected ref map<ACR_Squad, float> m_LeftPostAt = new map<ACR_Squad, float>();
 
  // RETURN_MS varied by up to 15% per squad (ACR_Variety, seeded from the match seed): holders
@@ -5940,14 +5942,16 @@ class ACR_AICommander : Managed
 
  protected void NoteLeftPost(ACR_Squad squad)
  {
-  if (!squad || !squad.m_Fortification) return;
-  m_LeftPost.Set(squad, squad.m_Fortification);
+  if (!squad) return;
+  if (squad.m_Fortification) m_LeftPost.Set(squad, squad.m_Fortification);
+  else if (squad.m_ActiveRoadblock) m_LeftRoadblock.Set(squad, squad.m_ActiveRoadblock);
+  else return;
   m_LeftPostAt.Set(squad, GetGame().GetWorld().GetWorldTime());
  }
 
  protected void ReturnToPosts()
  {
-  if (m_LeftPost.IsEmpty()) return;
+  if (m_LeftPost.IsEmpty() && m_LeftRoadblock.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
   array<ACR_Squad> done = {};
   foreach (ACR_Squad squad, ACR_Fortification fort : m_LeftPost)
@@ -5968,11 +5972,39 @@ class ACR_AICommander : Managed
    squad.m_iAITask = ACR_EAITask.FORTIFY;
    PrintFormat("[ACR] AI %1: %2 goes back to hold the %3 at %4 it left to defend", m_sFaction, squad.GetName(), ACR_Fortify.TierName(fort.m_iTier), fort.m_vPos);
   }
+  foreach (ACR_Squad left, ACR_Roadblock rb : m_LeftRoadblock)
+  {
+   float leftAt = 0;
+   m_LeftPostAt.Find(left, leftAt);
+   if (!left || !rb || !m_Manager.m_Squads.Contains(left) || left.CountAlive() <= 0 || !ACR_Roadblocks.s_aRoadblocks.Contains(rb) || !rb.m_Entity || rb.m_sFaction != m_sFaction || now - leftAt > ReturnLimit(left))
+   {
+    done.Insert(left);
+    continue;
+   }
+   if (left.m_iAITask != ACR_EAITask.FREE && left.m_iAITask != ACR_EAITask.POSTED) continue;
+   done.Insert(left);
+   if (left.HasPlayer() || left.m_Commander != 0 || RoadblockManningSquad(rb) != null) continue;
+   if (Holding() >= m_Doctrine.m_iHolders) continue;
+   if (!left.ManRoadblock(rb)) continue;
+   left.m_iAITask = ACR_EAITask.ROADBLOCK;
+   PrintFormat("[ACR] AI %1: %2 goes back to hold the %3 at %4 it left to defend", m_sFaction, left.GetName(), ACR_Roadblocks.Name(rb.m_iType), rb.m_vPos);
+  }
   foreach (ACR_Squad gone : done)
   {
    m_LeftPost.Remove(gone);
+   m_LeftRoadblock.Remove(gone);
    m_LeftPostAt.Remove(gone);
   }
+ }
+
+ // The squad (AI or player) holding a roadblock, on its way back to one included.
+ protected ACR_Squad RoadblockManningSquad(ACR_Roadblock rb)
+ {
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (squad && squad.m_ActiveRoadblock == rb && squad.CountAlive() > 0) return squad;
+  }
+  return null;
  }
 
  // The squads of ours holding what we built (and fit to).
@@ -5986,7 +6018,7 @@ class ACR_AICommander : Managed
   return holding;
  }
 
- int LeftPostsForTest() { return m_LeftPost.Count(); }
+ int LeftPostsForTest() { return m_LeftPost.Count() + m_LeftRoadblock.Count(); }
  void ReturnToPostsForTest() { ReturnToPosts(); }
  void NoteLeftPostForTest(ACR_Squad squad) { NoteLeftPost(squad); }
 

@@ -1879,6 +1879,23 @@ class ACR_Squad : Managed
   return true;
  }
 
+ // Back on a roadblock of ours (ACR_AICommander.ReturnToPosts): held as when its builder
+ // completed it, its gun by native Defend.
+ bool ManRoadblock(ACR_Roadblock rb)
+ {
+  if (!rb) return false;
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  m_vRoadblockSite = rb.m_vPos;
+  if (!IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0)) return false;
+  m_ActiveRoadblock = rb;
+  m_RoadblockTurret = rb.m_Turret;
+  SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  return true;
+ }
+
  // A new order: the position stays; our gunners leave its guns (as from a roadblock's).
  void LeaveFortification()
  {
