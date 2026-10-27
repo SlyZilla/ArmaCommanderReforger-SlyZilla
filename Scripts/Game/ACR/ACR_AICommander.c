@@ -928,15 +928,44 @@ class ACR_AICommander : Managed
  protected int m_iBuildLastRP = -1;
  static int BuildShare() { return Math.ClampInt(ACR_LogisticsRules.Choice("acrAIBuildShare", "0").ToInt(), 0, 30); }
  int BuildBudget() { return (int)m_fBuildBudget; }
- float EffectiveShare() { return Math.Min(BuildShare() * m_Doctrine.m_fBuildShare, 50); }
+ float EffectiveShare() { return ShareAt(m_Manager.m_Bases.GetRP(m_sFaction)); }
 
- // At the start of a strategy tick: the share of the RP gained since the last one.
+ // A rich side digs in (#28): over SURPLUS_FROM banked RP the share rises with the surplus, to twice
+ // the share at the RP cap (ACR_BaseSystem.POINTS_CAP), still at most 50%; and the budget is kept at
+ // least at that share of what is banked over SURPLUS_FROM, still at most BUILD_BUDGET_MAX. A side
+ // at the cap gains no RP to take a share of (overnight Everon games: the leading side sat at the
+ // cap from about 105 minutes with nothing left to buy). At or below SURPLUS_FROM nothing changes.
+ static const int SURPLUS_FROM = 600;
+ // SURPLUS_FROM varied by up to 15% per side (ACR_Variety, seeded from the match seed): a rich side
+ // starts digging in at a slightly different bank each match.
+ int SurplusFrom() { return (int)ACR_Variety.Jitter(SURPLUS_FROM, 0.15, "surplus " + m_sFaction); }
+
+ // x1 at or below SURPLUS_FROM, x2 at the RP cap.
+ float SurplusFactor(int rp)
+ {
+  float over = (rp - SurplusFrom()) / (float)(ACR_BaseSystem.POINTS_CAP - SurplusFrom());
+  return 1 + Math.Clamp(over, 0, 1);
+ }
+
+ // The share (percent of RP gained) with 'rp' banked.
+ float ShareAt(int rp) { return Math.Min(BuildShare() * m_Doctrine.m_fBuildShare * SurplusFactor(rp), 50); }
+
+ // The least the budget holds with 'rp' banked: that share of the surplus (0 at or below SURPLUS_FROM).
+ float SurplusFloor(int rp)
+ {
+  if (BuildShare() <= 0 || rp <= SurplusFrom()) return 0;
+  return Math.Min((rp - SurplusFrom()) * ShareAt(rp) / 100.0, BUILD_BUDGET_MAX);
+ }
+
+ // At the start of a strategy tick: the share of the RP gained since the last one, topped up to
+ // the surplus floor.
  void AccrueBuildBudget()
  {
   int rp = m_Manager.m_Bases.GetRP(m_sFaction);
-  float share = EffectiveShare();
+  float share = ShareAt(rp);
   if (share <= 0) m_fBuildBudget = 0;
   else if (m_iBuildLastRP >= 0 && rp > m_iBuildLastRP) m_fBuildBudget += (rp - m_iBuildLastRP) * share / 100.0;
+  m_fBuildBudget = Math.Max(m_fBuildBudget, SurplusFloor(rp));
   m_fBuildBudget = Math.Clamp(m_fBuildBudget, 0, Math.Min(BUILD_BUDGET_MAX, rp));
   m_iBuildLastRP = rp;
  }
@@ -971,7 +1000,10 @@ class ACR_AICommander : Managed
   {
    if (squad && squad.GetFaction() && squad.GetFaction().GetFactionKey() == m_sFaction && IsHolder(squad)) holders++;
   }
-  return string.Format(" | build budget %1 RP (%2%% of income), holding %3 of %4", BuildBudget(), (int)EffectiveShare(), holders, m_Doctrine.m_iHolders);
+  string surplus = "";
+  int rp = m_Manager.m_Bases.GetRP(m_sFaction);
+  if (rp > SurplusFrom()) surplus = string.Format(", raised by %1 RP banked over %2", rp - SurplusFrom(), SurplusFrom());
+  return string.Format(" | build budget %1 RP (%2%% of income%3), holding %4 of %5", BuildBudget(), (int)EffectiveShare(), surplus, holders, m_Doctrine.m_iHolders);
  }
  static const int MAX_GRABS = 3;           // empty bases it goes for at the same time (at least)
  static const int MAX_GRABS_BIG = 8;       // ... at most, on maps with many empty bases
@@ -4566,6 +4598,7 @@ class ACR_AICommander : Managed
  static const float FOB_SITE_AVOID_MS = 600000;     // an abandoned site is skipped for 10 min
  static const float FOB_SITE_AVOID_RADIUS = 150;
  static const float FOB_SITE_RETRY_MS = 300000;     // after a failed site search
+ static const float FOB_SITE_STEP_MS = 5000;        // between the steps of a site search (ACR_FobSiting)
 
  protected ACR_Squad m_FobBuilder;
  protected ACR_Squad m_FobEscort;
@@ -4656,62 +4689,68 @@ class ACR_AICommander : Managed
   return null;
  }
 
+ // A FOB site behind 'front' (ACR_FobSiting: the old offsets, scored), the whole search at once.
  bool FindFobSite(ACR_Base front, out vector site)
  {
-  site = Vector(0, 0, 0);
+  bool pending;
+  return FindFobSiteStep(front, site, -1, pending);
+ }
+
+ // The scored search, 'most' more offsets validated (-1: all that are left); 'pending' while some
+ // are still to be validated (ManageFobBuild spreads a search over a few ticks).
+ protected string m_sFobSiteNone;
+ bool FindFobSiteStep(ACR_Base front, out vector site, int most, out bool pending)
+ {
+  site = vector.Zero;
+  pending = false;
+  m_sFobSiteNone = "";
   if (!front) return false;
   ACR_Base deployBase = NearestDeployBase(front);
-  vector dir;
+  vector dir = Vector(0, 0, -1);
   if (deployBase)
   {
-   dir = deployBase.GetOrigin() - front.GetOrigin();
-   dir[1] = 0;
-   if (dir.LengthSq() > 0.001) dir.Normalize();
-   else dir = Vector(0, 0, -1);
-  }
-  else
-  {
-   dir = Vector(0, 0, -1);
-  }
-
-  array<float> dists = {450.0, 550.0, 350.0, 650.0, 750.0};
-  array<float> angles = {0.0, 25.0, -25.0, 50.0, -50.0, 75.0, -75.0};
-
-  foreach (float d : dists)
-  {
-   foreach (float a : angles)
+   vector toDeploy = deployBase.GetOrigin() - front.GetOrigin();
+   toDeploy[1] = 0;
+   if (toDeploy.LengthSq() > 0.001)
    {
-    float rad = a * Math.DEG2RAD;
-    float cosA = Math.Cos(rad);
-    float sinA = Math.Sin(rad);
-    vector rotatedDir = Vector(dir[0] * cosA - dir[2] * sinA, 0, dir[0] * sinA + dir[2] * cosA);
-    vector candidate = front.GetOrigin() + rotatedDir * d;
-    candidate[1] = GetGame().GetWorld().GetSurfaceY(candidate[0], candidate[2]);
-
-    if (Avoided(candidate)) continue;
-    vector validSpot;
-    string refusal;
-    if (!ACR_FobBuild.ValidateSite(candidate, validSpot, refusal, "", 20)) continue;
-
-    bool safe = true;
-    foreach (ACR_Base b : ACR_Base.s_All)
-    {
-     if (b.m_sOwner != m_sFaction && !b.m_sOwner.IsEmpty() && !b.m_bRetired)
-     {
-      if (vector.DistanceXZ(b.GetOrigin(), validSpot) < 600.0)
-      {
-       safe = false;
-       break;
-      }
-     }
-    }
-    if (!safe || ACR_FobBuild.IsContested(validSpot, m_sFaction)) continue;
-
-    site = validSpot;
-    return true;
+    toDeploy.Normalize();
+    dir = toDeploy;
    }
   }
-  return false;
+  array<ref ACR_FobSite> sites = {};
+  string none;
+  if (!ACR_FobSiting.Step(m_sFaction, front, dir, NearestEnemyBaseTo(front), most, sites, none))
+  {
+   pending = true;
+   return false;
+  }
+  Avoided(vector.Zero); // drops the expired avoided sites
+  ACR_FobSite best = ACR_FobSiting.Best(sites, m_aAvoidSites, string.Format("%1 %2 %3", m_sFaction, front.m_sName, m_aAvoidSites.Count()));
+  if (!best)
+  {
+   m_sFobSiteNone = none;
+   if (none.IsEmpty()) m_sFobSiteNone = string.Format("all %1 clear sites abandoned recently", sites.Count());
+   return false;
+  }
+  site = best.m_vPos;
+  NoteBuild("fob site " + front.m_sName, string.Format("[ACR] AI %1: FOB site behind %2 at %3: of %4 clear sites, %5", m_sFaction, front.m_sName, site, sites.Count(), ACR_FobSiting.Breakdown(best)));
+  return true;
+ }
+
+ // The nearest base another side holds (vector.Zero: none).
+ protected vector NearestEnemyBaseTo(ACR_Base from)
+ {
+  vector best = vector.Zero;
+  float bestDistance = float.MAX;
+  foreach (ACR_Base b : ACR_Base.s_All)
+  {
+   if (!b || b.m_bRetired || b.m_sOwner.IsEmpty() || b.m_sOwner == m_sFaction) continue;
+   float d = vector.DistanceXZ(b.GetOrigin(), from.GetOrigin());
+   if (d >= bestDistance) continue;
+   bestDistance = d;
+   best = b.GetOrigin();
+  }
+  return best;
  }
 
  ACR_Squad FindConstructionSquad()
@@ -4801,11 +4840,18 @@ class ACR_AICommander : Managed
   {
    front = NeedsFob();
    if (!front) return;
-   if (!FindFobSite(front, site))
+   bool pending;
+   if (!FindFobSiteStep(front, site, ACR_FobSiting.VALIDATE_PER_STEP, pending))
    {
-    // Site searches are expensive (HQ and eight upgrade spots per candidate): back off.
+    // Site searches are expensive (an HQ and 15 spots per candidate): a few candidates a step,
+    // the next step soon; with none clear, back off.
+    if (pending)
+    {
+     m_fNextFobEval = now + FOB_SITE_STEP_MS;
+     return;
+    }
     m_fNextFobEval = now + FOB_SITE_RETRY_MS;
-    Say(string.Format("[ACR] AI %1: no clear FOB site near %2, next look in 5 minutes", m_sFaction, front.m_sName));
+    Say(string.Format("[ACR] AI %1: no clear FOB site near %2 (%3), next look in 5 minutes", m_sFaction, front.m_sName, m_sFobSiteNone));
     return;
    }
   }
@@ -5593,11 +5639,11 @@ class ACR_AICommander : Managed
  // engineering can pay, upgrade our lowest-tier position in use below tier III (nearest the front
  // first), worked by the squad holding it or the nearest free one within FAR_BUILDER; else, with
  // fewer than its doctrine's m_iFortifyPositions in use (PositionsInUse), dig the nearest free
- // infantry squad (within FAR_BUILDER) in 80-160 m out from the first of our front bases with no
- // position of ours within 300 m, facing the enemy, where its upgrades would fit if such a site is
- // near (also to either side, never within DEFENCE_STANDOFF of our own fields). A position whose
- // upgrade was refused is left alone for a while (ACR_Fortify.HoldUpgrades). The squad then holds
- // it while KeepsHolding, else it is posted again.
+ // infantry squad (within FAR_BUILDER) in at the best scored spot out from the first of our front
+ // bases with no position of ours within 300 m, facing the enemy (DigIn, ACR_PositionSiting), never
+ // within DEFENCE_STANDOFF of our own fields. A position whose upgrade was refused is left alone
+ // for a while (ACR_Fortify.HoldUpgrades). The squad then holds it while KeepsHolding, else it is
+ // posted again.
  void ManageFortify()
  {
   foreach (ACR_Squad digger : m_Manager.m_Squads)
@@ -5748,51 +5794,32 @@ class ACR_AICommander : Managed
   return PositionsInUse(fronts);
  }
 
- // Digs 'candidate' in 80-160 m out from 'front' towards 'enemyPos' (first where its upgrades fit,
- // on the line out and DEFENCE_STANDOFF to either side, clear of our fields); true if ordered, else
- // notes why not.
+ // Digs 'candidate' in at the best scored spot out from 'front' towards 'enemyPos' that takes it
+ // (ACR_PositionSiting: field of fire, slight high ground, no dead ground close in front, cover
+ // behind, its upgrades fit, overlooking our roadblock or field; the old line spots too), clear of
+ // our fields; true if ordered, else notes why not.
  protected bool DigIn(ACR_Squad candidate, ACR_Base front, vector enemyPos, string from)
  {
-  string refusal = "";
-  vector toEnemy = enemyPos - front.GetOrigin();
-  toEnemy[1] = 0;
-  toEnemy.Normalize();
-  vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
-  // First a site where tiers II and III would fit as well (its upgrades then go in), then any
-  // that takes tier I; on the line out and DEFENCE_STANDOFF to either side, never within
-  // DEFENCE_STANDOFF of our own fields.
-  array<float> laterals = {0, -DEFENCE_STANDOFF, DEFENCE_STANDOFF};
-  int spots = 0;
-  int nearFields = 0;
+  array<ref ACR_PositionSite> sites = {};
+  int nearFields;
+  ACR_PositionSiting.Candidates(candidate, m_sFaction, front.GetOrigin(), enemyPos, sites, nearFields);
   int refused = 0;
-  for (int pass = 0; pass < 2; pass++)
+  string refusal = "";
+  foreach (ACR_PositionSite site : sites)
   {
-   foreach (float lateral : laterals)
+   if (!ACR_Fortify.Order(candidate, site.m_vPos, refusal, enemyPos))
    {
-    for (float reach = 80; reach <= 160; reach += 40)
-    {
-     vector sample = ACR_Manager.Ground(front.GetOrigin() + toEnemy * reach + side * lateral);
-     if (pass == 0) spots++;
-     if (ACR_Minefields.FieldNear(m_sFaction, sample, DEFENCE_STANDOFF))
-     {
-      if (pass == 0) nearFields++;
-      continue;
-     }
-     if (pass == 0 && !ACR_Fortify.UpgradesFit(sample, ACR_Fortify.FacingYaw(candidate, sample, m_sFaction, enemyPos))) continue;
-     if (!ACR_Fortify.Order(candidate, sample, refusal, enemyPos))
-     {
-      refused++;
-      continue;
-     }
-     candidate.m_iAITask = ACR_EAITask.FORTIFY;
-     string fit = "";
-     if (pass == 0) fit = ", its upgrades fit";
-     Say(string.Format("[ACR] AI %1: %2%3 digging in on the approach to %4 at %5%6", m_sFaction, candidate.GetName(), from, front.m_sName, sample, fit));
-     return true;
-    }
+    refused++;
+    continue;
    }
+   candidate.m_iAITask = ACR_EAITask.FORTIFY;
+   // Better spots the order refused, so a low score can be told from poor ground.
+   string skipped = "";
+   if (refused > 0) skipped = string.Format("; %1 better spots refused (last: %2)", refused, refusal);
+   Say(string.Format("[ACR] AI %1: %2%3 digging in on the approach to %4 at %5: of %6 spots, %7%8", m_sFaction, candidate.GetName(), from, front.m_sName, site.m_vPos, sites.Count(), ACR_PositionSiting.Breakdown(site), skipped));
+   return true;
   }
-  string why = string.Format("%1 of %2 spots near our own fields", nearFields, spots);
+  string why = string.Format("%1 spots, %2 more near our own fields", sites.Count(), nearFields);
   if (refused > 0) why += string.Format(", %1 refused (last: %2)", refused, refusal);
   NoteBuild("fortify site " + front.m_sName, string.Format("[ACR] AI %1: no position site at %2: %3", m_sFaction, front.m_sName, why));
   return false;
