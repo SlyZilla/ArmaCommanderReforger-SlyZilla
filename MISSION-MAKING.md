@@ -710,6 +710,8 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_sAcrDoctrineWest` | `-acrDoctrineWest` |
 | `m_sAcrDoctrineEast` | `-acrDoctrineEast` |
 | `m_sAcrDoctrineAdapt` | `-acrDoctrineAdapt` |
+| `m_sAcrCompanyWest` | `-acrCompanyWest` |
+| `m_sAcrCompanyEast` | `-acrCompanyEast` |
 | `m_iAcrUnitCap` | `-acrUnitCap` |
 | `m_iAcrSeed` | `-acrSeed` |
 | `m_iAcrSoldierCap` | `-acrSoldierCap` |
@@ -830,6 +832,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrDoctrineWest <doctrine>` / `-acrDoctrineEast <doctrine>` | The blue / red side AI commander's doctrine: `random`, `balanced`, `blitz`, `firepower`, `fortress` or `raider` (overrides `m_eAIDoctrine`; default random each match). The log names each side's pick (`AI commander <faction> doctrine:`) |
 | `-acrDoctrineAdapt 1` / `0` | AI commanders change doctrine when theirs isn't working (default on; see AI commander doctrines). Each review logs `AI commander <faction> doctrine review:` |
+| `-acrCompanyWest <company>` / `-acrCompanyEast <company>` | The blue / red side's company, its starting kit given at Start to an AI commander or a player side: `rifle` (default, no kit), `mechanized` (an APC or IFV in place of the starting truck), `weapons` (a mortar team and a forward observer team), `engineers` (two tier I Fortify positions at its front bases) or `recon` (two recon teams). A kit is bought at list price out of the side's starting RP. The setup screen's Economy tab has the same rows (Blue company / Red company). The log names each kit (`COMPANY KIT <side>:`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; finite stock in either mode: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (finite stock in either mode: rare units get quadruple base stock, other units double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
 | `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Hand-built worlds without a matching layout play in full; generated layouts support all three sizes |

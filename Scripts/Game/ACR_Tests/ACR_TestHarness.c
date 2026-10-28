@@ -101,7 +101,7 @@ class ACR_TestHarness : Managed
  static const int MODE_TWOICSHOTS = 91; // a game client run (89 variety, 90 the armour duel probe)
  static const int MODE_TWOICDECLUTTER = 131; // the 2IC declutter (117, 120, 125: own branches)
  static const int MODE_RIDELAV = 70; // 69: the playtest branches
- static const int MODE_MAPDECLUTTER = 131; // the calm command map's rules (90-97, 117, 120, 125 taken elsewhere)
+ static const int MODE_MAPDECLUTTER = 133; // the calm command map's rules (90-97, 117, 120, 125 taken elsewhere)
  static const int MODE_MAPDECLUTTERSHOTS = 132; // the calm command map in a game client (screenshots)
 
  ACR_TestRange m_Range;
