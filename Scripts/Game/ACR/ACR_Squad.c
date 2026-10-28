@@ -645,6 +645,7 @@ class ACR_Squad : Managed
  float m_fRoadblockLastProgress;
  IEntity m_RoadblockTurret;
  ref ACR_Roadblock m_ActiveRoadblock;
+ ref ACR_AmbushPlan m_Ambush;  // lying in wait by a road (Defend on a road, ACR_Ambush)
  ref ACR_MinePlan m_MinePlan;  // the Lay minefield / Disarm mines order at work
  int m_iRoadblockType = ACR_ERoadblockType.MEDIUM;
  int m_iRoadblockPaidRP;       // RP the build in progress was paid with (refunded if called off)
@@ -760,6 +761,7 @@ class ACR_Squad : Managed
   ACR_GunHold.Release(this); // before the gun is vacated: nobody climbs back on
   if (m_RoadblockTurret) VacateRoadblockTurret();
   if (m_MinePlan) CancelMineWork();
+  if (m_Ambush) ACR_Ambush.End(this);
   m_ActiveRoadblock = null; // a barricade or small checkpoint has no gun to vacate
   if (m_FortifyPlan) CancelFortify();
   if (m_Fortification) LeaveFortification();
@@ -832,6 +834,21 @@ class ACR_Squad : Managed
   if (!IssueWaypoint(WP_MOVE, destination)) return false;
   SetOrder("Moving", ACR_EOrderState.MOVE);
   m_OrderKind = ACR_EOrderKind.MOVE;
+  return true;
+ }
+
+ // Lie in wait at site, watching the kill zone (ACR_Ambush plans both and runs it); defend: a
+ // dragged Defend on posts at site facing killZone, without the waiting (ACR_Ambush.DefendAimed).
+ bool Ambush(vector site, vector killZone, bool defend = false)
+ {
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  if (!IssueWaypoint(WP_DEFEND, site, ACR_Ambush.SET_RADIUS)) return false;
+  m_Ambush = ACR_Ambush.Start(this, site, killZone, defend);
+  SetOrder(ACR_Ambush.OrderText(m_Ambush, "moving in"), ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  ACR_Ambush.Apply(this, m_Ambush, true);
   return true;
  }
 
@@ -2203,6 +2220,7 @@ class ACR_Squad : Managed
   else if (RoadblockPending() && CountAlive() <= 0) CancelRoadblock("abandoned: the squad is gone");
   if (m_ActiveRoadblock) TickRoadblockDefence(now);
   if (m_MinePlan) TickMineWork(now);
+  if (m_Ambush) ACR_Ambush.Tick(this, now);
   if (m_FortifyPlan) TickFortify(now);
   if (!m_Group || m_Commander != 0) return;
   array<AIAgent> agents = {};

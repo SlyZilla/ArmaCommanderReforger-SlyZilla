@@ -90,6 +90,8 @@
 ### Intel
 
 - "The enemy commander has changed tactics" only names the old doctrine when it had been confirmed. A hint such as "Firepower or Fortress" could include the new doctrine, so the line could say "no longer Fortress" as the enemy switched to Fortress.
+- Defend aims too: with Defend armed, a right-drag puts the squad on posts where you pressed, facing where you let go. Let go on or by a road and it is an ambush on that road (lying in wait with its fire held, as Defend on a road); anywhere else it defends from those posts facing that way, firing at will. A plain right-click is unchanged.
+- Defend on a road lays an ambush (#12): the stretch of road clicked is the kill zone, and the squad lies in wait 15-40 m off it (on the navmesh, in sight of the road, on the side away from the nearest known enemy, in cover or on higher ground where it finds some), prone and holding its fire. Once there, each man takes a spot of his own, at least 9 m from the next, in sight of the kill zone and in cover where there is some (walls and rocks count most), split across the road by where the cover is (staggered along it, not straight across from each other), and waits there crouched, facing the kill zone. The spots are picked among the best few at random (seeded by the match), so two ambushes on one road differ. Before, the whole squad lay bunched at one spot (playtests). It opens fire when an enemy enters the kill zone or comes within 25 m, when the side reports one in the kill zone, or when it takes fire or a loss; from then on it is an ordinary Defend there. The kill zone shows as a pale ring to the side. Defend anywhere else, and a vehicle crew's Defend, are as before.
 
 ## 0.5.7 — released
 

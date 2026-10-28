@@ -174,6 +174,33 @@ class ACR_Garrison
   return posts.Count();
  }
 
+ // Posts at the given spots for a group (another order's own posts: an ambush's, ACR_Ambush), each
+ // crouched and looking along its m_Look, registered as a garrison's so the game's defend activity
+ // sends one soldier to each under a garrison waypoint at 'center'. The waypoint's radius for them.
+ static int PostsAt(SCR_AIGroup group, notnull array<ref ACR_GarrisonSpot> spots, vector center, out float radius)
+ {
+  radius = 15;
+  if (!group) return 0;
+  Release(group);
+  s_Replans.Remove(group);
+  array<IEntity> posts = {};
+  foreach (ACR_GarrisonSpot spot : spots)
+  {
+   IEntity post = SpawnPost(spot);
+   if (post) posts.Insert(post);
+  }
+  if (posts.IsEmpty()) return 0;
+  s_Posts.Set(group, posts);
+  float tight = 6;
+  foreach (IEntity placed : posts)
+  {
+   radius = Math.Max(radius, vector.DistanceXZ(center, placed.GetOrigin()) + 5);
+   tight = Math.Max(tight, vector.DistanceXZ(center, placed.GetOrigin()) + 2);
+  }
+  s_Tight.Set(group, tight);
+  return posts.Count();
+ }
+
  // The best free spots, the first building first, then neighbours within SPILL_RADIUS of
  // it. false = a building's navmesh is still loading (waitForMesh).
  protected static bool PickSpots(array<IEntity> buildings, IEntity navAgent, int wanted, bool waitForMesh, float spill, notnull array<ref ACR_GarrisonSpot> chosen)

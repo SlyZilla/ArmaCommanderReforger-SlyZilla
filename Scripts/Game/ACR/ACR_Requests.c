@@ -341,8 +341,27 @@ class ACR_Requests : Managed
     }
     break;
    case ACR_ERequest.ORDER_DEFEND:
+   {
+    // On a road: an ambush there (#12); anywhere else, or with no ambush to be had, a Defend.
+    // Dragged: posts where the drag began facing where it ended, an ambush when it ended by a road.
+    vector ambushSite, killZone;
+    string ambushWhy;
+    vector aim = AimFor(point);
+    bool ambush;
+    if (aim != vector.Zero && ACR_Ambush.DefendAimed(squad, point, aim, ambushSite, killZone, ambush, ambushWhy))
+    {
+     PrintFormat("[ACR] AMBUSH player=%1 squad=%2 site=%3 facing=%4 ambush=%5 (Defend dragged)", pc.GetPlayerId(), name, ambushSite, killZone, ambush);
+     if (ambush) return outcome.Accept(name + ": lying in wait, facing the road");
+     return outcome.Accept(name + ": defending, facing the way you dragged");
+    }
+    if (ACR_Ambush.DefendOnRoad(squad, point, ambushSite, killZone, ambushWhy))
+    {
+     PrintFormat("[ACR] AMBUSH player=%1 squad=%2 site=%3 kill zone=%4 (Defend on a road)", pc.GetPlayerId(), name, ambushSite, killZone);
+     return outcome.Accept(name + ": lying in wait by the road");
+    }
     if (squad.Defend(point)) return outcome.Accept(name + ": defending");
     break;
+   }
    case ACR_ERequest.ORDER_GARRISON:
     if (squad.Garrison(point)) return outcome.Accept(name + ": garrisoning");
     // Garrison falls back to a Defend there by itself.
