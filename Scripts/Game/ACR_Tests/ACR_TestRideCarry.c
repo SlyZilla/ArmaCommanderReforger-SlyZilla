@@ -29,6 +29,17 @@ class ACR_TestRideCarry
   if (tick > 360) ACR_TestRegress.Abort("ridecarry", string.Format("timed out in step %1 (%2)", s_iStep, s_sDetail));
   if (tick == 4)
   {
+   // The AI commander's opening purchase can land before tick 1 switches it off (its first buy
+   // waits only for the company kit, #38): a vehicle it bought would beat ours to the Ride.
+   array<ACR_Squad> bought = {};
+   foreach (ACR_Squad other : manager.m_Squads)
+    if (other != alpha && ACR_Transport.CrewedVehicle(other)) bought.Insert(other);
+   foreach (ACR_Squad other : bought)
+   {
+    IEntity vehicle = ACR_Transport.CrewedVehicle(other);
+    if (vehicle) SCR_EntityHelper.DeleteEntityAndChildren(vehicle);
+    if (other.m_Group) SCR_EntityHelper.DeleteEntityAndChildren(other.m_Group);
+   }
    vector at = alpha.GetAnchor().GetOrigin();
    manager.SpawnUnit("LAV 1", "", ACR_TestRideLav.LAV, true, "", ACR_Manager.Ground(at + Vector(15, 0, 0)), ACR_Manager.Ground(at + Vector(20, 0, 5)));
    manager.SpawnUnit("Jeep 1", "", ACR_TestDrivelessGun.M1025_M2, true, "", ACR_Manager.Ground(at + Vector(-40, 0, 0)), ACR_Manager.Ground(at + Vector(-45, 0, 5)));
