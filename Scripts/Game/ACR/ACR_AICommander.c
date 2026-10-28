@@ -4016,9 +4016,12 @@ class ACR_AICommander : Managed
  {
   ACR_Base best;
   float bestFront = float.MAX;
+  float now = GetGame().GetWorld().GetWorldTime();
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (base.m_sOwner != m_sFaction || base.m_bContested || ThreatTo(base) > 0) continue;
+   float blockedUntil;
+   if (m_MortarUnreachable.Find(base, blockedUntil) && now < blockedUntil) continue;
    float front = float.MAX;
    float nearest = float.MAX;
    foreach (ACR_Base other : ACR_Base.s_All)
@@ -4035,9 +4038,66 @@ class ACR_AICommander : Managed
   return best;
  }
 
+ // Where a team was last sent (MortarBase), that order's serial and when. A team that gives up on
+ // the way (unreachable) leaves that base out for MORTAR_UNREACHABLE_MS: Jacob's 27 Oct game sent
+ // Red's mortar to Bovemont eight times in 30 min, and each time it packed up, failed to path
+ // there within a minute and set up again at home. Packing up halts and restores the order, so
+ // the serial only bounds it from below (ACR_Squad.GaveUpSince).
+ static const float MORTAR_UNREACHABLE_MS = 900000;
+ static const float MORTAR_SENT_MS = 600000;
+ protected ref map<ACR_Squad, ACR_Base> m_MortarSentTo = new map<ACR_Squad, ACR_Base>();
+ protected ref map<ACR_Squad, int> m_MortarSentSerial = new map<ACR_Squad, int>();
+ protected ref map<ACR_Squad, float> m_MortarSentAt = new map<ACR_Squad, float>();
+ protected ref map<ACR_Base, float> m_MortarUnreachable = new map<ACR_Base, float>();
+
+ // Every AI tick, before PositionMortars' time gate: a team that gives up sets up where it is
+ // within the next two minutes.
+ protected void NoteMortarGiveUps(float now)
+ {
+  array<ACR_Squad> sent = {};
+  foreach (ACR_Squad sentSquad, ACR_Base sentBase : m_MortarSentTo) sent.Insert(sentSquad);
+  foreach (ACR_Squad squad : sent)
+  {
+   ACR_Base base = m_MortarSentTo.Get(squad);
+   bool gaveUp = squad && base && squad.GaveUpSince(m_MortarSentSerial.Get(squad));
+   if (gaveUp)
+   {
+    m_MortarUnreachable.Set(base, now + MORTAR_UNREACHABLE_MS);
+    Say(string.Format("[ACR] AI %1 mortar: %2 can't reach %3, not sending a mortar there for %4 min", m_sFaction, squad.GetName(), base.m_sName, (int)(MORTAR_UNREACHABLE_MS / 60000)));
+   }
+   // Done with it: given up, gone, set up at the base, or long enough ago.
+   bool done = gaveUp || !squad || !base || now - m_MortarSentAt.Get(squad) > MORTAR_SENT_MS;
+   if (!done)
+   {
+    ACR_MortarTeam team = m_Manager.Mortars().TeamOf(squad);
+    done = !team || (team.m_eState == ACR_EMortarState.DEPLOYED && vector.DistanceXZ(team.m_Spot, base.GetOrigin()) < 80); // sent within 20 m (and only from radius + 80 out)
+   }
+   if (!done) continue;
+   m_MortarSentTo.Remove(squad);
+   m_MortarSentSerial.Remove(squad);
+   m_MortarSentAt.Remove(squad);
+  }
+ }
+
+ // srv:mortargiveup: a send as PositionMortars makes it, the give-up check, and the block.
+ void SendMortarForTest(ACR_Squad squad, ACR_Base base)
+ {
+  squad.MoveTo(ACR_Manager.Ground(base.GetOrigin()));
+  m_MortarSentTo.Set(squad, base);
+  m_MortarSentSerial.Set(squad, squad.m_iOrderSerial);
+  m_MortarSentAt.Set(squad, GetGame().GetWorld().GetWorldTime());
+ }
+ void NoteMortarGiveUpsForTest() { NoteMortarGiveUps(GetGame().GetWorld().GetWorldTime()); }
+ bool MortarBlockedForTest(ACR_Base base)
+ {
+  float until;
+  return m_MortarUnreachable.Find(base, until) && GetGame().GetWorld().GetWorldTime() < until;
+ }
+
  protected void PositionMortars()
  {
   float now = GetGame().GetWorld().GetWorldTime();
+  NoteMortarGiveUps(now);
   if (now < m_fNextMortarMove) return;
   array<ACR_MortarTeam> teams = {};
   m_Manager.Mortars().TeamsOf(m_sFaction, teams);
@@ -4070,6 +4130,9 @@ class ACR_AICommander : Managed
    if (!front || vector.DistanceXZ(here, front.GetOrigin()) < front.m_fRadius + 80) continue;
    vector spot = ACR_Manager.Ground(front.GetOrigin() + Vector(Math.RandomFloat(-20, 20), 0, Math.RandomFloat(-20, 20)));
    squad.MoveTo(spot);
+   m_MortarSentTo.Set(squad, front);
+   m_MortarSentSerial.Set(squad, squad.m_iOrderSerial);
+   m_MortarSentAt.Set(squad, now);
    m_fNextMortarMove = now + MORTAR_MOVE_MS;
    Say(string.Format("[ACR] AI %1 mortar: %2 moving to %3", m_sFaction, squad.GetName(), front.m_sName));
   }

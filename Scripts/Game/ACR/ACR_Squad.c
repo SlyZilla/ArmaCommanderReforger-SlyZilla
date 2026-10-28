@@ -2699,6 +2699,7 @@ class ACR_Squad : Managed
   PrintFormat("[ACR] MOVE %1: gave up after 4 recoveries at %2", m_Name, m_MoveTarget);
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager && m_iOrderedBy > 0) manager.Notify(m_iOrderedBy, message);
+  m_iGaveUpMoveSerial = m_iOrderSerial;
   Halt("Holding (unreachable)");
   m_iUnreachableSerial = m_iOrderSerial;
  }
@@ -2709,7 +2710,17 @@ class ACR_Squad : Managed
  // "unreachable" for 17 min). Moving the target short of the spot instead was tried and
  // dropped: the squad then "arrived" without moving, outside the base (srv:pathprobe).
  protected int m_iUnreachableSerial = -1;
+ protected int m_iGaveUpMoveSerial = -1; // the move order that was given up (the hold has its own serial)
  bool GaveUpUnreachable() { return m_iUnreachableSerial == m_iOrderSerial; }
+ // A move order given since this serial (this one included) was given up as unreachable.
+ bool GaveUpSince(int serial) { return m_iGaveUpMoveSerial >= serial; }
+ // srv:mortargiveup: as ReportUnreachable, without waiting out four recoveries.
+ void GiveUpForTest()
+ {
+  m_iGaveUpMoveSerial = m_iOrderSerial;
+  Halt("Holding (unreachable)");
+  m_iUnreachableSerial = m_iOrderSerial;
+ }
  // Its last move order still stands, though the engine may have dropped the waypoint: the
  // squad's own recovery owns it, and a fresh order would reset that recovery.
  bool MovePending() { return MovementStillPending() && !GaveUpUnreachable(); }
