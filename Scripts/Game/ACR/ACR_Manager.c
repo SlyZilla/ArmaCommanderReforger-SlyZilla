@@ -96,6 +96,7 @@ class ACR_Manager : Managed
  ref ACR_Launchers m_Launchers;
  int m_iSoldierCap = 100;   // living AI soldiers per side (purchases stop above it)
  protected bool m_bHostOptionsApplied;
+ bool HostOptionsApplied() { return m_bHostOptionsApplied; }
  protected int m_iStatusTick;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
@@ -886,12 +887,7 @@ class ACR_Manager : Managed
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
   {
    if (!settings.m_bAICommander) continue;
-   ACR_AICommander ai;
-   if (!m_AICommanders.Find(settings.m_sFaction, ai))
-   {
-    ai = new ACR_AICommander(this, settings.m_sFaction);
-    m_AICommanders.Insert(settings.m_sFaction, ai);
-   }
+   ACR_AICommander ai = EnsureAICommander(settings.m_sFaction);
    Faction faction = GetGame().GetFactionManager().GetFactionByKey(settings.m_sFaction);
    array<int> commanders = GetCommanders(faction);
    bool noCommander = commanders == null || commanders.IsEmpty();
@@ -1032,6 +1028,19 @@ class ACR_Manager : Managed
  {
   ACR_AICommander ai;
   m_AICommanders.Find(factionKey, ai);
+  return ai;
+ }
+
+ // The side's AI commander, made now if it isn't yet (the doctrine kits read its doctrine before
+ // its first tick, ACR_DoctrineKits).
+ ACR_AICommander EnsureAICommander(string factionKey)
+ {
+  ACR_AICommander ai;
+  if (!m_AICommanders.Find(factionKey, ai))
+  {
+   ai = new ACR_AICommander(this, factionKey);
+   m_AICommanders.Insert(factionKey, ai);
+  }
   return ai;
  }
 

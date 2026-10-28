@@ -123,6 +123,7 @@ variety|-acrVarietyTest 1|60
 minesiting|-acrMineSitingTest 1|120
 possiting|-acrPositionSitingTest 1|120
 possitingarland|-acrPositionSitingArlandTest 1|240|Worlds/ACR_Arland.ent
+doctrinekits|-acrDoctrineKitsTest 1|300
 grabs|-acrGrabsTest 1|60
 mortarspot|-acrMortarSpotTest 1|60
 fobsiting|-acrFobSitingTest 1|180

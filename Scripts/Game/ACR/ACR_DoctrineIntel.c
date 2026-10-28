@@ -31,6 +31,7 @@ class ACR_DoctrineIntel : Managed
  bool m_bChangeNoticed;
  protected ref map<string, float> m_FromSquad = new map<string, float>();
  ACR_AIDoctrine m_EnemyForTest; // tests: the enemy doctrine without an enemy commander
+ float m_fHeadStart;          // points given once an enemy AI commander is in command (Raider's starting kit, ACR_DoctrineKits)
 
  void ACR_DoctrineIntel(ACR_Intel intel)
  {
@@ -76,6 +77,15 @@ class ACR_DoctrineIntel : Managed
    if (doctrine.m_sKey == other) return ACR_AIDoctrine.NameOf(other) + " or " + ACR_AIDoctrine.NameOf(key);
   }
   return ACR_AIDoctrine.NameOf(key);
+ }
+
+ // Every second (ACR_Intel.Tick): a head start is given once there is an enemy doctrine to learn.
+ void Tick()
+ {
+  if (m_fHeadStart <= 0 || !Enemy()) return;
+  float points = m_fHeadStart;
+  m_fHeadStart = 0;
+  Add(points, "recon teams' head start");
  }
 
  void Add(float points, string why)

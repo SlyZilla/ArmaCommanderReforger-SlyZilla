@@ -4171,6 +4171,7 @@ class ACR_AICommander : Managed
 
  protected void Requisition()
  {
+  if (ACR_DoctrineKits.Pending(m_sFaction)) return; // its starting kit first
   ACR_FactionSettings settings = Settings();
   int cap = 8;
   if (settings) cap = settings.m_iAIUnitCap;
@@ -5341,6 +5342,8 @@ class ACR_AICommander : Managed
    enemies.Remove(enemies.Count() - 1);
   }
  }
+
+ void FrontBasesOf(notnull array<ACR_Base> bases, notnull array<vector> enemies, int most) { FrontBases(bases, enemies, most); }
  void FrontBasesForTest(notnull array<ACR_Base> bases, notnull array<vector> enemies) { FrontBases(bases, enemies, FRONT_BASES); }
 
  // Manage roadblocks / observation posts (aca-f23). Every 15 s, one build at a time, while it
