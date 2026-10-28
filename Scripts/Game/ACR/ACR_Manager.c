@@ -904,7 +904,7 @@ class ACR_Manager : Managed
   // FOBs handed to the AI (FOB panel) on a side a player commands (ACR_FobAI).
   foreach (ACR_FactionSettings handed : ACR_FactionSettings.s_All)
   {
-   if (!ACR_FobAI.AnyFor(handed.m_sFaction)) continue;
+   if (m_Debug.IsPaused(handed.m_sFaction) || !ACR_FobAI.AnyFor(handed.m_sFaction)) continue; // paused: as the AI commander
    ACR_AICommander fobAI = FobAICommanderFor(handed.m_sFaction);
    // In command, the AI runs every FOB already.
    if (fobAI && !(handed.m_bAICommander && fobAI.m_bActive)) fobAI.ManageHandedFobs();
@@ -913,6 +913,7 @@ class ACR_Manager : Managed
   // 2IC on, every squad of that side no player has claimed.
   foreach (ACR_FactionSettings squads : ACR_FactionSettings.s_All)
   {
+   if (m_Debug.IsPaused(squads.m_sFaction)) continue; // debug menu: frozen, as the AI commander
    ACR_AICommander squadAI;
    if (ACR_SquadAI.TwoIC())
    {

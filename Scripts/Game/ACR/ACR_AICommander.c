@@ -6224,6 +6224,7 @@ class ACR_AICommander : Managed
  {
   m_bHandedOnly = true;
   GatherIntel();
+  TickSapperDemos(); // its FOB raids' charges, as in Tick (AssignAttacks starts them)
   m_iHandedSeconds++;
   if (m_iHandedSeconds % TICK_SECONDS == 1)
   {
