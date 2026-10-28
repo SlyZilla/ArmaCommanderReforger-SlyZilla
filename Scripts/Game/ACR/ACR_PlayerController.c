@@ -1544,7 +1544,7 @@ modded class SCR_PlayerController
   string hint;
   if (!friendly) hint = "Player group: not commandable";
   else if (!m_ACR_IsCommander) hint = "Take command to give orders";
-  else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend there (click Defend again to cancel)";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend there, on a road an ambush (click Defend again to cancel). Dragged: posts where you pressed facing where you let go, an ambush when you let go on a road.";
   else if (m_ACR_CursorMode == ACR_ECursorMode.GARRISON) hint = "Right-click a building: they hold its windows and doors, filling the next buildings if needed (click Garrison again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in (click Get in again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.LZ) hint = "Right-click the landing zone: they jump out when their ride sets down there";
@@ -1743,7 +1743,7 @@ modded class SCR_PlayerController
 
  bool ACR_Aimable()
  {
-  if (ACR_CommandPanel.RoadblockOfMode(m_ACR_CursorMode) >= 0 || m_ACR_CursorMode == ACR_ECursorMode.FORTIFY) return true;
+  if (ACR_CommandPanel.RoadblockOfMode(m_ACR_CursorMode) >= 0 || m_ACR_CursorMode == ACR_ECursorMode.FORTIFY || m_ACR_CursorMode == ACR_ECursorMode.DEFEND) return true;
   return m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.MINES_MIXED;
  }
 
