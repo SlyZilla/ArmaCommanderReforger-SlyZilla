@@ -154,13 +154,25 @@ class ACR_Requests : Managed
    PrintFormat("[ACR] ORDER refused player=%1 command=%2: %3", pc.GetPlayerId(), command, why);
    return why;
   }
+  return OrderSquad(pc, command, squad, point).m_sMessage;
+ }
+
+ // One order to exactly this squad. A squad handed to the AI: the player's order takes it back
+ // first (ACR_SquadAI), and a refused order (no RP, a bad site...) hands it back as it was, so a
+ // refusal never leaves a squad nobody runs (#60 review). pc null (tests): refused.
+ ACR_OrderOutcome OrderSquad(SCR_PlayerController pc, int command, ACR_Squad squad, vector point)
+ {
+  bool wasClaimed = squad.m_bClaimed;
+  bool tookBack = ACR_SquadAI.TakeBack(squad, command);
   int serial = squad.m_iOrderSerial;
   int previous = squad.m_iOrderedBy;
   float previousAt = squad.m_fOrderedAt;
   ACR_OrderOutcome outcome = GiveOrderTo(pc, command, squad, point);
+  ACR_SquadAI.AfterOrder(squad, command, outcome.m_bAccepted, tookBack, wasClaimed);
+  if (tookBack && outcome.m_bAccepted) outcome.m_sMessage += " (taken back from the AI)";
   s_LastOutcome = outcome;
-  Credit(pc.GetPlayerId(), squad, command, point, outcome, serial, previous, previousAt);
-  return outcome.m_sMessage;
+  if (pc) Credit(pc.GetPlayerId(), squad, command, point, outcome, serial, previous, previousAt);
+  return outcome;
  }
 
  // Shared-command bookkeeping for one order (split out so srv:regress can check it
@@ -265,6 +277,7 @@ class ACR_Requests : Managed
  {
   ACR_OrderOutcome outcome = new ACR_OrderOutcome();
   if (!squad) return outcome.Refuse("No squad selected");
+  if (!pc) return outcome.Refuse("No player");
   if (squad.GetFaction() != SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId())) return outcome.Refuse("That squad belongs to another faction");
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return outcome.Refuse("Only the commander can give map orders. Take command first.");
   IEntity anchor = squad.GetAnchor();
@@ -392,6 +405,21 @@ class ACR_Requests : Managed
    case ACR_ERequest.MODE_FAST:
     squad.SetMode(ACR_EMoveMode.FAST);
     return outcome.Accept(name + ": fast");
+   case ACR_ERequest.ORDER_SQUAD_AI:
+   {
+    string handed = ACR_SquadAI.Toggle(squad);
+    PrintFormat("[ACR] SQUAD AI player=%1 %2: %3", pc.GetPlayerId(), name, squad.m_bAICommanded);
+    if (squad.m_bAICommanded || handed.Contains("back under your command")) return outcome.Accept(handed);
+    return outcome.Refuse(handed);
+   }
+   case ACR_ERequest.ORDER_PATROL:
+   {
+    string patrolWhy;
+    if (!squad.TogglePatrol(patrolWhy)) return outcome.Refuse(name + ": " + patrolWhy);
+    PrintFormat("[ACR] PATROL player=%1 %2 patrol %3", pc.GetPlayerId(), name, squad.m_bPatrol);
+    if (!squad.m_bPatrol) return outcome.Accept(name + ": patrol off (finishes the current leg)");
+    return outcome.Accept(name + ": patrolling its points in a loop");
+   }
    case ACR_ERequest.ORDER_FIRE_AT_WILL:
    {
     bool mortar = m_Manager.Mortars().TeamOf(squad) != null;
