@@ -163,7 +163,10 @@ class ACR_Requests : Managed
  ACR_OrderOutcome OrderSquad(SCR_PlayerController pc, int command, ACR_Squad squad, vector point)
  {
   bool wasClaimed = squad.m_bClaimed;
-  bool tookBack = ACR_SquadAI.TakeBack(squad, command);
+  // Only someone who may order the squad takes it back: anyone else's order is refused anyway,
+  // and taking it back and handing it over again would drop it out of the AI's attack plans.
+  bool mayOrder = pc && squad.GetFaction() == SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId()) && m_Manager.IsCommander(pc.GetPlayerId());
+  bool tookBack = mayOrder && ACR_SquadAI.TakeBack(squad, command);
   int serial = squad.m_iOrderSerial;
   int previous = squad.m_iOrderedBy;
   float previousAt = squad.m_fOrderedAt;

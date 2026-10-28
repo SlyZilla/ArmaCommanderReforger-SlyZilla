@@ -63,8 +63,10 @@ class ACR_TestSquadAI
    ACR_EMoveMode modeBefore = ACR_EMoveMode.COMBAT;
    alpha.SetMode(ACR_EMoveMode.FAST);
    // #60 review: a refused order (here, no player) leaves it handed, not claimed, its own mode kept for its return.
+   // Refused from someone who can't order it, it keeps its AI task too (it isn't taken back at all).
+   alpha.m_iAITask = ACR_EAITask.DEFEND;
    string refused = manager.m_Requests.OrderSquad(null, ACR_ERequest.MOVE_TO, alpha, alpha.GetAnchor().GetOrigin() + Vector(-15, 0, 0)).m_sMessage;
-   bool stays = alpha.m_bAICommanded && !alpha.m_bClaimed && ACR_SquadAI.RemembersMode(alpha);
+   bool stays = alpha.m_bAICommanded && !alpha.m_bClaimed && ACR_SquadAI.RemembersMode(alpha) && alpha.m_iAITask == ACR_EAITask.DEFEND;
    ACR_TestRegress.Check("squadai: a refused order to a handed squad leaves it handed (the AI runs it)", stays, string.Format("'%1': handed %2, claimed %3, mode %4", refused, alpha.m_bAICommanded, alpha.m_bClaimed, typename.EnumToString(ACR_EMoveMode, alpha.m_Mode)));
    alpha.SetMode(ACR_EMoveMode.FAST);
    bool orderTakes = ACR_SquadAI.TakeBack(alpha, ACR_ERequest.MOVE_TO) && !alpha.m_bAICommanded && alpha.m_iAITask == ACR_EAITask.FREE;
