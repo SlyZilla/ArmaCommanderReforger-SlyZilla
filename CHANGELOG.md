@@ -58,6 +58,7 @@
 - A map marker removed while a player held the mouse on it (ACA rebuilds its markers as squads change) no longer throws an exception every frame: the drag just ends (pn11).
 - The squads of an AI attack form up on separate approach lines again (#52). Moving a staging point out of the objective's sight could turn it up to 20 degrees towards a neighbouring line, so later squads' lines no longer fitted and the fourth squad of an attack was sent to the first squad's staging point. A point moved out of sight now keeps clear of every other line, taken or not.
 - A vehicle waiting for its own crew to get in is no longer taken as stuck (#53). In a playtest an LAV's gunner got out at a gate; while he climbed back in, the LAV counted as stuck, backed up away from him twice, then held where it was and dropped the player's move order. Now the stuck clock waits while one of the crew is getting in or out or standing by the vehicle (up to a minute, so a real stall still shows), a new order starts the clock afresh, and back-ups only add up towards giving up until the vehicle gets 40 m past the spot where it was stuck. The log says when a vehicle is waiting for its crew. Under fire the old limits apply.
+- AI squads in contact are left to BBB's fire and manoeuvre: ACA's own automatic flank of a stalled contact is switched off (#54). It hardly ever started (twice in 11 playtests), because a squad's own gunfire made it count as pinned down, and two mods steering the same squad in a firefight could only fight each other.
 
 ### Command and setup
 
