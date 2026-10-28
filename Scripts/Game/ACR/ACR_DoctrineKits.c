@@ -3,18 +3,19 @@
 // whoever ends up playing it (Jacob, #38). The kit is a swap, not an extra: it is bought at the start
 // at its list price, so it comes off the side's starting RP, and every company starts with the same
 // value (its units at list price and its RP). The kits are the doctrine kits of the first prototype:
-// - Rifle company: the standard start (the default);
-// - Mechanized company (Blitz's kit): an APC or IFV in place of the starting truck (the truck's list
+// - Rifle Company: the standard start (the default);
+// - Mechanized (Blitz's kit): an APC or IFV in place of the starting truck (the truck's list
 //   price back, the carrier's off);
-// - Weapons company (Firepower's): a mortar team and a forward observer team;
-// - Combat engineers (Fortress's): POSITIONS tier I Fortify positions at its front bases, built at
+// - Fire Support (Firepower's; key "weapons"): a mortar team and a forward observer team;
+// - Combat Engineers (Fortress's): POSITIONS tier I Fortify positions at its front bases, built at
 //   the start on the best scored spots facing the enemy (ACR_PositionSiting); an AI side mans them
 //   with -acrFortifyAI 1, a player side as it likes;
-// - Recon company (Raider's): RECON_TEAMS 2-3 man recon teams, and its intel on the enemy commander's
+// - Recon (Raider's): RECON_TEAMS 2-3 man recon teams, and its intel on the enemy commander's
 //   doctrine starts at a hint (level 1) once an enemy AI commander is in command
 //   (ACR_DoctrineIntel.m_fHeadStart).
 // A kit item the side's list lacks, or that it can't afford, is left out (said in the log), so the
-// value stays equal. The AI commanders' doctrines are their own choice, as before. Server only.
+// value stays equal. An AI side fights to its company's doctrine unless the setup screen's doctrine
+// row overrides it (ACR_AIDoctrine.Choose). Server only.
 class ACR_KitTruck : Managed
 {
  string m_sName;
@@ -76,6 +77,7 @@ class ACR_DoctrineKits
  static const int KIT_WAIT_STEP_MS = 1000;
  static const int KIT_WAIT_MAX_MS = 60000;
  static const int KIT_WAIT_LOG_MS = 5000;
+ static const float CARRIER_NEAR = 0.15; // Blitz: carriers within 15% of the cheapest's price are as good (ACR_Variety)
 
  protected static ref map<string, string> s_Sides = new map<string, string>(); // faction -> the kit due (a doctrine key, as the first prototype's)
  protected static ref map<string, ref ACR_KitTruck> s_Trucks = new map<string, ref ACR_KitTruck>(); // Blitz: the truck left out
@@ -104,23 +106,26 @@ class ACR_DoctrineKits
   return "rifle";
  }
 
+ // #38's names: the setup screen's company rows show only these.
  static string CompanyName(string company)
  {
-  if (company == "mechanized") return "Mechanized company";
-  if (company == "weapons") return "Weapons company";
-  if (company == "engineers") return "Combat engineers";
-  if (company == "recon") return "Recon company";
-  return "Rifle company";
+  if (company == "mechanized") return "Mechanized";
+  if (company == "weapons") return "Fire Support";
+  if (company == "engineers") return "Combat Engineers";
+  if (company == "recon") return "Recon";
+  return "Rifle Company";
  }
 
- // For the setup screen's rows.
+ // The line under the setup screen's Economy rows: "Combat Engineers: two tier I positions at its
+ // front" (with "Blue: ", at most ACR_Setup.ROW_CHARS).
  static string CompanySummary(string company)
  {
-  if (company == "mechanized") return "Mechanized company: an APC or IFV in place of the starting truck";
-  if (company == "weapons") return "Weapons company: a mortar team and a forward observer team";
-  if (company == "engineers") return "Combat engineers: two tier I positions dug in at its front";
-  if (company == "recon") return "Recon company: two recon teams, a head start on the enemy's doctrine";
-  return "Rifle company: the standard start";
+  string what = "the standard start";
+  if (company == "mechanized") what = "an APC or IFV in place of its truck";
+  else if (company == "weapons") what = "a mortar team and an observer team";
+  else if (company == "engineers") what = "two tier I positions at its front";
+  else if (company == "recon") what = "two recon teams and early enemy intel";
+  return CompanyName(company) + ": " + what;
  }
 
  // The host option for the side this faction plays: "acrCompanyWest" or "acrCompanyEast".
@@ -136,6 +141,8 @@ class ACR_DoctrineKits
   string value;
   if (!ACR_Options.Get(OptionFor(factionKey), value)) return "rifle";
   value.ToLower();
+  // Fire Support's key is "weapons" (its first name).
+  if (value == "firesupport") value = "weapons";
   if (KitOf(value).IsEmpty()) return "rifle";
   return value;
  }
@@ -177,7 +184,7 @@ class ACR_DoctrineKits
     continue;
    }
    s_Sides.Set(settings.m_sFaction, kit);
-   PrintFormat("[ACR] COMPANY KIT %1: %2's kit due", settings.m_sFaction, CompanyName(company));
+   PrintFormat("[ACR] COMPANY KIT %1: the %2 kit due", settings.m_sFaction, CompanyName(company));
   }
  }
 
@@ -192,7 +199,7 @@ class ACR_DoctrineKits
   ACR_FactionData data = manager.m_Bases.GetFaction(faction);
   int truck = TruckPrice(data, faction, vehicle);
   if (truck < 0) return false;
-  int index = CarrierIndex(data);
+  int index = CarrierIndex(data, faction);
   if (index < 0)
   {
    PrintFormat("[ACR] COMPANY KIT %1: no APC or IFV in its list, so it keeps %2", faction, name);
@@ -346,12 +353,12 @@ class ACR_DoctrineKits
    // No starting truck to swap (Red's Arland start is two rifle squads: pn10, 26 Oct, the kit came
    // out empty): the carrier at its list price, out of the starting RP like any kit.
    Note(record, "no starting truck to swap: the carrier at its list price");
-   Buy(manager, faction, data, hq, CarrierIndex(data), "APC or IFV", record);
+   Buy(manager, faction, data, hq, CarrierIndex(data, faction), "APC or IFV", record);
    return;
   }
   data.m_iRP += truck.m_iPrice;
   record.m_iCredit = truck.m_iPrice;
-  if (Buy(manager, faction, data, hq, CarrierIndex(data), "APC or IFV", record)) return;
+  if (Buy(manager, faction, data, hq, CarrierIndex(data, faction), "APC or IFV", record)) return;
   data.m_iRP -= truck.m_iPrice;
   if (data.m_iRP < 0) data.m_iRP = 0;
   record.m_iCredit = 0;
@@ -477,29 +484,27 @@ class ACR_DoctrineKits
   return any;
  }
 
- // The cheapest APC or IFV in stock (-1: none).
- // The cheapest APC or IFV that seats a squad (a BTR-70 over the BRDM-2 scout car at the same
- // price: pn10, 26 Oct), else the cheapest carrier there is.
- static int CarrierIndex(ACR_FactionData data)
+ // An APC or IFV in stock that seats a squad (a BTR-70 over the BRDM-2 scout car: pn10, 26 Oct),
+ // else any carrier there is (-1: none): the cheapest, or with variety on (ACR_Variety) one of
+ // those within CARRIER_NEAR of its price, seeded by the side, so every call in a match agrees.
+ static int CarrierIndex(ACR_FactionData data, string faction = "")
  {
-  int best = -1;
-  foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
+  bool squadCarrier;
+  foreach (ACR_RequisitionEntry entry : data.m_aRequisitions)
   {
-   if (!entry.m_bCarrier || entry.m_iRemaining <= 0) continue;
-   if (best < 0)
-   {
-    best = i;
-    continue;
-   }
-   ACR_RequisitionEntry current = data.m_aRequisitions[best];
-   if (entry.m_bSquadCarrier != current.m_bSquadCarrier)
-   {
-    if (entry.m_bSquadCarrier) best = i;
-    continue;
-   }
-   if (entry.m_iCost < current.m_iCost) best = i;
+   if (entry.m_bCarrier && entry.m_iRemaining > 0 && entry.m_bSquadCarrier) squadCarrier = true;
   }
-  return best;
+  array<int> indices = {};
+  array<float> scores = {};
+  foreach (int i, ACR_RequisitionEntry candidate : data.m_aRequisitions)
+  {
+   if (!candidate.m_bCarrier || candidate.m_iRemaining <= 0 || candidate.m_bSquadCarrier != squadCarrier) continue;
+   indices.Insert(i);
+   scores.Insert(-candidate.m_iCost);
+  }
+  int pick = ACR_Variety.Pick(scores, "kit carrier " + faction, CARRIER_NEAR);
+  if (pick < 0) return -1;
+  return indices[pick];
  }
 
  static int MortarIndex(ACR_FactionData data)

@@ -284,7 +284,7 @@ AI commander is turned off.
 | `m_bAICommander` | on | An AI commander leads this side whenever no player is in command |
 | `m_iAIUnitCap` | 8 | Maximum number of squads the AI commander keeps in the field |
 | `m_iAIAttacks` | 1 | How many base attacks the AI commander can run at once |
-| `m_eAIDoctrine` | `RANDOM` | How the AI commander fights: `RANDOM` (a new pick each match), `BALANCED`, `BLITZ`, `FIREPOWER`, `FORTRESS` or `RAIDER` (see AI commander doctrines). The setup screen or `-acrDoctrineWest`/`-acrDoctrineEast` override it |
+| `m_eAIDoctrine` | `RANDOM` | How the AI commander fights when no company is picked for its side: `RANDOM` (leaves it to the company: Balanced for a Rifle Company), `BALANCED`, `BLITZ`, `FIREPOWER`, `FORTRESS` or `RAIDER` (see AI commander doctrines). A company picked on the setup screen, the setup screen's doctrine row or `-acrDoctrineWest`/`-acrDoctrineEast` override it |
 | `m_ePricing` | `STEPPED` | How the buy list limits purchases: `STEPPED` or `FIXED_STOCK` (see Prices below) |
 | `m_bAutoFill` | on | Add the faction's eligible Game Master catalog units to the buy list at automatic prices |
 | `m_aRequisitions` | empty | Units you add to the buy list yourself. An entry replaces the matching automatic item |
@@ -304,9 +304,12 @@ starting with `USSR` count as eastern; otherwise keys containing `US`, or exactl
 
 #### AI commander doctrines
 
-Each AI commander starts the match with one doctrine. By default each side gets a random one;
-the setup screen (Blue/Red AI doctrine), `-acrDoctrineWest`/`-acrDoctrineEast` or `m_eAIDoctrine`
-pick it. Doctrines change how the commander plans, attacks, defends, moves, fires and buys, never how
+Each AI commander starts the match with one doctrine. By default it follows its side's company
+(the setup screen's Blue/Red company, `-acrCompanyWest`/`-acrCompanyEast`): Combat Engineers fight as
+Fortress, Mechanized as Blitz, Fire Support as Firepower, Recon as Raider, and a Rifle Company (none
+picked) as Balanced, or as the faction's `m_eAIDoctrine` when it sets one.
+The setup screen's Blue/Red AI doctrine row or `-acrDoctrineWest`/`-acrDoctrineEast` override it
+(`random` rolls one). Doctrines change how the commander plans, attacks, defends, moves, fires and buys, never how
 big its army is: squad cap, RP and stock are the same for all of them (Raider's 2-3 man teams take
 half a squad-cap slot each, so it fields about as many men; the soldier cap still applies).
 

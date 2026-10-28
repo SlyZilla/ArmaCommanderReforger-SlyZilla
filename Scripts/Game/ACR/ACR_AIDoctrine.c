@@ -1,6 +1,9 @@
-// AI commander doctrines (Jacob, 24 Oct): each AI side fights to one of a few styles, picked
-// per side on the setup screen (Blue/Red AI doctrine), by -acrDoctrineWest/-acrDoctrineEast,
-// by the faction's m_eAIDoctrine, or at random (the default). A doctrine is not a second
+// AI commander doctrines (Jacob, 24 Oct): each AI side fights to one of a few styles. By default it
+// follows the side's company (#38, the setup screen's Blue/Red company): Combat Engineers fight as
+// Fortress, Mechanized as Blitz, Fire Support as Firepower, Recon as Raider, a Rifle Company (none
+// picked) as Balanced. The setup screen's Blue/Red AI doctrine row
+// (-acrDoctrineWest/-acrDoctrineEast) overrides it, "random" included; with no company picked, the
+// faction's m_eAIDoctrine comes before Balanced. A doctrine is not a second
 // commander: it reweights levers ACR_AICommander already has (attack and defence odds, empty
 // base grabs, fronts, initiative, reserve, retreat, what it buys, when it calls supports,
 // rides and air lifts, fire missions, mines, FOBs, refits, pockets).
@@ -24,6 +27,9 @@ class ACR_AIDoctrine : Managed
  string m_sKey;
  string m_sName;
  string m_sSummary;
+ // The line under the setup screen's Command rows ("Blue: Fortress: holds in depth, counterattacks
+ // lost bases", at most ACR_Setup.ROW_CHARS).
+ string m_sBrief;
 
  // Planning (ACR_AICommander.AssignAttacks / AssignDefenders / UpdateAttacks)
  float m_fAttackRatio = 1;      // x the force it wants against a defended base
@@ -87,6 +93,7 @@ class ACR_AIDoctrine : Managed
   balanced.m_sKey = "balanced";
   balanced.m_sName = "Balanced";
   balanced.m_sSummary = "the standard commander";
+  balanced.m_sBrief = "the standard commander";
   s_All.Insert(balanced);
 
   // Mechanised shock: vehicles, speed and many fronts; accepts thinner odds and losses.
@@ -94,6 +101,7 @@ class ACR_AIDoctrine : Managed
   blitz.m_sKey = "blitz";
   blitz.m_sName = "Blitz";
   blitz.m_sSummary = "mechanised, fast, attacks early on thin odds";
+  blitz.m_sBrief = "armour, attacks early on thin odds";
   blitz.m_fAttackRatio = 0.85;
   blitz.m_iGrabs = 2;
   blitz.m_iExtraFronts = 4;
@@ -124,6 +132,7 @@ class ACR_AIDoctrine : Managed
   firepower.m_sKey = "firepower";
   firepower.m_sName = "Firepower";
   firepower.m_sSummary = "artillery and air first, patient, one front at a time";
+  firepower.m_sBrief = "artillery and air first, patient";
   firepower.m_fAttackRatio = 1.15;
   firepower.m_iExtraFronts = 1;
   firepower.m_iSquadsPerFront = 4;
@@ -151,6 +160,7 @@ class ACR_AIDoctrine : Managed
   fortress.m_sKey = "fortress";
   fortress.m_sName = "Fortress";
   fortress.m_sSummary = "defends in depth behind manned roadblocks, minefields and positions, counterattacks lost bases at once";
+  fortress.m_sBrief = "holds in depth, counterattacks lost bases";
   fortress.m_fAttackRatio = 1.1;
   fortress.m_fDefenseRatio = 1.35;
   fortress.m_fConcedeRatio = 1.5;
@@ -186,6 +196,7 @@ class ACR_AIDoctrine : Managed
   raider.m_sKey = "raider";
   raider.m_sName = "Raider";
   raider.m_sSummary = "small teams raid weak bases and FOBs, break off early";
+  raider.m_sBrief = "small teams raid weak bases and FOBs";
   raider.m_fAttackRatio = 0.9;
   raider.m_iGrabs = 1;
   raider.m_iExtraFronts = 5;
@@ -245,6 +256,13 @@ class ACR_AIDoctrine : Managed
    return Find(value);
   }
   if (picked && value == RANDOM) return Random(source);
+  // The doctrine row left at "follows company": the company's style.
+  string company = ACR_DoctrineKits.CompanyOf(factionKey);
+  if (Find(ACR_DoctrineKits.KitOf(company)))
+  {
+   source = "follows its company (" + ACR_DoctrineKits.CompanyName(company) + ")";
+   return Find(ACR_DoctrineKits.KitOf(company));
+  }
   ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
   if (settings && Find(settings.AIDoctrineKey()))
   {
@@ -258,7 +276,29 @@ class ACR_AIDoctrine : Managed
    source = "test";
    return Find(forTest);
   }
-  return Random(source);
+  // A Rifle Company (none picked) fights as the standard commander.
+  source = "follows its company (" + ACR_DoctrineKits.CompanyName(company) + ")";
+  return Find("balanced");
+ }
+
+ // The doctrine the row's "follows company" gives this faction (tests aside): its company's, the
+ // scenario's with no company picked, else Balanced.
+ static string FollowedKey(string factionKey)
+ {
+  string kit = ACR_DoctrineKits.KitOf(ACR_DoctrineKits.CompanyOf(factionKey));
+  if (Find(kit)) return kit;
+  ACR_FactionSettings settings = ACR_FactionSettings.Find(factionKey);
+  if (settings && Find(settings.AIDoctrineKey())) return Find(settings.AIDoctrineKey()).m_sKey;
+  return "balanced";
+ }
+
+ // The doctrine row's "follows company" as the setup screen shows it: "follows company (Fortress)",
+ // or "scenario's choice (Raider)" when no company is picked and the scenario sets one.
+ static string FollowsRow(string factionKey)
+ {
+  string followed = NameOf(FollowedKey(factionKey));
+  if (Find(ACR_DoctrineKits.KitOf(ACR_DoctrineKits.CompanyOf(factionKey))) || followed == "Balanced") return "follows company (" + followed + ")";
+  return "scenario's choice (" + followed + ")";
  }
 
  // Changing doctrine mid-match (on unless the host sets -acrDoctrineAdapt 0 / off).

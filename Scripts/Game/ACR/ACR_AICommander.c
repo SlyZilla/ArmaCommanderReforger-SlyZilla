@@ -1033,7 +1033,12 @@ class ACR_AICommander : Managed
  // The style this commander fights to this match (ACR_AIDoctrine), chosen when it is made.
  protected ref ACR_AIDoctrine m_Doctrine;
  protected string m_sDoctrineSource;
+ // Its home style: the doctrine it started with (its company's, unless the setup screen overrode
+ // it). A changed doctrine goes back to it once the trouble that changed it is over (PickDoctrine),
+ // never inside #29's hold, and only after a varied wait past it (HomeDriftMin).
+ protected string m_sHomeDoctrine;
  ACR_AIDoctrine Doctrine() { return m_Doctrine; }
+ string HomeDoctrine() { return m_sHomeDoctrine; }
  int DoctrineChanges() { return m_iDoctrineChanges; }
  void SetDoctrineForTest(ACR_AIDoctrine doctrine) { m_Doctrine = doctrine; m_sDoctrineSource = "test"; }
 
@@ -1042,6 +1047,7 @@ class ACR_AICommander : Managed
   m_Manager = manager;
   m_sFaction = factionKey;
   m_Doctrine = ACR_AIDoctrine.Choose(factionKey, m_sDoctrineSource);
+  m_sHomeDoctrine = m_Doctrine.m_sKey;
   Say(string.Format("[ACR] AI commander %1 doctrine: %2 (%3; %4)", m_sFaction, m_Doctrine.m_sName, m_sDoctrineSource, m_Doctrine.m_sSummary));
  }
  protected float RetreatRatio() { return m_Doctrine.m_fRetreatRatio; }
@@ -1167,12 +1173,13 @@ class ACR_AICommander : Managed
   ACR_Intel intel = m_Manager.IntelFor(m_sFaction);
   if (intel) enemyKnown = intel.Doctrine().Believed();
   string why;
-  string pick = PickDoctrine(m_Doctrine.m_sKey, enemyKnown, won, basesLost, lost, kills, why);
+  string pick = PickDoctrine(m_Doctrine.m_sKey, enemyKnown, won, basesLost, lost, kills, why, m_sHomeDoctrine);
   Say(string.Format("[ACR] AI commander %1 doctrine review: %2, bases +%3 -%4, lost %5 killed %6, enemy doctrine '%7': %8", m_sFaction, m_Doctrine.m_sName, won, basesLost, lost, kills, enemyKnown, why));
   if (pick.IsEmpty() || pick == m_Doctrine.m_sKey) return;
   float heldMin = -1;
   if (m_fDoctrineSince >= 0) heldMin = (now - m_fDoctrineSince) / 60000;
   string blocked = DoctrineChangeBlocked(pick, why, heldMin, m_sDoctrineLeft, m_sDoctrineLeftWhy);
+  if (blocked.IsEmpty() && why == WHY_HOME) blocked = HomeDriftBlocked(heldMin, HomeDriftMin());
   if (!blocked.IsEmpty())
   {
    Say(string.Format("[ACR] AI commander %1 doctrine: keeps %2 instead of %3 (%4)", m_sFaction, m_Doctrine.m_sName, ACR_AIDoctrine.NameOf(pick), blocked));
@@ -1201,8 +1208,27 @@ class ACR_AICommander : Managed
   return "";
  }
 
- // What a review decides over one review window: the doctrine key to change to, "" to keep.
- static string PickDoctrine(string current, string enemyKnown, int won, int basesLost, int lost, int kills, out string why)
+ // Going back to its home style is a reason of its own (the trouble that changed it is over), so
+ // the hold above applies to it but the same-reason rule doesn't. It also waits a varied extra
+ // HOME_DRIFT_EXTRA_MIN past the hold (up to twice that, ACR_Variety, seeded from the match seed,
+ // the side and its changes so far): sides don't all go home at the first review they may.
+ // -acrVariety 0: 40 min.
+ static const string WHY_HOME = "the trouble is over, back to its home style";
+ static const float HOME_DRIFT_EXTRA_MIN = 10;
+ float HomeDriftMin()
+ {
+  return DOCTRINE_HOLD_MIN + ACR_Variety.Jitter(HOME_DRIFT_EXTRA_MIN, 1, string.Format("home drift %1 %2", m_sFaction, m_iDoctrineChanges));
+ }
+ static string HomeDriftBlocked(float heldMin, float waitMin)
+ {
+  if (heldMin >= 0 && heldMin < waitMin)
+   return string.Format("back to its home style after %1 min, held %2", Math.Floor(waitMin), Math.Floor(heldMin));
+  return "";
+ }
+
+ // What a review decides over one review window: the doctrine key to change to, "" to keep. Away
+ // from its home style ("" none) a side only goes back to it (see below).
+ static string PickDoctrine(string current, string enemyKnown, int won, int basesLost, int lost, int kills, out string why, string home = "")
  {
   bool losingGround = basesLost >= won + 2;
   bool bleeding = lost >= 12 && lost > kills * 1.6;
@@ -1226,6 +1252,20 @@ class ACR_AICommander : Managed
   {
    why = "already countering the enemy's " + ACR_AIDoctrine.NameOf(enemyKnown);
    return "";
+  }
+  // Away from its home style (its company's, or the one it started with), a side keeps the change
+  // while the trouble that made it lasts, and goes back home once that is over: trouble no longer
+  // moves it on, or back and forth (#29). Only a known enemy's counter (above) still moves it to
+  // another doctrine.
+  if (!home.IsEmpty() && current != home)
+  {
+   if (losingGround || bleeding)
+   {
+    why = "still in trouble, keeps " + ACR_AIDoctrine.NameOf(current) + " before going back to " + ACR_AIDoctrine.NameOf(home);
+    return "";
+   }
+   why = WHY_HOME;
+   return home;
   }
   if (losingGround)
   {
