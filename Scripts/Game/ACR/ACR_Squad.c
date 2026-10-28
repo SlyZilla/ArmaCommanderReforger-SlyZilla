@@ -770,6 +770,8 @@ class ACR_Squad : Managed
   m_iOrderSerial++;
   m_iOrderedBy = 0;
   m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
+  // A new order restarts the stall clock (#53: a player's order to a waiting LAV counted as stuck 9 s later).
+  m_fStallSince = m_fOrderedAt;
   m_aRecentOrders.Insert(m_fOrderedAt);
   if (m_aRecentOrders.Count() > THINK_ORDERS) m_aRecentOrders.RemoveOrdered(0);
   // A new order cut a regroup short: no new regroup for a while, or an order re-issued
@@ -1880,6 +1882,23 @@ class ACR_Squad : Managed
   return true;
  }
 
+ // Back on a roadblock of ours (ACR_AICommander.ReturnToPosts): held as when its builder
+ // completed it, its gun by native Defend.
+ bool ManRoadblock(ACR_Roadblock rb)
+ {
+  if (!rb) return false;
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  m_vRoadblockSite = rb.m_vPos;
+  if (!IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0)) return false;
+  m_ActiveRoadblock = rb;
+  m_RoadblockTurret = rb.m_Turret;
+  SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  return true;
+ }
+
  // A new order: the position stays; our gunners leave its guns (as from a roadblock's).
  void LeaveFortification()
  {
@@ -2905,6 +2924,16 @@ class ACR_Squad : Managed
  protected float m_fStallSince;
  protected int m_iUnsticks;
  protected int m_iReroutes;
+ // #53 (27 Oct, Arland): an LAV waiting at a gate for its gunner to get back in was taken as
+ // stuck, backed up away from him twice and held, dropping the player's order. While one of the
+ // crew is getting in or out, or stands by the vehicle, the stall clock waits (up to
+ // BOARDING_WAIT_MS, so a man who never makes it doesn't hide a real stall). Back-ups count
+ // towards the hold only until the vehicle gets UNSTICK_CLEAR m past the spot it was stuck at.
+ static const float BOARDING_WAIT_MS = 60000;
+ static const float BOARDING_RANGE = 40;
+ static const float UNSTICK_CLEAR = 40;
+ protected float m_fBoardingSince = -1;
+ protected vector m_vUnstickFrom;
  float m_fStuckAt = -1000000; // world time the squad last gave up on a stuck vehicle (AI re-crewing waits)
  protected bool m_bUnsticking;
  protected ref ACR_SquadUnstick m_UnstickListener; // told by BBB_Unstick when backing out is over
@@ -3080,11 +3109,28 @@ class ACR_Squad : Managed
   if (!wantsToMove || vehicle != m_StallVehicle || (speed > 1.0 && vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5))
   {
    if (vehicle != m_StallVehicle || !wantsToMove) { m_iUnsticks = 0; m_iReroutes = 0; }
+   else if (m_iUnsticks > 0 && vector.DistanceXZ(vehicle.GetOrigin(), m_vUnstickFrom) > UNSTICK_CLEAR) m_iUnsticks = 0; // got past it
    m_StallVehicle = vehicle;
    if (vehicle) m_StallPos = vehicle.GetOrigin();
    m_fStallSince = now;
+   m_fBoardingSince = -1;
    return;
   }
+  // Waiting for its own men to get in (or out) isn't being stuck; under fire the usual limits apply.
+  if (!underFire && CrewBoarding(vehicle))
+  {
+   if (m_fBoardingSince < 0)
+   {
+    m_fBoardingSince = now;
+    PrintFormat("[ACR] DRIVE %1: waiting for its crew to get in or out, not stuck", m_Name);
+   }
+   if (now - m_fBoardingSince < BOARDING_WAIT_MS)
+   {
+    m_fStallSince = now;
+    return;
+   }
+  }
+  else m_fBoardingSince = -1;
   float stalled = (now - m_fStallSince) / 1000;
   bool armed = HasGunner(vehicle);
   // Fighting vehicles (anything with a turret: LAV, BTR, BRDM, gun trucks) keep
@@ -3199,9 +3245,28 @@ class ACR_Squad : Managed
   PrintFormat("[ACR] DRIVE %1: stuck, crew stays aboard and holds", m_Name);
  }
 
+ // A living, conscious member of this squad is getting in or out of a vehicle, or is on foot
+ // within BOARDING_RANGE of this one (#53).
+ bool CrewBoarding(IEntity vehicle)
+ {
+  if (!vehicle) return false;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!body || !ACR_Respawn.IsAlive(body) || body.GetCharacterController().IsUnconscious()) continue;
+   CompartmentAccessComponent access = body.GetCompartmentAccessComponent();
+   if (access && (access.IsGettingIn() || access.IsGettingOut())) return true;
+   if (!ACR_Transport.VehicleOf(body) && vector.DistanceXZ(body.GetOrigin(), vehicle.GetOrigin()) < BOARDING_RANGE) return true;
+  }
+  return false;
+ }
+
  protected void BeginUnstick(IEntity vehicle, ChimeraCharacter driver)
  {
   m_bUnsticking = true;
+  m_vUnstickFrom = vehicle.GetOrigin();
   float steer = 0.8;
   if (m_iUnsticks % 2 == 0) steer = -0.8;
   if (!m_UnstickListener) m_UnstickListener = new ACR_SquadUnstick(this);

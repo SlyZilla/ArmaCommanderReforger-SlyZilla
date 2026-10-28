@@ -28,6 +28,7 @@ class ACR_TestHarness : Managed
  static const int MODE_TACTICS = 15;
  static const int MODE_TRANSPORT = 16;
  static const int MODE_STALL = 17;
+ static const int MODE_STALLWAIT = 118; // #53: a vehicle waiting for its own crew to board isn't stuck
  static const int MODE_RIDE = 18;
  static const int MODE_LOGISTICS = 19;
  static const int MODE_QUEUE = 20;
@@ -83,6 +84,7 @@ class ACR_TestHarness : Managed
  static const int MODE_MORTARSPOT = 78; // 69-77: the playtest branches
  static const int MODE_RIDELAV = 70; // 69: the playtest branches
  static const int MODE_PATROL = 55; // 52 / 53: Fortify / roadblocks (#7, #8)
+ static const int MODE_HOLDRETURN = 85; // 79-84: the playtest branches and the 2IC
  static const int MODE_AIM = 62; // 55-61: patrol, ambush, QRF, FOB AI, defenders, budget, cap scale (own branches)
 
  ACR_TestRange m_Range;
@@ -112,6 +114,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrTacticsTest", flag)) mode = MODE_TACTICS;
   if (System.GetCLIParam("acrTransportTest", flag)) mode = MODE_TRANSPORT;
   if (System.GetCLIParam("acrStallTest", flag)) mode = MODE_STALL;
+  if (System.GetCLIParam("acrStallWaitTest", flag)) mode = MODE_STALLWAIT;
   if (System.GetCLIParam("acrRideTest", flag)) mode = MODE_RIDE;
   if (System.GetCLIParam("acrLogisticsTest", flag)) mode = MODE_LOGISTICS;
   if (System.GetCLIParam("acrQueueTest", flag)) mode = MODE_QUEUE;
@@ -162,6 +165,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRideLavTest", flag) || System.GetCLIParam("acrRideTruckTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrRideLavKillTest", flag) || System.GetCLIParam("acrRideLavGetOutTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrPatrolTest", flag)) mode = MODE_PATROL;
+  if (System.GetCLIParam("acrHoldReturnTest", flag)) mode = MODE_HOLDRETURN;
   if (System.GetCLIParam("acrAimTest", flag)) mode = MODE_AIM;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
@@ -243,6 +247,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_TACTICS) { m_Battle.TestTactics(); return; }
   if (m_Mode == MODE_TRANSPORT) { m_Vehicles.TestTransport(); return; }
   if (m_Mode == MODE_STALL) { m_Vehicles.TestStall(); return; }
+  if (m_Mode == MODE_STALLWAIT) { ACR_TestStallWait.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDE) { m_Vehicles.TestRide(); return; }
   if (m_Mode == MODE_LOGISTICS) { m_Logistics.TestLogistics(); return; }
   if (m_Mode == MODE_QUEUE) { m_Battle.TestQueue(); return; }
@@ -298,6 +303,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_MORTARSPOT) { ACR_TestMortarSpot.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDELAV) { ACR_TestRideLav.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PATROL) { ACR_TestPatrol.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_HOLDRETURN) { ACR_TestHoldReturn.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_AIM) { ACR_TestAim.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
