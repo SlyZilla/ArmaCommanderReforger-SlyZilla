@@ -75,6 +75,7 @@
 ### Intel
 
 - "The enemy commander has changed tactics" only names the old doctrine when it had been confirmed. A hint such as "Firepower or Fortress" could include the new doctrine, so the line could say "no longer Fortress" as the enemy switched to Fortress.
+- Patrol (map panel, a new row of standing orders): a squad walks its queued points in a loop. Give it a move order, Shift + right-click more points, then click **Patrol**; the point it is heading for joins the loop, and Defend or Garrison points are walked through. With one point it walks between where it stands and that point; a squad standing still sets off at once. A new order or clicking Patrol again ends it. The squad's status shows "patrolling N points".
 - Drag to aim: roadblocks, Fortify and the minefields still face the threat on a plain right-click. Right-click and drag sets the facing instead: the order goes where you pressed and faces where you let go, with a gold arrow on the map while you drag (while one of these orders is armed, a right-drag aims instead of panning the map; the keyboard and the screen edges still pan). A dragged minefield off the road lies square to the arrow, one on a road runs along it the way you dragged; an upgrade of a Fortify position keeps its facing (the order says so). The facing is sent with the order, so it works the same for every player in multiplayer; the AI commander keeps facing the threat.
 
 ## 0.5.7 — released
