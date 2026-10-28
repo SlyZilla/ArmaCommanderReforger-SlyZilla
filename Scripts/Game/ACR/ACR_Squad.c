@@ -2352,6 +2352,25 @@ class ACR_Squad : Managed
  // him back (ACR_AICommander.Recrew). Jacob's 27 Oct game: a Typhoon's driver and gunner got
  // out, only the gunner went back, and every move of the next 37 min failed on the spot.
  bool m_bDriverBailed;
+ // A crew that keeps bailing (the game's AI takes it out to walk whenever its vehicle finds no
+ // path) is taken as stuck after BAIL_LIMIT bails in BAIL_WINDOW_MS: Recrew and the logistics
+ // runs leave it for a while (m_fStuckAt). Jacob's 26 Oct game: a BTR-70's crew got out within
+ // 5 s of every grab order, Recrew put them back in (cancelling the walk) and the commander
+ // ordered the grab again, for 90 min.
+ static const int BAIL_LIMIT = 3;
+ static const float BAIL_WINDOW_MS = 600000;
+ protected ref array<float> m_aDriverBails = {};
+ protected void NoteDriverBail()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  for (int i = m_aDriverBails.Count() - 1; i >= 0; i--)
+   if (now - m_aDriverBails[i] > BAIL_WINDOW_MS) m_aDriverBails.Remove(i);
+  m_aDriverBails.Insert(now);
+  if (m_aDriverBails.Count() < BAIL_LIMIT) return;
+  m_aDriverBails.Clear();
+  m_fStuckAt = now;
+  PrintFormat("[ACR] CREW %1: its driver keeps getting out (%2 times in %3 min), taken as stuck", m_Name, BAIL_LIMIT, (int)(BAIL_WINDOW_MS / 60000));
+ }
  protected ref map<IEntity, int> m_CrewSeats = new map<IEntity, int>();
  protected void WatchCrew()
  {
@@ -2378,7 +2397,11 @@ class ACR_Squad : Managed
    ACR_Manager manager = ACR_Manager.GetInstance();
    if (m_bMortar && manager && manager.Mortars().IsLoadingDeparture(this, agent)) continue;
    m_iUnexpectedCrewDepartures++;
-   if (before == ECompartmentType.PILOT && m_OwnVehicle && !DriverOf(m_OwnVehicle)) m_bDriverBailed = true;
+   if (before == ECompartmentType.PILOT && m_OwnVehicle && !DriverOf(m_OwnVehicle))
+   {
+    m_bDriverBailed = true;
+    NoteDriverBail();
+   }
    string where = "";
    if (m_OwnVehicle) where = string.Format(", vehicle health %1, driver %2", ACR_Logistics.Health(m_OwnVehicle), DriverOf(m_OwnVehicle) != null);
    PrintFormat("[ACR] CREW LEFT %1: %2 got out of the %3 seat on his own (order '%4', alive %5, enemies near %6, player %7%8)", m_Name, NumberOf(body), typename.EnumToString(ECompartmentType, before), m_Order, ACR_Respawn.IsAlive(body), KnownEnemies(350), FindController(body), where);

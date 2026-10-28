@@ -77,8 +77,18 @@ class ACR_TestRecrew
   {
    bool back = ACR_Squad.DriverOf(s_DriverlessVehicle) != null && !s_Driverless.m_bDriverBailed;
    ACR_TestRegress.Check("recrew: someone drives the truck again and the flag is cleared", back, State(s_Driverless, s_DriverlessVehicle));
-   ACR_TestRegress.Complete("recrew", 3);
+   // Two more bails in the window (the first was at tick 14): taken as stuck, so Recrew and the
+   // logistics runs leave it (Jacob's 26 Oct game: a BTR crew bailed and was put back for 90 min).
+   Eject(s_Driverless, ECompartmentType.PILOT);
   }
-  if (tick == 67) Print("[ACR] TEST COMPLETE");
+  if (tick == 68) s_Driverless.ReseatDriver(s_DriverlessVehicle);
+  if (tick == 74) Eject(s_Driverless, ECompartmentType.PILOT);
+  if (tick == 77)
+  {
+   bool stuck = GetGame().GetWorld().GetWorldTime() - s_Driverless.m_fStuckAt < 10000;
+   ACR_TestRegress.Check("recrew: a driver who bails a third time in 10 min marks the crew stuck", stuck, string.Format("%1, stuck %2 s ago", State(s_Driverless, s_DriverlessVehicle), (int)((GetGame().GetWorld().GetWorldTime() - s_Driverless.m_fStuckAt) / 1000)));
+   ACR_TestRegress.Complete("recrew", 4);
+  }
+  if (tick == 79) Print("[ACR] TEST COMPLETE");
  }
 }
