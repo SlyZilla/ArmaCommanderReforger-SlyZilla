@@ -79,6 +79,7 @@ class ACR_TestHarness : Managed
  static const int MODE_RIDEJOB = 68; // 54-67: Fortify and the playtest branches
  static const int MODE_MINESITING = 71; // 68-70: ride job, defend swap, LAV ride (own branches)
  static const int MODE_GROUNDTILT = 74; // 69-73: the playtest branches
+ static const int MODE_STRUCTLAYOUT = 126; // 117: map-polygon-guard, 125: roadblock-friendly-lane
  static const int MODE_POSSITING = 72; // 68-71: ride job, defend swap, LAV ride, mine siting (own branches)
  static const int MODE_ATTACKREACH = 79; // 69-78: the playtest branches
  static const int MODE_GRABS = 77; // 69-76: the playtest branches
@@ -163,6 +164,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrVarietyTest", flag)) mode = MODE_VARIETY;
   if (System.GetCLIParam("acrMineSitingTest", flag)) mode = MODE_MINESITING;
   if (System.GetCLIParam("acrGroundTiltTest", flag)) mode = MODE_GROUNDTILT;
+  if (System.GetCLIParam("acrStructureLayoutTest", flag)) mode = MODE_STRUCTLAYOUT;
   if (System.GetCLIParam("acrPositionSitingTest", flag)) mode = MODE_POSSITING;
   if (System.GetCLIParam("acrAttackReachTest", flag)) mode = MODE_ATTACKREACH;
   if (System.GetCLIParam("acrGrabsTest", flag)) mode = MODE_GRABS;
@@ -306,6 +308,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_VARIETY) { ACR_TestVariety.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MINESITING) { ACR_TestMineSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GROUNDTILT) { ACR_TestGroundTilt.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_STRUCTLAYOUT) { ACR_TestStructureLayout.RunLayout(this, m_Ticks); return; }
   if (m_Mode == MODE_POSSITING) { ACR_TestPositionSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ATTACKREACH) { ACR_TestAttackReach.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GRABS) { ACR_TestGrabs.Run(this, m_Ticks); return; }
