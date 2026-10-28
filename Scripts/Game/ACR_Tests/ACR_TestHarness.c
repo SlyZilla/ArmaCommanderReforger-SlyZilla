@@ -101,6 +101,8 @@ class ACR_TestHarness : Managed
  static const int MODE_TWOICSHOTS = 91; // a game client run (89 variety, 90 the armour duel probe)
  static const int MODE_TWOICDECLUTTER = 131; // the 2IC declutter (117, 120, 125: own branches)
  static const int MODE_RIDELAV = 70; // 69: the playtest branches
+ static const int MODE_MAPDECLUTTER = 131; // the calm command map's rules (90-97, 117, 120, 125 taken elsewhere)
+ static const int MODE_MAPDECLUTTERSHOTS = 132; // the calm command map in a game client (screenshots)
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -174,6 +176,8 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrVarietyTest", flag)) mode = MODE_VARIETY;
   if (System.GetCLIParam("acrAmbushTest", flag) || System.GetCLIParam("acrAmbushRoadTest", flag) || System.GetCLIParam("acrAmbushRoadCommandedTest", flag) || System.GetCLIParam("acrAmbushDragTest", flag) || System.GetCLIParam("acrAmbushSlopeTest", flag)) mode = MODE_AMBUSH;
   if (System.GetCLIParam("acrMineSitingTest", flag)) mode = MODE_MINESITING;
+  if (System.GetCLIParam("acrMapDeclutterTest", flag)) mode = MODE_MAPDECLUTTER;
+  if (System.GetCLIParam("acrMapDeclutterShotsTest", flag)) mode = MODE_MAPDECLUTTERSHOTS;
   if (System.GetCLIParam("acrGroundTiltTest", flag)) mode = MODE_GROUNDTILT;
   if (System.GetCLIParam("acrStructureLayoutTest", flag)) mode = MODE_STRUCTLAYOUT;
   if (System.GetCLIParam("acrPositionSitingTest", flag)) mode = MODE_POSSITING;
@@ -328,6 +332,8 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_VARIETY) { ACR_TestVariety.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_AMBUSH) { ACR_TestAmbush.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MINESITING) { ACR_TestMineSiting.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MAPDECLUTTER) { ACR_TestMapDeclutter.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MAPDECLUTTERSHOTS) { ACR_TestMapDeclutterShots.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GROUNDTILT) { ACR_TestGroundTilt.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_STRUCTLAYOUT) { ACR_TestStructureLayout.RunLayout(this, m_Ticks); return; }
   if (m_Mode == MODE_POSSITING) { ACR_TestPositionSiting.Run(this, m_Ticks); return; }

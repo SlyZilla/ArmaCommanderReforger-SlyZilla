@@ -185,6 +185,8 @@ class ACR_MapFeed
   if (Changed(id, "debug", string.Format("%1|%2", debugAllowed, debugText), full)) pc.ACR_SendDebug(debugAllowed, debugText);
   string report = ACR_Report.Text(key);
   if (Changed(id, "report", report, full)) pc.ACR_SendReport(report);
+  bool calm = ACR_MapDeclutter.OptionOn();
+  if (Changed(id, "style", string.Format("%1", calm), full)) pc.ACR_SendMapStyle(calm);
   if (Changed(id, "bases", frame.m_sBasesSig, full)) { pc.ACR_SendBases(frame.m_BasePos, frame.m_BaseNames, frame.m_BaseOwners, frame.m_BaseDetails, frame.m_BaseRadii, frame.m_BaseContested, frame.m_BaseSupply); Count(frame, "bases"); }
   if (Changed(id, "reqs", frame.m_sReqSig, full)) { pc.ACR_SendRequisitions(frame.m_ReqNames, frame.m_ReqCosts, frame.m_ReqRemaining); Count(frame, "reqs"); }
   if (Changed(id, "sups", frame.m_sSupSig, full)) { pc.ACR_SendSupports(frame.m_SupNames, frame.m_SupCosts, frame.m_SupCooldowns); Count(frame, "sups"); }
@@ -514,6 +516,7 @@ class ACR_MapFeed
  {
   string sig = "";
   int bytes;
+  bool calm = ACR_MapDeclutter.OptionOn();
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (!base.IsVisibleTo(frame.m_sKey)) continue;
@@ -524,6 +527,8 @@ class ACR_MapFeed
     detail += ACR_FobSupply.Describe(base);
     detail += ACR_FobSlots.Describe(base);
    }
+   // The calm map names the enemy's HQ when zoomed out (ACR_MapDeclutter.IsHQ).
+   if (calm && ACR_LogisticsRules.IsHQ(base)) detail += " | HQ";
    frame.m_BasePos.Insert(base.GetOrigin());
    frame.m_BaseNames.Insert(base.GetLabel());
    frame.m_BaseOwners.Insert(owner);

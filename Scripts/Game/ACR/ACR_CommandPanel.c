@@ -160,17 +160,17 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetSizeToContent(m_Root, true);
   m_Root.SetZOrder(1000);
 
-  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.86), 0, m_Root);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, PanelBackground(0.86), 0, m_Root);
   AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
   AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
 
   SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_Root));
   size.EnableWidthOverride(true);
-  size.SetWidthOverride(WIDTH);
+  size.SetWidthOverride(PanelWidth());
   AlignableSlot.SetPadding(size, 14, 12, 14, 16);
   m_Content = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
 
-  AddText(m_Content, LAYOUT_HEADING, "AC: ACTUAL");
+  AddHeading(m_Content, "AC: ACTUAL");
   m_Economy = AddText(m_Content, LAYOUT_TEXT, "");
   m_Status = AddText(m_Content, LAYOUT_TEXT, "");
   m_ReinforceFeedback = AddText(m_Content, LAYOUT_TEXT, "");
@@ -205,6 +205,7 @@ class ACR_CommandPanel : Managed
   m_ReportText = AddText(m_Content, LAYOUT_TEXT, "");
   if (m_ReportText) { m_ReportText.SetVisible(false); AlignableSlot.SetPadding(m_ReportText, 0, 4, 0, 4); }
   m_RTSCameraButton = AddButton(m_Content, "3D Camera  [F10]", ACR_EPanelAction.TOGGLE_RTS_CAMERA);
+  AddExtraRows(m_Content);
 
   m_GroupSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
@@ -294,7 +295,7 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetPos(m_DebugRoot, 110, -96);
   FrameSlot.SetSizeToContent(m_DebugRoot, true);
   m_DebugRoot.SetZOrder(1000);
-  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.86), 0, m_DebugRoot);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, PanelBackground(0.86), 0, m_DebugRoot);
   AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
   AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
   SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_DebugRoot));
@@ -373,7 +374,7 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetAnchorMax(m_PickerRoot, 0, 0);
   FrameSlot.SetSizeToContent(m_PickerRoot, true);
   m_PickerRoot.SetZOrder(1001);
-  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.90), 0, m_PickerRoot);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, PanelBackground(0.90), 0, m_PickerRoot);
   AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
   AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
   SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_PickerRoot));
@@ -490,7 +491,25 @@ class ACR_CommandPanel : Managed
  {
   TextWidget widget = TextWidget.Cast(GetGame().GetWorkspace().CreateWidgets(layout, parent));
   if (widget) widget.SetText(text);
+  StyleText(widget, layout == LAYOUT_HEADING);
   return widget;
+ }
+
+ // Look hooks: the calm map (ACR_MapDeclutterView) restyles the panel through these.
+ protected Color PanelBackground(float alpha) { return new Color(0.02, 0.13, 0.30, alpha); }
+ protected float PanelWidth() { return WIDTH; }
+ protected TextWidget AddHeading(Widget parent, string text) { return AddText(parent, LAYOUT_HEADING, text); }
+ protected void StyleText(TextWidget widget, bool heading) {}
+ protected void AddExtraRows(Widget content) {}
+
+ // Arma Commander blue instead of the vanilla orange.
+ protected void StyleButton(SCR_ButtonTextComponent button, Widget widget)
+ {
+  Color normal = new Color(0.16, 0.42, 0.80, 0.40);
+  button.SetBackgroundColors(normal, new Color(0.26, 0.56, 0.96, 0.70), new Color(0.30, 0.62, 1.0, 0.95), new Color(0.36, 0.68, 1.0, 1.0), new Color(0.30, 0.62, 1.0, 0.95));
+  if (button.m_wBackground) button.m_wBackground.SetColor(normal);
+  Widget border = widget.FindAnyWidget("Border");
+  if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
  }
 
  protected SCR_ButtonTextComponent AddButton(Widget parent, string text, int action, bool fill = false)
@@ -503,12 +522,7 @@ class ACR_CommandPanel : Managed
   SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(widget);
   if (!button) return null;
   button.SetText(text);
-  // Arma Commander blue instead of the vanilla orange.
-  Color normal = new Color(0.16, 0.42, 0.80, 0.40);
-  button.SetBackgroundColors(normal, new Color(0.26, 0.56, 0.96, 0.70), new Color(0.30, 0.62, 1.0, 0.95), new Color(0.36, 0.68, 1.0, 1.0), new Color(0.30, 0.62, 1.0, 0.95));
-  if (button.m_wBackground) button.m_wBackground.SetColor(normal);
-  Widget border = widget.FindAnyWidget("Border");
-  if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
+  StyleButton(button, widget);
   button.m_OnClicked.Insert(OnButton);
   m_Actions.Insert(button, action);
   return button;
