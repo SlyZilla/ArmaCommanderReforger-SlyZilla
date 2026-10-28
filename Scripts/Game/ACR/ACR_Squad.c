@@ -1452,7 +1452,7 @@ class ACR_Squad : Managed
 
   SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
-  IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0);
+  IssueWaypoint(WP_DEFEND, rb.m_vPost, rb.m_fPostRadius);
   PrintFormat("[ACR] SQUAD %1: completed %2 at %3", m_Name, ACR_Roadblocks.Name(rb.m_iType), m_vRoadblockSite);
  }
 
@@ -1461,7 +1461,15 @@ class ACR_Squad : Managed
   if (!m_RoadblockTurret || !m_Group || m_Commander != 0 || HasPlayer()) return;
   // Defend reserves compartments and sends native get-in behaviors. Replacing it
   // each tick sends native get-out messages and starts the departure loop again.
-  if (!m_Group.GetCurrentWaypoint()) IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0);
+  // Beside the lane, off the road (ACR_RoadblockLane.Post), the gun inside the Defend's radius.
+  vector post = m_vRoadblockSite;
+  float radius = 15.0;
+  if (m_ActiveRoadblock && m_ActiveRoadblock.m_vPost != vector.Zero)
+  {
+   post = m_ActiveRoadblock.m_vPost;
+   radius = m_ActiveRoadblock.m_fPostRadius;
+  }
+  if (!m_Group.GetCurrentWaypoint()) IssueWaypoint(WP_DEFEND, post, radius);
  }
 
  void VacateRoadblockTurret()
@@ -3105,6 +3113,7 @@ class ACR_Squad : Managed
  protected vector m_StallPos;
  protected float m_fStallSince;
  protected int m_iUnsticks;
+ int m_iStuckCount; // every time its vehicle was judged stuck (tests)
  protected int m_iReroutes;
  // #53 (27 Oct, Arland): an LAV waiting at a gate for its gunner to get back in was taken as
  // stuck, backed up away from him twice and held, dropping the player's order. While one of the
@@ -3318,6 +3327,7 @@ class ACR_Squad : Managed
 
   bool eligible = driver != null && ACR_Respawn.IsAlive(driver) && IsMember(driver) && FindController(driver) == 0;
   if (eligible && manager && manager.IsGunnerDriven(vehicle)) eligible = false;
+  LaneSpeed(vehicle, eligible);
   bool wantsToMove;
   if (eligible)
   {
@@ -3405,6 +3415,34 @@ class ACR_Squad : Managed
   BeginUnstick(vehicle, driver);
  }
 
+ // Our AI driver takes our own roadblock's lane slowly (ACR_Roadblocks.LANE_SPEED_KMH within
+ // LANE_SLOW_RANGE of it): its chicane has a truck's width to spare, not a truck at road speed. The
+ // limit goes once it is past, or when the squad changes vehicle or drivers.
+ protected IEntity m_LaneSlowVehicle;
+ protected void LaneSpeed(IEntity vehicle, bool aiDriven)
+ {
+  ACR_Roadblock near = null;
+  if (vehicle && GetFaction()) near = ACR_Roadblocks.OwnNear(vehicle.GetOrigin(), GetFaction().GetFactionKey());
+  // Its holders step out of the way of any of our vehicles, AI-driven or not.
+  if (near) ACR_RoadblockLane.ClearFor(near, vehicle);
+  ACR_Roadblock rb = null;
+  if (aiDriven) rb = near;
+  if (m_LaneSlowVehicle && (m_LaneSlowVehicle != vehicle || !rb))
+  {
+   AICarMovementComponent was = AICarMovementComponent.Cast(m_LaneSlowVehicle.FindComponent(AICarMovementComponent));
+   if (was) was.ResetCruiseSpeed();
+   PrintFormat("[ACR] DRIVE %1: past the roadblock lane, road speed again", m_Name);
+   m_LaneSlowVehicle = null;
+  }
+  if (!rb) return;
+  AICarMovementComponent movement = AICarMovementComponent.Cast(vehicle.FindComponent(AICarMovementComponent));
+  if (!movement) return;
+  movement.SetCruiseSpeed(ACR_Roadblocks.LANE_SPEED_KMH);
+  if (m_LaneSlowVehicle == vehicle) return;
+  m_LaneSlowVehicle = vehicle;
+  PrintFormat("[ACR] DRIVE %1: slowing to %2 km/h through our roadblock lane at %3", m_Name, ACR_Roadblocks.LANE_SPEED_KMH, rb.m_vPos);
+ }
+
  // A fresh road route from where the vehicle stands to where it was going, carried
  // out as route legs of the current order (no new serial: rides stay on).
  protected bool Reroute(IEntity vehicle)
@@ -3458,6 +3496,7 @@ class ACR_Squad : Managed
    foreach (ACR_Squad rider : riders) if (rider != this && !rider.HasPlayer()) rider.DismountNow();
   }
   Halt("Stuck, holding");
+  m_iStuckCount++;
   m_StallVehicle = null;
   m_iUnsticks = 0;
   m_iReroutes = 0;
@@ -3488,6 +3527,7 @@ class ACR_Squad : Managed
  {
   m_bUnsticking = true;
   m_vUnstickFrom = vehicle.GetOrigin();
+  m_iStuckCount++;
   float steer = 0.8;
   if (m_iUnsticks % 2 == 0) steer = -0.8;
   if (!m_UnstickListener) m_UnstickListener = new ACR_SquadUnstick(this);
