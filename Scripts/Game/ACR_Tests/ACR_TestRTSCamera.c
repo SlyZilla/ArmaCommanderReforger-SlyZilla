@@ -87,6 +87,40 @@ modded class ACR_RTSCameraManager
    camera.HandleLeftClick(ws.DPIScale(clickAt[0]), ws.DPIScale(clickAt[1]));
    ACR_TestRegress.Check("RTS: clicking a squad marker selects it", data.IsSelected(data.m_GroupIds[shown]));
   }
+  // #66: an order line and a spotted enemy 60 m ahead, then a right-click on the enemy hunts it.
+  if (!camera.m_Overlay) { ACR_TestRegress.Abort("rtscamera", "no RTS overlay"); return; }
+  camera.UpdateMarkers(pc);
+  int withoutOrder = camera.m_Overlay.CommandCount();
+  if (data.m_GroupIds.IsEmpty()) ACR_TestRegress.Skip("RTS: a squad's order draws a line to its point", "no friendly squad");
+  else
+  {
+   data.m_OrderGroups.Insert(data.m_GroupIds[0]);
+   data.m_OrderTargets.Insert(target);
+   data.m_OrderKinds.Insert(ACR_EOrderKind.MOVE);
+   data.m_OrderIssuers.Insert(0);
+   camera.UpdateMarkers(pc);
+   int withOrder = camera.m_Overlay.CommandCount();
+   data.m_OrderGroups.Remove(data.m_OrderGroups.Count() - 1);
+   data.m_OrderTargets.Remove(data.m_OrderTargets.Count() - 1);
+   data.m_OrderKinds.Remove(data.m_OrderKinds.Count() - 1);
+   data.m_OrderIssuers.Remove(data.m_OrderIssuers.Count() - 1);
+   ACR_TestRegress.Check("RTS: a squad's order draws a line to its point", withOrder >= withoutOrder + 3, string.Format("draw commands %1 -> %2", withoutOrder, withOrder));
+  }
+  pc.ACR_TestAddContact(target, 3);
+  camera.UpdateMarkers(pc);
+  array<vector> contacts = camera.m_Overlay.ContactScreen();
+  int enemy = contacts.Count() - 1;
+  bool enemyShown = enemy >= 0 && enemy == pc.ACR_ContactCount() - 1 && contacts[enemy][2] > 0;
+  ACR_TestRegress.Check("RTS: a spotted enemy ahead gets a marker", enemyShown, string.Format("contacts %1, last at %2", contacts.Count(), contacts));
+  if (!enemyShown || data.m_Selected.IsEmpty()) ACR_TestRegress.Skip("RTS: right-click on an enemy marker hunts it", "no marker or no squad selected");
+  else
+  {
+   vector enemyAt = contacts[enemy];
+   WorkspaceWidget wsHunt = GetGame().GetWorkspace();
+   camera.HandleRightClick(wsHunt.DPIScale(enemyAt[0]), wsHunt.DPIScale(enemyAt[1]));
+   string toast = camera.m_ToastText.GetText();
+   ACR_TestRegress.Check("RTS: right-click on an enemy marker hunts it", toast.Contains("Hunt"), toast);
+  }
   CameraBase previous = camera.m_PreviousCamera;
   Widget oldRoot = camera.m_RootWidget;
   Close();
@@ -239,7 +273,7 @@ modded class ACR_TestCommand
    ACR_RTSCameraManager.Open();
   }
   if (h.m_Ticks == 6) ACR_RTSCameraManager.CheckNativeRTS();
-  if (h.m_Ticks == 8) ACR_TestRegress.Complete("rtscamera", 16);
+  if (h.m_Ticks == 8) ACR_TestRegress.Complete("rtscamera", 19);
  }
 
  void TestRTSAim()
@@ -261,5 +295,17 @@ modded class ACR_TestCommand
    ACR_RTSCameraManager.Close();
    ACR_TestRegress.Complete("rtsaim", 7);
   }
+ }
+}
+
+modded class SCR_PlayerController
+{
+ // Test: a soldier group our side has just spotted, as the intel feed would send it.
+ void ACR_TestAddContact(vector pos, int count)
+ {
+  m_ACR_ContactPositions.Insert(pos);
+  m_ACR_ContactKinds.Insert(ACR_Intel.KIND_INFANTRY);
+  m_ACR_ContactCounts.Insert(count);
+  m_ACR_ContactAges.Insert(0);
  }
 }

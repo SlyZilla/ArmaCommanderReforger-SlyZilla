@@ -109,6 +109,7 @@ class ACR_RTSCameraManager : Managed
 	protected ref array<Widget> m_BaseMarkers = {};
 	protected ref array<vector> m_SquadMarkerPos = {};
 	protected ref array<vector> m_BaseMarkerPos = {};
+	protected ref ACR_RTSOverlay m_Overlay; // order lines and spotted enemies (#66)
 
 	// ---------------------------------------------------------------- lifecycle
 	static bool IsActive()
@@ -241,6 +242,7 @@ class ACR_RTSCameraManager : Managed
 		FrameSlot.SetAnchorMin(m_MarkerLayer, 0, 0);
 		FrameSlot.SetAnchorMax(m_MarkerLayer, 1, 1);
 		FrameSlot.SetOffsets(m_MarkerLayer, 0, 0, 0, 0);
+		m_Overlay = new ACR_RTSOverlay(m_MarkerLayer);
 
 		// The drag-to-aim arrow, over the scene and ignoring the cursor like the markers.
 		m_AimCanvas = CanvasWidget.Cast(ws.CreateWidget(WidgetType.CanvasWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.BLEND, Color.FromInt(Color.WHITE), 0, m_RootWidget));
@@ -617,18 +619,27 @@ class ACR_RTSCameraManager : Managed
 
 	void HandleRightClick(int x, int y)
 	{
+		// A spotted enemy's marker under the cursor (it may stand against the sky).
+		int hunted = -1;
+		WorkspaceWidget ws = GetGame().GetWorkspace();
+		if (m_Overlay) hunted = NearestMarker(m_Overlay.ContactScreen(), ws.DPIUnscale(x), ws.DPIUnscale(y));
 		vector hitPos;
 		IEntity hitEnt;
-		if (!ScreenToWorld(x, y, hitPos, hitEnt)) return;
-		OrderAt(hitPos, hitEnt, vector.Zero);
+		bool onGround = ScreenToWorld(x, y, hitPos, hitEnt);
+		OrderAt(hitPos, hitEnt, vector.Zero, onGround, hunted);
 	}
 
 	// The right-click's order at hitPos; aim: where a drag to aim came up (vector.Zero: none, the
 	// order faces the threat as before). The facing goes with the order (ACR_IssueOrder).
-	void OrderAt(vector hitPos, IEntity hitEnt, vector aim)
+	// hunted: the spotted enemy whose marker was clicked (-1 none); onGround false: the ray hit
+	// nothing, so only that hunt can be ordered.
+	void OrderAt(vector hitPos, IEntity hitEnt, vector aim, bool onGround = true, int hunted = -1)
 	{
 		SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
 		if (!pc) return;
+		// The markers are last frame's: an intel update since may have shortened the list.
+		if (hunted >= pc.ACR_ContactCount()) hunted = -1;
+		if (!onGround && hunted < 0) return;
 		ACR_MapData data = pc.ACR_GetData();
 		if (!data || data.m_Selected.IsEmpty())
 		{
@@ -666,6 +677,14 @@ class ACR_RTSCameraManager : Managed
    actionName = "Garrison";
    if (command == ACR_ERequest.ORDER_GET_IN) actionName = "Get In";
   }
+		// Right-click on a spotted enemy: hunt it down, as on the map.
+		else if (hunted >= 0 && !append)
+		{
+			int kind, members, age;
+			pc.ACR_GetContact(hunted, hitPos, kind, members, age);
+			command = ACR_ERequest.ORDER_HUNT;
+			actionName = "Hunt " + ACR_Intel.Describe(kind, members);
+		}
 		else if (hitEnt && Vehicle.Cast(hitEnt))
 		{
 			command = ACR_ERequest.ORDER_GET_IN;
@@ -684,6 +703,7 @@ class ACR_RTSCameraManager : Managed
 			else if (command == ACR_ERequest.ORDER_GARRISON) command = ACR_ERequest.QUEUE_GARRISON;
 			actionName = "Queued " + actionName;
 		}
+		if (!onGround && command != ACR_ERequest.ORDER_HUNT) return;
 
 		if (pc.ACR_IssueOrder(command, hitPos, append, aim))
 		{
@@ -1247,6 +1267,7 @@ class ACR_RTSCameraManager : Managed
 		}
 		for (int h = squads; h < m_SquadMarkers.Count(); h++) m_SquadMarkers[h].SetVisible(false);
 		for (int k = bases; k < m_BaseMarkers.Count(); k++) m_BaseMarkers[k].SetVisible(false);
+		if (m_Overlay) m_Overlay.Update(pc, data, m_Camera);
 	}
 
 	void ShowToast(string message)
@@ -1291,6 +1312,7 @@ class ACR_RTSCameraManager : Managed
 			m_RootWidget = null;
 		}
 		m_MarkerLayer = null;
+		m_Overlay = null;
 		m_SquadMarkers.Clear();
 		m_BaseMarkers.Clear();
 		m_SquadMarkerPos.Clear();

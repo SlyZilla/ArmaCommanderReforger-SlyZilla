@@ -2033,6 +2033,18 @@ modded class SCR_PlayerController
 
  int ACR_ContactCount() { return m_ACR_ContactPositions.Count(); }
 
+ // Contact i as the map shows it: last known spot, kind, head count and seconds since seen.
+ void ACR_GetContact(int i, out vector pos, out int kind, out int count, out int age)
+ {
+  pos = m_ACR_ContactPositions[i];
+  kind = 0;
+  if (i < m_ACR_ContactKinds.Count()) kind = m_ACR_ContactKinds[i];
+  count = 1;
+  if (i < m_ACR_ContactCounts.Count()) count = m_ACR_ContactCounts[i];
+  age = ACR_MapData.Since(m_ACR_IntelAt);
+  if (i < m_ACR_ContactAges.Count()) age += m_ACR_ContactAges[i];
+ }
+
  // Index of the enemy contact marker within 16 px of the map cursor, or -1.
  protected int ACR_ContactUnderCursor(SCR_MapEntity mapEntity, float x, float z)
  {
