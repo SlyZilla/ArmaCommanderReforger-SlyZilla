@@ -6,6 +6,7 @@
 - Bigger maps, bigger armies (host option, off by default): `-acrCapScale 1` multiplies every side's AI squad cap and the soldier cap by the map's bases / 12 or the spread of its bases / 5 km, whichever is more, between x1 and x2 (soldier cap at most 250). The active-AI limit follows, and the log line `[ACR] CAP SCALE` shows what it chose. The setup screen has a row for it: **Squad caps scale with map** (off / on).
 - An AI mortar team that can't reach the base it was sent to isn't sent there again for 15 minutes. Before, a mortar team could be sent to the same unreachable base over and over, packing up and setting up again at home each time, and fired little all match.
 - An AI vehicle whose driver got out on his own while the gunner stayed aboard gets its driver back: he climbs into the driver's seat (placed there if he hasn't made it in 30 seconds). Before, nothing put him back, and the commander sent the driverless vehicle on order after order that failed where it stood (a Typhoon in a playtest, for 37 minutes). A crew that left a vehicle with an empty tank waits for the fuel truck instead of getting back in.
+- AI vehicles that keep failing to drive are left alone for a while: a supply truck that gave up stuck isn't sent on another run for 10 minutes, and a crew whose driver gets out three times in 10 minutes isn't put back in for 10 minutes, so it can walk its order. Before, a stuck arsenal truck was sent out 59 times in a 2.5-hour game, and a BTR crew got out and was put back in at every order for 90 minutes without the BTR moving.
 
 ### Fixes
 
