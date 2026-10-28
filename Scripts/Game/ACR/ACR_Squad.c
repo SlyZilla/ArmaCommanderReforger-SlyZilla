@@ -2733,6 +2733,7 @@ class ACR_Squad : Managed
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager && m_iOrderedBy > 0) manager.Notify(m_iOrderedBy, message);
   m_iGaveUpMoveSerial = m_iOrderSerial;
+  m_fGaveUpAt = GetGame().GetWorld().GetWorldTime();
   Halt("Holding (unreachable)");
   m_iUnreachableSerial = m_iOrderSerial;
  }
@@ -2744,6 +2745,7 @@ class ACR_Squad : Managed
  // dropped: the squad then "arrived" without moving, outside the base (srv:pathprobe).
  protected int m_iUnreachableSerial = -1;
  protected int m_iGaveUpMoveSerial = -1; // the move order that was given up (the hold has its own serial)
+ float m_fGaveUpAt = -1000000; // world time it last gave up a move as unreachable
  bool GaveUpUnreachable() { return m_iUnreachableSerial == m_iOrderSerial; }
  // A move order given since this serial (this one included) was given up as unreachable.
  bool GaveUpSince(int serial) { return m_iGaveUpMoveSerial >= serial; }
@@ -2751,6 +2753,7 @@ class ACR_Squad : Managed
  void GiveUpForTest()
  {
   m_iGaveUpMoveSerial = m_iOrderSerial;
+  m_fGaveUpAt = GetGame().GetWorld().GetWorldTime();
   Halt("Holding (unreachable)");
   m_iUnreachableSerial = m_iOrderSerial;
  }

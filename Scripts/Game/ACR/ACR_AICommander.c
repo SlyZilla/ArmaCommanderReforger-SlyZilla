@@ -4783,10 +4783,14 @@ class ACR_AICommander : Managed
  // A service vehicle that gave up stuck (ACR_Squad.m_fStuckAt: holding where it is) waits before
  // it is sent anywhere again, as Recrew does. Jacob's 26 Oct game: an arsenal truck stuck by its
  // spawn at Saint-Philippe Factory was sent to Tyrone 59 times in 2.5 h, 353 stuck lines.
+ // Giving up a move as unreachable counts too (RHS soak 28 Oct: a fuel truck that couldn't
+ // path off its spot was sent again every 45 s for 22 min, 31 give-ups).
  static const float STUCK_SERVICE_WAIT_MS = 600000;
  protected bool StuckLately(ACR_Squad crew)
  {
-  return crew && GetGame().GetWorld().GetWorldTime() - crew.m_fStuckAt < STUCK_SERVICE_WAIT_MS;
+  if (!crew) return false;
+  float now = GetGame().GetWorld().GetWorldTime();
+  return now - crew.m_fStuckAt < STUCK_SERVICE_WAIT_MS || now - crew.m_fGaveUpAt < STUCK_SERVICE_WAIT_MS;
  }
  bool StuckLatelyForTest(ACR_Squad crew) { return StuckLately(crew); }
 

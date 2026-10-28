@@ -1287,7 +1287,12 @@ class ACR_TestRegress
    bravo.m_fStuckAt = -1000000;
    bool free = logisticsAI && !logisticsAI.StuckLatelyForTest(bravo);
    bravo.m_fStuckAt = stuckBefore;
-   Check("a service vehicle that gave up stuck isn't sent on another run for a while", waits && free, string.Format("waits %1, free later %2", waits, free));
+   // RHS soak 28 Oct: a fuel truck that gave up its move was sent again every 45 s.
+   float gaveUpBefore = bravo.m_fGaveUpAt;
+   bravo.m_fGaveUpAt = GetGame().GetWorld().GetWorldTime();
+   bool waitsGaveUp = logisticsAI && logisticsAI.StuckLatelyForTest(bravo);
+   bravo.m_fGaveUpAt = gaveUpBefore;
+   Check("a service vehicle that gave up stuck or unreachable isn't sent on another run for a while", waits && free && waitsGaveUp, string.Format("waits %1, free later %2, waits after giving up %3", waits, free, waitsGaveUp));
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
