@@ -36,6 +36,39 @@ class ACR_GunHold
   }
  }
 
+ // A new order (ACR_Squad.NewOrder): the squad leaves the spot it held, so it holds no gun there any
+ // more, and a re-man BBB queued a moment before for one of them (BBB_HeldGuns: an empty held gun is
+ // manned again after 8 s) is called off. Before, that soldier climbed back on after the order and the
+ // squad stayed put: srv:roadblocks' gun rounds failed about 1 in 10 on main, and half the time with
+ // the roadblock lane's post nearer the gun ("Stuck trying to get into vehicle", then the gun manned).
+ static int Release(ACR_Squad squad)
+ {
+  if (!squad) return 0;
+  array<IEntity> guns = {};
+  foreach (IEntity held : squad.m_aHeldGuns) if (held) guns.Insert(held);
+  if (squad.m_RoadblockTurret && !guns.Contains(squad.m_RoadblockTurret)) guns.Insert(squad.m_RoadblockTurret);
+  if (squad.m_ActiveRoadblock && squad.m_ActiveRoadblock.m_Turret && !guns.Contains(squad.m_ActiveRoadblock.m_Turret)) guns.Insert(squad.m_ActiveRoadblock.m_Turret);
+  squad.m_aHeldGuns.Clear();
+  if (guns.IsEmpty()) return 0;
+  int cancelled;
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
+   if (!utility) continue;
+   SCR_AIGetInVehicle getIn = SCR_AIGetInVehicle.Cast(utility.FindActionOfType(SCR_AIGetInVehicle));
+   if (!getIn || !getIn.m_Vehicle || !guns.Contains(getIn.m_Vehicle.m_Value)) continue;
+   getIn.Fail();
+   cancelled++;
+  }
+  s_iReleased += cancelled;
+  if (cancelled > 0) PrintFormat("[ACR] SQUAD %1: called off %2 re-man(s) of the gun it held, for its new order", squad.GetName(), cancelled);
+  return cancelled;
+ }
+
+ static int s_iReleased; // re-mans called off (tests)
+
  // Every tactics tick of a squad: note the held guns its men sit in (they stay held while the
  // squad holds the spot, manned or not).
  static void Tick(ACR_Squad squad)

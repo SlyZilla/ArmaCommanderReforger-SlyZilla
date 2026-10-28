@@ -757,6 +757,7 @@ class ACR_Squad : Managed
   if (m_fReservedLoads > 0 || OrderState() == ACR_EOrderState.BUILD_FOB) CancelEstablishFob();
   // By payment, not state: Halt sets its own state first.
   if (RoadblockPending() || OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) CancelRoadblock("replaced by a new order");
+  ACR_GunHold.Release(this); // before the gun is vacated: nobody climbs back on
   if (m_RoadblockTurret) VacateRoadblockTurret();
   if (m_MinePlan) CancelMineWork();
   m_ActiveRoadblock = null; // a barricade or small checkpoint has no gun to vacate
