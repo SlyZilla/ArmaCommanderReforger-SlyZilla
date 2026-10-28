@@ -731,6 +731,7 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrFobRPServiceCost` | `-acrFobRPServiceCost 3` default, 0–100; RP per soldier actually serviced instantly at a FOB in supplied mode; zero makes this fallback free |
 | `m_iAcrMines` | `-acrMines 1` (default) or `0`; the commander's minefield orders (see [Minefields](#minefields)) |
 | `m_iAcrHoldGuns` | `-acrHoldGuns 1` (default) or `0`; gunners stay on the static guns of a spot their squad holds |
+| `m_iAcrMapDeclutter` | `-acrMapDeclutter 1` (default) or `0`; the calm command map, or the classic one |
 | `m_iAcrMinesRealistic` | `-acrMinesRealistic 0` (default) or `1`; with 1 the owning side's AI sets off its own mines too |
 | `m_iAcrMinesAI` | `-acrMinesAI 0` (default) or `1`; AI commanders lay minefields on their approaches |
 | `m_iAcrFortify` | `-acrFortify 1` (default) or `0`; the commander's Fortify order (see [Fortify position](#fortify-position)) |
@@ -845,6 +846,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
 | `-acrMines 0` | Turn off the commander's minefield orders (on by default; see [Minefields](#minefields)) |
 | `-acrHoldGuns 0` | Vanilla gunners: by default a squad holding a spot (Defend, a checkpoint, a Fortify position) keeps its men on the static guns there, unless an enemy seen in the last 10 s is within 60 m; an empty held gun is manned again after 8 s. Vanilla gets a gunner out whenever anything he knows of is outside the gun's arc. Setup row **Gunners stay on held guns** |
+| `-acrMapDeclutter 0` | The classic command map. By default the map is calm: dark panels, merged INTEL lines, base dots with size pips, squads at a base gathered into one icon with ×N, names and order lines thinned out when zoomed out. Setup row **Calm command map** |
 | `-acrSquadTactics 1` | AI squads use squad tactics inside an objective (off by default): an AI squad assaulting a base uses Better Battle Buddies' squad tactics (assault, flank, hold, search) and fire and manoeuvre once it is inside the base's ring, never leaving it, and squads defending a base on a Defend order may bound to cover or push back an enemy inside the base, never chasing out of it. Garrisons in buildings, squads staging or riding, and squads under a player's command are never affected |
 | `-acrMinesRealistic 1` | Mines go off for everyone. By default the owning side's AI never sets off its own mines; its players do |
 | `-acrFortify 0` | Turn off the commander's Fortify order (on by default; see [Fortify position](#fortify-position)) |

@@ -90,6 +90,8 @@ class ACR_TestHarness : Managed
  static const int MODE_PATROL = 55; // 52 / 53: Fortify / roadblocks (#7, #8)
  static const int MODE_HOLDRETURN = 85; // 79-84: the playtest branches and the 2IC
  static const int MODE_AIM = 62; // 55-61: patrol, ambush, QRF, FOB AI, defenders, budget, cap scale (own branches)
+ static const int MODE_MAPDECLUTTER = 131; // the calm command map's rules (90-97, 117, 120, 125 taken elsewhere)
+ static const int MODE_MAPDECLUTTERSHOTS = 132; // the calm command map in a game client (screenshots)
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -162,6 +164,8 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRideJobTest", flag)) mode = MODE_RIDEJOB;
   if (System.GetCLIParam("acrVarietyTest", flag)) mode = MODE_VARIETY;
   if (System.GetCLIParam("acrMineSitingTest", flag)) mode = MODE_MINESITING;
+  if (System.GetCLIParam("acrMapDeclutterTest", flag)) mode = MODE_MAPDECLUTTER;
+  if (System.GetCLIParam("acrMapDeclutterShotsTest", flag)) mode = MODE_MAPDECLUTTERSHOTS;
   if (System.GetCLIParam("acrGroundTiltTest", flag)) mode = MODE_GROUNDTILT;
   if (System.GetCLIParam("acrPositionSitingTest", flag)) mode = MODE_POSSITING;
   if (System.GetCLIParam("acrAttackReachTest", flag)) mode = MODE_ATTACKREACH;
@@ -305,6 +309,8 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_RIDEJOB) { ACR_TestRideJob.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_VARIETY) { ACR_TestVariety.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MINESITING) { ACR_TestMineSiting.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MAPDECLUTTER) { ACR_TestMapDeclutter.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MAPDECLUTTERSHOTS) { ACR_TestMapDeclutterShots.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GROUNDTILT) { ACR_TestGroundTilt.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_POSSITING) { ACR_TestPositionSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ATTACKREACH) { ACR_TestAttackReach.Run(this, m_Ticks); return; }
