@@ -412,6 +412,14 @@ class ACR_Requests : Managed
     if (squad.m_bAICommanded || handed.Contains("back under your command")) return outcome.Accept(handed);
     return outcome.Refuse(handed);
    }
+   case ACR_ERequest.ORDER_PATROL:
+   {
+    string patrolWhy;
+    if (!squad.TogglePatrol(patrolWhy)) return outcome.Refuse(name + ": " + patrolWhy);
+    PrintFormat("[ACR] PATROL player=%1 %2 patrol %3", pc.GetPlayerId(), name, squad.m_bPatrol);
+    if (!squad.m_bPatrol) return outcome.Accept(name + ": patrol off (finishes the current leg)");
+    return outcome.Accept(name + ": patrolling its points in a loop");
+   }
    case ACR_ERequest.ORDER_FIRE_AT_WILL:
    {
     bool mortar = m_Manager.Mortars().TeamOf(squad) != null;

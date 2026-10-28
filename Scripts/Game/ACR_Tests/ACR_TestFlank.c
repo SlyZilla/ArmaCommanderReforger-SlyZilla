@@ -11,7 +11,7 @@ class ACR_TestFlank
  static SCR_AIGroup s_Enemy;
  static int s_iAmmo, s_iStarted, s_iShots;
  static ref map<BaseWeaponComponent, int> s_Ammo = new map<BaseWeaponComponent, int>();
- static bool s_bFresh, s_bAutomatic;
+ static bool s_bFresh, s_bAutomatic, s_bBBB;
  static void Run(ACR_TestHarness h, int tick)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -112,8 +112,8 @@ class ACR_TestFlank
    ACR_TestRegress.Check("a native replacement waypoint survives player handover", nativeJoin && nativeOrder && !s_Squad.m_CombatFlank.Active() && s_Squad.m_Group.GetCurrentWaypoint() == nativeOrder);
    s_Squad.Halt("Holding");
    if (nativeOrder) SCR_EntityHelper.DeleteEntityAndChildren(nativeOrder);
-   // A live sensor/firing phase: the enemy is armed but holds fire, so no
-   // casualty or suppression randomness can prevent the stalled-contact check.
+   // A live sensor/firing phase: the enemy is armed but holds fire, so no casualty or
+   // suppression randomness decides who takes the contact (BBB, not ACA's flank: #54).
    array<AIAgent> fighters = {};
    s_Squad.GetAgents(fighters);
    foreach (int n, AIAgent fighter : fighters)
@@ -149,17 +149,19 @@ class ACR_TestFlank
    bool pinned;
    if (ACR_CombatFlank.Contact(s_Squad, observed, pinned)) s_bFresh = true;
    if (s_Squad.m_CombatFlank.m_iStarted > s_iStarted) s_bAutomatic = true;
+   // Contact is BBB's (#54): its fire and manoeuvre takes the squad, not ACA's flank.
+   if (BBB_FireManeuver.Job(s_Squad.m_Group)) s_bBBB = true;
    if (tick > 65) Ammo(s_Squad);
   }
   if (tick == 65 && s_Squad)
   {
-   ACR_TestRegress.Check("hold fire prevents automatic flanking", !s_bAutomatic);
    s_Squad.m_Group.GetGroupUtilityComponent().SetCombatMode(EAIGroupCombatMode.FIRE_AT_WILL);
   }
   if (tick == 110)
   {
    ACR_TestRegress.Check("live native sensors supply fresh infantry contact", s_bFresh);
-   ACR_TestRegress.Check("stalled contact automatically triggers flank", s_bAutomatic);
+   ACR_TestRegress.Check("contact is BBB's: its fire and manoeuvre takes the squad (#54)", s_bBBB);
+   ACR_TestRegress.Check("ACA's automatic flank of a stalled contact stays off (#54)", !s_bAutomatic);
    ACR_TestRegress.Check("native rifle fire continues in combat fixture", s_iShots > 0, s_iShots.ToString());
    if (s_Enemy) SCR_EntityHelper.DeleteEntityAndChildren(s_Enemy);
    if (s_Squad) s_Squad.Halt("Holding");

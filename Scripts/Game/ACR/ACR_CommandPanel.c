@@ -38,6 +38,7 @@ enum ACR_EPanelAction
  ROADBLOCK_L,
  BARRICADE,
  FORTIFY,
+ PATROL,
  DEBUG_TOGGLE = 50,
  DEBUG_THINK,             // the AC:A Think card (ACR_Think)
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
@@ -130,6 +131,7 @@ class ACR_CommandPanel : Managed
  protected Widget m_EstablishFobWidget;
  protected ref array<SCR_ButtonTextComponent> m_RoadblockButtons = {}; // by ACR_ERoadblockType
  protected Widget m_RoadblockWidget;
+ protected SCR_ButtonTextComponent m_PatrolButton;
  protected Widget m_MinesWidget;
  protected ref array<SCR_ButtonTextComponent> m_MineButtons = {};
  protected Widget m_RoadblockSizes;
@@ -249,6 +251,9 @@ class ACR_CommandPanel : Managed
   m_RideButton = AddButton(orders3, "Ride", ACR_EPanelAction.RIDE, true);
   m_LZButton = AddButton(orders3, "Unload at LZ", ACR_EPanelAction.SET_LZ, true);
   AddButton(orders3, "Fire at will", ACR_EPanelAction.FIRE_AT_WILL, true);
+  // Standing orders.
+  Widget orders4 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_PatrolButton = AddButton(orders4, "Patrol", ACR_EPanelAction.PATROL, true);
   m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
   m_EstablishFobButton = AddButton(m_OrderSection, "Establish FOB", ACR_EPanelAction.ESTABLISH_FOB);
   m_EstablishFobWidget = m_LastButtonWidget;
@@ -828,6 +833,14 @@ class ACR_CommandPanel : Managed
  void SetEstablishFob(bool visible)
  {
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(visible);
+ }
+
+ // "[Patrol]" while the squad patrols.
+ void SetPatrol(bool on)
+ {
+  if (!m_PatrolButton) return;
+  if (on) m_PatrolButton.SetText("[Patrol]");
+  else m_PatrolButton.SetText("Patrol");
  }
 
  // sizes false: only the barricade (FIA builds log barricades whatever the order).

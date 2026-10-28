@@ -582,7 +582,7 @@ class ACR_Squad : Managed
  // hand-overs, used by the AI commander and rides): the state a label stands for.
  static ACR_EOrderState StateOfLabel(string label)
  {
-  if (label == "Moving" || label == "Air lift: to the landing zone") return ACR_EOrderState.MOVE;
+  if (label == "Moving" || label == "Patrolling" || label == "Air lift: to the landing zone") return ACR_EOrderState.MOVE;
   if (label == "Defending" || label == "Holding position" || label == "Garrisoning") return ACR_EOrderState.DEFEND;
   if (label == "Assaulting") return ACR_EOrderState.ASSAULT;
   if (label == "Suppressing") return ACR_EOrderState.SUPPRESS;
@@ -600,7 +600,7 @@ class ACR_Squad : Managed
   ACR_EOrderState state = OrderState();
   string label = m_Order;
   if (state == ACR_EOrderState.BUILD_FOB && label.StartsWith("Establishing FOB")) return;
-  bool oldMoving = label == "Moving" || label == "Air lift: to the landing zone";
+  bool oldMoving = label == "Moving" || label == "Patrolling" || label == "Air lift: to the landing zone";
   bool oldFinished = oldMoving || label == "Assaulting" || label == "Suppressing" || label == "Getting in" || label == "Getting out";
   if ((state == ACR_EOrderState.MOVE) == oldMoving && FinishesOnArrival(state) == oldFinished) return;
   ACR_Perf.s_iInvariantErrors++;
@@ -621,6 +621,7 @@ class ACR_Squad : Managed
  bool m_bAICommanded; // handed to the AI commander while a player commands the side (ACR_SquadAI)
  bool m_bClaimed;     // a player led or ordered it: the 2IC leaves it alone until handed back (ACR_SquadAI)
  ref array<IEntity> m_aHeldGuns = {}; // static guns at the spot it holds that its men sat in (ACR_GunHold)
+ bool m_bPatrol;     // the queued points loop: each goes back at the end once the squad sets off for it
  int m_OrderKind;   // ACR_EOrderKind, for map symbology
  protected float m_fNextWaypointRecovery;
  protected int m_iWaypointRecoveries;
@@ -771,6 +772,8 @@ class ACR_Squad : Managed
   m_iOrderSerial++;
   m_iOrderedBy = 0;
   m_fOrderedAt = GetGame().GetWorld().GetWorldTime();
+  // A new order restarts the stall clock (#53: a player's order to a waiting LAV counted as stuck 9 s later).
+  m_fStallSince = m_fOrderedAt;
   m_aRecentOrders.Insert(m_fOrderedAt);
   if (m_aRecentOrders.Count() > THINK_ORDERS) m_aRecentOrders.RemoveOrdered(0);
   // A new order cut a regroup short: no new regroup for a while, or an order re-issued
@@ -1881,6 +1884,23 @@ class ACR_Squad : Managed
   return true;
  }
 
+ // Back on a roadblock of ours (ACR_AICommander.ReturnToPosts): held as when its builder
+ // completed it, its gun by native Defend.
+ bool ManRoadblock(ACR_Roadblock rb)
+ {
+  if (!rb) return false;
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  m_vRoadblockSite = rb.m_vPos;
+  if (!IssueWaypoint(WP_DEFEND, m_vRoadblockSite, 15.0)) return false;
+  m_ActiveRoadblock = rb;
+  m_RoadblockTurret = rb.m_Turret;
+  SetOrder("Holding roadblock", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  return true;
+ }
+
  // A new order: the position stays; our gunners leave its guns (as from a roadblock's).
  void LeaveFortification()
  {
@@ -2441,6 +2461,50 @@ class ACR_Squad : Managed
   m_aRoute.Clear();
   m_aQueuePos.Clear();
   m_aQueueKind.Clear();
+  m_bPatrol = false; // a new order ends a patrol
+ }
+
+ // Patrol (map panel): the squad walks its queued points (Shift + right-click) in a loop, the
+ // point it is moving to now included; Defend and Garrison points are walked through. With one
+ // point only it walks between where it stands and that point. A squad that isn't moving
+ // (holding where it arrived, say) sets off at once. A new order ends it, as does toggling it
+ // again: then it finishes the current leg only (the loop's points are dropped, #65 review: they
+ // were all still queued, so it walked one more lap).
+ bool TogglePatrol(out string refusal)
+ {
+  refusal = "";
+  if (m_bPatrol)
+  {
+   m_bPatrol = false;
+   m_aQueuePos.Clear();
+   m_aQueueKind.Clear();
+   return true;
+  }
+  bool moving = OrderState() == ACR_EOrderState.MOVE && m_Group && m_Group.GetCurrentWaypoint() && m_MoveTarget != vector.Zero && !m_aQueuePos.Contains(m_MoveTarget);
+  int points = m_aQueuePos.Count();
+  if (moving) points++;
+  IEntity anchor = GetAnchor();
+  if (points < 1 || !anchor)
+  {
+   refusal = "give it a move order or Shift + right-click a point first";
+   return false;
+  }
+  // One point: there and back, from where it stands.
+  if (points < 2 && m_aQueuePos.Count() < MAX_QUEUED)
+  {
+   m_aQueuePos.Insert(anchor.GetOrigin());
+   m_aQueueKind.Insert(0);
+  }
+  // Past MAX_QUEUED if need be: the point it is heading for is never left out of the loop.
+  if (moving)
+  {
+   m_aQueuePos.Insert(m_MoveTarget);
+   m_aQueueKind.Insert(0);
+  }
+  m_bPatrol = true;
+  PrintFormat("[ACR] SQUAD %1: patrolling %2 points (moving %3)", m_Name, m_aQueuePos.Count(), moving);
+  if (!moving) NextQueued();
+  return true;
  }
 
  // Add an order after the current one (or carry it out now if there's nothing to do).
@@ -2497,10 +2561,24 @@ class ACR_Squad : Managed
   if (m_Group.GetCurrentWaypoint()) return;
   // An engine-completed waypoint is not proof that the squad reached it.
   if (MovementStillPending()) return;
+  NextQueued();
+ }
+
+ // The next queued order now (a patrol puts the point back at the end).
+ protected void NextQueued()
+ {
+  if (m_aQueuePos.IsEmpty() || !m_Group) return;
   vector next = m_aQueuePos[0];
   int kind = m_aQueueKind[0];
   m_aQueuePos.RemoveOrdered(0);
   m_aQueueKind.RemoveOrdered(0);
+  // A patrol: the point goes back at the end, and every point is walked through.
+  if (m_bPatrol)
+  {
+   m_aQueuePos.Insert(next);
+   m_aQueueKind.Insert(0);
+   kind = 0;
+  }
   m_iWaypointRecoveries = 0;
   m_fNextWaypointRecovery = 0;
   if (kind == 2)
@@ -2516,7 +2594,8 @@ class ACR_Squad : Managed
   else
   {
    IssueWaypoint(WP_MOVE, next);
-   SetOrder("Moving", ACR_EOrderState.MOVE);
+   if (m_bPatrol) SetOrder("Patrolling", ACR_EOrderState.MOVE);
+   else SetOrder("Moving", ACR_EOrderState.MOVE);
   }
   m_OrderKind = kind;
  }
@@ -2847,6 +2926,16 @@ class ACR_Squad : Managed
  protected float m_fStallSince;
  protected int m_iUnsticks;
  protected int m_iReroutes;
+ // #53 (27 Oct, Arland): an LAV waiting at a gate for its gunner to get back in was taken as
+ // stuck, backed up away from him twice and held, dropping the player's order. While one of the
+ // crew is getting in or out, or stands by the vehicle, the stall clock waits (up to
+ // BOARDING_WAIT_MS, so a man who never makes it doesn't hide a real stall). Back-ups count
+ // towards the hold only until the vehicle gets UNSTICK_CLEAR m past the spot it was stuck at.
+ static const float BOARDING_WAIT_MS = 60000;
+ static const float BOARDING_RANGE = 40;
+ static const float UNSTICK_CLEAR = 40;
+ protected float m_fBoardingSince = -1;
+ protected vector m_vUnstickFrom;
  float m_fStuckAt = -1000000; // world time the squad last gave up on a stuck vehicle (AI re-crewing waits)
  protected bool m_bUnsticking;
  protected ref ACR_SquadUnstick m_UnstickListener; // told by BBB_Unstick when backing out is over
@@ -3022,11 +3111,28 @@ class ACR_Squad : Managed
   if (!wantsToMove || vehicle != m_StallVehicle || (speed > 1.0 && vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5))
   {
    if (vehicle != m_StallVehicle || !wantsToMove) { m_iUnsticks = 0; m_iReroutes = 0; }
+   else if (m_iUnsticks > 0 && vector.DistanceXZ(vehicle.GetOrigin(), m_vUnstickFrom) > UNSTICK_CLEAR) m_iUnsticks = 0; // got past it
    m_StallVehicle = vehicle;
    if (vehicle) m_StallPos = vehicle.GetOrigin();
    m_fStallSince = now;
+   m_fBoardingSince = -1;
    return;
   }
+  // Waiting for its own men to get in (or out) isn't being stuck; under fire the usual limits apply.
+  if (!underFire && CrewBoarding(vehicle))
+  {
+   if (m_fBoardingSince < 0)
+   {
+    m_fBoardingSince = now;
+    PrintFormat("[ACR] DRIVE %1: waiting for its crew to get in or out, not stuck", m_Name);
+   }
+   if (now - m_fBoardingSince < BOARDING_WAIT_MS)
+   {
+    m_fStallSince = now;
+    return;
+   }
+  }
+  else m_fBoardingSince = -1;
   float stalled = (now - m_fStallSince) / 1000;
   bool armed = HasGunner(vehicle);
   // Fighting vehicles (anything with a turret: LAV, BTR, BRDM, gun trucks) keep
@@ -3141,9 +3247,28 @@ class ACR_Squad : Managed
   PrintFormat("[ACR] DRIVE %1: stuck, crew stays aboard and holds", m_Name);
  }
 
+ // A living, conscious member of this squad is getting in or out of a vehicle, or is on foot
+ // within BOARDING_RANGE of this one (#53).
+ bool CrewBoarding(IEntity vehicle)
+ {
+  if (!vehicle) return false;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!body || !ACR_Respawn.IsAlive(body) || body.GetCharacterController().IsUnconscious()) continue;
+   CompartmentAccessComponent access = body.GetCompartmentAccessComponent();
+   if (access && (access.IsGettingIn() || access.IsGettingOut())) return true;
+   if (!ACR_Transport.VehicleOf(body) && vector.DistanceXZ(body.GetOrigin(), vehicle.GetOrigin()) < BOARDING_RANGE) return true;
+  }
+  return false;
+ }
+
  protected void BeginUnstick(IEntity vehicle, ChimeraCharacter driver)
  {
   m_bUnsticking = true;
+  m_vUnstickFrom = vehicle.GetOrigin();
   float steer = 0.8;
   if (m_iUnsticks % 2 == 0) steer = -0.8;
   if (!m_UnstickListener) m_UnstickListener = new ACR_SquadUnstick(this);
@@ -3737,6 +3862,7 @@ class ACR_Squad : Managed
   string text = string.Format("%1 alive | %2 | %3", alive, ModeName(m_Mode), order);
   text += " | HP " + m_iHealthPct.ToString() + "%";
   if (m_bFireAtWill) text += " | fire at will";
+  if (m_bPatrol) text += string.Format(" | patrolling %1 points", m_aQueuePos.Count());
   if (m_iAmmoPct >= 0) text += " | ammo " + m_iAmmoPct.ToString() + "%";
   if (m_iFuelPct >= 0 && m_iFuelPct < 30) text += " | fuel " + m_iFuelPct.ToString() + "%";
   if (m_iStockPct >= 0) text += " | " + m_sServiceName + " stock " + m_iStockPct.ToString() + "%";

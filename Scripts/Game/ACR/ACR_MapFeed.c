@@ -337,7 +337,8 @@ class ACR_MapFeed
    if (ACR_Minefields.CanLay(squad)) mode |= 128; // + flag: can lay / disarm mines
    if (ACR_Fortify.CanFortify(squad)) mode |= 256; // + flag: can fortify
    if (squad && squad.m_bAICommanded) mode |= 1024; // + flag: handed to the AI (ACR_SquadAI)
-   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB, +64 roadblock, +128 minefields, +256 fortify, +1024 handed to the AI)
+   if (squad && squad.m_bPatrol) mode |= 512; // + flag: patrolling
+   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB, +64 roadblock, +128 minefields, +256 fortify, +512 patrolling, +1024 handed to the AI)
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    frame.m_LeaderStates.Insert(state);
