@@ -90,6 +90,7 @@ class ACR_TestHarness : Managed
  static const int MODE_PATROL = 55; // 52 / 53: Fortify / roadblocks (#7, #8)
  static const int MODE_HOLDRETURN = 85; // 79-84: the playtest branches and the 2IC
  static const int MODE_AIM = 62; // 55-61: patrol, ambush, QRF, FOB AI, defenders, budget, cap scale (own branches)
+ static const int MODE_RIDECARRY = 87; // 80-86: the playtest branches, the 2IC and a LAV fix
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -175,6 +176,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrPatrolTest", flag)) mode = MODE_PATROL;
   if (System.GetCLIParam("acrHoldReturnTest", flag)) mode = MODE_HOLDRETURN;
   if (System.GetCLIParam("acrAimTest", flag)) mode = MODE_AIM;
+  if (System.GetCLIParam("acrRideCarryTest", flag)) mode = MODE_RIDECARRY;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -317,6 +319,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_PATROL) { ACR_TestPatrol.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HOLDRETURN) { ACR_TestHoldReturn.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_AIM) { ACR_TestAim.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RIDECARRY) { ACR_TestRideCarry.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

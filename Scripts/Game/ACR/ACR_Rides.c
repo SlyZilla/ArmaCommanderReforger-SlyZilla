@@ -93,6 +93,20 @@ class ACR_Rides : Managed
   return free;
  }
 
+ // Passenger seats, taken or not.
+ static int CargoSeats(IEntity vehicle)
+ {
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return 0;
+  array<BaseCompartmentSlot> seats = {};
+  compartments.GetCompartmentsOfType(seats, ECompartmentType.CARGO);
+  return seats.Count();
+ }
+
+ // A fighting vehicle that carries a squad (an APC or IFV: a LAV-25, a BTR-70), as the AI's assault
+ // carriers (ACR_AICommander.PairCarriers): this many passenger seats or more.
+ static const int CARRIER_SEATS = 4;
+
  ACR_Ride RideOf(ACR_Squad squad)
  {
   foreach (ACR_Ride ride : m_Rides)
@@ -109,20 +123,24 @@ class ACR_Rides : Managed
 
  // A squad that can serve as a taxi: crews a drivable ground vehicle with no
  // manned gun, AI-driven, not busy with anything but holding or heading home.
- bool IsFreeTransport(ACR_Squad squad, string faction)
+ // carriersToo (a player's Ride order): an APC or IFV with its gun manned too (CARRIER_SEATS).
+ bool IsFreeTransport(ACR_Squad squad, string faction, bool carriersToo = false)
  {
-  return WhyNotTaxi(squad, faction).IsEmpty();
+  return WhyNotTaxi(squad, faction, carriersToo).IsEmpty();
  }
 
  // "" = can serve as a taxi; otherwise why not (told to the player when a ride is refused).
- string WhyNotTaxi(ACR_Squad squad, string faction)
+ string WhyNotTaxi(ACR_Squad squad, string faction, bool carriersToo = false)
  {
   if (FactionOf(squad) != faction) return "other side";
   if (squad.HasPlayer()) return "led by a player";
   if (RideOf(squad) || Unloading(squad)) return "already giving a ride";
   IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
   if (!vehicle) return "no vehicle";
-  if (squad.HasGunner(vehicle)) return "has a manned gun";
+  // A fighting vehicle isn't a taxi for the AI's rides. A player's own Ride order may take one that
+  // carries a squad (pn10b, 26 Oct: Fire Team 2's Ride was refused with an idle LAV-25 15 m away,
+  // "has a manned gun", which read as the LAV having no seats).
+  if (squad.HasGunner(vehicle) && (!carriersToo || CargoSeats(vehicle) < CARRIER_SEATS)) return "a fighting vehicle (manned gun)";
   if (ACR_Logistics.ServiceOf(vehicle) != 0) return "service vehicle"; // ammo/repair/fuel trucks have their own job
   if (!CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent))) return "not a ground vehicle";
   ChimeraCharacter driver = ACR_Squad.DriverOf(vehicle);
@@ -137,7 +155,7 @@ class ACR_Rides : Managed
  }
 
  // For a refused ride: the nearest of our crewed vehicles and why it can't come.
- protected string NearestTaxiNote(ACR_Squad rider, string faction, vector pickup, float limit, int seatsNeeded)
+ protected string NearestTaxiNote(ACR_Squad rider, string faction, vector pickup, float limit, int seatsNeeded, bool carriersToo = false)
  {
   ACR_Squad nearest;
   float best = float.MAX;
@@ -150,15 +168,15 @@ class ACR_Rides : Managed
    if (d < best) { best = d; nearest = squad; }
   }
   if (!nearest) return " (we have no crewed vehicles)";
-  string why = WhyNotTaxi(nearest, faction);
+  string why = WhyNotTaxi(nearest, faction, carriersToo);
   if (why.IsEmpty() && best > limit) why = "too far";
-  if (why.IsEmpty()) why = string.Format("%1 free seats", FreeSeats(ACR_Transport.CrewedVehicle(nearest)));
-  return string.Format(" (nearest: %1, %2 m, %3)", nearest.GetName(), (int)best, why);
+  if (why.IsEmpty()) why = string.Format("only %1 free seats", FreeSeats(ACR_Transport.CrewedVehicle(nearest)));
+  return string.Format(" (the nearest, %1, %2 m away: %3)", nearest.GetName(), (int)best, why);
  }
 
  // Nearest free transport with room for everyone, within the fetch limits ('except': taxis already
  // counted for others, ACR_AICommander.Reach).
- ACR_Squad FindTransport(string faction, vector pickup, float trip, int seatsNeeded, out float distance, bool wideFetch = false, array<ACR_Squad> except = null)
+ ACR_Squad FindTransport(string faction, vector pickup, float trip, int seatsNeeded, out float distance, bool wideFetch = false, array<ACR_Squad> except = null, bool carriersToo = false)
  {
   float maxFetch = MAX_PICKUP;
   float shareFetch = PICKUP_SHARE;
@@ -173,7 +191,7 @@ class ACR_Rides : Managed
   float bestScore = float.MAX;
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
-   if (!IsFreeTransport(squad, faction)) continue;
+   if (!IsFreeTransport(squad, faction, carriersToo)) continue;
    if (except && except.Contains(squad)) continue;
    IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
    float d = vector.DistanceXZ(vehicle.GetOrigin(), pickup);
@@ -213,8 +231,9 @@ class ACR_Rides : Managed
  // ---------------------------------------------------------------- requests
 
  // Starts a ride, or returns null with the reason in why.
- // dropShort: how far short of the destination to get out.
- ACR_Ride Request(ACR_Squad rider, vector destination, float dropShort, ResourceName finalPrefab, float finalRadius, string finalOrder, int finalKind, out string why, bool wideFetch = false)
+ // dropShort: how far short of the destination to get out. carriersToo: a player's Ride order, which
+ // may take an APC or IFV (WhyNotTaxi).
+ ACR_Ride Request(ACR_Squad rider, vector destination, float dropShort, ResourceName finalPrefab, float finalRadius, string finalOrder, int finalKind, out string why, bool wideFetch = false, bool carriersToo = false)
  {
   why = "";
   IEntity anchor = rider.GetAnchor();
@@ -227,7 +246,7 @@ class ACR_Rides : Managed
   if (trip < MIN_TRIP) { why = string.Format("too close to need a ride (under %1 m)", (int)MIN_TRIP); return null; }
   int seats = rider.CountAlive();
   float fetch;
-  ACR_Squad taxi = FindTransport(faction, from, trip, seats, fetch, wideFetch);
+  ACR_Squad taxi = FindTransport(faction, from, trip, seats, fetch, wideFetch, null, carriersToo);
   if (!taxi)
   {
    m_NoTransportAt.Set(faction, GetGame().GetWorld().GetWorldTime());
@@ -239,7 +258,7 @@ class ACR_Rides : Managed
     shareFetch = PICKUP_SHARE_AI;
    }
    float limit = Math.Min(maxFetch, trip * shareFetch);
-   why = string.Format("no free transport with %1 seats within %2 m", seats, (int)limit) + NearestTaxiNote(rider, faction, from, limit, seats);
+   why = string.Format("no free transport with %1 seats within %2 m", seats, (int)limit) + NearestTaxiNote(rider, faction, from, limit, seats, carriersToo);
    return null;
   }
   // Only worth it if driving beats walking. Where the roads (which the game's own

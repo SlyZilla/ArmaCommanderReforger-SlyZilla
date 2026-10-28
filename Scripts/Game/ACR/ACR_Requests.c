@@ -478,13 +478,14 @@ class ACR_Requests : Managed
 
  // A free transport nearby (never fetched from far away) picks the squad up,
  // drops it at the point and it takes positions there (walking the rest if the ride fails).
+ // The player's order may take the side's own APC or IFV too (ACR_Rides.WhyNotTaxi).
  // going: a ride was arranged, or the squad walks instead (it moves either way).
  string Ride(ACR_Squad squad, vector point, out bool going)
  {
   going = false;
   if (!m_Manager.m_Rides) m_Manager.m_Rides = new ACR_Rides(m_Manager);
   string why;
-  if (!m_Manager.m_Rides.Request(squad, point, 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why))
+  if (!m_Manager.m_Rides.Request(squad, point, 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why, false, true))
   {
    // Walking beats the road there: just go.
    if (why.Contains("walking is faster") && squad.MoveTo(point)) { going = true; return squad.GetName() + ": " + why + ", on foot"; }

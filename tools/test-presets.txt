@@ -128,6 +128,7 @@ fobsiting|-acrFobSitingTest 1|180
 ridelav|-acrRideLavTest 1|400
 ridelavkill|-acrRideLavKillTest 1|400
 ridelavgetout|-acrRideLavGetOutTest 1|400
+ridecarry|-acrRideCarryTest 1|420
 ridetruck|-acrRideTruckTest 1|400
 fobai|-acrFobAITest 1|200
 squadai|-acrSquadAITest 1|200
