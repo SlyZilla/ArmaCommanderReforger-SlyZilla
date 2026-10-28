@@ -4,6 +4,7 @@
 ### AI commanders
 
 - Bigger maps, bigger armies (host option, off by default): `-acrCapScale 1` multiplies every side's AI squad cap and the soldier cap by the map's bases / 12 or the spread of its bases / 5 km, whichever is more, between x1 and x2 (soldier cap at most 250). The active-AI limit follows, and the log line `[ACR] CAP SCALE` shows what it chose. The setup screen has a row for it: **Squad caps scale with map** (off / on).
+- An AI mortar team that can't reach the base it was sent to isn't sent there again for 15 minutes. Before, a mortar team could be sent to the same unreachable base over and over, packing up and setting up again at home each time, and fired little all match.
 
 ### Fixes
 
