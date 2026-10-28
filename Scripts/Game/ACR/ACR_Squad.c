@@ -3486,33 +3486,38 @@ class ACR_Squad : Managed
   {
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!character || !character.IsInVehicle() || !character.GetCompartmentAccessComponent() || FindController(character) != 0) continue;
-   CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
-   // A seat whose exits are all refused (the LAV-25's CARGO seats, #23: animated, teleport,
-   // no-door and the game's own eject alike, 26 Oct): what the game says of him, then his vehicle
-   // action queue cleared (a stuck action blocks every new one) and out by teleport on the fourth
-   // sweep, without a door on the fifth; on the sixth he moves to a free seat, to go out from there.
-   if (m_iDismountSweeps == 4 || m_iDismountSweeps == 5)
-   {
-    if (ClearAndGetOut(character, access, m_iDismountSweeps == 5)) continue;
-   }
-   if (m_iDismountSweeps == 6 && MoveToFreeSeat(character, access)) continue;
-   // Still aboard on the third sweep (9 s): the teleport through a door left him in too (an LAV's
-   // rear seats, 25 Oct): out without a door, as vanilla clears a seat (SCR_AIChangeCompartment).
-   if (m_iDismountSweeps >= 3)
-   {
-    vector spot[4];
-    access.FindSuitableTeleportLocation(spot);
-    access.GetOutVehicle_NoDoor(spot, false, false);
-    PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, taken out without a door", m_Name, character);
-   }
-   else if (m_iDismountSweeps >= 2)
-   {
-    access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
-    PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, placed out", m_Name, character);
-   }
-   else if (!access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
-    access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   SweepOut(character, character.GetCompartmentAccessComponent(), m_iDismountSweeps);
   }
+ }
+
+ // One man still aboard out, by the sweep's step (the drop's PushOutStillAboard, and a Get out
+ // order's EnsureGetOut from its fourth check). True when an exit was taken.
+ protected bool SweepOut(ChimeraCharacter character, CompartmentAccessComponent access, int step)
+ {
+  // A seat whose exits are all refused (the LAV-25's CARGO seats, #23: animated, teleport,
+  // no-door and the game's own eject alike, 26 Oct): what the game says of him, then his vehicle
+  // action queue cleared (a stuck action blocks every new one) and out by teleport on the fourth
+  // sweep, without a door on the fifth; on the sixth he moves to a free seat, to go out from there.
+  if ((step == 4 || step == 5) && ClearAndGetOut(character, access, step == 5)) return true;
+  if (step == 6 && MoveToFreeSeat(character, access)) return true;
+  // Still aboard on the third sweep (9 s): the teleport through a door left him in too (an LAV's
+  // rear seats, 25 Oct): out without a door, as vanilla clears a seat (SCR_AIChangeCompartment).
+  if (step >= 3)
+  {
+   vector spot[4];
+   access.FindSuitableTeleportLocation(spot);
+   bool noDoor = access.GetOutVehicle_NoDoor(spot, false, false);
+   PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, taken out without a door", m_Name, character);
+   return noDoor;
+  }
+  if (step >= 2)
+  {
+   bool placed = access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   PrintFormat("[ACR] GET OUT %1: %2 still aboard after a dismount, placed out", m_Name, character);
+   return placed;
+  }
+  if (access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false)) return true;
+  return access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
  }
 
  // His vehicle action queue cleared, then out by teleport (noDoor: without a door, where the game
@@ -3743,6 +3748,7 @@ class ACR_Squad : Managed
  // another squad crews (a requisitioned Humvee's driver) stayed aboard (1 Oct MP),
  // so whoever is still inside once the vehicle has stopped is taken out directly.
  static bool s_bNoGetOutFallback; // tests: the game's waypoint alone
+ static bool s_bNoGetOutSweeps;   // tests: the fallback without the drop's sweeps (as before)
  protected int m_iGetOutChecks;
  protected int m_iGetOutSerial;
  void EnsureGetOut()
@@ -3768,9 +3774,18 @@ class ACR_Squad : Managed
    if (vehicle) physics = vehicle.GetPhysics();
    if (physics) speed = physics.GetVelocity().Length();
    if (speed > 1.5) continue; // the driver is someone else's: wait until it stops
-   if (access.IsGettingOut()) continue;
-   bool ok = access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
-   if (!ok && m_iGetOutChecks >= 3) ok = access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   bool ok;
+   // From the fourth check (13 s) the drop's sweeps (SweepOut): the LAV-25's cargo seats refuse
+   // the game's exits (#23), and a player's Get out only ever tried those (pn10b, 26 Oct: "check
+   // 1-5, 2 still aboard, 0 sent out" for Fire Team 2's LAV, until the stuck-soldier fallback set
+   // them down). Out by the seventh check (22 s).
+   if (m_iGetOutChecks >= 4 && !s_bNoGetOutSweeps) ok = SweepOut(character, access, m_iGetOutChecks);
+   else
+   {
+    if (access.IsGettingOut()) continue;
+    ok = access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+    if (!ok && m_iGetOutChecks >= 3) ok = access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+   }
    if (ok) moved++;
   }
   PrintFormat("[ACR] GET OUT %1: check %2, %3 still aboard, %4 sent out", m_Name, m_iGetOutChecks, stillIn, moved);
