@@ -77,7 +77,7 @@ class ACR_TestPockets
  {
   if (!s_Target)
   {
-   ACR_TestRegress.Complete("pockets", 10);
+   ACR_TestRegress.Complete("pockets", 11);
    return;
   }
   ACR_TestRegress.Check("pockets: the scout finds the pocket", s_Target.OwnerSeenBy("US") == ACR_Pockets.FACTION && s_Target.m_aDetectedBy.Contains("US"), s_Target.m_sName);
@@ -85,9 +85,13 @@ class ACR_TestPockets
   int garrison;
   if (s_Target.m_GarrisonGroup) garrison = s_Target.m_GarrisonGroup.GetAgentsCount();
   ACR_TestRegress.Check("pockets: its FIA garrison deploys", garrison > 0, string.Format("%1 soldiers", garrison));
+  // #73: at the town with the most buildings, garrison spots are clear (the garrison's own navmesh).
+  IEntity navAgent;
+  if (s_Target.m_GarrisonGroup) navAgent = s_Target.m_GarrisonGroup.GetLeaderAgent();
+  ACR_TestGarrisonSpawn.Check(navAgent);
   manager.m_Bases.DebugCapture(manager, s_Target, "US");
   ACR_TestRegress.Check("pockets: a capture ends the pocket", !s_Target.m_bPocket && s_Target.m_sOwner == "US" && s_Target.OwnerSeenBy("USSR") == "US", s_Target.m_sOwner);
   if (s_Scout) SCR_EntityHelper.DeleteEntityAndChildren(s_Scout);
-  ACR_TestRegress.Complete("pockets", 10);
+  ACR_TestRegress.Complete("pockets", 11);
  }
 }

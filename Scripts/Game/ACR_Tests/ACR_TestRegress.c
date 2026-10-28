@@ -156,7 +156,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 130; // includes eight BBB order-leash, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 131; // includes one garrison-spawn, eight BBB order-leash, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -706,6 +706,8 @@ class ACR_TestRegress
   if (!bravo) return;
   IEntity truck = harness.m_Range.m_Truck;
 
+  // #73: garrison soldiers spawn clear of walls (squads are out by now, for the navmesh).
+  if (tick == 6) ACR_TestGarrisonSpawn.Check();
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {

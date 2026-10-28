@@ -343,13 +343,67 @@ class ACR_BaseSystem : Managed
   }
  }
 
+ // #73: where a garrison, patrol or guard soldier appears near center: clear of walls (a 0.6 m
+ // wide, 2 m tall cylinder), not under a roof, and on the soldiers' navmesh. Before, a soldier
+ // whose random spot had no room within 5 m spawned there anyway, and a spot with room inside a
+ // house was dropped to the terrain under its floor: FIA in walls, every village. Each try reaches
+ // further out; with none good, the navmesh point nearest the centre (walkable, maybe indoors),
+ // else the clear ground nearest it.
+ // Where the navmesh isn't loaded (no AI near on a server) room and roof alone decide.
+ // Soldiers with window posts are moved onto them afterwards (ACR_Garrison), as before.
+ static const int SPOT_TRIES = 10;
+ static vector SoldierSpot(vector center, float spread, IEntity navAgent)
+ {
+  AIPathfindingComponent pathing;
+  if (navAgent) pathing = AIPathfindingComponent.Cast(navAgent.FindComponent(AIPathfindingComponent));
+  NavmeshWorldComponent mesh;
+  if (pathing) mesh = pathing.GetNavmeshComponent();
+  if (mesh && !mesh.IsTileLoaded(center)) mesh.LoadTileIn(center);
+  vector onMesh;
+  for (int attempt = 0; attempt < SPOT_TRIES; attempt++)
+  {
+   float reach = spread + attempt * 4;
+   vector candidate = ACR_Manager.Ground(center + Vector(Math.RandomFloat(-reach, reach), 0, Math.RandomFloat(-reach, reach)));
+   vector free;
+   if (!SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 6, 0.6, 2)) continue;
+   free = ACR_Manager.Ground(free);
+   // The finder's spot may sit on something; on the terrain it must still have room.
+   if (!RoomAt(free) || Roofed(free)) continue;
+   if (!pathing || (mesh && !mesh.IsTileLoaded(free))) return free;
+   if (!pathing.GetClosestPositionOnNavmesh(free, Vector(1, 1.5, 1), onMesh)) continue;
+   if (vector.DistanceXZ(onMesh, free) > 1) continue;
+   return free;
+  }
+  vector near = ACR_Manager.Ground(center);
+  if (pathing && pathing.GetClosestPositionOnNavmesh(near, Vector(30, 10, 30), onMesh)) return onMesh + Vector(0, 0.15, 0);
+  vector wide;
+  if (SCR_WorldTools.FindEmptyTerrainPosition(wide, near, 40, 0.6, 2)) return ACR_Manager.Ground(wide);
+  return near;
+ }
+
+ // Room for a soldier standing right here (only the spot itself is tried).
+ static bool RoomAt(vector spot)
+ {
+  vector free;
+  return SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 0.7, 0.6, 2) && vector.DistanceXZ(free, spot) < 0.1;
+ }
+
+ // Something other than a tree or a person overhead within 25 m: a roof, a floor, a bridge.
+ static bool Roofed(vector spot)
+ {
+  TraceParam trace = new TraceParam();
+  trace.Start = spot + Vector(0, 0.3, 0);
+  trace.End = spot + Vector(0, 25, 0);
+  trace.Flags = TraceFlags.ENTS;
+  float hit = GetGame().GetWorld().TraceMove(trace, null);
+  if (hit >= 1 || !trace.TraceEnt) return false;
+  return !Tree.Cast(trace.TraceEnt) && !ChimeraCharacter.Cast(trace.TraceEnt);
+ }
+
  protected void AddGarrisonSoldier(ACR_Base base, SCR_AIGroup group, array<ResourceName> pool)
  {
   float spread = Math.Min(base.m_fRadius * 0.6, 25);
-  vector offset = Vector(Math.RandomFloat(-spread, spread), 0, Math.RandomFloat(-spread, spread));
-  vector spot = ACR_Manager.Ground(base.GetOrigin() + offset);
-  vector free;
-  if (SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 5, 0.6, 2)) spot = ACR_Manager.Ground(free);
+  vector spot = SoldierSpot(base.GetOrigin(), spread, ACR_Garrison.AnyAgent());
   IEntity soldier = ACR_Manager.SpawnPrefab(pool.GetRandomElement(), spot);
   if (!soldier) return;
   if (!group.AddAIEntityToGroup(soldier))
@@ -471,11 +525,10 @@ class ACR_BaseSystem : Managed
   m_GarrisonGroups.Insert(group); // before any soldier joins, so it is never registered as a squad
   group.SetDeleteWhenEmpty(false);
   group.SetCustomName(name, 0);
+  IEntity navAgent = ACR_Garrison.AnyAgent();
   for (int i = 0; i < count; i++)
   {
-   vector spot = ACR_Manager.Ground(center + Vector(Math.RandomFloat(-8, 8), 0, Math.RandomFloat(-8, 8)));
-   vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 5, 0.6, 2)) spot = ACR_Manager.Ground(free);
+   vector spot = SoldierSpot(center, 8, navAgent);
    IEntity soldier = ACR_Manager.SpawnPrefab(data.m_aGarrison.GetRandomElement(), spot);
    if (!soldier) continue;
    if (!group.AddAIEntityToGroup(soldier))
