@@ -140,6 +140,7 @@ class ACR_Intel : Managed
  void Tick()
  {
   m_iTicks++;
+  m_DoctrineIntel.Tick();
   float now = GetGame().GetWorld().GetWorldTime();
   // 1. Our AI squads' own perception.
   foreach (ACR_Squad squad : m_Manager.m_Squads)

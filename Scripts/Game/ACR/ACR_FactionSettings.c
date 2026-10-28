@@ -21,6 +21,8 @@ class ACR_RequisitionEntry
  bool m_bAircraft;   // set automatically; the AI commander never buys these (its AI cannot fly)
  bool m_bTransport;  // set automatically: an unarmed truck, which the AI commander buys to ferry squads
  bool m_bArmed = true; // set automatically for vehicles: has a weapon (the AI doesn't buy unarmed cars to fight with)
+ bool m_bSquadCarrier; // set automatically: a carrier that seats a squad (TRAIT_PASSENGERS_LARGE: a BTR-70, not a BRDM-2)
+ bool m_bCarrier;     // set automatically: an armed APC or IFV (Blitz's starting kit, ACR_DoctrineKits)
  bool m_bMortarTeam;  // the built-in mortar team (ACR_Mortars), added to every faction's list
  bool m_bObserverTeam; // the built-in forward observer team (ACR_FireMissions)
  bool m_bRare;        // set automatically: aircraft, armour, mortar team, support helicopters keep a fixed stock
@@ -542,6 +544,8 @@ class ACR_FactionCatalog
   item.m_bArmed = entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED);
   item.m_bTransport = entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_TRUCK) && !entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED) && !item.m_bAircraft;
   item.m_bRare = item.m_bAircraft || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_APC) || entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMOR);
+  item.m_bCarrier = item.m_bArmed && !item.m_bAircraft && entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_APC);
+  item.m_bSquadCarrier = item.m_bCarrier && entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_PASSENGERS_LARGE);
  }
 
  protected static SCR_EntityCatalog GetCatalog(string factionKey, EEntityCatalogType type)

@@ -78,6 +78,13 @@ class ACR_Mode : GenericEntity
    GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 1000, false);
    return;
   }
+  // Company kits (#38): the host options (the setup's company rows) first.
+  if (ACR_DoctrineKits.Enabled() && !manager.HostOptionsApplied())
+  {
+   GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 1000, false);
+   return;
+  }
+  ACR_DoctrineKits.Plan(manager);
   foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All)
   {
    string factionKey = "";
@@ -107,13 +114,17 @@ class ACR_Mode : GenericEntity
     if (vehicle.IsEmpty()) groupPos = manager.ClearSpotNear(unit.m_MovedTo, 5, 20, 1.5);
     else groupPos = ACR_Manager.Ground(vehiclePos + Vector(6, 0, 6));
    }
+   // A mechanized company's kit: its carrier in place of this truck (bought with the rest of the kit).
+   if (ACR_DoctrineKits.SwapsTruck(manager, factionKey, unit.m_sName, group, vehicle, unit.m_bCrewed, passengers, vehiclePos, groupPos)) continue;
    // The side owns its starting units like bought ones: crews and members join it (with a
    // mod pair the crews kept the vehicle's vanilla US/USSR side and kit, 8 Oct).
    manager.m_sSpawningFaction = factionKey;
    manager.SpawnUnit(unit.m_sName, group, vehicle, unit.m_bCrewed, passengers, vehiclePos, groupPos);
    manager.m_sSpawningFaction = "";
+   ACR_DoctrineKits.CountStarting(factionKey, group, vehicle, unit.m_bCrewed, passengers);
    PrintFormat("[ACR] Starting unit: %1 (%2) at %3: %4 %5 %6", unit.m_sName, factionKey, groupPos, FilePath.StripPath(group), FilePath.StripPath(vehicle), FilePath.StripPath(passengers));
   }
+  if (ACR_DoctrineKits.Enabled()) ACR_DoctrineKits.GiveAll();
  }
 
  // Optional log summary for automated runs (-acrScenarioTest 1).

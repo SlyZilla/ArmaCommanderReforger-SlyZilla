@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrHoldGuns", "acrSquadTactics", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrCompanyWest", "acrCompanyEast", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrHoldGuns", "acrSquadTactics", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
   foreach (string name : names)
   {
    string value;
@@ -108,6 +108,10 @@ class ACR_MissionHeader : SCR_MissionHeader
  string m_sAcrDoctrineEast;
  [Attribute("", UIWidgets.EditBox, "AI commanders change doctrine when theirs isn't working: 1 (default) or 0 (-acrDoctrineAdapt)")]
  string m_sAcrDoctrineAdapt;
+ [Attribute("", UIWidgets.EditBox, "Blue side company, its starting kit: rifle (default), mechanized, weapons, engineers or recon (-acrCompanyWest)")]
+ string m_sAcrCompanyWest;
+ [Attribute("", UIWidgets.EditBox, "Red side company, its starting kit: rifle (default), mechanized, weapons, engineers or recon (-acrCompanyEast)")]
+ string m_sAcrCompanyEast;
  [Attribute("-1", UIWidgets.EditBox, "AI commander squad cap per side (-acrUnitCap)")]
  int m_iAcrUnitCap;
  [Attribute("-1", UIWidgets.EditBox, "Generated layout seed (-acrSeed); -1 or 0 = a new random layout each match")]
@@ -183,6 +187,8 @@ class ACR_MissionHeader : SCR_MissionHeader
   Text(values, "acrDoctrineWest", m_sAcrDoctrineWest);
   Text(values, "acrDoctrineEast", m_sAcrDoctrineEast);
   Text(values, "acrDoctrineAdapt", m_sAcrDoctrineAdapt);
+  Text(values, "acrCompanyWest", m_sAcrCompanyWest);
+  Text(values, "acrCompanyEast", m_sAcrCompanyEast);
   Number(values, "acrUnitCap", m_iAcrUnitCap);
   Number(values, "acrSeed", m_iAcrSeed);
   Number(values, "acrSoldierCap", m_iAcrSoldierCap);

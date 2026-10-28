@@ -206,7 +206,7 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "startrp", "income", "shared", "holdguns", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
   foreach (string key : keys)
   {
    if (key == "seed" && !generated) continue;
@@ -242,6 +242,8 @@ class ACR_Setup
   if (key == "doctrinewest") return "Blue AI doctrine";
   if (key == "doctrineeast") return "Red AI doctrine";
   if (key == "doctrineadapt") return "AI doctrines adapt";
+  if (key == "companywest") return "Blue company";
+  if (key == "companyeast") return "Red company";
   if (key == "unitcap") return "AI squad cap";
   if (key == "aibuild") return "AI build budget";
   if (key == "startrp") return "Starting RP";
@@ -302,6 +304,7 @@ class ACR_Setup
   }
   else if (key == "doctrinewest" || key == "doctrineeast") values = {"", "random", "balanced", "blitz", "firepower", "fortress", "raider"};
   else if (key == "doctrineadapt") values = {"1", "0"};
+  else if (key == "companywest" || key == "companyeast") values = {"", "mechanized", "weapons", "engineers", "recon"};
   else if (key == "unitcap") values = {"", "4", "6", "8", "12", "16", "24"};
   else if (key == "aibuild") values = {"0", "10", "15", "25"};
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
@@ -329,6 +332,8 @@ class ACR_Setup
   if (key == "doctrinewest") return "acrDoctrineWest";
   if (key == "doctrineeast") return "acrDoctrineEast";
   if (key == "doctrineadapt") return "acrDoctrineAdapt";
+  if (key == "companywest") return "acrCompanyWest";
+  if (key == "companyeast") return "acrCompanyEast";
   if (key == "unitcap") return "acrUnitCap";
   if (key == "aibuild") return "acrAIBuildShare";
   if (key == "startrp") return "acrStartRP";
@@ -412,6 +417,7 @@ class ACR_Setup
    if (key == "seed") return "random (click to roll one)";
    if (key == "pricing" || key == "ai") return "scenario's choice";
    if (key == "doctrinewest" || key == "doctrineeast") return "scenario's choice (random unless it sets one)";
+   if (key == "companywest" || key == "companyeast") return ACR_DoctrineKits.CompanySummary("rifle");
    return "scenario default";
   }
   if (key == "layout")
@@ -441,6 +447,7 @@ class ACR_Setup
    if (!doctrine) return "random each match";
    return doctrine.m_sName + ": " + doctrine.m_sSummary;
   }
+  if (key == "companywest" || key == "companyeast") return ACR_DoctrineKits.CompanySummary(value);
   if (key == "income") return "x" + value;
   if (key == "pockets" && value == "few") return "a few pockets (whole/half map)";
   if (key == "pockets" && value == "many") return "many pockets (whole/half map)";
@@ -857,7 +864,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  static int Tab(string key)
  {
   if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "holdguns" || key == "aibuild") return 1;
-  if (key == "pricing" || key == "startrp" || key == "income") return 2;
+  if (key == "pricing" || key == "startrp" || key == "income" || key == "companywest" || key == "companyeast") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
   if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai") return 4;
   return 0;
