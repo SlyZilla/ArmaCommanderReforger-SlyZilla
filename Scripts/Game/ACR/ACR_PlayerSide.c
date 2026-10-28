@@ -32,7 +32,7 @@ class ACR_PlayerSide
   s_bRead = true;
   string value;
   if (!ACR_Options.Get("acrPlayers", value)) return s_sKey;
-  value.Trim();
+  value.TrimInPlace();
   string lower = value;
   lower.ToLower();
   if (lower == "" || lower == "any" || lower == "free") return s_sKey;
@@ -196,7 +196,7 @@ class ACR_FactionSelection
  // A faction key as the world spells it, matched without case; "" if it isn't a candidate.
  static string Key(string wanted)
  {
-  wanted.Trim();
+  wanted.TrimInPlace();
   wanted.ToLower();
   array<string> keys = {};
   Candidates(keys);

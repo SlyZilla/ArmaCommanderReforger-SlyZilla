@@ -230,7 +230,7 @@ class ACR_MissionHeader : SCR_MissionHeader
  protected static void Text(map<string, string> values, string name, string value)
  {
   string trimmed = value;
-  trimmed.Trim();
+  trimmed.TrimInPlace();
   if (trimmed != "") values.Set(name, trimmed);
  }
  protected static void Number(map<string, string> values, string name, int value)
