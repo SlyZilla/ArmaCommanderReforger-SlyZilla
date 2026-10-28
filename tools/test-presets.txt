@@ -128,6 +128,9 @@ ridelav|-acrRideLavTest 1|400
 ridelavkill|-acrRideLavKillTest 1|400
 ridelavgetout|-acrRideLavGetOutTest 1|400
 ridetruck|-acrRideTruckTest 1|400
+fobai|-acrFobAITest 1|200
+squadai|-acrSquadAITest 1|200
+twoic|-acrTwoICTest 1|200
 patrol|-acrPatrolTest 1|600
 holdreturn|-acrHoldReturnTest 1|90
 bbbfiremaneuver|-acrBbbFireManeuverTest 1|500|Worlds/BBB_TestArland.ent

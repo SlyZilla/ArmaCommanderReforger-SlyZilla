@@ -366,7 +366,7 @@ class ACR_OrderDisplay : Managed
    float radius = Math.AbsFloat(ex - cx);
    if (radius < 3) continue;
    float width = 2;
-   if (data.m_BaseContested[i] == 1) width = 4;
+   if ((data.m_BaseContested[i] & 1) != 0) width = 4;
    Ring(cx, cy, radius, BaseColor(data.m_BaseOwners[i], 0.9).PackToInt(), width, 48);
   }
  }

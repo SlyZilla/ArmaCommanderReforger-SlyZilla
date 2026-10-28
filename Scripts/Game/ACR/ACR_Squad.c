@@ -618,6 +618,8 @@ class ACR_Squad : Managed
  ACR_Base m_AITarget;
  bool m_bMortar;    // a mortar team (ACR_Mortars runs its set-up, packing and fire missions)
  bool m_bFireAtWill; // observers call fire missions / mortar teams fire on their own (ACR_FireMissions)
+ bool m_bAICommanded; // handed to the AI commander while a player commands the side (ACR_SquadAI)
+ bool m_bClaimed;     // a player led or ordered it: the 2IC leaves it alone until handed back (ACR_SquadAI)
  ref array<IEntity> m_aHeldGuns = {}; // static guns at the spot it holds that its men sat in (ACR_GunHold)
  bool m_bPatrol;     // the queued points loop: each goes back at the end once the squad sets off for it
  int m_OrderKind;   // ACR_EOrderKind, for map symbology
@@ -3951,6 +3953,7 @@ class ACR_Squad : Managed
 
  void Dispose()
  {
+  ACR_SquadAI.Forget(this);
   CancelEstablishFob();
   CancelRoadblock();
   if (m_RoadblockTurret) VacateRoadblockTurret();

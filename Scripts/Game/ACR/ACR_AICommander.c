@@ -1048,7 +1048,8 @@ class ACR_AICommander : Managed
   {
    m_bActive = noPlayerCommander;
    Say(string.Format("[ACR] AI commander %1: %2", m_sFaction, m_bActive));
-   if (!m_bActive) ReleaseAll();
+   // With the 2IC on its plans carry on for the squads nobody claims (ACR_SquadAI.Adopt).
+   if (!m_bActive && !ACR_SquadAI.TwoIC()) ReleaseAll();
    // Back in command: judge its doctrine on what it does from now, not on the player's spell.
    m_fNextDoctrineReview = -1;
   }
@@ -1304,6 +1305,7 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   if (m_bHandedOnly && !squad.m_bAICommanded) continue; // a player commands the side: only squads handed to us
    if (squad.HasPlayer() || !squad.GetAnchor()) continue; // players lead themselves
    if (squad.m_bMortar) continue; // mortar teams: PositionMortars
    if (squad.Aircraft()) continue; // helicopter crews: AI can't fly
@@ -1936,6 +1938,7 @@ class ACR_AICommander : Managed
    foreach (ACR_Squad squad : m_Manager.m_Squads)
    {
     if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction || squad.HasPlayer() || !squad.GetAnchor()) continue;
+    if (m_bHandedOnly && !squad.m_bAICommanded) continue;
     if (squad == m_FobEscort || squad == m_ReserveSquad || squad.m_bMortar || squad.Aircraft() || ACR_AirLift.Busy(squad)) continue;
     bool defending = squad.m_iAITask == ACR_EAITask.DEFEND && squad.m_AITarget == base;
     // Troops posted at a threatened base are its defence now.
@@ -5069,7 +5072,8 @@ class ACR_AICommander : Managed
 
  void SetFobUpgradeEvalTimeForTest(float time) { m_fNextFobUpgradeEval = time; }
 
- void ManageFobUpgrades()
+ // handedOnly: only the FOBs a player handed to the AI (ACR_FobAI), with no squads sent to help.
+ void ManageFobUpgrades(bool handedOnly = false)
  {
   float now = GetGame().GetWorld().GetWorldTime();
   if (now < m_fNextFobUpgradeEval) return;
@@ -5082,6 +5086,7 @@ class ACR_AICommander : Managed
   {
    if (!base || base.m_bRetired || !base.m_bBuilt || base.m_bHqLost || base.m_sOwner != m_sFaction || !base.m_FobSupply) continue;
    if (base.m_bContested || ACR_FobBuild.IsContested(base.GetOrigin(), m_sFaction)) continue;
+   if (handedOnly && !ACR_FobAI.Handed(base)) continue;
 
    // 1. Supply replenishment check
    OrderFobSupplies(base, data);
@@ -5090,7 +5095,7 @@ class ACR_AICommander : Managed
    if (!base.m_aFobSlots) ACR_FobSlots.InitSlots(base);
    if (ACR_FobSlots.AnyBuilding(base))
    {
-    AssistFobConstruction(base);
+    if (!handedOnly) AssistFobConstruction(base);
    }
    else
    {
@@ -5098,6 +5103,13 @@ class ACR_AICommander : Managed
     OrderFobUpgrade(base, stock);
    }
   }
+ }
+
+ // A player commands the side (or it has no AI commander): the FOBs handed to the AI (FOB
+ // panel, ACR_FobAI) still get its supply orders and upgrades (ACR_Manager.TickAICommanders).
+ void ManageHandedFobs()
+ {
+  ManageFobUpgrades(true);
  }
 
  bool OrderFobSupplies(ACR_Base base, ACR_FactionData data)
@@ -5287,6 +5299,9 @@ class ACR_AICommander : Managed
  bool CanBuild(int cost, int reserve)
  {
   if (BuildShare() > 0) return BuildBudget() >= cost;
+  // The 2IC (squads handed to the AI) builds only out of the budget, never from the side's RP,
+  // which is the commanding player's (#14): with the share off it builds nothing.
+  if (m_bHandedOnly) return false;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
   return data && data.m_iRP >= cost + reserve;
  }
@@ -6156,6 +6171,72 @@ class ACR_AICommander : Managed
  // ---------------------------------------------------------------- hand-over
 
  // A player took command: leave every squad as it is, but forget AI tasks.
+ // ---------------------------------------------------------------- squads handed to the AI
+ // A player commands the side (or it has no AI commander): the squad logic runs for the squads
+ // handed to the AI (squad panel, ACR_SquadAI) and only them: MySquads and DefendInDepth see
+ // no other squad. No purchases, logistics, FOB building, mortars or crews for the side.
+ protected bool m_bHandedOnly;
+ protected int m_iHandedSeconds;
+ void TickHanded()
+ {
+  m_bHandedOnly = true;
+  GatherIntel();
+  m_iHandedSeconds++;
+  if (m_iHandedSeconds % TICK_SECONDS == 1)
+  {
+   m_iTickStarted = System.GetTickCount();
+   // Its engineering is paid out of the build budget only (CanBuild), set aside as in Tick.
+   AccrueBuildBudget();
+   TrickleBuildBudget();
+   ReleaseRoadblockBuilders();
+   Assess();
+   UpdateAttacks();
+   AssignDefenders();
+   AssignAttacks();
+   PostIdle();
+   int beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
+   ManageRoadblocks();
+   SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
+   beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
+   ManageMinefields();
+   SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
+   PrintFormat("[ACR] AI %1: commanding %2 squad(s) handed to it, %3 attack(s)", m_sFaction, ACR_SquadAI.CountFor(m_sFaction), m_Attacks.Count());
+  }
+  m_bHandedOnly = false;
+ }
+
+ bool CanBuildHandedForTest(int cost, int reserve)
+ {
+  m_bHandedOnly = true;
+  bool ok = CanBuild(cost, reserve);
+  m_bHandedOnly = false;
+  return ok;
+ }
+
+ // A squad given back to its player: out of every plan of ours.
+ void Forget(ACR_Squad squad)
+ {
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   int index = attack.m_Squads.Find(squad);
+   if (index >= 0) attack.Remove(index);
+  }
+  m_RetreatingUntil.Remove(squad);
+  m_ReinforceRetryAt.Remove(squad);
+  m_Refitting.Remove(squad);
+  m_ForwardAt.Remove(squad);
+  if (m_ReserveSquad == squad) m_ReserveSquad = null;
+  if (m_FobBuilder == squad) m_FobBuilder = null;
+  if (m_FobEscort == squad) m_FobEscort = null;
+ }
+
+ bool PlansFor(ACR_Squad squad)
+ {
+  foreach (ACR_AIAttack attack : m_Attacks)
+   if (attack.m_Squads.Contains(squad)) return true;
+  return squad == m_ReserveSquad || m_Refitting.Contains(squad);
+ }
+
  protected void ReleaseAll()
  {
   foreach (ACR_Squad squad : m_Manager.m_Squads)
