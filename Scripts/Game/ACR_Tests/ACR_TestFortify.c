@@ -14,7 +14,7 @@
 // set aside don't abandon it.
 class ACR_TestFortify
 {
- static const int CHECKS = 38;
+ static const int CHECKS = 39;
  static const ResourceName BOULDER = "{1F0AA3EA77753B5D}Prefabs/Rocks/Granite/Granite_Boulder_02.et";
  static const ResourceName SANDBAG_WALL = "{A3A7C365E845B1B6}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_high_burlap.et";
  static int s_iStep;
@@ -314,6 +314,7 @@ class ACR_TestFortify
    ACR_TestRegress.Check("fortify: with -acrFortifyAI 1 it digs a squad in on an approach", digger && digger.m_iAITask == ACR_EAITask.FORTIFY && digger.OrderState() == ACR_EOrderState.FORTIFY, where);
    if (digger) digger.Halt("Holding");
    ACR_Options.Unset("acrFortifyAI");
+   CheckCameraButton();
    ACR_TestRegress.Complete("fortify", CHECKS);
    s_iStep = 9;
   }
@@ -684,5 +685,16 @@ class ACR_TestFortify
   foreach (ACR_Squad squad : manager.m_Squads)
    if (squad.m_FortifyPlan && squad.GetFaction() && squad.GetFaction().GetFactionKey() == faction) return squad;
   return null;
+ }
+
+ // The RTS camera's Fortify button: the map's Fortify order (its tier, facing and price), the toast
+ // with the tier I price; armed and off.
+ protected static void CheckCameraButton()
+ {
+  string armed = ACR_RTSCameraManager.FortifyToast(true);
+  bool order = ACR_RTSCameraManager.FortifyCommand() == ACR_ERequest.ORDER_FORTIFY;
+  bool price = armed.Contains(ACR_Fortify.Cost(1).ToString() + " RP") && armed.Contains("upgrade") && ACR_RTSCameraManager.FortifyToast(false) == "Fortify mode off";
+  bool label = ACR_RTSCameraManager.FortifyButton(true) == "Fortify [ON]" && ACR_RTSCameraManager.FortifyButton(false) == "Fortify";
+  ACR_TestRegress.Check("fortify: the RTS camera's Fortify button sends the map's Fortify order, its toast gives the tier I price", order && price && label, string.Format("order %1; '%2'; labels %3", order, armed, label));
  }
 }
