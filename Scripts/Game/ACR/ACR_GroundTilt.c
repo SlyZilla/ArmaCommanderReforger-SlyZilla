@@ -37,6 +37,8 @@ class ACR_GroundTilt
    part.SetWorldTransform(moved);
   }
   piece.Update();
+  // Every machine lays it out the same way: clients build it level from its prefab.
+  ACR_StructureLayout.Record(piece);
   return true;
  }
 
