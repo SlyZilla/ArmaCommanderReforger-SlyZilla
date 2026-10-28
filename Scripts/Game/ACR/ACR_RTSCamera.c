@@ -388,7 +388,7 @@ class ACR_RTSCameraManager : Managed
 					if (m_bDefendMode) m_DefendBtn.SetText("Defend [ON]");
 					else m_DefendBtn.SetText("Defend");
 				}
-				if (m_bDefendMode) ShowToast("Defend mode armed: Right-click ground to place defence (on a road, an ambush); right-drag to set the way it faces");
+				if (m_bDefendMode) ShowToast("Defend mode armed: Right-click ground to place defence");
 				else ShowToast("Defend mode off");
 				return;
    case 3: // Garrison: choose the building in the scene.
@@ -694,12 +694,12 @@ class ACR_RTSCameraManager : Managed
 	}
 
 	// ---------------------------------------------------------------- drag to aim
-	// As on the map (#11): with Fortify, Roadblock, a minefield or Defend armed, a right-drag aims the
+	// As on the map (#11): with Fortify, Roadblock or a minefield armed, a right-drag aims the
 	// order instead of turning the camera. The order goes where the button went down and faces where
 	// it came up, with an arrow on the ground while dragging; a plain right-click orders as before.
 	bool AimArmed()
 	{
-		return m_bFortifyMode || m_bRoadblockMode || m_bDefendMode || m_iMineKind >= 0;
+		return m_bFortifyMode || m_bRoadblockMode || m_iMineKind >= 0; // not Defend: it takes no facing yet (#67 review)
 	}
 
 	// The gold arrow from where the button went down to the cursor (native pixels), drawn on the HUD

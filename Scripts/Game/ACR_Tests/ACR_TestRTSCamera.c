@@ -126,9 +126,9 @@ modded class ACR_RTSCameraManager
   pc.ACR_SelectGroup(data.m_GroupIds[0]);
   camera.WatchSelection(pc);
   camera.Disarm();
-  camera.m_bDefendMode = true;
+  camera.m_bRoadblockMode = true;
   camera.BeginOrbit(s_iFromX, s_iFromY);
-  ACR_TestRegress.Check("RTS aim: a right-press with Defend armed starts aiming", camera.m_bAiming, string.Format("pressed at %1,%2 on a %3 x %4 screen, the ground at %5", s_iFromX, s_iFromY, w, hgt, camera.m_vAimFrom));
+  ACR_TestRegress.Check("RTS aim: a right-press with Roadblock armed starts aiming", camera.m_bAiming, string.Format("pressed at %1,%2 on a %3 x %4 screen, the ground at %5", s_iFromX, s_iFromY, w, hgt, camera.m_vAimFrom));
   GetGame().GetInputManager().GetMouseDeviceHandler().SetCursorPosition(s_iAimX, s_iAimY);
   camera.ApplyOrbit(s_iAimX, s_iAimY);
   string detail;
