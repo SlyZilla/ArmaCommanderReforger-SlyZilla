@@ -2,30 +2,31 @@
 
 Plan the attack. Call in support. Then grab a rifle and see how your plan survives contact.
 
-Command squads from the map, take over a friendly soldier and fight alongside them. Capture territory across Arland, Everon and Kolguyev, solo against AI commanders or sharing command with friends. An unofficial, openly vibecoded Reforger port of Arma 3's Arma Commander.
+Command squads from the map, take over a friendly soldier and fight alongside them. Capture territory across Arland, Everon and Kolguyev: solo against AI commanders, sharing command with friends, or side against side. An unofficial, openly vibecoded Reforger port of Arma 3's Arma Commander.
 
 Requires the separate Better Battle Buddies (BBB) addon. Vanilla sides need no faction mods.
 
-## In 0.5.7: dig in and read the enemy
+## In 0.5.8: pick a side
 
-- Fortify position: dig a squad in where you right-click, then upgrade it from a sandbag line to an MG nest and bunker, and a strongpoint with crossfire.
-- Lay AP, AT or mixed minefields and lift them again. Build small, medium or large roadblocks and road barricades, paid from a construction truck's supplies when one is with the squad.
-- AI commanders fight to one of five doctrines: Balanced, Blitz, Firepower, Fortress or Raider. Gather intel to identify theirs; they change it when it fails.
-- FIA pockets of resistance hold some empty bases until you clear them.
-- Match setup is sorted into tabs. RU, UA and RHS USMC get distinct formations and kits.
+- Players choose their side, an officer loadout and a held base to deploy at, each with their own respawn timer. An AI commander runs any side no player commands, so PvP, co-op and mixed games use the same scenario. 16 player slots.
+- Smarter AI commanders: they refill worn-down squads first, attack with infantry that can take the base, approach out of the objective's sight, and build, upgrade and man defences along the front. A rich side digs in, fires more and buys quality.
+- Patrol loops, and drag to aim the facing of roadblocks, Fortify positions and minefields.
+- RTS camera: Fortify and minefield buttons, order lines and spotted enemies; right-click one to hunt it.
+- Base garrisons no longer spawn inside walls, and many AI and vehicle fixes.
 
 ## Command and fight
 
 - Shared command map with squad status, enemy sightings and radio reports.
-- Move, defend, hunt, queue waypoints and garrison buildings. Possess a soldier whenever you want to join the action.
-- Capture bases for RP; buy infantry, vehicles, mortar crews and observers.
+- Move, defend, hunt, patrol, queue waypoints and garrison buildings. Possess a soldier whenever you want to join the action.
+- Capture bases for RP; buy infantry, vehicles, mortar crews and observers. FIA resistance holds some empty bases.
 - Call artillery, combat helicopters and off-map squad air lifts.
-- Build, supply and upgrade FOBs behind your advance; raid or capture the enemy's.
+- Build, supply and upgrade FOBs; dig in Fortify positions, lay minefields and build roadblocks.
+- AI commanders fight to one of five doctrines. Gather intel to identify theirs.
 - BBB adds combat, medical and vehicle behaviour. Player orders and ACA's command rules take priority over autonomous features.
 
 ## Pick your battlefield
 
-Choose an AC: Actual scenario in Scenarios or Host. Before Start, the host/admin sets sides, layout, threat, AI doctrines, FIA resistance, prices, commanders, unit caps, starting RP, income and logistics. Joiners wait for the host; no external launcher is needed.
+Choose an AC: Actual scenario in Scenarios or Host. Before Start, the host/admin sets factions, layout, threat, AI doctrines, FIA resistance, prices, commanders, unit caps, starting RP, income and logistics. Joiners wait for the host, then pick a side and deploy; no external launcher is needed.
 
 Everon includes a hand-built island layout, halves and flashpoints. Generated layouts place bases and HQs around named locations: preview, reroll the seed or move bases before Start. Kolguyev uses generated layouts. Other terrains need an AC: Actual scenario setup.
 
