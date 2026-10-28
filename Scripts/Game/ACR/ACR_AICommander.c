@@ -4741,7 +4741,7 @@ class ACR_AICommander : Managed
     if (!station || best < ACR_Logistics.SERVICE_RANGE) continue; // none, or already being served
     ACR_Squad crew = CrewOf(station);
     bool holding = squad.m_iAITask == ACR_EAITask.DEFEND || squad.m_iAITask == ACR_EAITask.POSTED || !squad.m_Group.GetCurrentWaypoint();
-    bool crewFree = crew && !crew.HasPlayer() && !m_ServiceJobs.Contains(crew);
+    bool crewFree = crew && !crew.HasPlayer() && !m_ServiceJobs.Contains(crew) && !StuckLately(crew);
     string what = ACR_Logistics.ServiceName(service);
     if (crewFree && (holding || squad.IsMounted() == false && best > 800))
     {
@@ -4770,7 +4770,7 @@ class ACR_AICommander : Managed
    int serviceMask = ACR_Logistics.ServiceOf(serviceVehicle) & ~ACR_EService.CONSTRUCTION;
    if (!serviceVehicle || serviceMask == 0 || idleCrew.HasPlayer() || m_ServiceJobs.Contains(idleCrew)) continue;
    if (idleCrew.OrderState() == ACR_EOrderState.BUILD_FOB || idleCrew.m_iAITask == ACR_EAITask.BUILD_FOB) continue;
-   if (IsAssistingFobUpgrade(idleCrew)) continue;
+   if (IsAssistingFobUpgrade(idleCrew) || StuckLately(idleCrew)) continue;
    ACR_Base goal = supplyPoint;
    if (logistics.StockPercent(serviceVehicle) < 25) goal = HomeBase();
    if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
@@ -4779,6 +4779,16 @@ class ACR_AICommander : Managed
    Say(string.Format("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(serviceMask)));
   }
  }
+
+ // A service vehicle that gave up stuck (ACR_Squad.m_fStuckAt: holding where it is) waits before
+ // it is sent anywhere again, as Recrew does. Jacob's 26 Oct game: an arsenal truck stuck by its
+ // spawn at Saint-Philippe Factory was sent to Tyrone 59 times in 2.5 h, 353 stuck lines.
+ static const float STUCK_SERVICE_WAIT_MS = 600000;
+ protected bool StuckLately(ACR_Squad crew)
+ {
+  return crew && GetGame().GetWorld().GetWorldTime() - crew.m_fStuckAt < STUCK_SERVICE_WAIT_MS;
+ }
+ bool StuckLatelyForTest(ACR_Squad crew) { return StuckLately(crew); }
 
  protected bool IsAssistingFobUpgrade(ACR_Squad squad)
  {

@@ -156,7 +156,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 131; // includes one garrison-spawn, eight BBB order-leash, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 132; // includes one garrison-spawn, eight BBB order-leash, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -1279,6 +1279,15 @@ class ACR_TestRegress
    bravo.MoveTo(bravo.m_MoveTarget);
    Check("an order that cuts a regroup short starts the regroup cooldown", !bravo.RegroupingForTest() && bravo.NextRegroupForTest() >= regroupNow + ACR_Squad.REGROUP_FAILED_COOLDOWN_MS - 1000, string.Format("next regroup in %1 s", Math.Round((bravo.NextRegroupForTest() - regroupNow) / 1000)));
    Check("no regroup right after a new order; a regrouping reserve counts as moving", !ACR_Squad.OrderSettled(1000, 0) && ACR_Squad.OrderSettled(ACR_Squad.ORDER_SETTLE_MS, 0) && ACR_AICommander.ReserveMoving(ACR_EOrderState.REGROUP) && !ACR_AICommander.ReserveMoving(ACR_EOrderState.DEFEND), "settle and en-route rules");
+   // Jacob's 26 Oct game: a stuck arsenal truck was sent on 59 ammo runs in 2.5 h.
+   ACR_AICommander logisticsAI = manager.FobAICommanderFor("US");
+   float stuckBefore = bravo.m_fStuckAt;
+   bravo.m_fStuckAt = GetGame().GetWorld().GetWorldTime();
+   bool waits = logisticsAI && logisticsAI.StuckLatelyForTest(bravo);
+   bravo.m_fStuckAt = -1000000;
+   bool free = logisticsAI && !logisticsAI.StuckLatelyForTest(bravo);
+   bravo.m_fStuckAt = stuckBefore;
+   Check("a service vehicle that gave up stuck isn't sent on another run for a while", waits && free, string.Format("waits %1, free later %2", waits, free));
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
