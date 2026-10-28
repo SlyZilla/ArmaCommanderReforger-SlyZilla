@@ -195,6 +195,62 @@ class ACR_MapFeed
   if (Changed(id, "vehicles", frame.m_sVehiclesSig, full)) { pc.ACR_SendVehicles(frame.m_VehiclePos, frame.m_VehicleNames, frame.m_VehicleAges); Count(frame, "vehicles"); }
   if (Changed(id, "cmd", frame.m_sCmdSig, full)) { pc.ACR_SendCommanders(frame.m_CmdIds, frame.m_CmdTags, frame.m_CmdActions, frame.m_CmdActionAges, frame.m_SelGroups, frame.m_SelOwners); Count(frame, "cmd"); }
   if (Changed(id, "pings", frame.m_sPingsSig, full)) { pc.ACR_SendPings(frame.m_PingIds, frame.m_PingKinds, frame.m_PingPos, frame.m_PingOwners, frame.m_PingTags, frame.m_PingAges, frame.m_PingAnswers); Count(frame, "pings"); }
+  PublishTwoIC(manager, pc, id, key, full);
+ }
+
+ // The 2IC's card and channel (ACR_TwoIC, #14 v1), when they changed. Nothing while the 2IC is
+ // off, except one empty card to a player who had it on.
+ protected static void PublishTwoIC(ACR_Manager manager, SCR_PlayerController pc, int id, string key, bool full)
+ {
+  map<string, string> sent = s_Sent.Get(id);
+  if (!ACR_TwoIC.On())
+  {
+   if (!sent || !sent.Contains("2ic")) return;
+   sent.Remove("2ic");
+   sent.Remove("2icch");
+   array<int> none = {};
+   pc.ACR_SendTwoICCard(none, "");
+   return;
+  }
+  ACR_TwoICCard card = ACR_TwoIC.CardFor(manager, key);
+  if (Changed(id, "2ic", card.Sig(), full))
+  {
+   array<int> numbers = {};
+   card.Pack(numbers);
+   pc.ACR_SendTwoICCard(numbers, card.m_sDoing);
+  }
+  if (Changed(id, "2icch", ACR_TwoIC.ChannelSig(key), full))
+  {
+   array<int> ids = {};
+   array<int> kinds = {};
+   array<string> texts = {};
+   array<string> answers = {};
+   array<string> statuses = {};
+   array<int> ages = {};
+   array<int> flags = {};
+   ACR_TwoIC.Channel(key, ids, kinds, texts, answers, statuses, ages, flags);
+   pc.ACR_SendTwoICChannel(ids, kinds, texts, answers, statuses, ages, flags, (int)(GetGame().GetWorld().GetWorldTime() / 1000));
+  }
+  // Live requests' rings on the map.
+  if (Changed(id, "2icring", ACR_TwoICRequests.RingsSig(key), full))
+  {
+   array<vector> ringPos = {};
+   array<string> ringLabels = {};
+   array<int> ringKinds = {};
+   ACR_TwoICRequests.Rings(key, ringPos, ringLabels, ringKinds);
+   pc.ACR_SendTwoICRings(ringPos, ringLabels, ringKinds);
+  }
+  // The pinned no-truck line's "Buy a truck": its price, or why it can't be bought now.
+  int truckCost;
+  string truckBase, truckWhy;
+  if (Changed(id, "2ictruck", ACR_TwoICSuggest.OfferFor(manager, key, truckCost, truckBase, truckWhy), full)) pc.ACR_SendTwoICTruck(truckCost, truckBase, truckWhy);
+  // The panel's rows, while the player has it open.
+  if (!ACR_TwoIC.PanelOpen(id)) return;
+  ACR_TwoICPanelData panel = ACR_TwoIC.PanelFor(manager, key);
+  bool fresh = ACR_TwoIC.PanelFresh(id);
+  if (!Changed(id, "2icpanel", panel.Sig(), full || fresh)) return;
+  pc.ACR_SendTwoICSquads(panel.m_SquadIds, panel.m_SquadNames, panel.m_Wheres, panel.m_Doings, panel.m_RunBys, panel.m_SquadFlags);
+  pc.ACR_SendTwoICPanel(panel.m_FobLabels, panel.m_FobFlags, panel.m_iShare, panel.m_sSmall);
  }
 
  // ---------------------------------------------------------------- building

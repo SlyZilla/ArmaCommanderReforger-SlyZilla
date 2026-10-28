@@ -20,6 +20,7 @@ modded class SCR_KeybindSetting
     category.m_KeyBindingEntries.Insert(Entry("ACR_Possess", "Take over soldier", "click"));
     category.m_KeyBindingEntries.Insert(Entry("ACR_Return", "Command unit", "click"));
     category.m_KeyBindingEntries.Insert(Entry("ACR_RTSCamera", "RTS 3D camera", "click"));
+    category.m_KeyBindingEntries.Insert(Entry("ACR_TwoICPanel", "2IC panel (map, with the 2IC on)", "click"));
     m_KeybindConfig.m_KeyBindingCategories.Insert(category);
    }
   }

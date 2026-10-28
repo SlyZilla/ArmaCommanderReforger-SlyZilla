@@ -862,8 +862,11 @@ class ACR_Manager : Managed
    if (ACR_SquadAI.TwoIC())
    {
     squadAI = FobAICommanderFor(squads.m_sFaction);
-    bool twoICRuns = squadAI && ACR_SquadAI.Runs(this, squads.m_sFaction);
+    bool twoICRuns = squadAI && ACR_TwoIC.Running(this, squads.m_sFaction);
     if (twoICRuns) ACR_SquadAI.Adopt(squads.m_sFaction);
+    // Players' requests first (ACR_TwoICRequests), ahead of its own plans.
+    ACR_TwoICRequests.Tick(squads.m_sFaction, squadAI, twoICRuns);
+    ACR_TwoICSuggest.Tick(this, squads.m_sFaction, squadAI, twoICRuns);
    }
    if (!ACR_SquadAI.AnyFor(squads.m_sFaction)) continue;
    squadAI = FobAICommanderFor(squads.m_sFaction);
