@@ -2348,9 +2348,18 @@ class ACR_Squad : Managed
  // Crewmen leaving a driver or gunner seat when no order of ours asked for it are logged
  // (2 Oct live: a LAV crew got out twice "for no reason"; not reproduced on the server).
  int m_iUnexpectedCrewDepartures; // diagnostics and physical retention tests
+ // Its driver got out on his own and nobody drives its vehicle since: the AI commander puts
+ // him back (ACR_AICommander.Recrew). Jacob's 27 Oct game: a Typhoon's driver and gunner got
+ // out, only the gunner went back, and every move of the next 37 min failed on the spot.
+ bool m_bDriverBailed;
  protected ref map<IEntity, int> m_CrewSeats = new map<IEntity, int>();
  protected void WatchCrew()
  {
+  if (m_bDriverBailed && (!m_OwnVehicle || DriverOf(m_OwnVehicle)))
+  {
+   m_bDriverBailed = false;
+   m_iDriverReseats = 0;
+  }
   array<AIAgent> agents = {};
   GetAgents(agents);
   foreach (AIAgent agent : agents)
@@ -2369,6 +2378,7 @@ class ACR_Squad : Managed
    ACR_Manager manager = ACR_Manager.GetInstance();
    if (m_bMortar && manager && manager.Mortars().IsLoadingDeparture(this, agent)) continue;
    m_iUnexpectedCrewDepartures++;
+   if (before == ECompartmentType.PILOT && m_OwnVehicle && !DriverOf(m_OwnVehicle)) m_bDriverBailed = true;
    string where = "";
    if (m_OwnVehicle) where = string.Format(", vehicle health %1, driver %2", ACR_Logistics.Health(m_OwnVehicle), DriverOf(m_OwnVehicle) != null);
    PrintFormat("[ACR] CREW LEFT %1: %2 got out of the %3 seat on his own (order '%4', alive %5, enemies near %6, player %7%8)", m_Name, NumberOf(body), typename.EnumToString(ECompartmentType, before), m_Order, ACR_Respawn.IsAlive(body), KnownEnemies(350), FindController(body), where);
@@ -2973,6 +2983,45 @@ class ACR_Squad : Managed
  int UnstickTries() { return m_iUnsticks; }
  int Reroutes() { return m_iReroutes; }
  bool IsUnsticking() { return m_bUnsticking; }
+
+ // A driver who bailed (m_bDriverBailed): the nearest of its men on foot goes for the driver's
+ // seat himself. The group's Get in waypoint seats nobody while part of the crew is aboard
+ // (srv:recrew: 50 s on 'Getting in', the seat still empty). Close by he climbs in; further off
+ // he walks there (the game's own get-in), and the next try places him (BoardCargo does too).
+ protected int m_iDriverReseats;
+ bool ReseatDriver(IEntity vehicle)
+ {
+  CarControllerComponent car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
+  if (!car) return false;
+  BaseCompartmentSlot seat = car.GetPilotCompartmentSlot();
+  if (!seat || seat.GetOccupant()) return false;
+  ChimeraCharacter best;
+  AIAgent bestAgent;
+  float bestDistance = 60;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter man = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!man || !ACR_Respawn.IsAlive(man) || man.IsInVehicle() || FindController(man) != 0) continue;
+   if (!man.GetCompartmentAccessComponent() || man.GetCompartmentAccessComponent().IsGettingIn()) continue;
+   if (BBB_Claims.Committed(man)) continue; // BBB has him on a rescue, a static gun or a rearm
+   float distance = vector.Distance(man.GetOrigin(), vehicle.GetOrigin());
+   if (distance >= bestDistance) continue;
+   bestDistance = distance;
+   best = man;
+   bestAgent = agent;
+  }
+  if (!best) return false;
+  m_iDriverReseats++;
+  CompartmentAccessComponent access = best.GetCompartmentAccessComponent();
+  SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(bestAgent.FindComponent(SCR_AIUtilityComponent));
+  bool walk = bestDistance > 4 && m_iDriverReseats == 1 && utility;
+  PrintFormat("[ACR] CREW %1: back to the driver's seat, %2 m off (try %3, %4)", m_Name, (int)bestDistance, m_iDriverReseats, walk);
+  if (!walk) return access.GetInVehicle(vehicle, seat, bestDistance > 4, -1, ECloseDoorAfterActions.CLOSE_DOOR, false);
+  utility.AddAction(new SCR_AIGetInVehicle(utility, null, vehicle, seat, EAICompartmentType.Pilot));
+  return true;
+ }
 
  static ChimeraCharacter DriverOf(IEntity vehicle)
  {

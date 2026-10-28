@@ -3934,17 +3934,35 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : mine)
   {
    IEntity vehicle = squad.m_OwnVehicle;
-   if (!vehicle || squad.IsMounted() || squad.m_iAITask == ACR_EAITask.RESUPPLY) continue;
-   if (ACR_Logistics.Health(vehicle) < 0.25 || !ACR_Vehicles.IsEmpty(vehicle)) continue;
+   if (!vehicle || squad.m_iAITask == ACR_EAITask.RESUPPLY) continue;
+   // Or its driver bailed and only part of the crew is back aboard: nobody drives, so every
+   // move fails where it stands (ACR_Squad.m_bDriverBailed).
+   bool driverless = squad.m_bDriverBailed && squad.IsMounted() && !ACR_Squad.DriverOf(vehicle);
+   if (squad.IsMounted() && !driverless) continue;
+   if (ACR_Logistics.Health(vehicle) < 0.25 || (!driverless && !ACR_Vehicles.IsEmpty(vehicle))) continue;
+   // Run dry (the game's AI gets out of a car with no fuel): wait for the fuel truck, not in and
+   // out again (Jacob's 27 Oct game: a Humvee crew left, got back in and left again three times).
+   float fuel = ACR_Logistics.Fuel(vehicle);
+   if (fuel >= 0 && fuel < 0.02) continue;
    if (vector.DistanceXZ(PositionOf(squad), vehicle.GetOrigin()) > 400 || squad.KnownEnemies(120) > 0) continue;
    float next;
    if (m_NextRecrew.Find(squad, next) && now < next) continue;
    // Not back into a vehicle that just got stuck (the crew bailed, got back in, got stuck again).
    if (now - squad.m_fStuckAt < 600000) continue;
+   // Driverless: one man for the driver's seat (the group's Get in seats nobody while part of
+   // the crew is aboard); its order stands. Tried again in 30 s if he isn't in by then.
+   if (driverless)
+   {
+    m_NextRecrew.Set(squad, now + 30000);
+    if (squad.ReseatDriver(vehicle)) Say(string.Format("[ACR] AI %1: %2's driver gets back into its vehicle", m_sFaction, squad.GetName()));
+    continue;
+   }
    m_NextRecrew.Set(squad, now + 90000);
    if (squad.GetIn(vehicle.GetOrigin())) Say(string.Format("[ACR] AI %1: %2 gets back into its vehicle", m_sFaction, squad.GetName()));
   }
  }
+
+ void RecrewForTest() { Recrew(); }
 
  protected int PostedAt(ACR_Base base)
  {
