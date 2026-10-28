@@ -122,6 +122,7 @@ groundtilt|-acrGroundTiltTest 1|120
 structlayout|-acrStructureLayoutTest 1|150
 budget|-acrBuildBudgetTest 1|120
 aidefences|-acrAIDefencesTest 1|120
+rblane|-acrRoadblockLaneTest 1|420
 roadsiting|-acrRoadSitingTest 1|120
 buildride|-acrBuildRideTest 1|540
 variety|-acrVarietyTest 1|60
