@@ -34,6 +34,7 @@ class ACR_SquadAI
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager || !TwoIC()) return 0;
   int adopted;
+  array<ACR_Squad> taken = {};
   foreach (ACR_Squad squad : manager.m_Squads)
   {
    if (!squad || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != faction) continue;
@@ -47,8 +48,11 @@ class ACR_SquadAI
    if (squad.m_bAICommanded || squad.m_bClaimed || !CanHand(squad, why)) continue;
    Hand(squad, true);
    adopted++;
+   taken.Insert(squad);
   }
   if (adopted > 0) PrintFormat("[ACR] 2IC %1: %2 unclaimed squad(s) taken on", faction, adopted);
+  if (adopted == 1) ACR_TwoIC.Report(faction, string.Format("Took on %1", taken[0].GetName()));
+  else if (adopted > 1) ACR_TwoIC.Report(faction, string.Format("Took on %1 squads nobody leads", adopted));
   return adopted;
  }
 
@@ -116,6 +120,7 @@ class ACR_SquadAI
   }
   if (halt) squad.Halt("Holding");
   PrintFormat("[ACR] SQUAD AI %1: back to the player (halt %2), mode %3", squad.GetName(), halt, typename.EnumToString(ACR_EMoveMode, squad.m_Mode));
+  if (squad.GetFaction()) ACR_TwoIC.Report(squad.GetFaction().GetFactionKey(), string.Format("%1 is yours now", squad.GetName()));
   return true;
  }
 

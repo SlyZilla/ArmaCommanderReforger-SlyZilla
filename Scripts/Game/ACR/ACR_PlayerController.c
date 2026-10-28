@@ -979,7 +979,7 @@ modded class SCR_PlayerController
   if (cursorModule)
   {
    float wheel = 1;
-   if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) wheel = 0;
+   if (ACR_OverOwnUI(WidgetManager.GetWidgetUnderCursor())) wheel = 0;
    cursorModule.SetWheelZoomMultiplier(wheel);
   }
   ACR_UpdatePicker();
@@ -1094,7 +1094,7 @@ modded class SCR_PlayerController
   {
    ACR_UnitMarker marker = m_ACR_GroupMarkers[i];
    marker.m_UnitId = m_ACR_Data.m_LeaderIds[i];
-   marker.m_Label = m_ACR_Data.m_GroupNames[i];
+   marker.m_Label = ACR_GroupLabel(i, m_ACR_Data.m_GroupNames[i]);
    marker.m_GroupId = m_ACR_Data.m_GroupIds[i];
    marker.m_bCommandUnit = (m_ACR_GroupSymbols[i * 4 + 3] & 32) != 0;
    marker.m_Selected = ACR_IsSelected(marker.m_GroupId);
@@ -1382,6 +1382,18 @@ modded class SCR_PlayerController
   SCR_MapEntity.GetOnSelection().Insert(ACR_OnMapClick);
  }
 
+ // The cursor is over one of our boxes (the panel, the feed, the 2IC's: ACR_TwoICView).
+ protected bool ACR_OverOwnUI(Widget widget)
+ {
+  return m_ACR_Panel && m_ACR_Panel.Contains(widget);
+ }
+
+ // A group marker's label (the 2IC tags its squads: ACR_TwoICView).
+ protected string ACR_GroupLabel(int index, string label)
+ {
+  return label;
+ }
+
  protected void ACR_ClosePanel()
  {
   SCR_MapEntity.GetOnSelection().Remove(ACR_OnMapClick);
@@ -1401,7 +1413,7 @@ modded class SCR_PlayerController
  {
   if (ACR_EditorOpen()) return;
   if (System.GetTickCount() - m_ACR_LastUiClick < 400) return;
-  if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) return;
+  if (ACR_OverOwnUI(WidgetManager.GetWidgetUnderCursor())) return;
   ACR_ClosePicker();
   if (ACR_ModifierHeld("ACR_MapAlt"))
   {

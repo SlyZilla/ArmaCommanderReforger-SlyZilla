@@ -132,6 +132,14 @@ doctrinekits|-acrDoctrineKitsTest 1|300
 grabs|-acrGrabsTest 1|60
 mortarspot|-acrMortarSpotTest 1|60
 fobsiting|-acrFobSitingTest 1|180
+fobai|-acrFobAITest 1|200
+squadai|-acrSquadAITest 1|200
+twoic|-acrTwoICTest 1|200
+twoicui|-acrTwoICUITest 1|240
+twoicask|-acrTwoICAskTest 1|300
+twoicsuggest|-acrTwoICSuggestTest 1|200
+twoicshots|-acrTwoICShotsTest 1|240
+twoicdeclutter|-acrTwoICDeclutterTest 1|120
 ridelav|-acrRideLavTest 1|400
 ridelavkill|-acrRideLavKillTest 1|400
 ridelavgetout|-acrRideLavGetOutTest 1|400
@@ -139,9 +147,6 @@ lavgetout|-acrLavGetOutTest 1|240
 lavgetoutold|-acrLavGetOutOldTest 1|240
 ridecarry|-acrRideCarryTest 1|420
 ridetruck|-acrRideTruckTest 1|400
-fobai|-acrFobAITest 1|200
-squadai|-acrSquadAITest 1|200
-twoic|-acrTwoICTest 1|200
 patrol|-acrPatrolTest 1|600
 holdreturn|-acrHoldReturnTest 1|90
 capscale|-acrCapScaleTest 1|120

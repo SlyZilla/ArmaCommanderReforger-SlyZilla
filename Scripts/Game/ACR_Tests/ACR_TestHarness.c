@@ -83,9 +83,6 @@ class ACR_TestHarness : Managed
  static const int MODE_STRUCTLAYOUT = 126; // 117: map-polygon-guard, 125: roadblock-friendly-lane
  static const int MODE_POSSITING = 72; // 68-71: ride job, defend swap, LAV ride, mine siting (own branches)
  static const int MODE_ATTACKREACH = 79; // 69-78: the playtest branches
- static const int MODE_GRABS = 77; // 69-76: the playtest branches
- static const int MODE_MORTARSPOT = 78; // 69-77: the playtest branches
- static const int MODE_RIDELAV = 70; // 69: the playtest branches
  static const int MODE_FOBAI = 58; // 52 / 53 / 55 / 56 / 57: Fortify / roadblocks / patrol / ambush / QRF
  static const int MODE_SQUADAI = 63; // 59-62: defenders, budget, cap scale, aim (own branches)
  static const int MODE_TWOIC = 75; // 74: the slope tilt (own branch)
@@ -96,6 +93,14 @@ class ACR_TestHarness : Managed
  static const int MODE_RIDECARRY = 87; // 80-86: the playtest branches, the 2IC and a LAV fix
  static const int MODE_CAPSCALE = 61; // 52-60: Fortify, roadblocks, patrol, ambush, QRF, FOB AI, defenders, budget (own branches)
  static const int MODE_DOCTRINEKITS = 80; // 73-79: the playtest branches
+ static const int MODE_GRABS = 77; // 69-76: the playtest branches
+ static const int MODE_MORTARSPOT = 78; // 69-77: the playtest branches
+ static const int MODE_TWOICUI = 82; // 79-81: the playtest branches
+ static const int MODE_TWOICASK = 83;
+ static const int MODE_TWOICSUGGEST = 84;
+ static const int MODE_TWOICSHOTS = 91; // a game client run (89 variety, 90 the armour duel probe)
+ static const int MODE_TWOICDECLUTTER = 131; // the 2IC declutter (117, 120, 125: own branches)
+ static const int MODE_RIDELAV = 70; // 69: the playtest branches
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -173,10 +178,6 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrStructureLayoutTest", flag)) mode = MODE_STRUCTLAYOUT;
   if (System.GetCLIParam("acrPositionSitingTest", flag)) mode = MODE_POSSITING;
   if (System.GetCLIParam("acrAttackReachTest", flag)) mode = MODE_ATTACKREACH;
-  if (System.GetCLIParam("acrGrabsTest", flag)) mode = MODE_GRABS;
-  if (System.GetCLIParam("acrMortarSpotTest", flag)) mode = MODE_MORTARSPOT;
-  if (System.GetCLIParam("acrRideLavTest", flag) || System.GetCLIParam("acrRideTruckTest", flag)) mode = MODE_RIDELAV;
-  if (System.GetCLIParam("acrRideLavKillTest", flag) || System.GetCLIParam("acrRideLavGetOutTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrFobAITest", flag)) mode = MODE_FOBAI;
   if (System.GetCLIParam("acrSquadAITest", flag)) mode = MODE_SQUADAI;
   if (System.GetCLIParam("acrTwoICTest", flag)) mode = MODE_TWOIC;
@@ -187,6 +188,15 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRideCarryTest", flag)) mode = MODE_RIDECARRY;
   if (System.GetCLIParam("acrCapScaleTest", flag)) mode = MODE_CAPSCALE;
   if (System.GetCLIParam("acrDoctrineKitsTest", flag)) mode = MODE_DOCTRINEKITS;
+  if (System.GetCLIParam("acrGrabsTest", flag)) mode = MODE_GRABS;
+  if (System.GetCLIParam("acrMortarSpotTest", flag)) mode = MODE_MORTARSPOT;
+  if (System.GetCLIParam("acrTwoICUITest", flag)) mode = MODE_TWOICUI;
+  if (System.GetCLIParam("acrTwoICAskTest", flag)) mode = MODE_TWOICASK;
+  if (System.GetCLIParam("acrTwoICSuggestTest", flag)) mode = MODE_TWOICSUGGEST;
+  if (System.GetCLIParam("acrTwoICShotsTest", flag)) mode = MODE_TWOICSHOTS;
+  if (System.GetCLIParam("acrTwoICDeclutterTest", flag)) mode = MODE_TWOICDECLUTTER;
+  if (System.GetCLIParam("acrRideLavTest", flag) || System.GetCLIParam("acrRideTruckTest", flag)) mode = MODE_RIDELAV;
+  if (System.GetCLIParam("acrRideLavKillTest", flag) || System.GetCLIParam("acrRideLavGetOutTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -322,9 +332,6 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_STRUCTLAYOUT) { ACR_TestStructureLayout.RunLayout(this, m_Ticks); return; }
   if (m_Mode == MODE_POSSITING) { ACR_TestPositionSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ATTACKREACH) { ACR_TestAttackReach.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_GRABS) { ACR_TestGrabs.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_MORTARSPOT) { ACR_TestMortarSpot.Run(this, m_Ticks); return; }
-  if (m_Mode == MODE_RIDELAV) { ACR_TestRideLav.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FOBAI) { ACR_TestFobAI.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_SQUADAI) { ACR_TestSquadAI.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_TWOIC) { ACR_TestTwoIC.Run(this, m_Ticks); return; }
@@ -335,6 +342,14 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_RIDECARRY) { ACR_TestRideCarry.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_CAPSCALE) { ACR_TestCapScale.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_DOCTRINEKITS) { ACR_TestDoctrineKits.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_GRABS) { ACR_TestGrabs.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MORTARSPOT) { ACR_TestMortarSpot.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICUI) { ACR_TestTwoICUI.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICASK) { ACR_TestTwoICAsk.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICSUGGEST) { ACR_TestTwoICSuggest.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICSHOTS) { ACR_TestTwoICShots.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICDECLUTTER) { ACR_TestTwoICDeclutter.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RIDELAV) { ACR_TestRideLav.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

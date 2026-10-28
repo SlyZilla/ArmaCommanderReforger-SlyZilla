@@ -928,6 +928,13 @@ class ACR_AICommander : Managed
  protected int m_iBuildLastRP = -1;
  static int BuildShare() { return Math.ClampInt(ACR_LogisticsRules.Choice("acrAIBuildShare", "0").ToInt(), 0, 30); }
  int BuildBudget() { return (int)m_fBuildBudget; }
+ // This side's share: the 2IC panel's for its side (ACR_TwoIC.ShareFor), else the setting.
+ int SideShare()
+ {
+  int share;
+  if (ACR_TwoIC.ShareFor(m_sFaction, share)) return share;
+  return BuildShare();
+ }
  float EffectiveShare() { return ShareAt(m_Manager.m_Bases.GetRP(m_sFaction)); }
 
  // A rich side digs in (#28): over SURPLUS_FROM banked RP the share rises with the surplus, to twice
@@ -958,12 +965,12 @@ class ACR_AICommander : Managed
  }
 
  // The share (percent of RP gained) with 'rp' banked.
- float ShareAt(int rp) { return Math.Min(BuildShare() * m_Doctrine.m_fBuildShare * SurplusFactor(rp), 50); }
+ float ShareAt(int rp) { return Math.Min(SideShare() * m_Doctrine.m_fBuildShare * SurplusFactor(rp), 50); }
 
  // The least the budget holds with 'rp' banked: that share of the surplus (0 at or below SURPLUS_FROM).
  float SurplusFloor(int rp)
  {
-  if (BuildShare() <= 0 || rp <= SurplusFrom()) return 0;
+  if (SideShare() <= 0 || rp <= SurplusFrom()) return 0;
   return Math.Min((rp - SurplusFrom()) * ShareAt(rp) / 100.0, BUILD_BUDGET_MAX);
  }
 
@@ -985,7 +992,7 @@ class ACR_AICommander : Managed
  // one roadblock and one hasty position all game).
  void TrickleBuildBudget()
  {
-  if (BuildShare() <= 0) return;
+  if (SideShare() <= 0) return;
   int rp = m_Manager.m_Bases.GetRP(m_sFaction);
   m_fBuildBudget = Math.Clamp(m_fBuildBudget + BUILD_TRICKLE * m_Doctrine.m_fBuildShare, 0, Math.Min(BUILD_BUDGET_MAX, rp));
  }
@@ -998,13 +1005,13 @@ class ACR_AICommander : Managed
  // What unit purchases keep back for it.
  int BuildKeep()
  {
-  if (BuildShare() <= 0) return 0;
+  if (SideShare() <= 0) return 0;
   return BuildBudget();
  }
 
  string BuildStatus()
  {
-  if (BuildShare() <= 0) return "";
+  if (SideShare() <= 0) return "";
   int holders;
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
@@ -1013,7 +1020,7 @@ class ACR_AICommander : Managed
   string surplus = "";
   int rp = m_Manager.m_Bases.GetRP(m_sFaction);
   if (rp > SurplusFrom()) surplus = string.Format(", raised by %1 RP banked over %2", rp - SurplusFrom(), SurplusFrom());
-  return string.Format(" | build budget %1 RP (%2%% of income%3), holding %4 of %5", BuildBudget(), (int)EffectiveShare(), surplus, holders, m_Doctrine.m_iHolders);
+  return string.Format(" | build budget %1 RP (%2%% of income%3), holding %4 of %5", BuildBudget(), (int)EffectiveShare(), surplus, holders, HoldersCap());
  }
  static const int MAX_GRABS = 3;           // empty bases it goes for at the same time (at least)
  static const int MAX_GRABS_BIG = 8;       // ... at most, on maps with many empty bases
@@ -1758,6 +1765,7 @@ class ACR_AICommander : Managed
   {
    if (squad.m_iAITask != ACR_EAITask.DEFEND || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
    if (squad == m_FobEscort && HasActiveFobProject()) continue;
+   if (OnRequest(squad)) continue; // a player's request to the 2IC (#14 v1)
    ACR_Base held = squad.m_AITarget;
    if (!held || held.m_sOwner != m_sFaction || ThreatTo(held) == 0)
    {
@@ -2284,6 +2292,18 @@ class ACR_AICommander : Managed
    m_Attacks.Insert(grab);
    grabs++;
    Say(string.Format("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime));
+   TwoICReport(string.Format("Taking %1 with %2 (about %3 s away)", empty.m_sName, runner.GetName(), (int)bestTime));
+  }
+  // A small 2IC force (#14 v1) only grabs empty bases.
+  if (SmallForce())
+  {
+   float smallNow = GetGame().GetWorld().GetWorldTime();
+   if (smallNow >= m_fNextSmallLog)
+   {
+    m_fNextSmallLog = smallNow + 60000;
+    PrintFormat("[ACR] 2IC %1: a small force (%2 squads): grabs of empty bases only", m_sFaction, ACR_SquadAI.CountFor(m_sFaction));
+   }
+   return;
   }
   if (PlanBudgetSpent()) return;
   ReinforceAttacks(free);
@@ -2293,7 +2313,10 @@ class ACR_AICommander : Managed
   int maxExtraAttacks = m_Doctrine.m_iExtraFronts;
   if (ACR_Base.s_All.Count() > 24) maxExtraAttacks = maxExtraAttacks * 2;
   maxAttacks += Math.Min(maxExtraAttacks, free.Count() / m_Doctrine.m_iSquadsPerFront);
-  if (attacks >= maxAttacks && !counterDue) return;
+  // "Take this base" (a player's request to the 2IC, #14 v1): the next attack goes for it.
+  ACR_Base requested = RequestedTarget();
+  if (requested && IsAttacking(requested)) requested = null;
+  if (attacks >= maxAttacks && !counterDue && !requested) return;
 
   // Target: a counterattack on a base just lost, otherwise the enemy base with
   // the lowest (defence x ratio) scaled by distance -- the best one we can
@@ -2310,6 +2333,7 @@ class ACR_AICommander : Managed
   array<ACR_Base> candidates = {};
   array<float> scores = {};
   if (counterDue) candidates.Insert(m_CounterTarget);
+  else if (requested) candidates.Insert(requested);
   else
   {
    foreach (ACR_Base base : ACR_Base.s_All)
@@ -2523,6 +2547,16 @@ class ACR_AICommander : Managed
   string kind = "attacking";
   if (attack.m_bCounter) { kind = "COUNTERATTACKING"; m_CounterTarget = null; }
   Say(string.Format("[ACR] AI %1: %2 %3 with %4 squad(s), strength %5/%6", m_sFaction, kind, target.m_sName, attack.m_Squads.Count(), strength, required));
+  if (attack.m_bCounter) TwoICReport(string.Format("Counterattacking %1 with %2", target.m_sName, SquadList(attack.m_Squads)));
+  else TwoICReport(string.Format("Attacking %1 with %2", target.m_sName, SquadList(attack.m_Squads)));
+  // "Take this base" (a player's request to the 2IC): its attack is out.
+  if (m_RequestedTarget && target == m_RequestedTarget)
+  {
+   m_RequestedTarget = null;
+   ACR_TwoICRequest asked = ACR_TwoICRequests.Find(m_iRequestedBy);
+   if (asked) asked.Set(ACR_ETwoICState.COMING, string.Format("attacking %1 with %2", target.m_sName, SquadList(attack.m_Squads)));
+   PrintFormat("[ACR] 2IC %1: attacking %2 as asked (request %3)", m_sFaction, target.m_sName, m_iRequestedBy);
+  }
   if (empty) return;
   string stagingAt;
   foreach (ACR_Squad staged : attack.m_Squads)
@@ -3371,6 +3405,12 @@ class ACR_AICommander : Managed
      m_StalledUntil.Set(target, GetGame().GetWorld().GetWorldTime() + STALLED_COOLDOWN * 1000);
     }
     if (target) Say(string.Format("[ACR] AI %1: attack on %2 %3", m_sFaction, target.m_sName, outcome));
+    string why = "it failed";
+    if (broken) why = "too many losses";
+    else if (stalled) why = "it stalled";
+    if (target && won) TwoICReport(string.Format("Took %1", target.m_sName));
+    else if (target && attack.m_bGrab) TwoICReport(string.Format("Couldn't take %1: %2", target.m_sName, why));
+    else if (target) TwoICReport(string.Format("Called off the attack on %1: %2", target.m_sName, why));
     foreach (ACR_Squad squad : attack.m_Squads)
     {
      if (broken) FallBack(squad, "attack called off");
@@ -5287,7 +5327,7 @@ class ACR_AICommander : Managed
    if (!other || !other.GetFaction() || other.GetFaction().GetFactionKey() != m_sFaction || !IsHolder(other) || !FitToHold(other)) continue;
    if (other.m_fOrderedAt < squad.m_fOrderedAt || (other.m_fOrderedAt == squad.m_fOrderedAt && !passed)) ahead++;
   }
-  return ahead < m_Doctrine.m_iHolders;
+  return ahead < HoldersCap();
  }
 
  protected bool FitToHold(ACR_Squad squad)
@@ -5299,7 +5339,7 @@ class ACR_AICommander : Managed
  // aside already), else with 'reserve' RP to spare as well.
  bool CanBuild(int cost, int reserve)
  {
-  if (BuildShare() > 0) return BuildBudget() >= cost;
+  if (SideShare() > 0) return BuildBudget() >= cost;
   // The 2IC (squads handed to the AI) builds only out of the budget, never from the side's RP,
   // which is the commanding player's (#14): with the share off it builds nothing.
   if (m_bHandedOnly) return false;
@@ -5867,7 +5907,7 @@ class ACR_AICommander : Managed
   {
    if (squad && squad.GetFaction() && squad.GetFaction().GetFactionKey() == m_sFaction && IsHolder(squad) && FitToHold(squad)) holding++;
   }
-  if (holding >= m_Doctrine.m_iHolders) return false;
+  if (holding >= HoldersCap()) return false;
   foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
   {
    if (fort.m_sFaction != m_sFaction || ManningSquad(fort) != null || ACR_Fortify.BeingBuilt(fort) || !AtFront(fort, fronts)) continue;
@@ -6208,6 +6248,431 @@ class ACR_AICommander : Managed
   m_bHandedOnly = false;
  }
 
+ // ---------------------------------------------------------------- the 2IC's map UI (#14 v1)
+ // A line in the side's 2IC channel (ACR_TwoIC), while this runs the 2IC's squads.
+ protected void TwoICReport(string text)
+ {
+  if (m_bHandedOnly) ACR_TwoIC.Report(m_sFaction, text);
+ }
+
+ // "Alpha 1", "Alpha 1 and Bravo 1", "3 squads".
+ protected static string SquadList(array<ACR_Squad> squads)
+ {
+  array<string> names = {};
+  foreach (ACR_Squad squad : squads)
+   if (squad) names.Insert(squad.GetName());
+  if (names.Count() == 1) return names[0];
+  if (names.Count() == 2) return names[0] + " and " + names[1];
+  return string.Format("%1 squads", names.Count());
+ }
+
+ // What the 2IC is doing, for its card: its grabs and attacks, then how many of its squads
+ // hold, build, refit and wait. The first three, then "+N more".
+ string TwoICDoing()
+ {
+  array<string> parts = {};
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   if (!attack.m_Target) continue;
+   array<ACR_Squad> mine = {};
+   foreach (ACR_Squad member : attack.m_Squads)
+    if (member && member.m_bAICommanded) mine.Insert(member);
+   if (mine.IsEmpty()) continue;
+   string kind = "attacking";
+   if (attack.m_bGrab) kind = "taking";
+   else if (attack.m_bFobRaid) kind = "raiding";
+   else if (attack.m_bCounter) kind = "counterattacking";
+   parts.Insert(string.Format("%1 %2 (%3)", kind, attack.m_Target.m_sName, SquadList(mine)));
+  }
+  int holding, building, refitting, waiting;
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad || !squad.m_bAICommanded || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   int task = squad.m_iAITask;
+   if (task == ACR_EAITask.DEFEND) holding++;
+   else if (task == ACR_EAITask.BUILD_FOB || task == ACR_EAITask.ROADBLOCK || task == ACR_EAITask.MINES || task == ACR_EAITask.FORTIFY) building++;
+   else if (task == ACR_EAITask.RESUPPLY || m_Refitting.Contains(squad)) refitting++;
+   else if (task == ACR_EAITask.FREE || task == ACR_EAITask.POSTED) waiting++;
+  }
+  if (holding > 0) parts.Insert(string.Format("%1 holding", holding));
+  if (building > 0) parts.Insert(string.Format("%1 building", building));
+  if (refitting > 0) parts.Insert(string.Format("%1 refitting", refitting));
+  if (waiting > 0) parts.Insert(string.Format("%1 in reserve", waiting));
+  if (parts.IsEmpty()) return "nothing yet";
+  string doing = parts[0];
+  for (int i = 1; i < parts.Count() && i < 3; i++) doing += ", " + parts[i];
+  if (parts.Count() > 3) doing += string.Format(", +%1 more", parts.Count() - 3);
+  return doing;
+ }
+
+ // A 2IC with fewer than ACR_TwoIC.SMALL_FORCE squads: it only grabs empty bases, and holds with at
+ // most half its force.
+ protected float m_fNextSmallLog;
+ bool SmallForce()
+ {
+  return m_bHandedOnly && ACR_TwoIC.On() && ACR_TwoIC.SmallForce(m_sFaction);
+ }
+
+ // The most squads that stay on what they built: the doctrine's m_iHolders, a small force's half.
+ protected int HoldersCap()
+ {
+  if (!SmallForce()) return m_Doctrine.m_iHolders;
+  return Math.Min(m_Doctrine.m_iHolders, ACR_SquadAI.CountFor(m_sFaction) / 2);
+ }
+
+ bool SmallForceForTest()
+ {
+  bool handed = m_bHandedOnly;
+  m_bHandedOnly = true;
+  bool small = SmallForce();
+  m_bHandedOnly = handed;
+  return small;
+ }
+
+ int HoldersCapForTest()
+ {
+  bool handed = m_bHandedOnly;
+  m_bHandedOnly = true;
+  int cap = HoldersCap();
+  m_bHandedOnly = handed;
+  return cap;
+ }
+
+ // What a squad of the 2IC's is doing, for its panel: "taking Morton", "holding Lamentin", ...
+ string TaskText(ACR_Squad squad)
+ {
+  if (!squad) return "";
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   if (!attack.m_Target || !attack.m_Squads.Contains(squad)) continue;
+   if (attack.m_bGrab) return "taking " + attack.m_Target.m_sName;
+   if (attack.m_bFobRaid) return "raiding " + attack.m_Target.m_sName;
+   if (attack.m_bCounter) return "counterattacking " + attack.m_Target.m_sName;
+   return "attacking " + attack.m_Target.m_sName;
+  }
+  string at = "";
+  if (squad.m_AITarget) at = " " + squad.m_AITarget.m_sName;
+  int task = squad.m_iAITask;
+  if (task == ACR_EAITask.DEFEND) return "holding" + at;
+  if (task == ACR_EAITask.POSTED) return "posted" + at;
+  if (task == ACR_EAITask.RESUPPLY || m_Refitting.Contains(squad)) return "refitting";
+  if (task == ACR_EAITask.BUILD_FOB) return "building a FOB";
+  if (task == ACR_EAITask.ROADBLOCK) return "on a roadblock";
+  if (task == ACR_EAITask.MINES) return "laying mines";
+  if (task == ACR_EAITask.FORTIFY) return "digging in";
+  if (task == ACR_EAITask.ATTACK) return "attacking" + at;
+  return "in reserve";
+ }
+
+ // ---------------------------------------------------------------- the 2IC's requests (#14 v1)
+ // A player's "Ask the 2IC" (ACR_TwoICRequests), answered each second ahead of the 2IC's own
+ // plans: Support me here and Hold this send the nearest free squad (a small force takes one off a
+ // grab: requests first), which stays on it (AssignDefenders leaves it) until the support runs out
+ // or the hold is released; Take this base grabs an empty base at once and makes an enemy one the
+ // next attack's target.
+ static const float REQUEST_REACH = 2500;   // m: the farthest a squad is sent to support or hold
+ static const float SUPPORT_MS = 600000;    // a support stays 10 min once there
+ static const float ARRIVED = 60;           // m from the spot: there
+ protected ref map<ACR_Squad, int> m_OnRequest = new map<ACR_Squad, int>(); // squad -> request id
+ protected ACR_Base m_RequestedTarget;
+ protected int m_iRequestedBy;
+
+ bool OnRequest(ACR_Squad squad)
+ {
+  return squad && m_OnRequest.Contains(squad);
+ }
+
+ // "Take this base" for an enemy base, while it stands.
+ ACR_Base RequestedTarget()
+ {
+  if (m_RequestedTarget && (m_RequestedTarget.m_bRetired || m_RequestedTarget.m_sOwner == m_sFaction)) m_RequestedTarget = null;
+  return m_RequestedTarget;
+ }
+
+ void AnswerTwoIC(ACR_TwoICRequest r)
+ {
+  bool handed = m_bHandedOnly;
+  m_bHandedOnly = true;
+  AnswerRequest(r);
+  m_bHandedOnly = handed;
+ }
+
+ protected void AnswerRequest(ACR_TwoICRequest r)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  // Its squad is gone (lost, or a player took it back): another one, or why not.
+  if (!r.m_sSquad.IsEmpty() && (!r.m_Squad || !m_Manager.m_Squads.Contains(r.m_Squad) || !r.m_Squad.m_bAICommanded || r.m_Squad.CountAlive() == 0))
+  {
+   string lost = r.m_sSquad;
+   EndTwoICRequest(r);
+   r.Set(ACR_ETwoICState.WAITING, lost + " can't any more: finding another");
+  }
+  int state = r.m_iState;
+  if (state == ACR_ETwoICState.WAITING || (state == ACR_ETwoICState.CANT && r.m_bQueued && now >= r.m_fNextTry))
+  {
+   TryRequest(r);
+   if (r.m_iState == ACR_ETwoICState.CANT)
+   {
+    r.m_fNextTry = now + ACR_TwoICRequests.RETRY_MS;
+    if (!r.m_bQueued && r.m_fUntil <= 0) r.m_fUntil = now + ACR_TwoICRequests.DROP_MS;
+   }
+   return;
+  }
+  if (r.m_iKind == ACR_ETwoICAsk.TAKE)
+  {
+   if (!r.m_Base) return;
+   if (r.m_Base.m_sOwner == m_sFaction)
+   {
+    EndTwoICRequest(r);
+    r.Set(ACR_ETwoICState.DONE, "took " + r.m_Base.m_sName);
+    return;
+   }
+   // The grab or the attack ended without it.
+   if (state == ACR_ETwoICState.COMING && !IsAttacking(r.m_Base) && RequestedTarget() != r.m_Base)
+   {
+    EndTwoICRequest(r);
+    r.Set(ACR_ETwoICState.CANT, "the attack on " + r.m_Base.m_sName + " didn't take it");
+    r.m_fNextTry = now + ACR_TwoICRequests.RETRY_MS;
+    if (!r.m_bQueued) r.m_fUntil = now + ACR_TwoICRequests.DROP_MS;
+   }
+   return;
+  }
+  if (state == ACR_ETwoICState.COMING && r.m_Squad && vector.DistanceXZ(PositionOf(r.m_Squad), r.m_vPos) <= ARRIVED)
+  {
+   if (r.m_iKind == ACR_ETwoICAsk.HOLD) r.Set(ACR_ETwoICState.HOLDING, string.Format("%1 holds %2 until you release it", r.m_sSquad, r.m_sPlace));
+   else
+   {
+    r.m_fUntil = now + SUPPORT_MS;
+    r.Set(ACR_ETwoICState.SUPPORTING, string.Format("%1 supports you at %2 for 10 min", r.m_sSquad, r.m_sPlace));
+   }
+   return;
+  }
+  if (state == ACR_ETwoICState.SUPPORTING && now >= r.m_fUntil)
+  {
+   string done = r.m_sSquad;
+   EndTwoICRequest(r);
+   r.Set(ACR_ETwoICState.DONE, done + " is done supporting and free again");
+  }
+ }
+
+ protected void TryRequest(ACR_TwoICRequest r)
+ {
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  if (mine.IsEmpty())
+  {
+   r.Set(ACR_ETwoICState.CANT, "I have no squads: every squad of ours is a player's");
+   return;
+  }
+  if (r.m_iKind == ACR_ETwoICAsk.TAKE)
+  {
+   TryTake(r, mine);
+   return;
+  }
+  ACR_Squad squad = RequestSquad(mine, r.m_vPos);
+  if (!squad)
+  {
+   r.Set(ACR_ETwoICState.CANT, string.Format("none of my %1 squads is free (%2)", mine.Count(), BusyList(mine)));
+   return;
+  }
+  int dist = (int)vector.DistanceXZ(PositionOf(squad), r.m_vPos);
+  if (dist > REQUEST_REACH)
+  {
+   r.Set(ACR_ETwoICState.CANT, string.Format("my nearest free squad, %1, is %2 m away", squad.GetName(), dist));
+   return;
+  }
+  string from = ACR_TwoIC.Where(squad);
+  Forget(squad);
+  squad.m_iAITask = ACR_EAITask.DEFEND;
+  squad.m_AITarget = null;
+  if (r.m_iKind == ACR_ETwoICAsk.HOLD) squad.SetMode(ACR_EMoveMode.COMBAT);
+  else squad.SetMode(ACR_EMoveMode.FAST);
+  Travel(squad, r.m_vPos, true, 0);
+  m_OnRequest.Set(squad, r.m_iId);
+  r.m_Squad = squad;
+  r.m_sSquad = squad.GetName();
+  r.m_fUntil = 0;
+  r.Set(ACR_ETwoICState.COMING, string.Format("%1, %2", squad.GetName(), from));
+  PrintFormat("[ACR] 2IC %1: %2 answers request %3 (%4 m)", m_sFaction, squad.GetName(), r.m_iId, dist);
+ }
+
+ protected void TryTake(ACR_TwoICRequest r, array<ACR_Squad> mine)
+ {
+  ACR_Base base = r.m_Base;
+  if (!base || base.m_bRetired)
+  {
+   r.Set(ACR_ETwoICState.DONE, "there's no base there any more");
+   return;
+  }
+  if (base.m_sOwner == m_sFaction)
+  {
+   r.Set(ACR_ETwoICState.DONE, base.m_sName + " is ours");
+   return;
+  }
+  if (IsAttacking(base))
+  {
+   r.Set(ACR_ETwoICState.COMING, "already attacking " + base.m_sName);
+   return;
+  }
+  if (base.m_sOwner.IsEmpty())
+  {
+   ACR_Squad runner = RequestSquad(mine, base.GetOrigin());
+   if (!runner)
+   {
+    r.Set(ACR_ETwoICState.CANT, string.Format("none of my %1 squads is free to take %2 (%3)", mine.Count(), base.m_sName, BusyList(mine)));
+    return;
+   }
+   int dist = (int)vector.DistanceXZ(PositionOf(runner), base.GetOrigin());
+   RequestGrab(runner, base);
+   r.m_Squad = runner;
+   r.m_sSquad = runner.GetName();
+   r.m_fUntil = 0;
+   r.Set(ACR_ETwoICState.COMING, string.Format("%1 is going to take %2 (%3 m away)", runner.GetName(), base.m_sName, dist));
+   return;
+  }
+  if (SmallForce())
+  {
+   r.Set(ACR_ETwoICState.CANT, string.Format("with %1 squads I only take empty bases, not %2", ACR_SquadAI.CountFor(m_sFaction), base.m_sName));
+   return;
+  }
+  float need = AttackNeed(base) * Pressure();
+  array<ACR_Squad> free = {};
+  MySquads(free, true);
+  int available;
+  foreach (ACR_Squad counted : free) available += counted.Strength();
+  m_RequestedTarget = base;
+  m_iRequestedBy = r.m_iId;
+  r.m_fUntil = 0;
+  if (available >= need) r.Set(ACR_ETwoICState.COMING, string.Format("going for %1 with my free squads (strength %2 of the %3 it needs)", base.m_sName, available, (int)need));
+  else r.Set(ACR_ETwoICState.CANT, string.Format("not yet: I have %1 of the %2 strength it needs free", available, (int)need));
+ }
+
+ // A request ends (done, cancelled, released, its squad lost): its squad goes back to the 2IC's
+ // own plans; a grab made for it is called off; an attack target it set is dropped.
+ void EndTwoICRequest(ACR_TwoICRequest r)
+ {
+  if (m_iRequestedBy == r.m_iId)
+  {
+   m_RequestedTarget = null;
+   m_iRequestedBy = 0;
+  }
+  ACR_Squad squad = r.m_Squad;
+  r.m_Squad = null;
+  r.m_sSquad = "";
+  if (!squad) return;
+  int id;
+  if (m_OnRequest.Find(squad, id) && id == r.m_iId)
+  {
+   m_OnRequest.Remove(squad);
+   if (squad.m_iAITask == ACR_EAITask.DEFEND && !squad.m_AITarget) squad.m_iAITask = ACR_EAITask.FREE;
+  }
+  if (r.m_iKind == ACR_ETwoICAsk.TAKE && r.m_Base && r.m_Base.m_sOwner != m_sFaction && OnGrab(squad))
+  {
+   Forget(squad);
+   squad.m_iAITask = ACR_EAITask.FREE;
+  }
+ }
+
+ // The nearest squad of ours free to answer: a fighting squad that isn't holding what it built,
+ // on another request or falling back; a small force takes one off a grab too (requests first).
+ protected ACR_Squad RequestSquad(array<ACR_Squad> mine, vector pos)
+ {
+  bool small = SmallForce();
+  ACR_Squad best;
+  float bestDistance = float.MAX;
+  foreach (ACR_Squad squad : mine)
+  {
+   if (!squad.IsCombatUnit() || IsSupportTeam(squad) || OnRequest(squad) || IsHolder(squad) || IsRetreating(squad)) continue;
+   bool free = squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED;
+   if (!free && !(small && squad.m_iAITask == ACR_EAITask.ATTACK && OnGrab(squad))) continue;
+   float d = vector.DistanceXZ(PositionOf(squad), pos);
+   if (d >= bestDistance) continue;
+   bestDistance = d;
+   best = squad;
+  }
+  return best;
+ }
+
+ protected bool OnGrab(ACR_Squad squad)
+ {
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   if (attack.m_bGrab && attack.m_Squads.Contains(squad)) return true;
+  }
+  return false;
+ }
+
+ // What the squads are busy with, for a "none free" answer.
+ protected string BusyList(array<ACR_Squad> mine)
+ {
+  int attacking, defending, holding, requests, support, other;
+  foreach (ACR_Squad squad : mine)
+  {
+   if (OnRequest(squad)) requests++;
+   else if (IsHolder(squad)) holding++;
+   else if (IsSupportTeam(squad) || !squad.IsCombatUnit()) support++;
+   else if (squad.m_iAITask == ACR_EAITask.ATTACK) attacking++;
+   else if (squad.m_iAITask == ACR_EAITask.DEFEND) defending++;
+   else other++;
+  }
+  string list = "";
+  if (attacking > 0) list += string.Format(", %1 attacking", attacking);
+  if (defending > 0) list += string.Format(", %1 defending", defending);
+  if (holding > 0) list += string.Format(", %1 holding what they built", holding);
+  if (requests > 0) list += string.Format(", %1 on requests", requests);
+  if (support > 0) list += string.Format(", %1 support teams", support);
+  if (other > 0) list += string.Format(", %1 busy otherwise", other);
+  if (list.IsEmpty()) return "all busy";
+  return list.Substring(2, list.Length() - 2);
+ }
+
+ // A grab of an empty base by this squad, as AssignAttacks makes one.
+ protected void RequestGrab(ACR_Squad runner, ACR_Base empty)
+ {
+  Forget(runner);
+  ACR_AIAttack grab = new ACR_AIAttack();
+  grab.m_Target = empty;
+  grab.m_bGrab = true;
+  grab.m_bAssaulting = true;
+  grab.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
+  grab.Add(runner, empty.GetOrigin(), -1);
+  grab.m_iStartStrength = runner.Strength();
+  grab.m_fGrabSeconds = vector.DistanceXZ(PositionOf(runner), empty.GetOrigin()) / 1.2 + 180;
+  if (runner.IsMounted()) grab.m_fGrabSeconds = Math.Min(600, grab.m_fGrabSeconds);
+  runner.m_iAITask = ACR_EAITask.ATTACK;
+  runner.m_AITarget = empty;
+  runner.SetMode(ACR_EMoveMode.FAST);
+  Travel(runner, empty.GetOrigin(), false, 100);
+  m_Attacks.Insert(grab);
+  PrintFormat("[ACR] 2IC %1: %2 grabs %3 as asked", m_sFaction, runner.GetName(), empty.m_sName);
+ }
+
+ // The scored FOB sites behind 'front' (2IC suggestions and Establish FOB, ACR_TwoICSuggest), as
+ // FindFobSiteStep searches them: 'most' more validated; true when the search is complete.
+ bool TwoICFobSites(ACR_Base front, int most, notnull array<ref ACR_FobSite> sites)
+ {
+  if (!front) return true;
+  ACR_Base deployBase = NearestDeployBase(front);
+  vector dir = Vector(0, 0, -1);
+  if (deployBase)
+  {
+   vector toDeploy = deployBase.GetOrigin() - front.GetOrigin();
+   toDeploy[1] = 0;
+   if (toDeploy.LengthSq() > 0.001)
+   {
+    toDeploy.Normalize();
+    dir = toDeploy;
+   }
+  }
+  string none;
+  return ACR_FobSiting.Step(m_sFaction, front, dir, NearestEnemyBaseTo(front), most, sites, none);
+ }
+
+ bool IsAttackingForTest(ACR_Base base)
+ {
+  return IsAttacking(base);
+ }
+
  bool CanBuildHandedForTest(int cost, int reserve)
  {
   m_bHandedOnly = true;
@@ -6219,6 +6684,7 @@ class ACR_AICommander : Managed
  // A squad given back to its player: out of every plan of ours.
  void Forget(ACR_Squad squad)
  {
+  m_OnRequest.Remove(squad);
   foreach (ACR_AIAttack attack : m_Attacks)
   {
    int index = attack.m_Squads.Find(squad);

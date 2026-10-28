@@ -478,6 +478,14 @@ class ACR_CommandPanel : Managed
   }
  }
 
+ // The intel feed's top (the 2IC card moves it down, ACR_TwoICView).
+ void SetFeedTop(float y)
+ {
+  if (m_FeedRoot) FrameSlot.SetPos(m_FeedRoot, 110, y);
+ }
+
+ Widget DebugRoot() { return m_DebugRoot; }
+
  protected TextWidget AddText(Widget parent, ResourceName layout, string text)
  {
   TextWidget widget = TextWidget.Cast(GetGame().GetWorkspace().CreateWidgets(layout, parent));
