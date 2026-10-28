@@ -1,5 +1,5 @@
 // AI commander doctrines (ACR_AIDoctrine, 24 Oct), run from srv:regress at tick 4: the pick
-// follows option > faction settings > test default > random, the standard doctrine keeps the
+// follows option > company > faction settings > test default > Balanced, the standard doctrine keeps the
 // commander's old numbers, and a new commander takes its side's pick. Pass 2: the support
 // budget follows the doctrine, reviews pick the right doctrine, and discovery (ACR_DoctrineIntel)
 // goes hint > confirmed > out of date > noticed.
@@ -88,6 +88,8 @@ class ACR_TestDoctrine
   }
   else ACR_TestRegress.Skip("doctrine: the faction's m_eAIDoctrine applies when no option is set", "no settings for " + west);
 
+  CheckCompanies(manager, west);
+
   string row = ACR_Setup.ValueName("doctrineeast", "fortress");
   bool rows = ACR_Setup.Rows().Contains("doctrinewest\tBlue AI doctrine") && ACR_Setup.Option("doctrineeast") == "acrDoctrineEast" && row.StartsWith("Fortress");
   ACR_TestRegress.Check("doctrine: setup screen rows for both sides", rows, row);
@@ -125,6 +127,67 @@ class ACR_TestDoctrine
   bool holds = first == "" && early.Contains("held") && swapBack.Contains("same reason") && chaseBack.Contains("same reason") && otherReason == "" && elsewhere == "";
   ACR_TestRegress.Check("doctrine: a change is held 30 min and never swaps straight back for the same reason", holds,
    string.Format("first [%1] early [%2] swap [%3] chase [%4] other [%5] elsewhere [%6]", first, early, swapBack, chaseBack, otherReason, elsewhere));
+
+  // Away from its home style (#29's game: home Fortress, changed to Firepower for losing ground):
+  // it keeps the change while losing ground or bleeding, then goes back; winning or at a known
+  // enemy's counter it stays; at home it adapts as before. Going home is a reason of its own: held
+  // 30 min like any change, never "the same reason", and it waits HomeDriftMin first.
+  string stillLosing = ACR_AICommander.PickDoctrine("firepower", "", 0, 3, 10, 10, why, "fortress");
+  string stillBleeding = ACR_AICommander.PickDoctrine("firepower", "", 1, 1, 20, 8, why, "fortress");
+  string over = ACR_AICommander.PickDoctrine("firepower", "", 1, 1, 6, 6, why, "fortress");
+  string overWhy = why;
+  string stuckAway = ACR_AICommander.PickDoctrine("blitz", "", 0, 0, 4, 4, why, "balanced");
+  string winningAway = ACR_AICommander.PickDoctrine("firepower", "", 3, 0, 5, 20, why, "fortress");
+  string atCounter = ACR_AICommander.PickDoctrine("firepower", "fortress", 1, 1, 6, 6, why, "fortress");
+  string fromHome = ACR_AICommander.PickDoctrine("fortress", "", 1, 3, 10, 10, why, "fortress");
+  bool home = stillLosing == "" && stillBleeding == "" && over == "fortress" && overWhy == ACR_AICommander.WHY_HOME;
+  home = home && stuckAway == "balanced" && winningAway == "" && atCounter == "" && fromHome == "firepower";
+  string homeEarly = ACR_AICommander.DoctrineChangeBlocked("fortress", ACR_AICommander.WHY_HOME, 20, "fortress", "losing ground");
+  string homeHeld = ACR_AICommander.DoctrineChangeBlocked("fortress", ACR_AICommander.WHY_HOME, 35, "fortress", "losing ground");
+  string driftWait = ACR_AICommander.HomeDriftBlocked(35, 40);
+  string driftDone = ACR_AICommander.HomeDriftBlocked(41, 40);
+  home = home && homeEarly.Contains("held") && homeHeld == "" && driftWait.Contains("home style") && driftDone == "";
+  ACR_TestRegress.Check("doctrine: a changed doctrine keeps the change while in trouble, then goes back to its home style after the hold", home,
+   string.Format("losing [%1] bleeding [%2] over %3 (%4) stuck %5 winning [%6] at the counter [%7] from home %8; hold [%9]", stillLosing, stillBleeding, over, overWhy, stuckAway, winningAway, atCounter, fromHome, homeEarly) + string.Format(" held 35 [%1] drift [%2] / [%3]", homeHeld, driftWait, driftDone));
+ }
+
+ // #38: the doctrine row's default follows the side's company (Combat Engineers Fortress,
+ // Mechanized Blitz, Fire Support Firepower, Recon Raider), a doctrine picked on the row overrides
+ // it, the row says which, and a new commander fights to its company's doctrine.
+ protected static void CheckCompanies(ACR_Manager manager, string west)
+ {
+  ACR_Options.Unset("acrDoctrineWest");
+  array<string> companies = {"engineers", "mechanized", "weapons", "recon"};
+  array<string> styles = {"fortress", "blitz", "firepower", "raider"};
+  bool follows = true;
+  string picks = "";
+  for (int i = 0; i < companies.Count(); i++)
+  {
+   ACR_Options.Set("acrCompanyWest", companies[i]);
+   string companySource;
+   ACR_AIDoctrine followed = ACR_AIDoctrine.Choose(west, companySource);
+   picks += string.Format("%1 %2 (%3); ", companies[i], followed.m_sKey, companySource);
+   if (followed.m_sKey != styles[i] || !companySource.StartsWith("follows its company")) follows = false;
+  }
+  ACR_Options.Set("acrCompanyWest", "engineers");
+  string row = ACR_Setup.ValueName("doctrinewest", "");
+  string about = ACR_Setup.About("doctrinewest");
+  string companyRow = ACR_Setup.ValueName("companywest", "engineers");
+  ACR_AICommander made = new ACR_AICommander(manager, west);
+  float drift = made.HomeDriftMin();
+  bool home = made.Doctrine() && made.Doctrine().m_sKey == "fortress" && made.HomeDoctrine() == "fortress";
+  home = home && drift >= ACR_AICommander.DOCTRINE_HOLD_MIN && drift <= ACR_AICommander.DOCTRINE_HOLD_MIN + 2 * ACR_AICommander.HOME_DRIFT_EXTRA_MIN;
+  ACR_Options.Set("acrDoctrineWest", "blitz");
+  string overSource;
+  ACR_AIDoctrine over = ACR_AIDoctrine.Choose(west, overSource);
+  bool overrides = over.m_sKey == "blitz" && overSource == "screen";
+  ACR_Options.Unset("acrDoctrineWest");
+  ACR_Options.Unset("acrCompanyWest");
+  string rifleRow = ACR_Setup.ValueName("doctrinewest", "");
+  bool rows = row == "follows company (Fortress)" && (rifleRow == "follows company (Balanced)" || rifleRow.StartsWith("scenario's choice"));
+  rows = rows && about.StartsWith("Blue: Fortress: ") && companyRow == "Combat Engineers" && ACR_Setup.Rows().Contains("aboutdoctrinewest\tBlue: ");
+  ACR_TestRegress.Check("doctrine: the AI doctrine follows the side's company unless the doctrine row picks one", follows && home && overrides && rows,
+   picks + string.Format("commander and home %1 (drift home after %2 min); row overrides %3 (%4, %5); rows '%6' / '%7', '%8'", home, drift, overrides, over.m_sKey, overSource, row, rifleRow, companyRow) + string.Format(", under the rows '%1'", about));
  }
 
  protected static void CheckDiscovery(ACR_Manager manager)

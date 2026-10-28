@@ -5,7 +5,7 @@
 // Start applies them (threat high reaches the game, starting units spawn).
 class ACR_TestSetup
 {
- static const int CHECKS = 24;
+ static const int CHECKS = 25;
  protected static int s_iStartedAt = -1;
 
  static bool Wanted() { return System.IsCLIParam("acrSetupTest"); }
@@ -43,6 +43,44 @@ class ACR_TestSetup
    foreach (int tabCount : tabRows) { if (tabCount > largest) largest = tabCount; counts += tabCount.ToString() + " "; }
    float used = (perPage + 2) * ACR_SetupDialog.ROW_HEIGHT + ACR_SetupDialog.CHROME;
    ACR_TestRegress.Check("setup: every tab fits one page of a 1080p screen", perPage >= 10 && used <= 1080 && largest <= perPage, string.Format("rows per tab %1, %2 a page (%3 of 1080 used)", counts, perPage, used));
+   // Every row fits its button at 1080p at every value it can show, and every line under the rows
+   // (each company's and doctrine's, both sides) fits too (pn10b, 26 Oct: the company and doctrine
+   // rows ran past theirs).
+   int rowsChecked = 0;
+   int tooLong = 0;
+   string longestRow = "";
+   string overLong = "";
+   foreach (string rowLine : lines)
+   {
+    array<string> rowParts = {};
+    rowLine.Split("\t", rowParts, false);
+    if (rowParts.Count() < 2 || rowParts[0] == "map" || rowParts[0] == "undo") continue;
+    array<string> shownTexts = {};
+    if (rowParts[0].StartsWith("about")) shownTexts.Insert(rowParts[1]);
+    else
+    {
+     array<string> shownValues = ACR_Setup.Values(rowParts[0]);
+     shownValues.Insert(ACR_Setup.Current(rowParts[0]));
+     foreach (string rowValue : shownValues) shownTexts.Insert(ACR_Setup.Label(rowParts[0]) + ": " + ACR_Setup.ValueName(rowParts[0], rowValue));
+    }
+    if (rowParts[0] == "aboutcompanywest")
+    {
+     array<string> companyKeys = {"", "mechanized", "weapons", "engineers", "recon"};
+     foreach (string companyKey : companyKeys) shownTexts.Insert("Blue: " + ACR_DoctrineKits.CompanySummary(companyKey));
+     foreach (ACR_AIDoctrine eachDoctrine : ACR_AIDoctrine.All()) shownTexts.Insert("Blue: " + eachDoctrine.m_sName + ": " + eachDoctrine.m_sBrief);
+    }
+    foreach (string rowText : shownTexts)
+    {
+     rowsChecked++;
+     if (rowText.Length() > longestRow.Length()) longestRow = rowText;
+     if (rowText.Length() > ACR_Setup.ROW_CHARS)
+     {
+      tooLong++;
+      overLong += rowText + " | ";
+     }
+    }
+   }
+   ACR_TestRegress.Check("setup: every row fits its button at every value", rowsChecked > 50 && tooLong == 0, string.Format("%1 rows checked, %2 over %3 characters: %4longest '%5' (%6)", rowsChecked, tooLong, ACR_Setup.ROW_CHARS, overLong, longestRow, longestRow.Length()));
    ACR_TestRegress.Check("setup: the map preview is on the first tab with the battlefield", ACR_SetupDialog.Tab("map") == 0 && ACR_SetupDialog.Tab("seed") == 0 && ACR_SetupDialog.Tab("layout") == 0 && rows.Contains("map\t") && rows.IndexOf("map\t") < rows.IndexOf("pockets\t"), "");
    ACR_MissionHeader logisticsHeader = new ACR_MissionHeader();
    logisticsHeader.m_sAcrDeployment = "military";

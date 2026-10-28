@@ -225,9 +225,36 @@ class ACR_Setup
     continue;
    }
    rows += key + "\t" + Label(key) + ": " + ValueName(key, Current(key)) + "\n";
+   // The company and doctrine rows show a name; what it means goes on a line under the tab's rows
+   // (pn10b, 26 Oct: in the rows, the descriptions ran past the buttons).
+   if (key == "companywest" || key == "companyeast" || key == "doctrinewest" || key == "doctrineeast") rows += "about" + key + "\t" + About(key) + "\n";
   }
   return rows;
  }
+
+ // The line under the tab's rows for a company or doctrine row: "Blue: Combat Engineers: two tier I
+ // positions at its front", "Red: Fortress: holds in depth, counterattacks lost bases".
+ static string About(string key)
+ {
+  string side = "Blue: ";
+  string faction = ACR_FactionSelection.West();
+  if (key == "companyeast" || key == "doctrineeast")
+  {
+   side = "Red: ";
+   faction = ACR_FactionSelection.East();
+  }
+  if (key == "companywest" || key == "companyeast") return side + ACR_DoctrineKits.CompanySummary(ACR_DoctrineKits.CompanyOf(faction));
+  string value = Current(key);
+  if (value == ACR_AIDoctrine.RANDOM) return side + "a random doctrine each match";
+  ACR_AIDoctrine doctrine = ACR_AIDoctrine.Find(value);
+  if (!doctrine) doctrine = ACR_AIDoctrine.Find(ACR_AIDoctrine.FollowedKey(faction));
+  return side + doctrine.m_sName + ": " + doctrine.m_sBrief;
+ }
+
+ // A row's text ("Label: value") fits its button at 1080p in this many characters (pn10b, 26 Oct:
+ // "Blue AI doctrine: Fortress: defends in depth behind manned roadblocks, ..." was cut off at
+ // about 70); srv:setup checks every row at every value.
+ static const int ROW_CHARS = 60;
 
  static string Label(string key)
  {
@@ -424,8 +451,9 @@ class ACR_Setup
    if (key == "rpservice") return "3 RP per serviced soldier (scenario default)";
    if (key == "seed") return "random (click to roll one)";
    if (key == "pricing" || key == "ai") return "scenario's choice";
-   if (key == "doctrinewest" || key == "doctrineeast") return "scenario's choice (random unless it sets one)";
-   if (key == "companywest" || key == "companyeast") return ACR_DoctrineKits.CompanySummary("rifle");
+   if (key == "doctrinewest") return ACR_AIDoctrine.FollowsRow(ACR_FactionSelection.West());
+   if (key == "doctrineeast") return ACR_AIDoctrine.FollowsRow(ACR_FactionSelection.East());
+   if (key == "companywest" || key == "companyeast") return ACR_DoctrineKits.CompanyName("rifle");
    return "scenario default";
   }
   if (key == "layout")
@@ -453,9 +481,9 @@ class ACR_Setup
   {
    ACR_AIDoctrine doctrine = ACR_AIDoctrine.Find(value);
    if (!doctrine) return "random each match";
-   return doctrine.m_sName + ": " + doctrine.m_sSummary;
+   return doctrine.m_sName;
   }
-  if (key == "companywest" || key == "companyeast") return ACR_DoctrineKits.CompanySummary(value);
+  if (key == "companywest" || key == "companyeast") return ACR_DoctrineKits.CompanyName(value);
   if (key == "income") return "x" + value;
   if (key == "pockets" && value == "few") return "a few pockets (whole/half map)";
   if (key == "pockets" && value == "many") return "many pockets (whole/half map)";
@@ -830,6 +858,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
 {
  static const ResourceName PRESETS = "{AC230926A00100F0}Configs/ACR_Dialogs.conf";
  protected static const ResourceName LAYOUT_BUTTON = "{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout";
+ protected static const ResourceName LAYOUT_TEXT = "{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout";
  protected ref map<SCR_ButtonBaseComponent, string> m_Keys = new map<SCR_ButtonBaseComponent, string>();
  protected Widget m_wTabs;
  protected Widget m_wRows;
@@ -875,6 +904,8 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  // The tab a row belongs to; rows nobody sorted yet land on the first tab, where they are seen.
  static int Tab(string key)
  {
+  // A row's description line goes with its row.
+  if (key.StartsWith("about")) return Tab(key.Substring(5, key.Length() - 5));
   if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "holdguns" || key == "declutter" || key == "aibuild" || key == "capscale") return 1;
   if (key == "pricing" || key == "startrp" || key == "income" || key == "companywest" || key == "companyeast") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
@@ -936,11 +967,18 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   rows.Split("\n", lines, true);
   array<string> keys = {};
   array<string> texts = {};
+  array<string> abouts = {};
   foreach (string line : lines)
   {
    array<string> parts = {};
    line.Split("\t", parts, false);
    if (parts.Count() < 2 || Tab(parts[0]) != m_iTab) continue;
+   // A description line, shown under the rows (not a button).
+   if (parts[0].StartsWith("about"))
+   {
+    abouts.Insert(parts[1]);
+    continue;
+   }
    keys.Insert(parts[0]);
    texts.Insert(parts[1]);
   }
@@ -951,6 +989,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   if (m_iPage >= m_iPages) m_iPage = m_iPages - 1;
   int first = m_iPage * perPage;
   for (int i = first; i < keys.Count() && i < first + perPage; i++) AddButton(m_wRows, keys[i], texts[i]);
+  foreach (string about : abouts) AddText(m_wRows, about);
   if (m_iPages > 1)
   {
    string more = string.Format("More settings (page %1 of %2)...", m_iPage + 1, m_iPages);
@@ -971,6 +1010,14 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  {
   foreach (SCR_ButtonBaseComponent button, string shown : m_Keys) if (shown == key) return true;
   return false;
+ }
+
+ protected void AddText(Widget parent, string text)
+ {
+  TextWidget widget = TextWidget.Cast(GetGame().GetWorkspace().CreateWidgets(LAYOUT_TEXT, parent));
+  if (!widget) return;
+  AlignableSlot.SetPadding(widget, 8, 4, 2, 0);
+  widget.SetText(text);
  }
 
  protected SCR_ButtonTextComponent AddButton(Widget parent, string key, string text, bool fill = false)
