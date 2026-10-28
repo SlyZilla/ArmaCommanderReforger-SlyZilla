@@ -370,6 +370,64 @@ class ACR_Manager : Managed
    m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption(), m_SharedCommand);
  }
 
+ // Bigger battlefields (host option -acrCapScale 1, off by default): every side's AI squad cap
+ // and the soldier soft cap grow with the map, by its bases (CAP_SCALE_BASES or fewer: x1) or
+ // their spread (CAP_SCALE_SPREAD or less: x1), whichever says more, up to CAP_SCALE_MAX; the
+ // soldier cap is never scaled past CAP_SCALE_SOLDIERS (a host's higher cap stays). Resolved
+ // once, at the first tick after setup (the bases are all known then), after the threat level;
+ // the active-AI limit is raised again to match.
+ static const int CAP_SCALE_BASES = 12;
+ static const float CAP_SCALE_SPREAD = 5000;
+ static const float CAP_SCALE_MAX = 2;
+ static const int CAP_SCALE_SOLDIERS = 250;
+ protected bool m_bCapsScaled;
+ float m_fCapScale = 1; // the factor it resolved (tests read it)
+ void ScaleCapsToMap(bool force = false)
+ {
+  if (ACR_Base.s_All.IsEmpty()) return;
+  m_bCapsScaled = true;
+  if (!force && !ACR_Options.Flag("acrCapScale")) return;
+  int bases;
+  float minX = float.MAX;
+  float minZ = float.MAX;
+  float maxX = -float.MAX;
+  float maxZ = -float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired) continue;
+   bases++;
+   vector p = base.GetOrigin();
+   minX = Math.Min(minX, p[0]);
+   minZ = Math.Min(minZ, p[2]);
+   maxX = Math.Max(maxX, p[0]);
+   maxZ = Math.Max(maxZ, p[2]);
+  }
+  float spread = 0;
+  if (bases > 1) spread = Math.Sqrt((maxX - minX) * (maxX - minX) + (maxZ - minZ) * (maxZ - minZ));
+  ApplyCapScale(CapScaleFor(bases, spread), string.Format("%1 bases, spread %2 km", bases, Math.Round(spread / 100) / 10));
+ }
+
+ static float CapScaleFor(int bases, float spread)
+ {
+  return Math.Clamp(Math.Max(bases / (float)CAP_SCALE_BASES, spread / CAP_SCALE_SPREAD), 1, CAP_SCALE_MAX);
+ }
+
+ void ApplyCapScale(float factor, string why)
+ {
+  m_fCapScale = factor;
+  int soldiersWas = m_iSoldierCap;
+  if (m_iSoldierCap < CAP_SCALE_SOLDIERS) m_iSoldierCap = Math.Min(CAP_SCALE_SOLDIERS, (int)Math.Round(m_iSoldierCap * factor));
+  string caps;
+  foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
+  {
+   int was = settings.m_iAIUnitCap;
+   settings.m_iAIUnitCap = (int)Math.Round(was * factor);
+   caps += string.Format(" %1 %2->%3", settings.m_sFaction, was, settings.m_iAIUnitCap);
+  }
+  RaiseActiveAILimit();
+  PrintFormat("[ACR] CAP SCALE %1: x%2; squad caps%3; soldier cap %4->%5", why, factor, caps, soldiersWas, m_iSoldierCap);
+ }
+
  // The engine's own active-AI limit (SCR_AIWorld.et "Active AI limit", 128 for the whole world)
  // evicts groups above it: their soldiers are deleted and the empty group stays (live 4 Oct:
  // 3/4 of the enemy markers had nobody in them at soldier cap 150). Make room for both sides'
@@ -453,6 +511,7 @@ class ACR_Manager : Managed
   int t = System.GetTickCount();
   int tickStarted = t;
   if (!m_bHostOptionsApplied) ApplyHostOptions();
+  if (!m_bCapsScaled) ScaleCapsToMap();
   ScanForSquads();
   ResolveCrewNames();
   m_Requisition.TickPending();

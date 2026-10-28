@@ -713,6 +713,7 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrUnitCap` | `-acrUnitCap` |
 | `m_iAcrSeed` | `-acrSeed` |
 | `m_iAcrSoldierCap` | `-acrSoldierCap` |
+| `m_iAcrCapScale` | `-acrCapScale 0` (default) or `1`; scale the AI squad cap and soldier cap with the map |
 | `m_iAcrStartRP` | `-acrStartRP` |
 | `m_fAcrIncome` | `-acrIncome` |
 | `m_iAcrSkill` | `-acrSkill` |
@@ -840,6 +841,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrSkill N` | AI skill (overrides `m_iAISkill`) |
 | `-acrReaction X` | AI spotting speed (overrides `m_fAIPerception`) |
 | `-acrSoldierCap N` | Soft living-AI threshold per side before purchases/reinforcements stop (default 100 before threat scaling). A purchase begun below it can take the side over. The active-AI limit is raised to at least 2 x the resolved cap + 64 to avoid the vanilla 128-agent ceiling |
+| `-acrCapScale 1` | Bigger maps get bigger armies: every side's AI squad cap and the soldier cap are multiplied by the map's bases / 12 or the spread of its bases / 5 km, whichever is more, between x1 and x2 (the soldier cap stops at 250; a higher one set by the host stays). Applied once the match starts, after the threat level; the active-AI limit follows, and the log line `[ACR] CAP SCALE` shows the result. Off by default; the setup screen's **Squad caps scale with map** row turns it on |
 | `-acrSharedCommand 0` / `1` | Overrides `m_bSharedCommand` |
 | `-acrRespawnSeconds N` | Overrides `m_iRespawnSeconds` |
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |

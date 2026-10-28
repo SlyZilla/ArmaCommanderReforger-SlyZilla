@@ -68,7 +68,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrHoldGuns", "acrSquadTactics", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrCapScale", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrHoldGuns", "acrSquadTactics", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
   foreach (string name : names)
   {
    string value;
@@ -114,6 +114,8 @@ class ACR_MissionHeader : SCR_MissionHeader
  int m_iAcrSeed;
  [Attribute("-1", UIWidgets.EditBox, "Living AI soldiers per side (-acrSoldierCap)")]
  int m_iAcrSoldierCap;
+ [Attribute("-1", UIWidgets.EditBox, "Scale the AI squad cap and soldier cap with the map's bases / size: 0 default (off), 1 on (-acrCapScale)")]
+ int m_iAcrCapScale;
  [Attribute("-1", UIWidgets.EditBox, "Starting RP per side (-acrStartRP)")]
  int m_iAcrStartRP;
  [Attribute("-1", UIWidgets.EditBox, "Income multiplier (-acrIncome)")]
@@ -186,6 +188,7 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrUnitCap", m_iAcrUnitCap);
   Number(values, "acrSeed", m_iAcrSeed);
   Number(values, "acrSoldierCap", m_iAcrSoldierCap);
+  Number(values, "acrCapScale", m_iAcrCapScale);
   Number(values, "acrStartRP", m_iAcrStartRP);
   if (m_fAcrIncome >= 0) values.Set("acrIncome", m_fAcrIncome.ToString());
   Number(values, "acrSkill", m_iAcrSkill);
