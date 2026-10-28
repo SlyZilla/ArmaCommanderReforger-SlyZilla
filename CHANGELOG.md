@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.5.8 — unreleased
+## 0.5.9 — unreleased
+
+## 0.5.8 — released
 
 ### Players and spawning
 
