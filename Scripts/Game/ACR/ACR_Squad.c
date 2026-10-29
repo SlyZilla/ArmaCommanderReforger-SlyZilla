@@ -656,6 +656,8 @@ class ACR_Squad : Managed
  vector m_vRoadblockStage;     // beside the road, where the squad (and a truck it brings) waits
  ref ACR_FortifyPlan m_FortifyPlan;  // the Fortify order at work
  ACR_Fortification m_Fortification;  // the position it holds (its gunners stay on the guns)
+ ref ACR_QrfPlan m_Qrf;        // the QRF standing order (ACR_Qrf)
+ protected bool m_bQrfOrder;   // one of the QRF's own orders (they don't end it)
 
  static string ModeName(ACR_EMoveMode mode)
  {
@@ -766,6 +768,7 @@ class ACR_Squad : Managed
   m_ActiveRoadblock = null; // a barricade or small checkpoint has no gun to vacate
   if (m_FortifyPlan) CancelFortify();
   if (m_Fortification) LeaveFortification();
+  if (m_Qrf && !m_bQrfOrder) ACR_Qrf.End(this);
   m_CombatFlank.Cancel();
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
@@ -852,6 +855,45 @@ class ACR_Squad : Managed
   m_OrderKind = ACR_EOrderKind.DEFEND;
   ACR_Ambush.Apply(this, m_Ambush, true);
   return true;
+ }
+
+ // Stand by at post as a QRF: ACR_Qrf sends it after enemies the side spots round the post
+ // (with Hunt) and brings it back.
+ bool Qrf(vector post)
+ {
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  if (!IssueWaypoint(WP_DEFEND, post, 15)) return false;
+  SetOrder("QRF: standing by", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  m_Qrf = ACR_Qrf.Start(this, post);
+  return true;
+ }
+
+ // The QRF's own orders: back to its post, and after a target. They keep the QRF and who
+ // ordered it (as a mortar team's own moves do).
+ void QrfStandBy(vector post, string label)
+ {
+  int by = m_iOrderedBy;
+  m_bQrfOrder = true;
+  NewOrder();
+  m_bQrfOrder = false;
+  m_iOrderedBy = by;
+  ClearPlans();
+  m_bRegrouping = false;
+  if (!IssueWaypoint(WP_DEFEND, post, 15)) return;
+  SetOrder(label, ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+ }
+
+ void QrfHunt(ACR_Squad target, IEntity body, vector position, string what)
+ {
+  int by = m_iOrderedBy;
+  m_bQrfOrder = true;
+  Hunt(target, body, position, what);
+  m_bQrfOrder = false;
+  m_iOrderedBy = by;
  }
 
  bool Defend(vector position)
@@ -2162,6 +2204,7 @@ class ACR_Squad : Managed
   PrintFormat("[ACR] HUNT %1: %2", m_Name, reason);
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager && GetFaction()) manager.NotifyFaction(GetFaction().GetFactionKey(), m_Name + ": " + reason);
+  if (m_Qrf) return; // a QRF walks back to its post (ACR_Qrf)
   IEntity anchor = GetAnchor();
   if (anchor) Defend(anchor.GetOrigin());
  }
@@ -2256,6 +2299,7 @@ class ACR_Squad : Managed
   WatchBoardingTarget();
   HuntTick(now);
   ACR_GunHold.Tick(this);
+  if (m_Qrf) ACR_Qrf.Tick(this, now);
   if (m_bGarrisonPending && m_Order == "Garrisoning") PlaceGarrison(m_GarrisonPending);
   else if (m_sOrderPrefab == WP_GARRISON && m_Order == "Garrisoning" && m_Group.GetCurrentWaypoint() == null && m_iGarrisonReissues < 2)
   {
