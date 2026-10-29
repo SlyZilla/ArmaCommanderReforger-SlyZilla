@@ -902,6 +902,12 @@ class ACR_Intel : Managed
   return line;
  }
 
+ // Seen for this side by someone outside it (an FIA tip-off, ACR_Insurgency).
+ void Tip(IEntity enemy, float now, string spotter)
+ {
+  Note(enemy, now, spotter);
+ }
+
  // at: where it happened, if anywhere (the INTEL line then jumps the map there on a click).
  void AddFeed(float now, string line, vector at = vector.Zero)
  {
