@@ -122,7 +122,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   }
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
   else if (m_BaseIndex >= 0) pc.ACR_ClickBase(m_Label);
-  else pc.ACR_SelectGroup(pc.ACR_CycleOverlap(this));
+  else pc.ACR_PickGroup(this);
  }
 }
 class ACR_MarkerClick : ScriptedWidgetEventHandler
@@ -1135,6 +1135,13 @@ modded class SCR_PlayerController
   if (selected && selected.m_Original) ACR_Request(ACR_ERequest.RETURN);
   else if (selected) ACR_Request(ACR_ERequest.POSSESS, selected.m_UnitId);
   else SCR_HintManagerComponent.ShowCustomHint("Place the cursor over a unit marker, then press F7", "Possess soldier", 4, true);
+ }
+
+ // A left-click on a squad's marker: select it (a pile of overlapping markers: the next one in it).
+ // The calm map opens a list of the squads behind a "×N" instead (ACR_PlayerMapDeclutter).
+ void ACR_PickGroup(ACR_UnitMarker marker)
+ {
+  ACR_SelectGroup(ACR_CycleOverlap(marker));
  }
 
  // Squads whose markers overlap (a squad riding in a truck, a crew next to its

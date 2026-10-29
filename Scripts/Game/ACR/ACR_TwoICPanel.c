@@ -1,7 +1,7 @@
 // The 2IC panel (#14 v1), from the 2IC card's button or its key (F11, map only), laid out as the #14
 // sketch's panel (ACR_TwoICStyle): a header (the dot, "2IC", what it runs, Close); on the left every
 // squad of the side as a table (squad, where, doing, run by) with Take back (outlined) or Hand to 2IC
-// (the accent), "You lead it" for the player's own; on the right the FOBs it may manage (a tick for
+// (the accent), "You lead it" for the player's own, and Show (the map pans to it, selected); on the right the FOBs it may manage (a tick for
 // each), the share of income set aside for its reserve (its build budget) with a slider and bar,
 // whether it is a small force, and the type slot (later). The server sends the rows only while the
 // panel is open (ACR_TwoIC.PanelFor); the buttons go through the squad panel's and FOB panel's own
@@ -11,11 +11,12 @@ class ACR_TwoICPanel : Managed
  static const float WIDTH = 1560;        // the sketch's 1180 px at 1440
  static const float SIDE_WIDTH = 470;
  static const float LIST_HEIGHT = 600;
- static const float COL_NAME = 220;
- static const int NAME_CHARS = 21;     // a squad's name longer than this is cut short to fit COL_NAME
- static const float COL_WHERE = 220;
+ static const float COL_NAME = 270;
+ static const int NAME_CHARS = 26;     // a squad's name longer than this is cut short to fit COL_NAME
+ static const float COL_WHERE = 200;
  static const float COL_RUN = 100;
  static const float COL_ACTION = 210;
+ static const float COL_SHOW = 90;      // Show: the panel closes and the map pans to the squad (playtest 30 Oct)
  static const float LIST_WIDTH = 1037;   // WIDTH - SIDE_WIDTH - the left column's padding - the divider
  static const float SIDE_BAR = 430;
  static const float SHARE_TRACK = 300;
@@ -38,6 +39,8 @@ class ACR_TwoICPanel : Managed
  protected TextWidget m_CommandHint;
  protected ref map<SCR_ButtonBaseComponent, int> m_SquadButtons = new map<SCR_ButtonBaseComponent, int>();
  protected ref map<SCR_ButtonBaseComponent, int> m_FobButtons = new map<SCR_ButtonBaseComponent, int>();
+ protected ref map<SCR_ButtonBaseComponent, int> m_ShowButtons = new map<SCR_ButtonBaseComponent, int>();
+ protected ref map<SCR_ButtonBaseComponent, int> m_FobShowButtons = new map<SCR_ButtonBaseComponent, int>();
  protected ref array<RplId> m_SquadIds = {};
  protected ref array<string> m_FobLabels = {};
  protected string m_sShown = "-";
@@ -88,6 +91,7 @@ class ACR_TwoICPanel : Managed
   Header(columns, "WHERE", COL_WHERE);
   ACR_TwoICStyle.Grow(Header(columns, "DOING", 0));
   Header(columns, "RUN BY", COL_RUN);
+  Header(columns, "", COL_SHOW);
   Header(columns, "", COL_ACTION);
   ACR_TwoICStyle.Box(left, 0, 1, ACR_TwoICStyle.Track());
   SizeLayoutWidget listBox = ACR_TwoICStyle.Box(left, 0, LIST_HEIGHT, null);
@@ -196,6 +200,7 @@ class ACR_TwoICPanel : Managed
 
   Clear(m_SquadList);
   m_SquadButtons.Clear();
+  m_ShowButtons.Clear();
   m_SquadIds.Copy(ids);
   int run;
   foreach (int i, string name : names)
@@ -204,7 +209,7 @@ class ACR_TwoICPanel : Managed
    bool locked = (flags[i] & ACR_TwoIC.ROW_LOCKED) != 0;
    bool canHand = (flags[i] & ACR_TwoIC.ROW_CAN_HAND) != 0;
    if (twoIC) run++;
-   SCR_ButtonTextComponent button = AddSquad(name, wheres[i], doings[i], runBys[i], myName, twoIC, locked, commander && (twoIC || canHand));
+   SCR_ButtonTextComponent button = AddSquad(i, name, wheres[i], doings[i], runBys[i], myName, twoIC, locked, commander && (twoIC || canHand));
    if (!button) continue;
    button.m_OnClicked.Insert(OnSquad);
    m_SquadButtons.Insert(button, i);
@@ -212,13 +217,14 @@ class ACR_TwoICPanel : Managed
 
   Clear(m_FobList);
   m_FobButtons.Clear();
+  m_FobShowButtons.Clear();
   m_FobLabels.Copy(fobs);
   int managed;
   foreach (int j, string fob : fobs)
   {
    bool his = (fobFlags[j] & 1) != 0;
    if (his) managed++;
-   SCR_ButtonTextComponent fobButton = AddFob(fob, his, commander);
+   SCR_ButtonTextComponent fobButton = AddFob(j, fob, his, commander);
    if (!fobButton) continue;
    fobButton.m_OnClicked.Insert(OnFob);
    m_FobButtons.Insert(fobButton, j);
@@ -270,6 +276,18 @@ class ACR_TwoICPanel : Managed
  {
   int i;
   if (m_Owner && m_SquadButtons.Find(button, i) && i < m_SquadIds.Count()) m_Owner.ACR_Request(ACR_ERequest.ORDER_SQUAD_AI, m_SquadIds[i]);
+ }
+
+ protected void OnShow(SCR_ButtonBaseComponent button)
+ {
+  int i;
+  if (m_Owner && m_ShowButtons.Find(button, i) && i < m_SquadIds.Count()) m_Owner.ACR_TwoICShowSquad(m_SquadIds[i]);
+ }
+
+ protected void OnShowFob(SCR_ButtonBaseComponent button)
+ {
+  int j;
+  if (m_Owner && m_FobShowButtons.Find(button, j) && j < m_FobLabels.Count()) m_Owner.ACR_TwoICShowFob(m_FobLabels[j]);
  }
 
  protected void OnFob(SCR_ButtonBaseComponent button)
@@ -332,8 +350,8 @@ class ACR_TwoICPanel : Managed
   return cell;
  }
 
- // A squad's row: name, where, doing, run by (2IC in the accent, You in blue), and its button.
- protected SCR_ButtonTextComponent AddSquad(string name, string where, string doing, string runBy, string myName, bool twoIC, bool locked, bool enabled)
+ // A squad's row: name, where, doing, run by (2IC in the accent, You in blue), Show, and its button.
+ protected SCR_ButtonTextComponent AddSquad(int index, string name, string where, string doing, string runBy, string myName, bool twoIC, bool locked, bool enabled)
  {
   Widget cells = ACR_TwoICStyle.Row(m_SquadList);
   AlignableSlot.SetHorizontalAlign(cells, LayoutHorizontalAlign.Stretch);
@@ -344,6 +362,10 @@ class ACR_TwoICPanel : Managed
   Cell(cells, name, COL_NAME, ACR_TwoICStyle.White(), true);
   Cell(cells, where, COL_WHERE, dim);
   if (doing.IsEmpty()) doing = "-";
+  // One case down the column: the server's lines mix "holding" and "Holding" (playtest 30 Oct).
+  string firstLetter = doing.Substring(0, 1);
+  firstLetter.ToLower();
+  doing = firstLetter + doing.Substring(1, doing.Length() - 1);
   ACR_TwoICStyle.Grow(Cell(cells, doing, 0, dim));
   string by = "2IC";
   Color byColor = ACR_TwoICStyle.Accent();
@@ -354,6 +376,15 @@ class ACR_TwoICPanel : Managed
    byColor = ACR_TwoICStyle.Blue();
   }
   Cell(cells, by, COL_RUN, byColor, true);
+  // Show: any squad, whoever runs it (the commander's own and a player's too).
+  Widget showCell = ACR_TwoICStyle.Box(cells, COL_SHOW, 0, null);
+  AlignableSlot.SetVerticalAlign(showCell, LayoutVerticalAlign.Center);
+  SCR_ButtonTextComponent show = ACR_TwoICStyle.Button(showCell, "Show", ACR_TwoICStyle.BUTTON_GHOST, COL_SHOW - 10, 17, 44);
+  if (show)
+  {
+   show.m_OnClicked.Insert(OnShow);
+   m_ShowButtons.Insert(show, index);
+  }
   Widget action = ACR_TwoICStyle.Box(cells, COL_ACTION, 0, null);
   AlignableSlot.SetVerticalAlign(action, LayoutVerticalAlign.Center);
   ACR_TwoICStyle.Box(m_SquadList, 0, 1, ACR_TwoICStyle.Line());
@@ -375,7 +406,7 @@ class ACR_TwoICPanel : Managed
  }
 
  // A FOB's row: a tick box (the accent when the 2IC manages it), its name, and who has it.
- protected SCR_ButtonTextComponent AddFob(string fob, bool his, bool commander)
+ protected SCR_ButtonTextComponent AddFob(int index, string fob, bool his, bool commander)
  {
   WorkspaceWidget ws = GetGame().GetWorkspace();
   Widget holder = ws.CreateWidget(WidgetType.OverlayWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_FobList);
@@ -401,6 +432,12 @@ class ACR_TwoICPanel : Managed
   if (his) note = "2IC upgrades and defends";
   TextWidget whose = ACR_TwoICStyle.Text(row, note, ACR_TwoICStyle.Grey(), 16);
   AlignableSlot.SetVerticalAlign(whose, LayoutVerticalAlign.Center);
+  SCR_ButtonTextComponent show = ACR_TwoICStyle.Button(row, "Show", ACR_TwoICStyle.BUTTON_GHOST, 76, 16, 40);
+  if (show)
+  {
+   show.m_OnClicked.Insert(OnShowFob);
+   m_FobShowButtons.Insert(show, index);
+  }
   return box;
  }
 }
