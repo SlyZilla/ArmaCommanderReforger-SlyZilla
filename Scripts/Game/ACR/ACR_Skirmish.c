@@ -214,7 +214,7 @@ class ACR_Skirmish : GenericEntity
    point.SetFactionKey(side);
    vector at = ACR_Manager.Ground(target.GetOrigin() + Vector(6, 0, 6));
    vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, at, 20, 1.5, 2.5)) at = ACR_Manager.Ground(free);
+   if (ACR_BaseSystem.ClearGround(free, at, 20, 1.5)) at = free;
    point.SetOrigin(at);
    PrintFormat("[ACR] SKIRMISH spawn point %1 moved to %2 %3", side, target.m_sName, at);
   }

@@ -1164,7 +1164,7 @@ class ACR_Generator
    point.SetFactionKey(key);
    vector at = ACR_Manager.Ground(target.GetOrigin() + Vector(6, 0, 6));
    vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, at, 20, 1.5, 2.5)) at = ACR_Manager.Ground(free);
+   if (ACR_BaseSystem.ClearGround(free, at, 20, 1.5)) at = free;
    point.SetOrigin(at);
   }
   string sizeName = "full";

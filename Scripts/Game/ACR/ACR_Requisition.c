@@ -86,8 +86,7 @@ class ACR_Requisition : Managed
    vector candidate = ACR_Manager.Ground(base.GetOrigin() + Vector(Math.Cos(angle) * distance, 0, Math.Sin(angle) * distance));
    if (attempt == 0) fallback = candidate;
    vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 8, clearance, 2.5))
-    return ACR_Manager.Ground(free);
+   if (ACR_BaseSystem.ClearGround(free, candidate, 8, clearance)) return free;
   }
   return fallback;
  }
@@ -101,7 +100,7 @@ class ACR_Requisition : Managed
   if (flat.Length() > ring) spot = centre + flat.Normalized() * ring;
   vector candidate = ACR_Manager.Ground(spot);
   vector free;
-  if (SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 15, clearance, 2.5)) return ACR_Manager.Ground(free);
+  if (ACR_BaseSystem.ClearGround(free, candidate, 15, clearance)) return free;
   return candidate;
  }
 
@@ -246,9 +245,13 @@ class ACR_Requisition : Managed
  {
   array<IEntity> made = {};
   bool all = true;
+  IEntity navAgent = ACR_Garrison.AnyAgent();
   foreach (int i, ResourceName prefab : men)
   {
-   IEntity man = SpawnForPurchase(prefab, pos + Vector(1.5 * i, 0, 1));
+   // A line beside the spot, each man on his own clear ground (#87: not inside a heap).
+   vector at = ACR_Manager.Ground(pos + Vector(1.5 * i, 0, 1));
+   if (!ACR_BaseSystem.RoomAt(at) || ACR_BaseSystem.Covered(at)) at = ACR_BaseSystem.SoldierSpot(at, 2, navAgent);
+   IEntity man = SpawnForPurchase(prefab, at);
    if (!man) { all = false; break; }
    made.Insert(man);
    if (!group.AddAIEntityToGroup(man)) { all = false; break; }
@@ -328,6 +331,7 @@ class ACR_Requisition : Managed
    spawned.m_eACRFormation = formation.m_eFormation;
    if (!FillGroup(spawned, formation.m_aSoldiers, position)) return null;
   }
+  else if (spawned) ACR_BaseSystem.SettleSoon(spawned); // the game's own formation spawn
   return spawned;
  }
 

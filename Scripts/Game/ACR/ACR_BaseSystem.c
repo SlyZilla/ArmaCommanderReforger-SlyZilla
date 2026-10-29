@@ -368,7 +368,7 @@ class ACR_BaseSystem : Managed
    if (!SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 6, 0.6, 2)) continue;
    free = ACR_Manager.Ground(free);
    // The finder's spot may sit on something; on the terrain it must still have room.
-   if (!RoomAt(free) || Roofed(free)) continue;
+   if (!RoomAt(free) || Covered(free)) continue;
    if (!pathing || (mesh && !mesh.IsTileLoaded(free))) return free;
    if (!pathing.GetClosestPositionOnNavmesh(free, Vector(1, 1.5, 1), onMesh)) continue;
    if (vector.DistanceXZ(onMesh, free) > 1) continue;
@@ -398,6 +398,77 @@ class ACR_BaseSystem : Managed
   float hit = GetGame().GetWorld().TraceMove(trace, null);
   if (hit >= 1 || !trace.TraceEnt) return false;
   return !Tree.Cast(trace.TraceEnt) && !ChimeraCharacter.Cast(trace.TraceEnt);
+ }
+
+ // #87: inside a heap, seen from above: a sand or gravel pile, rubble or a low roof over the spot.
+ // The game's empty-spot finder hands out spots inside piles (10 of 20 round two piles in
+ // srv:regress), and squads, bought units and spawn points took its spots unchecked: squads stood
+ // buried in industrial yards. Walks down from 30 m, past trees, bushes and people (the soldier
+ // standing there included).
+ static bool Buried(vector spot)
+ {
+  TraceParam trace = new TraceParam();
+  trace.Flags = TraceFlags.ENTS;
+  vector top = spot + Vector(0, 30, 0);
+  vector bottom = spot + Vector(0, 0.4, 0);
+  for (int pass = 0; pass < 6; pass++)
+  {
+   trace.Start = top;
+   trace.End = bottom;
+   float hit = GetGame().GetWorld().TraceMove(trace, null);
+   if (hit >= 1 || !trace.TraceEnt) return false;
+   IEntity root = trace.TraceEnt.GetRootParent();
+   if (!Tree.Cast(trace.TraceEnt) && !ChimeraCharacter.Cast(root)) return true;
+   top = top + (bottom - top) * hit - Vector(0, 0.05, 0);
+   if (top[1] <= bottom[1]) return false;
+  }
+  return false;
+ }
+
+ static bool Covered(vector spot) { return Roofed(spot) || Buried(spot); }
+
+ // Clear ground for something clearance wide near center: the game's empty spots, minus those
+ // under a heap (#87). False when there's none within radius.
+ static bool ClearGround(out vector result, vector center, float radius, float clearance, float height = 2.5)
+ {
+  array<vector> spots = {};
+  SCR_WorldTools.FindAllEmptyTerrainPositions(spots, center, radius, clearance, height, 12);
+  foreach (vector spot : spots)
+  {
+   vector ground = ACR_Manager.Ground(spot);
+   if (Buried(ground)) continue;
+   result = ground;
+   return true;
+  }
+  return false;
+ }
+
+ // #87: a squad the game spawned in its formation round one spot: anyone who came out inside a
+ // heap or under a roof steps to clear ground near where he stands. The game queues its members
+ // over a few frames, so it looks twice.
+ static void SettleSoon(SCR_AIGroup group)
+ {
+  if (!group) return;
+  GetGame().GetCallqueue().CallLater(Settle, 1500, false, group, 0);
+ }
+
+ protected static void Settle(SCR_AIGroup group, int pass)
+ {
+  if (!group) return;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body) || EntityUtils.IsPlayer(body) || ACR_Transport.VehicleOf(body)) continue;
+   vector at = body.GetOrigin();
+   if (!Covered(at)) continue;
+   vector spot = SoldierSpot(at, 3, agent);
+   if (Covered(spot)) continue;
+   body.SetOrigin(spot);
+   PrintFormat("[ACR] SPAWN %1: a soldier who came out inside something stepped %2 m clear", group.GetCustomName(), (int)vector.DistanceXZ(at, spot));
+  }
+  if (pass < 1) GetGame().GetCallqueue().CallLater(Settle, 4000, false, group, pass + 1);
  }
 
  protected void AddGarrisonSoldier(ACR_Base base, SCR_AIGroup group, array<ResourceName> pool)
