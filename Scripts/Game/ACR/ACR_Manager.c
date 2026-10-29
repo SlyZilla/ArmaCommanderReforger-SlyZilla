@@ -547,6 +547,8 @@ class ACR_Manager : Managed
   Pings().Tick();
   ACR_Minefields.Tick();
   ACR_Fortify.Tick();
+  ACR_Guerrillas.Tick();
+  ACR_Insurgency.Tick();
   t = ACR_Perf.Lap("cleanup", t);
   WatchEvictions();
   array<IEntity> allVehicles = {};

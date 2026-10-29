@@ -157,6 +157,8 @@ class ACR_Skirmish : GenericEntity
   }
   ACR_QuickStart.Apply();
   ACR_Pockets.Apply();
+  ACR_Guerrillas.Apply();
+  ACR_Insurgency.Apply();
  }
 
  void Apply()
