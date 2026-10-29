@@ -1863,20 +1863,6 @@ modded class SCR_PlayerController
   }
  }
 
- // Sends the player's eye to 'at': the map pans there, zooms in to about SHOW_SPAN m across the screen
- // when it is further out than that (zoomed right out a squad was centred but tiny), and a pulse
- // marks the spot.
- static const float SHOW_SPAN = 3000;
- void ACR_FocusMap(vector at)
- {
-  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
-  if (!mapEntity || !mapEntity.IsOpen()) return;
-  float zoom = Math.Max(mapEntity.GetCurrentZoom(), GetGame().GetWorkspace().GetWidth() / SHOW_SPAN);
-  mapEntity.ZoomPanSmooth(zoom, at[0], at[2], 0.3);
-  ACR_PulseAt(at);
-  ACR_MarkUiClick();
- }
-
  bool ACR_TwoICPanelOpen() { return m_ACR_TwoICPanel != null; }
 
  // The channel's "Show" on an open suggestion: the map pans to its marker (its ring), at the same zoom.

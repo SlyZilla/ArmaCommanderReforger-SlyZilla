@@ -103,7 +103,7 @@ class ACR_Pings : Managed
   ACR_Intel intel = m_Manager.IntelFor(ping.m_sFaction);
   string place = "";
   if (intel) place = " (" + intel.Place(pos) + ")";
-  if (intel) intel.AddFeed(now, string.Format("%1: %2%3", tag, KindName(kind), place));
+  if (intel) intel.AddFeed(now, string.Format("%1: %2%3", tag, KindName(kind), place), pos);
   PrintFormat("[ACR] PING %1 %2 by %3 at %4", ping.m_sFaction, KindName(kind), tag, pos);
   return ping;
  }

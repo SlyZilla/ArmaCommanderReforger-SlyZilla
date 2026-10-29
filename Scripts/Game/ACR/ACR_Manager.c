@@ -286,7 +286,7 @@ class ACR_Manager : Managed
    ACR_Intel intel = IntelFor(key);
    string place = "";
    if (intel) place = " " + intel.Place(target);
-   Command().Feed(key, string.Format("%1 called %2%3 (-%4 RP)", tag, support, place, spent));
+   Command().Feed(key, string.Format("%1 called %2%3 (-%4 RP)", tag, support, place, spent), target);
    Command().Note(pc.GetPlayerId(), support + place);
    Pings().OnSupportCalled(key, target, tag, support);
   }

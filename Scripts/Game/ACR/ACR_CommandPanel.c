@@ -483,6 +483,45 @@ class ACR_CommandPanel : Managed
   }
  }
 
+ // The INTEL line under the screen point x, y (native px), -1 none. The feed's widgets ignore the
+ // cursor, so a click on a line reaches the map (SCR_PlayerController.ACR_OnMapClick) and is matched
+ // here by where it fell.
+ int FeedLineAt(float x, float y)
+ {
+  if (!m_FeedRoot || !m_FeedRoot.IsVisible()) return -1;
+  float rx, ry, rw, rh;
+  m_FeedRoot.GetScreenPos(rx, ry);
+  m_FeedRoot.GetScreenSize(rw, rh);
+  if (x < rx || x > rx + rw || y < ry || y > ry + rh) return -1;
+  foreach (int i, TextWidget line : m_FeedLines)
+  {
+   if (!line || !line.IsVisible()) continue;
+   float lx, ly, lw, lh;
+   line.GetScreenPos(lx, ly);
+   line.GetScreenSize(lw, lh);
+   if (y >= ly && y <= ly + lh) return i;
+  }
+  return -1;
+ }
+
+ // The INTEL line under the cursor that a click would jump from, lit (-1: none).
+ protected ref array<ref Color> m_FeedLineColors = {};
+ protected int m_iFeedLit = -1;
+ void LightFeedLine(int i)
+ {
+  if (i == m_iFeedLit) return;
+  while (m_FeedLineColors.Count() < m_FeedLines.Count())
+  {
+   TextWidget unlit = m_FeedLines[m_FeedLineColors.Count()];
+   Color color = Color.FromInt(Color.WHITE);
+   if (unlit) color = unlit.GetColor();
+   m_FeedLineColors.Insert(color);
+  }
+  if (m_iFeedLit >= 0 && m_iFeedLit < m_FeedLines.Count() && m_FeedLines[m_iFeedLit]) m_FeedLines[m_iFeedLit].SetColor(m_FeedLineColors[m_iFeedLit]);
+  m_iFeedLit = i;
+  if (i >= 0 && i < m_FeedLines.Count() && m_FeedLines[i]) m_FeedLines[i].SetColor(Color.FromRGBA(255, 200, 130, 255));
+ }
+
  // The intel feed's top (the 2IC card moves it down, ACR_TwoICView).
  void SetFeedTop(float y)
  {

@@ -88,6 +88,7 @@ class ACR_Intel : Managed
  protected ref map<string, float> m_Reported = new map<string, float>();
  ref array<string> m_Feed = {};
  ref array<float> m_FeedTime = {};
+ ref array<vector> m_FeedPos = {};  // where a line happened (vector.Zero: nowhere): a click on it jumps there
  ref array<ref ACR_Contact> m_Contacts = {};
  protected int m_iTicks;
  // Our own empty vehicles that someone of ours can see (or saw), for the map.
@@ -383,7 +384,7 @@ class ACR_Intel : Managed
   string relative = Relative(fob.GetOrigin());
   fob.m_aDetectedBy.Insert(m_sFaction);
   if (spotter.IsEmpty()) spotter = "Scouts";
-  AddFeed(now, string.Format("%1: enemy %2 found %3", spotter, fob.m_sName, place));
+  AddFeed(now, string.Format("%1: enemy %2 found %3", spotter, fob.m_sName, place), fob.GetOrigin());
   QueueRadio(string.Format("%1: enemy FOB spotted, %2.", spotter, relative));
   ACR_Report.Event(m_sFaction, "found enemy " + fob.m_sName);
   m_Manager.NotifyFaction(m_sFaction, string.Format("Enemy base discovered: %1", fob.m_sName));
@@ -398,7 +399,7 @@ class ACR_Intel : Managed
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
   ACR_Intel intel = manager.IntelFor(fob.m_sOwner);
-  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), line);
+  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), line, fob.GetOrigin());
  }
 
  protected static IEntity s_TraceIgnore;
@@ -632,7 +633,7 @@ class ACR_Intel : Managed
    m_Reported.Set(contact.m_sKey, now);
    string spotter = contact.m_sSpotter;
    if (spotter.IsEmpty()) spotter = "Contact";
-   AddFeed(now, string.Format("%1: %2 %3", spotter, Describe(contact.m_iKind, contact.m_iCount), Place(contact.m_Pos)));
+   AddFeed(now, string.Format("%1: %2 %3", spotter, Describe(contact.m_iKind, contact.m_iCount), Place(contact.m_Pos)), contact.m_Pos);
    QueueRadio(string.Format("%1: contact, %2, %3.", spotter, Describe(contact.m_iKind, contact.m_iCount), Relative(contact.m_Pos)));
    m_DoctrineIntel.OnContact(contact);
   }
@@ -683,14 +684,17 @@ class ACR_Intel : Managed
   return line;
  }
 
- void AddFeed(float now, string line)
+ // at: where it happened, if anywhere (the INTEL line then jumps the map there on a click).
+ void AddFeed(float now, string line, vector at = vector.Zero)
  {
   m_Feed.InsertAt(line, 0);
   m_FeedTime.InsertAt(now, 0);
+  m_FeedPos.InsertAt(at, 0);
   while (m_Feed.Count() > FEED_LINES)
   {
    m_Feed.RemoveOrdered(m_Feed.Count() - 1);
    m_FeedTime.RemoveOrdered(m_FeedTime.Count() - 1);
+   if (m_FeedPos.Count() > m_Feed.Count()) m_FeedPos.RemoveOrdered(m_FeedPos.Count() - 1);
   }
   PrintFormat("[ACR] INTEL %1: %2", m_sFaction, line);
  }

@@ -2016,13 +2016,17 @@ modded class SCR_PlayerController
  static const int ACR_CONTACT_SUSPECTED = 30; // s: older sightings are drawn as suspected
 
  protected ref array<int> m_ACR_FeedAges = {};
+ protected ref array<vector> m_ACR_FeedPos = {};
+ // Where each INTEL line as shown happened (vector.Zero: nowhere), as ACR_FeedLines last made them:
+ // a click on the line jumps the map there (ACR_FeedClick).
+ protected ref array<vector> m_ACR_FeedShownPos = {};
  protected int m_ACR_IntelAt;
- void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges)
+ void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges, array<vector> feedPos)
  {
-  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, feed, feedAges);
+  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, feed, feedAges, feedPos);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges)
+ protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges, array<vector> feedPos)
  {
   m_ACR_ContactPositions.Copy(positions);
   m_ACR_ContactKinds.Copy(kinds);
@@ -2030,6 +2034,7 @@ modded class SCR_PlayerController
   m_ACR_ContactAges.Copy(ages);
   m_ACR_Feed.Copy(feed);
   m_ACR_FeedAges.Copy(feedAges);
+  m_ACR_FeedPos.Copy(feedPos);
   m_ACR_IntelAt = System.GetTickCount();
  }
 
@@ -2037,12 +2042,16 @@ modded class SCR_PlayerController
  protected void ACR_FeedLines(notnull array<string> lines)
  {
   lines.Clear();
+  m_ACR_FeedShownPos.Clear();
   int since = ACR_MapData.Since(m_ACR_IntelAt);
   foreach (int i, string line : m_ACR_Feed)
   {
    int seconds = since;
    if (i < m_ACR_FeedAges.Count()) seconds += m_ACR_FeedAges[i];
    if (seconds > 600) break;
+   vector spot = vector.Zero;
+   if (i < m_ACR_FeedPos.Count()) spot = m_ACR_FeedPos[i];
+   m_ACR_FeedShownPos.Insert(spot);
    string when = seconds.ToString() + "s";
    if (seconds >= 60)
    {
