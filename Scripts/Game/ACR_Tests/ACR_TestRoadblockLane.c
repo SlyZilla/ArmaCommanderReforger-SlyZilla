@@ -9,7 +9,7 @@
 // he steps clear, and every man on foot stays at least HULL_GAP from its hull (sampled every 0.1 s).
 class ACR_TestRoadblockLane
 {
- static const int CHECKS = 6;
+ static const int CHECKS = 8;
  static const float HULL_GAP = 1.0; // m between a man on foot and the truck's hull, at least
  static const ResourceName TRUCK = "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et";
  static const float COVER = 8;   // the gun's distance from the lane's line, at most
@@ -248,8 +248,22 @@ class ACR_TestRoadblockLane
   string beforeWorst;
   float beforeClear = 0;
   if (before) beforeClear = ACR_RoadblockLane.WorstClearance(before.m_Entity, beforeWorst);
+  // Playtest 29 Oct: the nest's loose end sandbag stuck out in front of it, and cuttings and the
+  // stop sign stood in the middle of the road. As vanilla built it, for comparison:
+  vector endBefore;
+  string decorBeforeWhat;
+  float decorBefore = -1;
+  if (before)
+  {
+   endBefore = ACR_RoadblockLane.FromNest(before.m_Entity, "Sandbag_01_end");
+   decorBefore = ACR_RoadblockLane.DecorInnermost(before.m_Entity, decorBeforeWhat);
+  }
   Remove(before);
   ACR_RoadblockLane.s_bOff = false;
+  bool decorOff = true;
+  bool nestWhole = true;
+  string decorText = string.Format("vanilla M US: %1 %2 m from the centre line; now:", decorBeforeWhat, Math.Round(decorBefore * 10) / 10);
+  string nestText = string.Format("vanilla M US end sandbag from the nest %1;", endBefore);
 
   bool clear = true;
   bool guns = true;
@@ -275,6 +289,16 @@ class ACR_TestRoadblockLane
     float least = ACR_RoadblockLane.WorstClearance(rb.m_Entity, worst);
     clear = clear && least >= 0;
     clearText += string.Format(" %1 %2 %3 m (%4, %5 moved)", faction, ACR_Roadblocks.Name(type), Math.Round(least * 100) / 100, worst, rb.m_iLaneMoved);
+    string decorWhat;
+    float decorIn = ACR_RoadblockLane.DecorInnermost(rb.m_Entity, decorWhat);
+    decorOff = decorOff && decorIn >= ACR_RoadblockLane.ROAD_ASPHALT;
+    if (decorIn < float.MAX) decorText += string.Format(" %1 %2 %3 m (%4);", faction, ACR_Roadblocks.Name(type), Math.Round(decorIn * 10) / 10, decorWhat);
+    if (faction == "US" && type == ACR_ERoadblockType.MEDIUM)
+    {
+     vector endNow = ACR_RoadblockLane.FromNest(rb.m_Entity, "Sandbag_01_end");
+     nestWhole = endBefore != vector.Zero && vector.DistanceXZ(endNow, endBefore) < 0.05;
+     nestText += string.Format(" now %1 (%2 loose pieces moved with the nest)", endNow, ACR_RoadblockLane.s_iNestFollowers);
+    }
     // The post: its Defend at least 2.5 m off the lane, the gun inside it.
     vector post = ACR_RoadblockLane.Local(rb.m_Entity, rb.m_vPost);
     float postClear = ACR_RoadblockLane.Clearance(post[0], post[0], post[2], post[2]);
@@ -303,6 +327,8 @@ class ACR_TestRoadblockLane
   ACR_TestRegress.Check(string.Format("rblane: every roadblock leaves a %1 m chicane lane with no solid piece in it", ACR_RoadblockLane.LANE_HALF_WIDTH * 2), clear && beforeClear < 0, clearText);
   ACR_TestRegress.Check(string.Format("rblane: the M and L checkpoint guns sit beside the lane, within %1 m of its line (an enemy driving it passes under the gun)", COVER), guns && !gunText.IsEmpty(), gunText);
   ACR_TestRegress.Check("rblane: the holders post off the lane, the gun inside their Defend", posts, postText);
+  ACR_TestRegress.Check(string.Format("rblane: no cutting or checkpoint sign stands on the road (all %1 m or more from its centre line)", ACR_RoadblockLane.ROAD_ASPHALT), decorOff && decorBefore >= 0 && decorBefore < ACR_RoadblockLane.ROAD_ASPHALT, decorText);
+  ACR_TestRegress.Check("rblane: the gun nest's loose end sandbag moves with the nest (M US, as vanilla placed it beside it)", nestWhole, nestText);
  }
 
  protected static void Remove(ACR_Roadblock rb)

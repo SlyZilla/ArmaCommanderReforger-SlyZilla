@@ -132,37 +132,149 @@ class ACR_RoadblockLane
   }
  }
 
+ // Playtest 29 Oct (pn12h, both sides' checkpoints): the lane left the composition's camouflage
+ // cuttings and its stop sign standing in the middle of the road (slid just clear of the lane, between
+ // its halves), and slid the gun nest out of the lane without the loose end sandbag, ammo and chair
+ // beside it, so the end sandbag stuck out in front of the nest. Now a cutting or a sign in the lane,
+ // or anywhere on the road (inside ROAD_ASPHALT), goes out to the verge (ROAD_EDGE past the centre
+ // line, and past the lane), and the nest's loose
+ // pieces (within NEST_NEAR of it, on its side of the road) move with it.
+ static const float ROAD_EDGE = 4.0;  // m from the centre line: the verge (the compositions' edge pieces stand at 4.3-4.5)
+ static const float ROAD_ASPHALT = 3.5; // m from the centre line: a cutting or sign reaching inside this stands on the road
+ static const float NEST_NEAR = 2.5;  // m: loose pieces this close to the gun nest move with it
+ static int s_iDecorMoved;            // tests: cuttings and signs sent to the verge (last Open)
+ static float s_fDecorInnermost;      // tests: the innermost edge of those, m from the centre line
+ static int s_iNestFollowers;         // tests: loose pieces moved with the nest (last Open)
+
+ // Dressing that has no business standing in the road: the cuttings and the checkpoint sign.
+ static bool IsDecor(IEntity e)
+ {
+  string name = PrefabName(e);
+  return name.Contains("Prefabs/Vegetation/") || name.Contains("SignCheckpoint");
+ }
+
+ static bool IsNest(IEntity e)
+ {
+  return PrefabName(e).Contains("Sandbag_MG_");
+ }
+
+ // Tests: the nearest a cutting or sign stands to the road's centre line (0: across it), and which.
+ static float DecorInnermost(IEntity ent, out string what)
+ {
+  what = "none";
+  float best = float.MAX;
+  if (!ent) return best;
+  vector root[4];
+  ent.GetWorldTransform(root);
+  array<IEntity> units = {};
+  Units(ent, units);
+  foreach (IEntity unit : units)
+  {
+   if (!unit || !IsDecor(unit)) continue;
+   float x0, x1, z0, z1;
+   Footprint(unit, root, x0, x1, z0, z1);
+   float d = Math.Min(Math.AbsFloat(x0), Math.AbsFloat(x1));
+   if (x0 < 0 && x1 > 0) d = 0;
+   if (d >= best) continue;
+   best = d;
+   what = FilePath.StripPath(PrefabName(unit));
+  }
+  return best;
+ }
+
+ // Tests: where the first piece matching 'piece' stands from the gun nest, in the composition's frame.
+ static vector FromNest(IEntity ent, string piece)
+ {
+  if (!ent) return vector.Zero;
+  IEntity nest, other;
+  array<IEntity> units = {};
+  Units(ent, units);
+  foreach (IEntity unit : units)
+  {
+   if (!nest && IsNest(unit)) nest = unit;
+   if (!other && PrefabName(unit).Contains(piece)) other = unit;
+  }
+  if (!nest || !other) return vector.Zero;
+  vector root[4];
+  ent.GetWorldTransform(root);
+  vector d = other.GetOrigin() - nest.GetOrigin();
+  return Vector(vector.Dot(d, root[0]), 0, vector.Dot(d, root[2]));
+ }
+
  // Opens the lane through a roadblock just spawned (before its navmesh rebuild); returns how many
  // pieces moved.
  static int Open(IEntity ent, bool barricade)
  {
+  s_iDecorMoved = 0;
+  s_fDecorInnermost = float.MAX;
+  s_iNestFollowers = 0;
   if (!ent || s_bOff) return 0;
   vector root[4];
   ent.GetWorldTransform(root);
   array<IEntity> units = {};
   Units(ent, units);
-  int moved = 0;
-  foreach (IEntity unit : units)
+  // Each piece's footprint and move first, then the nest's loose pieces, then the moves.
+  int count = units.Count();
+  array<float> fx0 = {}, fx1 = {}, fz0 = {}, fz1 = {}, dxs = {}, dzs = {};
+  int nest = -1;
+  for (int i = 0; i < count; i++)
   {
-   if (!unit || IsDecal(unit)) continue;
+   IEntity unit = units[i];
    float x0, x1, z0, z1;
-   Footprint(unit, root, x0, x1, z0, z1);
+   if (unit) Footprint(unit, root, x0, x1, z0, z1);
+   fx0.Insert(x0); fx1.Insert(x1); fz0.Insert(z0); fz1.Insert(z1);
    float dz = 0;
-   if (barricade)
-   {
-    dz = -BARRICADE_STAGGER;
-    if (x0 + x1 < 0) dz = BARRICADE_STAGGER;
-   }
    float dx = 0;
-   if (Clearance(x0, x1, z0 + dz, z1 + dz) < LANE_MARGIN)
+   if (unit && !IsDecal(unit))
    {
-    float left = LaneX(z0 + dz) - LANE_HALF_WIDTH - LANE_MARGIN - x1;   // < 0
-    float right = LaneX(z1 + dz) + LANE_HALF_WIDTH + LANE_MARGIN - x0;  // > 0
-    dx = right;
-    if (-left < right) dx = left;
+    if (barricade)
+    {
+     dz = -BARRICADE_STAGGER;
+     if (x0 + x1 < 0) dz = BARRICADE_STAGGER;
+    }
+    bool inLane = Clearance(x0, x1, z0 + dz, z1 + dz) < LANE_MARGIN;
+    if (IsDecor(unit) && (inLane || (x1 > -ROAD_ASPHALT && x0 < ROAD_ASPHALT)))
+    {
+     // In the lane or anywhere on the road: out to the verge on the side it is on (from the
+     // lane's line), past the lane too.
+     float cz = (z0 + z1) / 2 + dz;
+     if ((x0 + x1) / 2 < LaneX(cz)) dx = Math.Min(-ROAD_EDGE, LaneX(z0 + dz) - LANE_HALF_WIDTH - LANE_MARGIN) - x1;
+     else dx = Math.Max(ROAD_EDGE, LaneX(z1 + dz) + LANE_HALF_WIDTH + LANE_MARGIN) - x0;
+     s_iDecorMoved++;
+     s_fDecorInnermost = Math.Min(s_fDecorInnermost, Math.Min(Math.AbsFloat(x0 + dx), Math.AbsFloat(x1 + dx)));
+    }
+    else if (inLane)
+    {
+     float left = LaneX(z0 + dz) - LANE_HALF_WIDTH - LANE_MARGIN - x1;   // < 0
+     float right = LaneX(z1 + dz) + LANE_HALF_WIDTH + LANE_MARGIN - x0;  // > 0
+     dx = right;
+     if (-left < right) dx = left;
+    }
+    if (nest < 0 && IsNest(unit)) nest = i;
    }
-   if (dx == 0 && dz == 0) continue;
-   Shift(unit, root[0] * dx + root[2] * dz);
+   dxs.Insert(dx);
+   dzs.Insert(dz);
+  }
+  // The nest's loose pieces (decals included: its dirt patch) go where it goes.
+  if (nest >= 0 && dxs[nest] != 0)
+  {
+   float side = fx0[nest] + fx1[nest];
+   for (int k = 0; k < count; k++)
+   {
+    if (k == nest || !units[k] || dxs[k] != 0 || dzs[k] != 0) continue;
+    if ((fx0[k] + fx1[k]) * side <= 0) continue; // the other side of the road
+    float gapX = Math.Max(0, Math.Max(fx0[nest] - fx1[k], fx0[k] - fx1[nest]));
+    float gapZ = Math.Max(0, Math.Max(fz0[nest] - fz1[k], fz0[k] - fz1[nest]));
+    if (gapX > NEST_NEAR || gapZ > NEST_NEAR) continue;
+    dxs[k] = dxs[nest];
+    s_iNestFollowers++;
+   }
+  }
+  int moved = 0;
+  for (int m = 0; m < count; m++)
+  {
+   if (!units[m] || (dxs[m] == 0 && dzs[m] == 0)) continue;
+   Shift(units[m], root[0] * dxs[m] + root[2] * dzs[m]);
    moved++;
   }
   ent.Update();
