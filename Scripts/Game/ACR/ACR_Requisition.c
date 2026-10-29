@@ -88,6 +88,10 @@ class ACR_Requisition : Managed
    vector free;
    if (ACR_BaseSystem.ClearGround(free, candidate, 8, clearance)) return free;
   }
+  // None in the ring (a crowded base): the nearest clear ground further out, before a spot
+  // nobody checked (#87: a Humvee in an airport hangar).
+  vector wide;
+  if (ACR_BaseSystem.ClearGround(wide, fallback, 60, clearance)) return wide;
   return fallback;
  }
 
@@ -101,7 +105,7 @@ class ACR_Requisition : Managed
   vector candidate = ACR_Manager.Ground(spot);
   vector free;
   if (ACR_BaseSystem.ClearGround(free, candidate, 15, clearance)) return free;
-  return candidate;
+  return SpawnPoint(base, 0, ring, clearance);
  }
 
  string Purchase(SCR_PlayerController pc, int entryIndex, string baseLabel, vector spot = "0 0 0", bool hasSpot = false)

@@ -1,19 +1,24 @@
-// #87 (srv:regress): squads don't spawn inside sand and gravel piles. A sand pile and a large
-// gravel pile go down on open ground of the test range; their centres must read as buried while
+// #87 (srv:regress): squads don't spawn inside sand and gravel piles, nor vehicles in hangars. A
+// sand pile, a large gravel pile and a hangar go down on open ground of the test range; their centres must read as buried while
 // open ground beside them doesn't, the spot finders must step off them, and a squad filled
 // onto the piles must stand clear. The old checks are counted for comparison only.
 class ACR_TestSpawnHeap
 {
  static const ResourceName SAND = "{DEB57429CD49782D}Prefabs/Props/Construction/GravelPile_01/SandPile_01.et";
  static const ResourceName GRAVEL = "{19A3C48FC2665A3F}Prefabs/Props/Construction/GravelPile_01/GravelPile_01_large.et";
+ static const ResourceName HANGAR = "{CEB1F71D46592F3C}Prefabs/Structures/Airport/Hangar_01/Hangar_01.et";
  static const ResourceName US_RIFLEMAN = "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et";
  static ref array<IEntity> s_Heaps = {};
  static SCR_AIGroup s_Group;
  static vector s_vSand;
  static vector s_vGravel;
 
- static void Place(vector sand, vector gravel)
+ static vector s_vHangar;
+
+ static void Place(vector sand, vector gravel, vector hangar)
  {
+  s_vHangar = ACR_Manager.Ground(hangar);
+  s_Heaps.Insert(ACR_Manager.SpawnPrefab(HANGAR, s_vHangar));
   s_vSand = ACR_Manager.Ground(sand);
   s_vGravel = ACR_Manager.Ground(gravel);
   s_Heaps.Insert(ACR_Manager.SpawnPrefab(SAND, s_vSand));
@@ -24,7 +29,7 @@ class ACR_TestSpawnHeap
  static void CheckSpots()
  {
   string name = "spawn spots step off sand and gravel piles (#87)";
-  if (s_Heaps.Count() < 2 || !s_Heaps[0] || !s_Heaps[1])
+  if (s_Heaps.Count() < 3 || !s_Heaps[0] || !s_Heaps[1] || !s_Heaps[2])
   {
    ACR_TestRegress.Skip(name, "the piles did not spawn");
    return;
@@ -55,8 +60,14 @@ class ACR_TestSpawnHeap
    vector spot = ACR_BaseSystem.SoldierSpot(s_vGravel, 1, ACR_Garrison.AnyAgent());
    if (ACR_BaseSystem.Covered(spot)) badSoldier++;
   }
-  bool ok = sandBuried && gravelBuried && !openBuried && found && !ACR_BaseSystem.Covered(clear) && badSoldier == 0;
-  ACR_TestRegress.Check(name, ok, string.Format("buried: sand %1 gravel %2 open %3; ClearGround %4 %5 m out; soldier spots on the gravel %6 of 10 bad; old: the game's finder gave a spot in a pile %7 of 20, room-and-roof passed one %8 times", sandBuried, gravelBuried, openBuried, found, (int)vector.DistanceXZ(clear, s_vSand), badSoldier, oldBuried, roomRoofPassed));
+  // A vehicle's spot (4 m clear) asked for at the hangar's middle, as a moved starting unit's.
+  vector truckOld;
+  bool oldInHangar = SCR_WorldTools.FindEmptyTerrainPosition(truckOld, s_vHangar, 8, 4, 2.5) && ACR_BaseSystem.Covered(ACR_Manager.Ground(truckOld));
+  vector truck;
+  bool truckFound = ACR_BaseSystem.ClearGround(truck, s_vHangar, 8, 4) || ACR_BaseSystem.ClearGround(truck, s_vHangar, 60, 4);
+  bool truckOk = truckFound && !ACR_BaseSystem.Covered(truck);
+  bool ok = sandBuried && gravelBuried && !openBuried && found && !ACR_BaseSystem.Covered(clear) && badSoldier == 0 && truckOk;
+  ACR_TestRegress.Check(name, ok, string.Format("buried: sand %1 gravel %2 open %3; ClearGround %4 %5 m out; soldier spots on the gravel %6 of 10 bad; old: the game's finder gave a spot in a pile %7 of 20, room-and-roof passed one %8 times; hangar: a vehicle spot %9 m from its middle", sandBuried, gravelBuried, openBuried, found, (int)vector.DistanceXZ(clear, s_vSand), badSoldier, oldBuried, roomRoofPassed, (int)vector.DistanceXZ(truck, s_vHangar)) + string.Format(", clear %1 (the old finder's under its roof: %2)", truckOk, oldInHangar));
 
   SCR_AIGroup.IgnoreSpawning(true);
   s_Group = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(ACR_BaseSystem.GROUP_BASE, s_vSand));

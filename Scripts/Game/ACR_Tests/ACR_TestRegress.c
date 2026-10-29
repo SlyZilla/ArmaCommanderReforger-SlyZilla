@@ -709,7 +709,7 @@ class ACR_TestRegress
   // #73: garrison soldiers spawn clear of walls (squads are out by now, for the navmesh).
   if (tick == 6) ACR_TestGarrisonSpawn.Check();
   // #87: spawn spots and squads step off sand and gravel piles.
-  if (tick == 6) ACR_TestSpawnHeap.Place(harness.Ground("1250 0 2760"), harness.Ground("1235 0 2780"));
+  if (tick == 6) ACR_TestSpawnHeap.Place(harness.Ground("1250 0 2760"), harness.Ground("1235 0 2780"), harness.Ground("1180 0 2720"));
   if (tick == 7) ACR_TestSpawnHeap.CheckSpots();
   if (tick == 9) ACR_TestSpawnHeap.CheckSquad();
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
