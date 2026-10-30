@@ -547,6 +547,20 @@ class ACR_BaseWorks
   return built;
  }
 
+ // Tests: every tier up at once, for a look at it (ACR_TestWorksShots).
+ static int BuildAllForTest(ACR_Base base, string faction)
+ {
+  ACR_BaseWork work = WorkFor(base, faction);
+  int built;
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   if (site.m_bBuilt || site.m_bNoFit) continue;
+   if (Build(work, site)) built++;
+   else site.m_bNoFit = true;
+  }
+  return built;
+ }
+
  // ---------------------------------------------------------------- where the sites go
 
  protected static void PlanSites(ACR_BaseWork work)

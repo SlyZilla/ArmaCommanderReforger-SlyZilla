@@ -207,3 +207,4 @@ baseworksai|-acrBaseWorksAITest 1|620|Worlds/ACR_Everon.ent
 baseworksplan|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Everon.ent
 baseworksplanarland|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Arland.ent
 baseworksplankolguyev|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Kolguyev.ent
+worksshots|-acrWorksShotsTest 1|600|Worlds/ACR_Kolguyev.ent
