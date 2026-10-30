@@ -122,7 +122,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   }
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
   else if (m_BaseIndex >= 0) pc.ACR_ClickBase(m_Label);
-  else pc.ACR_SelectGroup(pc.ACR_CycleOverlap(this));
+  else pc.ACR_PickGroup(this);
  }
 }
 class ACR_MarkerClick : ScriptedWidgetEventHandler
@@ -1137,6 +1137,13 @@ modded class SCR_PlayerController
   else SCR_HintManagerComponent.ShowCustomHint("Place the cursor over a unit marker, then press F7", "Possess soldier", 4, true);
  }
 
+ // A left-click on a squad's marker: select it (a pile of overlapping markers: the next one in it).
+ // The calm map opens a list of the squads behind a "×N" instead (ACR_PlayerMapDeclutter).
+ void ACR_PickGroup(ACR_UnitMarker marker)
+ {
+  ACR_SelectGroup(ACR_CycleOverlap(marker));
+ }
+
  // Squads whose markers overlap (a squad riding in a truck, a crew next to its
  // vehicle): the first click selects the marker on top, each further click on
  // the pile selects the next squad in it.
@@ -2009,13 +2016,17 @@ modded class SCR_PlayerController
  static const int ACR_CONTACT_SUSPECTED = 30; // s: older sightings are drawn as suspected
 
  protected ref array<int> m_ACR_FeedAges = {};
+ protected ref array<vector> m_ACR_FeedPos = {};
+ // Where each INTEL line as shown happened (vector.Zero: nowhere), as ACR_FeedLines last made them:
+ // a click on the line jumps the map there (ACR_FeedClick).
+ protected ref array<vector> m_ACR_FeedShownPos = {};
  protected int m_ACR_IntelAt;
- void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges)
+ void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges, array<vector> feedPos)
  {
-  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, feed, feedAges);
+  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, feed, feedAges, feedPos);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges)
+ protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges, array<vector> feedPos)
  {
   m_ACR_ContactPositions.Copy(positions);
   m_ACR_ContactKinds.Copy(kinds);
@@ -2023,6 +2034,7 @@ modded class SCR_PlayerController
   m_ACR_ContactAges.Copy(ages);
   m_ACR_Feed.Copy(feed);
   m_ACR_FeedAges.Copy(feedAges);
+  m_ACR_FeedPos.Copy(feedPos);
   m_ACR_IntelAt = System.GetTickCount();
  }
 
@@ -2030,12 +2042,16 @@ modded class SCR_PlayerController
  protected void ACR_FeedLines(notnull array<string> lines)
  {
   lines.Clear();
+  m_ACR_FeedShownPos.Clear();
   int since = ACR_MapData.Since(m_ACR_IntelAt);
   foreach (int i, string line : m_ACR_Feed)
   {
    int seconds = since;
    if (i < m_ACR_FeedAges.Count()) seconds += m_ACR_FeedAges[i];
    if (seconds > 600) break;
+   vector spot = vector.Zero;
+   if (i < m_ACR_FeedPos.Count()) spot = m_ACR_FeedPos[i];
+   m_ACR_FeedShownPos.Insert(spot);
    string when = seconds.ToString() + "s";
    if (seconds >= 60)
    {

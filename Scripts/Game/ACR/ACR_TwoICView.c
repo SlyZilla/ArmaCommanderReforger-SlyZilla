@@ -1835,6 +1835,36 @@ modded class SCR_PlayerController
   m_ACR_TwoICView.ShowRingPills(labels, xs, ys);
  }
 
+ // The 2IC panel's "Show" on a squad's row (playtest 30 Oct: finding a squad on a crowded map was
+ // hard): the panel closes, the squad is selected (its icon stands on its own, out of any "×N"), the
+ // map pans to it and a pulse marks it (ACR_FocusMap).
+ void ACR_TwoICShowSquad(RplId groupId)
+ {
+  if (!m_ACR_Data) return;
+  int g = m_ACR_Data.m_GroupIds.Find(groupId);
+  if (g < 0) return;
+  vector at = m_ACR_Data.LeaderPos(g);
+  if (m_ACR_TwoICPanel) ACR_TwoICTogglePanel();
+  ACR_SelectGroup(groupId);
+  ACR_FocusMap(at);
+ }
+
+ // The panel's "Show" on a FOB's row: the same, for the FOB's base marker.
+ void ACR_TwoICShowFob(string label)
+ {
+  if (!m_ACR_Data) return;
+  foreach (int b, string name : m_ACR_Data.m_BaseNames)
+  {
+   if (name != label && ACR_MapDeclutter.ShortName(name) != label) continue;
+   if (b >= m_ACR_Data.m_BasePositions.Count()) return;
+   if (m_ACR_TwoICPanel) ACR_TwoICTogglePanel();
+   ACR_FocusMap(m_ACR_Data.m_BasePositions[b]);
+   return;
+  }
+ }
+
+ bool ACR_TwoICPanelOpen() { return m_ACR_TwoICPanel != null; }
+
  // The channel's "Show" on an open suggestion: the map pans to its marker (its ring), at the same zoom.
  void ACR_TwoICShowSuggestion()
  {
@@ -2135,6 +2165,8 @@ modded class SCR_PlayerController
 
  override protected string ACR_GroupLabel(int index, string label)
  {
+  // The other tags first (a control group's number, ACR_PlayerMapGroups).
+  label = super.ACR_GroupLabel(index, label);
   if (!ACR_TwoICRuns(index)) return label;
   label.Replace(" [AI]", "");
   return label;

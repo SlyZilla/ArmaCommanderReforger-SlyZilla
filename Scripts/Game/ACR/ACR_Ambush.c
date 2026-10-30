@@ -843,7 +843,7 @@ class ACR_Ambush
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager || !squad.GetFaction()) return;
   ACR_Intel intel = manager.IntelFor(squad.GetFaction().GetFactionKey());
-  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), string.Format("%1 sprang its ambush (%2)", squad.GetName(), why));
+  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), string.Format("%1 sprang its ambush (%2)", squad.GetName(), why), plan.m_vKillZone);
  }
 
  // The combat mode and stance for the phase. own: on its ambush order (not regrouping), else
