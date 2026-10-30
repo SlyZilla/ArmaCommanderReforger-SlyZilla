@@ -3,6 +3,7 @@
 
 ### AI commanders
 
+- Drag the ACA panel, or INTEL by its header, anywhere on the command map; the place is kept per player and a double click puts it back. Off the map, the F keys show as a reminder along the top of the screen, drawn as they are bound; **Key reminders** on the ACA panel, or a key under Settings > Controls > AC: Actual, hides it (a player's request).
 - Bigger maps, bigger armies (host option, off by default): `-acrCapScale 1` multiplies every side's AI squad cap and the soldier cap by the map's bases / 12 or the spread of its bases / 5 km, whichever is more, between x1 and x2 (soldier cap at most 250). The active-AI limit follows, and the log line `[ACR] CAP SCALE` shows what it chose. The setup screen has a row for it: **Squad caps scale with map** (off / on).
 - An AI mortar team that can't reach the base it was sent to isn't sent there again for 15 minutes. Before, a mortar team could be sent to the same unreachable base over and over, packing up and setting up again at home each time, and fired little all match.
 - An AI vehicle whose driver got out on his own while the gunner stayed aboard gets its driver back: he climbs into the driver's seat (placed there if he hasn't made it in 30 seconds). Before, nothing put him back, and the commander sent the driverless vehicle on order after order that failed where it stood (a Typhoon in a playtest, for 37 minutes). A crew that left a vehicle with an empty tank waits for the fuel truck instead of getting back in.

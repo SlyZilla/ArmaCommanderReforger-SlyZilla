@@ -803,9 +803,9 @@ modded class ACR_CommandPanel
   Widget menuRoot = m_Root.GetParent();
   WorkspaceWidget ws = GetGame().GetWorkspace();
   if (!menuRoot || !ws) return;
-  float intelY = 96;
+  float intelY = ACR_UiPrefs.s_fFeedY;
   Widget card = menuRoot.FindAnyWidget("ACR_TwoICCard");
-  if (card && card.IsVisibleInHierarchy())
+  if (!ACR_UiPrefs.FeedMoved() && card && card.IsVisibleInHierarchy())
   {
    float cx, cy, cw, ch;
    card.GetScreenPos(cx, cy);
@@ -815,27 +815,27 @@ modded class ACR_CommandPanel
   if (intelY != m_fDeclIntelY)
   {
    m_fDeclIntelY = intelY;
-   FrameSlot.SetPos(m_FeedRoot, 110, intelY);
-   FrameSlot.SetPos(m_DeclIntelBar, 110, intelY);
   }
-  float acaY = 96;
+  FrameSlot.SetPos(m_FeedRoot, ACR_UiPrefs.s_fFeedX, intelY);
+  FrameSlot.SetPos(m_DeclIntelBar, ACR_UiPrefs.s_fFeedX, intelY);
+  float acaY = ACR_UiPrefs.s_fPanelY;
   float hx, hy, hw, hh;
-  if (SCR_HintUIComponent.ACR_ShownRect(hx, hy, hw, hh))
+  // Out of a hint's way, unless the player has put it somewhere of their own.
+  if (!ACR_UiPrefs.PanelMoved() && SCR_HintUIComponent.ACR_ShownRect(hx, hy, hw, hh))
   {
    Widget box = m_Root;
    if (!m_Root.IsVisible()) box = m_DeclAcaBar;
    float bx, by, bw, bh;
    box.GetScreenPos(bx, by);
    box.GetScreenSize(bw, bh);
-   float top = ws.DPIScale(96);
+   float top = ws.DPIScale(ACR_UiPrefs.s_fPanelY);
    bool covers = hx < bx + bw && hx + hw > bx && hy < top + bh && hy + hh > top;
    float below = ws.DPIUnscale(hy + hh) + 8;
    if (covers && below + ws.DPIUnscale(bh) <= ws.DPIUnscale(ws.GetHeight()) - 8) acaY = below;
   }
-  if (acaY == m_fDeclAcaY) return;
   m_fDeclAcaY = acaY;
-  FrameSlot.SetPos(m_Root, -24, acaY);
-  FrameSlot.SetPos(m_DeclAcaBar, -24, acaY);
+  FrameSlot.SetPos(m_Root, ACR_UiPrefs.s_fPanelX, acaY);
+  FrameSlot.SetPos(m_DeclAcaBar, ACR_UiPrefs.s_fPanelX, acaY);
  }
 
  float DeclIntelY() { return m_fDeclIntelY; }
