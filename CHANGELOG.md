@@ -12,6 +12,10 @@
 
 - The scenario generator handles more community terrains, for the new ACA map add-ons (Chernarus Minus, Gulfcoast Islands, Kunar Province, West Zagoria, Zimnitrita). On island maps, where the widest-apart HQ pairs can sit on islands with no land route between them, it now takes closer pairs, and a half or flashpoint draw that can't make a playable layout tries other draws from the same seed. Before, such a map could start with no bases at all. Place names with stray tabs or line breaks are tidied, and placeholder names like "?" no longer become objectives. Layouts on Everon, Arland and Kolguyev are unchanged.
 
+### Mod support
+
+- Content packs (#108): an optional add-on can now bring vehicle and kit mods into the buy lists cleanly. Vehicle mods add every variant they ship to the game's vehicle lists (test vehicles, fictional upgrades, copies crewed by the other side), and ACA used to offer them all. A plugged-in pack decides which of those stay, adds its own vetted entries with a price and role, and names the crews: a bought vehicle from the pack is crewed by the buying side's own crewmen, with a driver even where the mod left the seat empty. Without a pack nothing changes. The first pack, the Cold War pack, is a separate add-on.
+
 ### Fixes
 
 - Squads and vehicles no longer spawn inside sand and gravel piles, rubble heaps, hangars and other buildings (#87). The game's search for open ground often hands out a spot inside a pile, and squads, bought units, reinforcements and spawn points took its spots without a second look (base garrisons already had one since 0.5.8). A vehicle could also get the empty floor of a hangar (a starting Humvee on a generated Kolguyev layout). Each of those now also looks down from above and skips a spot with anything but trees over it, and a crowded base looks further out for clear ground instead of keeping a spot nobody checked. Bought squads stand on their own clear ground, and a squad the game lays out in its formation is checked once its men are in: anyone inside something steps to clear ground nearby.

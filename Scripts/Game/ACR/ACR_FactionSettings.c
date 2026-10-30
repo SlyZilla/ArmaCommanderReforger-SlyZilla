@@ -268,7 +268,7 @@ class ACR_FactionCatalog
    PaintSuffixes(factionKey, paints);
    foreach (string paint : paints)
     foreach (SCR_EntityCatalogEntry entry : entries)
-     if (entry.IsEnabled() && FilePath.StripExtension(FilePath.StripPath(entry.GetPrefab())) == sourceLeaf + paint) return entry.GetPrefab();
+     if (entry.IsEnabled() && FilePath.StripExtension(FilePath.StripPath(entry.GetPrefab())) == sourceLeaf + paint && Allowed(factionKey, type, entry.GetPrefab())) return entry.GetPrefab();
   }
   // The faction's standard subunit first; any other match only if it has none.
   ResourceName found = MatchCatalog(entries, sourceLeaf, wanted, factionKey, type, true);
@@ -344,6 +344,7 @@ class ACR_FactionCatalog
   {
    if (!entry.IsEnabled()) continue;
    ResourceName candidate = entry.GetPrefab();
+   if (!Allowed(factionKey, type, candidate)) continue;
    if (standardOnly && !IsStandard(factionKey, candidate, type)) continue;
    string leaf = FilePath.StripExtension(FilePath.StripPath(candidate));
    if (leaf == sourceLeaf) return candidate;
@@ -377,7 +378,7 @@ class ACR_FactionCatalog
  static bool IsStandard(string factionKey, ResourceName prefab, EEntityCatalogType type)
  {
   string path = prefab;
-  if (path.Contains("NotSpawned")) return false;
+  if (path.Contains("NotSpawned") || !Allowed(factionKey, type, prefab)) return false;
   string leaf = FilePath.StripExtension(FilePath.StripPath(prefab));
   if (type == EEntityCatalogType.VEHICLE)
   {
@@ -387,6 +388,12 @@ class ACR_FactionCatalog
   }
   string standard = StandardPath(factionKey);
   return standard.IsEmpty() || path.Contains(standard);
+ }
+
+ // A plugged-in content pack (ACR_ContentSocket) may keep mod entries out of the catalogs.
+ static bool Allowed(string factionKey, EEntityCatalogType type, ResourceName prefab)
+ {
+  return ACR_ContentSocket.Get().AllowsCatalogEntry(factionKey, type, prefab);
  }
 
  protected static ref map<string, ResourceName> s_Crewmen = new map<string, ResourceName>();
@@ -464,6 +471,7 @@ class ACR_FactionCatalog
    if (ACR_InfantryCatalog.UseDefaults(factionKey, settings)) ACR_InfantryCatalog.Build(factionKey, result);
    else AddCatalog(factionKey, EEntityCatalogType.GROUP, used, exclude, result);
    AddCatalog(factionKey, EEntityCatalogType.VEHICLE, used, exclude, result);
+   ACR_ContentSocket.Get().AddRequisitions(factionKey, result);
    EnsureWestGunship(factionKey, exclude, result);
   }
   EnsureRUAFVehicles(factionKey, result);
@@ -716,7 +724,7 @@ class ACR_FactionCatalog
  {
   foreach (SCR_EntityCatalogEntry entry : entries)
   {
-   if (!entry.IsEnabled()) continue;
+   if (!entry.IsEnabled() || !Allowed(factionKey, EEntityCatalogType.CHARACTER, entry.GetPrefab())) continue;
    if (standardOnly && !IsStandard(factionKey, entry.GetPrefab(), EEntityCatalogType.CHARACTER)) continue;
    if (entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_RIFLEMAN))
    {
