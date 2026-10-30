@@ -21,6 +21,7 @@ class ACR_UiPrefs
  static const float FEED_HOME_X = 110;  // clear of the map toolbar on the left
  static const float FEED_HOME_Y = 96;
  static const float GRAB = 40;          // this much of a panel stays on the screen, to grab it by
+ static const float STEP_GAP = 8;       // what a panel keeps clear of a hint, and a note of its panel
  protected static ref map<string, vector> s_Spots = new map<string, vector>();
  protected static string s_sFile = PREFS;
  static bool s_bKeyHints = true;
@@ -124,6 +125,45 @@ class ACR_UiPrefs
   float top = ToEdge(y, anchor, screenH, height);
   top = Math.Clamp(top, 0, Math.Max(screenH - height, 0));
   return FromEdge(top, anchor, screenH, height);
+ }
+
+ static bool Overlap(float x, float y, float w, float h, float ox, float oy, float ow, float oh)
+ {
+  return x < ox + ow && x + w > ox && y < oy + oh && y + h > oy;
+ }
+
+ // A panel with its top left at x, y while a hint box shows: where it stands is left as it is if clear,
+ // else the nearest of under the hint, above it, to its left and to its right that has all of the panel
+ // on the screen. False when there is none, and it stays.
+ static bool StepAside(float x, float y, float w, float h, float hintX, float hintY, float hintW, float hintH, float screenW, float screenH, out float toX, out float toY)
+ {
+  toX = x;
+  toY = y;
+  if (!Overlap(x, y, w, h, hintX, hintY, hintW, hintH)) return true;
+  array<float> xs = {x, x, hintX - STEP_GAP - w, hintX + hintW + STEP_GAP};
+  array<float> ys = {hintY + hintH + STEP_GAP, hintY - STEP_GAP - h, y, y};
+  float best = -1;
+  foreach (int i, float spotX : xs)
+  {
+   float spotY = ys[i];
+   if (spotX < 0 || spotY < 0 || spotX + w > screenW || spotY + h > screenH) continue;
+   float cost = Math.AbsFloat(spotX - x) + Math.AbsFloat(spotY - y);
+   if (best >= 0 && cost >= best) continue;
+   best = cost;
+   toX = spotX;
+   toY = spotY;
+  }
+  return best >= 0;
+ }
+
+ // A note's left edge beside its panel: on the left, or the right if the screen ends there.
+ static float BesideX(float panelX, float panelW, float noteW, float screenW)
+ {
+  float left = panelX - STEP_GAP - noteW;
+  if (left >= 0) return left;
+  float right = panelX + panelW + STEP_GAP;
+  if (right + noteW <= screenW) return right;
+  return 0;
  }
 
  // Tests: the file the player's real one is safe from (UseTestFileForTest), and the defaults again,

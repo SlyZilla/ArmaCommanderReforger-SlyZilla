@@ -2032,35 +2032,3 @@ modded class SCR_MapToolMenuUI
   m_ACR_MoonEntry.SetActive(pc.ACR_DeclToggleDark());
  }
 }
-
-// ---------------------------------------------------------------- the game's hint box
-// Where the game's hint box is while it shows, so the ACA panel can keep clear of it.
-modded class SCR_HintUIComponent
-{
- protected static ref array<SCR_HintUIComponent> s_aACR_Hints = {};
-
- override void HandlerAttached(Widget w)
- {
-  super.HandlerAttached(w);
-  if (!s_aACR_Hints.Contains(this)) s_aACR_Hints.Insert(this);
- }
-
- override void HandlerDeattached(Widget w)
- {
-  s_aACR_Hints.RemoveItem(this);
-  super.HandlerDeattached(w);
- }
-
- // A hint box on screen (shown, not faded out): its rectangle (px).
- static bool ACR_ShownRect(out float x, out float y, out float w, out float h)
- {
-  foreach (SCR_HintUIComponent hint : s_aACR_Hints)
-  {
-   if (!hint || !hint.m_Widget || !hint.m_Widget.IsVisibleInHierarchy() || hint.m_Widget.GetOpacity() < 0.2) continue;
-   hint.m_Widget.GetScreenPos(x, y);
-   hint.m_Widget.GetScreenSize(w, h);
-   if (w > 0 && h > 0) return true;
-  }
-  return false;
- }
-}

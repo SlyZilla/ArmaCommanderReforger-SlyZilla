@@ -152,6 +152,10 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_DebugCaptureOwn;
  protected SCR_ButtonTextComponent m_DebugCaptureEnemy;
  protected string m_sDebugShown = "-";
+ protected static const float NOTE_WIDTH = 340;
+ protected Widget m_NoteRoot;
+ protected TextWidget m_NoteText;
+ protected string m_sNote;
 
  void Create(Widget parent, SCR_PlayerController owner)
  {
@@ -296,7 +300,70 @@ class ACR_CommandPanel : Managed
   CreateFeed(parent);
   CreatePicker(parent);
   CreateDebug(parent);
+  CreateNote(parent);
   RegisterPanels();
+ }
+
+ // What an armed order does, in a box of its own beside the panel. At the panel's foot it ran off the
+ // screen with the build orders open (their rows add up to about 1150 px of a 1080 px screen), just
+ // when the player has asked for it. Clicks go through it to the map.
+ protected void CreateNote(Widget parent)
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  m_NoteRoot = ws.CreateWidget(WidgetType.OverlayWidgetTypeID, WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, parent);
+  FrameSlot.SetAnchorMin(m_NoteRoot, 0, 0);
+  FrameSlot.SetAnchorMax(m_NoteRoot, 0, 0);
+  FrameSlot.SetAlignment(m_NoteRoot, 0, 0);
+  FrameSlot.SetSizeToContent(m_NoteRoot, true);
+  m_NoteRoot.SetZOrder(1002);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, PanelBackground(0.94), 0, m_NoteRoot);
+  AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
+  SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 1, m_NoteRoot));
+  size.EnableWidthOverride(true);
+  size.SetWidthOverride(NOTE_WIDTH);
+  AlignableSlot.SetPadding(size, 10, 8, 10, 8);
+  m_NoteText = AddText(size, LAYOUT_TEXT, "");
+  if (m_NoteText)
+  {
+   m_NoteText.SetFlags(WidgetFlags.IGNORE_CURSOR);
+   AlignableSlot.SetHorizontalAlign(m_NoteText, LayoutHorizontalAlign.Stretch);
+  }
+ }
+
+ protected void SetNote(string text)
+ {
+  if (text == m_sNote) return;
+  m_sNote = text;
+  if (m_NoteText) m_NoteText.SetText(text);
+ }
+
+ // Beside the panel, level with its top; clear of a hint. Only while the panel shows (placing a FOB
+ // with the 2IC, its own banner says it all).
+ protected void PlaceNote()
+ {
+  if (!m_NoteRoot) return;
+  bool show = !m_sNote.IsEmpty() && m_Root && m_Root.IsVisible();
+  if (m_NoteRoot.IsVisible() != show) m_NoteRoot.SetVisible(show);
+  if (!show) return;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float screenW = ws.DPIUnscale(ws.GetWidth());
+  float screenH = ws.DPIUnscale(ws.GetHeight());
+  float px, py, pw, ph, nw, nh;
+  m_Root.GetScreenPos(px, py);
+  m_Root.GetScreenSize(pw, ph);
+  m_NoteRoot.GetScreenSize(nw, nh);
+  nw = ws.DPIUnscale(nw);
+  nh = ws.DPIUnscale(nh);
+  float x = ACR_UiPrefs.BesideX(ws.DPIUnscale(px), ws.DPIUnscale(pw), nw, screenW);
+  float y = ACR_UiPrefs.FitY(ws.DPIUnscale(py), 0, screenH, nh);
+  float hx, hy, hw, hh, toX, toY;
+  if (ACR_PanelMover.HintRect(hx, hy, hw, hh) && ACR_UiPrefs.StepAside(x, y, nw, nh, hx, hy, hw, hh, screenW, screenH, toX, toY))
+  {
+   x = toX;
+   y = toY;
+  }
+  FrameSlot.SetPos(m_NoteRoot, x, y);
  }
 
  // Debug menu (host and admins): a small box at the bottom left, closed by default.
@@ -571,6 +638,18 @@ class ACR_CommandPanel : Managed
   else m_BuildFoldButton.SetText("Build orders");
  }
 
+ // Tests: an armed order's note shows, clear of the panel.
+ bool NoteShownForTest() { return m_NoteRoot && m_NoteRoot.IsVisible(); }
+ bool NoteClearForTest()
+ {
+  if (!NoteShownForTest() || !m_Root) return false;
+  float x, y, w, h, nx, ny, nw, nh;
+  m_Root.GetScreenPos(x, y);
+  m_Root.GetScreenSize(w, h);
+  m_NoteRoot.GetScreenPos(nx, ny);
+  m_NoteRoot.GetScreenSize(nw, nh);
+  return nw > 0 && !ACR_UiPrefs.Overlap(x, y, w, h, nx, ny, nw, nh);
+ }
  // Tests: the middle of the first line INTEL shows, in screen pixels (x, y; zero: no line).
  vector FeedLineForTest()
  {
@@ -643,6 +722,7 @@ class ACR_CommandPanel : Managed
   ACR_PanelMover.FitTitleBar(ACR_UiPrefs.PANEL, m_Economy);
   ACR_PanelMover.FitTitleBar(ACR_UiPrefs.FEED, FirstFeedLine());
   ACR_PanelMover.Tick();
+  PlaceNote();
  }
 
  protected void OnMouseLeftUp(float value = 0, EActionTrigger reason = 0) { ACR_PanelMover.DragEnd(); }
@@ -721,7 +801,11 @@ class ACR_CommandPanel : Managed
   if (m_FobSection) m_FobSection.SetVisible(false);
   if (!m_GroupSection) return;
   m_GroupSection.SetVisible(!name.IsEmpty());
-  if (name.IsEmpty()) return;
+  if (name.IsEmpty())
+  {
+   SetNote("");
+   return;
+  }
   m_GroupName.SetText(name);
   m_GroupDetail.SetText(detail);
   if (m_SwitchWidget) m_SwitchWidget.SetVisible(true);
@@ -789,7 +873,13 @@ class ACR_CommandPanel : Managed
    else m_FortifyButton.SetText("Fortify");
   }
   RefreshBuildFold(cursorMode);
-  if (m_Hint) m_Hint.SetText(hint);
+  // An armed order's words stand beside the panel (CreateNote), the plain reminder at its foot.
+  bool armedNote = friendly && isCommander && cursorMode != ACR_ECursorMode.MOVE;
+  if (armedNote) SetNote(hint);
+  else SetNote("");
+  if (!m_Hint) return;
+  m_Hint.SetVisible(!armedNote);
+  if (!armedNote) m_Hint.SetText(hint);
  }
 
  // Buy list: one button per entry, rebuilt when the entry count changes.
@@ -931,6 +1021,7 @@ class ACR_CommandPanel : Managed
   if (m_MinesWidget) m_MinesWidget.SetVisible(false);
   if (m_FortifyWidget) m_FortifyWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
+  SetNote("");
   if (m_Hint) m_Hint.SetText("");
  }
 
@@ -1067,6 +1158,9 @@ class ACR_CommandPanel : Managed
   ACR_PanelMover.Remove(ACR_UiPrefs.PANEL);
   ACR_PanelMover.Remove(ACR_UiPrefs.FEED);
   ACR_PanelMover.Remove(ACR_UiPrefs.DEBUG_BOX);
+  if (m_NoteRoot) m_NoteRoot.RemoveFromHierarchy();
+  m_NoteRoot = null;
+  m_NoteText = null;
   GetGame().GetInputManager().RemoveActionListener("MouseLeft", EActionTrigger.UP, OnMouseLeftUp);
   if (m_Root) m_Root.RemoveFromHierarchy();
   m_Root = null;

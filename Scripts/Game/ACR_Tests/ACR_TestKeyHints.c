@@ -1,8 +1,9 @@
 // srv:keyhints (about 30 s): the key reminders' text and the UI prefs behind the movable panels. Checks:
 // what a commander and anyone else are reminded of, the vehicle's wording; the file keeps every panel's
 // spot and the choices, and a file from before every panel could move still reads; a double click's
-// forgetting; a place off the screen comes back on, by any anchor; the player's real file is left
-// alone. The widgets and the drag need a client (ACR_TestPanelShots).
+// forgetting; a place off the screen comes back on, by any anchor; where a panel stands while a hint
+// shows; the player's real file is left alone. The widgets and the drag need a client
+// (ACR_TestPanelShots).
 class ACR_TestKeyHints
 {
  static void Run(int second)
@@ -88,8 +89,41 @@ class ACR_TestKeyHints
   bool edges = ACR_UiPrefs.ToEdge(-24, 1, 1920, 340) == 1556 && ACR_UiPrefs.FromEdge(1556, 1, 1920, 340) == -24 && ACR_UiPrefs.ToEdge(0, 0.5, 1920, 1560) == 180 && ACR_UiPrefs.ToEdge(110, 0, 1920, 390) == 110;
   ACR_TestRegress.Check("keyhints: a spot's edge and back", edges, "");
 
+  CheckStepAside();
   ACR_TestRegress.Check("keyhints: the player's own file is left as it was", FileIO.FileExists(ACR_UiPrefs.PREFS) == realBefore, "");
-  ACR_TestRegress.Complete("keyhints", 20);
+  ACR_TestRegress.Complete("keyhints", 30);
+ }
+
+ // A 1920 x 1080 screen, the hint box where the map's right column puts it.
+ protected static void CheckStepAside()
+ {
+  float hx = 1568;
+  float hy = 150;
+  float hw = 320;
+  float hh = 200;
+  float x, y;
+  bool clear = ACR_UiPrefs.StepAside(1100, 60, 368, 900, hx, hy, hw, hh, 1920, 1080, x, y) && x == 1100 && y == 60;
+  ACR_TestRegress.Check("keyhints: a panel clear of the hint stays where it is", clear, string.Format("%1, %2", x, y));
+  // At home with nothing selected, 400 tall: under the hint is nearest, and fits.
+  bool under = ACR_UiPrefs.StepAside(1528, 96, 368, 400, hx, hy, hw, hh, 1920, 1080, x, y) && x == 1528 && y == 358;
+  ACR_TestRegress.Check("keyhints: a short panel goes under the hint", under, string.Format("%1, %2", x, y));
+  // The player's spot from the playtest (x -6, y 9), a squad selected, 1000 tall: under doesn't fit,
+  // above doesn't, so to the hint's left. Before, this stayed over the hint (and at home too).
+  bool beside = ACR_UiPrefs.StepAside(1546, 9, 368, 1000, hx, hy, hw, hh, 1920, 1080, x, y) && x == 1192 && y == 9;
+  ACR_TestRegress.Check("keyhints: a tall panel goes beside the hint", beside, string.Format("%1, %2", x, y));
+  // Hint at the very left: to its right, and no spot left off the screen.
+  bool right = ACR_UiPrefs.StepAside(10, 10, 400, 1000, 0, 100, 300, 500, 1920, 1080, x, y) && x == 308 && y == 10;
+  ACR_TestRegress.Check("keyhints: with no room to the left, to the hint's right", right, string.Format("%1, %2", x, y));
+  // Above is nearest when the hint is low.
+  bool above = ACR_UiPrefs.StepAside(800, 700, 300, 200, 800, 800, 300, 100, 1920, 1080, x, y) && x == 800 && y == 592;
+  ACR_TestRegress.Check("keyhints: above the hint when that is nearest", above, string.Format("%1, %2", x, y));
+  // Nothing clears it: stays, and says so (the hint is drawn over it then).
+  bool none = !ACR_UiPrefs.StepAside(0, 0, 1900, 1070, 800, 400, 300, 200, 1920, 1080, x, y) && x == 0 && y == 0;
+  ACR_TestRegress.Check("keyhints: a panel with nowhere to go stays", none, string.Format("%1, %2", x, y));
+  // Touching isn't overlapping (no stepping back and forth on the edge).
+  ACR_TestRegress.Check("keyhints: edges that touch don't overlap", !ACR_UiPrefs.Overlap(0, 0, 100, 100, 100, 0, 50, 50) && ACR_UiPrefs.Overlap(0, 0, 101, 100, 100, 0, 50, 50), "");
+  bool note = ACR_UiPrefs.BesideX(1556, 340, 340, 1920) == 1208 && ACR_UiPrefs.BesideX(100, 368, 340, 1920) == 476 && ACR_UiPrefs.BesideX(100, 1600, 340, 1920) == 0;
+  ACR_TestRegress.Check("keyhints: an order's note stands beside its panel", note, "");
  }
 
  protected static void WriteFile(array<string> lines)

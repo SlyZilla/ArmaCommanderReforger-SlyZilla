@@ -4,6 +4,43 @@
 // the spot in the player's prefs (ACR_UiPrefs), a double click forgets it, and each frame (Tick) every
 // panel goes where it should stand, kept on the screen. A press on a button, a text box or a
 // scrolling list is theirs, never a drag.
+//
+// The game's hints: on the map the hint box sits in the map menu's own HUD layout (MapMenu.layout,
+// HudManagerLayout > Group_Right > Slot_Hints, top right, z 0), a sibling of these panels (z 1000), so a
+// panel over it hid it. While a hint shows its layout is lifted over them all, and every panel it
+// overlaps stands clear of it (ACR_UiPrefs.StepAside) and returns after: the spot is never written.
+
+// Where the game's hint box is while it shows.
+modded class SCR_HintUIComponent
+{
+ protected static ref array<SCR_HintUIComponent> s_aACR_Hints = {};
+
+ override void HandlerAttached(Widget w)
+ {
+  super.HandlerAttached(w);
+  if (!s_aACR_Hints.Contains(this)) s_aACR_Hints.Insert(this);
+ }
+
+ override void HandlerDeattached(Widget w)
+ {
+  s_aACR_Hints.RemoveItem(this);
+  super.HandlerDeattached(w);
+ }
+
+ // A hint box on screen (shown, not faded out), null none; its rectangle (px).
+ static Widget ACR_Shown(out float x, out float y, out float w, out float h)
+ {
+  foreach (SCR_HintUIComponent hint : s_aACR_Hints)
+  {
+   if (!hint || !hint.m_Widget || !hint.m_Widget.IsVisibleInHierarchy() || hint.m_Widget.GetOpacity() < 0.2) continue;
+   hint.m_Widget.GetScreenPos(x, y);
+   hint.m_Widget.GetScreenSize(w, h);
+   if (w > 0 && h > 0) return hint.m_Widget;
+  }
+  return null;
+ }
+}
+
 class ACR_PanelDragHandler : ScriptedWidgetEventHandler
 {
  string m_sId;
@@ -52,6 +89,7 @@ class ACR_PanelSlot : Managed
  float m_fShownX;
  float m_fShownY;
  SizeLayoutWidget m_TitleBar;
+ float m_fTitleBarHeight;
  ref array<ref ACR_PanelDragHandler> m_aHandlers = {};
 
  // What shows of it now (null: nothing).
@@ -87,6 +125,14 @@ class ACR_PanelMover
  protected static const float DRAG_START = 4; // reference pixels before a press counts as a drag
  protected static const float HANDLE_WIDTH = 44;
  protected static const float HANDLE_HEIGHT = 3;
+ protected static const int HINT_Z = 1200;    // over every panel of ours, the 2IC's (1100) too
+ protected static bool s_bHint;               // a hint shows: its rectangle (unscaled px)
+ protected static float s_fHintX;
+ protected static float s_fHintY;
+ protected static float s_fHintW;
+ protected static float s_fHintH;
+ protected static Widget s_HintLayer;         // what is lifted for it, and its own z order
+ protected static int s_iHintLayerZ;
 
  static Color BarColor(bool lit)
  {
@@ -134,6 +180,7 @@ class ACR_PanelMover
   if (!slot) return;
   if (s_Drag == slot) s_Drag = null;
   s_aSlots.RemoveItem(slot);
+  if (s_aSlots.IsEmpty()) LiftHint(null);
  }
 
  // Where it stands by itself: followed each frame if it follows something.
@@ -234,7 +281,9 @@ class ACR_PanelMover
   slot.m_aBoxes[0].GetScreenPos(rootX, rootY);
   below.GetScreenPos(belowX, belowY);
   float height = GetGame().GetWorkspace().DPIUnscale(belowY - rootY);
-  if (height >= 16) slot.m_TitleBar.SetHeightOverride(height);
+  if (height < 16 || height == slot.m_fTitleBarHeight) return;
+  slot.m_fTitleBarHeight = height;
+  slot.m_TitleBar.SetHeightOverride(height);
  }
 
  // ---------------------------------------------------------------- the drag
@@ -322,16 +371,76 @@ class ACR_PanelMover
    height = ws.DPIUnscale(height);
    // Whole on this screen, not written back: it returns to its spot on the screen it was put on,
    // and a panel grown past the bottom (a squad selected) stands higher only while it is that tall.
-   x = ACR_UiPrefs.ClampX(x, slot.m_fAnchorX, ws.DPIUnscale(ws.GetWidth()), width);
-   y = ACR_UiPrefs.FitY(y, slot.m_fAnchorY, ws.DPIUnscale(ws.GetHeight()), height);
+   float screenW = ws.DPIUnscale(ws.GetWidth());
+   float screenH = ws.DPIUnscale(ws.GetHeight());
+   x = ACR_UiPrefs.ClampX(x, slot.m_fAnchorX, screenW, width);
+   y = ACR_UiPrefs.FitY(y, slot.m_fAnchorY, screenH, height);
+   // Out of a hint's way, unless the player is holding it. From its own spot each frame, so it goes
+   // back by itself when the hint does.
+   if (s_bHint && slot != s_Drag && width > 0 && height > 0)
+   {
+    float left = ACR_UiPrefs.ToEdge(x, slot.m_fAnchorX, screenW, width);
+    float top = ACR_UiPrefs.ToEdge(y, slot.m_fAnchorY, screenH, height);
+    float toLeft, toTop;
+    if (ACR_UiPrefs.StepAside(left, top, width, height, s_fHintX, s_fHintY, s_fHintW, s_fHintH, screenW, screenH, toLeft, toTop))
+    {
+     x = ACR_UiPrefs.FromEdge(toLeft, slot.m_fAnchorX, screenW, width);
+     y = ACR_UiPrefs.FromEdge(toTop, slot.m_fAnchorY, screenH, height);
+    }
+   }
   }
   slot.SetPos(x, y);
+ }
+
+ // The hint's layout over the panels while one shows, as it was after. Only the layout's frames are
+ // told to ignore the cursor, on their way up from the hint, which keeps its own.
+ protected static void LiftHint(Widget hint)
+ {
+  Widget layer = null;
+  Widget menu = null;
+  if (hint && !s_aSlots.IsEmpty() && !s_aSlots[0].m_aBoxes.IsEmpty() && s_aSlots[0].m_aBoxes[0]) menu = s_aSlots[0].m_aBoxes[0].GetParent();
+  if (menu)
+  {
+   layer = hint;
+   while (layer && layer.GetParent() != menu) layer = layer.GetParent();
+  }
+  if (layer == s_HintLayer) return;
+  if (s_HintLayer) s_HintLayer.SetZOrder(s_iHintLayerZ);
+  s_HintLayer = layer;
+  if (!layer) return;
+  s_iHintLayerZ = layer.GetZOrder();
+  layer.SetZOrder(HINT_Z);
+  Widget frame = hint.GetParent();
+  while (frame && frame != menu)
+  {
+   frame.SetFlags(WidgetFlags.IGNORE_CURSOR);
+   frame = frame.GetParent();
+  }
+ }
+
+ // A hint's rectangle while one shows (unscaled px).
+ static bool HintRect(out float x, out float y, out float w, out float h)
+ {
+  x = s_fHintX;
+  y = s_fHintY;
+  w = s_fHintW;
+  h = s_fHintH;
+  return s_bHint;
  }
 
  // Every frame the map is open (ACR_CommandPanel.TickDrag).
  static void Tick()
  {
   TickDrag();
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float x, y, w, h;
+  Widget hint = SCR_HintUIComponent.ACR_Shown(x, y, w, h);
+  s_bHint = hint != null;
+  s_fHintX = ws.DPIUnscale(x);
+  s_fHintY = ws.DPIUnscale(y);
+  s_fHintW = ws.DPIUnscale(w);
+  s_fHintH = ws.DPIUnscale(h);
+  LiftHint(hint);
   foreach (ACR_PanelSlot slot : s_aSlots) Place(slot);
  }
 
@@ -372,6 +481,34 @@ class ACR_PanelMover
   box.GetScreenPos(x, y);
   float inset = GetGame().GetWorkspace().DPIScale(6);
   return Vector(x + inset, y + inset, 0);
+ }
+
+ // Nothing of it is under the hint (it doesn't show, or no hint does, counts as clear).
+ static bool ClearOfHintForTest(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (!slot || !slot.Box() || !s_bHint) return true;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float x, y, w, h;
+  slot.Box().GetScreenPos(x, y);
+  slot.Box().GetScreenSize(w, h);
+  return !ACR_UiPrefs.Overlap(ws.DPIUnscale(x), ws.DPIUnscale(y), ws.DPIUnscale(w), ws.DPIUnscale(h), s_fHintX, s_fHintY, s_fHintW, s_fHintH);
+ }
+
+ static bool HintLiftedForTest() { return s_HintLayer && s_HintLayer.GetZOrder() == HINT_Z; }
+
+ // Where the hint box hangs, for the log: its parents' names up to the top.
+ static string HintPathForTest()
+ {
+  float x, y, w, h;
+  Widget widget = SCR_HintUIComponent.ACR_Shown(x, y, w, h);
+  string path = string.Format("%1,%2 %3x%4:", s_fHintX, s_fHintY, s_fHintW, s_fHintH);
+  while (widget)
+  {
+   path += " " + widget.GetName();
+   widget = widget.GetParent();
+  }
+  return path;
  }
 
  // Its box's top left corner on the screen, in reference pixels.

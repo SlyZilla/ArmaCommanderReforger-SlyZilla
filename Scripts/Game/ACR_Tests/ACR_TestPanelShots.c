@@ -3,7 +3,9 @@
 // in screen pixels of the game's window. Checks: the strip shows off the map; every movable panel moves
 // when dragged by what the player would press, its spot is saved; a button still clicks and turns the
 // strip off and on; a click on an INTEL line still jumps the map; a folded panel moves by its bar; a
-// double click puts each back. Everything goes through a test file (UseTestFileForTest): the player's
+// double click puts each back. A hint: it shows on the map, drawn over the panels, none is under it, a
+// button still clicks meanwhile, and each panel is back where it was after, the player's spot unchanged
+// (the playtest's: x -6, y 9); an armed order's note stands clear of the panel. Everything goes through a test file (UseTestFileForTest): the player's
 // own prefs are never read after the start, written or deleted, even if this test is cut short.
 class ACR_TestPanelShots
 {
@@ -54,7 +56,11 @@ class ACR_TestPanelShots
   }
   if (tick == 22) GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   if (tick == 24 && mapEntity) mapEntity.ZoomPanSmooth(ws.GetWidth() / 2400.0, h.m_Range.m_Rally[0], h.m_Range.m_Rally[2], 0.1);
-  if (tick == 28) pc.ACR_TestTwoICShown(true);
+  if (tick == 28)
+  {
+   pc.ACR_TestTwoICShown(true);
+   if (!pc.ACR_IsCommanderForHints()) pc.ACR_OnPanelAction(ACR_EPanelAction.TOGGLE_COMMAND);
+  }
   if (tick == 32)
   {
    Shot("panel_2_home");
@@ -158,17 +164,96 @@ class ACR_TestPanelShots
    if (back % BACK_TICKS == BACK_TICKS - 1) ACR_TestRegress.Check("panelshots: a double click puts it back: " + Id(k), !ACR_UiPrefs.Moved(Id(k)), "");
   }
   int done = after + 47 + PANELS * BACK_TICKS;
-  if (tick == done)
-  {
-   Shot("panel_6_back");
-   GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
-  }
-  if (tick == done + 6)
+  if (tick == done) Shot("panel_6_back");
+  RunHints(pc, panel, tick - done - 1);
+  if (tick == done + 50) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+  if (tick == done + 56)
   {
    ACR_TestRegress.Check("panelshots: the strip is back after the map", ACR_KeyHints.ShownForTest(), "");
    FileIO.DeleteFile(ACR_UiPrefs.TEST_PREFS);
-   ACR_TestRegress.Complete("panelshots", 39);
+   ACR_TestRegress.Complete("panelshots", 51);
   }
+ }
+
+ // The hint and the note. at: seconds from its start.
+ protected static void RunHints(SCR_PlayerController pc, ACR_CommandPanel panel, int at)
+ {
+  // At home, nothing selected.
+  if (at == 0) ShowHint("Alpha 1: fortifying. An order's hint, long enough to read as the real ones do, and to need more than one line of the box.");
+  if (at == 3)
+  {
+   float hx, hy, hw, hh;
+   ACR_TestRegress.Check("panelshots: a hint shows on the map", ACR_PanelMover.HintRect(hx, hy, hw, hh), ACR_PanelMover.HintPathForTest());
+   ACR_TestRegress.Check("panelshots: the panel at home isn't over the hint", ACR_PanelMover.ClearOfHintForTest(ACR_UiPrefs.PANEL), string.Format("%1", ACR_PanelMover.TopLeftForTest(ACR_UiPrefs.PANEL)));
+   ACR_TestRegress.Check("panelshots: the hint's layout is lifted over the panels", ACR_PanelMover.HintLiftedForTest(), ACR_PanelMover.HintPathForTest());
+   Shot("panel_7_hint_home");
+   SCR_HintManagerComponent.HideHint();
+  }
+  if (at == 8)
+  {
+   ACR_TestRegress.Check("panelshots: the panel is back at home after the hint", ACR_PanelMover.ShownX(ACR_UiPrefs.PANEL) == ACR_UiPrefs.PANEL_HOME_X && ACR_PanelMover.ShownY(ACR_UiPrefs.PANEL) == ACR_UiPrefs.PANEL_HOME_Y, string.Format("%1, %2", ACR_PanelMover.ShownX(ACR_UiPrefs.PANEL), ACR_PanelMover.ShownY(ACR_UiPrefs.PANEL)));
+   // The spot from the playtest: dragged to the top right, over the hint.
+   ACR_UiPrefs.SetSpot(ACR_UiPrefs.PANEL, -6, 9);
+   ShowHint("Alpha 1: fortifying. The same, with the panel on the player's own spot right over the hint box.");
+  }
+  if (at == 12)
+  {
+   float spotX, spotY;
+   ACR_UiPrefs.Spot(ACR_UiPrefs.PANEL, spotX, spotY);
+   ACR_TestRegress.Check("panelshots: a moved panel steps out of the hint's way", ACR_PanelMover.ClearOfHintForTest(ACR_UiPrefs.PANEL), string.Format("%1", ACR_PanelMover.TopLeftForTest(ACR_UiPrefs.PANEL)));
+   ACR_TestRegress.Check("panelshots: and the player's spot is unchanged", spotX == -6 && spotY == 9, string.Format("%1, %2", spotX, spotY));
+   Shot("panel_8_hint_moved");
+   s_bKeysBefore = ACR_UiPrefs.s_bKeyHints;
+   if (panel) Ask("click", panel.KeyHintsButtonForTest(), 0, 0);
+  }
+  if (at == 17)
+  {
+   ACR_TestRegress.Check("panelshots: a button still clicks while a hint shows", ACR_UiPrefs.s_bKeyHints != s_bKeysBefore, "");
+   ACR_UiPrefs.s_bKeyHints = s_bKeysBefore;
+   if (panel) panel.RefreshKeyHints();
+   SCR_HintManagerComponent.HideHint();
+  }
+  if (at == 22)
+  {
+   ACR_TestRegress.Check("panelshots: the moved panel returns to the player's spot", ACR_PanelMover.ShownX(ACR_UiPrefs.PANEL) == -6 && ACR_PanelMover.ShownY(ACR_UiPrefs.PANEL) == 9, string.Format("%1, %2", ACR_PanelMover.ShownX(ACR_UiPrefs.PANEL), ACR_PanelMover.ShownY(ACR_UiPrefs.PANEL)));
+   Shot("panel_9_returned");
+   ACR_UiPrefs.Forget(ACR_UiPrefs.PANEL);
+   // Any panel: INTEL put where the hint comes.
+   ACR_UiPrefs.SetSpot(ACR_UiPrefs.FEED, 1500, 100);
+   ShowHint("Alpha 1: fortifying. The same, with INTEL put where the hint comes.");
+  }
+  if (at == 26)
+  {
+   ACR_TestRegress.Check("panelshots: INTEL steps aside too", ACR_PanelMover.ClearOfHintForTest(ACR_UiPrefs.FEED), string.Format("%1", ACR_PanelMover.TopLeftForTest(ACR_UiPrefs.FEED)));
+   SCR_HintManagerComponent.HideHint();
+  }
+  if (at == 31)
+  {
+   ACR_TestRegress.Check("panelshots: and returns", ACR_PanelMover.ShownX(ACR_UiPrefs.FEED) == 1500 && ACR_PanelMover.ShownY(ACR_UiPrefs.FEED) == 100, string.Format("%1, %2", ACR_PanelMover.ShownX(ACR_UiPrefs.FEED), ACR_PanelMover.ShownY(ACR_UiPrefs.FEED)));
+   ACR_UiPrefs.Forget(ACR_UiPrefs.FEED);
+   // An armed order: its words beside the panel.
+   ACR_SquadsList list = pc.ACR_SquadsListForTest();
+   if (list && list.RowsForTest() > 0) pc.ACR_SquadsListPick(list.IdForTest(0));
+  }
+  if (at == 34) pc.ACR_OnPanelAction(ACR_EPanelAction.DEFEND);
+  if (at == 37)
+  {
+   if (panel)
+   {
+    ACR_TestRegress.Check("panelshots: an armed order's words show", panel.NoteShownForTest(), "");
+    ACR_TestRegress.Check("panelshots: beside the panel, not behind it", panel.NoteClearForTest(), "");
+   }
+   Shot("panel_10_armed_note");
+   pc.ACR_OnPanelAction(ACR_EPanelAction.DEFEND);
+  }
+  if (at == 40 && panel) ACR_TestRegress.Check("panelshots: cancelled, the words go", !panel.NoteShownForTest(), "");
+ }
+
+ protected static bool s_bKeysBefore;
+
+ protected static void ShowHint(string text)
+ {
+  SCR_HintManagerComponent.ShowCustomHint(text, "AC: Actual", 30, true);
  }
 
  // The middle of the rectangle, and how far to drag from it.
