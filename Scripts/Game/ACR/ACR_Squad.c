@@ -3053,7 +3053,7 @@ class ACR_Squad : Managed
  }
 
  // The nearest point on the soldiers' navmesh or road within radius of 'at'.
- protected bool ReachableNear(vector at, float radius, out vector result)
+ bool ReachableNear(vector at, float radius, out vector result)
  {
   if (IsMounted())
   {

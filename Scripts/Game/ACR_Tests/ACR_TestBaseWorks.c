@@ -11,7 +11,7 @@ class ACR_TestBaseWorks
  static const ResourceName SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName ENEMY = "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et";
  static const string NAME = "Works Squad";
- static const int STEP_LIMIT = 300; // s a tier may take
+ static const int STEP_LIMIT = 420; // s a tier may take (a site it can't reach is given up on after its walk + 90 s)
  static const int CHECKS = 41;
  protected static int s_iStep;
  protected static int s_iStepAt;
@@ -76,8 +76,20 @@ class ACR_TestBaseWorks
  protected static bool Tier(int tier, int waited)
  {
   if (s_Work && s_Work.m_iTier >= tier) return true;
-  if (waited > STEP_LIMIT) ACR_TestRegress.Abort("baseworks", string.Format("tier %1 not done in %2 s: %3 built, %4 open", tier, STEP_LIMIT, ACR_BaseWorks.BuiltSites(s_Work, tier), ACR_BaseWorks.OpenSites(s_Work, tier)));
+  if (waited > STEP_LIMIT) ACR_TestRegress.Abort("baseworks", string.Format("tier %1 not done in %2 s: %3 built, %4 open; %5", tier, STEP_LIMIT, ACR_BaseWorks.BuiltSites(s_Work, tier), ACR_BaseWorks.OpenSites(s_Work, tier), Where()));
   return false;
+ }
+
+ // Where the squad is and what it says it's doing, when it's taking too long.
+ protected static string Where()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return "";
+  ACR_Squad squad = Find(manager);
+  if (!squad || !squad.GetAnchor()) return "no squad";
+  string plan = "no plan";
+  if (squad.m_FortifyPlan) plan = string.Format("site %1, %2 m off, stage %3", squad.m_FortifyPlan.m_vSite, (int)vector.DistanceXZ(squad.GetAnchor().GetOrigin(), squad.m_FortifyPlan.m_vSite), squad.m_FortifyPlan.m_vStage);
+  return string.Format("%1 at %2, order %3, %4, seed %5", squad.GetName(), squad.GetAnchor().GetOrigin(), squad.OrderState(), plan, ACR_Generator.Seed());
  }
 
  protected static ACR_Squad Find(ACR_Manager manager)

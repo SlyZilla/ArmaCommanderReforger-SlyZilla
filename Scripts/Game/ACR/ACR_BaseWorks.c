@@ -73,6 +73,7 @@ class ACR_BaseWorks
  static const float COVER_NEST = 0.6;
  static const float COVER_BUNKER = 0.5;
  static const float POST_AREA = 40;     // m round the command post its defenders garrison
+ static const int REACH_GRACE_MS = 90000; // ms past a 1 m/s walk to a site before the squad gives up on it
  static const int AI_RP_RESERVE = 30;   // an AI commander keeps this much back (as ManageBaseWorks)
  static ref array<ref ACR_BaseWork> s_aWorks = {};
  static int s_iMaxSitesForTest;         // at most this many sites of each kind (0: no limit)
@@ -324,12 +325,16 @@ class ACR_BaseWorks
   if (length > 1) back = back * (Math.Min(8, length) / length);
   plan.m_vStage = ACR_Manager.Ground(site.m_vPos + back);
   if (BBB_Terrain.IsWaterAt(plan.m_vStage)) plan.m_vStage = site.m_vPos;
+  // Somewhere a man can stand: a stretch can run beside a fence or a house.
+  vector walkable;
+  if (squad.ReachableNear(plan.m_vStage, 12, walkable)) plan.m_vStage = walkable;
   plan.m_fRadius = SITE_RADIUS;
   plan.m_fDuration = Duration(site) * ACR_Fortify.WORK_SCALE;
   float now = GetGame().GetWorld().GetWorldTime();
   plan.m_fLastTick = now;
   plan.m_fLastProgress = now;
-  plan.m_fDeadline = now + vector.DistanceXZ(from, plan.m_vStage) / ACR_Minefields.TRAVEL_SPEED * 1000 + ACR_Squad.FOB_GIVE_UP_MS;
+  // A site it can't get to (no way into a yard) shouldn't hold up the rest of the town for long.
+  plan.m_fDeadline = now + vector.DistanceXZ(from, plan.m_vStage) / ACR_Minefields.TRAVEL_SPEED * 1000 + REACH_GRACE_MS;
   return plan;
  }
 
