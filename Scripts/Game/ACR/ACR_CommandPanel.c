@@ -41,6 +41,7 @@ enum ACR_EPanelAction
  PATROL,
  QRF,
  KEY_HINTS,
+ BUILD_FOLD,
  DEBUG_TOGGLE = 50,
  DEBUG_THINK,             // the AC:A Think card (ACR_Think)
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
@@ -294,25 +295,30 @@ class ACR_CommandPanel : Managed
   m_PatrolButton = AddButton(orders4, "Patrol", ACR_EPanelAction.PATROL, true);
   m_QrfButton = AddButton(orders4, "QRF", ACR_EPanelAction.QRF, true);
   m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
-  m_EstablishFobButton = AddButton(m_OrderSection, "Establish FOB", ACR_EPanelAction.ESTABLISH_FOB);
+  // What a squad builds folds away: with it open and a squad selected the panel took most of the
+  // screen and covered the game's hints (a player's report).
+  m_BuildFoldButton = AddButton(m_OrderSection, "", ACR_EPanelAction.BUILD_FOLD);
+  m_BuildFoldWidget = m_LastButtonWidget;
+  m_BuildSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_EstablishFobButton = AddButton(m_BuildSection, "Establish FOB", ACR_EPanelAction.ESTABLISH_FOB);
   m_EstablishFobWidget = m_LastButtonWidget;
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
   // Roadblocks: the three checkpoint sizes in a row, a barricade under them.
-  m_RoadblockWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_RoadblockWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_BuildSection);
   m_RoadblockSizes = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_RoadblockWidget);
   m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.SMALL), ACR_EPanelAction.ROADBLOCK_S, true));
   m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.MEDIUM), ACR_EPanelAction.ROADBLOCK, true));
   m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.LARGE), ACR_EPanelAction.ROADBLOCK_L, true));
   m_RoadblockButtons.Insert(AddButton(m_RoadblockWidget, ACR_Roadblocks.Button(ACR_ERoadblockType.BARRICADE), ACR_EPanelAction.BARRICADE));
   if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(false);
-  m_MinesWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_MinesWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_BuildSection);
   Widget layMines = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_MinesWidget);
   m_MineButtons.Insert(AddButton(layMines, ACR_Minefields.Button(ACR_EMineKind.AP), ACR_EPanelAction.MINES_AP, true));
   m_MineButtons.Insert(AddButton(layMines, ACR_Minefields.Button(ACR_EMineKind.AT), ACR_EPanelAction.MINES_AT, true));
   m_MineButtons.Insert(AddButton(layMines, ACR_Minefields.Button(ACR_EMineKind.MIXED), ACR_EPanelAction.MINES_MIXED, true));
   m_MineButtons.Insert(AddButton(m_MinesWidget, ACR_Minefields.Button(ACR_EMineKind.DISARM), ACR_EPanelAction.DISARM_MINES));
   if (m_MinesWidget) m_MinesWidget.SetVisible(false);
-  m_FortifyButton = AddButton(m_OrderSection, "Fortify", ACR_EPanelAction.FORTIFY);
+  m_FortifyButton = AddButton(m_BuildSection, "Fortify", ACR_EPanelAction.FORTIFY);
   m_FortifyWidget = m_LastButtonWidget;
   if (m_FortifyWidget) m_FortifyWidget.SetVisible(false);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
@@ -579,6 +585,32 @@ class ACR_CommandPanel : Managed
  protected float m_fDragStartX;
  protected float m_fDragStartY;
  protected static const float DRAG_START = 4; // reference pixels before a press counts as a drag
+
+ protected SCR_ButtonTextComponent m_BuildFoldButton;
+ protected Widget m_BuildFoldWidget;
+ protected Widget m_BuildSection;
+
+ void ToggleBuildFold()
+ {
+  ACR_UiPrefs.s_bBuildOpen = !ACR_UiPrefs.s_bBuildOpen;
+  ACR_UiPrefs.Save();
+ }
+
+ // Open while one of its orders is armed (its button shows that, and its second click cancels). The
+ // fold button only shows when the squad can build something.
+ protected void RefreshBuildFold(int cursorMode)
+ {
+  if (!m_BuildSection || !m_BuildFoldButton) return;
+  bool armed = cursorMode == ACR_ECursorMode.ESTABLISH_FOB || cursorMode == ACR_ECursorMode.FORTIFY || cursorMode == ACR_ECursorMode.DISARM_MINES;
+  if (ACR_CommandPanel.RoadblockOfMode(cursorMode) >= 0) armed = true;
+  if (cursorMode >= ACR_ECursorMode.MINES_AP && cursorMode <= ACR_ECursorMode.MINES_MIXED) armed = true;
+  bool any = (m_EstablishFobWidget && m_EstablishFobWidget.IsVisible()) || (m_RoadblockWidget && m_RoadblockWidget.IsVisible()) || (m_MinesWidget && m_MinesWidget.IsVisible()) || (m_FortifyWidget && m_FortifyWidget.IsVisible());
+  bool open = ACR_UiPrefs.s_bBuildOpen || armed;
+  if (m_BuildFoldWidget) m_BuildFoldWidget.SetVisible(any);
+  m_BuildSection.SetVisible(any && open);
+  if (open) m_BuildFoldButton.SetText("Build orders  [hide]");
+  else m_BuildFoldButton.SetText("Build orders");
+ }
 
  // Tests: the middle of what to press, in screen pixels (x, y).
  vector GripForTest(bool feed)
@@ -855,6 +887,7 @@ class ACR_CommandPanel : Managed
    if (cursorMode == ACR_ECursorMode.FORTIFY) m_FortifyButton.SetText("[Fortify]");
    else m_FortifyButton.SetText("Fortify");
   }
+  RefreshBuildFold(cursorMode);
   if (m_Hint) m_Hint.SetText(hint);
  }
 

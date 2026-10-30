@@ -14,16 +14,17 @@ class ACR_TestKeyHints
   ACR_TestRegress.Check("keyhints: in a vehicle F6 drops the passengers", driving.Contains("Drop passengers") && !driving.Contains("Squad rally") && leader.Contains("Squad rally"), driving);
 
   ACR_UiPrefs.ResetForTest();
-  ACR_TestRegress.Check("keyhints: nothing moved and reminders on by default", !ACR_UiPrefs.PanelMoved() && !ACR_UiPrefs.FeedMoved() && ACR_UiPrefs.s_bKeyHints, "");
+  ACR_TestRegress.Check("keyhints: nothing moved and reminders on by default", !ACR_UiPrefs.PanelMoved() && !ACR_UiPrefs.FeedMoved() && ACR_UiPrefs.s_bKeyHints && !ACR_UiPrefs.s_bBuildOpen, "");
   ACR_UiPrefs.s_fPanelX = -400;
   ACR_UiPrefs.s_fPanelY = 250;
   ACR_UiPrefs.s_fFeedX = 300;
   ACR_UiPrefs.s_fFeedY = 500;
   ACR_UiPrefs.s_bKeyHints = false;
+  ACR_UiPrefs.s_bBuildOpen = true;
   ACR_UiPrefs.Save();
   ACR_UiPrefs.ResetForTest();
   ACR_UiPrefs.Load();
-  bool kept = ACR_UiPrefs.s_fPanelX == -400 && ACR_UiPrefs.s_fPanelY == 250 && ACR_UiPrefs.s_fFeedX == 300 && ACR_UiPrefs.s_fFeedY == 500 && !ACR_UiPrefs.s_bKeyHints;
+  bool kept = ACR_UiPrefs.s_fPanelX == -400 && ACR_UiPrefs.s_fPanelY == 250 && ACR_UiPrefs.s_fFeedX == 300 && ACR_UiPrefs.s_fFeedY == 500 && !ACR_UiPrefs.s_bKeyHints && ACR_UiPrefs.s_bBuildOpen;
   ACR_TestRegress.Check("keyhints: the file keeps the places and the choice", kept && ACR_UiPrefs.PanelMoved() && ACR_UiPrefs.FeedMoved(), string.Format("%1 %2 %3 %4", ACR_UiPrefs.s_fPanelX, ACR_UiPrefs.s_fPanelY, ACR_UiPrefs.s_fFeedX, ACR_UiPrefs.s_fFeedY));
   FileIO.DeleteFile(ACR_UiPrefs.PREFS);
   ACR_UiPrefs.ResetForTest();

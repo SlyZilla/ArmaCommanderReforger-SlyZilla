@@ -1678,6 +1678,9 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.MINES_MIXED: ACR_ToggleCursor(ACR_ECursorMode.MINES_MIXED); return;
    case ACR_EPanelAction.DISARM_MINES: ACR_ToggleCursor(ACR_ECursorMode.DISARM_MINES); return;
    case ACR_EPanelAction.FORTIFY: ACR_ToggleCursor(ACR_ECursorMode.FORTIFY); return;
+   case ACR_EPanelAction.BUILD_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleBuildFold();
+    return;
    case ACR_EPanelAction.KEY_HINTS:
     ACR_KeyHints.Toggle();
     ACR_RefreshKeyHintsButton();

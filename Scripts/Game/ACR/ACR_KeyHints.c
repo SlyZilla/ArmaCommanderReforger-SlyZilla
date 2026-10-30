@@ -13,6 +13,7 @@ class ACR_UiPrefs
  static float s_fFeedX = FEED_HOME_X;
  static float s_fFeedY = FEED_HOME_Y;
  static bool s_bKeyHints = true;
+ static bool s_bBuildOpen;              // the ACA panel's build orders are unfolded
  protected static bool s_bRead;
 
  static bool PanelMoved() { return s_fPanelX != PANEL_HOME_X || s_fPanelY != PANEL_HOME_Y; }
@@ -31,6 +32,7 @@ class ACR_UiPrefs
    line = line.Trim();
    if (line == "keys=0") s_bKeyHints = false;
    if (line == "keys=1") s_bKeyHints = true;
+   if (line == "build=1") s_bBuildOpen = true;
    if (line.StartsWith("panelx=")) s_fPanelX = line.Substring(7, line.Length() - 7).ToFloat();
    if (line.StartsWith("panely=")) s_fPanelY = line.Substring(7, line.Length() - 7).ToFloat();
    if (line.StartsWith("feedx=")) s_fFeedX = line.Substring(6, line.Length() - 6).ToFloat();
@@ -45,6 +47,7 @@ class ACR_UiPrefs
   if (!file) return;
   if (s_bKeyHints) file.WriteLine("keys=1");
   else file.WriteLine("keys=0");
+  if (s_bBuildOpen) file.WriteLine("build=1");
   file.WriteLine("panelx=" + s_fPanelX.ToString());
   file.WriteLine("panely=" + s_fPanelY.ToString());
   file.WriteLine("feedx=" + s_fFeedX.ToString());
@@ -66,6 +69,7 @@ class ACR_UiPrefs
   s_fFeedX = FEED_HOME_X;
   s_fFeedY = FEED_HOME_Y;
   s_bKeyHints = true;
+  s_bBuildOpen = false;
   s_bRead = false;
  }
 }
