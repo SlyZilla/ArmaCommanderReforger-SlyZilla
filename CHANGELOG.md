@@ -13,6 +13,10 @@
 
 - The scenario generator handles more community terrains, for the new ACA map add-ons (Chernarus Minus, Gulfcoast Islands, Kunar Province, West Zagoria, Zimnitrita). On island maps, where the widest-apart HQ pairs can sit on islands with no land route between them, it now takes closer pairs, and a half or flashpoint draw that can't make a playable layout tries other draws from the same seed. Before, such a map could start with no bases at all. Place names with stray tabs or line breaks are tidied, and placeholder names like "?" no longer become objectives. Layouts on Everon, Arland and Kolguyev are unchanged.
 
+### Mod support
+
+- Content packs (#108): an optional add-on can now bring vehicle and kit mods into the buy lists cleanly. Vehicle mods add every variant they ship to the game's vehicle lists (test vehicles, fictional upgrades, copies crewed by the other side), and ACA used to offer them all. A plugged-in pack decides which of those stay, adds its own vetted entries with a price and role, and names the crews: a bought vehicle from the pack is crewed by the buying side's own crewmen, with a driver even where the mod left the seat empty. A pack can also swap the soldiers a side spawns (squads, riders, garrisons and the insurgent cells drawn from them) and its command unit, so era kit reaches the whole army. Without a pack nothing changes. The first pack, the Cold War pack, is a separate add-on.
+
 ### Fixes
 
 - The calm command map hides what it means to again (#14): the soldiers of a squad at a base (unless it is selected), our soldiers on a base's name, and the squads under a "×N" icon. The game shows every map marker again each frame, so a hidden one came back before it was drawn: a base with squads at it showed all their soldiers' dots around its marker, and the squads behind a "×N" sat stacked under its icon, where the cursor could catch one of them. Now each goes off the map until it is shown again.
