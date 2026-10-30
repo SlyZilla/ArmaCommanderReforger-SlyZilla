@@ -111,6 +111,8 @@ class ACR_RTSCameraManager : Managed
 	protected RplId m_FollowGroup = RplId.Invalid();
 	protected vector m_vFollowOffset;  // from the squad to the camera
 	protected vector m_vFollowAt;      // the squad, smoothed
+	protected vector m_vFollowGlide;   // what is left of the way to the follow spot
+	protected float m_fFollowLength;   // the wheel's distance from the squad
 	protected float m_fFloorY = -100000; // the top of what is under the camera (ground, roof, tree), smoothed
 	protected int m_iLastMarkerClick = -1;
 	protected int m_iLastMarkerClickAt;
@@ -125,6 +127,9 @@ class ACR_RTSCameraManager : Managed
 	protected static const float FOLLOW_MIN = 6.0; // m from the squad, following
 	protected static const float FOLLOW_MAX = 250.0;
 	protected static const int DOUBLE_CLICK_MS = 400;
+	protected static const float FOLLOW_EASE = 5.0;  // per second: the followed point after a soldier we can see
+	protected static const float FOLLOW_EASE_FAR = 1.5; // ... after the server's position, which jumps once a second
+	protected static const float FOLLOW_NEAR = 60.0;  // m: a soldier further than this from the server's position isn't trusted
 	protected float m_fTargetAtl = 35.0;
 
 	// World markers: one pin per friendly squad and base, re-projected every frame.
@@ -149,6 +154,17 @@ class ACR_RTSCameraManager : Managed
 		else Open();
 	}
 
+	// From the map (its panel's button, F10): the map takes a moment to shut, and the camera closes
+	// itself on any frame the map is open (the button only closed the map, playtest pn15). So the
+	// camera opens once the map has shut (Frame).
+	protected static bool s_bOpenPending;
+	protected static int s_iOpenBy;
+	static void OpenAfterMap()
+	{
+		s_bOpenPending = true;
+		s_iOpenBy = System.GetTickCount() + 5000;
+	}
+
 	static void Open()
 	{
 		if (IsActive()) return;
@@ -164,6 +180,7 @@ class ACR_RTSCameraManager : Managed
 
 	static void Close()
 	{
+		s_bOpenPending = false;
 		if (!s_Instance) return;
 		s_Instance.Cleanup();
 		s_Instance = null;
@@ -171,6 +188,16 @@ class ACR_RTSCameraManager : Managed
 
 	static void Frame(SCR_PlayerController pc)
 	{
+		if (s_bOpenPending)
+		{
+			SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+			if ((!mapEntity || !mapEntity.IsOpen()) && !GetGame().GetMenuManager().IsAnyMenuOpen())
+			{
+				s_bOpenPending = false;
+				Open();
+			}
+			else if (System.GetTickCount() > s_iOpenBy) s_bOpenPending = false;
+		}
 		if (s_Instance) s_Instance.FrameUpdate(pc);
 	}
 
@@ -924,12 +951,18 @@ class ACR_RTSCameraManager : Managed
   trace.End = Vector(pos[0], ground - 0.5, pos[2]);
   trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
   trace.LayerMask = EPhysicsLayerPresets.Projectile;
-  float fraction = world.TraceMove(trace, null);
+  float fraction = world.TraceMove(trace, FloorFilter);
   if (fraction < 1) top = Math.Max(ground, trace.Start[1] + (trace.End[1] - trace.Start[1]) * fraction);
   if (m_fFloorY < -99999 || Math.AbsFloat(m_fFloorY - top) > 80) m_fFloorY = top;
   else if (top > m_fFloorY) m_fFloorY = m_fFloorY + (top - m_fFloorY) * Math.Min(1.0, dt * 12.0);
   else m_fFloorY = m_fFloorY + (top - m_fFloorY) * Math.Min(1.0, dt * 3.0);
   return m_fFloorY;
+ }
+
+ // A soldier is no roof: the camera would bob over every man walking under it.
+ protected bool FloorFilter(notnull IEntity ent)
+ {
+  return !ChimeraCharacter.Cast(ent);
  }
 
  protected void ApplyInput(InputManager input)
@@ -985,8 +1018,7 @@ class ACR_RTSCameraManager : Managed
   if (wheel < 0) notches = -notches;
   if (Following())
   {
-   float length = Math.Clamp(m_vFollowOffset.Length() * Math.Pow(ATL_PER_NOTCH, notches), FOLLOW_MIN, FOLLOW_MAX);
-   m_vFollowOffset = m_vFollowOffset.Normalized() * length;
+   m_fFollowLength = Math.Clamp(m_fFollowLength * Math.Pow(ATL_PER_NOTCH, notches), FOLLOW_MIN, FOLLOW_MAX);
    return;
   }
   m_fTargetAtl = Math.Clamp(m_fTargetAtl * Math.Pow(ATL_PER_NOTCH, notches), ATL_MIN, ATL_MAX);
@@ -996,6 +1028,10 @@ class ACR_RTSCameraManager : Managed
  // The camera glides after the selected squad's leader and keeps looking at it, from where it is
  // (or 40 m behind and 25 m up, when further than FOLLOW_MAX): a right-drag turns round the squad,
  // the wheel moves in and out, WASD or F lets go. A double-click on a squad's marker follows it too.
+ // It follows the leader's own soldier where he is streamed: the map data's position is the
+ // server's, which jumps once a second, and easing after that made the camera surge and slow behind
+ // a squad walking steadily (playtest pn15). The camera keeps a fixed offset from one smoothed
+ // point, so it never turns or sways on its own.
  bool Following() { return m_FollowGroup.IsValid(); }
 
  void StartFollow(SCR_PlayerController pc)
@@ -1009,17 +1045,22 @@ class ACR_RTSCameraManager : Managed
    ShowToast("Select a squad to follow [Left-click]");
    return;
   }
-  vector at = data.LeaderPos(g) + Vector(0, 1.5, 0);
+  bool seen;
+  vector at = FollowTarget(data, g, seen);
   vector offset = m_Camera.GetOrigin() - at;
+  vector glide = vector.Zero;
   if (offset.Length() > FOLLOW_MAX || offset.Length() < FOLLOW_MIN)
   {
    vector angles = m_Camera.GetYawPitchRoll();
    vector heading[4];
    Math3D.AnglesToMatrix(Vector(angles[0], 0, 0), heading);
    offset = Vector(0, 25, 0) - heading[2] * 40;
+   glide = m_Camera.GetOrigin() - at - offset;
   }
   m_FollowGroup = id;
   m_vFollowOffset = offset;
+  m_fFollowLength = offset.Length();
+  m_vFollowGlide = glide;
   m_vFollowAt = at;
   string name = "the squad";
   if (g < data.m_GroupNames.Count()) name = data.m_GroupNames[g];
@@ -1047,15 +1088,43 @@ class ACR_RTSCameraManager : Managed
    StopFollow("The squad is gone: stopped following");
    return;
   }
-  vector target = data.LeaderPos(g) + Vector(0, 1.5, 0);
-  m_vFollowAt = m_vFollowAt + (target - m_vFollowAt) * Math.Min(1.0, dt * 4.0);
-  vector want = m_vFollowAt + m_vFollowOffset;
-  vector pos = m_Camera.GetOrigin();
-  pos = pos + (want - pos) * Math.Min(1.0, dt * 3.0);
+  bool seen;
+  vector target = FollowTarget(data, g, seen);
+  float ease = FOLLOW_EASE_FAR;
+  if (seen) ease = FOLLOW_EASE;
+  m_vFollowAt = m_vFollowAt + (target - m_vFollowAt) * Eased(ease, dt);
+  m_vFollowGlide = m_vFollowGlide * (1 - Eased(2.5, dt));
+  float length = m_vFollowOffset.Length();
+  if (length > 0.1) m_vFollowOffset = m_vFollowOffset * ((length + (m_fFollowLength - length) * Eased(6.0, dt)) / length);
+  vector pos = m_vFollowAt + m_vFollowOffset + m_vFollowGlide;
   float floor = Math.Max(GetGame().GetWorld().GetSurfaceY(pos[0], pos[2]) + ATL_MIN, FloorAt(pos, dt) + CLEARANCE);
   if (pos[1] < floor) pos[1] = floor;
   m_Camera.SetOrigin(pos);
   LookAt(m_vFollowAt);
+ }
+
+ // The share of the way to a target to cover this frame, whatever the frame rate.
+ protected static float Eased(float rate, float dt)
+ {
+  return 1 - Math.Pow(2.71828, -rate * dt);
+ }
+
+ // Where to look: the leader's own soldier if he is streamed here and where the server says he is
+ // (a mounted command unit's position is its vehicle's), else the server's position.
+ protected vector FollowTarget(ACR_MapData data, int g, out bool seen)
+ {
+  vector snapshot = data.LeaderPos(g);
+  seen = false;
+  if (g < data.m_LeaderIds.Count())
+  {
+   IEntity leader = SCR_EntityHelper.RplIdToEntity(data.m_LeaderIds[g]);
+   if (leader && vector.DistanceXZ(leader.GetOrigin(), snapshot) < FOLLOW_NEAR)
+   {
+    seen = true;
+    return leader.GetOrigin() + Vector(0, 1.5, 0);
+   }
+  }
+  return snapshot + Vector(0, 1.5, 0);
  }
 
  // Turns the camera to look at 'at': the yaw and pitch whose forward axis points there (the

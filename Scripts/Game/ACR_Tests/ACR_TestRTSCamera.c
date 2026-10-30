@@ -262,6 +262,80 @@ modded class ACR_RTSCameraManager
 {
  static bool s_bLookStyled;
  static float s_fLookHeight;
+ // Follow's steadiness (playtest pn15: the camera surged and eased behind a walking squad, once a
+ // second, as the server's position for it jumped). Per frame while sampling: the camera's speed
+ // against its own 2 s average. "Wobble" is how far off that average it runs, as a share of it.
+ static bool s_bSampling;
+ static int s_iFrames;
+ static float s_fMoved;      // how far the leader walked
+ static float s_fAvgSpeed;
+ static float s_fSumSquares;
+ static float s_fSumSpeed;
+ static int s_iCounted;
+ static vector s_vLastCam;
+ static vector s_vSampleFrom;
+ static const int SETTLE_FRAMES = 300;
+ static const float WOBBLE_MAX = 0.2;
+
+ override protected void FrameUpdate(SCR_PlayerController pc)
+ {
+  super.FrameUpdate(pc);
+  if (!s_bSampling || !m_Camera || !Following()) return;
+  ACR_MapData data = pc.ACR_GetData();
+  if (!data) return;
+  int g = data.m_GroupIds.Find(m_FollowGroup);
+  if (g < 0 || g >= data.m_LeaderIds.Count()) return;
+  IEntity leader = SCR_EntityHelper.RplIdToEntity(data.m_LeaderIds[g]);
+  if (!leader) return;
+  vector at = leader.GetOrigin();
+  vector cam = m_Camera.GetOrigin();
+  float dt = GetGame().GetInputManager().GetLastTimeDelta();
+  if (s_iFrames == 0) s_vSampleFrom = at;
+  s_iFrames++;
+  if (s_iFrames > 1 && dt > 0.001)
+  {
+   float speed = vector.DistanceXZ(cam, s_vLastCam) / dt;
+   if (s_fAvgSpeed <= 0) s_fAvgSpeed = speed;
+   s_fAvgSpeed = s_fAvgSpeed + (speed - s_fAvgSpeed) * Math.Min(1.0, dt / 2.0);
+   if (s_iFrames > SETTLE_FRAMES)
+   {
+    float off = speed - s_fAvgSpeed;
+    s_fSumSquares += off * off;
+    s_fSumSpeed += speed;
+    s_iCounted++;
+   }
+  }
+  s_vLastCam = cam;
+  s_fMoved = vector.DistanceXZ(at, s_vSampleFrom);
+ }
+
+ // The selected squad walks off, followed.
+ static void LookMove(SCR_PlayerController pc)
+ {
+  ACR_RTSCameraManager camera = s_Instance;
+  ACR_MapData data = pc.ACR_GetData();
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!camera || !data || !manager || !camera.Following()) return;
+  ACR_Squad squad = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(camera.m_FollowGroup)));
+  if (squad) squad.MoveTo(squad.GetAnchor().GetOrigin() + Vector(0, 0, -300));
+  s_iFrames = 0;
+  s_fMoved = 0;
+  s_fAvgSpeed = 0;
+  s_fSumSquares = 0;
+  s_fSumSpeed = 0;
+  s_iCounted = 0;
+  s_bSampling = true;
+ }
+
+ static void LookCheckSteady()
+ {
+  s_bSampling = false;
+  float mean = 0;
+  float wobble = 1;
+  if (s_iCounted > 0) mean = s_fSumSpeed / s_iCounted;
+  if (mean > 0.1) wobble = Math.Sqrt(s_fSumSquares / s_iCounted) / mean;
+  ACR_TestRegress.Check("RTS look: Follow is steady behind a moving squad (no surging back and forth)", s_fMoved > 5 && s_iCounted > 100 && wobble < WOBBLE_MAX, string.Format("%1 frames, leader moved %2 m, camera at %3 m/s, wobble %4", s_iFrames, s_fMoved, mean, wobble));
+ }
 
  // The bars are dark panels; Roadblock armed with a squad selected lights its button.
  static void LookStyled(SCR_PlayerController pc)
@@ -381,10 +455,19 @@ modded class ACR_TestCommand
   if (h.m_Ticks == 21 && ACR_RTSCameraManager.s_Instance) ACR_RTSCameraManager.s_Instance.SetUiHidden(true);
   if (h.m_Ticks == 22) ACR_RTSCameraManager.Shot("rts_look_4_hidden");
   if (h.m_Ticks == 23) ACR_RTSCameraManager.LookCheckHidden();
-  if (h.m_Ticks == 24)
+  if (h.m_Ticks == 24) ACR_RTSCameraManager.LookMove(pc);
+  if (h.m_Ticks == 44) ACR_RTSCameraManager.LookCheckSteady();
+  if (h.m_Ticks == 45) ACR_RTSCameraManager.Close();
+  // The map panel's 3D Camera button (it only closed the map, playtest pn15).
+  if (h.m_Ticks == 46) GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
+  if (h.m_Ticks == 49) pc.ACR_ToggleRTSCamera();
+  if (h.m_Ticks == 53)
   {
+   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+   bool shut = !mapEntity || !mapEntity.IsOpen();
+   ACR_TestRegress.Check("RTS look: the map panel's 3D Camera button closes the map and opens the camera", shut && ACR_RTSCameraManager.IsActive(), string.Format("map shut %1, camera %2", shut, ACR_RTSCameraManager.IsActive()));
    ACR_RTSCameraManager.Close();
-   ACR_TestRegress.Complete("rtslook", 4);
+   ACR_TestRegress.Complete("rtslook", 6);
   }
  }
 
