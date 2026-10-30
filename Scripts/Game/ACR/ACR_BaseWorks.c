@@ -8,9 +8,12 @@
 //                 the nests' guns and deploy when an enemy comes near (ACR_Defenders).
 //   Defences III: the planner's command post in a building, bunkers and guard towers; more
 //                 defenders, who go into the buildings round the post when they deploy.
-// Where the sites go is ACR_BaseDefences.Plan (the world round the base and the threats at the first
-// order); which one comes next is a weighted pick among the near-best, near the squad and facing the
-// threat (ACR_Variety), so no two towns go up in the same order. The works stay when the base falls:
+// Where the sites go starts from a survey of the base at the first order (ACR_BaseSurvey: its buildings,
+// walls, roads in, what already stands there, and which approaches from the threat lie open). The
+// sites fill the worst weak points first and each counts as cover, so they spread over the sectors;
+// a spot that breaks a hard rule (no line of fire, against a building or a door, on a road) isn't
+// used at all, and a town can get fewer sites for it. Each pick and which one comes next are weighted
+// among the near-best (ACR_Variety), so no two towns go up alike. The works stay when the base falls:
 // they are the new owner's, who can go on from there. A site whose walls are all gone can be rebuilt.
 // The AI commander (-acrFortifyAI, ACR_AICommander.ManageBaseWorks) uses it at a threatened front
 // base once it has the RP banked, and counts it in the base's defence (Credit).
@@ -39,6 +42,8 @@ class ACR_BaseSite : Managed
  bool m_bNoFit;                     // nothing could be placed: not tried again
  bool m_bSkipped;                   // a squad gave up on it (a truck parked there, no way in): the next order tries again
  int m_iSpot;                       // NEST, BUNKER: its spot in ACR_FobDefences.PrefabFor
+ int m_iSector;                     // the sector of the survey it looks into
+ float m_fReach;                    // NEST, BUNKER: clear m along its facing (the log, tests)
 }
 
 class ACR_BaseWork : Managed
@@ -60,13 +65,23 @@ class ACR_BaseWorks
  static const int MAX_BUNKERS = 3;
  static const int MAX_ROADBLOCKS = 2;
  static const float SITE_RADIUS = 30;   // squad members this close to a site work
- static const float SPOT_APART = 25;    // m between a nest or bunker and any other site
- static const float ROAD_CLEAR = 4;     // m from a road's edge to a nest or bunker
+ static const float SPOT_APART = 20;    // m between a nest or bunker and a site of another kind
+ static const float GUN_APART = 35;     // m between nests and bunkers
+ static const float SAME_WAY = 60;      // m between guns looking the same way (within 25 degrees)
+ static const float FIRE_LANE = 30;     // m in front of a gun no site of ours may stand
+ static const float COVER_BAGS = 0.25;  // how much a site counts in its sector (ACR_BaseSurvey.AddCover)
+ static const float COVER_REDOUBT = 0.35;
+ static const float COVER_CHECKPOINT = 0.4;
+ static const float COVER_NEST = 0.6;
+ static const float COVER_BUNKER = 0.5;
+ static const float CHECKPOINT_PAST = 70; // m past the edge of the town a checkpoint may stand ...
+ static const float CHECKPOINT_LEAST = 180; // ... and this far from the middle whatever the town's size
  static const float POST_AREA = 40;     // m round the command post its defenders garrison
  static const int AI_RP_RESERVE = 30;   // an AI commander keeps this much back (as ManageBaseWorks)
  static ref array<ref ACR_BaseWork> s_aWorks = {};
  static int s_iMaxSitesForTest;         // at most this many sites of each kind (0: no limit)
  static int s_iLastPlanMs;              // the last plan's cost (tests, log)
+ static ref ACR_BaseSurvey s_LastSurvey; // the last plan's survey (tests)
 
  // -acrBaseWorks 0 turns it off; Fortify on a base is then refused, as before.
  static bool Enabled() { return ACR_Fortify.Enabled() && ACR_LogisticsRules.Choice("acrBaseWorks", "1") != "0"; }
@@ -214,7 +229,7 @@ class ACR_BaseWorks
   return work.m_iTier;
  }
 
- protected static ACR_BaseWork WorkFor(ACR_Base base, string faction)
+ static ACR_BaseWork WorkFor(ACR_Base base, string faction)
  {
   ACR_BaseWork work = Find(base);
   if (work)
@@ -280,7 +295,10 @@ class ACR_BaseWorks
   {
    if (site.m_iTier != tier || site.m_bBuilt || site.m_bNoFit || site.m_bSkipped || Claimed(site, squad)) continue;
    open.Insert(site);
-   scores.Insert(site.m_fScore - vector.DistanceXZ(from, site.m_vPos) / 300);
+   float score = site.m_fScore - vector.DistanceXZ(from, site.m_vPos) / 200;
+   // A checkpoint is out of the way: everything else in the town first, then the walk.
+   if (site.m_eKind == ACR_EBaseSite.ROADBLOCK) score -= 5;
+   scores.Insert(score);
   }
   if (open.IsEmpty())
   {
@@ -534,11 +552,15 @@ class ACR_BaseWorks
  protected static void PlanSites(ACR_BaseWork work)
  {
   ACR_Base base = work.m_Base;
+  ACR_BaseSurvey survey = ACR_BaseSurvey.Take(base, work.m_sFaction);
+  s_LastSurvey = survey;
+  PrintFormat("[ACR] BASEWORKS survey %1 (%2 ms)", survey.Words(), survey.m_iMs);
   array<ref ACR_BaseDefencePos> plan = {};
   string summary;
-  ACR_BaseDefences.Plan(base, work.m_sFaction, plan, summary);
+  ACR_BaseDefences.Plan(base, work.m_sFaction, plan, summary, survey);
   PrintFormat("[ACR] BASEWORKS plan %1", summary);
   array<ref ACR_BaseSite> walls = {};
+  array<ref ACR_BaseSite> redoubts = {};
   foreach (ACR_BaseDefencePos pos : plan)
   {
    ACR_BaseSite site = new ACR_BaseSite();
@@ -546,7 +568,9 @@ class ACR_BaseWorks
    site.m_Plan = pos;
    site.m_vPos = pos.m_vPos;
    site.m_fYaw = ACR_BaseDefences.Bearing(pos.m_vFacing);
+   site.m_iSector = ACR_BaseSurvey.Sector(site.m_fYaw);
    site.m_fScore = pos.m_fThreat + Math.Min(pos.m_fSight, 200) / 200;
+   site.m_fReach = pos.m_fSight;
    if (pos.m_eKind == ACR_EBaseDefenceKind.POST)
    {
     site.m_iTier = 3;
@@ -555,7 +579,7 @@ class ACR_BaseWorks
    else if (pos.m_eKind == ACR_EBaseDefenceKind.SQUARE)
    {
     site.m_iTier = 2;
-    work.m_aSites.Insert(site);
+    redoubts.Insert(site);
    }
    else
    {
@@ -563,27 +587,36 @@ class ACR_BaseWorks
     walls.Insert(site);
    }
   }
-  // The best of them on a big town.
-  while (walls.Count() > MAX_WALL_SITES)
-  {
-   int worst = 0;
-   foreach (int i, ACR_BaseSite wall : walls)
-    if (wall.m_fScore < walls[worst].m_fScore) worst = i;
-   walls.Remove(worst);
-  }
-  foreach (ACR_BaseSite keep : walls) work.m_aSites.Insert(keep);
-
-  array<vector> dirs = {};
-  array<float> weights = {};
-  ACR_BaseDefences.Threats(base, work.m_sFaction, dirs, weights);
-  if (dirs.IsEmpty()) dirs.Insert(Vector(0, 0, 1));
-  if (weights.IsEmpty()) weights.Insert(1);
-  array<ref ACR_BaseDefenceSeg> segs = {};
-  ACR_BaseDefences.Roads(base.GetOrigin(), ACR_BaseDefences.SearchRadius(base) + 40, segs);
-  Strong(work, dirs, weights, segs, ACR_EBaseSite.NEST, 2, MAX_NESTS);
-  Strong(work, dirs, weights, segs, ACR_EBaseSite.BUNKER, 3, MAX_BUNKERS);
-  Checkpoints(work);
+  // Bigger towns get more; what's left of the plan is for the next town to do otherwise.
+  WeakFirst(work, survey, walls, Math.ClampInt(4 + survey.m_iTown / 8, 4, MAX_WALL_SITES), COVER_BAGS, "wall");
+  WeakFirst(work, survey, redoubts, redoubts.Count(), COVER_REDOUBT, "redoubt");
+  Checkpoints(work, survey);
+  survey.FindSpots();
+  Strong(work, survey, ACR_EBaseSite.NEST, 2, MAX_NESTS);
+  Strong(work, survey, ACR_EBaseSite.BUNKER, 3, MAX_BUNKERS);
+  string refused = survey.RefusedWords();
+  if (!refused.IsEmpty()) PrintFormat("[ACR] BASEWORKS %1: planner positions left out: %2", base.m_sName, refused);
+  PrintFormat("[ACR] BASEWORKS %1 guns: %2", base.m_sName, survey.SpotWords());
+  foreach (ACR_BaseSite made : work.m_aSites)
+   PrintFormat("[ACR] BASEWORKS site %1 %2, tier %3, at %4 %5 facing %6 (%7 m clear), its sector now %8", base.m_sName, SiteWords(made), made.m_iTier, (int)made.m_vPos[0], (int)made.m_vPos[2], (int)made.m_fYaw, (int)made.m_fReach, survey.Weak(made.m_iSector).ToString(-1, 2));
   if (s_iMaxSitesForTest > 0) Trim(work);
+ }
+
+ // Up to 'most' of the planner's positions, the weakest sector first: a weighted pick among the
+ // near-best, each one covering its sector for the next.
+ protected static void WeakFirst(ACR_BaseWork work, ACR_BaseSurvey survey, array<ref ACR_BaseSite> positions, int most, float cover, string what)
+ {
+  for (int made = 0; made < most && !positions.IsEmpty(); made++)
+  {
+   array<float> scores = {};
+   foreach (ACR_BaseSite candidate : positions) scores.Insert(survey.WeakLight(candidate.m_iSector) + candidate.m_fScore * 0.1);
+   int picked = ACR_Variety.Pick(scores, string.Format("base works %1 %2 %3", what, work.m_Base.m_sName, made));
+   ACR_BaseSite site = positions[picked];
+   site.m_fScore = survey.WeakLight(site.m_iSector);
+   work.m_aSites.Insert(site);
+   survey.AddLight(site.m_iSector, cover);
+   positions.Remove(picked);
+  }
  }
 
  protected static void Trim(ACR_BaseWork work)
@@ -601,59 +634,106 @@ class ACR_BaseWorks
   }
  }
 
- // Nests or bunkers on the ring round the town, towards the threats, with a view: picked among the
- // near-best, each well apart from every other site.
- protected static void Strong(ACR_BaseWork work, array<vector> dirs, array<float> weights, array<ref ACR_BaseDefenceSeg> segs, ACR_EBaseSite kind, int tier, int most)
+ // Nests or bunkers on the places the survey found: the weakest sector first, a weighted pick among
+ // the near-best, each covering its sector for the next. Fewer than 'most' when no good place is left.
+ protected static void Strong(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_EBaseSite kind, int tier, int most)
  {
-  vector center = work.m_Base.GetOrigin();
-  float ring = Math.Clamp(work.m_Base.m_fRadius, 60, 160);
-  array<vector> places = {};
-  array<float> yaws = {};
-  array<float> scores = {};
-  array<float> rings = {ring, ring * 0.75, ring + 25};
-  array<float> shifts = {0, 30, -30, 60, -60};
-  foreach (vector dir : dirs)
+  bool towers = work.m_sFaction != "FIA";
+  int towersMade, bunkersMade;
+  int made;
+  for (made = 0; made < most; made++)
   {
-   foreach (float radius : rings)
+   array<ACR_BaseSpot> open = {};
+   array<float> scores = {};
+   foreach (ACR_BaseSpot spot : survey.m_aSpots)
    {
-    foreach (float shift : shifts)
-    {
-     float bearing = ACR_BaseDefences.Bearing(dir) + shift;
-     float rad = bearing * Math.DEG2RAD;
-     vector outward = Vector(Math.Sin(rad), 0, Math.Cos(rad));
-     vector place = center + outward * radius;
-     place[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]);
-     if (BBB_Terrain.IsWaterAt(place) || ACR_BaseDefences.RoadEdgeGap(segs, place) < ROAD_CLEAR || NearSite(work, place, SPOT_APART)) continue;
-     string why;
-     if (!ACR_FobBuild.FootprintClear(place, ACR_FobDefences.PIECE_RADIUS, null, why, true, ACR_FobDefences.MAX_RISE)) continue;
-     places.Insert(place);
-     yaws.Insert(ACR_FobDefences.BearingYaw(bearing));
-     scores.Insert(ACR_BaseDefences.ThreatDot(dirs, weights, outward) + ACR_BaseDefences.Sight(place, outward, 150) / 150);
-    }
+    if (kind == ACR_EBaseSite.NEST && !spot.m_bNest) continue;
+    if (kind == ACR_EBaseSite.BUNKER && !spot.m_bBunker && !(towers && spot.m_bTower)) continue;
+    if (!SpotFree(work, spot)) continue;
+    open.Insert(spot);
+    float score = 0.5 * (survey.Weak(spot.m_iSector) + survey.Weak(spot.m_iStands)) + 0.3 * spot.m_fReach / ACR_BaseSurvey.OPEN_RANGE;
+    if (spot.m_bGate) score += 0.1;
+    // Nearer in is a shorter walk, and the men in it nearer the town.
+    float past = vector.DistanceXZ(spot.m_vPos, work.m_Base.GetOrigin()) - survey.m_aEdge[ACR_BaseSurvey.Sector(ACR_BaseDefences.Bearing(spot.m_vPos - work.m_Base.GetOrigin()))];
+    score -= Math.Max(past, 0) / 400;
+    scores.Insert(score);
    }
-  }
-  for (int made = 0; made < most && !places.IsEmpty(); made++)
-  {
+   if (open.IsEmpty()) break;
    int picked = ACR_Variety.Pick(scores, string.Format("base works spot %1 %2 %3", work.m_Base.m_sName, kind, made));
+   ACR_BaseSpot chosen = open[picked];
    ACR_BaseSite site = new ACR_BaseSite();
    site.m_eKind = kind;
    site.m_iTier = tier;
-   site.m_vPos = places[picked];
-   site.m_fYaw = yaws[picked];
-   site.m_fScore = scores[picked];
-   // Bunkers and towers by turns, as FOB defences' posts; nests on the nest spots.
+   site.m_vPos = chosen.m_vPos;
+   site.m_fYaw = ACR_FobDefences.BearingYaw(chosen.m_fFacing);
+   site.m_iSector = chosen.m_iSector;
+   site.m_fReach = chosen.m_fReach;
+   site.m_fScore = survey.Weak(chosen.m_iSector);
    site.m_iSpot = ACR_FobDefences.POST_COUNT;
-   if (kind == ACR_EBaseSite.BUNKER) site.m_iSpot = made % 2;
+   float cover = COVER_NEST;
+   if (kind == ACR_EBaseSite.BUNKER)
+   {
+    cover = COVER_BUNKER;
+    site.m_iSpot = 0;
+    if (towers && TowerThere(work, chosen, towersMade, bunkersMade, made)) site.m_iSpot = 1;
+    if (site.m_iSpot == 1) towersMade++;
+    else bunkersMade++;
+   }
    site.m_sPrefab = ACR_FobDefences.PrefabFor(site.m_iSpot, work.m_sFaction, tier - 1);
    work.m_aSites.Insert(site);
-   for (int i = places.Count() - 1; i >= 0; i--)
-   {
-    if (vector.DistanceXZ(places[i], site.m_vPos) >= SPOT_APART) continue;
-    places.Remove(i);
-    yaws.Remove(i);
-    scores.Remove(i);
-   }
+   // It covers where it looks, and the side of the town it stands on.
+   survey.AddCover(site.m_iSector, cover * 0.6);
+   survey.AddCover(chosen.m_iStands, cover * 0.4);
   }
+  if (made < most) PrintFormat("[ACR] BASEWORKS %1: %2 of %3 %4 (no good place left)", work.m_Base.m_sName, made, most, SpotKindWords(kind));
+ }
+
+ protected static string SpotKindWords(ACR_EBaseSite kind)
+ {
+  if (kind == ACR_EBaseSite.NEST) return "MG nests";
+  return "bunkers and towers";
+ }
+
+ // What goes up here: a tower where only its height clears the fan, or where there is a long view
+ // or a wall to see over; a bunker at a road in or a shorter view. Among those that fit, by turns
+ // as near as the place allows (a weighted pick, seeded).
+ protected static bool TowerThere(ACR_BaseWork work, ACR_BaseSpot spot, int towersMade, int bunkersMade, int made)
+ {
+  if (!spot.m_bBunker) return true;
+  if (!spot.m_bTower) return false;
+  float tower = 0.5 - 0.25 * towersMade;
+  float bunker = 0.5 - 0.25 * bunkersMade;
+  if (spot.m_fReach >= 100) tower += 0.3;
+  else bunker += 0.15;
+  if (spot.m_bGate) bunker += 0.25;
+  array<float> scores = {bunker, tower};
+  return ACR_Variety.Pick(scores, string.Format("base works post %1 %2", work.m_Base.m_sName, made), 0.3) == 1;
+ }
+
+ // Well apart from the other guns and from any site, and with no site of ours in its line of fire.
+ protected static bool SpotFree(ACR_BaseWork work, ACR_BaseSpot spot)
+ {
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   bool gun = site.m_eKind == ACR_EBaseSite.NEST || site.m_eKind == ACR_EBaseSite.BUNKER;
+   float apart = vector.DistanceXZ(site.m_vPos, spot.m_vPos);
+   if (gun && apart < GUN_APART) return false;
+   if (gun && apart < SAME_WAY && ACR_BaseDefences.DotXZ(ACR_BaseSurvey.Dir(site.m_fYaw), ACR_BaseSurvey.Dir(spot.m_fFacing)) > 0.906) return false;
+   if (!gun && apart < SPOT_APART) return false;
+   if (apart > FIRE_LANE + 10) continue;
+   if (InFireLane(spot, site.m_vPos)) return false;
+   if (!site.m_Plan) continue;
+   foreach (vector piece : site.m_Plan.m_aPiecePos) if (InFireLane(spot, piece)) return false;
+  }
+  return true;
+ }
+
+ protected static bool InFireLane(ACR_BaseSpot spot, vector at)
+ {
+  float apart = vector.DistanceXZ(at, spot.m_vPos);
+  if (apart > FIRE_LANE) return false;
+  vector way = ACR_BaseDefences.FlatDir(spot.m_vPos, at);
+  return ACR_BaseDefences.DotXZ(way, ACR_BaseSurvey.Dir(spot.m_fFacing)) > 0.9;
  }
 
  protected static bool NearSite(ACR_BaseWork work, vector pos, float apart)
@@ -663,9 +743,12 @@ class ACR_BaseWorks
   return false;
  }
 
- // A checkpoint on the road from each of the two nearest enemy bases, on the roadblock siting's
- // own scored spots.
- protected static void Checkpoints(ACR_BaseWork work)
+ // A checkpoint on a road in from each of the two nearest enemy bases, close to the town: where the
+ // road leaves it, as far out as ValidateSite's distance from a base asks and no further (playtest
+ // 30 Oct: one 305 m out took 7 of tier II's 13 minutes, and the road from the enemy is the same road
+ // nearer in). Scored as the roadblock siting does, less the walk, and worked last in its tier
+ // (NextPlan). No road in near enough that way: no checkpoint, and the log says so.
+ protected static void Checkpoints(ACR_BaseWork work, ACR_BaseSurvey survey)
  {
   vector center = work.m_Base.GetOrigin();
   array<ACR_Base> enemies = {};
@@ -680,29 +763,59 @@ class ACR_BaseWorks
   {
    int nearest = 0;
    foreach (int i, float d : dists) if (d < dists[nearest]) nearest = i;
-   vector enemy = enemies[nearest].GetOrigin();
+   ACR_Base enemy = enemies[nearest];
    enemies.Remove(nearest);
    dists.Remove(nearest);
    array<ref ACR_RoadSite> sites = {};
-   string none;
-   ACR_RoadblockSiting.Candidates(center, enemy, work.m_sFaction, sites, none);
-   array<ACR_RoadSite> fits = {};
    array<float> scores = {};
-   foreach (ACR_RoadSite road : sites)
+   array<int> sectors = {};
+   RoadSitesIn(work, survey, enemy.GetOrigin(), sites, scores, sectors);
+   if (sites.IsEmpty())
    {
-    if (NearSite(work, road.m_vPos, 15) || FarFromCheckpoints(work, road.m_vPos, 60)) continue;
-    fits.Insert(road);
-    scores.Insert(road.m_fScore);
+    PrintFormat("[ACR] BASEWORKS %1: no checkpoint for the road from %2: no road in near enough", work.m_Base.m_sName, enemy.m_sName);
+    continue;
    }
-   if (fits.IsEmpty()) continue;
    int picked = ACR_Variety.Pick(scores, string.Format("base works road %1 %2", work.m_Base.m_sName, made));
    ACR_BaseSite site = new ACR_BaseSite();
    site.m_eKind = ACR_EBaseSite.ROADBLOCK;
    site.m_iTier = 2;
-   site.m_vPos = fits[picked].m_vPos;
-   site.m_fYaw = fits[picked].m_fYaw;
-   site.m_fScore = 1;
+   site.m_vPos = sites[picked].m_vPos;
+   site.m_fYaw = sites[picked].m_fYaw;
+   site.m_iSector = sectors[picked];
+   site.m_fScore = survey.Weak(site.m_iSector);
    work.m_aSites.Insert(site);
+   survey.AddLight(site.m_iSector, COVER_CHECKPOINT);
+  }
+ }
+
+ // Road sites just past the edge of the town on the roads in that lead the enemy's way.
+ protected static void RoadSitesIn(ACR_BaseWork work, ACR_BaseSurvey survey, vector enemy, notnull array<ref ACR_RoadSite> sites, notnull array<float> scores, notnull array<int> sectors)
+ {
+  vector center = work.m_Base.GetOrigin();
+  vector toEnemy = ACR_BaseDefences.FlatDir(center, enemy);
+  foreach (ACR_BaseGate gate : survey.m_aGates)
+  {
+   if (ACR_BaseDefences.DotXZ(gate.m_vOut, toEnemy) < 0.2) continue;
+   float limit = Math.Max(survey.m_aEdge[gate.m_iSector] + CHECKPOINT_PAST, CHECKPOINT_LEAST);
+   for (float along = 0; along <= 120; along += 20)
+   {
+    vector sample = gate.m_vPos + gate.m_vOut * along;
+    if (vector.DistanceXZ(sample, center) > limit) break;
+    vector pos;
+    float yaw;
+    string refusal;
+    if (!ACR_Roadblocks.ValidateSite(sample, pos, yaw, refusal, work.m_sFaction, enemy)) continue;
+    float out_m = vector.DistanceXZ(pos, center);
+    if (out_m > limit || NearSite(work, pos, 15) || FarFromCheckpoints(work, pos, 100)) continue;
+    bool seen;
+    foreach (ACR_RoadSite have : sites) if (vector.DistanceXZ(have.m_vPos, pos) < 25) seen = true;
+    if (seen) continue;
+    ACR_RoadSite site = ACR_RoadblockSiting.Describe(pos, yaw, center, enemy);
+    sites.Insert(site);
+    sectors.Insert(gate.m_iSector);
+    // Its usual score (out of about 14), the sector's weakness, less the walk.
+    scores.Insert(site.m_fScore + 3 * survey.Weak(gate.m_iSector) - out_m / 50);
+   }
   }
  }
 
@@ -835,5 +948,6 @@ class ACR_BaseWorks
  {
   s_aWorks.Clear();
   s_iMaxSitesForTest = 0;
+  s_LastSurvey = null;
  }
 }

@@ -2,16 +2,17 @@
 // #105). A squad at the biggest town we can give the West. Checks: the option, the click's reach and
 // what is refused, charging nothing; the first site paid alone; a new order refunds the site in hand
 // and leaves the rest open; tier I built site by site and on the side's map; tier II with its
-// defenders, tier III with more, and nothing past that; a lost site opens again and only it is
-// rebuilt; the base falling hands the works over standing. srv:baseworksai: AI commanders with RP
-// banked fortify a town of their own.
+// defenders and a nest whose real gun can fire, tier III with more, and nothing past that; a lost
+// site opens again and only it is rebuilt; the base falling hands the works over standing.
+// srv:baseworksai: AI commanders with RP banked fortify a town of their own. srv:baseworksplan: where
+// the sites go, on every base of a map, against the hard rules (RunPlan).
 class ACR_TestBaseWorks
 {
  static const ResourceName SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName ENEMY = "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et";
  static const string NAME = "Works Squad";
  static const int STEP_LIMIT = 300; // s a tier may take (its checkpoint can be 400 m out)
- static const int CHECKS = 35;
+ static const int CHECKS = 38;
  protected static int s_iStep;
  protected static int s_iStepAt;
  protected static int s_iRP;
@@ -27,6 +28,12 @@ class ACR_TestBaseWorks
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
+  if (System.IsCLIParam("acrBaseWorksPlanTest"))
+  {
+   foreach (ACR_FactionSettings aside : ACR_FactionSettings.s_All) aside.m_bAICommander = false;
+   RunPlan(manager, second);
+   return;
+  }
   if (System.IsCLIParam("acrBaseWorksAITest"))
   {
    RunAI(manager, second);
@@ -246,10 +253,35 @@ class ACR_TestBaseWorks
   }
   ACR_TestRegress.Check("baseworks: tier II built", ACR_BaseWorks.BuiltSites(s_Work, 2) > 0 && real, kinds);
   ACR_TestRegress.Check("baseworks: tier II has an MG nest", nest, kinds);
+  NestFires();
   int men = Men();
   bool crewOut = s_Work.m_Defenders && !s_Work.m_Defenders.m_aCrewGuns.IsEmpty();
   ACR_TestRegress.Check("baseworks: tier II has defenders in reserve", men == ACR_BaseWorks.Defenders(2), string.Format("%1 men", men));
   ACR_TestRegress.Check("baseworks: the reserve is told to man the nest's gun", crewOut, "");
+ }
+
+ // The nest as built: the game's line of fire check on its real gun, and the gun looks the way the
+ // planner looked. (The planner only ever saw the place and a bearing.)
+ protected static void NestFires()
+ {
+  foreach (ACR_BaseSite site : s_Work.m_aSites)
+  {
+   if (site.m_iTier != 2 || !site.m_bBuilt || site.m_eKind != ACR_EBaseSite.NEST) continue;
+   string detail;
+   ACR_TestRegress.Check("baseworks: the built nest's gun has a clear line of fire", ACR_Fortify.LineOfFire(site.m_aWalls[0], detail), detail);
+   IEntity gun = ACR_Roadblocks.FindTurretInHierarchy(site.m_aWalls[0]);
+   float turned = 180;
+   if (gun)
+   {
+    vector transform[4];
+    gun.GetWorldTransform(transform);
+    turned = Math.AbsFloat(ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(transform[2]) - site.m_fYaw + 180) - 180);
+   }
+   ACR_TestRegress.Check("baseworks: ... and looks the way the planner checked", gun && turned < 45, string.Format("%1 deg off facing %2", (int)turned, (int)site.m_fYaw));
+   return;
+  }
+  ACR_TestRegress.Check("baseworks: the built nest's gun has a clear line of fire", false, "no nest built");
+  ACR_TestRegress.Check("baseworks: ... and looks the way the planner checked", false, "no nest built");
  }
 
  // The works' men: in reserve, or on the guns.
@@ -293,6 +325,14 @@ class ACR_TestBaseWorks
  protected static void TierThree(ACR_Squad squad)
  {
   int men = Men();
+  array<IEntity> buildings = {};
+  ACR_BaseDefences.Buildings(s_Base.GetOrigin(), ACR_BaseDefences.SearchRadius(s_Base) + 60, buildings);
+  float nearest = 1000;
+  foreach (ACR_BaseSite site : s_Work.m_aSites)
+  {
+   if (site.m_iTier == 3 && site.m_bBuilt && site.m_eKind == ACR_EBaseSite.BUNKER) nearest = Math.Min(nearest, ACR_BaseDefences.BuildingGap(buildings, site.m_vPos, 8));
+  }
+  ACR_TestRegress.Check("baseworks: the built bunker stands clear of the buildings", nearest >= 8, string.Format("%1 m", nearest.ToString(-1, 1)));
   ACR_TestRegress.Check("baseworks: tier III built, more defenders", ACR_BaseWorks.BuiltSites(s_Work, 3) > 0 && men == ACR_BaseWorks.Defenders(3), string.Format("%1 men", men));
   string why;
   ACR_TestRegress.Check("baseworks: nothing past tier III", !ACR_BaseWorks.Order(squad, s_Base, why), why);
@@ -378,5 +418,491 @@ class ACR_TestBaseWorks
   }
   ACR_TestRegress.Check("baseworksai: the next site waits for the build budget", stops, "");
   ACR_TestRegress.Complete("baseworksai", 2);
+ }
+
+ // ---------------------------------------------------------------- the placement, every town
+
+ // srv:baseworksplan[arland|kolguyev] (about 2 min, no squad): the works' plan of every base on the
+ // map, checked against the hard rules with traces and queries of its own, not the planner's (so a
+ // plan from the old ring, Strong, fails them: tried on aea7d35). Prints each plan's geometry for
+ // drawing (WORKSGEO lines). On Kolguyev also the spot of the 30 Oct playtest's Bovemont Base.
+ protected static int s_iBases, s_iNests, s_iBunkers, s_iWalls, s_iChecks, s_iPosts;
+ protected static int s_iFire, s_iClose, s_iFacing, s_iPlannedFacing, s_iBuilding, s_iDoor, s_iRoad, s_iDressRoad, s_iApart, s_iDoubled, s_iThreeGuns, s_iClump, s_iFarCheck, s_iWorstMs, s_iNestTowns;
+ protected static string s_sWorst;
+ protected static ref array<IEntity> s_aFound = {};
+
+ protected static void RunPlan(ACR_Manager manager, int second)
+ {
+  if (second != 12) return;
+  s_sSide = ACR_FactionSelection.West();
+  int most = -1;
+  ACR_Base biggest;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_bBuilt) continue;
+   array<IEntity> buildings = {};
+   ACR_BaseDefences.Buildings(base.GetOrigin(), ACR_BaseDefences.SearchRadius(base), buildings);
+   if (buildings.Count() > most)
+   {
+    most = buildings.Count();
+    biggest = base;
+   }
+   PlanChecks(base);
+  }
+  ACR_TestRegress.Check("baseworks plan: every base planned", s_iBases >= 5, string.Format("%1 bases: %2 nests in %3 towns, %4 bunkers and towers, %5 sandbag sites, %6 checkpoints, %7 command posts", s_iBases, s_iNests, s_iNestTowns, s_iBunkers, s_iWalls, s_iChecks, s_iPosts));
+  ACR_TestRegress.Check("baseworks plan: most towns still get guns", s_iNestTowns * 2 >= s_iBases, string.Format("nests in %1 of %2", s_iNestTowns, s_iBases));
+  ACR_TestRegress.Check("baseworks plan: every gun has a clear line of fire (the game's own check)", s_iFire == 0, string.Format("%1 of %2 blocked", s_iFire, s_iNests + s_iBunkers));
+  ACR_TestRegress.Check("baseworks plan: no gun faces a wall, fence or building close in front", s_iClose == 0, string.Format("%1 of %2", s_iClose, s_iNests + s_iBunkers));
+  ACR_TestRegress.Check("baseworks plan: a gun sees 40 m along its middle", s_iFacing == 0, string.Format("%1 of %2", s_iFacing, s_iNests + s_iBunkers));
+  ACR_TestRegress.Check("baseworks plan: sandbag sites see out", s_iPlannedFacing == 0, string.Format("%1 of %2", s_iPlannedFacing, s_iWalls));
+  ACR_TestRegress.Check("baseworks plan: nothing stands close to a building", s_iBuilding == 0, string.Format("%1 sites", s_iBuilding));
+  ACR_TestRegress.Check("baseworks plan: nothing at a door", s_iDoor == 0, string.Format("%1 sites", s_iDoor));
+  ACR_TestRegress.Check("baseworks plan: no gun or sandbag on a road", s_iRoad == 0, string.Format("%1 sites", s_iRoad));
+  ACR_TestRegress.Check("baseworks plan: no dressing on a road", s_iDressRoad == 0, string.Format("%1 pieces", s_iDressRoad));
+  ACR_TestRegress.Check("baseworks plan: guns stand well apart", s_iApart == 0, string.Format("%1 pairs under 30 m", s_iApart));
+  ACR_TestRegress.Check("baseworks plan: no two guns side by side look the same way", s_iDoubled == 0, string.Format("%1 pairs under 50 m, within 20 degrees", s_iDoubled));
+  ACR_TestRegress.Check("baseworks plan: towns with their guns all in one 60 degrees are few", s_iClump * 4 <= s_iThreeGuns, string.Format("%1 of %2 towns with three or more (one threat and no other place can do that)", s_iClump, s_iThreeGuns));
+  ACR_TestRegress.Check("baseworks plan: checkpoints stay near the town", s_iFarCheck == 0, string.Format("%1 of %2", s_iFarCheck, s_iChecks));
+  ACR_TestRegress.Check("baseworks plan: planning cost", s_iWorstMs < 600, string.Format("worst %1 ms (%2)", s_iWorstMs, s_sWorst));
+  CrateChecks();
+  SeedChecks(biggest);
+  Draw(biggest);
+  Replay();
+  ACR_TestRegress.Complete("baseworksplan", 19);
+ }
+
+ protected static void PlanChecks(ACR_Base base)
+ {
+  string faction = base.m_sOwner;
+  if (faction.IsEmpty()) faction = s_sSide;
+  ACR_BaseWork work = ACR_BaseWorks.WorkFor(base, faction);
+  s_iBases++;
+  if (ACR_BaseWorks.s_iLastPlanMs > s_iWorstMs)
+  {
+   s_iWorstMs = ACR_BaseWorks.s_iLastPlanMs;
+   s_sWorst = base.m_sName;
+  }
+  float radius = ACR_BaseDefences.SearchRadius(base);
+  vector center = base.GetOrigin();
+  array<IEntity> buildings = {};
+  ACR_BaseDefences.Buildings(center, radius + 60, buildings);
+  array<ref ACR_BaseDefenceSeg> segs = {};
+  ACR_BaseDefences.Roads(center, radius + 60, segs);
+  array<vector> doors = {};
+  Doors(buildings, doors);
+  array<vector> guns = {};
+  array<float> yaws = {};
+  int nests;
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   if (site.m_eKind == ACR_EBaseSite.ROADBLOCK)
+   {
+    s_iChecks++;
+    if (vector.DistanceXZ(site.m_vPos, center) > radius + 90)
+    {
+     s_iFarCheck++;
+     PrintFormat("[ACR] TEST baseworks plan %1: checkpoint %2 m out", base.m_sName, (int)vector.DistanceXZ(site.m_vPos, center));
+    }
+    continue;
+   }
+   if (site.m_eKind == ACR_EBaseSite.PLANNED)
+   {
+    PlannedChecks(base, site, buildings, segs, doors);
+    continue;
+   }
+   if (site.m_eKind == ACR_EBaseSite.NEST)
+   {
+    s_iNests++;
+    nests++;
+   }
+   else s_iBunkers++;
+   GunChecks(base, site, buildings, segs, doors);
+   foreach (int g, vector other : guns)
+   {
+    if (vector.DistanceXZ(other, site.m_vPos) < 30) s_iApart++;
+    if (vector.DistanceXZ(other, site.m_vPos) < 50 && ACR_BaseDefences.DotXZ(ACR_BaseSurvey.Dir(yaws[g]), ACR_BaseSurvey.Dir(site.m_fYaw)) > 0.94) s_iDoubled++;
+   }
+   guns.Insert(site.m_vPos);
+   yaws.Insert(site.m_fYaw);
+  }
+  if (nests > 0) s_iNestTowns++;
+  if (guns.Count() >= 3) s_iThreeGuns++;
+  if (Clumped(center, guns))
+  {
+   s_iClump++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 guns clumped", base.m_sName, guns.Count());
+  }
+ }
+
+ // Three or more guns with all but one inside one 60 degrees round the town.
+ protected static bool Clumped(vector center, array<vector> guns)
+ {
+  if (guns.Count() < 3) return false;
+  foreach (vector gun : guns)
+  {
+   vector way = ACR_BaseDefences.FlatDir(center, gun);
+   int inside = 0;
+   foreach (vector other : guns)
+    if (ACR_BaseDefences.DotXZ(way, ACR_BaseDefences.FlatDir(center, other)) > 0.866) inside++;
+   if (inside >= guns.Count() - 1) return true;
+  }
+  return false;
+ }
+
+ protected static void GunChecks(ACR_Base base, ACR_BaseSite site, array<IEntity> buildings, array<ref ACR_BaseDefenceSeg> segs, array<vector> doors)
+ {
+  string what = ACR_BaseWorks.SiteWords(site);
+  float up = 1.1;
+  if (site.m_eKind == ACR_EBaseSite.BUNKER)
+  {
+   up = 1.3;
+   if (site.m_iSpot == 1) up = 4.5;
+  }
+  bool tower = site.m_eKind == ACR_EBaseSite.BUNKER && site.m_iSpot == 1;
+  string detail;
+  if (!tower && !ACR_Fortify.LineOfFireAt(site.m_vPos, site.m_fYaw, null, detail))
+  {
+   s_iFire++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: %4", base.m_sName, what, site.m_vPos, detail);
+  }
+  // A wall, fence or building close on any ray is a fail; a tree or rock on two of the five.
+  array<float> turns = {-20, -10, 0, 10, 20};
+  int blocked = 0;
+  bool structure = false;
+  string blocker = "";
+  foreach (float turn : turns)
+  {
+   string hit;
+   float clear = ClearAhead(site.m_vPos, up, site.m_fYaw + turn, 40, hit);
+   if (clear < 20)
+   {
+    blocked++;
+    blocker = string.Format("%1 %2 m ahead (%3 deg)", hit, (int)clear, turn);
+    if (s_bHitStructure) structure = true;
+   }
+   if (turn == 0 && clear < 39)
+   {
+    s_iFacing++;
+    PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3 facing %4: only %5 m clear (%6)", base.m_sName, what, site.m_vPos, (int)site.m_fYaw, (int)clear, hit);
+   }
+  }
+  if (structure || blocked >= 2)
+  {
+   s_iClose++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3 facing %4: %5 (%6 rays)", base.m_sName, what, site.m_vPos, (int)site.m_fYaw, blocker, blocked);
+  }
+  float gap = ACR_BaseDefences.BuildingGap(buildings, site.m_vPos, 8);
+  if (gap < 8)
+  {
+   s_iBuilding++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: %4 m from a building", base.m_sName, what, site.m_vPos, gap.ToString(-1, 1));
+  }
+  if (NearDoor(doors, site.m_vPos, 8))
+  {
+   s_iDoor++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: at a door", base.m_sName, what, site.m_vPos);
+  }
+  if (ACR_BaseDefences.RoadEdgeGap(segs, site.m_vPos) < 4)
+  {
+   s_iRoad++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: on a road", base.m_sName, what, site.m_vPos);
+  }
+ }
+
+ protected static void PlannedChecks(ACR_Base base, ACR_BaseSite site, array<IEntity> buildings, array<ref ACR_BaseDefenceSeg> segs, array<vector> doors)
+ {
+  ACR_BaseDefencePos pos = site.m_Plan;
+  string what = ACR_BaseWorks.SiteWords(site);
+  if (pos.m_eKind == ACR_EBaseDefenceKind.POST)
+  {
+   s_iPosts++;
+   return;
+  }
+  s_iWalls++;
+  bool apart = pos.m_eKind == ACR_EBaseDefenceKind.SQUARE || pos.m_eKind == ACR_EBaseDefenceKind.PERIMETER;
+  vector from = vector.Zero;
+  int bags = 0;
+  bool closed, door, road;
+  foreach (int i, vector at : pos.m_aPiecePos)
+  {
+   if (!pos.m_aPieceWall[i])
+   {
+    if (ACR_BaseDefences.RoadEdgeGap(segs, at) < 0) s_iDressRoad++;
+    continue;
+   }
+   if (apart && ACR_BaseDefences.BuildingGap(buildings, at, 2) < 2) closed = true;
+   if (NearDoor(doors, at, 2.5)) door = true;
+   if (ACR_BaseDefences.RoadEdgeGap(segs, at) < 0) road = true;
+   vector size = ACR_BaseDefences.HalfSize(pos.m_aPiecePrefab[i]);
+   if (size[0] < 1.5) continue;
+   from = from + at;
+   bags++;
+  }
+  if (closed)
+  {
+   s_iBuilding++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: its bags against a building", base.m_sName, what, pos.m_vPos);
+  }
+  if (door)
+  {
+   s_iDoor++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: its bags at a door", base.m_sName, what, pos.m_vPos);
+  }
+  if (road)
+  {
+   s_iRoad++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: its bags on a road", base.m_sName, what, pos.m_vPos);
+  }
+  if (bags == 0) return;
+  from = from * (1.0 / bags) + pos.m_vFacing * 0.8;
+  // Two of three rays: a sign pole in a street isn't a facing failure.
+  array<float> turns = {-5, 0, 5};
+  int blocked = 0;
+  string blocker = "";
+  foreach (float turn : turns)
+  {
+   string hit;
+   float clear = ClearAhead(from, 1.45, ACR_BaseDefences.Bearing(pos.m_vFacing) + turn, 15, hit);
+   if (clear >= 10) continue;
+   blocked++;
+   blocker = string.Format("%1 %2 m ahead", hit, (int)clear);
+  }
+  if (blocked >= 2)
+  {
+   s_iPlannedFacing++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3 facing %4: %5", base.m_sName, what, pos.m_vPos, (int)ACR_BaseDefences.Bearing(pos.m_vFacing), blocker);
+  }
+ }
+
+ protected static bool SolidOnly(notnull IEntity e)
+ {
+  if (ChimeraCharacter.Cast(e) || Vehicle.Cast(e)) return false;
+  if (e.GetPrefabData() && e.GetPrefabData().GetPrefabName().Contains("Barbed")) return false;
+  if (Tree.Cast(e))
+  {
+   vector mins, maxs;
+   e.GetBounds(mins, maxs);
+   if (maxs[1] - mins[1] < 2.5) return false;
+  }
+  return true;
+ }
+
+ // m clear ahead at a height over the ground, up to range. Rising ground is LineOfFireAt's to judge:
+ // past it, it counts as clear (a level trace goes on under the ground into whatever stands there).
+ protected static bool s_bHitStructure;
+ protected static float ClearAhead(vector place, float up, float bearing, float range, out string hit)
+ {
+  hit = "";
+  s_bHitStructure = false;
+  BaseWorld world = GetGame().GetWorld();
+  float rad = bearing * Math.DEG2RAD;
+  vector dir = Vector(Math.Sin(rad), 0, Math.Cos(rad));
+  vector muzzle = place;
+  muzzle[1] = world.GetSurfaceY(place[0], place[2]) + up;
+  TraceParam trace = new TraceParam();
+  trace.Start = muzzle + dir * 1.2;
+  trace.End = muzzle + dir * range;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  float fraction = world.TraceMove(trace, SolidOnly);
+  if (fraction >= 1 || !trace.TraceEnt || GenericTerrainEntity.Cast(trace.TraceEnt) || trace.TraceEnt.ClassName() == "RoadEntity") return range;
+  hit = ACR_BaseDefences.ModelName(trace.TraceEnt);
+  IEntity root = trace.TraceEnt.GetRootParent();
+  s_bHitStructure = SCR_DestructibleBuildingEntity.Cast(root) || BaseBuilding.Cast(root) || hit.Contains("Fence") || hit.Contains("Wall");
+  return 1.2 + fraction * (range - 1.2);
+ }
+
+ protected static void Doors(array<IEntity> buildings, notnull array<vector> doors)
+ {
+  foreach (IEntity b : buildings)
+  {
+   IEntity child = b.GetChildren();
+   while (child)
+   {
+    string part = "";
+    if (child.GetPrefabData()) part = child.GetPrefabData().GetPrefabName();
+    if (part.Contains("/Doors/") && !part.Contains("_INT")) doors.Insert(child.GetOrigin());
+    child = child.GetSibling();
+   }
+  }
+ }
+
+ protected static bool NearDoor(array<vector> doors, vector p, float within)
+ {
+  foreach (vector door : doors) if (vector.DistanceXZ(door, p) < within) return true;
+  return false;
+ }
+
+ // The kit's crates read as kit: no tall tower of them, in every side's kit.
+ protected static void CrateChecks()
+ {
+  array<string> sides = {"US", "USSR", "FIA"};
+  float tallest = 0;
+  string name = "";
+  foreach (string side : sides)
+  {
+   ACR_BaseDefenceKit kit = ACR_BaseDefences.Kit(side);
+   foreach (ResourceName prefab : kit.m_aClutter)
+   {
+    float height = HeightOf(prefab);
+    if (height <= tallest) continue;
+    tallest = height;
+    name = FilePath.StripPath(prefab);
+   }
+  }
+  ACR_TestRegress.Check("baseworks plan: nothing in a kit's clutter stands over 2 m", tallest > 0 && tallest < 2, string.Format("tallest %1 m, %2", tallest.ToString(-1, 2), name));
+  ResourceName cratesPrefab = ACR_BaseDefences.PostPrefab(ACR_BaseDefences.Kit("US"), "crates");
+  float crates = HeightOf(cratesPrefab);
+  vector half = ACR_BaseDefences.HalfSize(cratesPrefab);
+  ACR_TestRegress.Check("baseworks plan: the command post's crates are knee to chest high", crates > 0.3 && crates < 1.4 && half[0] > 0.3, string.Format("%1 m, half %2", crates.ToString(-1, 2), half));
+ }
+
+ protected static float HeightOf(ResourceName prefab)
+ {
+  vector size = SizeOf(prefab);
+  return size[1];
+ }
+
+ // A prefab's size with its children, spawned high up for a moment.
+ protected static vector SizeOf(ResourceName prefab)
+ {
+  Resource res = Resource.Load(prefab);
+  if (!res.IsValid()) return vector.Zero;
+  EntitySpawnParams params = new EntitySpawnParams();
+  params.TransformMode = ETransformMode.WORLD;
+  params.Transform[3] = ACR_Base.s_All[0].GetOrigin() + Vector(0, 300, 0);
+  IEntity e = GetGame().SpawnEntityPrefab(res, GetGame().GetWorld(), params);
+  if (!e) return vector.Zero;
+  vector mins, maxs;
+  e.GetWorldBounds(mins, maxs);
+  GrowBounds(e, mins, maxs);
+  SCR_EntityHelper.DeleteEntityAndChildren(e);
+  return maxs - mins;
+ }
+
+ protected static void GrowBounds(IEntity e, inout vector mins, inout vector maxs)
+ {
+  IEntity child = e.GetChildren();
+  while (child)
+  {
+   vector a, b;
+   child.GetWorldBounds(a, b);
+   for (int i = 0; i < 3; i++)
+   {
+    if (a[i] < mins[i]) mins[i] = a[i];
+    if (b[i] > maxs[i]) maxs[i] = b[i];
+   }
+   GrowBounds(child, mins, maxs);
+   child = child.GetSibling();
+  }
+ }
+
+ // The same seed plans a town the same; another seed differently.
+ protected static void SeedChecks(ACR_Base base)
+ {
+  string first = PlanText(base);
+  string again = PlanText(base);
+  ACR_TestRegress.Check("baseworks plan: the same seed plans the same", first == again && !first.IsEmpty(), base.m_sName);
+  string seedWas;
+  ACR_Options.Get("acrSeed", seedWas);
+  int differs = 0;
+  array<string> seeds = {"11", "222", "3333"};
+  foreach (string seed : seeds)
+  {
+   ACR_Options.Set("acrSeed", seed);
+   if (PlanText(base) != first) differs++;
+  }
+  if (seedWas.IsEmpty()) ACR_Options.Unset("acrSeed");
+  else ACR_Options.Set("acrSeed", seedWas);
+  ACR_TestRegress.Check("baseworks plan: another seed plans otherwise", differs > 0, string.Format("%1 of %2 seeds differ at %3", differs, seeds.Count(), base.m_sName));
+ }
+
+ protected static string PlanText(ACR_Base base)
+ {
+  string faction = base.m_sOwner;
+  if (faction.IsEmpty()) faction = s_sSide;
+  ACR_BaseWorks.Reset();
+  ACR_BaseWork work = ACR_BaseWorks.WorkFor(base, faction);
+  string text = "";
+  foreach (ACR_BaseSite site : work.m_aSites) text += string.Format("%1 %2 %3 %4 %5;", site.m_eKind, site.m_iTier, (int)site.m_vPos[0], (int)site.m_vPos[2], (int)site.m_fYaw);
+  return text;
+ }
+
+ // The geometry of a town's plan, for a picture.
+ protected static void Draw(ACR_Base base)
+ {
+  string faction = base.m_sOwner;
+  if (faction.IsEmpty()) faction = s_sSide;
+  ACR_BaseWorks.Reset();
+  ACR_BaseWork work = ACR_BaseWorks.WorkFor(base, faction);
+  vector c = base.GetOrigin();
+  float radius = ACR_BaseDefences.SearchRadius(base);
+  PrintFormat("[ACR] WORKSGEO TOWN %1 %2 %3 %4", base.m_sName, (int)c[0], (int)c[2], (int)radius);
+  array<vector> dirs = {};
+  array<float> weights = {};
+  ACR_BaseDefences.Threats(base, faction, dirs, weights);
+  foreach (int d, vector dir : dirs) PrintFormat("[ACR] WORKSGEO T %1 %2 %3", dir[0].ToString(-1, 2), dir[2].ToString(-1, 2), weights[d].ToString(-1, 2));
+  array<IEntity> buildings = {};
+  ACR_BaseDefences.Buildings(c, radius + 80, buildings);
+  foreach (IEntity b : buildings)
+  {
+   vector mins, maxs;
+   b.GetBounds(mins, maxs);
+   vector p0 = b.CoordToParent(Vector(mins[0], 0, mins[2]));
+   vector p1 = b.CoordToParent(Vector(maxs[0], 0, mins[2]));
+   vector p2 = b.CoordToParent(Vector(maxs[0], 0, maxs[2]));
+   vector p3 = b.CoordToParent(Vector(mins[0], 0, maxs[2]));
+   PrintFormat("[ACR] WORKSGEO B %1 %2 %3 %4 %5 %6 %7 %8", p0[0].ToString(-1, 1), p0[2].ToString(-1, 1), p1[0].ToString(-1, 1), p1[2].ToString(-1, 1), p2[0].ToString(-1, 1), p2[2].ToString(-1, 1), p3[0].ToString(-1, 1), p3[2].ToString(-1, 1));
+  }
+  array<vector> doors = {};
+  Doors(buildings, doors);
+  foreach (vector door : doors) PrintFormat("[ACR] WORKSGEO D %1 %2", door[0].ToString(-1, 1), door[2].ToString(-1, 1));
+  array<ref ACR_BaseDefenceSeg> segs = {};
+  ACR_BaseDefences.Roads(c, radius + 80, segs);
+  foreach (ACR_BaseDefenceSeg s : segs) PrintFormat("[ACR] WORKSGEO R %1 %2 %3 %4 %5", s.m_vA[0].ToString(-1, 1), s.m_vA[2].ToString(-1, 1), s.m_vB[0].ToString(-1, 1), s.m_vB[2].ToString(-1, 1), s.m_fWidth.ToString(-1, 1));
+  s_aFound.Clear();
+  GetGame().GetWorld().QueryEntitiesBySphere(c, radius + 80, CollectWalls, null, EQueryEntitiesFlags.STATIC);
+  foreach (IEntity wall : s_aFound)
+  {
+   vector wMins, wMaxs;
+   wall.GetBounds(wMins, wMaxs);
+   vector a = Vector(wMins[0], 0, 0.5 * (wMins[2] + wMaxs[2]));
+   vector z = Vector(wMaxs[0], 0, 0.5 * (wMins[2] + wMaxs[2]));
+   if (wMaxs[2] - wMins[2] > wMaxs[0] - wMins[0])
+   {
+    a = Vector(0.5 * (wMins[0] + wMaxs[0]), 0, wMins[2]);
+    z = Vector(0.5 * (wMins[0] + wMaxs[0]), 0, wMaxs[2]);
+   }
+   a = wall.CoordToParent(a);
+   z = wall.CoordToParent(z);
+   PrintFormat("[ACR] WORKSGEO W %1 %2 %3 %4 %5", a[0].ToString(-1, 1), a[2].ToString(-1, 1), z[0].ToString(-1, 1), z[2].ToString(-1, 1), (int)(wMaxs[1] - wMins[1] + 0.5));
+  }
+  s_aFound.Clear();
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   string words = ACR_BaseWorks.SiteWords(site);
+   words.Replace(" ", "_");
+   PrintFormat("[ACR] WORKSGEO S %1 %2 %3 %4 %5 %6", words, site.m_iTier, site.m_vPos[0].ToString(-1, 1), site.m_vPos[2].ToString(-1, 1), (int)site.m_fYaw, site.m_iSpot);
+   if (!site.m_Plan) continue;
+   foreach (int i, vector at : site.m_Plan.m_aPiecePos)
+    PrintFormat("[ACR] WORKSGEO P %1 %2 %3 %4 %5", at[0].ToString(-1, 1), at[2].ToString(-1, 1), (int)site.m_Plan.m_aPieceYaw[i], FilePath.StripExtension(FilePath.StripPath(site.m_Plan.m_aPiecePrefab[i])), site.m_Plan.m_aPieceWall[i]);
+  }
+  PrintFormat("[ACR] WORKSGEO END %1", base.m_sName);
+ }
+
+ protected static bool CollectWalls(IEntity e)
+ {
+  if (!e || !e.GetPhysics()) return true;
+  string name = "";
+  if (e.GetPrefabData()) name = e.GetPrefabData().GetPrefabName();
+  if (name.IsEmpty() && e.GetVObject()) name = e.GetVObject().GetResourceName();
+  if (name.Contains("/Walls/") || name.Contains("Fence")) s_aFound.Insert(e);
+  return true;
+ }
+
+ // Kolguyev: the 30 Oct playtest's base.
+ protected static void Replay()
+ {
+  foreach (ACR_Base base : ACR_Base.s_All)
+   if (base && base.m_sName == "Bovemont Base") Draw(base);
  }
 }

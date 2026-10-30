@@ -45,7 +45,7 @@ modded class ACR_TestHooks
   // -acrPathProbeTest: can foot squads reach Gallows Base's centre (ACR_TestPathProbe).
   if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
   // -acrBaseWorksTest: Fortify on a base (ACR_TestBaseWorks, #105).
-  if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksAITest")) ACR_TestBaseWorks.Run(seconds);
+  if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
   // -acrGuerrillasTest: FIA guerrilla cells (ACR_TestGuerrillas, #89).
   if (System.IsCLIParam("acrGuerrillasTest")) ACR_TestGuerrillas.Run(seconds);
   // -acrInsurgencyTest: FIA allegiance and dangerous roads (ACR_TestInsurgency, #89).

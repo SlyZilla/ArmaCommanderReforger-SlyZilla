@@ -204,3 +204,6 @@ genmapzimnitrita|-acrGenerateMapTest 1|150|Worlds/ACR_Zimnitrita.ent
 baseworks|-acrBaseWorksTest 1|900|Worlds/ACR_Everon.ent
 baseworksarland|-acrBaseWorksTest 1|900|Worlds/ACR_Arland.ent
 baseworksai|-acrBaseWorksAITest 1|620|Worlds/ACR_Everon.ent
+baseworksplan|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Everon.ent
+baseworksplanarland|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Arland.ent
+baseworksplankolguyev|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Kolguyev.ent

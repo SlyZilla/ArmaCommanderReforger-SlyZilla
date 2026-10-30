@@ -103,6 +103,7 @@ class ACR_BaseDefenceKit : Managed
 	ResourceName m_sTable;
 	ResourceName m_sRadio;
 	ResourceName m_sMap;
+	ResourceName m_sCrates;
 	ref array<ResourceName> m_aClutter = {};
 }
 
@@ -144,7 +145,12 @@ class ACR_BaseDefences : Managed
 	// Deployed concertina wire (it snags, like vanilla's). Not BarbedTape_Coil: that is a spool on a pallet.
 	static const ResourceName COIL = "{EF39F5715EF2323E}Prefabs/Structures/Walls/BarbedWire/BarbedTape_01/BarbedTape_01_Short.et";
 	static const ResourceName WHEELBARROW = "{6DD0648BB7A52420}Prefabs/Props/Civilian/Wheelbarrow_01.et";
-	static const ResourceName CRATES = "{AA1E1DD1D69055EC}Prefabs/Props/Military/MilitaryCrates/CrateStack_01/CrateStack_01_green.et";
+	// A pallet of ammunition boxes (0.9 m high) in each side's colours and a low pile of shell containers
+	// (1 m). Not CrateStack_01: that one prefab is a 2.55 m tower of crates on a 1.2 x 1 m base, and with
+	// sandbags round it nobody could tell what it was (playtest 30 Oct).
+	static const ResourceName CRATES_US = "{AE0FFC699F429214}Prefabs/Props/Military/Camps/PalletAmmo_01_US.et";
+	static const ResourceName CRATES_EAST = "{47A2F2F3C8FAACD5}Prefabs/Props/Military/Camps/PalletAmmo_01_Soviet.et";
+	static const ResourceName SHELLS = "{77D49455528ED5E6}Prefabs/Props/Military/MilitaryCrates/ShellContainerstack_01/ShellContainerstack_01_pile_small.et";
 	static const ResourceName LOG = "{32654927F2657E8A}Prefabs/Props/Forest/WoodPile/WoodLog_01_A.et";
 	static const ResourceName TIRES = "{CEA239D9E1899899}Prefabs/Props/Garbage/Tires/TirePile_01_small.et";
 	static const ResourceName JEEP_TIRES = "{5CA44F8D9F7491ED}Prefabs/Props/VehicleParts/Tires/Tire_M151A2_pile.et";
@@ -242,7 +248,8 @@ class ACR_BaseDefences : Managed
 		if (prefab == DUCKBOARD) return Vector(0.63, 0, 1.9);
 		if (prefab == NET_US || prefab == NET_USSR || prefab == NET_FIA) return Vector(2.05, 0, 1.1);
 		if (prefab == WHEELBARROW) return Vector(0.43, 0, 1.08);
-		if (prefab == CRATES) return Vector(0.62, 0, 0.52);
+		if (prefab == CRATES_US || prefab == CRATES_EAST) return Vector(0.55, 0, 0.62);
+		if (prefab == SHELLS) return Vector(1.27, 0, 0.68);
 		if (prefab == PALLET) return Vector(0.41, 0, 0.62);
 		if (prefab == BARREL || prefab == JEEP_TIRES) return Vector(0.44, 0, 0.44);
 		if (prefab == CHAIR_US || prefab == CHAIR_EAST) return Vector(0.26, 0, 0.21);
@@ -309,7 +316,8 @@ class ACR_BaseDefences : Managed
 	// Nothing solid in the world under a footprint: fences, walls, poles, parked vehicles, props,
 	// tree trunks (bushes are fine, like vanilla's bought defences). Flat things (kerbs, rugs)
 	// and things overhead (wires, awnings, signs) don't count.
-	static bool WorldClear(vector at, float yaw, vector half, IEntity ignore = null)
+	// noTrees: a piece that fells them when it goes in (ACR_FobBuild.FellTrees).
+	static bool WorldClear(vector at, float yaw, vector half, IEntity ignore = null, bool noTrees = false)
 	{
 		s_Ignore = ignore;
 		s_aSolid.Clear();
@@ -322,7 +330,7 @@ class ACR_BaseDefences : Managed
 			vector size = maxs - mins;
 			if (Tree.Cast(e))
 			{
-				if (size[1] < 2.5) continue;
+				if (size[1] < 2.5 || noTrees) continue;
 				if (BoxesOverlap(at, yaw, half, e.GetOrigin(), 0, Vector(0.35, 0, 0.35), 0.1)) clear = false;
 				continue;
 			}
@@ -398,9 +406,11 @@ class ACR_BaseDefences : Managed
 		kit.m_sTable = TABLE_US;
 		kit.m_sRadio = RADIO_US;
 		kit.m_sMap = TableMap(east || fia);
+		kit.m_sCrates = CRATES_US;
 		if (east || fia)
 		{
 			kit.m_sNetTop = NETTOP_USSR;
+			kit.m_sCrates = CRATES_EAST;
 			kit.m_sTable = TABLE_EAST;
 			kit.m_sRadio = RADIO_EAST;
 			kit.m_sLong = LONG_BURLAP;
@@ -429,8 +439,8 @@ class ACR_BaseDefences : Managed
 		}
 		else
 		{
-			kit.m_aClutter.Insert(CRATES);
-			kit.m_aClutter.Insert(CRATES);
+			kit.m_aClutter.Insert(kit.m_sCrates);
+			kit.m_aClutter.Insert(SHELLS);
 			kit.m_aClutter.Insert(JEEP_TIRES);
 			kit.m_aClutter.Insert(WHEELBARROW);
 		}
@@ -1043,7 +1053,9 @@ class ACR_BaseDefences : Managed
 		return p;
 	}
 
-	static void Perimeter(ACR_Base base, ACR_BaseDefenceKit kit, array<ref ACR_BaseDefenceSeg> segs, array<vector> dirs, array<float> weights, array<IEntity> buildings, notnull array<ref ACR_BaseDefencePos> found)
+	// With a survey (the works): its weakest sectors get a post too, out from the edge of the town that
+	// way, and a spot must pass its hard rules.
+	static void Perimeter(ACR_Base base, ACR_BaseDefenceKit kit, array<ref ACR_BaseDefenceSeg> segs, array<vector> dirs, array<float> weights, array<IEntity> buildings, notnull array<ref ACR_BaseDefencePos> found, ACR_BaseSurvey survey = null)
 	{
 		vector center = base.GetOrigin();
 		float ring = Math.Clamp(base.m_fRadius, 60, 200);
@@ -1059,20 +1071,31 @@ class ACR_BaseDefences : Managed
 		{
 			foreach (vector d : dirs) axes.Insert(d);
 		}
+		if (survey) survey.WeakAxes(axes, 3);
 		array<float> scales = {0.9, 1.0, 1.15};
+		float step = 8;
+		if (survey) step = 16;
 		foreach (vector axis : axes)
 		{
 			// Every clear spot along this approach, best first; the first whose round piece
 			// fits among the world's fences, poles and props is the post.
 			array<ref ACR_BaseDefencePos> spots = {};
 			float axisBearing = Bearing(axis);
-			for (float shift = -40; shift <= 40; shift += 8)
+			for (float shift = -40; shift <= 40; shift += step)
 			{
 				float rad = (axisBearing + shift) * Math.DEG2RAD;
 				vector outward = Vector(Math.Sin(rad), 0, Math.Cos(rad));
-				foreach (float scale : scales)
+				array<float> reaches = {};
+				foreach (float scale : scales) reaches.Insert(ring * scale);
+				if (survey)
 				{
-					vector p = center + outward * (ring * scale);
+					float townEdge = survey.EdgeAt(axisBearing + shift);
+					reaches.Insert(townEdge + 6);
+					reaches.Insert(townEdge + 14);
+				}
+				foreach (float reach : reaches)
+				{
+					vector p = center + outward * reach;
 					p[1] = GetGame().GetWorld().GetSurfaceY(p[0], p[2]);
 					string why;
 					if (!ACR_FobBuild.FootprintClear(p, 2.5, null, why, true, 1.5)) continue;
@@ -1109,6 +1132,7 @@ class ACR_BaseDefences : Managed
 				if (Rand() < 0.6) Wire(best, best.m_vPos + f * (6 + Rand() * 3), f, segs, buildings);
 				best.m_sNote = string.Format("ring %1 m", (int)vector.DistanceXZ(center, best.m_vPos));
 				Prune(best, buildings);
+				if (survey && !survey.Keeps(best)) continue;
 				found.Insert(best);
 				break;
 			}
@@ -1210,7 +1234,7 @@ class ACR_BaseDefences : Managed
 			case "lamp": return kit.m_sLight;
 			case "chart": return FLIPCHART;
 			case "chair": return kit.m_sChair;
-			case "crates": return CRATES;
+			case "crates": return kit.m_sCrates;
 			case "lantern": return kit.m_sLight;
 			case "nettop": return kit.m_sNetTop;
 		}
@@ -1458,7 +1482,9 @@ class ACR_BaseDefences : Managed
 		return Math.Clamp(base.m_fRadius + 50, 100, 220);
 	}
 
-	static void Plan(ACR_Base base, string owner, notnull array<ref ACR_BaseDefencePos> result, out string summary)
+	// With a survey (ACR_BaseWorks), only positions that pass its hard rules, and more of them to choose
+	// from: the works pick among them by their weak points. Without one (the preview), as Jacob built it.
+	static void Plan(ACR_Base base, string owner, notnull array<ref ACR_BaseDefencePos> result, out string summary, ACR_BaseSurvey survey = null)
 	{
 		s_iCornersSeen = 0; s_iNoRoad = 0; s_iNoThreat = 0; s_iNoFit = 0; s_iBlocked = 0; s_iNoSight = 0;
 		summary = "";
@@ -1483,19 +1509,27 @@ class ACR_BaseDefences : Managed
 			if (vector.DistanceXZ(house.GetOrigin(), center) <= radius) townSize++;
 		array<ref ACR_BaseDefencePos> posts = {};
 		Posts(base, kit, dirs, weights, buildings, posts);
+		if (survey) foreach (ACR_BaseDefencePos post : posts) survey.TrimPost(post);
 		Pick(posts, 1, 80, result);
 		array<ref ACR_BaseDefencePos> squares = {};
 		Squares(base, kit, dirs, weights, segs, buildings, nodes, squares);
+		if (survey) survey.KeepOnly(squares);
 		Pick(squares, Math.ClampInt(1 + townSize / 40, 1, 3), 60, result);
 		array<ref ACR_BaseDefencePos> corners = {};
 		Corners(base, kit, dirs, weights, segs, buildings, nodes, corners);
+		if (survey) survey.KeepOnly(corners);
 		Pick(corners, Math.ClampInt(townSize / 7, 4, 14), 15, result);
 		array<ref ACR_BaseDefencePos> houses = {};
 		Edges(base, kit, dirs, weights, segs, buildings, houses);
-		Pick(houses, Math.ClampInt(townSize / 10, 0, 6), 20, result);
+		if (survey) survey.KeepOnly(houses);
+		int houseMost = Math.ClampInt(townSize / 10, 0, 6);
+		if (survey) houseMost = Math.ClampInt(townSize / 5, 3, 8);
+		Pick(houses, houseMost, 20, result);
 		array<ref ACR_BaseDefencePos> edges = {};
-		Perimeter(base, kit, segs, dirs, weights, buildings, edges);
-		Pick(edges, MAX_PERIMETER, 40, result);
+		Perimeter(base, kit, segs, dirs, weights, buildings, edges, survey);
+		int perimeterMost = MAX_PERIMETER;
+		if (survey) perimeterMost = MAX_PERIMETER + 3;
+		Pick(edges, perimeterMost, 40, result);
 
 		string threatText = "";
 		foreach (int i, vector d : dirs)
