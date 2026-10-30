@@ -74,32 +74,6 @@ enum ACR_ECursorMode
 // Arma Commander side panel on the fullscreen map. Built from script out of the
 // game's own widget-library text and button layouts, so it matches vanilla UI.
 // Pure view: ACR_PlayerController decides what it shows and handles clicks.
-// A press on the ACA panel (not on a button) or on INTEL's header drags it; a double click puts it back.
-class ACR_PanelDragHandler : ScriptedWidgetEventHandler
-{
- ACR_CommandPanel m_Panel;
- bool m_bFeed;
-
- override bool OnMouseButtonDown(Widget w, int x, int y, int button)
- {
-  if (button != 0 || !m_Panel) return false;
-  return m_Panel.DragStart(w, m_bFeed);
- }
-
- override bool OnMouseButtonUp(Widget w, int x, int y, int button)
- {
-  if (button == 0 && m_Panel) m_Panel.DragEnd();
-  return false;
- }
-
- override bool OnDoubleClick(Widget w, int x, int y, int button)
- {
-  if (button != 0 || !m_Panel) return false;
-  m_Panel.PlaceHome(m_bFeed);
-  return true;
- }
-}
-
 class ACR_CommandPanel : Managed
 {
  protected static const ResourceName LAYOUT_BUTTON = "{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout";
@@ -190,10 +164,6 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetSizeToContent(m_Root, true);
   m_Root.SetZOrder(1000);
   ACR_UiPrefs.Load();
-  PlacePanel(ACR_UiPrefs.s_fPanelX, ACR_UiPrefs.s_fPanelY, PanelWidth());
-  m_DragHandler = new ACR_PanelDragHandler();
-  m_DragHandler.m_Panel = this;
-  m_Root.AddHandler(m_DragHandler);
   GetGame().GetInputManager().AddActionListener("MouseLeft", EActionTrigger.UP, OnMouseLeftUp);
 
   Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, PanelBackground(0.86), 0, m_Root);
@@ -324,9 +294,9 @@ class ACR_CommandPanel : Managed
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
   if (m_Hint) AlignableSlot.SetPadding(m_Hint, 0, 8, 0, 6);
   CreateFeed(parent);
-  AddFeedGrip();
   CreatePicker(parent);
   CreateDebug(parent);
+  RegisterPanels();
  }
 
  // Debug menu (host and admins): a small box at the bottom left, closed by default.
@@ -346,7 +316,7 @@ class ACR_CommandPanel : Managed
   SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_DebugRoot));
   size.EnableWidthOverride(true);
   size.SetWidthOverride(320);
-  AlignableSlot.SetPadding(size, 8, 6, 8, 8);
+  AlignableSlot.SetPadding(size, 8, 14, 8, 8); // room above the button to hold it by
   Widget column = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
   m_DebugToggle = AddButton(column, "Debug", ACR_EPanelAction.DEBUG_TOGGLE);
   m_DebugSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, column);
@@ -566,25 +536,14 @@ class ACR_CommandPanel : Managed
  // The intel feed's top (the 2IC card moves it down, ACR_TwoICView).
  void SetFeedTop(float y)
  {
-  // A place the player chose stands.
-  if (m_FeedRoot && !ACR_UiPrefs.FeedMoved()) FrameSlot.SetPos(m_FeedRoot, ACR_UiPrefs.FEED_HOME_X, y);
+  ACR_PanelMover.Natural(ACR_UiPrefs.FEED, ACR_UiPrefs.FEED_HOME_X, y);
  }
 
  Widget DebugRoot() { return m_DebugRoot; }
 
  // ---------------------------------------------------------------- moving the panels
 
- protected ref ACR_PanelDragHandler m_DragHandler;
- protected ref ACR_PanelDragHandler m_FeedDragHandler;
  protected SCR_ButtonTextComponent m_KeyHintsButton;
- protected bool m_bDragging;
- protected bool m_bDragFeed;
- protected bool m_bDragMoved;
- protected int m_iDragFromX;
- protected int m_iDragFromY;
- protected float m_fDragStartX;
- protected float m_fDragStartY;
- protected static const float DRAG_START = 4; // reference pixels before a press counts as a drag
 
  protected SCR_ButtonTextComponent m_BuildFoldButton;
  protected Widget m_BuildFoldWidget;
@@ -612,17 +571,30 @@ class ACR_CommandPanel : Managed
   else m_BuildFoldButton.SetText("Build orders");
  }
 
- // Tests: the middle of what to press, in screen pixels (x, y).
- vector GripForTest(bool feed)
+ // Tests: the middle of the first line INTEL shows, in screen pixels (x, y; zero: no line).
+ vector FeedLineForTest()
  {
-  Widget box = m_Root;
-  if (feed) box = m_FeedRoot;
-  float x, y, w, h;
-  box.GetScreenPos(x, y);
-  box.GetScreenSize(w, h);
-  float down = GetGame().GetWorkspace().DPIScale(12);
-  return Vector(x + w * 0.5, y + down, 0);
+  foreach (TextWidget line : m_FeedLines)
+  {
+   if (!line || !line.IsVisible()) continue;
+   float x, y, w, h;
+   line.GetScreenPos(x, y);
+   line.GetScreenSize(w, h);
+   return Vector(x + w * 0.5, y + h * 0.5, 0);
+  }
+  return vector.Zero;
  }
+ // Tests: INTEL's title bar ends above the first line it shows.
+ bool FeedTitleClearForTest()
+ {
+  Widget first = FirstFeedLine();
+  vector grip = ACR_PanelMover.GripForTest(ACR_UiPrefs.FEED);
+  if (!first || grip == vector.Zero) return false;
+  float x, y;
+  first.GetScreenPos(x, y);
+  return FeedLineAt(grip[0], grip[1]) < 0 && grip[1] < y;
+ }
+ // Tests: the middle of the key reminders button, in screen pixels (x, y).
  vector KeyHintsButtonForTest()
  {
   if (!m_KeyHintsButton) return vector.Zero;
@@ -640,111 +612,40 @@ class ACR_CommandPanel : Managed
   else m_KeyHintsButton.SetText("Key reminders: off");
  }
 
- // INTEL lets the cursor through to the map (a click on a line jumps there), all but this grip on
- // its header.
- protected void AddFeedGrip()
+ // Each panel of this box's, for the one way of moving a panel (ACR_PanelMover). The ACA panel is held
+ // by its face or its title; INTEL by its title only: the rest lets the cursor through to the map
+ // (a click on a line jumps there).
+ protected void RegisterPanels()
  {
-  if (!m_FeedRoot) return;
-  WorkspaceWidget ws = GetGame().GetWorkspace();
-  SizeLayoutWidget grip = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_FeedRoot));
-  if (!grip) return;
-  grip.EnableHeightOverride(true);
-  grip.SetHeightOverride(26);
-  AlignableSlot.SetHorizontalAlign(grip, LayoutHorizontalAlign.Stretch);
-  AlignableSlot.SetVerticalAlign(grip, LayoutVerticalAlign.Top);
-  Widget hit = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, Color.FromRGBA(0, 0, 0, 3), 0, grip);
-  if (!hit) return;
-  m_FeedDragHandler = new ACR_PanelDragHandler();
-  m_FeedDragHandler.m_Panel = this;
-  m_FeedDragHandler.m_bFeed = true;
-  hit.AddHandler(m_FeedDragHandler);
-  PlaceFeed(ACR_UiPrefs.s_fFeedX, ACR_UiPrefs.s_fFeedY, 330);
+  ACR_PanelMover.Add(ACR_UiPrefs.PANEL, m_Root, 1, 0, ACR_UiPrefs.PANEL_HOME_X, ACR_UiPrefs.PANEL_HOME_Y);
+  ACR_PanelMover.Grip(ACR_UiPrefs.PANEL, m_Root);
+  ACR_PanelMover.TitleBar(ACR_UiPrefs.PANEL, m_Root, 44);
+  ACR_PanelMover.Add(ACR_UiPrefs.FEED, m_FeedRoot, 0, 0, ACR_UiPrefs.FEED_HOME_X, ACR_UiPrefs.FEED_HOME_Y);
+  ACR_PanelMover.TitleBar(ACR_UiPrefs.FEED, m_FeedRoot, 34);
+  ACR_PanelMover.Add(ACR_UiPrefs.DEBUG_BOX, m_DebugRoot, 0, 1, ACR_UiPrefs.FEED_HOME_X, -96);
+  ACR_PanelMover.Body(ACR_UiPrefs.DEBUG_BOX, m_DebugRoot);
  }
 
- bool DragStart(Widget pressed, bool feed)
+ // INTEL's first line showing, what its title bar must stop short of.
+ protected Widget FirstFeedLine()
  {
-  // A button keeps its click.
-  Widget widget = pressed;
-  while (widget && widget != m_Root)
+  if (m_FeedText && m_FeedText.IsVisible()) return m_FeedText;
+  foreach (TextWidget line : m_FeedLines)
   {
-   if (ButtonWidget.Cast(widget)) return false;
-   widget = widget.GetParent();
+   if (line && line.IsVisible()) return line;
   }
-  WidgetManager.GetMousePos(m_iDragFromX, m_iDragFromY);
-  m_bDragging = true;
-  m_bDragFeed = feed;
-  m_bDragMoved = false;
-  if (feed)
-  {
-   m_fDragStartX = ACR_UiPrefs.s_fFeedX;
-   m_fDragStartY = ACR_UiPrefs.s_fFeedY;
-  }
-  else
-  {
-   m_fDragStartX = ACR_UiPrefs.s_fPanelX;
-   m_fDragStartY = ACR_UiPrefs.s_fPanelY;
-  }
-  return true;
+  return null;
  }
 
  // Every frame the map is open (SCR_PlayerController.ACR_UpdatePanel).
  void TickDrag()
  {
-  if (!m_bDragging) return;
-  WorkspaceWidget ws = GetGame().GetWorkspace();
-  int x, y;
-  WidgetManager.GetMousePos(x, y);
-  float dx = ws.DPIUnscale(x - m_iDragFromX);
-  float dy = ws.DPIUnscale(y - m_iDragFromY);
-  if (!m_bDragMoved && Math.AbsFloat(dx) + Math.AbsFloat(dy) < DRAG_START) return;
-  m_bDragMoved = true;
-  float width, height;
-  if (m_bDragFeed)
-  {
-   m_FeedRoot.GetScreenSize(width, height);
-   PlaceFeed(m_fDragStartX + dx, m_fDragStartY + dy, ws.DPIUnscale(width));
-  }
-  else
-  {
-   m_Root.GetScreenSize(width, height);
-   PlacePanel(m_fDragStartX + dx, m_fDragStartY + dy, ws.DPIUnscale(width));
-  }
+  ACR_PanelMover.FitTitleBar(ACR_UiPrefs.PANEL, m_Economy);
+  ACR_PanelMover.FitTitleBar(ACR_UiPrefs.FEED, FirstFeedLine());
+  ACR_PanelMover.Tick();
  }
 
- protected void OnMouseLeftUp(float value = 0, EActionTrigger reason = 0) { DragEnd(); }
-
- void DragEnd()
- {
-  if (!m_bDragging) return;
-  m_bDragging = false;
-  if (m_bDragMoved) ACR_UiPrefs.Save();
- }
-
- void PlaceHome(bool feed)
- {
-  m_bDragging = false;
-  if (feed) PlaceFeed(ACR_UiPrefs.FEED_HOME_X, ACR_UiPrefs.FEED_HOME_Y, 0);
-  else PlacePanel(ACR_UiPrefs.PANEL_HOME_X, ACR_UiPrefs.PANEL_HOME_Y, 0);
-  ACR_UiPrefs.Save();
- }
-
- protected void PlacePanel(float x, float y, float width)
- {
-  if (!m_Root) return;
-  WorkspaceWidget ws = GetGame().GetWorkspace();
-  ACR_UiPrefs.s_fPanelX = ACR_UiPrefs.ClampPanelX(x, ws.DPIUnscale(ws.GetWidth()), width);
-  ACR_UiPrefs.s_fPanelY = ACR_UiPrefs.ClampY(y, ws.DPIUnscale(ws.GetHeight()));
-  FrameSlot.SetPos(m_Root, ACR_UiPrefs.s_fPanelX, ACR_UiPrefs.s_fPanelY);
- }
-
- protected void PlaceFeed(float x, float y, float width)
- {
-  if (!m_FeedRoot) return;
-  WorkspaceWidget ws = GetGame().GetWorkspace();
-  ACR_UiPrefs.s_fFeedX = ACR_UiPrefs.ClampFeedX(x, ws.DPIUnscale(ws.GetWidth()), width);
-  ACR_UiPrefs.s_fFeedY = ACR_UiPrefs.ClampY(y, ws.DPIUnscale(ws.GetHeight()));
-  FrameSlot.SetPos(m_FeedRoot, ACR_UiPrefs.s_fFeedX, ACR_UiPrefs.s_fFeedY);
- }
+ protected void OnMouseLeftUp(float value = 0, EActionTrigger reason = 0) { ACR_PanelMover.DragEnd(); }
 
  protected TextWidget AddText(Widget parent, ResourceName layout, string text)
  {
@@ -1162,7 +1063,10 @@ class ACR_CommandPanel : Managed
 
  void Destroy()
  {
-  DragEnd();
+  ACR_PanelMover.DragEnd();
+  ACR_PanelMover.Remove(ACR_UiPrefs.PANEL);
+  ACR_PanelMover.Remove(ACR_UiPrefs.FEED);
+  ACR_PanelMover.Remove(ACR_UiPrefs.DEBUG_BOX);
   GetGame().GetInputManager().RemoveActionListener("MouseLeft", EActionTrigger.UP, OnMouseLeftUp);
   if (m_Root) m_Root.RemoveFromHierarchy();
   m_Root = null;

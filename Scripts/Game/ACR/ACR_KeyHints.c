@@ -1,31 +1,58 @@
-// Per-player UI choices kept in the profile: where the ACA panel and INTEL stand on the command map
-// (dragged there, ACR_CommandPanel) and whether the key reminders show.
+// Per-player UI choices kept in the profile: where the command map's panels stand (dragged there,
+// ACR_PanelMover) and whether the key reminders show. A panel the player hasn't placed has no spot,
+// and stands where its own code puts it. In the file a spot is "place.<panel>=x,y"; a file from before
+// every panel could move has panelx, panely, feedx and feedy, which are still read.
+// A spot is in the terms of the panel's anchor: from the edge or middle of the screen it stands by,
+// to the same edge or middle of the panel (anchor 0: left or top, 0.5: middle, 1: right or bottom).
 class ACR_UiPrefs
 {
  static const string PREFS = "$profile:ACA_CommandUi.txt";
+ static const string TEST_PREFS = "$profile:ACA_CommandUi_test.txt";
+ static const string PANEL = "aca";
+ static const string FEED = "intel";
+ static const string SQUADS = "squads";
+ static const string LAYERS = "layers";
+ static const string DEBUG_BOX = "debug";
+ static const string CARD = "2ic";
+ static const string CHANNEL = "2ic-channel";
+ static const string TWOIC_PANEL = "2ic-panel";
  static const float PANEL_HOME_X = -24; // from the screen's right edge
  static const float PANEL_HOME_Y = 96;
  static const float FEED_HOME_X = 110;  // clear of the map toolbar on the left
  static const float FEED_HOME_Y = 96;
  static const float GRAB = 40;          // this much of a panel stays on the screen, to grab it by
- static float s_fPanelX = PANEL_HOME_X;
- static float s_fPanelY = PANEL_HOME_Y;
- static float s_fFeedX = FEED_HOME_X;
- static float s_fFeedY = FEED_HOME_Y;
+ protected static ref map<string, vector> s_Spots = new map<string, vector>();
+ protected static string s_sFile = PREFS;
  static bool s_bKeyHints = true;
  static bool s_bBuildOpen;              // the ACA panel's build orders are unfolded
  protected static bool s_bRead;
 
- static bool PanelMoved() { return s_fPanelX != PANEL_HOME_X || s_fPanelY != PANEL_HOME_Y; }
- static bool FeedMoved() { return s_fFeedX != FEED_HOME_X || s_fFeedY != FEED_HOME_Y; }
+ static bool Moved(string id) { return s_Spots.Contains(id); }
+
+ // The player's spot for a panel; false when it has none.
+ static bool Spot(string id, out float x, out float y)
+ {
+  vector spot;
+  if (!s_Spots.Find(id, spot)) return false;
+  x = spot[0];
+  y = spot[1];
+  return true;
+ }
+
+ static void SetSpot(string id, float x, float y) { s_Spots.Set(id, Vector(x, y, 0)); }
+ static void Forget(string id) { s_Spots.Remove(id); }
 
  static void Load()
  {
   if (s_bRead) return;
   s_bRead = true;
-  if (!FileIO.FileExists(PREFS)) return;
-  FileHandle file = FileIO.OpenFile(PREFS, FileMode.READ);
+  if (!FileIO.FileExists(s_sFile)) return;
+  FileHandle file = FileIO.OpenFile(s_sFile, FileMode.READ);
   if (!file) return;
+  float oldPanelX = PANEL_HOME_X;
+  float oldPanelY = PANEL_HOME_Y;
+  float oldFeedX = FEED_HOME_X;
+  float oldFeedY = FEED_HOME_Y;
   string line;
   while (file.ReadLine(line) >= 0)
   {
@@ -33,44 +60,87 @@ class ACR_UiPrefs
    if (line == "keys=0") s_bKeyHints = false;
    if (line == "keys=1") s_bKeyHints = true;
    if (line == "build=1") s_bBuildOpen = true;
-   if (line.StartsWith("panelx=")) s_fPanelX = line.Substring(7, line.Length() - 7).ToFloat();
-   if (line.StartsWith("panely=")) s_fPanelY = line.Substring(7, line.Length() - 7).ToFloat();
-   if (line.StartsWith("feedx=")) s_fFeedX = line.Substring(6, line.Length() - 6).ToFloat();
-   if (line.StartsWith("feedy=")) s_fFeedY = line.Substring(6, line.Length() - 6).ToFloat();
+   if (line.StartsWith("panelx=")) oldPanelX = line.Substring(7, line.Length() - 7).ToFloat();
+   if (line.StartsWith("panely=")) oldPanelY = line.Substring(7, line.Length() - 7).ToFloat();
+   if (line.StartsWith("feedx=")) oldFeedX = line.Substring(6, line.Length() - 6).ToFloat();
+   if (line.StartsWith("feedy=")) oldFeedY = line.Substring(6, line.Length() - 6).ToFloat();
+   if (line.StartsWith("place.")) ReadSpot(line);
   }
   file.Close();
+  if (!Moved(PANEL) && (oldPanelX != PANEL_HOME_X || oldPanelY != PANEL_HOME_Y)) SetSpot(PANEL, oldPanelX, oldPanelY);
+  if (!Moved(FEED) && (oldFeedX != FEED_HOME_X || oldFeedY != FEED_HOME_Y)) SetSpot(FEED, oldFeedX, oldFeedY);
+ }
+
+ // "place.intel=300,500"
+ protected static void ReadSpot(string line)
+ {
+  int equals = line.IndexOf("=");
+  if (equals <= 6) return;
+  string id = line.Substring(6, equals - 6);
+  string value = line.Substring(equals + 1, line.Length() - equals - 1);
+  array<string> parts = {};
+  value.Split(",", parts, false);
+  if (parts.Count() == 2) SetSpot(id, parts[0].ToFloat(), parts[1].ToFloat());
  }
 
  static void Save()
  {
-  FileHandle file = FileIO.OpenFile(PREFS, FileMode.WRITE);
+  FileHandle file = FileIO.OpenFile(s_sFile, FileMode.WRITE);
   if (!file) return;
   if (s_bKeyHints) file.WriteLine("keys=1");
   else file.WriteLine("keys=0");
   if (s_bBuildOpen) file.WriteLine("build=1");
-  file.WriteLine("panelx=" + s_fPanelX.ToString());
-  file.WriteLine("panely=" + s_fPanelY.ToString());
-  file.WriteLine("feedx=" + s_fFeedX.ToString());
-  file.WriteLine("feedy=" + s_fFeedY.ToString());
+  foreach (string id, vector spot : s_Spots)
+  {
+   float x = spot[0];
+   float y = spot[1];
+   file.WriteLine("place." + id + "=" + x.ToString() + "," + y.ToString());
+  }
   file.Close();
  }
 
- // The panel stands from the right edge (x <= 0). A smaller screen than it was dragged on brings it
- // back on.
- static float ClampPanelX(float x, float screenW, float panelW) { return Math.Clamp(x, Math.Min(panelW - screenW, 0), 0); }
- static float ClampFeedX(float x, float screenW, float feedW) { return Math.Clamp(x, 0, Math.Max(screenW - feedW, 0)); }
- static float ClampY(float y, float screenH) { return Math.Clamp(y, 0, Math.Max(screenH - GRAB, 0)); }
+ // All of a panel's width stays on the screen (a smaller screen than it was dragged on brings it
+ // back on).
+ static float ClampX(float x, float anchor, float screenW, float width)
+ {
+  float low = (width - screenW) * anchor;
+  return Math.Clamp(x, low, low + Math.Max(screenW - width, 0));
+ }
 
- // Tests: the defaults again, reading the file on the next Load.
+ // A panel is held by its top: that stays on the screen, with GRAB below it.
+ static float ClampY(float y, float anchor, float screenH, float height)
+ {
+  float low = (height - screenH) * anchor;
+  return Math.Clamp(y, low, low + Math.Max(screenH - GRAB, 0));
+ }
+
+ // Its top edge from the screen's top (or left edge from the left), from a spot; and back.
+ static float ToEdge(float spot, float anchor, float screen, float size) { return spot + (screen - size) * anchor; }
+ static float FromEdge(float edge, float anchor, float screen, float size) { return edge - (screen - size) * anchor; }
+
+ // A spot's y with all of the panel on the screen, if it fits; its top on the screen if it doesn't.
+ static float FitY(float y, float anchor, float screenH, float height)
+ {
+  float top = ToEdge(y, anchor, screenH, height);
+  top = Math.Clamp(top, 0, Math.Max(screenH - height, 0));
+  return FromEdge(top, anchor, screenH, height);
+ }
+
+ // Tests: the file the player's real one is safe from (UseTestFileForTest), and the defaults again,
+ // reading the file on the next Load.
  static void ResetForTest()
  {
-  s_fPanelX = PANEL_HOME_X;
-  s_fPanelY = PANEL_HOME_Y;
-  s_fFeedX = FEED_HOME_X;
-  s_fFeedY = FEED_HOME_Y;
+  s_Spots.Clear();
   s_bKeyHints = true;
   s_bBuildOpen = false;
   s_bRead = false;
+ }
+
+ static void UseTestFileForTest()
+ {
+  s_sFile = TEST_PREFS;
+  FileIO.DeleteFile(TEST_PREFS);
+  ResetForTest();
  }
 }
 

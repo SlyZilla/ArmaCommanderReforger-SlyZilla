@@ -791,55 +791,36 @@ modded class ACR_CommandPanel
   if (open) open.m_OnClicked.Insert(OnDeclOpen);
  }
 
- // Where the boxes go, each frame. Top left: INTEL under the 2IC's card when that shows (part A
- // names its root "ACR_TwoICCard"; no compile dependency), else at the top. Top right: the ACA
- // panel (or its bar) below the game's hint box while the hint covers its spot, if it fits there.
- protected float m_fDeclIntelY = -1;
- protected float m_fDeclAcaY = -1;
-
+ // INTEL stands under the 2IC's card when that shows (part A names its root "ACR_TwoICCard"; no compile
+ // dependency) and hasn't been put elsewhere; else at the top. The player's own spots, and the rest,
+ // are ACR_PanelMover's.
  void DeclPlace()
  {
-  if (!m_Root || !m_FeedRoot || !m_DeclAcaBar || !m_DeclIntelBar) return;
+  if (!m_Root) return;
   Widget menuRoot = m_Root.GetParent();
   WorkspaceWidget ws = GetGame().GetWorkspace();
   if (!menuRoot || !ws) return;
-  float intelY = ACR_UiPrefs.s_fFeedY;
+  float intelY = ACR_UiPrefs.FEED_HOME_Y;
   Widget card = menuRoot.FindAnyWidget("ACR_TwoICCard");
-  if (!ACR_UiPrefs.FeedMoved() && card && card.IsVisibleInHierarchy())
+  if (!ACR_UiPrefs.Moved(ACR_UiPrefs.CARD) && card && card.IsVisibleInHierarchy())
   {
    float cx, cy, cw, ch;
    card.GetScreenPos(cx, cy);
    card.GetScreenSize(cw, ch);
    if (ch > 0) intelY = ws.DPIUnscale(cy + ch) + 8;
   }
-  if (intelY != m_fDeclIntelY)
-  {
-   m_fDeclIntelY = intelY;
-  }
-  FrameSlot.SetPos(m_FeedRoot, ACR_UiPrefs.s_fFeedX, intelY);
-  FrameSlot.SetPos(m_DeclIntelBar, ACR_UiPrefs.s_fFeedX, intelY);
-  float acaY = ACR_UiPrefs.s_fPanelY;
-  float hx, hy, hw, hh;
-  // Out of a hint's way, unless the player has put it somewhere of their own.
-  if (!ACR_UiPrefs.PanelMoved() && SCR_HintUIComponent.ACR_ShownRect(hx, hy, hw, hh))
-  {
-   Widget box = m_Root;
-   if (!m_Root.IsVisible()) box = m_DeclAcaBar;
-   float bx, by, bw, bh;
-   box.GetScreenPos(bx, by);
-   box.GetScreenSize(bw, bh);
-   float top = ws.DPIScale(ACR_UiPrefs.s_fPanelY);
-   bool covers = hx < bx + bw && hx + hw > bx && hy < top + bh && hy + hh > top;
-   float below = ws.DPIUnscale(hy + hh) + 8;
-   if (covers && below + ws.DPIUnscale(bh) <= ws.DPIUnscale(ws.GetHeight()) - 8) acaY = below;
-  }
-  m_fDeclAcaY = acaY;
-  FrameSlot.SetPos(m_Root, ACR_UiPrefs.s_fPanelX, acaY);
-  FrameSlot.SetPos(m_DeclAcaBar, ACR_UiPrefs.s_fPanelX, acaY);
+  ACR_PanelMover.Natural(ACR_UiPrefs.FEED, ACR_UiPrefs.FEED_HOME_X, intelY);
  }
 
- float DeclIntelY() { return m_fDeclIntelY; }
- float DeclAcaY() { return m_fDeclAcaY; }
+ // Folded, each panel is held by its bar, and stands where it would unfolded.
+ override protected void RegisterPanels()
+ {
+  super.RegisterPanels();
+  ACR_PanelMover.AddBox(ACR_UiPrefs.PANEL, m_DeclAcaBar);
+  ACR_PanelMover.Body(ACR_UiPrefs.PANEL, m_DeclAcaBar);
+  ACR_PanelMover.AddBox(ACR_UiPrefs.FEED, m_DeclIntelBar);
+  ACR_PanelMover.TitleBar(ACR_UiPrefs.FEED, m_DeclIntelBar, 0);
+ }
 
  // Collapse to the bars (or back): aca / intel as asked; the bars' texts.
  void SetCollapsed(bool aca, bool intel, string acaText, string headline, int fresh)
@@ -1034,6 +1015,7 @@ modded class SCR_PlayerController
   int line;
   if (!ACR_EditorOpen() && ACR_FeedSpotAt(mx, my, spot, line))
   {
+   m_bACR_FeedJumpedForTest = true;
    ACR_FocusMap(spot);
    return;
   }
@@ -1050,6 +1032,10 @@ modded class SCR_PlayerController
   if (ACR_FeedSpotAt(mx, my, spot, line)) m_ACR_Panel.LightFeedLine(line);
   else m_ACR_Panel.LightFeedLine(-1);
  }
+
+ // Tests: a real click on an INTEL line has jumped the map.
+ protected bool m_bACR_FeedJumpedForTest;
+ bool ACR_FeedJumpedForTest() { return m_bACR_FeedJumpedForTest; }
 
  // Tests: the first INTEL line shown that names a place, clicked; its spot (vector.Zero: none).
  vector ACR_FeedJumpForTest()

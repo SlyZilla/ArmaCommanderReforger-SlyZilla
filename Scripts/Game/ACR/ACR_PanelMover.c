@@ -1,0 +1,387 @@
+// The one way to move a panel on the command map. A panel registers its root (Add) with where it
+// stands by itself (its natural spot, which may follow something: Natural) and how it is held: its
+// title bar (TitleBar), or its own face for one that has no bar to spare (Grip, Body). A drag keeps
+// the spot in the player's prefs (ACR_UiPrefs), a double click forgets it, and each frame (Tick) every
+// panel goes where it should stand, kept on the screen. A press on a button, a text box or a
+// scrolling list is theirs, never a drag.
+class ACR_PanelDragHandler : ScriptedWidgetEventHandler
+{
+ string m_sId;
+ ImageWidget m_Lit; // a title bar's fill: lit under the cursor, so the player sees it can be held
+
+ override bool OnMouseButtonDown(Widget w, int x, int y, int button)
+ {
+  if (button != 0) return false;
+  return ACR_PanelMover.DragStart(m_sId);
+ }
+
+ override bool OnMouseButtonUp(Widget w, int x, int y, int button)
+ {
+  if (button == 0) ACR_PanelMover.DragEnd();
+  return false;
+ }
+
+ override bool OnDoubleClick(Widget w, int x, int y, int button)
+ {
+  if (button != 0 || ACR_PanelMover.OverControl()) return false;
+  ACR_PanelMover.PlaceHome(m_sId);
+  return true;
+ }
+
+ override bool OnMouseEnter(Widget w, int x, int y)
+ {
+  if (m_Lit) m_Lit.SetColor(ACR_PanelMover.BarColor(true));
+  return false;
+ }
+
+ override bool OnMouseLeave(Widget w, Widget enterW, int x, int y)
+ {
+  if (m_Lit) m_Lit.SetColor(ACR_PanelMover.BarColor(false));
+  return false;
+ }
+}
+
+class ACR_PanelSlot : Managed
+{
+ string m_sId;
+ ref array<Widget> m_aBoxes = {};      // the root first, then what stands where it does (the folded bar)
+ float m_fAnchorX;                     // 0 left, 0.5 middle, 1 right: the root's anchor and alignment
+ float m_fAnchorY;
+ float m_fNaturalX;                    // in the anchor's terms
+ float m_fNaturalY;
+ float m_fShownX;
+ float m_fShownY;
+ SizeLayoutWidget m_TitleBar;
+ ref array<ref ACR_PanelDragHandler> m_aHandlers = {};
+
+ // What shows of it now (null: nothing).
+ Widget Box()
+ {
+  foreach (Widget box : m_aBoxes)
+  {
+   if (box && box.IsVisible()) return box;
+  }
+  return null;
+ }
+
+ void SetPos(float x, float y)
+ {
+  m_fShownX = x;
+  m_fShownY = y;
+  foreach (Widget box : m_aBoxes)
+  {
+   if (box) FrameSlot.SetPos(box, x, y);
+  }
+ }
+}
+
+class ACR_PanelMover
+{
+ protected static ref array<ref ACR_PanelSlot> s_aSlots = {};
+ protected static ACR_PanelSlot s_Drag;
+ protected static bool s_bDragMoved;
+ protected static int s_iDragFromX;
+ protected static int s_iDragFromY;
+ protected static float s_fDragStartX;
+ protected static float s_fDragStartY;
+ protected static const float DRAG_START = 4; // reference pixels before a press counts as a drag
+ protected static const float HANDLE_WIDTH = 44;
+ protected static const float HANDLE_HEIGHT = 3;
+
+ static Color BarColor(bool lit)
+ {
+  if (lit) return new Color(1, 1, 1, 0.18);
+  return new Color(1, 1, 1, 0.05);
+ }
+
+ // ---------------------------------------------------------------- what a panel registers
+ protected static ACR_PanelSlot Slot(string id)
+ {
+  foreach (ACR_PanelSlot slot : s_aSlots)
+  {
+   if (slot.m_sId == id) return slot;
+  }
+  return null;
+ }
+
+ // A panel rebuilt (the UI size's buttons) takes its old entry's place.
+ static void Add(string id, Widget root, float anchorX, float anchorY, float naturalX, float naturalY)
+ {
+  if (!root) return;
+  ACR_UiPrefs.Load();
+  Remove(id);
+  ACR_PanelSlot slot = new ACR_PanelSlot();
+  slot.m_sId = id;
+  slot.m_aBoxes.Insert(root);
+  slot.m_fAnchorX = anchorX;
+  slot.m_fAnchorY = anchorY;
+  slot.m_fNaturalX = naturalX;
+  slot.m_fNaturalY = naturalY;
+  s_aSlots.Insert(slot);
+  Place(slot);
+ }
+
+ // Something else that stands where the panel stands (only one of them shows at a time).
+ static void AddBox(string id, Widget box)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (slot && box) slot.m_aBoxes.Insert(box);
+ }
+
+ static void Remove(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (!slot) return;
+  if (s_Drag == slot) s_Drag = null;
+  s_aSlots.RemoveItem(slot);
+ }
+
+ // Where it stands by itself: followed each frame if it follows something.
+ static void Natural(string id, float x, float y)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (!slot) return;
+  slot.m_fNaturalX = x;
+  slot.m_fNaturalY = y;
+ }
+
+ protected static ACR_PanelDragHandler NewHandler(ACR_PanelSlot slot)
+ {
+  ACR_PanelDragHandler handler = new ACR_PanelDragHandler();
+  handler.m_sId = slot.m_sId;
+  slot.m_aHandlers.Insert(handler);
+  return handler;
+ }
+
+ // A press on this widget, or on what it holds that takes no press itself, drags the panel.
+ static void Grip(string id, Widget widget)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (slot && widget) widget.AddHandler(NewHandler(slot));
+ }
+
+ // A panel held by its whole face, in an overlay: Grip, a clear layer under its content for where the
+ // content lets the cursor through (a PanelBox's fill ignores it), and the handle.
+ static void Body(string id, Widget overlay)
+ {
+  if (!overlay) return;
+  Grip(id, overlay);
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  Widget clear = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, Color.FromRGBA(0, 0, 0, 3), 0, overlay);
+  if (clear)
+  {
+   AlignableSlot.SetHorizontalAlign(clear, LayoutHorizontalAlign.Stretch);
+   AlignableSlot.SetVerticalAlign(clear, LayoutVerticalAlign.Stretch);
+  }
+  Handle(overlay);
+ }
+
+ // A title bar: a lit band along the top of an overlay, over what is there (height 0: all of it), so
+ // nothing it holds may be a button: rightMargin leaves room for them. A press anywhere on it drags.
+ static void TitleBar(string id, Widget overlay, float height, float rightMargin = 0)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (!slot || !overlay) return;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  SizeLayoutWidget bar = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 5, overlay));
+  if (!bar) return;
+  AlignableSlot.SetHorizontalAlign(bar, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(bar, LayoutVerticalAlign.Stretch);
+  if (height > 0)
+  {
+   bar.EnableHeightOverride(true);
+   bar.SetHeightOverride(height);
+   AlignableSlot.SetVerticalAlign(bar, LayoutVerticalAlign.Top);
+  }
+  AlignableSlot.SetPadding(bar, 0, 0, rightMargin, 0);
+  ImageWidget fill = ImageWidget.Cast(ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, BarColor(false), 0, bar));
+  if (!fill) return;
+  AlignableSlot.SetHorizontalAlign(fill, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(fill, LayoutVerticalAlign.Stretch);
+  ACR_PanelDragHandler handler = NewHandler(slot);
+  handler.m_Lit = fill;
+  fill.AddHandler(handler);
+  if (!slot.m_TitleBar) slot.m_TitleBar = bar;
+  Handle(overlay);
+ }
+
+ // The handle: a short bar at the top middle, the sign that this panel can be held.
+ static void Handle(Widget overlay)
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  SizeLayoutWidget handle = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 6, overlay));
+  if (!handle) return;
+  handle.EnableWidthOverride(true);
+  handle.SetWidthOverride(HANDLE_WIDTH);
+  handle.EnableHeightOverride(true);
+  handle.SetHeightOverride(HANDLE_HEIGHT);
+  AlignableSlot.SetHorizontalAlign(handle, LayoutHorizontalAlign.Center);
+  AlignableSlot.SetVerticalAlign(handle, LayoutVerticalAlign.Top);
+  AlignableSlot.SetPadding(handle, 0, 4, 0, 0);
+  Widget mark = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(1, 1, 1, 0.5), 0, handle);
+  if (!mark) return;
+  AlignableSlot.SetHorizontalAlign(mark, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(mark, LayoutVerticalAlign.Stretch);
+ }
+
+ // The title bar reaches down to this widget, the first below it (a font size changes where that is,
+ // and INTEL's bar must stop short of its first line: a click there jumps the map).
+ static void FitTitleBar(string id, Widget below)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (!slot || !slot.m_TitleBar || !below || slot.m_aBoxes.IsEmpty() || slot.m_aBoxes[0] != slot.Box()) return;
+  float rootX, rootY, belowX, belowY;
+  slot.m_aBoxes[0].GetScreenPos(rootX, rootY);
+  below.GetScreenPos(belowX, belowY);
+  float height = GetGame().GetWorkspace().DPIUnscale(belowY - rootY);
+  if (height >= 16) slot.m_TitleBar.SetHeightOverride(height);
+ }
+
+ // ---------------------------------------------------------------- the drag
+ // A button, a text box or a scrolling list under the cursor.
+ static bool OverControl()
+ {
+  Widget widget = WidgetManager.GetWidgetUnderCursor();
+  while (widget)
+  {
+   if (ButtonWidget.Cast(widget) || EditBoxWidget.Cast(widget) || ScrollLayoutWidget.Cast(widget)) return true;
+   widget = widget.GetParent();
+  }
+  return false;
+ }
+
+ static bool DragStart(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (!slot || OverControl()) return false;
+  WidgetManager.GetMousePos(s_iDragFromX, s_iDragFromY);
+  s_Drag = slot;
+  s_bDragMoved = false;
+  // From where it shows, which may not be its saved spot.
+  s_fDragStartX = slot.m_fShownX;
+  s_fDragStartY = slot.m_fShownY;
+  return true;
+ }
+
+ protected static void TickDrag()
+ {
+  if (!s_Drag) return;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  int x, y;
+  WidgetManager.GetMousePos(x, y);
+  float dx = ws.DPIUnscale(x - s_iDragFromX);
+  float dy = ws.DPIUnscale(y - s_iDragFromY);
+  if (!s_bDragMoved && Math.AbsFloat(dx) + Math.AbsFloat(dy) < DRAG_START) return;
+  s_bDragMoved = true;
+  float width, height;
+  Widget box = s_Drag.Box();
+  if (box) box.GetScreenSize(width, height);
+  width = ws.DPIUnscale(width);
+  height = ws.DPIUnscale(height);
+  float screenW = ws.DPIUnscale(ws.GetWidth());
+  float screenH = ws.DPIUnscale(ws.GetHeight());
+  ACR_UiPrefs.SetSpot(s_Drag.m_sId, ACR_UiPrefs.ClampX(s_fDragStartX + dx, s_Drag.m_fAnchorX, screenW, width), ACR_UiPrefs.ClampY(s_fDragStartY + dy, s_Drag.m_fAnchorY, screenH, height));
+ }
+
+ static void DragEnd()
+ {
+  if (!s_Drag) return;
+  ACR_PanelSlot slot = s_Drag;
+  s_Drag = null;
+  if (!s_bDragMoved) return;
+  // Where it was seen to stop (a tall panel stops above its dragged spot).
+  ACR_UiPrefs.SetSpot(slot.m_sId, slot.m_fShownX, slot.m_fShownY);
+  ACR_UiPrefs.Save();
+ }
+
+ static void PlaceHome(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (s_Drag == slot) s_Drag = null;
+  ACR_UiPrefs.Forget(id);
+  ACR_UiPrefs.Save();
+  if (slot) Place(slot);
+ }
+
+ // ---------------------------------------------------------------- each frame
+ protected static void Place(ACR_PanelSlot slot)
+ {
+  float x, y;
+  if (!ACR_UiPrefs.Spot(slot.m_sId, x, y))
+  {
+   x = slot.m_fNaturalX;
+   y = slot.m_fNaturalY;
+  }
+  Widget box = slot.Box();
+  if (box)
+  {
+   WorkspaceWidget ws = GetGame().GetWorkspace();
+   float width, height;
+   box.GetScreenSize(width, height);
+   width = ws.DPIUnscale(width);
+   height = ws.DPIUnscale(height);
+   // Whole on this screen, not written back: it returns to its spot on the screen it was put on,
+   // and a panel grown past the bottom (a squad selected) stands higher only while it is that tall.
+   x = ACR_UiPrefs.ClampX(x, slot.m_fAnchorX, ws.DPIUnscale(ws.GetWidth()), width);
+   y = ACR_UiPrefs.FitY(y, slot.m_fAnchorY, ws.DPIUnscale(ws.GetHeight()), height);
+  }
+  slot.SetPos(x, y);
+ }
+
+ // Every frame the map is open (ACR_CommandPanel.TickDrag).
+ static void Tick()
+ {
+  TickDrag();
+  foreach (ACR_PanelSlot slot : s_aSlots) Place(slot);
+ }
+
+ // Where it shows now, in its anchor's terms.
+ static float ShownX(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (slot) return slot.m_fShownX;
+  return 0;
+ }
+ static float ShownY(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (slot) return slot.m_fShownY;
+  return 0;
+ }
+
+ // ---------------------------------------------------------------- tests
+ static bool ShowsForTest(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  return slot && slot.Box();
+ }
+
+ // What to press (screen pixels, x and y): the middle of the title bar, or a corner of the face.
+ static vector GripForTest(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (!slot || !slot.Box()) return vector.Zero;
+  float x, y, width, height;
+  Widget box = slot.Box();
+  if (slot.m_TitleBar && box == slot.m_aBoxes[0])
+  {
+   slot.m_TitleBar.GetScreenPos(x, y);
+   slot.m_TitleBar.GetScreenSize(width, height);
+   return Vector(x + width * 0.5, y + height * 0.5, 0);
+  }
+  box.GetScreenPos(x, y);
+  float inset = GetGame().GetWorkspace().DPIScale(6);
+  return Vector(x + inset, y + inset, 0);
+ }
+
+ // Its box's top left corner on the screen, in reference pixels.
+ static vector TopLeftForTest(string id)
+ {
+  ACR_PanelSlot slot = Slot(id);
+  if (!slot || !slot.Box()) return vector.Zero;
+  float x, y;
+  slot.Box().GetScreenPos(x, y);
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  return Vector(ws.DPIUnscale(x), ws.DPIUnscale(y), 0);
+ }
+}
