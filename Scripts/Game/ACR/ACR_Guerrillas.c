@@ -141,7 +141,10 @@ class ACR_Guerrillas
    if (!base.m_sOwner.IsEmpty() && !base.m_bPocket)
    {
     held.Insert(base);
-    s_aStarts.Insert(base.GetOrigin());
+    // Quick start's handed-out bases aren't where a side starts from, and with most of the map
+    // handed out their clearances left no room (playtest pn16: 0 hideouts of 4, 2 houses, 8 cells
+    // of 14). Every base still keeps its own circle clear (Usable).
+    if (!ACR_QuickStart.Assigned(base)) s_aStarts.Insert(base.GetOrigin());
    }
   }
   float gap = 0;

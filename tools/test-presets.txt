@@ -201,3 +201,4 @@ genmapgulfcoast|-acrGenerateMapTest 1|150|Worlds/ACR_GulfcoastIslands.ent
 genmapkunar|-acrGenerateMapTest 1|150|Worlds/ACR_KunarProvince.ent
 genmapwestzagoria|-acrGenerateMapTest 1|150|Worlds/ACR_WestZagoria.ent
 genmapzimnitrita|-acrGenerateMapTest 1|150|Worlds/ACR_Zimnitrita.ent
+quickstartfia|-acrQuickStartFIATest 1|90|Worlds/ACR_Everon.ent
