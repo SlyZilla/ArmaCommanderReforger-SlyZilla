@@ -255,12 +255,97 @@ modded class ACR_RTSCameraManager
  }
 }
 
+// -acrRTSLookTest 1 (a game client): the makeover (30 Oct). The bars in the dark style with an armed
+// tool lit; the floor at eye height with the camera free to look up to the horizon; Follow; Hide UI.
+// One in-engine shot each.
+modded class ACR_RTSCameraManager
+{
+ static bool s_bLookStyled;
+ static float s_fLookHeight;
+
+ // The bars are dark panels; Roadblock armed with a squad selected lights its button.
+ static void LookStyled(SCR_PlayerController pc)
+ {
+  ACR_RTSCameraManager camera = s_Instance;
+  if (!camera) return;
+  ACR_MapData data = pc.ACR_GetData();
+  if (data && !data.m_GroupIds.IsEmpty()) pc.ACR_SelectGroup(data.m_GroupIds[0]);
+  camera.m_bRoadblockMode = true;
+  camera.UpdateTacticalUI(pc);
+  s_bLookStyled = camera.m_TopBar && camera.m_TopBar.IsVisible() && camera.m_BottomBar && camera.m_BottomBar.IsVisible() && camera.LitForTest(camera.m_RoadblockBtn) && !camera.LitForTest(camera.m_DefendBtn) && camera.m_RoadblockBtn.GetText() == "Roadblock";
+ }
+
+ static void LookCheckStyled()
+ {
+  ACR_TestRegress.Check("RTS look: the bars are dark panels; an armed tool is lit, not marked [ON]", s_bLookStyled, string.Format("styled %1", s_bLookStyled));
+  ACR_RTSCameraManager camera = s_Instance;
+  if (!camera) return;
+  camera.m_bRoadblockMode = false;
+  // Down to the floor: the wheel's lowest height.
+  camera.m_fTargetAtl = ATL_MIN;
+ }
+
+ // The camera came down to about eye height (over ground or a roof), and may look up past the horizon there.
+ static void LookCheckLow()
+ {
+  ACR_RTSCameraManager camera = s_Instance;
+  if (!camera) return;
+  vector pos = camera.m_Camera.GetOrigin();
+  float ground = GetGame().GetWorld().GetSurfaceY(pos[0], pos[2]);
+  float floor = Math.Max(ground, camera.m_fFloorY);
+  s_fLookHeight = pos[1] - floor;
+  camera.BeginOrbit(300, 700);
+  camera.ApplyOrbit(300, 100);
+  camera.EndOrbit(300, 100, false);
+  vector angles = camera.m_Camera.GetYawPitchRoll();
+  ACR_TestRegress.Check("RTS look: the floor is at about eye height, and low the camera may look up to the horizon", s_fLookHeight > 1 && s_fLookHeight < 4 && pos[1] - ground < 30 && angles[1] > -1, string.Format("%1 m over what is under it (%2 m over the ground), pitch %3", s_fLookHeight, pos[1] - ground, angles[1]));
+ }
+
+ // Follow: the camera glides after the selected squad and looks at it.
+ static void LookFollow(SCR_PlayerController pc)
+ {
+  ACR_RTSCameraManager camera = s_Instance;
+  if (!camera) return;
+  camera.m_fTargetAtl = 35;
+  camera.StartFollow(pc);
+ }
+
+ static void LookCheckFollow(SCR_PlayerController pc)
+ {
+  ACR_RTSCameraManager camera = s_Instance;
+  if (!camera) return;
+  ACR_MapData data = pc.ACR_GetData();
+  int g = -1;
+  if (data) g = data.m_GroupIds.Find(camera.m_FollowGroup);
+  if (g < 0) { ACR_TestRegress.Check("RTS look: Follow glides after the squad and looks at it", false, "not following"); return; }
+  vector squad = data.LeaderPos(g) + Vector(0, 1.5, 0);
+  vector eye = camera.m_Camera.GetOrigin();
+  vector forward = camera.m_Camera.GetWorldTransformAxis(2);
+  vector to = (squad - eye).Normalized();
+  float facing = vector.Dot(forward, to);
+  float off = vector.Distance(eye, squad + camera.m_vFollowOffset);
+  ACR_TestRegress.Check("RTS look: Follow glides after the squad and looks at it", camera.Following() && facing > 0.95 && off < 6, string.Format("facing %1, %2 m from its spot", facing, off));
+ }
+
+ // Hide UI: the bars and the markers go, the hint shows; H again brings them back.
+ static void LookCheckHidden()
+ {
+  ACR_RTSCameraManager camera = s_Instance;
+  if (!camera) return;
+  bool hidden = camera.UiHidden() && !camera.m_TopBar.IsVisible() && !camera.m_BottomBar.IsVisible() && !camera.m_MarkerLayer.IsVisible() && camera.m_HiddenHint.IsVisible();
+  camera.SetUiHidden(false);
+  bool back = !camera.UiHidden() && camera.m_TopBar.IsVisible() && camera.m_BottomBar.IsVisible() && camera.m_MarkerLayer.IsVisible();
+  ACR_TestRegress.Check("RTS look: Hide UI hides the bars and markers (a hint says H), and shows them again", hidden && back, string.Format("hidden %1, back %2", hidden, back));
+ }
+}
+
 modded class ACR_TestCommand
 {
  override void TestRespawn()
  {
   if (System.IsCLIParam("acrRTSCameraTest")) { TestRTSCamera(); return; }
   if (System.IsCLIParam("acrRTSAimTest")) { TestRTSAim(); return; }
+  if (System.IsCLIParam("acrRTSLookTest")) { TestRTSLook(); return; }
   super.TestRespawn();
  }
 
@@ -274,6 +359,33 @@ modded class ACR_TestCommand
   }
   if (h.m_Ticks == 6) ACR_RTSCameraManager.CheckNativeRTS();
   if (h.m_Ticks == 8) ACR_TestRegress.Complete("rtscamera", 19);
+ }
+
+ void TestRTSLook()
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (h.m_Ticks == 5)
+  {
+   if (!pc || !ACR_Respawn.IsAlive(pc.GetControlledEntity())) { ACR_TestRegress.Abort("rtslook", "live client required"); return; }
+   ACR_RTSCameraManager.Open();
+  }
+  if (!pc) return;
+  if (h.m_Ticks == 6) ACR_RTSCameraManager.LookStyled(pc);
+  if (h.m_Ticks == 7) ACR_RTSCameraManager.Shot("rts_look_1_bars");
+  if (h.m_Ticks == 8) ACR_RTSCameraManager.LookCheckStyled();
+  if (h.m_Ticks == 12) ACR_RTSCameraManager.LookCheckLow();
+  if (h.m_Ticks == 13) ACR_RTSCameraManager.Shot("rts_look_2_low");
+  if (h.m_Ticks == 14) ACR_RTSCameraManager.LookFollow(pc);
+  if (h.m_Ticks == 19) ACR_RTSCameraManager.LookCheckFollow(pc);
+  if (h.m_Ticks == 20) ACR_RTSCameraManager.Shot("rts_look_3_follow");
+  if (h.m_Ticks == 21 && ACR_RTSCameraManager.s_Instance) ACR_RTSCameraManager.s_Instance.SetUiHidden(true);
+  if (h.m_Ticks == 22) ACR_RTSCameraManager.Shot("rts_look_4_hidden");
+  if (h.m_Ticks == 23) ACR_RTSCameraManager.LookCheckHidden();
+  if (h.m_Ticks == 24)
+  {
+   ACR_RTSCameraManager.Close();
+   ACR_TestRegress.Complete("rtslook", 4);
+  }
  }
 
  void TestRTSAim()
