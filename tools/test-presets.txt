@@ -208,3 +208,4 @@ genmapwestzagoria|-acrGenerateMapTest 1|150|Worlds/ACR_WestZagoria.ent
 genmapzimnitrita|-acrGenerateMapTest 1|150|Worlds/ACR_Zimnitrita.ent
 contentpack|-acrContentPackTest 1|120
 contentpackwinter|-acrContentPackWinterTest 1|120
+quickstartfia|-acrQuickStartFIATest 1|90|Worlds/ACR_Everon.ent
