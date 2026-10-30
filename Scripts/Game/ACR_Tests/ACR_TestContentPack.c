@@ -1,7 +1,8 @@
 // -acrContentPackTest 1 (server-capable, ~1 min; preset contentpack): #108, a content pack
 // plugged into ACR_ContentSocket. Run it with a pack and its mods loaded (the Cold War pack:
 // ACAColdWar and its dependencies). Checks the buy lists keep only the vanilla catalog vehicles
-// plus the pack's own, that every listed prefab loads, and that the pack's vehicles bought by
+// plus the pack's own, that every listed prefab loads, that garrisons keep vanilla soldiers, that
+// the pack's infantry spawns as its 8-man formations, and that the pack's vehicles bought by
 // either side come with that side's crewmen and a driver.
 class ACR_TestContentPack
 {
