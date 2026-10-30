@@ -1224,7 +1224,11 @@ modded class SCR_PlayerController
  void ACR_ToggleRTSCamera()
  {
   if (GetGame().GetMenuManager().IsAnyMenuOpen())
+  {
    GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+   ACR_RTSCameraManager.OpenAfterMap();
+   return;
+  }
   ACR_RTSCameraManager.Toggle();
  }
 

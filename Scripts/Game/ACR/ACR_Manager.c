@@ -1430,10 +1430,6 @@ class ACR_Manager : Managed
    if (mapOpen) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
    else GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   }
-  if (input.GetActionTriggered("ACR_RTSCamera"))
-  {
-   if (mapOpen) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
-   ACR_RTSCameraManager.Toggle();
-  }
+  if (input.GetActionTriggered("ACR_RTSCamera")) pc.ACR_ToggleRTSCamera();
  }
 }
