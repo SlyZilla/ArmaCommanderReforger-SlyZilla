@@ -661,8 +661,16 @@ class ACR_Guerrillas
   vector site;
   vector old = cell.m_vKillZone;
   cell.m_vKillZone = vector.Zero; // its own old site doesn't crowd the pick
-  // Short of free sites, closer to the others rather than back where it fought.
-  if (!PickSite(cell.m_bHouse, site) && !PickSite(cell.m_bHouse, site, SPACING * 0.5)) site = old;
+  // Short of free sites, closer to the others rather than back where it fought; the survey's
+  // sites follow a few routes, so seven cells can crowd every one at half spacing too.
+  bool picked = PickSite(cell.m_bHouse, site);
+  if (!picked) picked = PickSite(cell.m_bHouse, site, SPACING * 0.5);
+  if (!picked)
+  {
+   cell.m_vKillZone = old; // now it does: anywhere but where it fought
+   picked = PickSite(cell.m_bHouse, site, SPACING * 0.2);
+  }
+  if (!picked) site = old;
   cell.m_vKillZone = site;
   post.m_vPos = site;
   if (!cell.m_bHouse) SetRoad(post, site);
