@@ -50,6 +50,7 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrInsurgencyTest")) ACR_TestInsurgency.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
+  if (System.IsCLIParam("acrGenerateMapTest")) ACR_TestGenerate.RunAnyMap(seconds);
   // -acrPocketsTest: FIA pockets of resistance (ACR_TestPockets).
   if (System.IsCLIParam("acrPocketsTest")) ACR_TestPockets.Run(seconds);
   // -acrQuickStartTest: the map already split between the sides (ACR_TestQuickStart).

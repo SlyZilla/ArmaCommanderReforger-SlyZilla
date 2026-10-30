@@ -154,6 +154,8 @@ function Get-TestMissionId($world) {
     $name = [IO.Path]::GetFileNameWithoutExtension($world)
     $meta = Join-Path $ProjectRoot ('Missions/' + $name + '.conf.meta')
     if (!(Test-Path -LiteralPath $meta)) { $meta = Join-Path (Split-Path $ProjectRoot -Parent) ('BetterBattleBuddies/Missions/' + $name + '.conf.meta') }
+    # ACA map add-ons (ACAMap*, 29 Oct): their worlds need the map mods, so the args file applies.
+    if (!(Test-Path -LiteralPath $meta)) { $found = Get-ChildItem -Path (Split-Path $ProjectRoot -Parent) -Directory -Filter 'ACAMap*' | ForEach-Object { Join-Path $_.FullName ('Missions/' + $name + '.conf.meta') } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1; if ($found) { $meta = $found } }
     if (!(Test-Path -LiteralPath $meta)) { return $null }
     $m = Select-String -LiteralPath $meta -Pattern 'Name\s+"(\{[0-9A-F]{16}\}Missions/[^"]+)"' | Select-Object -First 1
     if ($m) { return $m.Matches[0].Groups[1].Value }
