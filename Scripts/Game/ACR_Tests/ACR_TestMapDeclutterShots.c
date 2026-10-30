@@ -7,7 +7,13 @@ class ACR_TestMapDeclutterShots
 {
  static const ResourceName RIFLE_SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
- static const int CHECKS = 12;
+ static const int CHECKS = 15;
+ protected static int s_iListRows;
+ protected static int s_iSearchRows;
+ protected static string s_sSearchLabel;
+ protected static RplId s_SearchId = RplId.Invalid();
+ protected static RplId s_FirstId = RplId.Invalid();
+ protected static bool s_bFirstHidden;
  protected static bool s_bHovered;
  protected static int s_iDots;
  protected static vector s_GroupCentre;
@@ -93,7 +99,11 @@ class ACR_TestMapDeclutterShots
   if (tick == 31) pc.ACR_ClearSelectionForTest();
   // 4: zoomed out: the bars.
   if (tick == 30 && mapEntity) ZoomFar(mapEntity);
-  if (tick == 33) ACR_TestRegress.Check("mapdeclutter shots: zoomed out, the ACA panel and INTEL fold to one-line bars", pc.ACR_DeclPanelCollapsed() && pc.ACR_DeclIntelCollapsed(), string.Format("panel %1, intel %2, zoom %3 px/m", pc.ACR_DeclPanelCollapsed(), pc.ACR_DeclIntelCollapsed(), mapEntity.GetCurrentZoom()));
+  if (tick == 33)
+  {
+   bool listFolded = pc.ACR_SquadsListForTest() && pc.ACR_SquadsListForTest().FoldedForTest();
+   ACR_TestRegress.Check("mapdeclutter shots: zoomed out, the ACA panel, INTEL and the Squads list fold to one-line bars", pc.ACR_DeclPanelCollapsed() && pc.ACR_DeclIntelCollapsed() && listFolded, string.Format("panel %1, intel %2, squads %3, zoom %4 px/m", pc.ACR_DeclPanelCollapsed(), pc.ACR_DeclIntelCollapsed(), listFolded, mapEntity.GetCurrentZoom()));
+  }
   if (tick == 34) Shot("declutter_4_far");
   // 5: the dark map, by the moon button.
   if (tick == 37 && mapEntity) mapEntity.ZoomPanSmooth(ws.GetWidth() / 2400.0, s_Base[0], s_Base[2], 0.1);
@@ -191,9 +201,69 @@ class ACR_TestMapDeclutterShots
    ACR_TestRegress.Check("mapdeclutter shots: hovering a squad shows its card; a hurt squad in a ×N marks the icon with a dot", s_bHovered && pc.ACR_CardShownForTest() && dots > 0 && levels, string.Format("hovered %1, card %2, dots drawn %3, levels %4", s_bHovered, pc.ACR_CardShownForTest(), dots, levels));
    Shot("declutter_10_card_and_warning");
   }
+  // The Squads list: every squad of ours; "2nd" typed keeps 2nd Squad, and its Show selects it and
+  // centres the map on it.
   if (tick == 70)
   {
    pc.ACR_HoverClearForTest();
+   ACR_SquadsList list = pc.ACR_SquadsListForTest();
+   if (list)
+   {
+    s_iListRows = list.RowsForTest();
+    list.SearchForTest("2nd");
+    pc.ACR_SquadsListRefreshForTest();
+   }
+  }
+  if (tick == 72)
+  {
+   ACR_SquadsList searched = pc.ACR_SquadsListForTest();
+   if (searched)
+   {
+    s_iSearchRows = searched.RowsForTest();
+    s_sSearchLabel = searched.LabelForTest(0);
+    s_SearchId = searched.IdForTest(0);
+   }
+   Shot("declutter_11_squads_search");
+  }
+  if (tick == 73)
+  {
+   ACR_SquadsList shown = pc.ACR_SquadsListForTest();
+   if (shown) shown.ShowForTest(0);
+  }
+  if (tick == 75)
+  {
+   ACR_MapData listData = pc.ACR_GetData();
+   float showOff = -1;
+   if (listData && s_SearchId.IsValid()) showOff = MapCentreOff(listData.LeaderPos(listData.m_GroupIds.Find(s_SearchId)));
+   bool picked2nd = s_SearchId.IsValid() && pc.ACR_IsSelected(s_SearchId);
+   // A squad selected: the ACA panel is tall; the legend and the layer switches stand beside it.
+   ACR_TestRegress.Check("mapdeclutter shots: with a squad selected, the legend and the layer switches stay clear of the tall ACA panel", pc.ACR_CornerClearForTest(), string.Format("clear %1, right edge %2 px in", pc.ACR_CornerClearForTest(), (int)pc.ACR_CornerRightForTest()));
+   Shot("declutter_13_corner_beside_panel");
+   ACR_TestRegress.Check("mapdeclutter shots: the Squads list lists our squads; '2nd' typed keeps 2nd Squad; its Show selects it and centres the map", s_iListRows >= 4 && s_iSearchRows == 1 && s_sSearchLabel.Contains("2nd Squad") && picked2nd && showOff >= 0 && showOff < 150, string.Format("rows %1, after search %2 '%3', selected %4, map centre %5 m off", s_iListRows, s_iSearchRows, s_sSearchLabel, picked2nd, (int)showOff));
+   ACR_SquadsList cleared = pc.ACR_SquadsListForTest();
+   if (cleared) cleared.SearchForTest("");
+   pc.ACR_ClearSelectionForTest();
+   // Layers: Infantry off.
+   if (pc.ACR_LayerBarForTest()) pc.ACR_LayerBarForTest().ClickForTest(ACR_MapLayers.INFANTRY);
+  }
+  if (tick == 77)
+  {
+   ACR_Squad first = h.NamedSquad(manager, "1st Squad");
+   if (first) s_FirstId = SCR_EntityHelper.EntityToRplId(first.m_Group);
+   s_bFirstHidden = s_FirstId.IsValid() && !pc.ACR_GroupMarkerShownForTest(s_FirstId) && pc.ACR_LayerKindForTest(s_FirstId) == ACR_MapLayers.INFANTRY;
+   Shot("declutter_12_layer_off");
+   if (s_FirstId.IsValid()) pc.ACR_SquadsListPick(s_FirstId);
+  }
+  if (tick == 79)
+  {
+   bool selectedShows = s_FirstId.IsValid() && pc.ACR_GroupMarkerShownForTest(s_FirstId);
+   bool kinds = ACR_MapLayers.KindOf(EMilitarySymbolIcon.INFANTRY) == ACR_MapLayers.INFANTRY && ACR_MapLayers.KindOf(EMilitarySymbolIcon.MOTORIZED | EMilitarySymbolIcon.INFANTRY) == ACR_MapLayers.VEHICLES && ACR_MapLayers.KindOf(EMilitarySymbolIcon.MORTAR) == ACR_MapLayers.SUPPORT;
+   ACR_TestRegress.Check("mapdeclutter shots: layers: Infantry off takes the infantry squads off the map; a selected one still shows", s_bFirstHidden && selectedShows && kinds, string.Format("hidden %1, selected shows %2, kinds %3", s_bFirstHidden, selectedShows, kinds));
+   ACR_MapLayers.Set(ACR_MapLayers.INFANTRY, false);
+   pc.ACR_ClearSelectionForTest();
+  }
+  if (tick == 80)
+  {
    ACR_Options.Unset(ACR_MapDeclutter.OPTION);
    ACR_TestRegress.Complete("mapdeclutter shots", CHECKS);
   }

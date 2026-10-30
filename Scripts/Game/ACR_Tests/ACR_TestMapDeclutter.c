@@ -4,7 +4,7 @@
 // pips, the corner marks, and the host option's default and setup row.
 class ACR_TestMapDeclutter
 {
- static const int CHECKS = 16;
+ static const int CHECKS = 17;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -14,6 +14,7 @@ class ACR_TestMapDeclutter
   CheckSquads();
   CheckPlacement();
   CheckOption();
+  CheckSquadsList();
   ACR_TestRegress.Complete("mapdeclutter", CHECKS);
  }
 
@@ -233,5 +234,17 @@ class ACR_TestMapDeclutter
   // The player's own choices default to the sketch: the light map, compact.
   ACR_MapDeclutter.ResetForTest();
   ACR_TestRegress.Check("mapdeclutter: the dark map is off and the UI compact by default", !ACR_MapDeclutter.Dark() && ACR_MapDeclutter.Compact() && ACR_MapDeclutter.On(), "");
+ }
+
+ // The Squads list's search (name or kind, any case) and its rows (health or ammo only when down);
+ // the map layers by a squad's symbol, all on to begin with.
+ static void CheckSquadsList()
+ {
+  bool search = ACR_SquadsList.Matches("", "1st Squad", "infantry") && ACR_SquadsList.Matches("2nd", "2nd Squad", "infantry") && ACR_SquadsList.Matches("mort", "Heavy Weapons", "mortar") && ACR_SquadsList.Matches("squad", "1ST SQUAD", "") && !ACR_SquadsList.Matches("2nd", "1st Squad", "infantry");
+  string full = ACR_SquadsList.Label("1st Squad", "infantry", "holding", 100, 100, false);
+  string hurt = ACR_SquadsList.Label("A Very Long Squad Name Indeed", "MG", "moving", 60, 100, true);
+  bool rows = full == "1st Squad · infantry · holding" && hurt.StartsWith("» A Very Long Squad N...") && hurt.EndsWith("HP 60%") && !hurt.Contains("ammo");
+  bool layers = !ACR_MapLayers.AnyOff() && ACR_MapLayers.KindOf(0) == ACR_MapLayers.INFANTRY && ACR_MapLayers.KindOf(EMilitarySymbolIcon.ARMOR) == ACR_MapLayers.VEHICLES && ACR_MapLayers.KindOf(EMilitarySymbolIcon.SUPPLY | EMilitarySymbolIcon.MOTORIZED) == ACR_MapLayers.SUPPORT;
+  ACR_TestRegress.Check("mapdeclutter: the Squads list searches by name or kind; rows show health or ammo only when down; layers by symbol, all on", search && rows && layers, string.Format("search %1, rows '%2' '%3', layers %4", search, full, hurt, layers));
  }
 }
