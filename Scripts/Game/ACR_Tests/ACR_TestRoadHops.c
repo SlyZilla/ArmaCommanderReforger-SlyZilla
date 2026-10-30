@@ -57,7 +57,8 @@ class ACR_TestRoadHops
     }
     PrintFormat("[ACR] ROADHOPS hop %1 %2, %3 m from the last, turns %4 deg", i, hops[i], (int)vector.DistanceXZ(hops[i - 1], hops[i]), (int)turn);
    }
-   ACR_TestRegress.Check("roadhops: the trip is planned along the roads", s_Truck.HasActiveRoute(), string.Format("end %1, road flow %2", s_vEnd, ACR_Squad.RoadFlow()));
+   // By default one waypoint for the whole trip (NoRoadHops); road hops only with -acrNoRoadHops 0.
+   ACR_TestRegress.Check("roadhops: one waypoint for the trip, or along the roads with -acrNoRoadHops 0", s_Truck.HasActiveRoute() != ACR_Squad.NoRoadHops(), string.Format("end %1, road flow %2, no road hops %3", s_vEnd, ACR_Squad.RoadFlow(), ACR_Squad.NoRoadHops()));
   }
   if (!s_Truck || tick <= 14 || s_bDone) return;
   IEntity vehicle = ACR_Transport.CrewedVehicle(s_Truck);
