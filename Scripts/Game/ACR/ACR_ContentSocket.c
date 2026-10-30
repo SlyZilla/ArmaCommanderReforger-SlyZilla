@@ -49,6 +49,58 @@ class ACR_ContentSocket : Managed
  // Also fills crew seats the vehicle leaves without a default occupant.
  ResourceName Crewman(string factionKey, IEntity vehicle, ECompartmentType seat) { return ""; }
 
+ // The soldier to spawn in place of one of the side's soldiers: members of bought and starting
+ // squads, riders, garrisons (and so FIA cells). May vary per call; the prefab itself keeps it.
+ ResourceName Soldier(string factionKey, ResourceName prefab) { return prefab; }
+
+ // The side's command-unit (player officer) prefab. Must give the same answer on every machine:
+ // loadouts replicate as list indexes.
+ ResourceName Officer(string factionKey, ResourceName prefab) { return prefab; }
+
+ // ---------------------------------------------------------------- used by ACA
+
+ protected static ref map<ResourceName, ref array<ResourceName>> s_GroupSlots = new map<ResourceName, ref array<ResourceName>>();
+
+ // Puts Soldier()'s swaps into a formation: the listed soldiers, or the group prefab's own members
+ // when the list is empty. False (list untouched) when nothing was swapped.
+ bool SwapSoldiers(string factionKey, ResourceName group, notnull array<ResourceName> soldiers)
+ {
+  if (!Plugged() || factionKey.IsEmpty()) return false;
+  array<ResourceName> men = {};
+  if (!soldiers.IsEmpty()) men.Copy(soldiers);
+  else if (!GroupSlots(group, men)) return false;
+  bool changed;
+  foreach (int i, ResourceName man : men)
+  {
+   ResourceName swapped = Soldier(factionKey, man);
+   if (swapped.IsEmpty() || swapped == man) continue;
+   men[i] = swapped;
+   changed = true;
+  }
+  if (!changed) return false;
+  soldiers.Copy(men);
+  return true;
+ }
+
+ // A group prefab's members (m_aUnitPrefabSlots, inherited values included).
+ protected static bool GroupSlots(ResourceName group, notnull array<ResourceName> result)
+ {
+  array<ResourceName> cached;
+  if (!s_GroupSlots.Find(group, cached))
+  {
+   cached = {};
+   Resource resource = Resource.Load(group);
+   if (resource && resource.IsValid())
+   {
+    IEntitySource source = resource.GetResource().ToEntitySource();
+    if (source) source.Get("m_aUnitPrefabSlots", cached);
+   }
+   s_GroupSlots.Set(group, cached);
+  }
+  result.Copy(cached);
+  return !result.IsEmpty();
+ }
+
  // ---------------------------------------------------------------- helpers for the pack
 
  // A buyable vehicle, skipped when the list already has one of that prefab or name.

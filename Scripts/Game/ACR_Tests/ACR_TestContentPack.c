@@ -84,6 +84,24 @@ class ACR_TestContentPack
    s_iExpected++;
   }
 
+  // The pack's command units: the US officer is the pack's own (M1911), and loads.
+  string officer = "none";
+  bool officerLoads;
+  SCR_LoadoutManager loadouts = GetGame().GetLoadoutManager();
+  if (loadouts)
+  {
+   foreach (SCR_BasePlayerLoadout loadout : loadouts.GetPlayerLoadouts())
+   {
+    SCR_FactionPlayerLoadout factionLoadout = SCR_FactionPlayerLoadout.Cast(loadout);
+    if (!factionLoadout || factionLoadout.m_sAffiliatedFaction != "US") continue;
+    officer = factionLoadout.m_sLoadoutResource;
+    Resource officerResource = Resource.Load(factionLoadout.m_sLoadoutResource);
+    officerLoads = officerResource && officerResource.IsValid();
+   }
+  }
+  ACR_TestRegress.Check("content: the US command unit is the pack's officer", officerLoads && officer.Contains("CW_US_Officer"), officer);
+  s_iExpected++;
+
   // The pack's infantry: period soldiers in a formation of 8.
   BuyInfantry(manager, "US", "Reserve Rifle Squad");
   BuyInfantry(manager, "USSR", "Reservist Squad");
@@ -140,6 +158,42 @@ class ACR_TestContentPack
   s_Squads.Insert(purchase);
  }
 
+ // What the group's men wear (jacket, pants) and how many items their pockets got.
+ protected static string Uniforms(SCR_AIGroup group)
+ {
+  string report;
+  if (!group) return report;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body) continue;
+   EquipedLoadoutStorageComponent loadout = EquipedLoadoutStorageComponent.Cast(body.FindComponent(EquipedLoadoutStorageComponent));
+   if (!loadout) continue;
+   array<IEntity> cloths = {loadout.GetClothFromArea(LoadoutJacketArea), loadout.GetClothFromArea(LoadoutPantsArea)};
+   int items;
+   array<IEntity> held = {};
+   foreach (IEntity cloth : cloths)
+   {
+    if (!cloth) continue;
+    BaseInventoryStorageComponent storage = BaseInventoryStorageComponent.Cast(cloth.FindComponent(BaseInventoryStorageComponent));
+    if (!storage) continue;
+    held.Clear();
+    storage.GetAll(held);
+    items += held.Count();
+   }
+   report += string.Format(" | %1 %2 items:%3", Leaf(cloths[0]), Leaf(cloths[1]), items);
+  }
+  return report;
+ }
+
+ static string Leaf(IEntity entity)
+ {
+  if (!entity || !entity.GetPrefabData()) return "none";
+  return FilePath.StripExtension(FilePath.StripPath(entity.GetPrefabData().GetPrefabName()));
+ }
+
  protected static void Crews()
  {
   foreach (ACR_PendingPurchase squad : s_Squads)
@@ -157,11 +211,11 @@ class ACR_TestContentPack
      if (!body || !body.GetPrefabData()) continue;
      men++;
      string bodyPath = body.GetPrefabData().GetPrefabName();
-     if (bodyPath.Contains("/ARY_")) period++;
+     if (bodyPath.Contains("/ARY_") || bodyPath.Contains("/ACR_ColdWar/")) period++;
      roster += " " + FilePath.StripExtension(FilePath.StripPath(bodyPath));
     }
    }
-   PrintFormat("[ACR] CONTENTTEST squad %1: %2 men, %3 period:%4", squad.m_sName, men, period, roster);
+   PrintFormat("[ACR] CONTENTTEST squad %1: %2 men, %3 period:%4%5", squad.m_sName, men, period, roster, Uniforms(squad.m_Group));
    ACR_TestRegress.Check("content: " + squad.m_sName + " spawns 8 men with period kit", men == 8 && period >= 3, string.Format("%1 men, %2 period", men, period));
    s_iExpected++;
   }

@@ -718,6 +718,13 @@ class ACR_FactionCatalog
   catalog.GetEntityList(entries);
   AddGarrisonSoldiers(factionKey, entries, true, result);
   if (result.IsEmpty()) AddGarrisonSoldiers(factionKey, entries, false, result);
+  // A content pack's soldier swaps (per entry, so a varied swap gives a varied pool).
+  ACR_ContentSocket socket = ACR_ContentSocket.Get();
+  for (int i = 0; i < result.Count(); i++)
+  {
+   ResourceName swapped = socket.Soldier(factionKey, result[i]);
+   if (!swapped.IsEmpty()) result[i] = swapped;
+  }
  }
 
  protected static void AddGarrisonSoldiers(string factionKey, array<SCR_EntityCatalogEntry> entries, bool standardOnly, array<ResourceName> result)
