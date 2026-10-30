@@ -27,7 +27,9 @@ enum ACR_EBaseDefenceKind
 	SQUARE,
 	PERIMETER,
 	EDGE,
-	POST
+	POST,
+	LINE,       // a stretch of a base's line (ACR_BaseLines)
+	WIRE        // wire in front of one
 }
 
 class ACR_BaseDefencePos : Managed
@@ -96,6 +98,7 @@ class ACR_BaseDefenceKit : Managed
 	ResourceName m_sLong;
 	ResourceName m_sEnd;
 	ResourceName m_sRound;
+	ResourceName m_sShort;
 	ResourceName m_sLight;
 	ResourceName m_sChair;
 	ResourceName m_sNet;
@@ -134,6 +137,8 @@ class ACR_BaseDefences : Managed
 	static const ResourceName END_BURLAP = "{B547CF929FCC6BB7}Prefabs/Props/Military/Sandbags/Sandbag_01_end_high_burlap.et";
 	static const ResourceName ROUND_PLASTIC = "{B6307C189CCCA0B9}Prefabs/Props/Military/Sandbags/Sandbag_01_round_high_plastic.et";
 	static const ResourceName ROUND_BURLAP = "{7AF4B627D5C90235}Prefabs/Props/Military/Sandbags/Sandbag_01_round_high_burlap.et";
+	static const ResourceName SHORT_PLASTIC = "{0B0C600941B2A6A8}Prefabs/Props/Military/Sandbags/Sandbag_01_short_high_plastic.et";
+	static const ResourceName SHORT_BURLAP = "{937999008F178E82}Prefabs/Props/Military/Sandbags/Sandbag_01_short_high_burlap.et";
 	static const ResourceName DUCKBOARD = "{CC66836BF4E211F9}Prefabs/Props/Military/Camps/Duckboard_01.et";
 	static const ResourceName LANTERN_US = "{50E6A3845C9F20FD}Prefabs/Props/Military/Camps/LanternMilitary_US_01.et";
 	static const ResourceName LAMP_EAST = "{2CB0AA2A87842C18}Prefabs/Props/Civilian/LampKerosene_01/LampKerosene_01_military_USSR.et";
@@ -208,6 +213,11 @@ class ACR_BaseDefences : Managed
 	static const float NETTOP_OFFSET_X = 0.48;
 	static const float NETTOP_OFFSET_Z = -1.11;
 
+	static bool IsLong(ResourceName prefab)
+	{
+		return prefab == LONG_PLASTIC || prefab == LONG_BURLAP;
+	}
+
 	static bool IsNetTop(ResourceName prefab)
 	{
 		return prefab == NETTOP_US || prefab == NETTOP_USSR || prefab == NETTOP_FIA;
@@ -244,6 +254,7 @@ class ACR_BaseDefences : Managed
 	{
 		if (prefab == LONG_PLASTIC || prefab == LONG_BURLAP) return Vector(1.72, 0, 0.61);
 		if (prefab == END_PLASTIC || prefab == END_BURLAP) return Vector(1.07, 0, 0.6);
+		if (prefab == SHORT_PLASTIC || prefab == SHORT_BURLAP) return Vector(0.88, 0, 0.6);
 		if (prefab == ROUND_PLASTIC || prefab == ROUND_BURLAP) return Vector(1.61, 0, 0.7);
 		if (prefab == DUCKBOARD) return Vector(0.63, 0, 1.9);
 		if (prefab == NET_US || prefab == NET_USSR || prefab == NET_FIA) return Vector(2.05, 0, 1.1);
@@ -399,6 +410,7 @@ class ACR_BaseDefences : Managed
 		kit.m_sLong = LONG_PLASTIC;
 		kit.m_sEnd = END_PLASTIC;
 		kit.m_sRound = ROUND_PLASTIC;
+		kit.m_sShort = SHORT_PLASTIC;
 		kit.m_sLight = LANTERN_US;
 		kit.m_sChair = CHAIR_US;
 		kit.m_sNet = NET_US;
@@ -416,6 +428,7 @@ class ACR_BaseDefences : Managed
 			kit.m_sLong = LONG_BURLAP;
 			kit.m_sEnd = END_BURLAP;
 			kit.m_sRound = ROUND_BURLAP;
+			kit.m_sShort = SHORT_BURLAP;
 			kit.m_sLight = LAMP_EAST;
 			kit.m_sChair = CHAIR_EAST;
 			kit.m_sNet = NET_USSR;
@@ -1053,9 +1066,7 @@ class ACR_BaseDefences : Managed
 		return p;
 	}
 
-	// With a survey (the works): its weakest sectors get a post too, out from the edge of the town that
-	// way, and a spot must pass its hard rules.
-	static void Perimeter(ACR_Base base, ACR_BaseDefenceKit kit, array<ref ACR_BaseDefenceSeg> segs, array<vector> dirs, array<float> weights, array<IEntity> buildings, notnull array<ref ACR_BaseDefencePos> found, ACR_BaseSurvey survey = null)
+	static void Perimeter(ACR_Base base, ACR_BaseDefenceKit kit, array<ref ACR_BaseDefenceSeg> segs, array<vector> dirs, array<float> weights, array<IEntity> buildings, notnull array<ref ACR_BaseDefencePos> found)
 	{
 		vector center = base.GetOrigin();
 		float ring = Math.Clamp(base.m_fRadius, 60, 200);
@@ -1071,31 +1082,20 @@ class ACR_BaseDefences : Managed
 		{
 			foreach (vector d : dirs) axes.Insert(d);
 		}
-		if (survey) survey.WeakAxes(axes, 3);
 		array<float> scales = {0.9, 1.0, 1.15};
-		float step = 8;
-		if (survey) step = 16;
 		foreach (vector axis : axes)
 		{
 			// Every clear spot along this approach, best first; the first whose round piece
 			// fits among the world's fences, poles and props is the post.
 			array<ref ACR_BaseDefencePos> spots = {};
 			float axisBearing = Bearing(axis);
-			for (float shift = -40; shift <= 40; shift += step)
+			for (float shift = -40; shift <= 40; shift += 8)
 			{
 				float rad = (axisBearing + shift) * Math.DEG2RAD;
 				vector outward = Vector(Math.Sin(rad), 0, Math.Cos(rad));
-				array<float> reaches = {};
-				foreach (float scale : scales) reaches.Insert(ring * scale);
-				if (survey)
+				foreach (float scale : scales)
 				{
-					float townEdge = survey.EdgeAt(axisBearing + shift);
-					reaches.Insert(townEdge + 6);
-					reaches.Insert(townEdge + 14);
-				}
-				foreach (float reach : reaches)
-				{
-					vector p = center + outward * reach;
+					vector p = center + outward * (ring * scale);
 					p[1] = GetGame().GetWorld().GetSurfaceY(p[0], p[2]);
 					string why;
 					if (!ACR_FobBuild.FootprintClear(p, 2.5, null, why, true, 1.5)) continue;
@@ -1132,7 +1132,6 @@ class ACR_BaseDefences : Managed
 				if (Rand() < 0.6) Wire(best, best.m_vPos + f * (6 + Rand() * 3), f, segs, buildings);
 				best.m_sNote = string.Format("ring %1 m", (int)vector.DistanceXZ(center, best.m_vPos));
 				Prune(best, buildings);
-				if (survey && !survey.Keeps(best)) continue;
 				found.Insert(best);
 				break;
 			}
@@ -1482,9 +1481,7 @@ class ACR_BaseDefences : Managed
 		return Math.Clamp(base.m_fRadius + 50, 100, 220);
 	}
 
-	// With a survey (ACR_BaseWorks), only positions that pass its hard rules, and more of them to choose
-	// from: the works pick among them by their weak points. Without one (the preview), as Jacob built it.
-	static void Plan(ACR_Base base, string owner, notnull array<ref ACR_BaseDefencePos> result, out string summary, ACR_BaseSurvey survey = null)
+	static void Plan(ACR_Base base, string owner, notnull array<ref ACR_BaseDefencePos> result, out string summary)
 	{
 		s_iCornersSeen = 0; s_iNoRoad = 0; s_iNoThreat = 0; s_iNoFit = 0; s_iBlocked = 0; s_iNoSight = 0;
 		summary = "";
@@ -1509,27 +1506,19 @@ class ACR_BaseDefences : Managed
 			if (vector.DistanceXZ(house.GetOrigin(), center) <= radius) townSize++;
 		array<ref ACR_BaseDefencePos> posts = {};
 		Posts(base, kit, dirs, weights, buildings, posts);
-		if (survey) foreach (ACR_BaseDefencePos post : posts) survey.TrimPost(post);
 		Pick(posts, 1, 80, result);
 		array<ref ACR_BaseDefencePos> squares = {};
 		Squares(base, kit, dirs, weights, segs, buildings, nodes, squares);
-		if (survey) survey.KeepOnly(squares);
 		Pick(squares, Math.ClampInt(1 + townSize / 40, 1, 3), 60, result);
 		array<ref ACR_BaseDefencePos> corners = {};
 		Corners(base, kit, dirs, weights, segs, buildings, nodes, corners);
-		if (survey) survey.KeepOnly(corners);
 		Pick(corners, Math.ClampInt(townSize / 7, 4, 14), 15, result);
 		array<ref ACR_BaseDefencePos> houses = {};
 		Edges(base, kit, dirs, weights, segs, buildings, houses);
-		if (survey) survey.KeepOnly(houses);
-		int houseMost = Math.ClampInt(townSize / 10, 0, 6);
-		if (survey) houseMost = Math.ClampInt(townSize / 5, 3, 8);
-		Pick(houses, houseMost, 20, result);
+		Pick(houses, Math.ClampInt(townSize / 10, 0, 6), 20, result);
 		array<ref ACR_BaseDefencePos> edges = {};
-		Perimeter(base, kit, segs, dirs, weights, buildings, edges, survey);
-		int perimeterMost = MAX_PERIMETER;
-		if (survey) perimeterMost = MAX_PERIMETER + 3;
-		Pick(edges, perimeterMost, 40, result);
+		Perimeter(base, kit, segs, dirs, weights, buildings, edges);
+		Pick(edges, MAX_PERIMETER, 40, result);
 
 		string threatText = "";
 		foreach (int i, vector d : dirs)
@@ -1548,6 +1537,8 @@ class ACR_BaseDefences : Managed
 			case ACR_EBaseDefenceKind.PERIMETER: return "perimeter";
 			case ACR_EBaseDefenceKind.EDGE: return "house";
 			case ACR_EBaseDefenceKind.POST: return "post";
+			case ACR_EBaseDefenceKind.LINE: return "line";
+			case ACR_EBaseDefenceKind.WIRE: return "wire";
 		}
 		return "?";
 	}
@@ -1575,6 +1566,22 @@ class ACR_BaseDefences : Managed
 		if (prefab == MAP_KOLGUYEV) pitch = 90;
 		Math3D.AnglesToMatrix(Vector(yaw, pitch, 0), spawnParams.Transform);
 		spawnParams.Transform[3] = at;
+		return GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
+	}
+
+	// A piece lying on the ground under it: spawned tilted, so the transform every machine gets is the
+	// tilted one (a move after spawning wouldn't reach clients, ACR_StructureLayout). -acrGroundTilt 0: level.
+	static IEntity SpawnOnGround(ResourceName prefab, vector at, float yaw)
+	{
+		if (!ACR_GroundTilt.Enabled()) return SpawnProp(prefab, at, yaw);
+		Resource resource = Resource.Load(prefab);
+		if (!resource.IsValid()) return null;
+		vector half = HalfSize(prefab);
+		vector mat[4];
+		ACR_GroundTilt.Transform(at, yaw, half[0], half[2], mat);
+		EntitySpawnParams spawnParams = new EntitySpawnParams();
+		spawnParams.TransformMode = ETransformMode.WORLD;
+		for (int i = 0; i < 4; i++) spawnParams.Transform[i] = mat[i];
 		return GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
 	}
 

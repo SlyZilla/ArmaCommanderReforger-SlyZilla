@@ -12,7 +12,7 @@ class ACR_TestBaseWorks
  static const ResourceName ENEMY = "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et";
  static const string NAME = "Works Squad";
  static const int STEP_LIMIT = 300; // s a tier may take
- static const int CHECKS = 38;
+ static const int CHECKS = 41;
  protected static int s_iStep;
  protected static int s_iStepAt;
  protected static int s_iRP;
@@ -100,6 +100,17 @@ class ACR_TestBaseWorks
    array<IEntity> buildings = {};
    ACR_BaseDefences.Buildings(base.GetOrigin(), ACR_BaseDefences.SearchRadius(base), buildings);
    if (buildings.Count() <= most) continue;
+   // A town its lines can hold a nest in: some have nowhere with the view for one.
+   ACR_BaseWork plan = ACR_BaseWorks.WorkFor(base, s_sSide);
+   bool nest = false;
+   foreach (ACR_BaseSite site : plan.m_aSites) if (site.m_eKind == ACR_EBaseSite.NEST) nest = true;
+   if (!nest)
+   {
+    PrintFormat("[ACR] TEST baseworks: %1 (%2 buildings) has no nest, on to the next", base.m_sName, buildings.Count());
+    ACR_BaseWorks.s_aWorks.RemoveItem(plan);
+    continue;
+   }
+   if (s_Base) ACR_BaseWorks.s_aWorks.RemoveItem(ACR_BaseWorks.Find(s_Base));
    most = buildings.Count();
    s_Base = base;
   }
@@ -222,6 +233,7 @@ class ACR_TestBaseWorks
   ACR_TestRegress.Check("baseworks: paid per site", us.m_iRP == s_iRP - paid, string.Format("%1 -> %2, %3 for the sites", s_iRP, us.m_iRP, paid));
   ACR_TestRegress.Check("baseworks: the navmesh is told", ACR_Navmesh.s_iQueued > s_iQueued, string.Format("%1 more", ACR_Navmesh.s_iQueued - s_iQueued));
   ACR_TestRegress.Check("baseworks: the sandbags have a damage manager", damage, "");
+  LineChecks();
   array<vector> positions = {};
   array<float> radii = {};
   array<string> labels = {};
@@ -230,6 +242,40 @@ class ACR_TestBaseWorks
   foreach (string line : labels) if (line.Contains("Defences I")) label = line;
   ACR_TestRegress.Check("baseworks: on the side's map", !label.IsEmpty(), label);
   ACR_TestRegress.Check("baseworks: the squad holds the base after the tier", !squad.m_FortifyPlan && squad.OrderState() == ACR_EOrderState.DEFEND, squad.OrderState().ToString());
+ }
+
+ // Tier I as it stands in the world: stretches of line whose real pieces meet end to end.
+ protected static void LineChecks()
+ {
+  int stretches, loose, pieces;
+  string worst = "";
+  foreach (ACR_BaseSite site : s_Work.m_aSites)
+  {
+   if (site.m_iTier != 1 || !site.m_bBuilt || !site.m_Plan || site.m_Plan.m_eKind != ACR_EBaseDefenceKind.LINE) continue;
+   stretches++;
+   foreach (int i, IEntity piece : site.m_aWalls)
+   {
+    pieces++;
+    if (i == 0) continue;
+    vector a = piece.GetOrigin();
+    vector b = site.m_aWalls[i - 1].GetOrigin();
+    float halves = LengthOf(piece) * 0.5 + LengthOf(site.m_aWalls[i - 1]) * 0.5;
+    float gap = vector.DistanceXZ(a, b) - halves;
+    if (gap < 0.6) continue;
+    loose++;
+    worst = string.Format("%1 m at %2", gap.ToString(-1, 2), a);
+   }
+  }
+  ACR_TestRegress.Check("baseworks: tier I is a sandbag line, in stretches", stretches > 0 && pieces >= stretches * 2, string.Format("%1 stretches, %2 pieces", stretches, pieces));
+  ACR_TestRegress.Check("baseworks: its real pieces meet end to end", stretches > 0 && loose == 0, string.Format("%1 joints open %2", loose, worst));
+ }
+
+ // Along the piece: its model's size across its own X.
+ protected static float LengthOf(IEntity piece)
+ {
+  vector mins, maxs;
+  piece.GetBounds(mins, maxs);
+  return maxs[0] - mins[0];
  }
 
  protected static void OrderNext(ACR_Squad squad)
@@ -254,6 +300,7 @@ class ACR_TestBaseWorks
   ACR_TestRegress.Check("baseworks: tier II built", ACR_BaseWorks.BuiltSites(s_Work, 2) > 0 && real, kinds);
   ACR_TestRegress.Check("baseworks: tier II has an MG nest", nest, kinds);
   NestFires();
+  NestInLine();
   int men = Men();
   bool crewOut = s_Work.m_Defenders && !s_Work.m_Defenders.m_aCrewGuns.IsEmpty();
   ACR_TestRegress.Check("baseworks: tier II has defenders in reserve", men == ACR_BaseWorks.Defenders(2), string.Format("%1 men", men));
@@ -282,6 +329,28 @@ class ACR_TestBaseWorks
   }
   ACR_TestRegress.Check("baseworks: the built nest's gun has a clear line of fire", false, "no nest built");
   ACR_TestRegress.Check("baseworks: ... and looks the way the planner checked", false, "no nest built");
+ }
+
+ // The pieces where a nest goes came out when it went in.
+ protected static void NestInLine()
+ {
+  int left = 0;
+  int cuts = 0;
+  foreach (ACR_BaseSite nest : s_Work.m_aSites)
+  {
+   if (nest.m_eKind != ACR_EBaseSite.NEST || !nest.m_bBuilt) continue;
+   cuts += nest.m_aCuts.Count();
+   foreach (ACR_BaseSite site : s_Work.m_aSites)
+   {
+    if (!site.m_Plan) continue;
+    foreach (IEntity piece : site.m_aWalls)
+    {
+     if (!piece) continue;
+     foreach (vector cut : nest.m_aCuts) if (vector.DistanceXZ(piece.GetOrigin(), cut) < 0.6) left++;
+    }
+   }
+  }
+  ACR_TestRegress.Check("baseworks: a nest takes the place of the line's pieces", cuts > 0 && left == 0, string.Format("%1 places, %2 pieces still there", cuts, left));
  }
 
  // The works' men: in reserve, or on the guns.
@@ -426,8 +495,10 @@ class ACR_TestBaseWorks
  // map, checked against the hard rules with traces and queries of its own, not the planner's (so a
  // plan from the old ring, Strong, fails them: tried on aea7d35). Prints each plan's geometry for
  // drawing (WORKSGEO lines). On Kolguyev also the spot of the 30 Oct playtest's Bovemont Base.
- protected static int s_iBases, s_iNests, s_iBunkers, s_iWalls, s_iChecks, s_iPosts;
- protected static int s_iFire, s_iClose, s_iFacing, s_iPlannedFacing, s_iBuilding, s_iDoor, s_iRoad, s_iDressRoad, s_iApart, s_iDoubled, s_iThreeGuns, s_iClump, s_iFarCheck, s_iWorstMs, s_iNestTowns;
+ protected static int s_iBases, s_iNests, s_iBunkers, s_iWalls, s_iChecks, s_iPosts, s_iLineTowns, s_iLongTowns, s_iLines, s_iPieces, s_iMostPieces;
+ protected static int s_iLoose, s_iShortRuns, s_iGunAlone, s_iEnds, s_iLongRuns, s_iLongStretch, s_iLongTier, s_iNestOff, s_iNoCheckLane, s_iWorstTier;
+ protected static ref set<int> s_aLengths = new set<int>();
+ protected static int s_iFire, s_iClose, s_iFacing, s_iPlannedFacing, s_iBuilding, s_iDoor, s_iRoad, s_iDressRoad, s_iApart, s_iDoubled, s_iFarCheck, s_iWorstMs, s_iNestTowns;
  protected static string s_sWorst;
  protected static ref array<IEntity> s_aFound = {};
 
@@ -449,26 +520,36 @@ class ACR_TestBaseWorks
    }
    PlanChecks(base);
   }
-  ACR_TestRegress.Check("baseworks plan: every base planned", s_iBases >= 5, string.Format("%1 bases: %2 nests in %3 towns, %4 bunkers and towers, %5 sandbag sites, %6 checkpoints, %7 command posts", s_iBases, s_iNests, s_iNestTowns, s_iBunkers, s_iWalls, s_iChecks, s_iPosts));
-  ACR_TestRegress.Check("baseworks plan: most towns still get guns", s_iNestTowns * 2 >= s_iBases, string.Format("nests in %1 of %2", s_iNestTowns, s_iBases));
+  ACR_TestRegress.Check("baseworks plan: every base planned", s_iBases >= 5, string.Format("%1 bases: %2 lines, %3 sandbag pieces, %4 stretches and wire, %5 nests in %6 towns, %7 bunkers and towers, %8 checkpoints, %9 command posts", s_iBases, s_iLines, s_iPieces, s_iWalls, s_iNests, s_iNestTowns, s_iBunkers, s_iChecks, s_iPosts));
+  ACR_TestRegress.Check("baseworks plan: most towns have a line", s_iLineTowns * 3 >= s_iBases * 2, string.Format("%1 of %2", s_iLineTowns, s_iBases));
+  ACR_TestRegress.Check("baseworks plan: most of those have one of 30 m or more", s_iLongTowns * 2 >= s_iBases, string.Format("%1 of %2 towns", s_iLongTowns, s_iBases));
+  ACR_TestRegress.Check("baseworks plan: pieces meet end to end", s_iLoose == 0, string.Format("%1 joints open", s_iLoose));
+  ACR_TestRegress.Check("baseworks plan: no sandbag piece or stub on its own", s_iShortRuns == 0, string.Format("%1 runs under 5 m or a single piece", s_iShortRuns));
+  ACR_TestRegress.Check("baseworks plan: line ends stand on something or curve back", s_iEnds == 0, string.Format("%1 ends", s_iEnds));
+  ACR_TestRegress.Check("baseworks plan: no gun far from a line", s_iGunAlone == 0, string.Format("%1 of %2 over 20 m from a sandbag", s_iGunAlone, s_iNests + s_iBunkers));
+  ACR_TestRegress.Check("baseworks plan: most nests are built into a line", s_iNestOff * 2 <= s_iNests, string.Format("%1 of %2 at a line's end instead", s_iNestOff, s_iNests));
+  ACR_TestRegress.Check("baseworks plan: a way through on foot every so often", s_iLongRuns == 0, string.Format("%1 runs over 50 m unbroken", s_iLongRuns));
+  ACR_TestRegress.Check("baseworks plan: stretches stay a stretch", s_iLongStretch == 0, string.Format("%1 over 40 m", s_iLongStretch));
+  ACR_TestRegress.Check("baseworks plan: pieces per base stay under the cap", s_iMostPieces <= ACR_BaseLines.MOST_PIECES, string.Format("most %1 (cap %2)", s_iMostPieces, ACR_BaseLines.MOST_PIECES));
+  ACR_TestRegress.Check("baseworks plan: tier I stays a reasonable job", s_iWorstTier <= 360, string.Format("worst %1 s of work", s_iWorstTier));
+  ACR_TestRegress.Check("baseworks plan: towns don't get one template", s_aLengths.Count() * 3 >= s_iLines, string.Format("%1 different line lengths in %2 lines", s_aLengths.Count(), s_iLines));
   ACR_TestRegress.Check("baseworks plan: every gun has a clear line of fire (the game's own check)", s_iFire == 0, string.Format("%1 of %2 blocked", s_iFire, s_iNests + s_iBunkers));
   ACR_TestRegress.Check("baseworks plan: no gun faces a wall, fence or building close in front", s_iClose == 0, string.Format("%1 of %2", s_iClose, s_iNests + s_iBunkers));
   ACR_TestRegress.Check("baseworks plan: a gun sees 40 m along its middle", s_iFacing == 0, string.Format("%1 of %2", s_iFacing, s_iNests + s_iBunkers));
-  ACR_TestRegress.Check("baseworks plan: sandbag sites see out", s_iPlannedFacing == 0, string.Format("%1 of %2", s_iPlannedFacing, s_iWalls));
+  ACR_TestRegress.Check("baseworks plan: sandbag lines see out", s_iPlannedFacing == 0, string.Format("%1 of %2 stretches", s_iPlannedFacing, s_iWalls));
   ACR_TestRegress.Check("baseworks plan: nothing stands close to a building", s_iBuilding == 0, string.Format("%1 sites", s_iBuilding));
   ACR_TestRegress.Check("baseworks plan: nothing at a door", s_iDoor == 0, string.Format("%1 sites", s_iDoor));
   ACR_TestRegress.Check("baseworks plan: no gun or sandbag on a road", s_iRoad == 0, string.Format("%1 sites", s_iRoad));
   ACR_TestRegress.Check("baseworks plan: no dressing on a road", s_iDressRoad == 0, string.Format("%1 pieces", s_iDressRoad));
   ACR_TestRegress.Check("baseworks plan: guns stand well apart", s_iApart == 0, string.Format("%1 pairs under 30 m", s_iApart));
-  ACR_TestRegress.Check("baseworks plan: no two guns side by side look the same way", s_iDoubled == 0, string.Format("%1 pairs under 50 m, within 20 degrees", s_iDoubled));
-  ACR_TestRegress.Check("baseworks plan: towns with their guns all in one 60 degrees are few", s_iClump * 4 <= s_iThreeGuns, string.Format("%1 of %2 towns with three or more (one threat and no other place can do that)", s_iClump, s_iThreeGuns));
+  ACR_TestRegress.Check("baseworks plan: no two nests side by side look the same way", s_iDoubled == 0, string.Format("%1 pairs under 50 m, within 20 degrees", s_iDoubled));
   ACR_TestRegress.Check("baseworks plan: checkpoints stay near the town", s_iFarCheck == 0, string.Format("%1 of %2", s_iFarCheck, s_iChecks));
   ACR_TestRegress.Check("baseworks plan: planning cost", s_iWorstMs < 600, string.Format("worst %1 ms (%2)", s_iWorstMs, s_sWorst));
   CrateChecks();
   SeedChecks(biggest);
   Draw(biggest);
   Replay();
-  ACR_TestRegress.Complete("baseworksplan", 19);
+  ACR_TestRegress.Complete("baseworksplan", 29);
  }
 
  protected static void PlanChecks(ACR_Base base)
@@ -487,11 +568,12 @@ class ACR_TestBaseWorks
   array<IEntity> buildings = {};
   ACR_BaseDefences.Buildings(center, radius + 60, buildings);
   array<ref ACR_BaseDefenceSeg> segs = {};
-  ACR_BaseDefences.Roads(center, radius + 60, segs);
+  ACR_BaseDefences.Roads(center, radius + 100, segs);
   array<vector> doors = {};
   Doors(buildings, doors);
   array<vector> guns = {};
   array<float> yaws = {};
+  array<int> kinds = {};
   int nests;
   foreach (ACR_BaseSite site : work.m_aSites)
   {
@@ -517,36 +599,202 @@ class ACR_TestBaseWorks
    }
    else s_iBunkers++;
    GunChecks(base, site, buildings, segs, doors);
+   if (site.m_eKind == ACR_EBaseSite.NEST && site.m_aCuts.IsEmpty()) s_iNestOff++;
+   if (!NearBags(work, site.m_vPos, 20))
+   {
+    s_iGunAlone++;
+    PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: no sandbags within 20 m", base.m_sName, ACR_BaseWorks.SiteWords(site), site.m_vPos);
+   }
    foreach (int g, vector other : guns)
    {
     if (vector.DistanceXZ(other, site.m_vPos) < 30) s_iApart++;
-    if (vector.DistanceXZ(other, site.m_vPos) < 50 && ACR_BaseDefences.DotXZ(ACR_BaseSurvey.Dir(yaws[g]), ACR_BaseSurvey.Dir(site.m_fYaw)) > 0.94) s_iDoubled++;
+    if (site.m_eKind == ACR_EBaseSite.NEST && kinds[g] == ACR_EBaseSite.NEST && vector.DistanceXZ(other, site.m_vPos) < 50 && ACR_BaseDefences.DotXZ(ACR_BaseSurvey.Dir(yaws[g]), ACR_BaseSurvey.Dir(site.m_fYaw)) > 0.94) s_iDoubled++;
    }
    guns.Insert(site.m_vPos);
    yaws.Insert(site.m_fYaw);
+   kinds.Insert(site.m_eKind);
   }
   if (nests > 0) s_iNestTowns++;
-  if (guns.Count() >= 3) s_iThreeGuns++;
-  if (Clumped(center, guns))
+  JoinChecks(base, work, buildings, segs);
+ }
+
+ protected static bool NearBags(ACR_BaseWork work, vector at, float within)
+ {
+  foreach (ACR_BaseSite site : work.m_aSites)
   {
-   s_iClump++;
-   PrintFormat("[ACR] TEST baseworks plan %1: %2 guns clumped", base.m_sName, guns.Count());
+   if (!site.m_Plan || site.m_Plan.m_eKind == ACR_EBaseDefenceKind.POST) continue;
+   foreach (int i, vector piece : site.m_Plan.m_aPiecePos)
+    if (site.m_Plan.m_aPieceWall[i] && vector.DistanceXZ(piece, at) < within) return true;
+  }
+  return false;
+ }
+
+ // The ends of a sandbag piece from its place and its model's length alone (not what the planner
+ // recorded): along its local X, a round piece's half a metre behind its middle.
+ protected static void PieceEnds(ResourceName prefab, vector at, float yaw, out vector a, out vector b)
+ {
+  vector half = ACR_BaseDefences.HalfSize(prefab);
+  float rad = yaw * Math.DEG2RAD;
+  vector facing = Vector(Math.Sin(rad), 0, Math.Cos(rad));
+  vector right = Vector(facing[2], 0, -facing[0]);
+  vector middle = at;
+  if (prefab == ACR_BaseDefences.ROUND_PLASTIC || prefab == ACR_BaseDefences.ROUND_BURLAP) middle = at - facing * 0.5;
+  a = middle - right * half[0];
+  b = middle + right * half[0];
+ }
+
+ // Every sandbag piece of a town (not the command post's), by how they actually touch: runs of pieces
+ // whose ends meet. Works on any plan, the old planner's too. Then the lines' own order and ends.
+ protected static void JoinChecks(ACR_Base base, ACR_BaseWork work, array<IEntity> buildings, array<ref ACR_BaseDefenceSeg> segs)
+ {
+  array<vector> as = {};
+  array<vector> bs = {};
+  array<float> lengths = {};
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   if (!site.m_Plan || site.m_Plan.m_eKind == ACR_EBaseDefenceKind.POST) continue;
+   foreach (int i, vector at : site.m_Plan.m_aPiecePos)
+   {
+    if (!site.m_Plan.m_aPieceWall[i]) continue;
+    vector a, b;
+    PieceEnds(site.m_Plan.m_aPiecePrefab[i], at, site.m_Plan.m_aPieceYaw[i], a, b);
+    as.Insert(a);
+    bs.Insert(b);
+    lengths.Insert(vector.DistanceXZ(a, b));
+   }
+  }
+  int n = as.Count();
+  s_iPieces += n;
+  s_iMostPieces = Math.Max(s_iMostPieces, n);
+  // Runs: pieces whose ends are within 3 m (a walk-through gap doesn't split a run).
+  array<int> run = {};
+  for (int r = 0; r < n; r++) run.Insert(r);
+  for (int x = 0; x < n; x++)
+  {
+   for (int y = x + 1; y < n; y++)
+   {
+    if (run[x] == run[y]) continue;
+    if (EndsApart(as[x], bs[x], as[y], bs[y]) > 3) continue;
+    int from = run[y];
+    int to = run[x];
+    for (int z = 0; z < n; z++) if (run[z] == from) run[z] = to;
+   }
+  }
+  float longest = 0;
+  for (int c = 0; c < n; c++)
+  {
+   float length = 0;
+   int count = 0;
+   for (int d = 0; d < n; d++)
+   {
+    if (run[d] != c) continue;
+    length += lengths[d];
+    count++;
+   }
+   if (count == 0) continue;
+   longest = Math.Max(longest, length);
+   // (Two pieces can close a gap in a wall, 5 m of it.)
+   if (count >= 2 && length >= 5) continue;
+   s_iShortRuns++;
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 sandbags, %3 m, standing alone at %4", base.m_sName, count, (int)length, as[c]);
+  }
+  if (n > 0) s_iLineTowns++;
+  if (longest >= 30) s_iLongTowns++;
+  LineOrder(base, work, buildings, segs);
+  // Stretches and the tier's work.
+  int seconds = 0;
+  foreach (ACR_BaseSite stretch : work.m_aSites)
+  {
+   if (stretch.m_iTier == 1) seconds += ACR_BaseWorks.Duration(stretch);
+   if (!stretch.m_Plan || stretch.m_Plan.m_eKind != ACR_EBaseDefenceKind.LINE) continue;
+   float span = 0;
+   foreach (int s, vector piece : stretch.m_Plan.m_aPiecePos)
+    if (stretch.m_Plan.m_aPieceWall[s]) span += 2 * ACR_BaseDefences.HalfSize(stretch.m_Plan.m_aPiecePrefab[s])[0];
+   if (span > 40) s_iLongStretch++;
+  }
+  s_iWorstTier = Math.Max(s_iWorstTier, seconds);
+ }
+
+ protected static float EndsApart(vector a1, vector b1, vector a2, vector b2)
+ {
+  float least = vector.DistanceXZ(a1, a2);
+  least = Math.Min(least, vector.DistanceXZ(a1, b2));
+  least = Math.Min(least, vector.DistanceXZ(b1, a2));
+  return Math.Min(least, vector.DistanceXZ(b1, b2));
+ }
+
+ // A line's own chain: neighbours meet, gaps are gaps; its ends; a way through often enough.
+ protected static void LineOrder(ACR_Base base, ACR_BaseWork work, array<IEntity> buildings, array<ref ACR_BaseDefenceSeg> segs)
+ {
+  foreach (ACR_BaseLine line : work.m_aLines)
+  {
+   s_iLines++;
+   s_aLengths.Insert((int)line.m_fLength);
+   int count = line.m_aPieces.Count();
+   float unbroken = 0;
+   foreach (int i, ACR_LinePiece piece : line.m_aPieces)
+   {
+    unbroken += vector.DistanceXZ(piece.m_vFrom, piece.m_vTo);
+    if (i + 1 >= count) continue;
+    if (piece.m_iBreak != 0)
+    {
+     if (unbroken > 50)
+     {
+      s_iLongRuns++;
+      PrintFormat("[ACR] TEST baseworks plan %1: %2 m unbroken to %3", base.m_sName, (int)unbroken, piece.m_vTo);
+     }
+     unbroken = 0;
+     continue;
+    }
+    ACR_LinePiece next = line.m_aPieces[i + 1];
+    vector a1, b1, a2, b2;
+    PieceEnds(piece.m_sPrefab, piece.m_vPos, piece.m_fYaw, a1, b1);
+    PieceEnds(next.m_sPrefab, next.m_vPos, next.m_fYaw, a2, b2);
+    float gap = EndsApart(a1, b1, a2, b2);
+    if (gap > 0.6)
+    {
+     s_iLoose++;
+     PrintFormat("[ACR] TEST baseworks plan %1: a joint %2 m open at %3", base.m_sName, gap.ToString(-1, 2), piece.m_vTo);
+    }
+   }
+   if (unbroken > 50)
+   {
+    s_iLongRuns++;
+    PrintFormat("[ACR] TEST baseworks plan %1: %2 m unbroken to its end", base.m_sName, (int)unbroken);
+   }
+   CheckEnd(base, line, line.m_sEndA, line.m_aPieces, 0, 1, buildings, segs);
+   CheckEnd(base, line, line.m_sEndB, line.m_aPieces, count - 1, -1, buildings, segs);
   }
  }
 
- // Three or more guns with all but one inside one 60 degrees round the town.
- protected static bool Clumped(vector center, array<vector> guns)
+ // An end stands on something near it or turns back from the line's run; a word alone doesn't pass.
+ protected static void CheckEnd(ACR_Base base, ACR_BaseLine line, string word, array<ref ACR_LinePiece> pieces, int last, int inward, array<IEntity> buildings, array<ref ACR_BaseDefenceSeg> segs)
  {
-  if (guns.Count() < 3) return false;
-  foreach (vector gun : guns)
+  if (pieces.IsEmpty()) return;
+  ACR_LinePiece end = pieces[last];
+  vector tip = end.m_vFrom;
+  if (inward < 0) tip = end.m_vTo;
+  bool fine = false;
+  if (word == "curve")
   {
-   vector way = ACR_BaseDefences.FlatDir(center, gun);
-   int inside = 0;
-   foreach (vector other : guns)
-    if (ACR_BaseDefences.DotXZ(way, ACR_BaseDefences.FlatDir(center, other)) > 0.866) inside++;
-   if (inside >= guns.Count() - 1) return true;
+   // The end piece, against the last long piece: turned at least 30 degrees, away from the firing side.
+   int back = last + inward;
+   while (back >= 0 && back < pieces.Count() && !pieces[back].m_bLong) back += inward;
+   if (back >= 0 && back < pieces.Count())
+   {
+    // Both outward along the chain: a first piece's chain runs into the line, a last one's out of it.
+    float outer = -1.0 * inward;
+    vector endWay = ACR_BaseDefences.FlatDir(end.m_vFrom, end.m_vTo) * outer;
+    vector lineWay = ACR_BaseDefences.FlatDir(pieces[back].m_vFrom, pieces[back].m_vTo) * outer;
+    fine = ACR_BaseDefences.DotXZ(endWay, lineWay) < 0.87 && ACR_BaseDefences.DotXZ(endWay, pieces[back].m_vFacing) < 0;
+   }
   }
-  return false;
+  else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 8) < 8;
+  else if (word == "road") fine = ACR_BaseDefences.RoadEdgeGap(segs, tip) < 6;
+  else if (word == "wall" || word == "gap" || word == "work" || word == "slope") fine = true;
+  if (fine) return;
+  s_iEnds++;
+  PrintFormat("[ACR] TEST baseworks plan %1: a line of %2 m ends \"%3\" at %4 on nothing", base.m_sName, (int)line.m_fLength, word, tip);
  }
 
  protected static void GunChecks(ACR_Base base, ACR_BaseSite site, array<IEntity> buildings, array<ref ACR_BaseDefenceSeg> segs, array<vector> doors)
@@ -619,7 +867,8 @@ class ACR_TestBaseWorks
    return;
   }
   s_iWalls++;
-  bool apart = pos.m_eKind == ACR_EBaseDefenceKind.SQUARE || pos.m_eKind == ACR_EBaseDefenceKind.PERIMETER;
+  if (pos.m_eKind == ACR_EBaseDefenceKind.WIRE) return;
+  bool apart = pos.m_eKind != ACR_EBaseDefenceKind.CORNER && pos.m_eKind != ACR_EBaseDefenceKind.EDGE;
   vector from = vector.Zero;
   int bags = 0;
   bool closed, door, road;
@@ -630,7 +879,7 @@ class ACR_TestBaseWorks
     if (ACR_BaseDefences.RoadEdgeGap(segs, at) < 0) s_iDressRoad++;
     continue;
    }
-   if (apart && ACR_BaseDefences.BuildingGap(buildings, at, 2) < 2) closed = true;
+   if (apart && ACR_BaseDefences.BuildingGap(buildings, at, 1) < 0.25) closed = true;
    if (NearDoor(doors, at, 2.5)) door = true;
    if (ACR_BaseDefences.RoadEdgeGap(segs, at) < 0) road = true;
    vector size = ACR_BaseDefences.HalfSize(pos.m_aPiecePrefab[i]);
@@ -654,23 +903,17 @@ class ACR_TestBaseWorks
    PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: its bags on a road", base.m_sName, what, pos.m_vPos);
   }
   if (bags == 0) return;
-  from = from * (1.0 / bags) + pos.m_vFacing * 0.8;
-  // Two of three rays: a sign pole in a street isn't a facing failure.
-  array<float> turns = {-5, 0, 5};
-  int blocked = 0;
-  string blocker = "";
-  foreach (float turn : turns)
+  // Each long piece's own firing side, 10 m clear. (Its yaw is the way it faces.)
+  foreach (int k, vector place : pos.m_aPiecePos)
   {
+   if (!ACR_BaseDefences.IsLong(pos.m_aPiecePrefab[k]) || !pos.m_aPieceWall[k]) continue;
+   float look = pos.m_aPieceYaw[k];
    string hit;
-   float clear = ClearAhead(from, 1.45, ACR_BaseDefences.Bearing(pos.m_vFacing) + turn, 15, hit);
+   float clear = ClearAhead(place + ACR_BaseSurvey.Dir(look) * 0.8, 1.45, look, 15, hit);
    if (clear >= 10) continue;
-   blocked++;
-   blocker = string.Format("%1 %2 m ahead", hit, (int)clear);
-  }
-  if (blocked >= 2)
-  {
    s_iPlannedFacing++;
-   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3 facing %4: %5", base.m_sName, what, pos.m_vPos, (int)ACR_BaseDefences.Bearing(pos.m_vFacing), blocker);
+   PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3 facing %4: %5 %6 m ahead", base.m_sName, what, place, (int)look, hit, (int)clear);
+   break;
   }
  }
 
@@ -899,7 +1142,7 @@ class ACR_TestBaseWorks
   return true;
  }
 
- // Kolguyev: the 30 Oct playtest's base.
+ // Kolguyev: the base of the 30 Oct playtest.
  protected static void Replay()
  {
   foreach (ACR_Base base : ACR_Base.s_All)

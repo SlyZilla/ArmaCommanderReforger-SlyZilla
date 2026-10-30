@@ -8,11 +8,10 @@
 //   walls and fences   how much of the sector they close, and the gaps and gates in them;
 //   roads in           where a road leaves the town (a gate, if it goes through a wall line);
 //   what stands there  the map's sandbags, bunkers and towers, our positions and checkpoints.
-// Weak(sector) sums that up. ACR_BaseWorks fills the worst sector first and each site it places
-// counts as cover (AddCover), so the next one goes where the town is weakest now, not beside it.
-// The hard rules are here too, as filters and not scores: a gun or firing position needs a clear
-// line of fire in the way it faces (a fan of traces at its muzzle height), nothing stands close to
-// a building or a door, nothing on a road. Fewer sites, not bad ones; the log says why.
+// Weak(sector) sums that up. ACR_BaseLines runs its lines across the worst sectors first and what
+// it places counts as cover (AddCover, AddLight), so the next goes where the town is weakest now.
+// The hard rules' traces are here too: a gun or firing position needs a clear line of fire in the
+// way it faces (a fan at its muzzle height).
 class ACR_BaseGate : Managed
 {
  vector m_vPos;      // where the road leaves the town
@@ -27,9 +26,8 @@ class ACR_BaseSpot : Managed
  vector m_vPos;
  float m_fFacing;    // compass the gun looks along
  int m_iSector;      // the sector it looks into
- int m_iStands;      // the sector it stands in
  float m_fReach;     // clear m along the facing, up to OPEN_RANGE
- bool m_bNest;       // a nest's gun, low down, has its line of fire here
+ bool m_bNest;       // a nest's gun, low down, has a line of fire here
  bool m_bBunker;     // a bunker's ports have
  bool m_bTower;      // a tower's platform has (it sees over what stops the others)
  bool m_bGate;       // looks down a road in
@@ -42,7 +40,6 @@ class ACR_BaseSurvey : Managed
  static const int BINS = 72;              // 5 degrees each, for walls
  static const float OPEN_RANGE = 150;     // m looked out from the edge, and a gun's reach counted
  static const float THREAT_FLOOR = 0.1;   // a sector away from every threat still counts a little
- static const float MIN_WEAK = 0.08;      // below this a sector isn't a weak point (for a perimeter post of its own)
  static const float MIN_SPOT_THREAT = 0.2; // guns don't look for spots in sectors below this
  static const float LIGHT_TO_GUN = 0.3;   // how much sandbags in a sector take off a gun's reason to go there
 
@@ -61,11 +58,9 @@ class ACR_BaseSurvey : Managed
  static const float BUILDING_CLEAR = 10;  // m from a gun's middle to any building (its 6 m footprint + 4 m)
  static const float DOOR_CLEAR = 12;      // m from a gun's middle to a door or gate of a building
  static const float GUN_ROAD = 7;         // m from a gun's middle to a road's edge
- static const float WALL_BUILDING = 2.5;  // m from a redoubt's or perimeter position's bags to a building
- static const float WALL_DOOR = 3;        // m from any sandbag piece to a door (the command post's own aside)
+ static const float WALL_DOOR = 3;        // m from a sandbag piece to a door (the command post's own aside)
  static const float BLOCK_CLOSE = 6;      // m: a command post's bags that face another building this close go
  static const float FOOT_HALF = 6;        // m: nothing solid in this box round a gun's middle (fences, walls, rocks); nests measure 11-14 x 6-10 m, bunkers and towers 12-14 x 12-14
- static const int SPOTS_PER_SECTOR = 10;  // enough to choose from
 
  ACR_Base m_Base;
  vector m_vCenter;
@@ -85,20 +80,14 @@ class ACR_BaseSurvey : Managed
  ref array<int> m_aRoads = {};
  ref array<float> m_aCover = {};           // what's there and the guns
  ref array<float> m_aLight = {};           // sandbags, redoubts and checkpoints: to a gun they count for little
- ref array<ref ACR_BaseSpot> m_aSpots = {};
+ ref array<vector> m_aWorkSpots = {};     // the map's works and ours
  ref array<vector> m_aWallEnds = {};      // two per wall piece (tests draw them)
  int m_iTown;                             // buildings within the search radius
  int m_iWallPieces;
  int m_iMapWorks;                         // the map's sandbags, bunkers and towers seen
  int m_iOurWorks;                         // our positions and checkpoints near
- bool m_bSpots;
- int m_iTried;                            // spots looked at, and what ruled them out
- int m_iNoRoad;
- int m_iNoBuilding;
- int m_iNoDoor;
- int m_iNoGround;
- int m_iNoFire;
- ref map<string, int> m_mRefused = new map<string, int>(); // planner positions refused, and why
+ int m_iLineMs;                           // what its lines cost to plan
+ ref map<string, int> m_mRefused = new map<string, int>(); // command post pieces left out, and why
  protected ref array<int> m_aBins = {};
 
  static int s_iTraces;                    // line-of-fire traces (tests, the log)
@@ -137,9 +126,13 @@ class ACR_BaseSurvey : Managed
   return (s + SECTORS) % SECTORS;
  }
 
- float EdgeAt(float bearing)
+ // How far the town reaches that way, between its sectors' figures.
+ float EdgeSmooth(float bearing)
  {
-  return m_aEdge[Sector(bearing)];
+  float at = Normal(bearing) / SECTOR_DEG;
+  int s = (int)at;
+  float share = at - s;
+  return m_aEdge[s % SECTORS] * (1 - share) + m_aEdge[(s + 1) % SECTORS] * share;
  }
 
  // How weak the town is that way, now: the threat, times the open ground (a wall takes half of that
@@ -176,25 +169,65 @@ class ACR_BaseSurvey : Managed
   m_aLight[right] = m_aLight[right] + value * 0.4;
  }
 
- // The worst sectors now, as directions, leaving out those near a direction already listed.
- void WeakAxes(notnull array<vector> axes, int most)
+ // The worst sectors now that a threat comes from, up to 'most'.
+ void WeakSectors(notnull array<int> sectors, int most)
  {
-  array<int> used = {};
   for (int made = 0; made < most; made++)
   {
    int worst = -1;
    for (int s = 0; s < SECTORS; s++)
    {
-    if (used.Contains(s) || Weak(s) < MIN_WEAK) continue;
-    if (worst < 0 || Weak(s) > Weak(worst)) worst = s;
+    if (sectors.Contains(s) || m_aThreat[s] < MIN_SPOT_THREAT) continue;
+    if (worst < 0 || WeakLight(s) > WeakLight(worst)) worst = s;
    }
    if (worst < 0) return;
-   used.Insert(worst);
-   vector dir = Dir(SectorBearing(worst));
-   bool near;
-   foreach (vector have : axes) if (ACR_BaseDefences.DotXZ(have, dir) > 0.9) near = true;
-   if (!near) axes.Insert(dir);
+   sectors.Insert(worst);
   }
+ }
+
+ // Something a line can end on near a point: its word, "" if nothing.
+ string AnchorNear(vector p, float within)
+ {
+  if (ACR_BaseDefences.BuildingGap(m_aBuildings, p, within) < within) return "building";
+  int count = m_aWallEnds.Count();
+  for (int i = 0; i + 1 < count; i += 2)
+  {
+   vector a = m_aWallEnds[i];
+   if (vector.DistanceXZ(a, p) > within + 15) continue;
+   ACR_BaseDefenceSeg seg = new ACR_BaseDefenceSeg();
+   seg.m_vA = a;
+   seg.m_vB = m_aWallEnds[i + 1];
+   vector q;
+   if (ACR_BaseDefences.SegDistance(seg, p, q) < within) return "wall";
+  }
+  foreach (vector work : m_aWorkSpots) if (vector.DistanceXZ(work, p) < within) return "work";
+  if (ACR_BaseDefences.RoadEdgeGap(m_aSegs, p) < 1.5) return "road";
+  return "";
+ }
+
+ // Wall ends with nothing joined to them, on the threatened side: where gaps start.
+ void FreeWallEnds(notnull array<vector> ends)
+ {
+  map<int, int> cells = new map<int, int>();
+  foreach (vector end : m_aWallEnds)
+  {
+   int key = Cell(end, 0, 0);
+   cells.Set(key, cells.Get(key) + 1);
+  }
+  foreach (vector at : m_aWallEnds)
+  {
+   if (ends.Count() >= 40) return;
+   if (m_aThreat[Sector(ACR_BaseDefences.Bearing(at - m_vCenter))] < MIN_SPOT_THREAT) continue;
+   int near = 0;
+   for (int dx = -1; dx <= 1; dx++)
+    for (int dz = -1; dz <= 1; dz++) near += cells.Get(Cell(at, dx, dz));
+   if (near <= 2) ends.Insert(at);
+  }
+ }
+
+ protected int Cell(vector p, int dx, int dz)
+ {
+  return ((int)(p[0] / 3) + dx) * 20011 + (int)(p[2] / 3) + dz;
  }
 
  // ---------------------------------------------------------------- the look
@@ -214,8 +247,9 @@ class ACR_BaseSurvey : Managed
   m_vCenter = base.GetOrigin();
   m_fRadius = ACR_BaseDefences.SearchRadius(base);
   ACR_BaseDefences.Threats(base, owner, m_aDirs, m_aWeights);
-  ACR_BaseDefences.Roads(m_vCenter, m_fRadius + 40, m_aSegs);
-  ACR_BaseDefences.Buildings(m_vCenter, m_fRadius + 30, m_aBuildings);
+  // Past the search radius: a line can run out there, and must see what stands there.
+  ACR_BaseDefences.Roads(m_vCenter, m_fRadius + 70, m_aSegs);
+  ACR_BaseDefences.Buildings(m_vCenter, m_fRadius + 80, m_aBuildings);
   for (int s = 0; s < SECTORS; s++)
   {
    m_aEdge.Insert(0);
@@ -359,6 +393,7 @@ class ACR_BaseSurvey : Managed
   for (int c = 0; c < SECTORS; c++) mapCover.Insert(0);
   foreach (IEntity work : s_aWorks)
   {
+   m_aWorkSpots.Insert(work.GetOrigin());
    float bearingTo = ACR_BaseDefences.Bearing(work.GetOrigin() - m_vCenter);
    int u = Sector(bearingTo);
    if (vector.DistanceXZ(work.GetOrigin(), m_vCenter) < m_aEdge[u] * 0.4) continue;
@@ -432,12 +467,14 @@ class ACR_BaseSurvey : Managed
   {
    if (!position || vector.DistanceXZ(position.m_vPos, m_vCenter) > m_fRadius + 100) continue;
    m_iOurWorks++;
+   m_aWorkSpots.Insert(position.m_vPos);
    AddCover(Sector(position.m_fYaw), 0.25 + 0.15 * position.m_iTier);
   }
   foreach (ACR_Roadblock roadblock : ACR_Roadblocks.s_aRoadblocks)
   {
    if (!roadblock || vector.DistanceXZ(roadblock.m_vPos, m_vCenter) > m_fRadius + 200) continue;
    m_iOurWorks++;
+   m_aWorkSpots.Insert(roadblock.m_vPos);
    AddCover(Sector(ACR_BaseDefences.Bearing(roadblock.m_vPos - m_vCenter)), 0.4);
   }
  }
@@ -529,7 +566,7 @@ class ACR_BaseSurvey : Managed
  static bool NestFan(vector place, float bearing)
  {
   string why;
-  return FanClear(place, UP_NEST, bearing, 60, 40, 22) && ACR_Fortify.LineOfFireAt(place, bearing, null, why);
+  return FanClear(place, UP_NEST, bearing, 45, 30, 22) && ACR_Fortify.LineOfFireAt(place, bearing, null, why);
  }
 
  static bool BunkerFan(vector place, float bearing)
@@ -538,255 +575,13 @@ class ACR_BaseSurvey : Managed
   return FanClear(place, UP_BUNKER, bearing, 50, 30, 22) && ACR_Fortify.LineOfFireAt(place, bearing, null, why);
  }
 
- static bool TowerFan(vector place, float bearing) { return FanClear(place, UP_TOWER, bearing, 80, 50, 25); }
+ static bool TowerFan(vector place, float bearing) { return FanClear(place, UP_TOWER, bearing, 60, 40, 25); }
 
- // ---------------------------------------------------------------- where guns can go
-
- // Every place round the town a gun fits and can fire from, found once; ACR_BaseWorks picks among
- // them by how weak their sector is at the time. Out past the last building first, then in among
- // the outer houses; costly checks last.
- void FindSpots()
- {
-  if (m_bSpots) return;
-  m_bSpots = true;
-  array<float> shifts = {0, -6, 6, -12, 12};
-  array<float> past = {8, 16, 24, 32, 40, 50, 60, -6, -14, -22, -30};
-  vector half = Vector(FOOT_HALF, 0, FOOT_HALF);
-  for (int s = 0; s < SECTORS; s++)
-  {
-   if (m_aThreat[s] < MIN_SPOT_THREAT) continue;
-   float edge = m_aEdge[s];
-   array<ref ACR_BaseDefenceSeg> roads = {};
-   RoadsThisWay(SectorBearing(s), edge - 50, edge + 80, roads);
-   int here = 0;
-   foreach (float by : past)
-   {
-    float ring = edge + by;
-    if (ring < 20 || here >= SPOTS_PER_SECTOR) continue;
-    foreach (float shift : shifts)
-    {
-     if (here >= SPOTS_PER_SECTOR) break;
-     float bearing = SectorBearing(s) + shift;
-     vector place = m_vCenter + Dir(bearing) * ring;
-     place[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]);
-     m_iTried++;
-     if (ACR_BaseDefences.RoadEdgeGap(roads, place) < GUN_ROAD)
-     {
-      m_iNoRoad++;
-      continue;
-     }
-     if (ACR_BaseDefences.BuildingGap(m_aBuildings, place, BUILDING_CLEAR) < BUILDING_CLEAR)
-     {
-      m_iNoBuilding++;
-      continue;
-     }
-     if (DoorGap(place) < DOOR_CLEAR)
-     {
-      m_iNoDoor++;
-      continue;
-     }
-     string why;
-     if (!ACR_FobBuild.FootprintClear(place, ACR_FobDefences.PIECE_RADIUS, null, why, true, ACR_FobDefences.MAX_RISE) || !ACR_BaseDefences.WorldClear(place, bearing, half, null, true))
-     {
-      m_iNoGround++;
-      continue;
-     }
-     ACR_BaseSpot spot = BestFacing(place, bearing);
-     if (!spot)
-     {
-      m_iNoFire++;
-      continue;
-     }
-     m_aSpots.Insert(spot);
-     here++;
-    }
-   }
-  }
- }
-
- // The road segments that way, between two distances (a town has hundreds, and this is asked often).
- protected void RoadsThisWay(float bearing, float nearest, float furthest, notnull array<ref ACR_BaseDefenceSeg> roads)
- {
-  vector way = Dir(bearing);
-  foreach (ACR_BaseDefenceSeg seg : m_aSegs)
-  {
-   vector middle = (seg.m_vA + seg.m_vB) * 0.5 - m_vCenter;
-   middle[1] = 0;
-   float apart = middle.Length();
-   if (apart < nearest - 30 || apart > furthest + 30) continue;
-   if (apart > 40 && ACR_BaseDefences.DotXZ(way, middle * (1.0 / apart)) < 0.5) continue;
-   roads.Insert(seg);
-  }
- }
-
- // The way this place can look: towards the threat, and out from the town on its side of it, so
- // guns on the flanks don't all look the same way; a road in beside it counts for more. What it can hold follows
- // from where the fan is clear: a nest, a bunker, or only a tower's height clears it.
- protected ACR_BaseSpot BestFacing(vector place, float outward)
- {
-  array<float> facings = {};
-  array<float> threats = {};
-  vector looking = Dir(outward);
-  AddFacing(facings, threats, outward, looking);
-  AddFacing(facings, threats, outward + 20, looking);
-  AddFacing(facings, threats, outward - 20, looking);
-  foreach (vector threat : m_aDirs)
-   if (ACR_BaseDefences.DotXZ(threat, looking) > 0.7) AddFacing(facings, threats, ACR_BaseDefences.Bearing(threat), looking);
-  bool gate;
-  foreach (ACR_BaseGate road : m_aGates)
-  {
-   if (vector.DistanceXZ(road.m_vPos, place) > 45) continue;
-   gate = true;
-   AddFacing(facings, threats, ACR_BaseDefences.Bearing(road.m_vOut), looking);
-   threats[threats.Count() - 1] = threats[threats.Count() - 1] + 0.3;
-  }
-  array<int> order = {};
-  while (order.Count() < facings.Count())
-  {
-   int best = -1;
-   foreach (int i, float t : threats)
-   {
-    if (order.Contains(i)) continue;
-    if (best < 0 || t > threats[best]) best = i;
-   }
-   order.Insert(best);
-  }
-  foreach (int first : order)
-  {
-   float facingFirst = facings[first];
-   if (NestFan(place, facingFirst)) return MakeSpot(place, facingFirst, true, BunkerFan(place, facingFirst), TowerFan(place, facingFirst), gate);
-  }
-  // Only the two facing the threat most for what's left: most spots that get here are blocked.
-  for (int k = 0; k < order.Count() && k < 2; k++)
-  {
-   float facing = facings[order[k]];
-   if (BunkerFan(place, facing)) return MakeSpot(place, facing, false, true, TowerFan(place, facing), gate);
-   if (TowerFan(place, facing)) return MakeSpot(place, facing, false, false, true, gate);
-  }
-  return null;
- }
-
- protected void AddFacing(array<float> facings, array<float> threats, float bearing, vector outward)
- {
-  facings.Insert(bearing);
-  threats.Insert(ACR_BaseDefences.ThreatDot(m_aDirs, m_aWeights, Dir(bearing)) + 0.6 * ACR_BaseDefences.DotXZ(Dir(bearing), outward));
- }
-
- protected ACR_BaseSpot MakeSpot(vector place, float facing, bool nest, bool bunker, bool tower, bool gate)
- {
-  ACR_BaseSpot spot = new ACR_BaseSpot();
-  spot.m_vPos = place;
-  spot.m_fFacing = facing;
-  spot.m_iSector = Sector(facing);
-  spot.m_iStands = Sector(ACR_BaseDefences.Bearing(place - m_vCenter));
-  spot.m_bNest = nest;
-  spot.m_bBunker = bunker;
-  spot.m_bTower = tower;
-  spot.m_bGate = gate;
-  vector muzzle = place;
-  float up = UP_TOWER;
-  if (nest) up = UP_NEST;
-  else if (bunker) up = UP_BUNKER;
-  muzzle[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]) + up;
-  // (Rising ground further out than the fan asked can stop this short: at least what the fan found.)
-  spot.m_fReach = Math.Max(Reach(muzzle, facing, OPEN_RANGE), 50);
-  return spot;
- }
-
- // ---------------------------------------------------------------- the planner's positions
+ // ---------------------------------------------------------------- the command post
 
  protected void Refuse(string why)
  {
   m_mRefused.Set(why, m_mRefused.Get(why) + 1);
- }
-
- // Whether the works take a position of the planner's (ACR_BaseDefences.Plan): the hard rules.
- bool Keeps(ACR_BaseDefencePos pos)
- {
-  int bags = 0;
-  vector from = vector.Zero;
-  foreach (int i, vector at : pos.m_aPiecePos)
-  {
-   if (!pos.m_aPieceWall[i]) continue;
-   if (DoorGap(at) < WALL_DOOR)
-   {
-    Refuse("by a door");
-    return false;
-   }
-   bool apart = pos.m_eKind == ACR_EBaseDefenceKind.SQUARE || pos.m_eKind == ACR_EBaseDefenceKind.PERIMETER;
-   if (apart && ACR_BaseDefences.BuildingGap(m_aBuildings, at, WALL_BUILDING) < WALL_BUILDING)
-   {
-    Refuse("against a building");
-    return false;
-   }
-   if (OnRoad(pos, i))
-   {
-    Refuse("on a road");
-    return false;
-   }
-   // The fan starts in front of the middle of the main pieces (a long or round piece, not an end).
-   vector size = ACR_BaseDefences.HalfSize(pos.m_aPiecePrefab[i]);
-   if (size[0] > 1.5)
-   {
-    from = from + at;
-    bags++;
-   }
-  }
-  if (bags == 0)
-  {
-   Refuse("no main sandbags");
-   return false;
-  }
-  from = from * (1.0 / bags) + pos.m_vFacing * 0.8;
-  float middle = 30;
-  float mid = 20;
-  float wide = 10;
-  switch (pos.m_eKind)
-  {
-   case ACR_EBaseDefenceKind.CORNER:
-    // Up a street, houses either side.
-    middle = 15;
-    mid = 10;
-    wide = 0;
-    break;
-   case ACR_EBaseDefenceKind.SQUARE:
-    middle = 25;
-    mid = 12;
-    wide = 0;
-    break;
-  }
-  if (!FanClear(from, UP_BAGS, ACR_BaseDefences.Bearing(pos.m_vFacing), middle, mid, wide))
-  {
-   Refuse("no line of fire");
-   return false;
-  }
-  DropRoadDressing(pos);
-  return true;
- }
-
- // A sandbag piece's middle or tips on the road. (Half a metre over a road's edge is the road's
- // shoulder: its width is a spline's, not a kerb's.)
- protected bool OnRoad(ACR_BaseDefencePos pos, int i)
- {
-  vector at = pos.m_aPiecePos[i];
-  if (ACR_BaseDefences.RoadEdgeGap(m_aSegs, at) < 0) return true;
-  vector size = ACR_BaseDefences.HalfSize(pos.m_aPiecePrefab[i]);
-  vector across = ACR_BaseDefences.RightOf(Dir(pos.m_aPieceYaw[i])) * size[0];
-  return ACR_BaseDefences.RoadEdgeGap(m_aSegs, at + across) < -0.5 || ACR_BaseDefences.RoadEdgeGap(m_aSegs, at - across) < -0.5;
- }
-
- protected void DropRoadDressing(ACR_BaseDefencePos pos)
- {
-  for (int i = pos.m_aPiecePos.Count() - 1; i >= 0; i--)
-  {
-   if (!pos.m_aPieceWall[i] && ACR_BaseDefences.RoadEdgeGap(m_aSegs, pos.m_aPiecePos[i]) < 0.3) pos.RemovePiece(i);
-  }
- }
-
- void KeepOnly(notnull array<ref ACR_BaseDefencePos> positions)
- {
-  for (int i = positions.Count() - 1; i >= 0; i--)
-   if (!Keeps(positions[i])) positions.Remove(i);
  }
 
  // A command post's long sandbags face the side they stand on. One that faces another building a
@@ -843,16 +638,9 @@ class ACR_BaseSurvey : Managed
   return string.Format("%1: %2 buildings, %3 doors, %4 wall pieces, %5 of the map's works, %6 of ours, %7 roads in | weakest: %8", m_Base.m_sName, m_iTown, m_aDoors.Count(), m_iWallPieces, m_iMapWorks, m_iOurWorks, m_aGates.Count(), WorstWords(3));
  }
 
- string SpotWords()
+ string FitWords()
  {
-  string where = "";
-  for (int s = 0; s < SECTORS; s++)
-  {
-   int here = 0;
-   foreach (ACR_BaseSpot spot : m_aSpots) if (Sector(ACR_BaseDefences.Bearing(spot.m_vPos - m_vCenter)) == s) here++;
-   if (here > 0) where += string.Format(" %1:%2", (int)SectorBearing(s), here);
-  }
-  return string.Format("%1 places looked at, %2 fit (by bearing%3): %4 on a road, %5 by a building, %6 by a door, %7 ground or something solid, %8 no line of fire", m_iTried, m_aSpots.Count(), where, m_iNoRoad, m_iNoBuilding, m_iNoDoor, m_iNoGround, m_iNoFire);
+  return WorstWords(2);
  }
 
  string RefusedWords()

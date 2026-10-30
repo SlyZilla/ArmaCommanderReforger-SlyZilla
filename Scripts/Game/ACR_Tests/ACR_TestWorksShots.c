@@ -1,7 +1,8 @@
 // -acrWorksShotsTest 1 (a game client, not srv; ~6 min, Kolguyev): Fortify a whole base as it stands, for
-// a look. Builds all three tiers on two towns at once, then photographs each town from above and each
-// site twice: from behind it along the way it faces (does it look at anything?) and from straight
-// above (how it sits among fences and buildings). Daylight. Shots: $profile:acr-shots/works_*.
+// a look. Builds all three tiers on two towns at once, then photographs each town low and wide from
+// its threatened side, each line from its end along it and from out in front at a man-on-a-roof height
+// (does it read as one thing?), and each gun and the command post from behind along the way it faces and
+// from straight above. Daylight. Shots: $profile:acr-shots/works_*.
 class ACR_TestWorksShots
 {
  static const float STEP_S = 4; // for the world to stream in round the camera
@@ -71,11 +72,18 @@ class ACR_TestWorksShots
   string tag = town.m_sName;
   tag.Replace(" ", "");
   vector center = town.GetOrigin();
-  AddShot(center + Vector(0, 180, -130), Vector(0, -54, 0), string.Format("works_%1_overview", tag), "the whole town");
   ACR_BaseWork work = ACR_BaseWorks.WorkFor(town, side);
+  // Low and wide: from out in front of the worst line, looking in at the town over it.
+  vector look = Vector(0, 0, 1);
+  if (!work.m_aLines.IsEmpty()) look = work.m_aLines[0].m_vFacing;
+  float towards = ACR_BaseDefences.Bearing(look * -1);
+  AddShot(center + look * 140 + Vector(0, 40, 0), Vector(towards, -14, 0), string.Format("works_%1_overview", tag), "the whole town, low");
+  foreach (int l, ACR_BaseLine line : work.m_aLines) LineShots(line, tag, l);
   foreach (int i, ACR_BaseSite site : work.m_aSites)
   {
    if (!site.m_bBuilt) continue;
+   // A line's stretches are seen in its shots.
+   if (site.m_Plan && site.m_Plan.m_eKind != ACR_EBaseDefenceKind.POST) continue;
    float bearing = site.m_fYaw;
    float rad = bearing * Math.DEG2RAD;
    vector along = Vector(Math.Sin(rad), 0, Math.Cos(rad));
@@ -84,6 +92,24 @@ class ACR_TestWorksShots
    AddShot(site.m_vPos - along * 13 + Vector(0, 5, 0), Vector(bearing, -14, 0), name + "_behind", words);
    AddShot(site.m_vPos + Vector(0, 38, 0), Vector(bearing, -88, 0), name + "_above", words);
   }
+ }
+
+ // Along a line from just beyond its end, a little behind and above it; and from out in front.
+ protected static void LineShots(ACR_BaseLine line, string tag, int index)
+ {
+  int count = line.m_aPieces.Count();
+  if (count == 0) return;
+  ACR_LinePiece first = line.m_aPieces[0];
+  ACR_LinePiece last = line.m_aPieces[count - 1];
+  string words = string.Format("line %1, tier %2: %3 pieces, %4 m, ends %5 and %6", index, line.m_iTier, count, (int)line.m_fLength, line.m_sEndA, line.m_sEndB);
+  vector along = ACR_BaseDefences.FlatDir(first.m_vPos, last.m_vPos);
+  float way = ACR_BaseDefences.Bearing(along);
+  string name = string.Format("works_%1_line%2_t%3", tag, index, line.m_iTier);
+  vector eye = first.m_vPos - along * 8 - line.m_vFacing * 4 + Vector(0, 5, 0);
+  AddShot(eye, Vector(way, -9, 0), name + "_along", words);
+  float back = ACR_BaseDefences.Bearing(line.m_vFacing * -1);
+  float stand = Math.Max(line.m_fLength * 0.55, 22);
+  AddShot(line.m_vMiddle + line.m_vFacing * stand + Vector(0, 7, 0), Vector(back, -9, 0), name + "_front", words);
  }
 
  protected static void AddShot(vector eye, vector angles, string name, string words)
@@ -113,7 +139,7 @@ class ACR_TestWorksShots
    manual.SetInputEnabled(false);
    manual.ClearEventMask(EntityEvent.POSTFRAME);
   }
-  s_Camera.SetVerticalFOV(62);
+  s_Camera.SetVerticalFOV(70);
   s_Camera.SetNearPlane(0.3);
   s_Camera.SetFarPlane(6000);
   GetGame().GetCameraManager().SetCamera(s_Camera);
