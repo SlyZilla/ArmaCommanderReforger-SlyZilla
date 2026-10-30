@@ -11,7 +11,7 @@ class ACR_TestBaseWorks
  static const ResourceName SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName ENEMY = "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et";
  static const string NAME = "Works Squad";
- static const int STEP_LIMIT = 300; // s a tier may take (its checkpoint can be 400 m out)
+ static const int STEP_LIMIT = 300; // s a tier may take
  static const int CHECKS = 38;
  protected static int s_iStep;
  protected static int s_iStepAt;
