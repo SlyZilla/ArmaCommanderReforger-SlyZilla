@@ -141,6 +141,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRecrewTest", flag)) mode = MODE_RECREW;
   if (System.GetCLIParam("acrMortarGiveUpTest", flag)) mode = MODE_MORTARGIVEUP;
   if (System.GetCLIParam("acrContentPackTest", flag)) mode = MODE_CONTENTPACK;
+  if (System.GetCLIParam("acrContentPackWinterTest", flag)) mode = MODE_CONTENTPACK;
   if (System.GetCLIParam("acrRoadHopsTest", flag)) mode = MODE_ROADHOPS;
   if (System.GetCLIParam("acrRoadHopsOffTest", flag)) mode = MODE_ROADHOPS;
   if (System.GetCLIParam("acrRTSOverlayTest", flag)) mode = MODE_RTSOVERLAY;

@@ -118,6 +118,24 @@ class ACR_TestContentPack
   // The pack's infantry: period soldiers in a formation of 8.
   BuyInfantry(manager, "US", "Reserve Rifle Squad");
   BuyInfantry(manager, "USSR", "Reservist Squad");
+  BuyInfantry(manager, "US", "Night Scout Team", 4);
+  // -acrContentPackWinterTest 1 (preset contentpackwinter): a cold map, Soviet soldiers in the heavy coat.
+  if (System.IsCLIParam("acrContentPackWinterTest"))
+  {
+   ACR_RequisitionEntry winter = new ACR_RequisitionEntry();
+   winter.Set("Winter test squad", "{8DE0C0830FE0C33D}Prefabs/Groups/OPFOR/Group_USSR_Base.et", "", 10, 1);
+   winter.m_aSoldiers = {
+    "{5436629450D8387A}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_SL.et",
+    "{DCB41B3746FDD1BE}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_Rifleman.et",
+    "{23ADBBC31B6A3DC6}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_AR.et",
+    "{96C784C502AC37DA}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_MG.et",
+    "{BF643BE4ADBDFDD3}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_LAT.et",
+    "{1C78331E156A3D65}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_AT.et",
+    "{AB9726163EC1BD81}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_Medic.et",
+    "{8E0FE664CE7D1CA9}Prefabs/Characters/Factions/OPFOR/USSR_Army/Character_USSR_GL.et"
+   };
+   SpawnSquad(manager, "USSR", winter);
+  }
   // An FIA squad of vanilla roles: the pack swaps leader, sharpshooter and riflemen.
   ACR_RequisitionEntry fia = new ACR_RequisitionEntry();
   fia.Set("FIA test squad", "{8DE0C0830FE0C33D}Prefabs/Groups/OPFOR/Group_USSR_Base.et", "", 10, 1);
@@ -151,14 +169,14 @@ class ACR_TestContentPack
   s_Sides.Insert(side);
  }
 
- protected static void BuyInfantry(ACR_Manager manager, string side, string name)
+ protected static void BuyInfantry(ACR_Manager manager, string side, string name, int size = 8)
  {
   array<ref ACR_RequisitionEntry> entries = {};
   ACR_FactionCatalog.BuildRequisitions(side, ACR_FactionSettings.Find(side), entries);
   ACR_RequisitionEntry entry;
   foreach (ACR_RequisitionEntry candidate : entries)
    if (candidate.m_sName == name) entry = candidate;
-  ACR_TestRegress.Check("content: " + side + " sells the " + name, entry && entry.m_aSoldiers && entry.m_aSoldiers.Count() == 8, name);
+  ACR_TestRegress.Check("content: " + side + " sells the " + name, entry && entry.m_aSoldiers && entry.m_aSoldiers.Count() == size, name);
   s_iExpected++;
   if (entry) SpawnSquad(manager, side, entry);
  }
@@ -247,7 +265,17 @@ class ACR_TestContentPack
    string flag;
    string leaf = Leaf(primary);
    if (mags <= 0 && (leaf.Contains("G3") || leaf.Contains("Uzi") || leaf.Contains("VZ58"))) flag = "NOAMMO";
-   report += string.Format(" %1:%2%3", leaf, mags, flag);
+   // Its optic, if any (night scouts: the PVS-4).
+   string optic = "";
+   IEntity part = primary.GetChildren();
+   while (part)
+   {
+    string partLeaf = Leaf(part);
+    if (partLeaf.Contains("Optic")) optic = "+" + partLeaf;
+    part = part.GetSibling();
+   }
+   if (leaf.Contains("PVS4") && optic.IsEmpty()) flag += "NOOPTIC";
+   report += string.Format(" %1%2:%3%4", leaf, optic, mags, flag);
   }
   return report;
  }
@@ -282,6 +310,29 @@ class ACR_TestContentPack
    PrintFormat("[ACR] CONTENTTEST squad %1: %2 men, %3 period:%4%5", squad.m_sName, men, period, roster, Uniforms(squad.m_Group));
    string armed = Weapons(squad.m_Group);
    PrintFormat("[ACR] CONTENTTEST weapons %1:%2", squad.m_sName, armed);
+   if (squad.m_sName == "Night Scout Team")
+   {
+    ACR_TestRegress.Check("content: night scouts carry the M16A2 with the AN/PVS-4", men == 4 && armed.Contains("PVS4") && !armed.Contains("NOOPTIC"), armed);
+    s_iExpected++;
+    continue;
+   }
+   if (squad.m_sName == "Winter test squad")
+   {
+    string worn = Uniforms(squad.m_Group);
+    array<string> parts = {};
+    worn.Split(" | ", parts, true);
+    int coats;
+    int emptyCoats;
+    foreach (string part : parts)
+    {
+     if (!part.Contains("ARY_Jacket_M88_Heavy")) continue;
+     coats++;
+     if (part.Contains("items:0")) emptyCoats++;
+    }
+    ACR_TestRegress.Check("content: on a cold map Soviet soldiers wear the heavy coat with their kit", men == 8 && coats == 8 && emptyCoats == 0, string.Format("%1 coats of %2 men, %3 with empty pockets", coats, men, emptyCoats));
+    s_iExpected++;
+    continue;
+   }
    if (squad.m_sFaction == "FIA")
    {
     // Its recipe, not who is still standing: it spawns beside another side's base and fights.

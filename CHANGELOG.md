@@ -14,7 +14,7 @@
 
 ### Mod support
 
-- Content packs (#108): an optional add-on can now bring vehicle and kit mods into the buy lists cleanly. Vehicle mods add every variant they ship to the game's vehicle lists (test vehicles, fictional upgrades, copies crewed by the other side), and ACA used to offer them all. A plugged-in pack decides which of those stay, adds its own vetted entries with a price and role, and names the crews: a bought vehicle from the pack is crewed by the buying side's own crewmen, with a driver even where the mod left the seat empty. Without a pack nothing changes. The first pack, the Cold War pack, is a separate add-on.
+- Content packs (#108): an optional add-on can now bring vehicle and kit mods into the buy lists cleanly. Vehicle mods add every variant they ship to the game's vehicle lists (test vehicles, fictional upgrades, copies crewed by the other side), and ACA used to offer them all. A plugged-in pack decides which of those stay, adds its own vetted entries with a price and role, and names the crews: a bought vehicle from the pack is crewed by the buying side's own crewmen, with a driver even where the mod left the seat empty. A pack can also swap the soldiers a side spawns (squads, riders, garrisons and the insurgent cells drawn from them) and its command unit, so era kit reaches the whole army. Without a pack nothing changes. The first pack, the Cold War pack, is a separate add-on.
 
 ### Fixes
 
