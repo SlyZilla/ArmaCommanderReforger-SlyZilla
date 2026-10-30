@@ -42,7 +42,7 @@ class ACR_ContentSocket : Managed
  bool AllowsCatalogEntry(string factionKey, EEntityCatalogType type, ResourceName prefab) { return true; }
 
  // The pack's own buy-list entries for a side, added after the catalog ones (auto-filled lists only:
- // a mission's own list stays as authored). Use AddVehicle.
+ // a mission's own list stays as authored). Use AddVehicle and AddFormation.
  void AddRequisitions(string factionKey, array<ref ACR_RequisitionEntry> result) {}
 
  // The crewman (or pilot) for a seat of a vehicle this side bought; "" keeps ACA's choice.
@@ -64,6 +64,22 @@ class ACR_ContentSocket : Managed
   item.m_bSquadCarrier = (flags & ACR_ESocketVehicle.SQUAD_CARRIER) != 0;
   item.m_bAircraft = (flags & ACR_ESocketVehicle.AIRCRAFT) != 0;
   item.m_bRare = (flags & ACR_ESocketVehicle.RARE) != 0 || item.m_bAircraft;
+  result.Insert(item);
+  return item;
+ }
+
+ // A buyable infantry formation: these soldiers, in this order, spawned into the side's base
+ // group (as ACR_InfantryCatalog does); they are also its reinforcement recipe. Skipped when the
+ // list already has an entry of that name.
+ static ACR_RequisitionEntry AddFormation(array<ref ACR_RequisitionEntry> result, string name, ResourceName group, int cost, ACR_EFormation formation, array<ResourceName> soldiers)
+ {
+  foreach (ACR_RequisitionEntry existing : result)
+   if (existing.m_sName == name) return null;
+  ACR_RequisitionEntry item = new ACR_RequisitionEntry();
+  item.Set(name, group, "", cost, 4);
+  item.m_eFormation = formation;
+  item.m_aSoldiers = {};
+  item.m_aSoldiers.Copy(soldiers);
   result.Insert(item);
   return item;
  }

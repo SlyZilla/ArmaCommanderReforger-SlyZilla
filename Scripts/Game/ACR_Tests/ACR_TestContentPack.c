@@ -7,6 +7,7 @@ class ACR_TestContentPack
 {
  static ref array<ref ACR_PendingPurchase> s_Bought = {};
  static ref array<string> s_Sides = {};
+ static ref array<ref ACR_PendingPurchase> s_Squads = {};
  static int s_iExpected;
 
  static void Run(ACR_TestHarness h, int tick)
@@ -67,6 +68,25 @@ class ACR_TestContentPack
   ACR_TestRegress.Check("content: unvetted mod vehicles stay out of the US list", foreign == 0, foreign.ToString());
   s_iExpected++;
 
+  // Kit mods add their soldiers to the catalogs too: garrisons stay vanilla.
+  array<string> armies = {"US", "USSR"};
+  foreach (string army : armies)
+  {
+   array<ResourceName> pool = manager.m_Bases.GetFaction(army).m_aGarrison;
+   int fromMods;
+   foreach (ResourceName soldier : pool)
+   {
+    string soldierPath = soldier;
+    if (soldierPath.Contains("/ARY_")) fromMods++;
+   }
+   ACR_TestRegress.Check("content: " + army + " garrisons use only vanilla soldiers", !pool.IsEmpty() && fromMods == 0, string.Format("%1 of %2 from mods", fromMods, pool.Count()));
+   s_iExpected++;
+  }
+
+  // The pack's infantry: period soldiers in a formation of 8.
+  BuyInfantry(manager, "US", "Reserve Rifle Squad");
+  BuyInfantry(manager, "USSR", "Reservist Squad");
+
   // Buy the pack's vehicles whose own crews are wrong: Zagoria (USSR riflemen whoever owns it)
   // and WCS (M113 riflemen).
   Buy(manager, "US", "Leopard test", "{A4EA6DD24C1ED74F}Leopard/Leopard1_grn.et", 0);
@@ -93,8 +113,57 @@ class ACR_TestContentPack
   s_Sides.Insert(side);
  }
 
+ protected static void BuyInfantry(ACR_Manager manager, string side, string name)
+ {
+  array<ref ACR_RequisitionEntry> entries = {};
+  ACR_FactionCatalog.BuildRequisitions(side, ACR_FactionSettings.Find(side), entries);
+  ACR_RequisitionEntry entry;
+  foreach (ACR_RequisitionEntry candidate : entries)
+   if (candidate.m_sName == name) entry = candidate;
+  ACR_TestRegress.Check("content: " + side + " sells the " + name, entry && entry.m_aSoldiers && entry.m_aSoldiers.Count() == 8, name);
+  s_iExpected++;
+  if (!entry) return;
+  ACR_Base home;
+  foreach (ACR_Base candidate : ACR_Base.s_All)
+   if (candidate.m_sOwner == side) { home = candidate; break; }
+  if (!home) return;
+  vector at = manager.ClearSpotNear(home, 70, 120, 6);
+  ACR_PendingPurchase purchase = new ACR_PendingPurchase();
+  purchase.m_sName = name;
+  purchase.m_sFaction = side;
+  purchase.m_Entry = entry;
+  manager.m_sSpawningFaction = side;
+  bool ok = manager.m_Requisition.SpawnParts(purchase, entry.m_sGroup, "", false, "", at, at);
+  manager.m_sSpawningFaction = "";
+  PrintFormat("[ACR] CONTENTTEST bought %1 for %2: %3 %4", name, side, ok, purchase.m_sError);
+  s_Squads.Insert(purchase);
+ }
+
  protected static void Crews()
  {
+  foreach (ACR_PendingPurchase squad : s_Squads)
+  {
+   int men;
+   int period;
+   string roster;
+   if (squad.m_Group)
+   {
+    array<AIAgent> agents = {};
+    squad.m_Group.GetAgents(agents);
+    foreach (AIAgent agent : agents)
+    {
+     IEntity body = agent.GetControlledEntity();
+     if (!body || !body.GetPrefabData()) continue;
+     men++;
+     string bodyPath = body.GetPrefabData().GetPrefabName();
+     if (bodyPath.Contains("/ARY_")) period++;
+     roster += " " + FilePath.StripExtension(FilePath.StripPath(bodyPath));
+    }
+   }
+   PrintFormat("[ACR] CONTENTTEST squad %1: %2 men, %3 period:%4", squad.m_sName, men, period, roster);
+   ACR_TestRegress.Check("content: " + squad.m_sName + " spawns 8 men with period kit", men == 8 && period >= 3, string.Format("%1 men, %2 period", men, period));
+   s_iExpected++;
+  }
   foreach (int i, ACR_PendingPurchase purchase : s_Bought)
   {
    string side = s_Sides[i];
