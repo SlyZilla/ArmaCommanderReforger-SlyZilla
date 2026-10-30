@@ -208,7 +208,7 @@ modded class SCR_PlayerController
    debugBox.GetScreenPos(dx, dy);
    floor = Math.Min(floor, ws.DPIUnscale(dy) - 10);
   }
-  m_ACR_SquadsList.Place(110, top);
+  m_ACR_SquadsList.Place(ACR_UiPrefs.s_fFeedX, top);
   m_ACR_SquadsList.SetFar(m_ACR_Panel.DeclIntelCollapsed());
   int now = System.GetTickCount();
   if (now - m_iACR_SquadsListAt < SQUADS_LIST_MS) return;
