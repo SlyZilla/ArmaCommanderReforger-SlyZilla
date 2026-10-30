@@ -817,7 +817,9 @@ class ACR_TestBaseWorks
   }
   bool tower = site.m_eKind == ACR_EBaseSite.BUNKER && site.m_iSpot == 1;
   string detail;
-  if (!tower && !ACR_Fortify.LineOfFireAt(site.m_vPos, site.m_fYaw, null, detail))
+  vector gunAt = site.m_vPos;
+  if (site.m_eKind == ACR_EBaseSite.NEST) gunAt = site.m_vPos + ACR_BaseSurvey.Dir(site.m_fYaw) * 1.1;
+  if (!tower && !ACR_Fortify.LineOfFireAt(gunAt, site.m_fYaw, null, detail))
   {
    s_iFire++;
    PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: %4", base.m_sName, what, site.m_vPos, detail);

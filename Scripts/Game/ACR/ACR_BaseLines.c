@@ -1173,18 +1173,26 @@ class ACR_BaseLines
    tip = last.m_vFrom;
   }
   vector facing = last.m_vFacing;
-  array<vector> places = {tip + out_way * 10, tip + out_way * 14, tip + out_way * 8 - facing * 8};
+  array<float> forwards = {10, 14, 8};
+  array<float> backs = {0, 8};
   array<float> turns = {0, 25, 45};
-  foreach (vector place : places)
+  int found = 0;
+  foreach (float back : backs)
   {
-   foreach (float turn : turns)
+   foreach (float forward : forwards)
    {
-    // Turned out, across the front of the line's end.
-    vector look = facing * Math.Cos(turn * Math.DEG2RAD) + out_way * Math.Sin(turn * Math.DEG2RAD);
-    ACR_BaseSpot spot = MakeSpot(work, survey, place, ACR_BaseDefences.Bearing(look), false);
-    if (!spot) continue;
-    spots.Insert(spot);
-    break;
+    if (found >= 4) return;
+    vector place = tip + out_way * forward - facing * back;
+    foreach (float turn : turns)
+    {
+     // Turned out, across the front of the line's end.
+     vector look = facing * Math.Cos(turn * Math.DEG2RAD) + out_way * Math.Sin(turn * Math.DEG2RAD);
+     ACR_BaseSpot spot = MakeSpot(work, survey, place, ACR_BaseDefences.Bearing(look), false);
+     if (!spot) continue;
+     spots.Insert(spot);
+     found++;
+     break;
+    }
    }
   }
  }
@@ -1192,16 +1200,17 @@ class ACR_BaseLines
  protected static void BehindSpots(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseLine line, notnull array<ref ACR_BaseSpot> spots)
  {
   int count = line.m_aPieces.Count();
-  array<float> shares = {0.2, 0.35, 0.5, 0.65, 0.8};
-  array<float> backs = {12, 17};
-  foreach (float share : shares)
+  array<float> backs = {12, 16};
+  int found = 0;
+  for (int i = 1; i < count && found < 6; i += 2)
   {
-   ACR_LinePiece piece = line.m_aPieces[(int)(count * share)];
+   ACR_LinePiece piece = line.m_aPieces[i];
    foreach (float back : backs)
    {
     ACR_BaseSpot spot = MakeSpot(work, survey, piece.m_vPos - piece.m_vFacing * back, ACR_BaseDefences.Bearing(piece.m_vFacing), true);
     if (!spot) continue;
     spots.Insert(spot);
+    found++;
     break;
    }
   }

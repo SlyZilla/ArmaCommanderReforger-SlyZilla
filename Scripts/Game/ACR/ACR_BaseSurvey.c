@@ -566,7 +566,9 @@ class ACR_BaseSurvey : Managed
  static bool NestFan(vector place, float bearing)
  {
   string why;
-  return FanClear(place, UP_NEST, bearing, 45, 30, 22) && ACR_Fortify.LineOfFireAt(place, bearing, null, why);
+  // The gun stands 1.1 m forward of the nest's middle (measured): the same trace the built gun gets.
+  vector gun = place + Dir(bearing) * 1.1;
+  return FanClear(place, UP_NEST, bearing, 45, 30, 22) && ACR_Fortify.LineOfFireAt(gun, bearing, null, why);
  }
 
  static bool BunkerFan(vector place, float bearing)
