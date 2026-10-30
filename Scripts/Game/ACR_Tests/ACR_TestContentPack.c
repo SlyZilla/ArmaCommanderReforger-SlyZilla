@@ -53,8 +53,9 @@ class ACR_TestContentPack
    }
    PrintFormat("[ACR] CONTENTTEST %1: %2 entries, pack vehicles%3", side, entries.Count(), report);
    ACR_TestRegress.Check("content: " + side + " buy list prefabs all load", invalid == 0, report);
-   if (side == "FIA") ACR_TestRegress.Check("content: FIA gets no pack vehicles", packed == 0, report);
-   else ACR_TestRegress.Check("content: " + side + " sells the pack's vehicles", packed >= 5, string.Format("%1:%2", packed, report));
+   int wanted = 5;
+   if (side == "FIA") wanted = 3; // technicals
+   ACR_TestRegress.Check("content: " + side + " sells the pack's vehicles", packed >= wanted, string.Format("%1:%2", packed, report));
    s_iExpected += 2;
   }
   // Catalog vehicles a mod added are gone from the lists (the mods add dozens to each side).
@@ -67,6 +68,18 @@ class ACR_TestContentPack
    if (path.Contains("Tracked/BFV") || path.Contains("SightDebug") || path.Contains("Leopard1_grn_RS80Z") || path.Contains("1a5MV")) foreign++;
   }
   ACR_TestRegress.Check("content: unvetted mod vehicles stay out of the US list", foreign == 0, foreign.ToString());
+  s_iExpected++;
+
+  // FIA garrisons (and so FIA cells) draw the pack's guerrilla kits.
+  int guerrillas;
+  array<ResourceName> fiaPool = {};
+  ACR_FactionCatalog.BuildGarrisonPool("FIA", ACR_FactionSettings.Find("FIA"), fiaPool);
+  foreach (ResourceName fiaSoldier : fiaPool)
+  {
+   string fiaPath = fiaSoldier;
+   if (fiaPath.Contains("CW_FIA_")) guerrillas++;
+  }
+  ACR_TestRegress.Check("content: FIA garrisons draw the pack's guerrilla kits", guerrillas > 0, string.Format("%1 of %2", guerrillas, fiaPool.Count()));
   s_iExpected++;
 
   // Kit mods add their soldiers to the catalogs too: garrisons stay vanilla.
@@ -105,6 +118,12 @@ class ACR_TestContentPack
   // The pack's infantry: period soldiers in a formation of 8.
   BuyInfantry(manager, "US", "Reserve Rifle Squad");
   BuyInfantry(manager, "USSR", "Reservist Squad");
+  // An FIA squad of vanilla roles: the pack swaps leader, sharpshooter and riflemen.
+  ACR_RequisitionEntry fia = new ACR_RequisitionEntry();
+  fia.Set("FIA test squad", "{8DE0C0830FE0C33D}Prefabs/Groups/OPFOR/Group_USSR_Base.et", "", 10, 1);
+  fia.m_aSoldiers = {"{677B515F119222C2}Prefabs/Characters/Factions/INDFOR/FIA/Character_FIA_SL.et", "{CE33AB22F61F3365}Prefabs/Characters/Factions/INDFOR/FIA/Character_FIA_Sharpshooter.et"};
+  for (int r = 0; r < 8; r++) fia.m_aSoldiers.Insert("{84B40583F4D1B7A3}Prefabs/Characters/Factions/INDFOR/FIA/Character_FIA_Rifleman.et");
+  SpawnSquad(manager, "FIA", fia);
 
   // Buy the pack's vehicles whose own crews are wrong: Zagoria (USSR riflemen whoever owns it)
   // and WCS (M113 riflemen).
@@ -141,12 +160,26 @@ class ACR_TestContentPack
    if (candidate.m_sName == name) entry = candidate;
   ACR_TestRegress.Check("content: " + side + " sells the " + name, entry && entry.m_aSoldiers && entry.m_aSoldiers.Count() == 8, name);
   s_iExpected++;
-  if (!entry) return;
+  if (entry) SpawnSquad(manager, side, entry);
+ }
+
+ protected static void SpawnSquad(ACR_Manager manager, string side, ACR_RequisitionEntry entry)
+ {
+  string name = entry.m_sName;
   ACR_Base home;
   foreach (ACR_Base candidate : ACR_Base.s_All)
    if (candidate.m_sOwner == side) { home = candidate; break; }
+  // A side without a base on the test map (FIA) spawns well away from any base, out of the fight.
+  float near = 70;
+  float far = 120;
+  if (!home && !ACR_Base.s_All.IsEmpty())
+  {
+   home = ACR_Base.s_All[0];
+   near = 600;
+   far = 900;
+  }
   if (!home) return;
-  vector at = manager.ClearSpotNear(home, 70, 120, 6);
+  vector at = manager.ClearSpotNear(home, near, far, 6);
   ACR_PendingPurchase purchase = new ACR_PendingPurchase();
   purchase.m_sName = name;
   purchase.m_sFaction = side;
@@ -188,6 +221,37 @@ class ACR_TestContentPack
   return report;
  }
 
+ // Each man's primary weapon and how many of its magazines he carries (UNARMED / NOAMMO flag a problem).
+ protected static string Weapons(SCR_AIGroup group)
+ {
+  string report;
+  if (!group) return report;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body) continue;
+   BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(body.FindComponent(BaseWeaponManagerComponent));
+   SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(body.FindComponent(SCR_InventoryStorageManagerComponent));
+   if (!weapons || !inventory) continue;
+   array<WeaponSlotComponent> slots = {};
+   weapons.GetWeaponsSlots(slots);
+   IEntity primary;
+   foreach (WeaponSlotComponent slot : slots)
+    if (slot.GetWeaponSlotIndex() == 0) primary = slot.GetWeaponEntity();
+   if (!primary) { report += " UNARMED"; continue; }
+   BaseWeaponComponent weapon = BaseWeaponComponent.Cast(primary.FindComponent(BaseWeaponComponent));
+   int mags = -1;
+   if (weapon) mags = inventory.GetMagazineCountByWeapon(weapon);
+   string flag;
+   string leaf = Leaf(primary);
+   if (mags <= 0 && (leaf.Contains("G3") || leaf.Contains("Uzi") || leaf.Contains("VZ58"))) flag = "NOAMMO";
+   report += string.Format(" %1:%2%3", leaf, mags, flag);
+  }
+  return report;
+ }
+
  static string Leaf(IEntity entity)
  {
   if (!entity || !entity.GetPrefabData()) return "none";
@@ -216,7 +280,25 @@ class ACR_TestContentPack
     }
    }
    PrintFormat("[ACR] CONTENTTEST squad %1: %2 men, %3 period:%4%5", squad.m_sName, men, period, roster, Uniforms(squad.m_Group));
-   ACR_TestRegress.Check("content: " + squad.m_sName + " spawns 8 men with period kit", men == 8 && period >= 3, string.Format("%1 men, %2 period", men, period));
+   string armed = Weapons(squad.m_Group);
+   PrintFormat("[ACR] CONTENTTEST weapons %1:%2", squad.m_sName, armed);
+   if (squad.m_sFaction == "FIA")
+   {
+    // Its recipe, not who is still standing: it spawns beside another side's base and fights.
+    int slots;
+    int kitted;
+    if (squad.m_Group && squad.m_Group.m_aUnitPrefabSlots)
+     foreach (ResourceName slot : squad.m_Group.m_aUnitPrefabSlots)
+     {
+      slots++;
+      string slotPath = slot;
+      if (slotPath.Contains("CW_FIA_")) kitted++;
+     }
+    ACR_TestRegress.Check("content: FIA squad members get the pack's guerrilla kits", slots == 10 && kitted >= 6 && men >= 8, string.Format("%1 slots, %2 kitted, %3 alive", slots, kitted, men));
+    ACR_TestRegress.Check("content: FIA guerrillas carry their weapons with ammunition", !armed.Contains("NOAMMO") && !armed.Contains("UNARMED"), armed);
+    s_iExpected++;
+   }
+   else ACR_TestRegress.Check("content: " + squad.m_sName + " spawns 8 men with period kit", men == 8 && period >= 3, string.Format("%1 men, %2 period", men, period));
    s_iExpected++;
   }
   foreach (int i, ACR_PendingPurchase purchase : s_Bought)
