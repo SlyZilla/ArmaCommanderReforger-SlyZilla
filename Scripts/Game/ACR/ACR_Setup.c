@@ -237,7 +237,7 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks"};
   foreach (string key : keys)
   {
    if (key == "seed" && !generated && Current("quickstart") == "off") continue;
@@ -326,6 +326,7 @@ class ACR_Setup
   if (key == "minesai") return "AI commanders lay mines";
   if (key == "fortify") return "Fortify orders";
   if (key == "fortifyai") return "AI commanders fortify";
+  if (key == "baseworks") return "Fortify a whole base";
   return key;
  }
 
@@ -388,7 +389,7 @@ class ACR_Setup
   else if (key == "depotcapacity") values = {"0", "1000", "2000", "4000"};
   else if (key == "servicecost") values = {"5", "10", "20"};
   else if (key == "rpservice") values = {"0", "3", "5"};
-  else if (key == "mines" || key == "fortify") values = {"1", "0"};
+  else if (key == "mines" || key == "fortify" || key == "baseworks") values = {"1", "0"};
   else if (key == "minesreal" || key == "minesai" || key == "fortifyai") values = {"0", "1"};
   return values;
  }
@@ -428,6 +429,7 @@ class ACR_Setup
   if (key == "minesai") return "acrMinesAI";
   if (key == "fortify") return "acrFortify";
   if (key == "fortifyai") return "acrFortifyAI";
+  if (key == "baseworks") return "acrBaseWorks";
   return "";
  }
 
@@ -471,7 +473,7 @@ class ACR_Setup
    if (key == "depotcapacity") return "2000";
    if (key == "servicecost") return "10";
    if (key == "rpservice") return "3";
-   if (key == "mines" || key == "doctrineadapt" || key == "fortify") return "1";
+   if (key == "mines" || key == "doctrineadapt" || key == "fortify" || key == "baseworks") return "1";
    if (key == "minesreal" || key == "minesai" || key == "fortifyai") return "0";
    if (key == "aibuild") return "0";
    if (key == "capscale") return "0";
@@ -562,7 +564,7 @@ class ACR_Setup
   if (key == "declutter") return "on";
   if (key == "minesreal" && value == "1") return "dangerous to all";
   if (key == "minesreal") return "safe for our AI";
-  if (key == "shared" || key == "fobrelay" || key == "mines" || key == "minesai" || key == "fortify" || key == "fortifyai")
+  if (key == "shared" || key == "fobrelay" || key == "mines" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks")
   {
    if (value == "0") return "off";
    return "on";
@@ -1001,7 +1003,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "holdguns" || key == "declutter" || key == "aibuild" || key == "capscale") return 1;
   if (key == "pricing" || key == "startrp" || key == "income" || key == "companywest" || key == "companyeast") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
-  if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai") return 4;
+  if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks") return 4;
   return 0;
  }
 

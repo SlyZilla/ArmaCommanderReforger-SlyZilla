@@ -1737,6 +1737,7 @@ class ACR_AICommander : Managed
    }
    if (!base.m_sOwner.IsEmpty()) defence += base.m_iGarrisonLeft;
    if (!base.m_sOwner.IsEmpty()) defence += FortifiedCredit(base);
+   if (ours) defence += ACR_BaseWorks.Credit(base);
    if (!ours && !base.m_sOwner.IsEmpty()) defence += UNKNOWN_DEFENCE; // fog of war: expect more than we've seen
    m_Defence.Set(base, defence);
    m_Threat.Set(base, threat);
@@ -6058,6 +6059,7 @@ class ACR_AICommander : Managed
    if (busy && busy.m_FortifyPlan && busy.GetFaction() && busy.GetFaction().GetFactionKey() == m_sFaction) return;
   }
   if (PendingBuilds(ACR_EAITask.FORTIFY) > 0) return;
+  if (ManageBaseWorks(fronts)) return;
   string refusal;
 
   ACR_Fortification target;
@@ -6112,6 +6114,43 @@ class ACR_AICommander : Managed
    if (RideToBuild(candidate, ACR_EAITask.FORTIFY, front, enemies[f], front.GetOrigin(), 0)) return;
    if (DigIn(candidate, front, enemies[f], FromFar(candidate, front.GetOrigin(), FORTIFY_NEAR))) return;
   }
+ }
+
+ // A front base of ours gets its next tier of works (ACR_BaseWorks) once the side has the RP banked
+ // for it: more the higher the tier, as a rich side digs in (#28). The most threatened ones are
+ // likeliest, picked among the near-best; a doctrine that builds no positions builds no works.
+ static const int WORKS_BANK_STEP = 150;
+ protected bool ManageBaseWorks(array<ACR_Base> fronts)
+ {
+  if (!ACR_BaseWorks.Enabled() || !m_Doctrine || m_Doctrine.m_iFortifyPositions <= 0) return false;
+  ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  if (!data) return false;
+  array<ACR_Base> open = {};
+  array<float> scores = {};
+  foreach (ACR_Base front : fronts)
+  {
+   int next = ACR_BaseWorks.TierOf(front) + 1;
+   if (next > ACR_Fortify.MAX_TIER || front.m_bBuilt || data.m_iRP < next * WORKS_BANK_STEP || !CanBuild(ACR_Fortify.Cost(next), 30)) continue;
+   open.Insert(front);
+   scores.Insert(ThreatTo(front) + 1 - DefenceOf(front) * 0.1);
+  }
+  if (open.IsEmpty()) return false;
+  ACR_Base base = open[ACR_Variety.Pick(scores, string.Format("base works %1 %2", m_sFaction, (int)GetGame().GetWorld().GetWorldTime()))];
+  ACR_Squad worker = FortifyWorkerNear(base.GetOrigin());
+  if (!worker)
+  {
+   NoteBuild("works squad " + base.m_sName, string.Format("[ACR] AI %1: works at %2 wait for a free squad within %3 m %4", m_sFaction, base.m_sName, FAR_BUILDER, NoBuilderWhy(base.GetOrigin(), BUILDER_FORTIFY)));
+   return false;
+  }
+  string refusal;
+  if (!ACR_BaseWorks.Order(worker, base, refusal))
+  {
+   NoteBuild("works " + base.m_sName, string.Format("[ACR] AI %1: no works at %2: %3", m_sFaction, base.m_sName, refusal));
+   return false;
+  }
+  worker.m_iAITask = ACR_EAITask.FORTIFY;
+  Say(string.Format("[ACR] AI %1: %2 fortifying the town at %3", m_sFaction, worker.GetName(), base.m_sName));
+  return true;
  }
 
  // A position of ours at a front base that stands empty (its holder killed, gone to defend or

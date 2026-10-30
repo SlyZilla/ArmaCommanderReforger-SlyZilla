@@ -1,0 +1,839 @@
+// Base works (#105): Fortify on the middle of a base we hold fortifies the whole town, one tier per
+// order, with FOB defences' tier names. A squad works it site by site, paying as it goes, so it can
+// stop at any point and pick up where it left off: its own, or another squad's, next order on the
+// base goes on with what is left, a lost site included.
+//   Defences I:   the planner's street corners, house corners and perimeter positions (sandbags).
+//   Defences II:  the planner's redoubts at junctions, MG nests on the approaches, a checkpoint on
+//                 the road from each of the two nearest enemy bases; defenders in reserve, who man
+//                 the nests' guns and deploy when an enemy comes near (ACR_Defenders).
+//   Defences III: the planner's command post in a building, bunkers and guard towers; more
+//                 defenders, who go into the buildings round the post when they deploy.
+// Where the sites go is ACR_BaseDefences.Plan (the world round the base and the threats at the first
+// order); which one comes next is a weighted pick among the near-best, near the squad and facing the
+// threat (ACR_Variety), so no two towns go up in the same order. The works stay when the base falls:
+// they are the new owner's, who can go on from there. A site whose walls are all gone can be rebuilt.
+// The AI commander (-acrFortifyAI, ACR_AICommander.ManageBaseWorks) uses it at a threatened front
+// base once it has the RP banked, and counts it in the base's defence (Credit).
+
+enum ACR_EBaseSite
+{
+ PLANNED,  // the planner's sandbags and dressing
+ NEST,
+ BUNKER,   // a bunker or guard tower
+ ROADBLOCK
+}
+
+class ACR_BaseSite : Managed
+{
+ ACR_EBaseSite m_eKind;
+ int m_iTier;                       // 1-3
+ vector m_vPos;
+ float m_fYaw;
+ float m_fScore;                    // threat and view
+ ref ACR_BaseDefencePos m_Plan;     // PLANNED: its pieces
+ ResourceName m_sPrefab;            // NEST, BUNKER
+ ref array<IEntity> m_aWalls = {};  // what holds it up: gone when all of these are
+ ref array<IEntity> m_aDressing = {};
+ ACR_Roadblock m_Roadblock;
+ bool m_bBuilt;
+ bool m_bNoFit;                     // nothing could be placed: not tried again
+ bool m_bSkipped;                   // a squad gave up on it (a truck parked there, no way in): the next order tries again
+ int m_iSpot;                       // NEST, BUNKER: its spot in ACR_FobDefences.PrefabFor
+}
+
+class ACR_BaseWork : Managed
+{
+ ACR_Base m_Base;
+ string m_sFaction;
+ int m_iTier;                       // the highest tier finished (0: none yet)
+ ref array<ref ACR_BaseSite> m_aSites = {};
+ ACR_DefenderPost m_Defenders;
+ int m_iMannedTier;                 // the tier the reserve has been raised for (under this owner)
+ int m_iPicks;                      // sites handed out, for the weighted pick's key
+}
+
+class ACR_BaseWorks
+{
+ static const float CLICK_RADIUS = 60;  // m from a base's centre: Fortify there means the whole base
+ static const int MAX_WALL_SITES = 12;  // tier I sites on the biggest town (the piece count stays in check)
+ static const int MAX_NESTS = 3;
+ static const int MAX_BUNKERS = 3;
+ static const int MAX_ROADBLOCKS = 2;
+ static const float SITE_RADIUS = 30;   // squad members this close to a site work
+ static const float SPOT_APART = 25;    // m between a nest or bunker and any other site
+ static const float ROAD_CLEAR = 4;     // m from a road's edge to a nest or bunker
+ static const float POST_AREA = 40;     // m round the command post its defenders garrison
+ static const int AI_RP_RESERVE = 30;   // an AI commander keeps this much back (as ManageBaseWorks)
+ static ref array<ref ACR_BaseWork> s_aWorks = {};
+ static int s_iMaxSitesForTest;         // at most this many sites of each kind (0: no limit)
+ static int s_iLastPlanMs;              // the last plan's cost (tests, log)
+
+ // -acrBaseWorks 0 turns it off; Fortify on a base is then refused, as before.
+ static bool Enabled() { return ACR_Fortify.Enabled() && ACR_LogisticsRules.Choice("acrBaseWorks", "1") != "0"; }
+
+ static int Defenders(int tier)
+ {
+  if (tier < 2) return 0;
+  return ACR_Fortify.Defenders(tier) * 2;
+ }
+
+ static int Cost(ACR_BaseSite site)
+ {
+  switch (site.m_eKind)
+  {
+   case ACR_EBaseSite.NEST: return 10;
+   case ACR_EBaseSite.BUNKER: return 15;
+   case ACR_EBaseSite.ROADBLOCK: return ACR_Roadblocks.Cost(ACR_ERoadblockType.MEDIUM);
+  }
+  if (!site.m_Plan) return 5;
+  switch (site.m_Plan.m_eKind)
+  {
+   case ACR_EBaseDefenceKind.PERIMETER: return 10;
+   case ACR_EBaseDefenceKind.SQUARE: return 10;
+   case ACR_EBaseDefenceKind.POST: return 20;
+  }
+  return 5;
+ }
+
+ // Seconds of work.
+ static float Duration(ACR_BaseSite site)
+ {
+  switch (site.m_eKind)
+  {
+   case ACR_EBaseSite.NEST: return 45;
+   case ACR_EBaseSite.BUNKER: return 60;
+   case ACR_EBaseSite.ROADBLOCK: return 40;
+  }
+  if (!site.m_Plan) return 15;
+  switch (site.m_Plan.m_eKind)
+  {
+   case ACR_EBaseDefenceKind.PERIMETER: return 30;
+   case ACR_EBaseDefenceKind.SQUARE: return 40;
+   case ACR_EBaseDefenceKind.POST: return 60;
+  }
+  return 15;
+ }
+
+ static string SiteWords(ACR_BaseSite site)
+ {
+  switch (site.m_eKind)
+  {
+   case ACR_EBaseSite.NEST: return "MG nest";
+   case ACR_EBaseSite.BUNKER: return "bunker";
+   case ACR_EBaseSite.ROADBLOCK: return "checkpoint";
+  }
+  if (!site.m_Plan) return "sandbags";
+  switch (site.m_Plan.m_eKind)
+  {
+   case ACR_EBaseDefenceKind.CORNER: return "street corner";
+   case ACR_EBaseDefenceKind.SQUARE: return "redoubt";
+   case ACR_EBaseDefenceKind.EDGE: return "house corner";
+   case ACR_EBaseDefenceKind.PERIMETER: return "perimeter position";
+   case ACR_EBaseDefenceKind.POST: return "command post";
+  }
+  return "sandbags";
+ }
+
+ // ---------------------------------------------------------------- the order
+
+ // The base of ours a Fortify click at 'point' means, if any (a FOB's is refused in Order).
+ static ACR_Base BaseAt(vector point, string faction)
+ {
+  if (!Enabled()) return null;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_bHidden || base.m_sOwner != faction) continue;
+   if (vector.DistanceXZ(point, base.GetOrigin()) < CLICK_RADIUS) return base;
+  }
+  return null;
+ }
+
+ // The server side of the order: the next site of the tier that is open. A new order replaces the
+ // squad's current job, like any other. false + refusal, nothing charged, when it can't.
+ static bool Order(ACR_Squad squad, ACR_Base base, out string refusal)
+ {
+  refusal = "";
+  if (!Enabled())
+  {
+   refusal = "fortifying a base is turned off for this match";
+   return false;
+  }
+  if (!ACR_Fortify.CanFortify(squad) || !squad.GetFaction())
+  {
+   refusal = "only infantry can fortify";
+   return false;
+  }
+  string faction = squad.GetFaction().GetFactionKey();
+  if (!base || base.m_bRetired || base.m_sOwner != faction)
+  {
+   refusal = "that base isn't ours";
+   return false;
+  }
+  if (base.m_bBuilt)
+  {
+   refusal = "a FOB builds its defences from its own panel";
+   return false;
+  }
+  ACR_BaseWork work = WorkFor(base, faction);
+  foreach (ACR_BaseSite skipped : work.m_aSites) skipped.m_bSkipped = false;
+  int tier = OpenTier(work);
+  if (tier == 0)
+  {
+   if (work.m_aSites.IsEmpty()) refusal = "no place to fortify here";
+   else refusal = "this base is fortified as far as it goes";
+   return false;
+  }
+  ACR_FortifyPlan plan = NextPlan(work, squad, tier, refusal);
+  if (!plan) return false;
+  if (!squad.Fortify(plan))
+  {
+   refusal = "unable to start the work";
+   return false;
+  }
+  PrintFormat("[ACR] BASEWORKS %1 %2: %3 starts %4 (%5 sites open)", faction, base.m_sName, squad.GetName(), ACR_FobDefences.TierName(tier - 1), OpenSites(work, tier));
+  return true;
+ }
+
+ static string Accepted(ACR_Base base)
+ {
+  ACR_BaseWork work = Find(base);
+  if (!work) return "fortifying the base";
+  return string.Format("fortifying %1: %2", base.m_sName, ACR_FobDefences.TierName(OpenTier(work) - 1));
+ }
+
+ static ACR_BaseWork Find(ACR_Base base)
+ {
+  foreach (ACR_BaseWork work : s_aWorks) if (work.m_Base == base) return work;
+  return null;
+ }
+
+ static int TierOf(ACR_Base base)
+ {
+  ACR_BaseWork work = Find(base);
+  if (!work) return 0;
+  return work.m_iTier;
+ }
+
+ protected static ACR_BaseWork WorkFor(ACR_Base base, string faction)
+ {
+  ACR_BaseWork work = Find(base);
+  if (work)
+  {
+   if (work.m_sFaction != faction) Transfer(work, faction);
+   return work;
+  }
+  work = new ACR_BaseWork();
+  work.m_Base = base;
+  work.m_sFaction = faction;
+  int started = System.GetTickCount();
+  PlanSites(work);
+  s_iLastPlanMs = System.GetTickCount() - started;
+  PrintFormat("[ACR] BASEWORKS %1 %2: planned %3 sites in %4 ms", faction, base.m_sName, work.m_aSites.Count(), s_iLastPlanMs);
+  s_aWorks.Insert(work);
+  return work;
+ }
+
+ // The lowest tier with a site still to build: a lost site comes before the next tier.
+ static int OpenTier(ACR_BaseWork work)
+ {
+  for (int tier = 1; tier <= ACR_Fortify.MAX_TIER; tier++)
+   if (OpenSites(work, tier) > 0) return tier;
+  return 0;
+ }
+
+ static int OpenSites(ACR_BaseWork work, int tier)
+ {
+  int open;
+  foreach (ACR_BaseSite site : work.m_aSites)
+   if (site.m_iTier == tier && !site.m_bBuilt && !site.m_bNoFit && !site.m_bSkipped) open++;
+  return open;
+ }
+
+ static int BuiltSites(ACR_BaseWork work, int tier = 0)
+ {
+  int built;
+  foreach (ACR_BaseSite site : work.m_aSites)
+   if (site.m_bBuilt && (tier == 0 || site.m_iTier == tier)) built++;
+  return built;
+ }
+
+ // Another squad is at work on it.
+ protected static bool Claimed(ACR_BaseSite site, ACR_Squad except)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return false;
+  foreach (ACR_Squad squad : manager.m_Squads)
+   if (squad && squad != except && squad.m_FortifyPlan && squad.m_FortifyPlan.m_Site == site) return true;
+  return false;
+ }
+
+ // The squad's next site of this tier, near it and facing the threat.
+ protected static ACR_FortifyPlan NextPlan(ACR_BaseWork work, ACR_Squad squad, int tier, out string refusal)
+ {
+  refusal = "";
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !squad.GetAnchor()) return null;
+  vector from = squad.GetAnchor().GetOrigin();
+  array<ACR_BaseSite> open = {};
+  array<float> scores = {};
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   if (site.m_iTier != tier || site.m_bBuilt || site.m_bNoFit || site.m_bSkipped || Claimed(site, squad)) continue;
+   open.Insert(site);
+   scores.Insert(site.m_fScore - vector.DistanceXZ(from, site.m_vPos) / 300);
+  }
+  if (open.IsEmpty())
+  {
+   refusal = "another squad is on what is left to build";
+   return null;
+  }
+  work.m_iPicks++;
+  int picked = ACR_Variety.Pick(scores, string.Format("base works %1 %2 %3", work.m_Base.m_sName, tier, work.m_iPicks));
+  ACR_BaseSite site = open[picked];
+  ACR_FortifyPlan plan = new ACR_FortifyPlan();
+  plan.m_sFaction = work.m_sFaction;
+  plan.m_vSite = site.m_vPos;
+  plan.m_fYaw = site.m_fYaw;
+  plan.m_iTier = tier;
+  plan.m_Work = work;
+  plan.m_Site = site;
+  plan.m_iCost = Cost(site);
+  if (manager.m_Bases.GetRP(work.m_sFaction) + squad.PendingRP() < plan.m_iCost)
+  {
+   refusal = string.Format("not enough RP (%1 needed)", plan.m_iCost);
+   return null;
+  }
+  // From the base side of the site.
+  vector back = work.m_Base.GetOrigin() - site.m_vPos;
+  back[1] = 0;
+  float length = back.Length();
+  if (length > 1) back = back * (Math.Min(8, length) / length);
+  plan.m_vStage = ACR_Manager.Ground(site.m_vPos + back);
+  if (BBB_Terrain.IsWaterAt(plan.m_vStage)) plan.m_vStage = site.m_vPos;
+  plan.m_fRadius = SITE_RADIUS;
+  plan.m_fDuration = Duration(site) * ACR_Fortify.WORK_SCALE;
+  float now = GetGame().GetWorld().GetWorldTime();
+  plan.m_fLastTick = now;
+  plan.m_fLastProgress = now;
+  plan.m_fDeadline = now + vector.DistanceXZ(from, plan.m_vStage) / ACR_Minefields.TRAVEL_SPEED * 1000 + ACR_Squad.FOB_GIVE_UP_MS;
+  return plan;
+ }
+
+ // "Bay Town: street corner"
+ static string Words(ACR_FortifyPlan plan)
+ {
+  return string.Format("%1: %2", plan.m_Work.m_Base.m_sName, SiteWords(plan.m_Site));
+ }
+
+ static bool VehicleOnSite(ACR_FortifyPlan plan)
+ {
+  return ACR_FobSlots.VehicleOnSpot(plan.m_vSite, 8);
+ }
+
+ // ---------------------------------------------------------------- the squad's work
+
+ // A site's work is done (ACR_Squad.CompleteFortify): its pieces go in, and the squad goes on to
+ // the next of the tier, or holds the base when there is none it can do.
+ static void SiteDone(ACR_Squad squad, ACR_FortifyPlan plan)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  ACR_BaseWork work = plan.m_Work;
+  ACR_BaseSite site = plan.m_Site;
+  int orderedBy = squad.m_iOrderedBy;
+  if (!s_aWorks.Contains(work) || work.m_sFaction != plan.m_sFaction || !Build(work, site))
+  {
+   if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
+   site.m_bNoFit = s_aWorks.Contains(work) && work.m_sFaction == plan.m_sFaction;
+   PrintFormat("[ACR] BASEWORKS %1: no %2 at %3, refunded %4 RP", plan.m_sFaction, SiteWords(site), site.m_vPos, plan.m_iCost);
+  }
+  if (!s_aWorks.Contains(work) || work.m_sFaction != plan.m_sFaction)
+  {
+   squad.HoldBaseWorks(work);
+   return;
+  }
+  GoOn(squad, plan, orderedBy);
+ }
+
+ // The squad gave up on a site (ACR_Squad.TickFortify): refunded, the rest of the tier goes on, and
+ // the next order on the base tries it again. One parked truck doesn't cost the tier.
+ static void SiteSkipped(ACR_Squad squad, ACR_FortifyPlan plan)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
+  plan.m_Site.m_bSkipped = true;
+  PrintFormat("[ACR] BASEWORKS %1: %2 gave up on the %3 at %4, refunded %5 RP", plan.m_sFaction, squad.GetName(), SiteWords(plan.m_Site), plan.m_vSite, plan.m_iCost);
+  if (!s_aWorks.Contains(plan.m_Work) || plan.m_Work.m_sFaction != plan.m_sFaction)
+  {
+   squad.HoldBaseWorks(plan.m_Work);
+   return;
+  }
+  GoOn(squad, plan, squad.m_iOrderedBy);
+ }
+
+ protected static void GoOn(ACR_Squad squad, ACR_FortifyPlan plan, int orderedBy)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  ACR_BaseWork work = plan.m_Work;
+  int tier = plan.m_iTier;
+  if (OpenSites(work, tier) == 0 && !WorkedOn(work, tier, squad)) TierDone(work, tier);
+  string why;
+  ACR_FortifyPlan next;
+  if (OpenSites(work, tier) > 0) next = NextPlan(work, squad, tier, why);
+  // An AI commander's squad goes on only as far as its build budget does, as its first site did
+  // (ACR_AICommander.ManageBaseWorks); it can pick the work up again later.
+  ACR_AICommander ai;
+  if (manager && squad.m_iAITask == ACR_EAITask.FORTIFY) ai = manager.AICommanderFor(plan.m_sFaction);
+  if (next && ai && !AIMayPay(ai, next.m_iCost))
+  {
+   next = null;
+   why = "";
+  }
+  if (next && squad.Fortify(next))
+  {
+   squad.m_iOrderedBy = orderedBy;
+   if (ai) ai.SpendBuildBudget(next.m_iCost);
+   return;
+  }
+  if (!why.IsEmpty() && OpenSites(work, tier) > 0 && manager)
+  {
+   string paused = string.Format("%1 stopped work on %2: %3", squad.GetName(), work.m_Base.m_sName, why);
+   manager.Command().Feed(plan.m_sFaction, paused);
+   if (orderedBy != 0) manager.Notify(orderedBy, paused);
+  }
+  squad.HoldBaseWorks(work);
+ }
+
+ static bool AIMayPay(ACR_AICommander ai, int cost)
+ {
+  return ai.CanBuild(cost, AI_RP_RESERVE);
+ }
+
+ // A squad other than 'except' has a site of this tier in hand.
+ protected static bool WorkedOn(ACR_BaseWork work, int tier, ACR_Squad except)
+ {
+  foreach (ACR_BaseSite site : work.m_aSites)
+   if (site.m_iTier == tier && Claimed(site, except)) return true;
+  return false;
+ }
+
+ protected static void TierDone(ACR_BaseWork work, int tier)
+ {
+  int built = BuiltSites(work, tier);
+  if (built == 0) return;
+  work.m_iTier = Math.Max(work.m_iTier, tier);
+  RaiseDefenders(work);
+  ManWorks(work);
+  string done = string.Format("%1 fortified: %2, %3 sites", work.m_Base.m_sName, ACR_FobDefences.TierName(tier - 1), built);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager) manager.Command().Feed(work.m_sFaction, done);
+  ACR_Report.Event(work.m_sFaction, done);
+  PrintFormat("[ACR] BASEWORKS %1 %2", work.m_sFaction, done);
+ }
+
+ protected static void RaiseDefenders(ACR_BaseWork work)
+ {
+  int more = Defenders(work.m_iTier) - Defenders(work.m_iMannedTier);
+  if (more <= 0) return;
+  work.m_iMannedTier = work.m_iTier;
+  if (!work.m_Defenders) work.m_Defenders = ACR_Defenders.Add(work.m_sFaction, work.m_Base.GetOrigin(), work.m_Base.m_sName + " works", ACR_BaseDefences.SearchRadius(work.m_Base));
+  work.m_Defenders.m_iReserve += more;
+ }
+
+ // The reserve on the nests' guns, and based at the command post once there is one.
+ protected static void ManWorks(ACR_BaseWork work)
+ {
+  ACR_DefenderPost post = work.m_Defenders;
+  if (!post) return;
+  // A town with no command post site: the buildings round its middle.
+  if (work.m_iTier >= 3)
+  {
+   post.m_fRadius = POST_AREA;
+   post.m_fGarrisonArea = POST_AREA;
+  }
+  array<IEntity> guns = {};
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   if (!site.m_bBuilt) continue;
+   if (work.m_iTier >= 3 && site.m_Plan && site.m_Plan.m_eKind == ACR_EBaseDefenceKind.POST) post.m_vPos = site.m_vPos;
+   if (site.m_eKind != ACR_EBaseSite.NEST) continue;
+   foreach (IEntity piece : site.m_aWalls)
+   {
+    IEntity gun = ACR_Roadblocks.FindTurretInHierarchy(piece);
+    if (gun) guns.Insert(gun);
+   }
+  }
+  if (!guns.IsEmpty()) ACR_Defenders.CrewGuns(post, guns);
+ }
+
+ protected static bool Build(ACR_BaseWork work, ACR_BaseSite site)
+ {
+  switch (site.m_eKind)
+  {
+   case ACR_EBaseSite.ROADBLOCK:
+    site.m_Roadblock = ACR_Roadblocks.SpawnRoadblock(work.m_sFaction, site.m_vPos, site.m_fYaw, work.m_Base.m_sName + " works");
+    if (!site.m_Roadblock) return false;
+    site.m_aWalls.Insert(site.m_Roadblock.m_Entity);
+    break;
+   case ACR_EBaseSite.PLANNED:
+    BuildPlanned(site);
+    if (site.m_aWalls.IsEmpty())
+    {
+     foreach (IEntity prop : site.m_aDressing) if (prop) SCR_EntityHelper.DeleteEntityAndChildren(prop);
+     site.m_aDressing.Clear();
+     return false;
+    }
+    break;
+   default:
+    ACR_FobBuild.FellTrees(site.m_vPos, ACR_FobDefences.PIECE_RADIUS);
+    IEntity piece = ACR_Fortify.SpawnPiece(site.m_sPrefab, site.m_vPos, site.m_fYaw, work.m_sFaction);
+    if (!piece) return false;
+    site.m_aWalls.Insert(piece);
+  }
+  site.m_bBuilt = true;
+  PrintFormat("[ACR] BASEWORKS %1 %2: %3 at %4 (%5 pieces)", work.m_sFaction, work.m_Base.m_sName, SiteWords(site), site.m_vPos, site.m_aWalls.Count() + site.m_aDressing.Count());
+  return true;
+ }
+
+ // The planner's pieces. Only sandbags and such ask for a navmesh rebuild; a chair doesn't. A
+ // position with no sandbags (none fit) is held up by whatever it has.
+ protected static void BuildPlanned(ACR_BaseSite site)
+ {
+  ACR_BaseDefencePos pos = site.m_Plan;
+  bool anyWall = pos.Walls() > 0;
+  foreach (int i, vector at : pos.m_aPiecePos)
+  {
+   IEntity piece = ACR_BaseDefences.SpawnProp(pos.m_aPiecePrefab[i], at, pos.m_aPieceYaw[i]);
+   if (!piece) continue;
+   if (pos.m_aPieceWall[i] || !anyWall)
+   {
+    site.m_aWalls.Insert(piece);
+    ACR_Navmesh.RebuildAfterSpawn(piece);
+   }
+   else site.m_aDressing.Insert(piece);
+  }
+ }
+
+ // Tier I up at once and free, nobody walking (Quick start's front towns). The sites built.
+ static int BuildNow(ACR_Base base, string faction)
+ {
+  if (!Enabled() || !base || base.m_bBuilt || base.m_sOwner != faction) return 0;
+  ACR_BaseWork work = WorkFor(base, faction);
+  int built;
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   if (site.m_iTier != 1 || site.m_bBuilt || site.m_bNoFit) continue;
+   if (Build(work, site)) built++;
+   else site.m_bNoFit = true;
+  }
+  if (built > 0) work.m_iTier = Math.Max(work.m_iTier, 1);
+  return built;
+ }
+
+ // ---------------------------------------------------------------- where the sites go
+
+ protected static void PlanSites(ACR_BaseWork work)
+ {
+  ACR_Base base = work.m_Base;
+  array<ref ACR_BaseDefencePos> plan = {};
+  string summary;
+  ACR_BaseDefences.Plan(base, work.m_sFaction, plan, summary);
+  PrintFormat("[ACR] BASEWORKS plan %1", summary);
+  array<ref ACR_BaseSite> walls = {};
+  foreach (ACR_BaseDefencePos pos : plan)
+  {
+   ACR_BaseSite site = new ACR_BaseSite();
+   site.m_eKind = ACR_EBaseSite.PLANNED;
+   site.m_Plan = pos;
+   site.m_vPos = pos.m_vPos;
+   site.m_fYaw = ACR_BaseDefences.Bearing(pos.m_vFacing);
+   site.m_fScore = pos.m_fThreat + Math.Min(pos.m_fSight, 200) / 200;
+   if (pos.m_eKind == ACR_EBaseDefenceKind.POST)
+   {
+    site.m_iTier = 3;
+    work.m_aSites.Insert(site);
+   }
+   else if (pos.m_eKind == ACR_EBaseDefenceKind.SQUARE)
+   {
+    site.m_iTier = 2;
+    work.m_aSites.Insert(site);
+   }
+   else
+   {
+    site.m_iTier = 1;
+    walls.Insert(site);
+   }
+  }
+  // The best of them on a big town.
+  while (walls.Count() > MAX_WALL_SITES)
+  {
+   int worst = 0;
+   foreach (int i, ACR_BaseSite wall : walls)
+    if (wall.m_fScore < walls[worst].m_fScore) worst = i;
+   walls.Remove(worst);
+  }
+  foreach (ACR_BaseSite keep : walls) work.m_aSites.Insert(keep);
+
+  array<vector> dirs = {};
+  array<float> weights = {};
+  ACR_BaseDefences.Threats(base, work.m_sFaction, dirs, weights);
+  if (dirs.IsEmpty()) dirs.Insert(Vector(0, 0, 1));
+  if (weights.IsEmpty()) weights.Insert(1);
+  array<ref ACR_BaseDefenceSeg> segs = {};
+  ACR_BaseDefences.Roads(base.GetOrigin(), ACR_BaseDefences.SearchRadius(base) + 40, segs);
+  Strong(work, dirs, weights, segs, ACR_EBaseSite.NEST, 2, MAX_NESTS);
+  Strong(work, dirs, weights, segs, ACR_EBaseSite.BUNKER, 3, MAX_BUNKERS);
+  Checkpoints(work);
+  if (s_iMaxSitesForTest > 0) Trim(work);
+ }
+
+ protected static void Trim(ACR_BaseWork work)
+ {
+  map<string, int> seen = new map<string, int>();
+  for (int i = 0; i < work.m_aSites.Count(); i++)
+  {
+   string kind = SiteWords(work.m_aSites[i]);
+   int count;
+   seen.Find(kind, count);
+   seen.Set(kind, count + 1);
+   if (count < s_iMaxSitesForTest) continue;
+   work.m_aSites.RemoveOrdered(i);
+   i--;
+  }
+ }
+
+ // Nests or bunkers on the ring round the town, towards the threats, with a view: picked among the
+ // near-best, each well apart from every other site.
+ protected static void Strong(ACR_BaseWork work, array<vector> dirs, array<float> weights, array<ref ACR_BaseDefenceSeg> segs, ACR_EBaseSite kind, int tier, int most)
+ {
+  vector center = work.m_Base.GetOrigin();
+  float ring = Math.Clamp(work.m_Base.m_fRadius, 60, 160);
+  array<vector> places = {};
+  array<float> yaws = {};
+  array<float> scores = {};
+  array<float> rings = {ring, ring * 0.75, ring + 25};
+  array<float> shifts = {0, 30, -30, 60, -60};
+  foreach (vector dir : dirs)
+  {
+   foreach (float radius : rings)
+   {
+    foreach (float shift : shifts)
+    {
+     float bearing = ACR_BaseDefences.Bearing(dir) + shift;
+     float rad = bearing * Math.DEG2RAD;
+     vector outward = Vector(Math.Sin(rad), 0, Math.Cos(rad));
+     vector place = center + outward * radius;
+     place[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]);
+     if (BBB_Terrain.IsWaterAt(place) || ACR_BaseDefences.RoadEdgeGap(segs, place) < ROAD_CLEAR || NearSite(work, place, SPOT_APART)) continue;
+     string why;
+     if (!ACR_FobBuild.FootprintClear(place, ACR_FobDefences.PIECE_RADIUS, null, why, true, ACR_FobDefences.MAX_RISE)) continue;
+     places.Insert(place);
+     yaws.Insert(ACR_FobDefences.BearingYaw(bearing));
+     scores.Insert(ACR_BaseDefences.ThreatDot(dirs, weights, outward) + ACR_BaseDefences.Sight(place, outward, 150) / 150);
+    }
+   }
+  }
+  for (int made = 0; made < most && !places.IsEmpty(); made++)
+  {
+   int picked = ACR_Variety.Pick(scores, string.Format("base works spot %1 %2 %3", work.m_Base.m_sName, kind, made));
+   ACR_BaseSite site = new ACR_BaseSite();
+   site.m_eKind = kind;
+   site.m_iTier = tier;
+   site.m_vPos = places[picked];
+   site.m_fYaw = yaws[picked];
+   site.m_fScore = scores[picked];
+   // Bunkers and towers by turns, as FOB defences' posts; nests on the nest spots.
+   site.m_iSpot = ACR_FobDefences.POST_COUNT;
+   if (kind == ACR_EBaseSite.BUNKER) site.m_iSpot = made % 2;
+   site.m_sPrefab = ACR_FobDefences.PrefabFor(site.m_iSpot, work.m_sFaction, tier - 1);
+   work.m_aSites.Insert(site);
+   for (int i = places.Count() - 1; i >= 0; i--)
+   {
+    if (vector.DistanceXZ(places[i], site.m_vPos) >= SPOT_APART) continue;
+    places.Remove(i);
+    yaws.Remove(i);
+    scores.Remove(i);
+   }
+  }
+ }
+
+ protected static bool NearSite(ACR_BaseWork work, vector pos, float apart)
+ {
+  foreach (ACR_BaseSite site : work.m_aSites)
+   if (vector.DistanceXZ(site.m_vPos, pos) < apart) return true;
+  return false;
+ }
+
+ // A checkpoint on the road from each of the two nearest enemy bases, on the roadblock siting's
+ // own scored spots.
+ protected static void Checkpoints(ACR_BaseWork work)
+ {
+  vector center = work.m_Base.GetOrigin();
+  array<ACR_Base> enemies = {};
+  array<float> dists = {};
+  foreach (ACR_Base other : ACR_Base.s_All)
+  {
+   if (!other || other.m_bRetired || other.m_sOwner.IsEmpty() || other.m_sOwner == work.m_sFaction) continue;
+   enemies.Insert(other);
+   dists.Insert(vector.DistanceXZ(center, other.GetOrigin()));
+  }
+  for (int made = 0; made < MAX_ROADBLOCKS && !enemies.IsEmpty(); made++)
+  {
+   int nearest = 0;
+   foreach (int i, float d : dists) if (d < dists[nearest]) nearest = i;
+   vector enemy = enemies[nearest].GetOrigin();
+   enemies.Remove(nearest);
+   dists.Remove(nearest);
+   array<ref ACR_RoadSite> sites = {};
+   string none;
+   ACR_RoadblockSiting.Candidates(center, enemy, work.m_sFaction, sites, none);
+   array<ACR_RoadSite> fits = {};
+   array<float> scores = {};
+   foreach (ACR_RoadSite road : sites)
+   {
+    if (NearSite(work, road.m_vPos, 15) || FarFromCheckpoints(work, road.m_vPos, 60)) continue;
+    fits.Insert(road);
+    scores.Insert(road.m_fScore);
+   }
+   if (fits.IsEmpty()) continue;
+   int picked = ACR_Variety.Pick(scores, string.Format("base works road %1 %2", work.m_Base.m_sName, made));
+   ACR_BaseSite site = new ACR_BaseSite();
+   site.m_eKind = ACR_EBaseSite.ROADBLOCK;
+   site.m_iTier = 2;
+   site.m_vPos = fits[picked].m_vPos;
+   site.m_fYaw = fits[picked].m_fYaw;
+   site.m_fScore = 1;
+   work.m_aSites.Insert(site);
+  }
+ }
+
+ protected static bool FarFromCheckpoints(ACR_BaseWork work, vector pos, float apart)
+ {
+  foreach (ACR_BaseSite site : work.m_aSites)
+   if (site.m_eKind == ACR_EBaseSite.ROADBLOCK && vector.DistanceXZ(site.m_vPos, pos) < apart) return true;
+  return false;
+ }
+
+ // ---------------------------------------------------------------- upkeep
+
+ // From ACR_Fortify.Tick every 5 s: lost sites and a base that changed hands.
+ static void Tick()
+ {
+  for (int w = s_aWorks.Count() - 1; w >= 0; w--)
+  {
+   ACR_BaseWork work = s_aWorks[w];
+   if (!work.m_Base || work.m_Base.m_bRetired)
+   {
+    CallOff(work, "its base is gone");
+    ACR_Defenders.Remove(work.m_Defenders);
+    s_aWorks.RemoveOrdered(w);
+    continue;
+   }
+   string owner = work.m_Base.m_sOwner;
+   if (!owner.IsEmpty() && owner != work.m_sFaction) Transfer(work, owner);
+   foreach (ACR_BaseSite site : work.m_aSites)
+    if (site.m_bBuilt) PruneSite(site);
+   // The tier stands while any site of it does.
+   while (work.m_iTier > 0 && BuiltSites(work, work.m_iTier) == 0)
+   {
+    PrintFormat("[ACR] BASEWORKS %1 %2: %3 is gone", work.m_sFaction, work.m_Base.m_sName, ACR_FobDefences.TierName(work.m_iTier - 1));
+    work.m_iTier--;
+   }
+  }
+ }
+
+ protected static void PruneSite(ACR_BaseSite site)
+ {
+  for (int i = site.m_aWalls.Count() - 1; i >= 0; i--)
+  {
+   IEntity piece = site.m_aWalls[i];
+   if (piece && ACR_Logistics.Health(piece) > 0) continue;
+   site.m_aWalls.Remove(i);
+   if (piece) ACR_Navmesh.DeleteStructure(piece);
+  }
+  if (!site.m_aWalls.IsEmpty()) return;
+  // The dressing goes with it; the site can be built again.
+  foreach (IEntity prop : site.m_aDressing) if (prop) SCR_EntityHelper.DeleteEntityAndChildren(prop);
+  site.m_aDressing.Clear();
+  site.m_Roadblock = null;
+  site.m_bBuilt = false;
+  PrintFormat("[ACR] BASEWORKS: the %1 at %2 is gone", SiteWords(site), site.m_vPos);
+ }
+
+ protected static void Transfer(ACR_BaseWork work, string owner)
+ {
+  CallOff(work, "the base has fallen");
+  PrintFormat("[ACR] BASEWORKS %1: %2 passes to %3 (%4 sites standing)", work.m_Base.m_sName, work.m_sFaction, owner, BuiltSites(work));
+  work.m_sFaction = owner;
+  // The sandbags change hands; the men in reserve don't.
+  ACR_Defenders.Remove(work.m_Defenders);
+  work.m_Defenders = null;
+  work.m_iMannedTier = 0;
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   // Nests and bunkers still to build are the new owner's kind.
+   if (!site.m_sPrefab.IsEmpty()) site.m_sPrefab = ACR_FobDefences.PrefabFor(site.m_iSpot, owner, site.m_iTier - 1);
+   if (site.m_Roadblock)
+   {
+    site.m_Roadblock.m_sFaction = owner;
+    // Its reserve (-acrRoadblockDefenders) doesn't change hands either.
+    ACR_Defenders.Remove(site.m_Roadblock.m_Defenders);
+    site.m_Roadblock.m_Defenders = null;
+   }
+   foreach (IEntity piece : site.m_aWalls)
+   {
+    if (!piece) continue;
+    SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(piece.FindComponent(SCR_CampaignBuildingCompositionComponent));
+    if (comp) comp.ACR_SetFaction(owner);
+   }
+  }
+ }
+
+ protected static void CallOff(ACR_BaseWork work, string why)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  foreach (ACR_Squad squad : manager.m_Squads)
+   if (squad && squad.m_FortifyPlan && squad.m_FortifyPlan.m_Work == work) squad.CancelFortify(why);
+ }
+
+ // The owner's defence credit in the AI's sums: dug in all round, its men hold longer than they
+ // would in the open (as ACR_AICommander.FortifiedCredit counts a position's).
+ static int Credit(ACR_Base base)
+ {
+  ACR_BaseWork work = Find(base);
+  if (!work) return 0;
+  switch (work.m_iTier)
+  {
+   case 1: return 2;
+   case 2:
+    if (work.m_Defenders) return 5;
+    return 2;
+   case 3:
+    if (work.m_Defenders) return 10;
+    return 3;
+  }
+  return 0;
+ }
+
+ // The owning side's command map: a pale ring round the town ("~": not a danger area).
+ static void Zones(string faction, notnull array<vector> positions, notnull array<float> radii, notnull array<string> labels)
+ {
+  foreach (ACR_BaseWork work : s_aWorks)
+  {
+   if (work.m_sFaction != faction || !work.m_Base) continue;
+   int built = BuiltSites(work);
+   if (built == 0) continue;
+   positions.Insert(work.m_Base.GetOrigin());
+   radii.Insert(ACR_BaseDefences.SearchRadius(work.m_Base));
+   string tier = "Works";
+   if (work.m_iTier > 0) tier = ACR_FobDefences.TierName(work.m_iTier - 1);
+   labels.Insert(string.Format("~%1: %2 sites", tier, built));
+  }
+ }
+
+ static void Reset()
+ {
+  s_aWorks.Clear();
+  s_iMaxSitesForTest = 0;
+ }
+}

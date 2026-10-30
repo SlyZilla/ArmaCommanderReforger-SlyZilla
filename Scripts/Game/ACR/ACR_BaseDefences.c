@@ -18,8 +18,8 @@
 // per spot from a generator seeded by its position, so a spot always looks the same.
 // Only replicated props without inventories are used (no loot, visible to every client).
 // Threat directions are the nearest bases the owner does not hold. Nothing here changes the
-// game: the only consumer so far is the debug preview (/acr defences), which spawns the props
-// (no navmesh rebuild, no structure registration) so the spots can be judged.
+// game by itself: ACR_BaseWorks builds what it plans, and the debug preview (/acr defences) spawns
+// the props (no navmesh rebuild, no structure registration) so the spots can be judged.
 
 enum ACR_EBaseDefenceKind
 {
@@ -1529,6 +1529,21 @@ class ACR_BaseDefences : Managed
 
 	// ---------------------------------------------------------------- debug preview
 
+	static IEntity SpawnProp(ResourceName prefab, vector at, float yaw)
+	{
+		Resource resource = Resource.Load(prefab);
+		if (!resource.IsValid()) return null;
+		EntitySpawnParams spawnParams = new EntitySpawnParams();
+		spawnParams.TransformMode = ETransformMode.WORLD;
+		// The Kolguyev map is an item held upright (vanilla's Everon table map lies flat):
+		// pitched to lie face up on the table.
+		float pitch = 0;
+		if (prefab == MAP_KOLGUYEV) pitch = 90;
+		Math3D.AnglesToMatrix(Vector(yaw, pitch, 0), spawnParams.Transform);
+		spawnParams.Transform[3] = at;
+		return GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
+	}
+
 	static int SpawnPreview(array<ref ACR_BaseDefencePos> plan)
 	{
 		int spawned = 0;
@@ -1536,17 +1551,7 @@ class ACR_BaseDefences : Managed
 		{
 			foreach (int i, vector at : p.m_aPiecePos)
 			{
-				Resource resource = Resource.Load(p.m_aPiecePrefab[i]);
-				if (!resource.IsValid()) continue;
-				EntitySpawnParams spawnParams = new EntitySpawnParams();
-				spawnParams.TransformMode = ETransformMode.WORLD;
-				// The Kolguyev map is an item held upright (vanilla's Everon table map lies flat):
-				// pitched to lie face up on the table.
-				float pitch = 0;
-				if (p.m_aPiecePrefab[i] == MAP_KOLGUYEV) pitch = 90;
-				Math3D.AnglesToMatrix(Vector(p.m_aPieceYaw[i], pitch, 0), spawnParams.Transform);
-				spawnParams.Transform[3] = at;
-				IEntity ent = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
+				IEntity ent = SpawnProp(p.m_aPiecePrefab[i], at, p.m_aPieceYaw[i]);
 				if (!ent) continue;
 				s_aPreview.Insert(ent);
 				spawned++;

@@ -47,6 +47,8 @@ class ACR_FortifyPlan : Managed
  float m_fLastProgress;              // world ms of the last progress (3 min without it at the site: give up)
  float m_fDeadline;                  // world ms by which the squad must reach the site
  bool m_bArrived;
+ ACR_BaseWork m_Work;                // base works: the town it is part of (ACR_BaseWorks)
+ ACR_BaseSite m_Site;                // ... and the site
 }
 
 class ACR_Fortify
@@ -160,7 +162,7 @@ class ACR_Fortify
 
  static string Hint()
  {
-  return string.Format("Right-click: dig in there, facing the nearest known enemy or enemy base (%1 RP); again on our position to upgrade it (%2 / %3 RP; click Fortify again to cancel)", Cost(1), Cost(2), Cost(3));
+  return string.Format("Right-click: dig in there, facing the nearest known enemy or enemy base (%1 RP); again on our position to upgrade it (%2 / %3 RP); on the middle of our base to fortify the town (click Fortify again to cancel)", Cost(1), Cost(2), Cost(3));
  }
 
  // Each spot's place in the position's frame (x across, z towards the threat) and its piece's
@@ -680,6 +682,7 @@ class ACR_Fortify
 
  static bool VehicleOnSpots(ACR_FortifyPlan plan)
  {
+  if (plan.m_Work) return ACR_BaseWorks.VehicleOnSite(plan);
   for (int spot = 0; spot < SPOT_COUNT; spot++)
   {
    if (!SpotChangesAt(spot, plan.m_iTier)) continue;
@@ -1122,6 +1125,7 @@ class ACR_Fortify
   s_iTicks++;
   if (s_iTicks % 5 != 0) return;
   ACR_Defenders.Tick();
+  ACR_BaseWorks.Tick();
   if (s_Positions.IsEmpty()) return;
   for (int f = s_Positions.Count() - 1; f >= 0; f--)
   {
@@ -1151,12 +1155,14 @@ class ACR_Fortify
    radii.Insert(HOLD_RADIUS);
    labels.Insert("~" + TierName(fort.m_iTier));
   }
+  ACR_BaseWorks.Zones(faction, positions, radii, labels);
  }
 
  static void Reset()
  {
   s_Positions.Clear();
   ACR_Defenders.Reset();
+  ACR_BaseWorks.Reset();
   s_iNextId = 0;
   s_iTicks = 0;
   WORK_SCALE = 1;
