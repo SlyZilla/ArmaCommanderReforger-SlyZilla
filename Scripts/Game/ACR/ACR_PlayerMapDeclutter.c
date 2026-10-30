@@ -1160,6 +1160,7 @@ modded class SCR_PlayerController
    }
    Widget root = marker.GetRootWidget();
    if (root && root.IsVisible() != show) root.SetVisible(show);
+   if (!show) ACR_Park(marker);
   }
  }
 
@@ -1314,7 +1315,9 @@ modded class SCR_PlayerController
    marker.GetWorldPos(at);
    int sx, sy;
    mapEntity.WorldToScreen(at[0], at[1], sx, sy, true);
-   if (ACR_MapDeclutter.OnAName(sx, sy, r, obstacles)) marker.GetRootWidget().SetVisible(false);
+   if (!ACR_MapDeclutter.OnAName(sx, sy, r, obstacles)) continue;
+   marker.GetRootWidget().SetVisible(false);
+   ACR_Park(marker);
   }
   foreach (ACR_UnitMarker vehicle : m_ACR_VehicleMarkers) if (vehicle) movers.Insert(vehicle);
   foreach (ACR_UnitMarker mover : movers)
@@ -1341,6 +1344,7 @@ modded class SCR_PlayerController
    if (!vehicle || !vehicle.GetRootWidget()) continue;
    bool showVehicle = !on || !m_ACR_Data.m_bDeclFar;
    if (vehicle.GetRootWidget().IsVisible() != showVehicle) vehicle.GetRootWidget().SetVisible(showVehicle);
+   if (!showVehicle) ACR_Park(vehicle);
   }
   foreach (ACR_UnitMarker marker : m_ACR_Markers)
   {
@@ -1357,7 +1361,20 @@ modded class SCR_PlayerController
    }
    Widget root = marker.GetRootWidget();
    if (root && root.IsVisible() != show) root.SetVisible(show);
+   if (!show) ACR_Park(marker);
   }
+ }
+
+ // A marker the calm map hides goes off the map as well: the game shows every marker's widget
+ // again each frame (SCR_MapMarkerManagerComponent.Update: SetStaticMarkerDisabled(false) ->
+ // SetUpdateDisabled(false)), so a hidden one came back before it was drawn (30 Oct: the soldiers
+ // of the squads at a base, and the squads under a "×N" stacked beneath its icon, all showed). Off
+ // the map it is out of sight and out of the cursor's way; its own update puts it back each frame
+ // before this.
+ static const int PARK = -100000;
+ protected void ACR_Park(ACR_UnitMarker marker)
+ {
+  if (marker) marker.SetWorldPos(PARK, PARK);
  }
 
  // "×N" right of each icon that stands for several squads.
@@ -1584,6 +1601,37 @@ modded class SCR_PlayerController
  // Tests (the shots test): the panel's state.
  bool ACR_DeclPanelCollapsed() { return m_ACR_Panel && m_ACR_Panel.DeclCollapsed(); }
  bool ACR_DeclIntelCollapsed() { return m_ACR_Panel && m_ACR_Panel.DeclIntelCollapsed(); }
+ // Tests: of the markers the calm map hides now (soldiers zoomed out or of an unselected squad at a
+ // base, squads under a "×N"), how many there are (hidden) and how many are still on the screen.
+ int ACR_DeclHiddenOnScreenForTest(out int hidden)
+ {
+  hidden = 0;
+  int onScreen;
+  array<ACR_UnitMarker> markers = {};
+  foreach (ACR_UnitMarker soldier : m_ACR_Markers)
+  {
+   if (!soldier || soldier.m_Original) continue;
+   bool hide = m_ACR_Data.m_bDeclFar;
+   int g = m_ACR_Data.m_GroupIds.Find(soldier.m_GroupId);
+   if (!hide && !m_ACR_Data.IsSelected(soldier.m_GroupId) && g >= 0 && g < m_ACR_Data.m_DeclBaseOf.Count() && m_ACR_Data.m_DeclBaseOf[g] >= 0) hide = true;
+   if (hide) markers.Insert(soldier);
+  }
+  foreach (int i, ACR_UnitMarker squad : m_ACR_GroupMarkers)
+  {
+   if (squad && i < m_ACR_Data.m_DeclRep.Count() && !m_ACR_Data.m_DeclRep[i]) markers.Insert(squad);
+  }
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  foreach (ACR_UnitMarker marker : markers)
+  {
+   hidden++;
+   Widget root = marker.GetRootWidget();
+   if (!root || !root.IsVisible()) continue;
+   float x, y;
+   root.GetScreenPos(x, y);
+   if (x > -200 && y > -200 && x < ws.GetWidth() + 200 && y < ws.GetHeight() + 200) onScreen++;
+  }
+  return onScreen;
+ }
  bool ACR_DeclPanelStyled() { return m_ACR_Panel && m_ACR_Panel.DeclStyled(); }
  bool ACR_DeclTintShown() { return m_wDeclTint && m_wDeclTint.IsVisible(); }
  int ACR_DeclBadgesShown()
