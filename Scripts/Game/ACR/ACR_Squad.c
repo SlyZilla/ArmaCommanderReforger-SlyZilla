@@ -556,6 +556,12 @@ class ACR_Squad : Managed
  }
  protected void RestoreOrderAt(ACR_OrderSnapshot snapshot, ResourceName prefab, vector target, float radius)
  {
+  // A Fortify order called off while it was set aside (its base fell): nothing to go back to.
+  if (snapshot.m_eState == ACR_EOrderState.FORTIFY && !m_FortifyPlan)
+  {
+   SetOrder("Holding position", ACR_EOrderState.HOLD);
+   return;
+  }
   // A garrison put back (after a dismount, a set-aside...) needs its posts again.
   if (prefab == WP_GARRISON && m_Group && !ACR_Garrison.HasPosts(m_Group))
   {
@@ -1798,7 +1804,9 @@ class ACR_Squad : Managed
  // "Fortifying: dug in (40% - contact)"
  protected string FortifyLabel(string status = "")
  {
-  string label = string.Format("Fortifying: %1 (%2%%", ACR_Fortify.TierWords(m_FortifyPlan.m_iTier), (int)(m_FortifyPlan.m_fProgress / m_FortifyPlan.m_fDuration * 100));
+  string what = ACR_Fortify.TierWords(m_FortifyPlan.m_iTier);
+  if (m_FortifyPlan.m_Work) what = ACR_BaseWorks.Words(m_FortifyPlan);
+  string label = string.Format("Fortifying: %1 (%2%%", what, (int)(m_FortifyPlan.m_fProgress / m_FortifyPlan.m_fDuration * 100));
   if (status != "") label += " - " + status;
   return label + ")";
  }
@@ -1862,12 +1870,14 @@ class ACR_Squad : Managed
   }
   if (!plan.m_bArrived && now > plan.m_fDeadline)
   {
+   if (SkipWorksSite(plan)) return;
    CancelFortify("abandoned: the squad could not reach the site");
    return;
   }
   if (plan.m_bArrived && now - plan.m_fLastProgress >= FOB_GIVE_UP_MS)
   {
    PrintFormat("[ACR] SQUAD %1: fortifying at %2 abandoned after 3 minutes without progress", m_Name, plan.m_vSite);
+   if (SkipWorksSite(plan)) return;
    CancelFortify("abandoned");
    return;
   }
@@ -1906,6 +1916,17 @@ class ACR_Squad : Managed
   CompleteFortify();
  }
 
+ // Base works go on to the next site, unless it's a fight that stopped the work: that stops the order.
+ protected bool SkipWorksSite(ACR_FortifyPlan plan)
+ {
+  if (!plan.m_Work || ACR_FobBuild.IsContested(plan.m_vSite, plan.m_sFaction) || KnownEnemies(60, true) > 0) return false;
+  m_FortifyPlan = null;
+  EquipShovels(false);
+  ClearOrders();
+  ACR_BaseWorks.SiteSkipped(this, plan);
+  return true;
+ }
+
  protected void CompleteFortify()
  {
   ACR_FortifyPlan plan = m_FortifyPlan;
@@ -1913,6 +1934,11 @@ class ACR_Squad : Managed
   EquipShovels(false);
   // Stop the walk first: the pieces and their navmesh rebuild land round the builders.
   ClearOrders();
+  if (plan.m_Work)
+  {
+   ACR_BaseWorks.SiteDone(this, plan);
+   return;
+  }
   string why;
   ACR_Fortification fort = ACR_Fortify.Build(plan, why);
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -1940,6 +1966,15 @@ class ACR_Squad : Managed
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   IssueWaypoint(WP_DEFEND, ACR_Fortify.HoldCentre(fort), ACR_Fortify.HOLDER_RADIUS);
+ }
+
+ // The base works' squad with nothing left to do there: it holds the base.
+ void HoldBaseWorks(ACR_BaseWork work)
+ {
+  if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+  SetOrder("Holding position", ACR_EOrderState.DEFEND);
+  m_OrderKind = ACR_EOrderKind.DEFEND;
+  if (work && work.m_Base) IssueWaypoint(WP_DEFEND, work.m_Base.GetOrigin(), 60);
  }
 
  // Back to a position of ours that stands empty (ACR_AICommander.ManPositions): hold it as its
