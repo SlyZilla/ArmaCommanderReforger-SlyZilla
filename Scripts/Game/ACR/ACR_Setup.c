@@ -535,8 +535,8 @@ class ACR_Setup
   if (key == "pockets" && value == "few") return "a few pockets (whole/half map)";
   if (key == "pockets" && value == "many") return "many pockets (whole/half map)";
   if (key == "pockets" && value == "off") return "off";
-  if (key == "quickstart" && value == "even") return "the map split along a front line, garrisons and roadblocks up";
-  if (key == "quickstart" && value == "uneven") return "one side holds two thirds, the other starts with double RP";
+  if (key == "quickstart" && value == "even") return "the map split along a front, roadblocks up";
+  if (key == "quickstart" && value == "uneven") return "one side holds 2/3, the other has double RP";
   if (key == "quickstart") return "off (both sides start from their HQ)";
   if (key == "guerrillas" && value == "few") return "a few cells (whole/half map)";
   if (key == "guerrillas" && value == "many") return "many cells (whole/half map)";
