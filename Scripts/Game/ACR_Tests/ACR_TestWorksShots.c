@@ -5,7 +5,7 @@
 class ACR_TestWorksShots
 {
  static const float STEP_S = 4; // for the world to stream in round the camera
- static const string TOWNS = "Bovemont Base,Ugoldar";
+ static const string TOWNS = "Bovemont Base,Ugoldar Base,Ugoldar Harbor 2";
  protected static ref array<ACR_Base> s_aBases = {};
  protected static ref array<vector> s_aEyes = {};
  protected static ref array<vector> s_aAngles = {};
