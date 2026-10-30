@@ -419,13 +419,15 @@ class ACR_Minefields
  }
 
  // Metres from p to the edge of the nearest road (negative: on it); float.MAX without one.
+ // Real road pieces only: a navmesh rebuild (a roadblock or barricade spawning) adds navlinks
+ // off the road, and men lying in wait 20 m off it measured a few metres from one.
  static float RoadClearance(vector p)
  {
   ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
   if (!aiWorld || !aiWorld.GetRoadNetworkManager()) return float.MAX;
   BaseRoad road;
   float distance;
-  aiWorld.GetRoadNetworkManager().GetClosestRoad(p, road, distance);
+  aiWorld.GetRoadNetworkManager().GetClosestRoad(p, road, distance, true);
   if (!road) return float.MAX;
   return distance - RoadWidth(road) * 0.5;
  }
