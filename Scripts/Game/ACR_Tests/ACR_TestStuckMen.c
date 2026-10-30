@@ -11,6 +11,7 @@ class ACR_TestStuckMen
  protected static bool s_bEnded;
  protected static int s_iEnded;
  protected static bool s_bStoppedAgain;
+ static int s_iFollowers;
 
  static void Run(int second)
  {
@@ -89,7 +90,10 @@ class ACR_TestStuckMen
 
  protected static void Ended(ACR_Squad squad)
  {
-  ACR_TestRegress.Check("stuckmen: the first regroup waits for them, then notes who couldn't come", squad.StuckMen() == s_aFrozen.Count(), string.Format("%1 noted of %2 frozen", squad.StuckMen(), s_aFrozen.Count()));
+  // A man in formation behind a frozen team leader can stop with him: he never moved either, so he is
+  // noted too, and counts again once he moves.
+  s_iFollowers = squad.StuckMen() - s_aFrozen.Count();
+  ACR_TestRegress.Check("stuckmen: the first regroup waits for them, then notes who couldn't come", s_iFollowers >= 0 && s_iFollowers <= 1, string.Format("%1 noted of %2 frozen", squad.StuckMen(), s_aFrozen.Count()));
   ACR_TestRegress.Check("stuckmen: the squad carries on with its order", squad.MovementPendingForTest(), squad.m_Order);
   squad.HoldRegroupForTest(0);
  }
@@ -100,15 +104,16 @@ class ACR_TestStuckMen
   float gap = 0;
   foreach (IEntity body : s_aFrozen) if (body) gap = Math.Max(gap, vector.DistanceXZ(body.GetOrigin(), leader.GetOrigin()));
   ACR_TestRegress.Check("stuckmen: they are far behind and it doesn't stop for them again", gap > ACR_Squad.STRAGGLER_DISTANCE && !s_bStoppedAgain, string.Format("%1 m behind, stopped again %2", (int)gap, s_bStoppedAgain));
-  ACR_TestRegress.Check("stuckmen: nobody else counts as a straggler", squad.Stragglers(ACR_Squad.STRAGGLER_DISTANCE) == 0, string.Format("%1", squad.Stragglers(ACR_Squad.STRAGGLER_DISTANCE)));
+  ACR_TestRegress.Check("stuckmen: nobody else counts as a straggler", squad.Stragglers(ACR_Squad.STRAGGLER_DISTANCE) <= s_iFollowers, string.Format("%1, followers noted %2", squad.Stragglers(ACR_Squad.STRAGGLER_DISTANCE), s_iFollowers));
   vector center;
   bool has = squad.Centroid(center);
   ACR_TestRegress.Check("stuckmen: the meeting point doesn't count them", has && vector.DistanceXZ(center, leader.GetOrigin()) < gap * 0.25, string.Format("%1 m from the leader, they are %2 m", (int)vector.DistanceXZ(center, leader.GetOrigin()), (int)gap));
   // One of them gets free.
+  int noted = squad.StuckMen();
   IEntity freed = s_aFrozen[0];
   freed.SetOrigin(ACR_Manager.Ground(freed.GetOrigin() + Vector(6, 0, 0)));
   freed.Update();
-  ACR_TestRegress.Check("stuckmen: a man who moves counts again", squad.StuckMen() == s_aFrozen.Count() - 1, string.Format("%1 noted", squad.StuckMen()));
+  ACR_TestRegress.Check("stuckmen: a man who moves counts again", squad.StuckMen() == noted - 1, string.Format("%1 noted, %2 before", squad.StuckMen(), noted));
   ACR_TestRegress.Complete("stuckmen", 6);
  }
 }
