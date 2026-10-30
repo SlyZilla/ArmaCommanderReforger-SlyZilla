@@ -194,6 +194,7 @@ kolguyevsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Kolguyev.ent
 deploymenu|-acrDeployMenuTest 1|180|Worlds/ACR_Arland.ent
 mappolygon|-acrMapPolygonTest 1|60
 rtsoverlay|-acrRTSOverlayTest 1|60
+intelmarks|-acrIntelMarksTest 1|60
 stallwait|-acrStallWaitTest 1|130
 recrew|-acrRecrewTest 1|120
 mortargiveup|-acrMortarGiveUpTest 1|100
