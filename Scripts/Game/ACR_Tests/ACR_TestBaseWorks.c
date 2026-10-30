@@ -100,13 +100,19 @@ class ACR_TestBaseWorks
    array<IEntity> buildings = {};
    ACR_BaseDefences.Buildings(base.GetOrigin(), ACR_BaseDefences.SearchRadius(base), buildings);
    if (buildings.Count() <= most) continue;
-   // A town its lines can hold a nest in: some have nowhere with the view for one.
+   // A town with a nest built into a line and something on tier III: some have nowhere with the view
+   // for them, and the test goes through every tier.
    ACR_BaseWork plan = ACR_BaseWorks.WorkFor(base, s_sSide);
    bool nest = false;
-   foreach (ACR_BaseSite site : plan.m_aSites) if (site.m_eKind == ACR_EBaseSite.NEST) nest = true;
-   if (!nest)
+   bool third = false;
+   foreach (ACR_BaseSite site : plan.m_aSites)
    {
-    PrintFormat("[ACR] TEST baseworks: %1 (%2 buildings) has no nest, on to the next", base.m_sName, buildings.Count());
+    if (site.m_eKind == ACR_EBaseSite.NEST && !site.m_aCuts.IsEmpty()) nest = true;
+    if (site.m_iTier == 3) third = true;
+   }
+   if (!nest || !third)
+   {
+    PrintFormat("[ACR] TEST baseworks: %1 (%2 buildings) has no nest in a line or no tier III, on to the next", base.m_sName, buildings.Count());
     ACR_BaseWorks.s_aWorks.RemoveItem(plan);
     continue;
    }
@@ -167,6 +173,8 @@ class ACR_TestBaseWorks
   ACR_TestRegress.Check("baseworks: planning stays under 2 s", ACR_BaseWorks.s_iLastPlanMs < 2000, string.Format("%1 ms", ACR_BaseWorks.s_iLastPlanMs));
   ACR_TestRegress.Check("baseworks: only the first site is paid", squad.m_FortifyPlan && us.m_iRP == s_iRP - squad.m_FortifyPlan.m_iCost, string.Format("%1 -> %2", s_iRP, us.m_iRP));
   s_iQueued = ACR_Navmesh.s_iQueued;
+  // Not done before the new order comes: a stretch can stand right beside where the squad spawned.
+  if (squad.m_FortifyPlan) squad.m_FortifyPlan.m_fDuration = 600;
  }
 
  protected static void Replaced(ACR_Squad squad, ACR_FactionData us)
@@ -182,6 +190,7 @@ class ACR_TestBaseWorks
   string why;
   bool again = ACR_BaseWorks.Order(squad, s_Base, why);
   ACR_TestRegress.Check("baseworks: ordered again it goes on", again, why);
+  if (squad.m_FortifyPlan) squad.m_FortifyPlan.m_fDuration = 600;
  }
 
  // Three minutes with no progress on this site, as with a truck parked on it.
