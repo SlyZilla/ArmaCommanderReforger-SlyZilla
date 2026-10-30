@@ -60,6 +60,7 @@ class ACR_FeedFrame : Managed
  ref array<int> m_ContactKinds = {};
  ref array<int> m_ContactCounts = {};
  ref array<int> m_ContactAges = {};
+ ref array<int> m_ContactDetails = {}; // 3 per contact: id, NATO icons, heading (degrees, -1 none)
  ref array<string> m_Feed = {};
  ref array<int> m_FeedAges = {};
  string m_sIntelSig;
@@ -193,7 +194,7 @@ class ACR_MapFeed
   if (Changed(id, "zones", frame.m_sZonesSig, full)) { pc.ACR_SendZones(frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels); Count(frame, "zones"); }
   if (Changed(id, "orders", frame.m_sOrdersSig, full)) { pc.ACR_SendOrders(frame.m_OrderGroups, frame.m_OrderTargets, frame.m_OrderKinds, frame.m_OrderIssuers); Count(frame, "orders"); }
   PublishCapture(pc, key);
-  if (Changed(id, "intel", frame.m_sIntelSig, full)) { pc.ACR_SendIntel(frame.m_ContactPos, frame.m_ContactKinds, frame.m_ContactCounts, frame.m_ContactAges, frame.m_Feed, frame.m_FeedAges); Count(frame, "intel"); }
+  if (Changed(id, "intel", frame.m_sIntelSig, full)) { pc.ACR_SendIntel(frame.m_ContactPos, frame.m_ContactKinds, frame.m_ContactCounts, frame.m_ContactAges, frame.m_ContactDetails, frame.m_Feed, frame.m_FeedAges); Count(frame, "intel"); }
   if (Changed(id, "vehicles", frame.m_sVehiclesSig, full)) { pc.ACR_SendVehicles(frame.m_VehiclePos, frame.m_VehicleNames, frame.m_VehicleAges); Count(frame, "vehicles"); }
   if (Changed(id, "cmd", frame.m_sCmdSig, full)) { pc.ACR_SendCommanders(frame.m_CmdIds, frame.m_CmdTags, frame.m_CmdActions, frame.m_CmdActionAges, frame.m_SelGroups, frame.m_SelOwners); Count(frame, "cmd"); }
   if (Changed(id, "pings", frame.m_sPingsSig, full)) { pc.ACR_SendPings(frame.m_PingIds, frame.m_PingKinds, frame.m_PingPos, frame.m_PingOwners, frame.m_PingTags, frame.m_PingAges, frame.m_PingAnswers); Count(frame, "pings"); }
@@ -657,8 +658,12 @@ class ACR_MapFeed
    frame.m_ContactCounts.Insert(contact.m_iCount);
    int age = (now - contact.m_fSeen) / 1000;
    frame.m_ContactAges.Insert(age);
+   int heading = Math.Round(contact.m_fHeading);
+   frame.m_ContactDetails.Insert(contact.m_sKey.Hash());
+   frame.m_ContactDetails.Insert(contact.m_iIcons);
+   frame.m_ContactDetails.Insert(heading);
    int seen = contact.m_fSeen / 1000;
-   sig += P(contact.m_Pos) + contact.m_iKind.ToString() + "," + contact.m_iCount.ToString() + "," + seen.ToString() + ";";
+   sig += P(contact.m_Pos) + contact.m_iKind.ToString() + "," + contact.m_iCount.ToString() + "," + seen.ToString() + "," + contact.m_iIcons.ToString() + "," + heading.ToString() + ";";
   }
   int feedBytes;
   foreach (int i, string line : intel.m_Feed)
@@ -672,7 +677,7 @@ class ACR_MapFeed
    feedBytes += line.Length() + 8;
   }
   frame.m_sIntelSig = sig;
-  frame.m_Bytes.Set("intel", frame.m_ContactPos.Count() * 24 + feedBytes + 24);
+  frame.m_Bytes.Set("intel", frame.m_ContactPos.Count() * 36 + feedBytes + 28);
   string vehicleSig = "";
   int vehicleBytes;
   foreach (IEntity vehicle, float seenAt : intel.m_VehicleSeen)
