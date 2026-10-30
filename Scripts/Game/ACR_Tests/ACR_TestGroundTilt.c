@@ -129,7 +129,8 @@ class ACR_TestGroundTilt
  {
   vector ground = ACR_Manager.Ground(at);
   if (prefab == ACR_FobDefences.SANDBAGS_US || prefab == ACR_Fortify.WIRE) return ACR_Fortify.SpawnPiece(prefab, ground, yaw, "US");
-  ACR_Roadblock rb = ACR_Roadblocks.SpawnRoadblock("US", ground, yaw, "", ACR_ERoadblockType.BARRICADE);
+  // No lane: it moves pieces sideways, and the tilt is measured on the layout as the prefab has it.
+  ACR_Roadblock rb = ACR_Roadblocks.SpawnRoadblock("US", ground, yaw, "", ACR_ERoadblockType.BARRICADE, false);
   if (!rb) return null;
   ACR_Roadblocks.s_aRoadblocks.RemoveItem(rb);
   return rb.m_Entity;
