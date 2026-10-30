@@ -59,6 +59,8 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrPocketsTest")) ACR_TestPockets.Run(seconds);
   // -acrQuickStartTest: the map already split between the sides (ACR_TestQuickStart).
   if (System.IsCLIParam("acrQuickStartTest")) ACR_TestQuickStart.Run(seconds);
+  // -acrStuckMenTest: a squad doesn't keep stopping for men who can't walk (ACR_TestStuckMen).
+  if (System.IsCLIParam("acrStuckMenTest")) ACR_TestStuckMen.Run(seconds);
   // -acrBaseDefencesTest: the fortification planner on Everon (ACR_TestBaseDefences).
   if (System.IsCLIParam("acrBaseDefencesTest")) ACR_TestBaseDefences.Run(seconds);
   if (System.IsCLIParam("acrBaseDefencesSurveyTest")) ACR_TestBaseDefences.RunSurvey(seconds);
