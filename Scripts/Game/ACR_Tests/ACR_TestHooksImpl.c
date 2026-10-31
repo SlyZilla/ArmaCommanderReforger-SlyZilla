@@ -44,6 +44,8 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrSlopesTest")) ACR_TestSlopes.Run(seconds);
   // -acrPathProbeTest: can foot squads reach Gallows Base's centre (ACR_TestPathProbe).
   if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
+  // -acrQuickStartFIATest: FIA's cells on a Quick start (ACR_TestQuickStartFIA).
+  if (System.IsCLIParam("acrQuickStartFIATest")) ACR_TestQuickStartFIA.Run(seconds);
   // -acrGuerrillasTest: FIA guerrilla cells (ACR_TestGuerrillas, #89).
   if (System.IsCLIParam("acrGuerrillasTest")) ACR_TestGuerrillas.Run(seconds);
   // -acrInsurgencyTest: FIA allegiance and dangerous roads (ACR_TestInsurgency, #89).
@@ -74,6 +76,7 @@ modded class ACR_TestHooks
  // Tests keep their worlds as authored; the guerrilla test and the balance soaks get guerrillas.
  override string Guerrillas()
  {
+  if (System.IsCLIParam("acrQuickStartFIATest")) return "many";
   if (System.IsCLIParam("acrGuerrillasTest") || System.IsCLIParam("acrInsurgencyTest") || System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrLongSoakTest")) return "few";
   return "";
  }
@@ -88,7 +91,7 @@ modded class ACR_TestHooks
 
  override string QuickStart()
  {
-  if (System.IsCLIParam("acrQuickStartTest")) return "even";
+  if (System.IsCLIParam("acrQuickStartTest") || System.IsCLIParam("acrQuickStartFIATest")) return "even";
   return "";
  }
 
