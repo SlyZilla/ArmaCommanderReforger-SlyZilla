@@ -12,6 +12,7 @@ respawn|-acrRespawnTest 1|90
 deathfade|-acrDeathFadeTest 1|90
 rtscamera|-acrRTSCameraTest 1|90
 rtsaim|-acrRTSAimTest 1|150
+rtslook|-acrRTSLookTest 1|150
 thinkoverlay|-acrThinkOverlayTest 1|90
 support|-acrSupportTest 1|260
 gunship|-acrGunshipTest 1|180
@@ -177,6 +178,7 @@ bbborderleash|-acrBbbOrderLeashTest 1|190|Worlds/BBB_TestArland.ent
 typhoons|-acrTyphoonPurchaseTest 1|120
 pockets|-acrPocketsTest 1|150|Worlds/ACR_Everon.ent
 quickstart|-acrQuickStartTest 1|150|Worlds/ACR_Everon.ent
+stuckmen|-acrStuckMenTest 1|240|Worlds/ACR_Everon.ent
 basedefences|-acrBaseDefencesTest 1|120|Worlds/ACR_Everon.ent
 basedefencessurvey|-acrBaseDefencesSurveyTest 1|90|Worlds/ACR_Everon.ent
 basedefencessurveyarland|-acrBaseDefencesSurveyTest 1|90|Worlds/ACR_Arland.ent
@@ -187,10 +189,13 @@ longsoakkolguyev|-acrLongSoakTest 1|7380|Worlds/ACR_Kolguyev.ent
 pathprobe|-acrPathProbeTest 1|400|Worlds/ACR_Everon.ent
 guerrillas|-acrGuerrillasTest 1|150|Worlds/ACR_Everon.ent
 insurgency|-acrInsurgencyTest 1|170|Worlds/ACR_Everon.ent
+fialeaning|-acrFIALeaningTest 1|100|Worlds/ACR_Everon.ent
+hideouts|-acrHideoutsTest 1|120|Worlds/ACR_Everon.ent
 kolguyevsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Kolguyev.ent
 deploymenu|-acrDeployMenuTest 1|180|Worlds/ACR_Arland.ent
 mappolygon|-acrMapPolygonTest 1|60
 rtsoverlay|-acrRTSOverlayTest 1|60
+intelmarks|-acrIntelMarksTest 1|60
 stallwait|-acrStallWaitTest 1|130
 recrew|-acrRecrewTest 1|120
 mortargiveup|-acrMortarGiveUpTest 1|100
@@ -198,3 +203,11 @@ roadhops|-acrRoadHopsTest 1|500
 roadhopsoff|-acrRoadHopsOffTest 1|500
 keyhints|-acrKeyHintsTest 1|60|Worlds/ACR_Everon.ent
 panelshots|-acrPanelShotsTest 1|420
+genmapchernarus|-acrGenerateMapTest 1|150|Worlds/ACR_ChernarusMinus.ent
+genmapgulfcoast|-acrGenerateMapTest 1|150|Worlds/ACR_GulfcoastIslands.ent
+genmapkunar|-acrGenerateMapTest 1|150|Worlds/ACR_KunarProvince.ent
+genmapwestzagoria|-acrGenerateMapTest 1|150|Worlds/ACR_WestZagoria.ent
+genmapzimnitrita|-acrGenerateMapTest 1|150|Worlds/ACR_Zimnitrita.ent
+contentpack|-acrContentPackTest 1|120
+contentpackwinter|-acrContentPackWinterTest 1|120
+quickstartfia|-acrQuickStartFIATest 1|90|Worlds/ACR_Everon.ent

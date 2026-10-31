@@ -166,7 +166,9 @@ class ACR_RTSOverlay : Managed
    if (!label) continue;
    label.SetVisible(true);
    FrameSlot.SetPos(label, screen[0], screen[1] - 10);
-   label.SetText(string.Format("%1  %2s  %3m", ACR_Intel.Describe(kind, members), age, Math.Round(distance)));
+   int contactId, icons, heading;
+   pc.ACR_GetContactSymbol(i, contactId, icons, heading);
+   label.SetText(string.Format("%1  %2  %3m", ACR_Intel.DescribeSymbol(icons, kind, members), ACR_Intel.AgeText(age), Math.Round(distance)));
    label.SetColor(red);
   }
   return used;

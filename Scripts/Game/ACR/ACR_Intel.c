@@ -14,6 +14,9 @@ class ACR_Contact : Managed
  string m_sSpotter;
  ACR_Squad m_Squad;    // the enemy squad (or null)
  IEntity m_Body;       // ...or one soldier of a group we don't manage
+ int m_iIcons;          // EMilitarySymbolIcon flags for the map (ACR_Intel.IconsOf)
+ float m_fHeading = -1; // degrees (0 = north) it was last seen moving towards, or -1
+ ref array<IEntity> m_Bodies = {}; // the soldiers of it we have seen
 }
 
 class ACR_Intel : Managed
@@ -99,6 +102,16 @@ class ACR_Intel : Managed
  // Enemy FOBs are hidden until found: by walking into one (ACR_BaseSystem) or by seeing its HQ.
  static const float FOB_SIGHT = 250;      // m from the HQ, with a clear view
  static const int FOB_TRACES = 8;         // line-of-sight checks per FOB per pass
+ // A contact sits in the middle of the sightings made within GROUP_FRESH_MS of its newest one.
+ // Once that point has moved HEADING_MIN_M it has a heading, kept while sightings go on for
+ // HEADING_KEEP_MS more (the map's arrow: where it was last seen going).
+ static const float GROUP_FRESH_MS = 5000;
+ static const float HEADING_MIN_M = 40;
+ static const float HEADING_KEEP_MS = 60000;
+ protected ref map<string, vector> m_MoveFrom = new map<string, vector>();
+ protected ref map<string, float> m_Heading = new map<string, float>();
+ protected ref map<string, float> m_HeadingAt = new map<string, float>();
+ protected ref map<IEntity, int> m_Role = new map<IEntity, int>(); // RoleOf, per soldier seen
 
  void ACR_Intel(ACR_Manager manager, string faction)
  {
@@ -208,6 +221,7 @@ class ACR_Intel : Managed
    m_SeenTime.Remove(gone);
    m_SeenAt.Remove(gone);
    m_SeenBy.Remove(gone);
+   m_Role.Remove(gone);
   }
   BuildContacts(now);
   Report(now);
@@ -480,6 +494,7 @@ class ACR_Intel : Managed
      contact.m_fSeen = -1;
     }
     contact.m_iCount++;
+    contact.m_Bodies.Insert(body);
     int kind = KindOf(body);
     if (kind > contact.m_iKind) contact.m_iKind = kind;
     if (when > contact.m_fSeen)
@@ -510,6 +525,7 @@ class ACR_Intel : Managed
     if (group) byGroup.Insert(group, other);
    }
    other.m_iCount++;
+   other.m_Bodies.Insert(body);
    int otherKind = KindOf(body);
    if (otherKind > other.m_iKind) other.m_iKind = otherKind;
    if (when > other.m_fSeen)
@@ -519,6 +535,65 @@ class ACR_Intel : Managed
     other.m_sSpotter = m_SeenBy.Get(body);
    }
   }
+  array<string> live = {};
+  foreach (ACR_Contact built : m_Contacts)
+  {
+   Settle(built);
+   live.Insert(built.m_sKey);
+  }
+  array<string> forgotten = {};
+  foreach (string key, vector from : m_MoveFrom) if (!live.Contains(key)) forgotten.Insert(key);
+  foreach (string lost : forgotten)
+  {
+   m_MoveFrom.Remove(lost);
+   m_Heading.Remove(lost);
+   m_HeadingAt.Remove(lost);
+  }
+ }
+
+ // Where a contact is (the middle of its latest sightings, not one soldier of it), what it
+ // looks like on the map and where it was going.
+ protected void Settle(ACR_Contact contact)
+ {
+  vector sum;
+  int fresh;
+  foreach (IEntity body : contact.m_Bodies)
+  {
+   if (m_SeenTime.Get(body) < contact.m_fSeen - GROUP_FRESH_MS) continue;
+   sum = sum + m_SeenAt.Get(body);
+   fresh++;
+  }
+  if (fresh > 0) contact.m_Pos = sum * (1.0 / fresh);
+  contact.m_iIcons = IconsOf(contact);
+  contact.m_fHeading = Heading(contact.m_sKey, contact.m_Pos, contact.m_fSeen);
+ }
+
+ // Degrees (0 = north) from where the contact was to where it is once it has moved
+ // HEADING_MIN_M; -1 until then, or once it has been seen standing for HEADING_KEEP_MS.
+ protected float Heading(string key, vector pos, float seen)
+ {
+  vector from;
+  if (!m_MoveFrom.Find(key, from))
+  {
+   m_MoveFrom.Set(key, pos);
+   return -1;
+  }
+  if (vector.DistanceXZ(from, pos) >= HEADING_MIN_M)
+  {
+   m_Heading.Set(key, Bearing(from, pos));
+   m_HeadingAt.Set(key, seen);
+   m_MoveFrom.Set(key, pos);
+  }
+  float at;
+  if (!m_HeadingAt.Find(key, at) || seen - at > HEADING_KEEP_MS) return -1;
+  return m_Heading.Get(key);
+ }
+
+ static float Bearing(vector from, vector to)
+ {
+  float angle = Math.Atan2(to[0] - from[0], to[2] - from[2]) * Math.RAD2DEG;
+  if (angle < 0) angle += 360;
+  return angle;
  }
 
  protected static AIGroup GroupOf(IEntity body)
@@ -560,6 +635,149 @@ class ACR_Intel : Managed
  {
   if (kind == KIND_AIR) return EMilitarySymbolDimension.AIR;
   return EMilitarySymbolDimension.LAND;
+ }
+
+ static bool Has(int icons, int icon) { return (icons & icon) == icon; }
+
+ // The NATO symbol for what we have actually seen of a contact (APP-6 style): a tank is armour,
+ // an APC or IFV armoured infantry, a truck with men in it motorised infantry, a gun with no
+ // driver's seat a weapon nest, a foot team mostly carrying one weapon that kind of team.
+ int IconsOf(ACR_Contact contact)
+ {
+  if (contact.m_iKind != KIND_INFANTRY)
+  {
+   foreach (IEntity body : contact.m_Bodies)
+   {
+    IEntity vehicle = ACR_Transport.VehicleOf(body);
+    if (vehicle && VehicleKind(vehicle) == contact.m_iKind) return VehicleIcons(vehicle, contact.m_iCount);
+   }
+   return IconOf(contact.m_iKind);
+  }
+  if (contact.m_Squad && contact.m_Squad.m_bMortar) return EMilitarySymbolIcon.MORTAR;
+  int launchers, guns, snipers;
+  foreach (IEntity soldier : contact.m_Bodies)
+  {
+   int role;
+   if (!m_Role.Find(soldier, role))
+   {
+    role = RoleOf(soldier);
+    m_Role.Set(soldier, role);
+   }
+   if (role == EMilitarySymbolIcon.ANTITANK) launchers++;
+   else if (role == EMilitarySymbolIcon.MACHINEGUN) guns++;
+   else if (role == EMilitarySymbolIcon.SNIPER) snipers++;
+  }
+  return InfantryIcons(contact.m_iCount, launchers, guns, snipers);
+ }
+
+ // Two or more seen, at least half of them with the same special weapon: that kind of team.
+ // One soldier, or a squad with its usual gunner, launcher and marksman, is just infantry.
+ static int InfantryIcons(int count, int launchers, int guns, int snipers)
+ {
+  if (count < 2) return EMilitarySymbolIcon.INFANTRY;
+  if (snipers * 2 >= count) return EMilitarySymbolIcon.SNIPER;
+  if (launchers * 2 >= count) return EMilitarySymbolIcon.INFANTRY | EMilitarySymbolIcon.ANTITANK;
+  if (guns * 2 >= count) return EMilitarySymbolIcon.INFANTRY | EMilitarySymbolIcon.MACHINEGUN;
+  return EMilitarySymbolIcon.INFANTRY;
+ }
+
+ // The special weapon a soldier carries (ANTITANK, MACHINEGUN or SNIPER), else 0.
+ static int RoleOf(IEntity soldier)
+ {
+  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(soldier.FindComponent(BaseWeaponManagerComponent));
+  if (!weapons) return 0;
+  array<IEntity> carried = {};
+  weapons.GetWeaponsList(carried);
+  int role = 0;
+  foreach (IEntity item : carried)
+  {
+   if (!item) continue;
+   BaseWeaponComponent weapon = BaseWeaponComponent.Cast(item.FindComponent(BaseWeaponComponent));
+   if (!weapon) continue;
+   EWeaponType type = weapon.GetWeaponType();
+   if (type == EWeaponType.WT_ROCKETLAUNCHER) return EMilitarySymbolIcon.ANTITANK;
+   if (type == EWeaponType.WT_MACHINEGUN) role = EMilitarySymbolIcon.MACHINEGUN;
+   else if (type == EWeaponType.WT_SNIPERRIFLE && role == 0) role = EMilitarySymbolIcon.SNIPER;
+  }
+  return role;
+ }
+
+ // A turret and no driver's seat: a weapon on a tripod or in a nest, not a vehicle.
+ static bool StaticGun(IEntity vehicle)
+ {
+  SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!compartments) return false;
+  array<BaseCompartmentSlot> pilots = {};
+  compartments.GetCompartmentsOfType(pilots, ECompartmentType.PILOT);
+  return pilots.IsEmpty() && ACR_Squad.HasTurret(vehicle);
+ }
+
+ static int VehicleIcons(IEntity vehicle, int count)
+ {
+  if (vehicle.FindComponent(VehicleFixedWingSimulation)) return EMilitarySymbolIcon.FIXED_WING;
+  if (vehicle.FindComponent(VehicleHelicopterSimulation)) return EMilitarySymbolIcon.ROTARY_WING;
+  string name = "";
+  if (vehicle.GetPrefabData()) name = vehicle.GetPrefabData().GetPrefabName();
+  name.ToUpper();
+  if (StaticGun(vehicle))
+  {
+   if (name.Contains("MORTAR")) return EMilitarySymbolIcon.MORTAR;
+   if (name.Contains("SPG") || name.Contains("TOW") || name.Contains("KORNET") || name.Contains("METIS") || name.Contains("ATGM")) return EMilitarySymbolIcon.ANTITANK;
+   if (name.Contains("MK19") || name.Contains("AGS17") || name.Contains("AGS30") || name.Contains("GMG")) return EMilitarySymbolIcon.INFANTRY | EMilitarySymbolIcon.GRENADE;
+   return EMilitarySymbolIcon.INFANTRY | EMilitarySymbolIcon.MACHINEGUN;
+  }
+  // The engine's own weight class first (mod vehicles), then the names KindOf knows.
+  PerceivableComponent perceivable = PerceivableComponent.Cast(vehicle.FindComponent(PerceivableComponent));
+  if (perceivable && perceivable.GetUnitType() == EAIUnitType.UnitType_VehicleHeavy) return EMilitarySymbolIcon.ARMOR;
+  bool tank = name.Contains("T72") || name.Contains("T80") || name.Contains("T90") || name.Contains("M1A") || name.Contains("TANK") || name.Contains("LEOPARD");
+  if (tank && VehicleKind(vehicle) == KIND_ARMOUR) return EMilitarySymbolIcon.ARMOR;
+  if ((perceivable && perceivable.GetUnitType() == EAIUnitType.UnitType_VehicleMedium) || VehicleKind(vehicle) == KIND_ARMOUR) return EMilitarySymbolIcon.INFANTRY | EMilitarySymbolIcon.ARMOR;
+  if (ACR_Squad.HasTurret(vehicle)) return EMilitarySymbolIcon.MOTORIZED | EMilitarySymbolIcon.MACHINEGUN;
+  if (count >= 3) return EMilitarySymbolIcon.INFANTRY | EMilitarySymbolIcon.MOTORIZED;
+  return EMilitarySymbolIcon.MOTORIZED;
+ }
+
+ // What the map calls a contact, from its symbol (the feed and the AI keep Describe).
+ static string DescribeSymbol(int icons, int kind, int count)
+ {
+  string men = count.ToString();
+  if (Has(icons, EMilitarySymbolIcon.FIXED_WING)) return "aircraft";
+  if (Has(icons, EMilitarySymbolIcon.ROTARY_WING)) return "helicopter";
+  if (Has(icons, EMilitarySymbolIcon.MORTAR)) return "mortar";
+  if (Has(icons, EMilitarySymbolIcon.ARMOR) && Has(icons, EMilitarySymbolIcon.INFANTRY)) return "APC/IFV";
+  if (Has(icons, EMilitarySymbolIcon.ARMOR)) return "tank";
+  if (Has(icons, EMilitarySymbolIcon.MOTORIZED) && Has(icons, EMilitarySymbolIcon.MACHINEGUN)) return "armed vehicle";
+  if (Has(icons, EMilitarySymbolIcon.MOTORIZED) && Has(icons, EMilitarySymbolIcon.INFANTRY)) return "vehicle with " + men;
+  if (Has(icons, EMilitarySymbolIcon.MOTORIZED)) return "vehicle";
+  if (kind != KIND_INFANTRY)
+  {
+   if (Has(icons, EMilitarySymbolIcon.ANTITANK)) return "AT gun";
+   if (Has(icons, EMilitarySymbolIcon.GRENADE)) return "GMG nest";
+   if (Has(icons, EMilitarySymbolIcon.MACHINEGUN)) return "MG nest";
+   return Describe(kind, count);
+  }
+  if (Has(icons, EMilitarySymbolIcon.SNIPER)) return "sniper team of " + men;
+  if (Has(icons, EMilitarySymbolIcon.ANTITANK)) return "AT team of " + men;
+  if (Has(icons, EMilitarySymbolIcon.MACHINEGUN)) return "MG team of " + men;
+  return Describe(KIND_INFANTRY, count);
+ }
+
+ // Size mark over a foot contact's symbol, from the men seen: team, squad, platoon.
+ static int EchelonOf(int kind, int count)
+ {
+  if (kind != KIND_INFANTRY || count < 2) return EMilitarySymbolAmplifier.NONE;
+  if (count <= 4) return EMilitarySymbolAmplifier.TEAM;
+  if (count <= 12) return EMilitarySymbolAmplifier.SQUAD;
+  return EMilitarySymbolAmplifier.PLATOON;
+ }
+
+ // "now", "40s ago", "3 min ago".
+ static string AgeText(int seconds)
+ {
+  if (seconds < 5) return "now";
+  if (seconds < 60) return seconds.ToString() + "s ago";
+  int minutes = seconds / 60;
+  return minutes.ToString() + " min ago";
  }
 
  // Freshest sighting of an enemy squad (or a lone soldier).
@@ -682,6 +900,12 @@ class ACR_Intel : Managed
   m_Radio.RemoveOrdered(0);
   m_fNextRadio = now + RADIO_GAP_MS;
   return line;
+ }
+
+ // Seen for this side by someone outside it (an FIA tip-off, ACR_Insurgency).
+ void Tip(IEntity enemy, float now, string spotter)
+ {
+  Note(enemy, now, spotter);
  }
 
  // at: where it happened, if anywhere (the INTEL line then jumps the map there on a click).

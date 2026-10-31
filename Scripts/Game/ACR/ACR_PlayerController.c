@@ -12,6 +12,9 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  RplId m_GroupId;      // squad this marker belongs to
  int m_BaseIndex = -1; // >= 0: this marker is a base
  bool m_bContact;      // spotted enemy: clicks go through to the map
+ bool m_bSuspected;    // spotted enemy not seen for a while (ACR_CONTACT_SUSPECTED)
+ float m_fAlpha = 1;   // spotted enemy: fades as the sighting ages
+ int m_iContactShape = -1; // spotted enemy: icons and dimension it was prepared with
  int m_iPingId = -1;   // >= 0: this marker is a ping's label
  int m_iSymbolKey;     // changes when m_GroupSymbol is set differently
  protected Widget m_wPip; // ground-level reticle pip for spotted contacts
@@ -52,7 +55,8 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (!m_MarkerWidgetComp) return;
   string shown = m_Label;
   if (m_BaseIndex >= 0) shown = m_BaseCaption;
-  string key = string.Format("%1|%2|%3|%4|%5|%6", shown, m_State, m_Original, m_Selected, m_iSymbolKey, m_BaseHover);
+  int alphaStep = Math.Round(m_fAlpha * 20);
+  string key = string.Format("%1|%2|%3|%4|%5|%6|%7|%8", shown, m_State, m_Original, m_Selected, m_iSymbolKey, m_BaseHover, alphaStep, m_bSuspected);
   if (key == m_sStyled) return;
   m_sStyled = key;
   if (m_BaseIndex >= 0) m_MarkerWidgetComp.SetEventListening(true);
@@ -67,6 +71,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (m_State == 6) color = new Color(1, 1, 1, 1);          // ping label (coloured by kind afterwards)
   if (m_Original) color = new Color(0.2, 1, 0.3, 1);
   if (m_Selected) color = new Color(1, 1, 1, 1);
+  if (m_fAlpha < 1) color = new Color(color.R(), color.G(), color.B(), color.A() * m_fAlpha);
   m_MarkerWidgetComp.SetColor(color);
   if (m_GroupSymbol) m_MarkerWidgetComp.UpdateMilitarySymbol(m_GroupSymbol);
   if (m_bContact && m_wRoot && !m_wPip)
@@ -83,8 +88,8 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   }
   if (m_wPip)
   {
-   float pipAlpha = 0.95;
-   if (m_State == 3 && m_Label.Contains("?")) pipAlpha = 0.55;
+   float pipAlpha = 0.95 * m_fAlpha;
+   if (m_bSuspected) pipAlpha = Math.Min(pipAlpha, 0.55);
    m_wPip.SetColor(new Color(1, 0.22, 0.18, pipAlpha));
   }
  }
@@ -861,12 +866,13 @@ modded class SCR_PlayerController
    foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) manager.ACR_RemoveMarker(groupMarker);
    foreach (ACR_UnitMarker baseMarker : m_ACR_BaseMarkers) manager.ACR_RemoveMarker(baseMarker);
    foreach (ACR_UnitMarker zoneMarker : m_ACR_ZoneMarkers) manager.ACR_RemoveMarker(zoneMarker);
-   foreach (ACR_UnitMarker contactMarker : m_ACR_ContactMarkers) manager.ACR_RemoveMarker(contactMarker);
+   foreach (int contactId, ACR_UnitMarker contactMarker : m_ACR_ContactById) manager.ACR_RemoveMarker(contactMarker);
    foreach (ACR_UnitMarker vehicleMarker : m_ACR_VehicleMarkers) manager.ACR_RemoveMarker(vehicleMarker);
   }
   m_ACR_Display.ClearMarkers(manager);
   m_ACR_VehicleMarkers.Clear();
   m_ACR_ContactMarkers.Clear();
+  m_ACR_ContactById.Clear();
   m_ACR_ZoneMarkers.Clear();
   m_ACR_BaseMarkers.Clear();
   m_ACR_Markers.Clear();
@@ -1224,7 +1230,11 @@ modded class SCR_PlayerController
  void ACR_ToggleRTSCamera()
  {
   if (GetGame().GetMenuManager().IsAnyMenuOpen())
+  {
    GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+   ACR_RTSCameraManager.OpenAfterMap();
+   return;
+  }
   ACR_RTSCameraManager.Toggle();
  }
 
@@ -2026,9 +2036,10 @@ modded class SCR_PlayerController
  protected ref array<int> m_ACR_ContactKinds = {};
  protected ref array<int> m_ACR_ContactCounts = {};
  protected ref array<int> m_ACR_ContactAges = {};
+ protected ref array<int> m_ACR_ContactDetails = {}; // 3 per contact: id, NATO icons, heading (-1 none)
  protected ref array<string> m_ACR_Feed = {};
- protected ref array<ref ACR_UnitMarker> m_ACR_ContactMarkers = {};
- protected ref array<int> m_ACR_ContactMarkerKinds = {};
+ protected ref array<ref ACR_UnitMarker> m_ACR_ContactMarkers = {}; // in contact order
+ protected ref map<int, ref ACR_UnitMarker> m_ACR_ContactById = new map<int, ref ACR_UnitMarker>();
  static const int ACR_CONTACT_SUSPECTED = 30; // s: older sightings are drawn as suspected
 
  protected ref array<int> m_ACR_FeedAges = {};
@@ -2037,17 +2048,18 @@ modded class SCR_PlayerController
  // a click on the line jumps the map there (ACR_FeedClick).
  protected ref array<vector> m_ACR_FeedShownPos = {};
  protected int m_ACR_IntelAt;
- void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges, array<vector> feedPos)
+ void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<int> details, array<string> feed, array<int> feedAges, array<vector> feedPos)
  {
-  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, feed, feedAges, feedPos);
+  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, details, feed, feedAges, feedPos);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges, array<vector> feedPos)
+ protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<int> details, array<string> feed, array<int> feedAges, array<vector> feedPos)
  {
   m_ACR_ContactPositions.Copy(positions);
   m_ACR_ContactKinds.Copy(kinds);
   m_ACR_ContactCounts.Copy(counts);
   m_ACR_ContactAges.Copy(ages);
+  m_ACR_ContactDetails.Copy(details);
   m_ACR_Feed.Copy(feed);
   m_ACR_FeedAges.Copy(feedAges);
   m_ACR_FeedPos.Copy(feedPos);
@@ -2090,6 +2102,22 @@ modded class SCR_PlayerController
   if (i < m_ACR_ContactCounts.Count()) count = m_ACR_ContactCounts[i];
   age = ACR_MapData.Since(m_ACR_IntelAt);
   if (i < m_ACR_ContactAges.Count()) age += m_ACR_ContactAges[i];
+ }
+
+ // Contact i's stable id, NATO icons and heading (degrees, -1: none seen). A contact without
+ // details (a test's) gets an id from its index and its kind's plain symbol.
+ void ACR_GetContactSymbol(int i, out int id, out int icons, out int heading)
+ {
+  id = -(i + 1);
+  heading = -1;
+  int kind = 0;
+  if (i < m_ACR_ContactKinds.Count()) kind = m_ACR_ContactKinds[i];
+  icons = ACR_Intel.IconOf(kind);
+  if (i * 3 + 2 >= m_ACR_ContactDetails.Count()) return;
+  id = m_ACR_ContactDetails[i * 3];
+  icons = m_ACR_ContactDetails[i * 3 + 1];
+  heading = m_ACR_ContactDetails[i * 3 + 2];
+  if (icons == 0) icons = ACR_Intel.IconOf(kind);
  }
 
  // Index of the enemy contact marker within 16 px of the map cursor, or -1.
@@ -2194,60 +2222,87 @@ modded class SCR_PlayerController
  }
  int ACR_FeedCount() { return m_ACR_Feed.Count(); }
 
- protected static int ACR_ContactIcon(int kind) { return ACR_Intel.IconOf(kind); }
  protected static int ACR_ContactDimension(int kind) { return ACR_Intel.DimensionOf(kind); }
 
+ // Each contact keeps its marker while it is known (keyed by the server's contact id), so markers
+ // don't blink when another contact comes or goes; one is only remade when its symbol's shape changes.
  protected void ACR_UpdateContactMarkers(SCR_MapMarkerManagerComponent manager)
  {
-  // Rebuild when the number or the kinds change (the symbol shape is set at creation).
-  bool rebuild = m_ACR_ContactMarkers.Count() != m_ACR_ContactKinds.Count();
-  if (!rebuild)
-   foreach (int k, int kind : m_ACR_ContactKinds)
-    if (m_ACR_ContactMarkerKinds[k] != kind) rebuild = true;
-  if (rebuild)
+  m_ACR_ContactMarkers.Clear();
+  array<int> used = {};
+  m_ACR_Data.m_ContactArrowPos.Clear();
+  m_ACR_Data.m_ContactArrowHeading.Clear();
+  m_ACR_Data.m_ContactArrowAlpha.Clear();
+  foreach (int i, vector pos : m_ACR_ContactPositions)
   {
-   foreach (ACR_UnitMarker old : m_ACR_ContactMarkers) manager.ACR_RemoveMarker(old);
-   m_ACR_ContactMarkers.Clear();
-   m_ACR_ContactMarkerKinds.Clear();
-   foreach (int kindToMake : m_ACR_ContactKinds)
+   int id, icons, heading;
+   ACR_GetContactSymbol(i, id, icons, heading);
+   if (used.Contains(id)) id = -(i + 1);
+   used.Insert(id);
+   int kind = 0;
+   if (i < m_ACR_ContactKinds.Count()) kind = m_ACR_ContactKinds[i];
+   int count = 1;
+   if (i < m_ACR_ContactCounts.Count()) count = m_ACR_ContactCounts[i];
+   int age = ACR_MapData.Since(m_ACR_IntelAt);
+   if (i < m_ACR_ContactAges.Count()) age += m_ACR_ContactAges[i];
+   int dimension = ACR_ContactDimension(kind);
+   if (ACR_Intel.Has(icons, EMilitarySymbolIcon.ROTARY_WING) || ACR_Intel.Has(icons, EMilitarySymbolIcon.FIXED_WING)) dimension = EMilitarySymbolDimension.AIR;
+   int shape = icons * 10 + dimension;
+   ACR_UnitMarker contact = m_ACR_ContactById.Get(id);
+   if (contact && contact.m_iContactShape != shape)
    {
-    ACR_UnitMarker marker = new ACR_UnitMarker();
-    marker.m_bContact = true;
-    SCR_MapMarkerBase prepared = manager.PrepareMilitaryMarker(EMilitarySymbolIdentity.OPFOR, ACR_ContactDimension(kindToMake), ACR_ContactIcon(kindToMake));
+    manager.ACR_RemoveMarker(contact);
+    contact = null;
+   }
+   if (!contact)
+   {
+    contact = new ACR_UnitMarker();
+    SCR_MapMarkerBase prepared = manager.PrepareMilitaryMarker(EMilitarySymbolIdentity.OPFOR, dimension, icons);
     if (prepared)
     {
-     marker.SetType(prepared.GetType());
-     marker.SetMarkerConfigID(prepared.GetMarkerConfigID());
-     marker.SetFlags(prepared.GetFlags());
+     contact.SetType(prepared.GetType());
+     contact.SetMarkerConfigID(prepared.GetMarkerConfigID());
+     contact.SetFlags(prepared.GetFlags());
     }
     else
     {
-     marker.SetType(SCR_EMapMarkerType.SIMPLE);
-     marker.SetMarkerConfigID(1);
+     contact.SetType(SCR_EMapMarkerType.SIMPLE);
+     contact.SetMarkerConfigID(1);
     }
-    marker.SetCanBeRemovedByOwner(false);
-    marker.m_bContact = true;
-    m_ACR_ContactMarkers.Insert(marker);
-    m_ACR_ContactMarkerKinds.Insert(kindToMake);
-    manager.InsertStaticMarker(marker, true);
-    marker.SetMarkerOwnerID(-1);
+    contact.SetCanBeRemovedByOwner(false);
+    contact.m_bContact = true;
+    contact.m_iContactShape = shape;
+    m_ACR_ContactById.Set(id, contact);
+    manager.InsertStaticMarker(contact, true);
+    contact.SetMarkerOwnerID(-1);
    }
-  }
-  foreach (int i, ACR_UnitMarker contact : m_ACR_ContactMarkers)
-  {
-   int age = m_ACR_ContactAges[i] + ACR_MapData.Since(m_ACR_IntelAt);
-   int kindNow = m_ACR_ContactKinds[i];
-   contact.m_Label = ACR_Intel.Describe(kindNow, m_ACR_ContactCounts[i]) + " (" + age.ToString() + "s)";
+   m_ACR_ContactMarkers.Insert(contact);
+   float alpha = ACR_RTSOverlay.ContactAlpha(age);
+   contact.m_Label = ACR_Intel.DescribeSymbol(icons, kind, count) + ", " + ACR_Intel.AgeText(age);
    contact.m_State = 3;
    contact.m_bContact = true;
-   vector pos = m_ACR_ContactPositions[i];
+   contact.m_bSuspected = age > ACR_CONTACT_SUSPECTED;
+   contact.m_fAlpha = alpha;
    contact.SetWorldPos(pos[0], pos[2]);
+   // Hostile while fresh, "assumed hostile" (dashed frame) once it's only a last known spot.
    int identity = EMilitarySymbolIdentity.OPFOR;
-   if (age > ACR_CONTACT_SUSPECTED) identity = EMilitarySymbolIdentity.ASSUMED_OPFOR;
+   if (contact.m_bSuspected) identity = EMilitarySymbolIdentity.ASSUMED_OPFOR;
+   int echelon = ACR_Intel.EchelonOf(kind, count);
    if (!contact.m_GroupSymbol) contact.m_GroupSymbol = new SCR_MilitarySymbol();
-   contact.m_GroupSymbol.Set(identity, ACR_ContactDimension(kindNow), ACR_ContactIcon(kindNow), EMilitarySymbolAmplifier.NONE);
-   contact.m_iSymbolKey = ACR_ContactIcon(kindNow) * 1000 + ACR_ContactDimension(kindNow) * 10 + identity;
+   contact.m_GroupSymbol.Set(identity, dimension, icons, echelon);
+   contact.m_iSymbolKey = shape * 1000 + echelon * 10 + identity;
    contact.RefreshStyle();
+   if (heading < 0) continue;
+   m_ACR_Data.m_ContactArrowPos.Insert(pos);
+   m_ACR_Data.m_ContactArrowHeading.Insert(heading);
+   m_ACR_Data.m_ContactArrowAlpha.Insert(alpha);
+  }
+  array<int> gone = {};
+  foreach (int known, ACR_UnitMarker marker : m_ACR_ContactById) if (!used.Contains(known)) gone.Insert(known);
+  foreach (int lost : gone)
+  {
+   manager.ACR_RemoveMarker(m_ACR_ContactById.Get(lost));
+   m_ACR_ContactById.Remove(lost);
   }
  }
 

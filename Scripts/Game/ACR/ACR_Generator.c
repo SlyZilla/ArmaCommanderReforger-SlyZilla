@@ -186,6 +186,12 @@ class ACR_Generator
    }
    string shown = raw;
    if (raw.StartsWith("#")) shown = WidgetManager.Translate(raw);
+   // Third-party maps (29 Oct, Kunar): names with stray tabs/line breaks, and "?" placeholders.
+   shown.Replace("\n", " ");
+   shown.Replace("\r", " ");
+   shown.Replace("\t", " ");
+   shown = shown.Trim();
+   if (shown != "" && !shown.StartsWith("#") && !HasLetter(shown)) continue;
    if (type == EMapDescriptorType.MDT_NAME_HILL && shown != "" && !shown.StartsWith("#"))
    {
     ACR_GenSite hill = new ACR_GenSite();
@@ -210,6 +216,16 @@ class ACR_Generator
   }
   NameIndustry(sites);
   foreach (ACR_GenSite identified : sites) identified.m_sId = identified.m_sName;
+ }
+
+ static bool HasLetter(string text)
+ {
+  for (int i = 0; i < text.Length(); i++)
+  {
+   int c = text.Get(i).ToAscii();
+   if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c > 127 || c < 0) return true;
+  }
+  return false;
  }
 
  // Kind, radius, value and (for settlements and landmarks) the name. False = not a base.
@@ -328,13 +344,24 @@ class ACR_Generator
  // ---------------------------------------------------------------- choosing the layout
  // The layout for a seed and size, without touching the world (tests call this to compare).
  // size: -1 full, else ACR_ESkirmishSize. hqs[0] = west HQ, hqs[1] = east HQ.
+ // A seed whose draw can't make a playable layout (29 Oct: one flashpoint seed in eight on
+ // Gulfcoast Islands' sparse islands) tries a few derived draws, still deterministically. A
+ // failed plan leaves a generated world with no bases, so this beats reporting failure.
+ // Host edits stay keyed to the seed the host chose. Seeds that plan first time are unchanged.
  static bool Plan(int seed, int size, notnull array<ref ACR_GenSite> layout, notnull array<ACR_GenSite> hqs, array<ref ACR_GenSite> incomeCandidates = null)
+ {
+  for (int retry = 0; retry < 6; retry++)
+   if (PlanDraw(seed, seed + retry * 7919, size, layout, hqs, incomeCandidates)) return true;
+  return false;
+ }
+
+ protected static bool PlanDraw(int seed, int draw, int size, notnull array<ref ACR_GenSite> layout, notnull array<ACR_GenSite> hqs, array<ref ACR_GenSite> incomeCandidates)
  {
   layout.Clear();
   hqs.Clear();
   if (incomeCandidates) incomeCandidates.Clear();
   RandomGenerator rng = new RandomGenerator();
-  rng.SetSeed(seed);
+  rng.SetSeed(draw);
   // The map's places are read once (about a second), then copied for each plan.
   if (!s_Surveyed)
   {
@@ -385,7 +412,9 @@ class ACR_Generator
   bool flash = size == ACR_ESkirmishSize.FLASHPOINT;
   array<ACR_GenSite> pool = {}, hqPool = {};
   int attempts = 1;
-  if (flash) attempts = 8;
+  // Halves too (29 Oct, Gulfcoast Islands): a band can cut an archipelago into unreachable
+  // islands. Retries only follow a failed draw, so maps that plan first time are unchanged.
+  if (flash || size == ACR_ESkirmishSize.HALF) attempts = 8;
   bool selected = false;
   for (int attempt = 0; attempt < attempts; attempt++)
   {
@@ -412,7 +441,7 @@ class ACR_Generator
   if (pool.Count() < 3) return false;
   foreach (ACR_GenSite p : pool) layout.Insert(p);
   // Establish the original income budget before omitting any optional tactical sites.
-  AssignEconomy(layout, hqs, flash, seed);
+  AssignEconomy(layout, hqs, flash, draw);
   // Optional owned snapshot of the actual economic candidate pool, before tactical omission.
   if (incomeCandidates) foreach (ACR_GenSite economic : layout) incomeCandidates.Insert(economic.Copy());
   int economySize = layout.Count();
@@ -425,7 +454,7 @@ class ACR_Generator
   ApplyMoves(seed, size, layout);
   // Host edits remain authoritative; moving an HQ relocates its protected opening income.
   // Automatically omitted tactical sites must not lower the economic target on a re-plan.
-  if (edited) AssignEconomy(layout, hqs, flash, seed, layout.Count() + omitted);
+  if (edited) AssignEconomy(layout, hqs, flash, draw, layout.Count() + omitted);
   // HQs get a 70 m circle where there is room for it.
   foreach (ACR_GenSite hq : hqs)
   {
@@ -1030,7 +1059,7 @@ class ACR_Generator
  // pairs as quality anchors and sample up to nine alternatives with at most two more rear
  // objectives. Only pairs within one accessible objective of the best checked pair compete.
  // Actual objectives still pass FairObjectives and ThinObjectives, regardless of the pair.
- protected static void PickHQs(array<ACR_GenSite> pool, bool flashpoint, RandomGenerator rng, out ACR_GenSite west, out ACR_GenSite east)
+ protected static void PickHQs(array<ACR_GenSite> pool, bool flashpoint, RandomGenerator rng, out ACR_GenSite west, out ACR_GenSite east, float spanShare = 0.8)
  {
   array<ACR_GenSite> candidates = {};
   if (!flashpoint)
@@ -1046,7 +1075,7 @@ class ACR_Generator
   ACR_GenSite spanA, spanB;
   Farthest(candidates, spanA, spanB);
   if (!spanA || !spanB) return;
-  float minimumSpan = 0.8 * vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
+  float minimumSpan = spanShare * vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
   array<int> allA = {}, allB = {}, rearCounts = {};
   array<float> distances = {};
   int bestRear = int.MAX;
@@ -1092,7 +1121,13 @@ class ACR_Generator
   array<int> suitable = {};
   foreach (int checked, int total : counts)
    if (total >= bestCount - 1 && total >= 3) suitable.Insert(shortlist[checked]);
-  if (suitable.IsEmpty()) return;
+  // Archipelagos (29 Oct, Gulfcoast Islands): every widely separated pair can sit on islands
+  // with no dry route between them. Only then accept closer pairs; other maps keep 80%.
+  if (suitable.IsEmpty())
+  {
+   if (spanShare > 0.3) PickHQs(pool, flashpoint, rng, west, east, spanShare - 0.2);
+   return;
+  }
   int pick = Math.Min(suitable.Count() - 1, Math.Floor(rng.RandFloat01() * suitable.Count()));
   int choice = suitable[pick];
   west = candidates[allA[choice]];

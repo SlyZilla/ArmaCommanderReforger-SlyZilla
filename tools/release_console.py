@@ -23,6 +23,21 @@ SPECS = {
                 guid='629405AEFC950C12', dirs=['Scripts', 'Configs'],
                 files=['COPYING', 'LICENSE.md', 'LICENSE.txt', 'README.md', 'CHANGELOG.md']),
 }
+# ACA map add-ons (29 Oct): one per third-party terrain, each a world + mission header that
+# depends on ACA and that map. Their startup check runs against the downloaded Workshop ACA/BBB
+# and map (InstalledAddons), so a map add-on never waits on an ACA release.
+MAPS = {
+    'MAP-CHERNARUS': ('ACAMapChernarusMinus', 'Chernarus Minus', 1, 'ChernarusMinus'),
+    'MAP-GULFCOAST': ('ACAMapGulfcoastIslands', 'Gulfcoast Islands', 2, 'GulfcoastIslands'),
+    'MAP-KUNAR': ('ACAMapKunarProvince', 'Kunar Province', 3, 'KunarProvince'),
+    'MAP-WESTZAGORIA': ('ACAMapWestZagoria', 'West Zagoria', 4, 'WestZagoria'),
+    'MAP-ZIMNITRITA': ('ACAMapZimnitrita', 'Zimnitrita', 5, 'Zimnitrita'),
+}
+for _key, (_folder, _title, _n, _short) in MAPS.items():
+    SPECS[_key] = dict(folder=_folder, title='Arma Commander: Actual - ' + _title,
+                       guid=f'AC230926D000000{_n}', dirs=['Missions', 'Worlds'],
+                       files=['LICENSE.md', 'README.md', 'CHANGELOG.md'],
+                       world=f'Worlds/ACR_{_short}.ent')
 
 
 class Blocked(RuntimeError):
@@ -104,6 +119,7 @@ class Console:
         if self.output.resolve().is_relative_to(self.addons):
             raise Blocked('Release output must be OUTSIDE Workbench/addons.')
         self.state = self.root / '.release-console'
+        self.installed_root = Path('E:/ArmaReforgerMods/addons')
 
     def source(self, mod):
         return self.addons / SPECS[mod]['folder']
@@ -289,6 +305,9 @@ class Console:
                 '-AddonRoot', manifest['addonRoot'], '-ReportDirectory', str(parent / 'startup')]
         if dependency:
             args += ['-DependencyRoot', str(dependency / SPECS['BBB']['folder'])]
+        spec = SPECS[manifest['mod']]
+        if 'world' in spec:
+            args += ['-AddonId', spec['guid'], '-World', spec['world'], '-InstalledRoot', str(self.installed_root)]
         subprocess.run(args, check=True, stdout=sys.stderr)
         self.verify_manifest(parent)
         write_json(parent / 'STARTUP-CHECK.json', dict(
@@ -422,6 +441,7 @@ def main():
     parser.add_argument('--candidate', type=Path)
     options = parser.parse_args()
     console = Console()
+    console.installed_root = options.installed_root
     if options.action == 'status':
         for mod in SPECS:
             releases = console.release_history(mod)['releases']

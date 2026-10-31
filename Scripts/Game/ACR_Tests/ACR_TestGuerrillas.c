@@ -46,7 +46,7 @@ class ACR_TestGuerrillas
   string detail = "";
   foreach (ACR_DefenderPost post : ACR_Defenders.s_Posts)
   {
-   if (!post.m_Cell) continue;
+   if (!post.m_Cell || post.m_Cell.m_bHideout) continue; // hideouts: srv:hideouts
    if (post.m_Cell.m_bHouse) { houses++; if (!s_House) s_House = post; }
    else { roads++; if (!s_Ambush) s_Ambush = post; }
    vector site = post.m_Cell.m_vKillZone;
@@ -164,7 +164,7 @@ class ACR_TestGuerrillas
   bool later = cell.m_fReadyAt > GetGame().GetWorld().GetWorldTime() + 60000;
   bool moved = vector.DistanceXZ(cell.m_vKillZone, s_vOldSite) > 1;
   bool gone = s_Ambush.m_iReserve > 0 || s_Ambush.m_bGone;
-  Check("guerrillas: with nobody near it packs up, its barricade goes", !s_Ambush.m_Group && !cell.m_Block && gone, string.Format("group %1, barricade %2, reserve %3, gone %4", s_Ambush.m_Group != null, cell.m_Block != null, s_Ambush.m_iReserve, s_Ambush.m_bGone));
+  Check("guerrillas: with nobody near it packs up, its barricade goes", !s_Ambush.m_Group && !cell.m_Block && gone, string.Format("group %1, barricade %2, reserve %3, gone %4%5", s_Ambush.m_Group != null, cell.m_Block != null, s_Ambush.m_iReserve, s_Ambush.m_bGone, NearestEnemy()));
   Check("guerrillas: survivors move on to another road later", s_Ambush.m_bGone || (cell.m_iMoves == 1 && moved && later), string.Format("moves %1, site %2 -> %3, ready in %4 s", cell.m_iMoves, s_vOldSite, cell.m_vKillZone, (int)((cell.m_fReadyAt - GetGame().GetWorld().GetWorldTime()) / 1000)));
   if (!s_House) Finish();
  }
@@ -216,6 +216,37 @@ class ACR_TestGuerrillas
   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(group.FindComponent(SCR_AIGroupUtilityComponent));
   if (!utility) return -1;
   return utility.GetCombatModeExternal();
+ }
+
+ // Still out: the enemy nearest its men (StayOut keeps it out with one within CLEAR).
+ protected static string NearestEnemy()
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !s_Ambush.m_Group) return "";
+  array<AIAgent> men = {};
+  s_Ambush.m_Group.GetAgents(men);
+  string nearest = "";
+  float best = ACR_Guerrillas.CLEAR + 1;
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (!squad.GetFaction() || ACR_Insurgency.Friendly(squad.GetFaction().GetFactionKey(), s_Ambush.m_sFaction)) continue;
+   array<AIAgent> agents = {};
+   squad.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (!body || !ACR_Respawn.IsAlive(body)) continue;
+    foreach (AIAgent man : men)
+    {
+     if (!man.GetControlledEntity()) continue;
+     float distance = vector.DistanceXZ(body.GetOrigin(), man.GetControlledEntity().GetOrigin());
+     if (distance >= best) continue;
+     best = distance;
+     nearest = string.Format(", nearest enemy %1 at %2 m (%3)", squad.GetName(), (int)distance, body.GetOrigin());
+    }
+   }
+  }
+  return nearest;
  }
 
  protected static ACR_Squad Squad(ACR_Manager manager, string name)
