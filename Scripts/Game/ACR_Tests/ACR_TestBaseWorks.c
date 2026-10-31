@@ -22,6 +22,7 @@ class ACR_TestBaseWorks
  protected static ACR_BaseWork s_Work;
  protected static ACR_BaseSite s_Lost;
  protected static ACR_BaseSite s_Skipped;
+ protected static int s_iBuiltAtGive;
  protected static int s_iMen;
  protected static string s_sSide;
 
@@ -230,6 +231,7 @@ class ACR_TestBaseWorks
  {
   if (!squad.m_FortifyPlan) return;
   s_Skipped = squad.m_FortifyPlan.m_Site;
+  s_iBuiltAtGive = ACR_BaseWorks.BuiltSites(s_Work);
   squad.m_FortifyPlan.m_bArrived = true;
   squad.m_FortifyPlan.m_fLastProgress = GetGame().GetWorld().GetWorldTime() - ACR_Squad.FOB_GIVE_UP_MS - 1000;
  }
@@ -239,7 +241,9 @@ class ACR_TestBaseWorks
   bool onward = squad.m_FortifyPlan && s_Skipped && squad.m_FortifyPlan.m_Site != s_Skipped && s_Skipped.m_bSkipped;
   int paid;
   if (squad.m_FortifyPlan) paid = squad.m_FortifyPlan.m_iCost;
-  ACR_TestRegress.Check("baseworks: a site it can't finish is refunded and it goes on", onward && us.m_iRP == s_iRP - paid, string.Format("%1 -> %2", s_iRP, us.m_iRP));
+  // A next site right beside the squad can be up in the seconds this waits, and stays paid for.
+  int builtSince = ACR_BaseWorks.BuiltSites(s_Work) - s_iBuiltAtGive;
+  ACR_TestRegress.Check("baseworks: a site it can't finish is refunded and it goes on", onward && us.m_iRP == s_iRP - paid * (1 + builtSince), string.Format("%1 -> %2, %3 built since", s_iRP, us.m_iRP, builtSince));
   if (squad.m_FortifyPlan) Stopped(squad, squad.m_FortifyPlan);
  }
 
