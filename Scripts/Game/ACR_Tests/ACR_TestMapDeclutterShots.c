@@ -7,7 +7,9 @@ class ACR_TestMapDeclutterShots
 {
  static const ResourceName RIFLE_SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
- static const int CHECKS = 11;
+ static const int CHECKS = 12;
+ protected static bool s_bHovered;
+ protected static int s_iDots;
  protected static vector s_GroupCentre;
  protected static vector s_Sighting;
  protected static vector s_Jumped;
@@ -166,8 +168,32 @@ class ACR_TestMapDeclutterShots
    ACR_TestRegress.Check("mapdeclutter shots: control groups: Ctrl + 1 keeps the selection, 1 selects it again, 1 twice centres the map on it, labels show [1]", both && pc.ACR_ControlGroupSizeForTest(0) == 2 && groupOff >= 0 && groupOff < 150 && label.Contains("[1]"), string.Format("selected %1, group %2, map centre %3 m off, label '%4'", both, pc.ACR_ControlGroupSizeForTest(0), (int)groupOff, label));
    Shot("declutter_9_control_group");
   }
-  if (tick == 66)
+  // The calm map again: the hover card on 1st Squad, and 2nd Squad (at the Farm "×N") shown hurt:
+  // a red dot on the icon that stands for it.
+  if (tick == 66) ACR_Options.Unset(ACR_MapDeclutter.OPTION);
+  if (tick == 67)
   {
+   ACR_Squad hovered = h.NamedSquad(manager, "1st Squad");
+   if (hovered) s_bHovered = pc.ACR_HoverSquadForTest(SCR_EntityHelper.EntityToRplId(hovered.m_Group));
+   ACR_Squad hurt = h.NamedSquad(manager, "2nd Squad");
+   ACR_MapData data = pc.ACR_GetData();
+   if (hurt && data)
+   {
+    int s = data.m_StatusGroups.Find(SCR_EntityHelper.EntityToRplId(hurt.m_Group));
+    if (s >= 0 && s * 6 < data.m_Status.Count()) data.m_Status[s * 6] = 20;
+   }
+   s_iDots = ACR_OrderDisplay.s_iWarnDots;
+  }
+  if (tick == 69)
+  {
+   bool levels = ACR_OrderDisplay.WarnLevel(100, 100) == 0 && ACR_OrderDisplay.WarnLevel(50, 100) == 1 && ACR_OrderDisplay.WarnLevel(100, 20) == 2 && ACR_OrderDisplay.WarnLevel(-1, -1) == 0;
+   int dots = ACR_OrderDisplay.s_iWarnDots - s_iDots;
+   ACR_TestRegress.Check("mapdeclutter shots: hovering a squad shows its card; a hurt squad in a ×N marks the icon with a dot", s_bHovered && pc.ACR_CardShownForTest() && dots > 0 && levels, string.Format("hovered %1, card %2, dots drawn %3, levels %4", s_bHovered, pc.ACR_CardShownForTest(), dots, levels));
+   Shot("declutter_10_card_and_warning");
+  }
+  if (tick == 70)
+  {
+   pc.ACR_HoverClearForTest();
    ACR_Options.Unset(ACR_MapDeclutter.OPTION);
    ACR_TestRegress.Complete("mapdeclutter shots", CHECKS);
   }
