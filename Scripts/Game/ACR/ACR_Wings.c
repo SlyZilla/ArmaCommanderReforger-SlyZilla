@@ -41,16 +41,13 @@ class ACR_Wings
  static const float GAP_AT = 0.6;       // ... this far along
  static const float GUN_ROOM = 2.6;     // m round a gun or post its bags make way
  static const float GUN_FIRE_HALF = 1.6; // m either side of a gun's line of fire, out to ACR_Fortify.FIRE_CLEAR
- static bool s_bOffForTest;
  static int s_iWorstMs;                 // tests: the most a work's wings have cost to plan
  protected static ref ACR_BaseWork s_NoWork = new ACR_BaseWork();
  protected static int s_iStop;
 
  static bool On()
  {
-  if (s_bOffForTest) return false;
-  string value;
-  return !(ACR_Options.Get("acrWings", value) && value == "0");
+  return ACR_LogisticsRules.Choice("acrWings", "1") != "0";
  }
 
  static string ShapeWord(int shape)

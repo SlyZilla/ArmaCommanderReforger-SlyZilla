@@ -30,7 +30,7 @@ class ACR_TestWings
   if (!manager) return;
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All) settings.m_bAICommander = false;
   bool shots = System.IsCLIParam("acrWingShotsTest");
-  if (System.IsCLIParam("acrWingsOffTest")) ACR_Wings.s_bOffForTest = true;
+  if (System.IsCLIParam("acrWingsOffTest")) ACR_Options.Set("acrWings", "0");
   if (second == 8) Dig();
   if (second == 10) Blocks();
   if (shots)
@@ -114,7 +114,7 @@ class ACR_TestWings
 
  protected static void LookAtBlocks()
  {
-  if (ACR_Wings.s_bOffForTest) return;
+  if (!ACR_Wings.On()) return;
   int withWing, pieces, inLane, onRoad;
   foreach (ACR_Roadblock block : s_aBlocks)
   {
@@ -214,7 +214,7 @@ class ACR_TestWings
    }
   }
   PrintFormat("[ACR] TEST wings: %1 positions, %2 with both end posts, %3 of those with a wing; %4 tie in, %5 refused, %6 run on; %7 pieces; lengths %8", s_aForts.Count(), whole, withWing, ties, refused, runs, pieces, lengths.Count());
-  if (ACR_Wings.s_bOffForTest)
+  if (!ACR_Wings.On())
   {
    ACR_TestRegress.Check("wings: none with the switch off", withWing == 0 && pieces == 0, string.Format("%1", pieces));
    return;
@@ -272,7 +272,7 @@ class ACR_TestWings
     if (piece && vector.DistanceXZ(piece.GetOrigin(), gun.GetOrigin()) < 1.5) close++;
   }
   PrintFormat("[ACR] TEST wings upgrades: %1 tried, %2 refused (%3), %4 made bags go", tried, refused, reasons, cutGuns);
-  if (ACR_Wings.s_bOffForTest) return;
+  if (!ACR_Wings.On()) return;
   // (These positions stand wherever a ring round a base falls: about a third are refused with wings off too.)
   ACR_TestRegress.Check("wings: no upgrade refused over its bags", overBags == 0 && refused * 2 <= tried, string.Format("%1 of %2 refused, %3 over sandbags", refused, tried, overBags));
   ACR_TestRegress.Check("wings: a gun's bags make way", close == 0, string.Format("%1 pieces stand on a gun", close));
@@ -293,7 +293,7 @@ class ACR_TestWings
 
  protected static void Finish()
  {
-  if (ACR_Wings.s_bOffForTest)
+  if (!ACR_Wings.On())
   {
    ACR_TestRegress.Complete("wings", 2);
    return;
@@ -302,7 +302,7 @@ class ACR_TestWings
   foreach (IEntity piece : s_aGoneWings) if (piece && !piece.IsDeleted()) left++;
   ACR_TestRegress.Check("wings: they go with the position", s_Gone && left == 0 && !ACR_Fortify.s_Positions.Contains(s_Gone), string.Format("%1 of %2 left", left, s_aGoneWings.Count()));
   // A position dug in with the switch off has none.
-  ACR_Wings.s_bOffForTest = true;
+  ACR_Options.Set("acrWings", "0");
   bool none = true;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
@@ -319,7 +319,7 @@ class ACR_TestWings
    if (fort && !fort.m_aWings.IsEmpty()) none = false;
    break;
   }
-  ACR_Wings.s_bOffForTest = false;
+  ACR_Options.Unset("acrWings");
   ACR_TestRegress.Check("wings: the switch turns them off", none, "");
   ACR_TestRegress.Check("wings: planned quickly", ACR_Wings.s_iWorstMs < 400, string.Format("worst %1 ms", ACR_Wings.s_iWorstMs));
   ACR_TestRegress.Complete("wings", CHECKS);
