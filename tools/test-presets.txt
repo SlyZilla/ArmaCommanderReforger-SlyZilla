@@ -12,6 +12,7 @@ respawn|-acrRespawnTest 1|90
 deathfade|-acrDeathFadeTest 1|90
 rtscamera|-acrRTSCameraTest 1|90
 rtsaim|-acrRTSAimTest 1|150
+rtslook|-acrRTSLookTest 1|150
 thinkoverlay|-acrThinkOverlayTest 1|90
 support|-acrSupportTest 1|260
 gunship|-acrGunshipTest 1|180

@@ -128,7 +128,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrAITest", flag)) mode = MODE_AI;
   if (System.GetCLIParam("acrGunnerTest", flag)) mode = MODE_GUNNER;
   if (System.GetCLIParam("acrProbeTest", flag)) mode = MODE_PROBE;
-  if (System.GetCLIParam("acrRespawnTest", flag) || System.GetCLIParam("acrDeathFadeTest", flag) || System.GetCLIParam("acrRTSCameraTest", flag) || System.GetCLIParam("acrRTSAimTest", flag) || System.GetCLIParam("acrThinkOverlayTest", flag)) mode = MODE_RESPAWN;
+  if (System.GetCLIParam("acrRespawnTest", flag) || System.GetCLIParam("acrDeathFadeTest", flag) || System.GetCLIParam("acrRTSCameraTest", flag) || System.GetCLIParam("acrRTSAimTest", flag) || System.GetCLIParam("acrRTSLookTest", flag) || System.GetCLIParam("acrThinkOverlayTest", flag)) mode = MODE_RESPAWN;
   if (System.GetCLIParam("acrSupportTest", flag)) mode = MODE_SUPPORT;
   if (System.GetCLIParam("acrGunshipTest", flag)) mode = MODE_GUNSHIP;
   // -acrHeliTest 1: door gunners (Mi-8) and a rocket run (UH-1H) instead of two gunships.
