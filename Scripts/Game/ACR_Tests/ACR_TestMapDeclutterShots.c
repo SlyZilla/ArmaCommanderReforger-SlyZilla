@@ -7,7 +7,7 @@ class ACR_TestMapDeclutterShots
 {
  static const ResourceName RIFLE_SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
- static const int CHECKS = 5;
+ static const int CHECKS = 6;
  protected static vector s_Base;
  protected static int s_iFrames;
 
@@ -49,7 +49,15 @@ class ACR_TestMapDeclutterShots
    ACR_TestRegress.Check("mapdeclutter shots: the calm map is drawn and the panels are dark-styled", ACR_OrderDisplay.s_iDeclFrames > 0 && pc.ACR_DeclPanelStyled(), string.Format("frames %1, styled %2", ACR_OrderDisplay.s_iDeclFrames, pc.ACR_DeclPanelStyled()));
    ACR_TestRegress.Check("mapdeclutter shots: squads at our base are one icon with ×N", pc.ACR_DeclBadgesShown() > 0, string.Format("badges %1", pc.ACR_DeclBadgesShown()));
   }
-  if (tick == 27) Shot("declutter_1_map");
+  if (tick == 27)
+  {
+   // The soldiers of the squads at our base and the squads under its "×N" are hidden: off the
+   // screen, not just a hidden widget the game shows again (30 Oct).
+   int hidden;
+   int onScreen = pc.ACR_DeclHiddenOnScreenForTest(hidden);
+   ACR_TestRegress.Check("mapdeclutter shots: what the calm map hides at a base stays off the screen (soldiers, squads under a ×N)", hidden > 0 && onScreen == 0, string.Format("hidden %1, still on screen %2", hidden, onScreen));
+   Shot("declutter_1_map");
+  }
   // 4: zoomed out: the bars.
   if (tick == 30 && mapEntity) ZoomFar(mapEntity);
   if (tick == 33) ACR_TestRegress.Check("mapdeclutter shots: zoomed out, the ACA panel and INTEL fold to one-line bars", pc.ACR_DeclPanelCollapsed() && pc.ACR_DeclIntelCollapsed(), string.Format("panel %1, intel %2, zoom %3 px/m", pc.ACR_DeclPanelCollapsed(), pc.ACR_DeclIntelCollapsed(), mapEntity.GetCurrentZoom()));
