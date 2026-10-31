@@ -210,13 +210,37 @@ class ACR_TestHelipad
     foreach (AIAgent agent : agents) if (agent.GetControlledEntity() && ACR_HeliStation.Aboard(agent.GetControlledEntity(), s_Heli.m_Vehicle)) crewSquads++;
    }
    ACR_TestRegress.Check("helipad: the new crew is never a squad", crewSquads == 0, string.Format("%1", crewSquads));
+   // Everon long match 31 Oct: a parked gunship ended up 33 m off its pad, under a light tower, and
+   // its lift held there for good. Called after being pushed, it goes back to lift.
+   vector padSpot = s_Pad.Spot();
+   s_Heli.m_Vehicle.SetOrigin(ACR_Manager.Ground(padSpot + Vector(30, 0, 0)));
+   ACR_HeliRun pushed = new ACR_HeliRun();
+   pushed.m_sFaction = Side();
+   pushed.m_Target = s_Target;
+   pushed.StartFromPad(manager.m_Supports, s_Heli, GetGame().GetWorld().GetWorldTime());
+   float padGap = vector.DistanceXZ(s_Heli.m_Vehicle.GetOrigin(), padSpot);
+   ACR_TestRegress.Check("helipad: pushed off its pad, it goes back on the pad before it lifts", padGap < 1, string.Format("%1 m off the pad", padGap));
+   // Re-homed to a pad at another base (its own captured), it stays where it stands: no jump there.
+   EntitySpawnParams farParameters = new EntitySpawnParams();
+   farParameters.TransformMode = ETransformMode.WORLD;
+   farParameters.Transform[3] = ACR_Manager.Ground(padSpot + Vector(300, 0, 0));
+   ACR_Helipad farPad = ACR_Helipad.Cast(GetGame().SpawnEntity(ACR_Helipad, GetGame().GetWorld(), farParameters));
+   s_Heli.m_Pad = farPad;
+   ACR_HeliRun rehomed = new ACR_HeliRun();
+   rehomed.m_sFaction = Side();
+   rehomed.m_Target = s_Target;
+   rehomed.StartFromPad(manager.m_Supports, s_Heli, GetGame().GetWorld().GetWorldTime());
+   float homeGap = vector.DistanceXZ(s_Heli.m_Vehicle.GetOrigin(), padSpot);
+   ACR_TestRegress.Check("helipad: re-homed to another pad, it lifts from where it stands", farPad && homeGap < 1, string.Format("%1 m from where it was set down", homeGap));
+   s_Heli.m_Pad = s_Pad;
+   if (farPad) SCR_EntityHelper.DeleteEntityAndChildren(farPad);
    SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(s_Heli.m_Vehicle.FindComponent(SCR_DamageManagerComponent));
    if (damage) damage.Kill(Instigator.CreateInstigator(null));
   }
   if (s_iRecrewAt > 0 && tick == s_iRecrewAt + 8)
   {
    ACR_TestRegress.Check("helipad: destroyed = gone, buy a new one", station.CountOf(Side(), true) == 0 && station.StatusFor(Side(), true).Contains("buy"), station.StatusFor(Side(), true));
-   ACR_TestRegress.Complete("helipad", 16);
+   ACR_TestRegress.Complete("helipad", 18);
   }
   if (tick == s_iCalledAt + 210)
   {
