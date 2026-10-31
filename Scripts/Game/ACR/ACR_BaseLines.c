@@ -85,6 +85,8 @@ class ACR_BaseLiner : Managed
  static const int FIT_DOOR = 5;
  static const int FIT_VIEW = 6;
  static const int FIT_WATER = 7;
+ static const int FIT_BEHIND = 8;
+ static const float ROOM = 1.6;             // m clear behind the bags: a man stands and fires there
  static const float VIEW = 15;              // m clear on a piece's firing side, straight out or a little to either side
  static const int MAX_BLIND = 2;            // pieces in a row that may go without (a tree in front of one)
  static const float GENTLE = 5.5;           // degrees at a joint while nothing's in the way
@@ -147,6 +149,7 @@ class ACR_BaseLiner : Managed
    case FIT_DOOR: return "door";
    case FIT_VIEW: return "view";
    case FIT_WATER: return "water";
+   case FIT_BEHIND: return "behind";
   }
   return "length";
  }
@@ -184,7 +187,9 @@ class ACR_BaseLiner : Managed
   if (ACR_BaseDefences.BuildingGap(m_aHouses, mid, clear + 1) < clear || ACR_BaseDefences.BuildingGap(m_aHouses, to, clear + 1) < clear) return FIT_BUILDING;
   if (m_Survey.DoorGap(mid) < ACR_BaseSurvey.WALL_DOOR) return FIT_DOOR;
   if (!ACR_BaseDefences.WorldClear(mid, ACR_BaseDefences.Bearing(facing), Vector(length * 0.5 + 0.05, 0, 0.61), null, false, true)) return FIT_SOLID;
-  if (loose || noView) return FIT_OK;
+  if (loose) return FIT_OK;
+  if (!RoomBehind(mid, facing)) return FIT_BEHIND;
+  if (noView) return FIT_OK;
   // The trace starts 1.2 m on from here: right in front of the bags, so a fence a metre off counts.
   vector muzzle = mid - facing * 0.4;
   muzzle[1] = Ground(muzzle) + ACR_BaseSurvey.UP_BAGS;
@@ -192,6 +197,15 @@ class ACR_BaseLiner : Managed
   if (ACR_BaseSurvey.Reach(muzzle, look, VIEW) >= VIEW - 0.5) return FIT_OK;
   if (ACR_BaseSurvey.Reach(muzzle, look - 18, VIEW) >= VIEW - 0.5 || ACR_BaseSurvey.Reach(muzzle, look + 18, VIEW) >= VIEW - 0.5) return FIT_OK;
   return FIT_VIEW;
+ }
+
+ // Whether a man can stand behind bags here: no fence or wall hard at their back. The trace starts 1.2 m
+ // on from where it's given, so this starts it at their rear face.
+ static bool RoomBehind(vector middle, vector facing)
+ {
+  vector from = middle + facing * 0.6;
+  from[1] = Ground(from) + 1.0;
+  return ACR_BaseSurvey.Reach(from, ACR_BaseDefences.Bearing(facing) + 180, ROOM + 1.2) >= ROOM + 1.1;
  }
 
  // Where the line wants to go next: on along the town's edge at its offset, or at its target.

@@ -568,7 +568,7 @@ class ACR_TestBaseWorks
  protected static int s_iBases, s_iNests, s_iBunkers, s_iWalls, s_iChecks, s_iPosts, s_iLineTowns, s_iLongTowns, s_iLines, s_iPieces, s_iMostPieces;
  protected static int s_iLoose, s_iShortRuns, s_iGunAlone, s_iEnds, s_iLongRuns, s_iLongStretch, s_iLongTier, s_iNestOff, s_iNoCheckLane, s_iWorstTier;
  protected static ref set<int> s_aLengths = new set<int>();
- protected static int s_iSeeing, s_iLooked, s_iGapByNest, s_iFragments, s_iLoneCheck, s_iAnchored, s_iEnds2;
+ protected static int s_iSeeing, s_iLooked, s_iGapByNest, s_iFragments, s_iLoneCheck, s_iAnchored, s_iEnds2, s_iBehind, s_iCramped;
  protected static float s_fOurs, s_fEither;
  static const float COVER_FLOOR = 0.5;   // of a threatened arc, by lines, on average (the maps reach 55-68%)
  static const float ANCHOR_FLOOR = 0.5;  // the maps reach 55-78%
@@ -598,6 +598,8 @@ class ACR_TestBaseWorks
   ACR_TestRegress.Check("baseworks plan: most towns have a line", s_iLineTowns * 3 >= s_iBases * 2, string.Format("%1 of %2", s_iLineTowns, s_iBases));
   ACR_TestRegress.Check("baseworks plan: most of those have one of 30 m or more", s_iLongTowns * 2 >= s_iBases, string.Format("%1 of %2 towns", s_iLongTowns, s_iBases));
   ACR_TestRegress.Check("baseworks plan: pieces meet end to end", s_iLoose == 0, string.Format("%1 joints open", s_iLoose));
+  // An end piece may close right on a wall; a run of bags with a fence at its back can't be manned.
+  ACR_TestRegress.Check("baseworks plan: a man has room behind the bags", s_iCramped * 20 <= s_iBehind, string.Format("%1 of %2 long pieces", s_iCramped, s_iBehind));
   ACR_TestRegress.Check("baseworks plan: no sandbag piece or stub on its own", s_iShortRuns == 0, string.Format("%1 runs under 5 m or a single piece", s_iShortRuns));
   ACR_TestRegress.Check("baseworks plan: line ends stand on something or curve back", s_iEnds == 0, string.Format("%1 ends", s_iEnds));
   ACR_TestRegress.Check("baseworks plan: every gun touches a line", s_iGunAlone == 0, string.Format("%1 of %2 over 14 m from a sandbag", s_iGunAlone, s_iNests + s_iBunkers));
@@ -634,7 +636,7 @@ class ACR_TestBaseWorks
   SeedChecks(biggest);
   Draw(biggest);
   Replay();
-  ACR_TestRegress.Complete("baseworksplan", 36);
+  ACR_TestRegress.Complete("baseworksplan", 37);
  }
 
  protected static void PlanChecks(ACR_Base base)
@@ -940,6 +942,15 @@ class ACR_TestBaseWorks
    foreach (int i, ACR_LinePiece piece : line.m_aPieces)
    {
     unbroken += vector.DistanceXZ(piece.m_vFrom, piece.m_vTo);
+    if (piece.m_bLong)
+    {
+     s_iBehind++;
+     if (!ACR_BaseLiner.RoomBehind(piece.m_vPos, piece.m_vFacing))
+     {
+      s_iCramped++;
+      PrintFormat("[ACR] TEST baseworks plan %1: no room behind the bags at %2", base.m_sName, piece.m_vPos);
+     }
+    }
     if (i + 1 >= count) continue;
     if (piece.m_iBreak != 0)
     {
