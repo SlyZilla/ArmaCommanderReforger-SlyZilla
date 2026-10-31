@@ -7,7 +7,8 @@ class ACR_TestMapDeclutterShots
 {
  static const ResourceName RIFLE_SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
- static const int CHECKS = 10;
+ static const int CHECKS = 11;
+ protected static vector s_GroupCentre;
  protected static vector s_Sighting;
  protected static vector s_Jumped;
  protected static vector s_Clicked;
@@ -145,8 +146,27 @@ class ACR_TestMapDeclutterShots
    float zoom = 0;
    if (mapEntity) zoom = mapEntity.GetCurrentZoom();
    ACR_TestRegress.Check("mapdeclutter shots: a double-click on a squad centres the map on it and zooms in", s_Clicked != vector.Zero && squadOff >= 0 && squadOff < 100 && zoom >= ws.GetWidth() / 1300.0, string.Format("squad at %1, map centre %2 m off, zoom %3", s_Clicked, (int)squadOff, zoom));
+   // Control groups: 1st and 2nd Squad kept as group 1 (Ctrl + 1), the selection cleared, then 1
+   // twice: both selected again, the map on them, and their labels carry [1].
+   s_GroupCentre = pc.ACR_KeepGroupForTest(0, h.NamedSquad(manager, "1st Squad"), h.NamedSquad(manager, "2nd Squad"));
+   pc.ACR_ClearSelectionForTest();
   }
-  if (tick == 63)
+  if (tick == 64)
+  {
+   pc.ACR_RecallControlGroup(0, false);
+   pc.ACR_RecallControlGroup(0, false);
+  }
+  if (tick == 65)
+  {
+   ACR_Squad first = h.NamedSquad(manager, "1st Squad");
+   ACR_Squad second = h.NamedSquad(manager, "2nd Squad");
+   bool both = first && second && pc.ACR_IsSelected(SCR_EntityHelper.EntityToRplId(first.m_Group)) && pc.ACR_IsSelected(SCR_EntityHelper.EntityToRplId(second.m_Group));
+   float groupOff = MapCentreOff(s_GroupCentre);
+   string label = pc.ACR_GroupMarkerLabelForTest(SCR_EntityHelper.EntityToRplId(second.m_Group));
+   ACR_TestRegress.Check("mapdeclutter shots: control groups: Ctrl + 1 keeps the selection, 1 selects it again, 1 twice centres the map on it, labels show [1]", both && pc.ACR_ControlGroupSizeForTest(0) == 2 && groupOff >= 0 && groupOff < 150 && label.Contains("[1]"), string.Format("selected %1, group %2, map centre %3 m off, label '%4'", both, pc.ACR_ControlGroupSizeForTest(0), (int)groupOff, label));
+   Shot("declutter_9_control_group");
+  }
+  if (tick == 66)
   {
    ACR_Options.Unset(ACR_MapDeclutter.OPTION);
    ACR_TestRegress.Complete("mapdeclutter shots", CHECKS);

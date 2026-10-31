@@ -2165,6 +2165,8 @@ modded class SCR_PlayerController
 
  override protected string ACR_GroupLabel(int index, string label)
  {
+  // The other tags first (a control group's number, ACR_PlayerMapGroups).
+  label = super.ACR_GroupLabel(index, label);
   if (!ACR_TwoICRuns(index)) return label;
   label.Replace(" [AI]", "");
   return label;
