@@ -37,7 +37,8 @@ modded class SCR_MapMarkerWidgetComponent
   ACR_UnitMarker marker = ACR_UnitMarker.Cast(m_MarkerObject);
   if (!marker || marker.m_BaseIndex < 0 || !m_wMarkerText) return;
   string text = marker.m_BaseCaption;
-  if (m_ACR_BaseHovered) text = marker.m_BaseHover;
+  // Not while the list of a "×N"'s squads is open: it would show behind the list (ACR_SquadPicker).
+  if (m_ACR_BaseHovered && !ACR_SquadPicker.s_bOpen) text = marker.m_BaseHover;
   m_wMarkerText.SetText(text);
   m_wMarkerText.SetVisible(m_bShowText);
  }

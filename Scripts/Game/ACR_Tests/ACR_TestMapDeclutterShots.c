@@ -7,8 +7,11 @@ class ACR_TestMapDeclutterShots
 {
  static const ResourceName RIFLE_SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
- static const int CHECKS = 6;
+ static const int CHECKS = 8;
  protected static vector s_Base;
+ protected static bool s_bPicker;
+ protected static bool s_bHover;
+ protected static RplId s_Picked = RplId.Invalid();
  protected static int s_iFrames;
 
  static void Run(ACR_TestHarness h, int tick)
@@ -58,6 +61,30 @@ class ACR_TestMapDeclutterShots
    ACR_TestRegress.Check("mapdeclutter shots: what the calm map hides at a base stays off the screen (soldiers, squads under a ×N)", hidden > 0 && onScreen == 0, string.Format("hidden %1, still on screen %2", hidden, onScreen));
    Shot("declutter_1_map");
   }
+  // The "×N" icon's list of its squads (playtest 30 Oct: picking the right squad was hard).
+  if (tick == 28) s_bPicker = pc.ACR_SquadPickerForTest();
+  if (tick == 29)
+  {
+   ACR_TestRegress.Check("mapdeclutter shots: a click on the ×N icon lists its squads to pick from", s_bPicker && pc.ACR_SquadPickerOpen(), string.Format("opened %1, open %2", s_bPicker, pc.ACR_SquadPickerOpen()));
+   Shot("declutter_7_cluster_list");
+   // Hovering the second row rings where that squad really stands.
+   s_bHover = pc.ACR_SquadPickerHoverForTest(1);
+  }
+  if (tick == 30)
+  {
+   Shot("declutter_8_row_hover");
+   // Its number key (2) picks it.
+   s_Picked = pc.ACR_SquadPickerIdForTest(1);
+   pc.ACR_SquadPickerKeyForTest(1);
+  }
+  if (tick == 31)
+  {
+   bool picked = s_Picked.IsValid() && pc.ACR_GetSelectedGroup() == s_Picked && !pc.ACR_SquadPickerOpen();
+   ACR_TestRegress.Check("mapdeclutter shots: hovering a row rings its squad; its number key picks it and the list closes", s_bHover && picked, string.Format("hover %1, picked %2, open %3", s_bHover, picked, pc.ACR_SquadPickerOpen()));
+  }
+  if (tick == 31) pc.ACR_CloseSquadPicker();
+  // Nothing selected again: the zoomed-out check below wants the panel free to fold.
+  if (tick == 31) pc.ACR_ClearSelectionForTest();
   // 4: zoomed out: the bars.
   if (tick == 30 && mapEntity) ZoomFar(mapEntity);
   if (tick == 33) ACR_TestRegress.Check("mapdeclutter shots: zoomed out, the ACA panel and INTEL fold to one-line bars", pc.ACR_DeclPanelCollapsed() && pc.ACR_DeclIntelCollapsed(), string.Format("panel %1, intel %2, zoom %3 px/m", pc.ACR_DeclPanelCollapsed(), pc.ACR_DeclIntelCollapsed(), mapEntity.GetCurrentZoom()));
