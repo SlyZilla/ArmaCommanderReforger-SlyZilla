@@ -448,7 +448,9 @@ class ACR_TestBaseWorks
 
  protected static void EnemyNear(ACR_Manager manager)
  {
+  // In front of a line: from a side no line faces the reserve takes the buildings, as it should.
   vector spot = ACR_Manager.Ground(s_Work.m_Defenders.m_vPos + Vector(250, 0, 0));
+  if (!s_Work.m_aLines.IsEmpty()) spot = ACR_Manager.Ground(s_Work.m_aLines[0].m_vMiddle + s_Work.m_aLines[0].m_vFacing * 150);
   manager.m_sSpawningFaction = ACR_FactionSelection.East();
   manager.SpawnUnit("Works Enemy", ENEMY, "", false, "", spot, spot);
   manager.m_sSpawningFaction = "";
