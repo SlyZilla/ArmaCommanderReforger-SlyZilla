@@ -113,6 +113,7 @@ class ACR_TestHarness : Managed
  static const int MODE_MAPDECLUTTERSHOTS = 132; // the calm command map in a game client (screenshots)
  static const int MODE_RBLANE = 125; // 117: map-polygon-guard
  static const int MODE_QRF = 57; // 52 / 53 / 55 / 56: Fortify / roadblocks / patrol / ambush
+ static const int MODE_HELIDOWN = 141; // a helicopter crippled in the air comes down
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -143,6 +144,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrStallTest", flag)) mode = MODE_STALL;
   if (System.GetCLIParam("acrStallWaitTest", flag)) mode = MODE_STALLWAIT;
   if (System.GetCLIParam("acrRecrewTest", flag)) mode = MODE_RECREW;
+  if (System.GetCLIParam("acrHeliDownTest", flag)) mode = MODE_HELIDOWN;
   if (System.GetCLIParam("acrMortarGiveUpTest", flag)) mode = MODE_MORTARGIVEUP;
   if (System.GetCLIParam("acrContentPackTest", flag)) mode = MODE_CONTENTPACK;
   if (System.GetCLIParam("acrContentPackWinterTest", flag)) mode = MODE_CONTENTPACK;
@@ -307,6 +309,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_STALL) { m_Vehicles.TestStall(); return; }
   if (m_Mode == MODE_STALLWAIT) { ACR_TestStallWait.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RECREW) { ACR_TestRecrew.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_HELIDOWN) { ACR_TestHeliDown.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MORTARGIVEUP) { ACR_TestMortarGiveUp.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_CONTENTPACK) { ACR_TestContentPack.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADHOPS) { ACR_TestRoadHops.Run(this, m_Ticks); return; }
