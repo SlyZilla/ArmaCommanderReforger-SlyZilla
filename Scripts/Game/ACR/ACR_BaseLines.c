@@ -611,8 +611,7 @@ class ACR_BaseStyle : Managed
 
  static bool On()
  {
-  string value;
-  return !(ACR_Options.Get("acrBaseStyles", value) && value == "0");
+  return ACR_LogisticsRules.Choice("acrBaseStyles", "1") != "0";
  }
 
  array<float> OffsetsFor(int tier)

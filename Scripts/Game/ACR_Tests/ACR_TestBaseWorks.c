@@ -718,7 +718,7 @@ class ACR_TestBaseWorks
   PrintFormat("[ACR] TEST baseworks styles: %1", styleWords);
   ACR_TestRegress.Check("baseworks plan: towns get different styles", stylesUsed >= 3 || ACR_BaseStyle.s_iForceForTest >= 0 || s_iBases < 10, styleWords);
   SwitchChecks(biggest);
-  ACR_TestRegress.Complete("baseworksplan", 43);
+  ACR_TestRegress.Complete("baseworksplan", 44);
  }
 
  // A few towns' plans as text, for a drawing to look at side by side.
@@ -1513,6 +1513,19 @@ class ACR_TestBaseWorks
   int gunsOn = CompactSites(base);
   ACR_BaseLines.s_iFirstNestLevelForTest = firstWas;
   ACR_TestRegress.Check("baseworks plan: -acrBaseSmallGuns 0 turns small guns off", gunsOff == 0 && gunsOn > 0, string.Format("%1 off, %2 on", gunsOff, gunsOn));
+  // Every town a wall with styles off, whatever its seed would draw.
+  bool walls = true;
+  ACR_Options.Set("acrBaseStyles", "0");
+  foreach (ACR_Base other : ACR_Base.s_All)
+  {
+   if (!other || other.m_bRetired || other.m_bHidden || other.m_bBuilt) continue;
+   string owner = other.m_sOwner;
+   if (owner.IsEmpty()) owner = s_sSide;
+   PlanText(other);
+   if (ACR_BaseWorks.WorkFor(other, owner).m_Style.m_iKind != ACR_BaseStyle.WALL) walls = false;
+  }
+  ACR_Options.Unset("acrBaseStyles");
+  ACR_TestRegress.Check("baseworks plan: -acrBaseStyles 0 makes every town a wall", walls, "");
  }
 
  protected static int CompactSites(ACR_Base base)
