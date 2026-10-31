@@ -119,7 +119,7 @@ class ACR_BaseWorks
   if (!site.m_Plan) return 15;
   switch (site.m_Plan.m_eKind)
   {
-   case ACR_EBaseDefenceKind.LINE: return 25;
+   case ACR_EBaseDefenceKind.LINE: return 20;
    case ACR_EBaseDefenceKind.WIRE: return 15;
    case ACR_EBaseDefenceKind.POST: return 60;
   }
@@ -508,6 +508,7 @@ class ACR_BaseWorks
     site.m_Roadblock = ACR_Roadblocks.SpawnRoadblock(work.m_sFaction, site.m_vPos, site.m_fYaw, work.m_Base.m_sName + " works");
     if (!site.m_Roadblock) return false;
     site.m_aWalls.Insert(site.m_Roadblock.m_Entity);
+    GateWay(work, site);
     break;
    case ACR_EBaseSite.PLANNED:
     BuildPlanned(work, site);
@@ -536,7 +537,7 @@ class ACR_BaseWorks
   if (nest.m_aCuts.IsEmpty()) return;
   foreach (ACR_BaseSite stretch : work.m_aSites)
   {
-   if (!stretch.m_Plan || stretch.m_iLine != nest.m_iLine) continue;
+   if (!stretch.m_Plan || stretch.m_Plan.m_eKind != ACR_EBaseDefenceKind.LINE) continue;
    bool had = !stretch.m_aWalls.IsEmpty();
    for (int i = stretch.m_aWalls.Count() - 1; i >= 0; i--)
    {
@@ -554,10 +555,55 @@ class ACR_BaseWorks
    for (int d = stretch.m_aDressing.Count() - 1; d >= 0; d--)
    {
     IEntity prop = stretch.m_aDressing[d];
-    if (!prop || vector.DistanceXZ(prop.GetOrigin(), nest.m_vPos) > 8) continue;
+    if (!prop || vector.DistanceXZ(prop.GetOrigin(), nest.m_vPos) > 7) continue;
     stretch.m_aDressing.Remove(d);
     SCR_EntityHelper.DeleteEntityAndChildren(prop);
    }
+  }
+ }
+
+ // A checkpoint just built in a line's lane: its real pieces, as the lane left them, say how wide it
+ // stands; the line's bags inside that make way, so the two meet at the road as one gate.
+ protected static void GateWay(ACR_BaseWork work, ACR_BaseSite site)
+ {
+  IEntity root = site.m_Roadblock.m_Entity;
+  if (!root) return;
+  float left = 0;
+  float right = 0;
+  float back = 0;
+  float front = 0;
+  GateExtent(root, root, left, right, back, front);
+  foreach (ACR_BaseLine line : work.m_aLines)
+  {
+   foreach (ACR_LinePiece piece : line.m_aPieces)
+   {
+    vector local = root.CoordToLocal(piece.m_vPos);
+    if (local[0] < left - 0.4 || local[0] > right + 0.4 || local[2] < back - 0.4 || local[2] > front + 0.4) continue;
+    site.m_aCuts.Insert(piece.m_vPos);
+   }
+  }
+  PrintFormat("[ACR] BASEWORKS checkpoint at %1 stands x %2 .. %3, z %4 .. %5: %6 line pieces make way", site.m_vPos, left.ToString(-1, 1), right.ToString(-1, 1), back.ToString(-1, 1), front.ToString(-1, 1), site.m_aCuts.Count());
+  MakeWay(work, site);
+ }
+
+ protected static void GateExtent(IEntity root, IEntity parent, inout float left, inout float right, inout float back, inout float front)
+ {
+  IEntity child = parent.GetChildren();
+  while (child)
+  {
+   // Solid things, not bushes, decals or the odd box.
+   vector mins, maxs;
+   child.GetBounds(mins, maxs);
+   if (child.GetPhysics() && !Tree.Cast(child) && maxs[0] - mins[0] > 0.9)
+   {
+    vector at = root.CoordToLocal(child.GetOrigin());
+    left = Math.Min(left, at[0]);
+    right = Math.Max(right, at[0]);
+    back = Math.Min(back, at[2]);
+    front = Math.Max(front, at[2]);
+   }
+   GateExtent(root, child, left, right, back, front);
+   child = child.GetSibling();
   }
  }
 
@@ -637,20 +683,43 @@ class ACR_BaseWorks
   s_LastSurvey = survey;
   PrintFormat("[ACR] BASEWORKS survey %1 (%2 ms)", survey.Words(), survey.m_iMs);
   ACR_BaseLines.Plan(work, survey);
-  ACR_BaseLines.Wire(work, survey);
+  // Nests first: gaps for men on foot keep clear of them, and stretches are cut after the gaps.
   ACR_BaseLines.Nests(work, survey, MAX_NESTS);
+  ACR_BaseLines.Stretches(work, survey);
+  ACR_BaseLines.Wire(work, survey);
   ACR_BaseLines.Checkpoints(work, survey, MAX_ROADBLOCKS);
   ACR_BaseLines.Posts(work, survey, MAX_BUNKERS);
   ACR_BaseLines.CommandPost(work, survey);
   string refused = survey.RefusedWords();
   if (!refused.IsEmpty()) PrintFormat("[ACR] BASEWORKS %1: command post pieces left out: %2", base.m_sName, refused);
   float seconds = 0;
+  int pieces = 0;
+  // Compositions by their measured part counts: a nest about 30, a bunker 45, a tower 20, a checkpoint 50.
+  int entities = 0;
+  int ends = 0;
+  int anchored = 0;
+  foreach (ACR_BaseLine line : work.m_aLines)
+  {
+   ends += 2;
+   anchored += line.Anchors();
+  }
   foreach (ACR_BaseSite made : work.m_aSites)
   {
    PrintFormat("[ACR] BASEWORKS site %1 %2, tier %3, at %4 %5 facing %6, line %7, its sector now %8", base.m_sName, SiteWords(made), made.m_iTier, (int)made.m_vPos[0], (int)made.m_vPos[2], (int)made.m_fYaw, made.m_iLine, survey.Weak(made.m_iSector).ToString(-1, 2));
    if (made.m_iTier == 1) seconds += Duration(made);
+   if (made.m_Plan)
+   {
+    entities += made.m_Plan.m_aPiecePos.Count();
+    pieces += made.m_Plan.Walls();
+   }
+   else if (made.m_eKind == ACR_EBaseSite.NEST) entities += 30;
+   else if (made.m_eKind == ACR_EBaseSite.BUNKER) entities += 45;
+   else entities += 50;
   }
-  PrintFormat("[ACR] BASEWORKS %1: tier I is %2 s of work, walking aside", base.m_sName, (int)seconds);
+  float ours, existing, either;
+  survey.Coverage(work, ours, existing, either);
+  PrintFormat("[ACR] BASEWORKS %1: covers %2%% of the threatened arc with lines, %3%% with those and what stands there (%4%% that alone); anchored ends %5 of %6", base.m_sName, (int)(ours * 100), (int)(either * 100), (int)(existing * 100), anchored, ends);
+  PrintFormat("[ACR] BASEWORKS %1: %2 sandbag pieces, about %3 entities in all; tier I is %4 s of work, walking aside", base.m_sName, pieces, entities, (int)seconds);
   if (s_iMaxSitesForTest > 0) Trim(work);
  }
 

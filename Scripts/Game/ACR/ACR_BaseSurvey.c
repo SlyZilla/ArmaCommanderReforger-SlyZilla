@@ -31,6 +31,7 @@ class ACR_BaseSpot : Managed
  bool m_bBunker;     // a bunker's ports have
  bool m_bTower;      // a tower's platform has (it sees over what stops the others)
  bool m_bGate;       // looks down a road in
+ ref array<vector> m_aCuts = {}; // line pieces that make way for it
 }
 
 class ACR_BaseSurvey : Managed
@@ -56,7 +57,12 @@ class ACR_BaseSurvey : Managed
  static const float NEAR_CLEAR = 10;
 
  static const float BUILDING_CLEAR = 10;  // m from a gun's middle to any building (its 6 m footprint + 4 m)
- static const float DOOR_CLEAR = 12;      // m from a gun's middle to a door or gate of a building
+ static const float DOOR_CLEAR = 10;      // m from a nest's or bunker's middle to a door or gate of a building
+ static const float NEST_BUILDING = 8;    // m from a nest's or bunker's bags' middle to any building (bags 5.5 m + 2.5)
+ static const float NEST_ROAD = 5;        // m from a nest's place to a road's edge (it stands on the line, which keeps off)
+ static const float TOWER_BUILDING = 6;   // a tower's are narrower: bags 3.8 m
+ static const float TOWER_ROAD = 4.5;
+ static const float TOWER_DOOR = 7;
  static const float GUN_ROAD = 7;         // m from a gun's middle to a road's edge
  static const float WALL_DOOR = 3;        // m from a sandbag piece to a door (the command post's own aside)
  static const float BLOCK_CLOSE = 6;      // m: a command post's bags that face another building this close go
@@ -81,18 +87,24 @@ class ACR_BaseSurvey : Managed
  ref array<float> m_aCover = {};           // what's there and the guns
  ref array<float> m_aLight = {};           // sandbags, redoubts and checkpoints: to a gun they count for little
  ref array<vector> m_aWorkSpots = {};     // the map's works and ours
+ ref array<vector> m_aRocks = {};         // big rocks: a line can end on one
  ref array<vector> m_aWallEnds = {};      // two per wall piece (tests draw them)
  int m_iTown;                             // buildings within the search radius
  int m_iWallPieces;
  int m_iMapWorks;                         // the map's sandbags, bunkers and towers seen
  int m_iOurWorks;                         // our positions and checkpoints near
  int m_iLineMs;                           // what its lines cost to plan
+ int m_iWalks;                            // lines walked to get them
+ int m_iPass;                             // 1: the approaches are being walked a second time
+ protected ref map<int, ref array<ref ACR_BaseDefenceSeg>> m_mRoads = new map<int, ref array<ref ACR_BaseDefenceSeg>>();
+ protected ref map<int, ref array<IEntity>> m_mHouses = new map<int, ref array<IEntity>>();
  ref map<string, int> m_mRefused = new map<string, int>(); // command post pieces left out, and why
  protected ref array<int> m_aBins = {};
 
  static int s_iTraces;                    // line-of-fire traces (tests, the log)
  protected static ref array<IEntity> s_aWalls = {};
  protected static ref array<IEntity> s_aWorks = {};
+ protected static ref array<IEntity> s_aRocks = {};
 
  // ---------------------------------------------------------------- sectors
 
@@ -124,6 +136,39 @@ class ACR_BaseSurvey : Managed
  protected static int Wrapped(int s)
  {
   return (s + SECTORS) % SECTORS;
+ }
+
+ // The roads and buildings that way, for a walk from there (a town has hundreds, and a walk asks often).
+ // Shared: kept per sector for the survey's life.
+ void ThisWay(int sector, out array<ref ACR_BaseDefenceSeg> roads, out array<IEntity> houses)
+ {
+  if (!m_mRoads.Contains(sector))
+  {
+   array<ref ACR_BaseDefenceSeg> newRoads = new array<ref ACR_BaseDefenceSeg>();
+   array<IEntity> newHouses = new array<IEntity>();
+   vector way = Dir(SectorBearing(sector));
+   foreach (ACR_BaseDefenceSeg seg : m_aSegs)
+   {
+    vector mid = (seg.m_vA + seg.m_vB) * 0.5 - m_vCenter;
+    mid[1] = 0;
+    float apart = mid.Length();
+    if (apart > 60 && ACR_BaseDefences.DotXZ(way, mid * (1.0 / apart)) < -0.2) continue;
+    newRoads.Insert(seg);
+   }
+   foreach (IEntity house : m_aBuildings)
+   {
+    if (!house) continue;
+    vector toHouse = house.GetOrigin() - m_vCenter;
+    toHouse[1] = 0;
+    float away = toHouse.Length();
+    if (away > 60 && ACR_BaseDefences.DotXZ(way, toHouse * (1.0 / away)) < -0.2) continue;
+    newHouses.Insert(house);
+   }
+   m_mRoads.Set(sector, newRoads);
+   m_mHouses.Set(sector, newHouses);
+  }
+  roads = m_mRoads.Get(sector);
+  houses = m_mHouses.Get(sector);
  }
 
  // How far the town reaches that way, between its sectors' figures.
@@ -201,8 +246,124 @@ class ACR_BaseSurvey : Managed
    if (ACR_BaseDefences.SegDistance(seg, p, q) < within) return "wall";
   }
   foreach (vector work : m_aWorkSpots) if (vector.DistanceXZ(work, p) < within) return "work";
+  foreach (vector rock : m_aRocks) if (vector.DistanceXZ(rock, p) < within + 2) return "rock";
   if (ACR_BaseDefences.RoadEdgeGap(m_aSegs, p) < 1.5) return "road";
   return "";
+ }
+
+ // The nearest thing a line going 'heading' from 'tip' could end on, within 'within' m and not behind it: a
+ // building's near side, a wall, a big rock, a work, the end of a line we've chosen.
+ bool NearestAnchor(vector tip, vector heading, ACR_BaseWork work, float within, out vector at, out string word)
+ {
+  float best = within;
+  bool found = false;
+  foreach (IEntity b : m_aBuildings)
+  {
+   if (!b || vector.DistanceXZ(b.GetOrigin(), tip) > within + 40) continue;
+   vector mins, maxs;
+   b.GetBounds(mins, maxs);
+   vector local = b.CoordToLocal(tip);
+   vector near = Vector(Math.Clamp(local[0], mins[0], maxs[0]), 0, Math.Clamp(local[2], mins[2], maxs[2]));
+   TryAnchor(tip, heading, b.CoordToParent(near), "building", best, at, word, found);
+  }
+  int count = m_aWallEnds.Count();
+  for (int i = 0; i + 1 < count; i += 2)
+  {
+   vector a = m_aWallEnds[i];
+   if (vector.DistanceXZ(a, tip) > within + 15) continue;
+   ACR_BaseDefenceSeg seg = new ACR_BaseDefenceSeg();
+   seg.m_vA = a;
+   seg.m_vB = m_aWallEnds[i + 1];
+   vector q;
+   ACR_BaseDefences.SegDistance(seg, tip, q);
+   TryAnchor(tip, heading, q, "wall", best, at, word, found);
+  }
+  foreach (vector spot : m_aWorkSpots) TryAnchor(tip, heading, spot, "work", best, at, word, found);
+  foreach (vector rock : m_aRocks) TryAnchor(tip, heading, rock, "rock", best, at, word, found);
+  foreach (ACR_BaseLine line : work.m_aLines)
+  {
+   if (line.m_aPieces.IsEmpty()) continue;
+   TryAnchor(tip, heading, line.m_aPieces[0].m_vFrom, "line", best, at, word, found);
+   TryAnchor(tip, heading, line.m_aPieces[line.m_aPieces.Count() - 1].m_vTo, "line", best, at, word, found);
+  }
+  return found;
+ }
+
+ protected void TryAnchor(vector tip, vector heading, vector point, string name, inout float best, inout vector at, inout string word, inout bool found)
+ {
+  float apart = vector.DistanceXZ(tip, point);
+  if (apart >= best || apart < 0.5) return;
+  if (ACR_BaseDefences.DotXZ(ACR_BaseDefences.FlatDir(tip, point), heading) < 0.2) return;
+  best = apart;
+  at = point;
+  word = name;
+  found = true;
+ }
+
+ // The threatened arc round the town seen from its middle: how much of it the lines cover, how much walls
+ // and buildings do, and both. Shares, 0..1.
+ void Coverage(ACR_BaseWork work, out float ours, out float existing, out float either)
+ {
+  array<int> lineBins = {};
+  array<int> wallBins = {};
+  for (int bin = 0; bin < BINS; bin++)
+  {
+   lineBins.Insert(0);
+   wallBins.Insert(m_aBins[bin]);
+  }
+  foreach (ACR_BaseLine line : work.m_aLines)
+   foreach (ACR_LinePiece piece : line.m_aPieces)
+    MarkInto(lineBins, ACR_BaseDefences.Bearing(piece.m_vFrom - m_vCenter), ACR_BaseDefences.Bearing(piece.m_vTo - m_vCenter));
+  foreach (IEntity b : m_aBuildings)
+  {
+   if (!b || vector.DistanceXZ(b.GetOrigin(), m_vCenter) > m_fRadius) continue;
+   vector mins, maxs;
+   b.GetBounds(mins, maxs);
+   vector c0 = b.CoordToParent(Vector(mins[0], 0, mins[2]));
+   vector c1 = b.CoordToParent(Vector(maxs[0], 0, maxs[2]));
+   vector c2 = b.CoordToParent(Vector(mins[0], 0, maxs[2]));
+   vector c3 = b.CoordToParent(Vector(maxs[0], 0, mins[2]));
+   MarkInto(wallBins, ACR_BaseDefences.Bearing(c0 - m_vCenter), ACR_BaseDefences.Bearing(c1 - m_vCenter));
+   MarkInto(wallBins, ACR_BaseDefences.Bearing(c2 - m_vCenter), ACR_BaseDefences.Bearing(c3 - m_vCenter));
+  }
+  int arc = 0;
+  int forOurs = 0;
+  int forWalls = 0;
+  int forEither = 0;
+  for (int k = 0; k < BINS; k++)
+  {
+   if (ACR_BaseDefences.ThreatDot(m_aDirs, m_aWeights, Dir((k + 0.5) * 5)) < MIN_SPOT_THREAT) continue;
+   arc++;
+   if (lineBins[k] > 0) forOurs++;
+   if (wallBins[k] > 0) forWalls++;
+   if (lineBins[k] > 0 || wallBins[k] > 0) forEither++;
+  }
+  arc = Math.Max(arc, 1);
+  ours = forOurs * 1.0 / arc;
+  existing = forWalls * 1.0 / arc;
+  either = forEither * 1.0 / arc;
+ }
+
+ protected void MarkInto(notnull array<int> bins, float from, float to)
+ {
+  from = Normal(from);
+  to = Normal(to);
+  float span = Normal(to - from);
+  if (span > 180)
+  {
+   float swap = from;
+   from = to;
+   to = swap;
+   span = 360 - span;
+  }
+  for (float at = from; at <= from + span + 0.01; at += 5) bins[(int)(Normal(at) / 5) % BINS] = 1;
+  bins[(int)(Normal(to) / 5) % BINS] = 1;
+ }
+
+ // One walk's outcome (the log, for why few lines come up).
+ void LogWalk(string town, int sector, float past, string words)
+ {
+  PrintFormat("[ACR] BASEWORKS walk %1 sector %2 +%3 m: %4", town, (int)SectorBearing(sector), (int)past, words);
  }
 
  // Wall ends with nothing joined to them, on the threatened side: where gaps start.
@@ -335,6 +496,7 @@ class ACR_BaseSurvey : Managed
   if (!e || !e.GetPhysics() || Tree.Cast(e) || ChimeraCharacter.Cast(e)) return true;
   string name = FullName(e);
   if (name.Contains("/Walls/") || name.Contains("Fence") || name.Contains("/Gates/")) s_aWalls.Insert(e);
+  else if (name.Contains("Rock") || name.Contains("Stone") || name.Contains("Granite") || name.Contains("Boulder")) s_aRocks.Insert(e);
   else if (name.Contains("/Sandbags/") || name.Contains("/Fortifications/") || name.Contains("/Bunkers/") || name.Contains("GuardTower") || name.Contains("Watchtower") || name.Contains("GuardPost")) s_aWorks.Insert(e);
   return true;
  }
@@ -345,6 +507,7 @@ class ACR_BaseSurvey : Managed
  {
   s_aWalls.Clear();
   s_aWorks.Clear();
+  s_aRocks.Clear();
   GetGame().GetWorld().QueryEntitiesBySphere(m_vCenter, m_fRadius + 30, CollectSolid, null, EQueryEntitiesFlags.STATIC);
   foreach (IEntity wall : s_aWalls)
   {
@@ -404,8 +567,16 @@ class ACR_BaseSurvey : Managed
    mapCover[u] = Math.Min(mapCover[u] + worth, 0.3);
   }
   foreach (int v, float cover : mapCover) if (cover > 0) AddCover(v, cover);
+  foreach (IEntity rock : s_aRocks)
+  {
+   vector rockMins, rockMaxs;
+   rock.GetBounds(rockMins, rockMaxs);
+   if (rockMaxs[0] - rockMins[0] < 3 && rockMaxs[2] - rockMins[2] < 3) continue;
+   m_aRocks.Insert(rock.CoordToParent((rockMins + rockMaxs) * 0.5));
+  }
   s_aWalls.Clear();
   s_aWorks.Clear();
+  s_aRocks.Clear();
  }
 
  protected void MarkBins(float from, float to)
@@ -568,16 +739,22 @@ class ACR_BaseSurvey : Managed
   string why;
   // The gun stands 1.1 m forward of the nest's middle (measured): the same trace the built gun gets.
   vector gun = place + Dir(bearing) * 1.1;
-  return FanClear(place, UP_NEST, bearing, 45, 30, 22) && ACR_Fortify.LineOfFireAt(gun, bearing, null, why);
+  return FanClear(gun, UP_NEST, bearing, 45, 30, 22) && ACR_Fortify.LineOfFireAt(gun, bearing, null, why);
  }
 
+ // A bunker's firing slit is 4 m forward of its origin (measured).
  static bool BunkerFan(vector place, float bearing)
  {
   string why;
-  return FanClear(place, UP_BUNKER, bearing, 50, 30, 22) && ACR_Fortify.LineOfFireAt(place, bearing, null, why);
+  vector slit = place + Dir(bearing) * 4;
+  return FanClear(slit, UP_BUNKER, bearing, 40, 25, 22) && ACR_Fortify.LineOfFireAt(slit, bearing, null, why);
  }
 
- static bool TowerFan(vector place, float bearing) { return FanClear(place, UP_TOWER, bearing, 60, 40, 25); }
+ // A tower's platform stands 3 m forward of its origin (measured).
+ static bool TowerFan(vector place, float bearing)
+ {
+  return FanClear(place + Dir(bearing) * 3, UP_TOWER, bearing, 40, 25, 22);
+ }
 
  // ---------------------------------------------------------------- the command post
 

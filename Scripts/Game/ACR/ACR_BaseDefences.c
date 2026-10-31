@@ -327,8 +327,9 @@ class ACR_BaseDefences : Managed
 	// Nothing solid in the world under a footprint: fences, walls, poles, parked vehicles, props,
 	// tree trunks (bushes are fine, like vanilla's bought defences). Flat things (kerbs, rugs)
 	// and things overhead (wires, awnings, signs) don't count.
-	// noTrees: a piece that fells them when it goes in (ACR_FobBuild.FellTrees).
-	static bool WorldClear(vector at, float yaw, vector half, IEntity ignore = null, bool noTrees = false)
+	// noTrees: a piece that fells them when it goes in (ACR_FobBuild.FellTrees). overLowRocks: sandbags can
+	// lie over a rock that stands under 1.1 m.
+	static bool WorldClear(vector at, float yaw, vector half, IEntity ignore = null, bool noTrees = false, bool overLowRocks = false)
 	{
 		s_Ignore = ignore;
 		s_aSolid.Clear();
@@ -354,6 +355,7 @@ class ACR_BaseDefences : Managed
 			if (top < at[1] + 0.35 || bottom > at[1] + 2.2) continue;
 			string model = ModelName(e);
 			if (Walkable(model)) continue;
+			if (overLowRocks && top < at[1] + 1.1 && (model.Contains("Stone") || model.Contains("Rock") || model.Contains("Granite"))) continue;
 			float boxYaw = Bearing(e.VectorToParent(Vector(0, 0, 1)));
 			if (BoxesOverlap(at, yaw, half, boxCentre, boxYaw, size * 0.5, 0.1)) clear = false;
 			if (!clear)

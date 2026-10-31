@@ -78,6 +78,9 @@ class ACR_TestWorksShots
   if (!work.m_aLines.IsEmpty()) look = work.m_aLines[0].m_vFacing;
   float towards = ACR_BaseDefences.Bearing(look * -1);
   AddShot(center + look * 140 + Vector(0, 40, 0), Vector(towards, -14, 0), string.Format("works_%1_overview", tag), "the whole town, low");
+  // High and oblique, from the threatened side: can the whole base's coverage be judged?
+  float high = ACR_BaseDefences.SearchRadius(town) * 0.9;
+  AddShot(center + look * high + Vector(0, Math.Clamp(high, 90, 120), 0), Vector(towards, -45, 0), string.Format("works_%1_high", tag), "the whole town, high");
   foreach (int l, ACR_BaseLine line : work.m_aLines) LineShots(line, tag, l);
   foreach (int i, ACR_BaseSite site : work.m_aSites)
   {
@@ -106,10 +109,62 @@ class ACR_TestWorksShots
   float way = ACR_BaseDefences.Bearing(along);
   string name = string.Format("works_%1_line%2_t%3", tag, index, line.m_iTier);
   vector eye = first.m_vPos - along * 8 - line.m_vFacing * 4 + Vector(0, 5, 0);
-  AddShot(eye, Vector(way, -9, 0), name + "_along", words);
-  float back = ACR_BaseDefences.Bearing(line.m_vFacing * -1);
+  eye = ClearEye(eye, line.m_vMiddle);
+  AddShot(eye, Aim(eye, line.m_vMiddle), name + "_along", words);
   float stand = Math.Max(line.m_fLength * 0.55, 22);
-  AddShot(line.m_vMiddle + line.m_vFacing * stand + Vector(0, 7, 0), Vector(back, -9, 0), name + "_front", words);
+  eye = ClearEye(line.m_vMiddle + line.m_vFacing * stand + Vector(0, 7, 0), line.m_vMiddle);
+  AddShot(eye, Aim(eye, line.m_vMiddle), name + "_front", words);
+ }
+
+ // Angles from an eye to a target a little over the ground.
+ protected static vector Aim(vector eye, vector target)
+ {
+  vector to = target + Vector(0, 1, 0) - eye;
+  float flat = Math.Sqrt(to[0] * to[0] + to[2] * to[2]);
+  return Vector(ACR_BaseDefences.Bearing(to), Math.Atan2(to[1], Math.Max(flat, 0.1)) * Math.RAD2DEG, 0);
+ }
+
+ protected static bool NotChar(notnull IEntity e) { return ChimeraCharacter.Cast(e) == null; }
+
+ // Clear from the eye to the target, and not inside anything.
+ protected static bool SeesFrom(vector eye, vector target)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  float ground = world.GetSurfaceY(eye[0], eye[2]);
+  if (eye[1] < ground + 2) eye[1] = ground + 2;
+  // Inside a building or a tree: something overhead, or a box round the eye.
+  TraceParam up = new TraceParam();
+  up.Start = eye;
+  up.End = eye + Vector(0, 25, 0);
+  up.Flags = TraceFlags.ENTS;
+  if (world.TraceMove(up, NotChar) < 1) return false;
+  TraceParam look = new TraceParam();
+  look.Start = eye;
+  look.End = target + Vector(0, 1, 0);
+  look.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  return world.TraceMove(look, NotChar) >= 0.97;
+ }
+
+ // The eye, moved until it sees the target: up, then to either side and further back.
+ protected static vector ClearEye(vector eye, vector target)
+ {
+  vector away = ACR_BaseDefences.FlatDir(target, eye);
+  vector across = Vector(away[2], 0, -away[0]);
+  array<float> ups = {0, 4, 8, 14, 22};
+  array<float> sides = {0, 8, -8, 16, -16, 26, -26};
+  array<float> backs = {0, 8};
+  foreach (float rise : ups)
+  {
+   foreach (float back : backs)
+   {
+    foreach (float side : sides)
+    {
+     vector tried = eye + Vector(0, rise, 0) + across * side + away * back;
+     if (SeesFrom(tried, target)) return tried;
+    }
+   }
+  }
+  return eye + Vector(0, 22, 0);
  }
 
  protected static void AddShot(vector eye, vector angles, string name, string words)
