@@ -128,6 +128,7 @@ class ACR_TestBaseWorks
  protected static void Setup(ACR_Manager manager)
  {
   s_sSide = ACR_FactionSelection.West();
+  if (System.IsCLIParam("acrBaseWorksCompactTest")) ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
   ACR_Fortify.WORK_SCALE = 0.05;
   ACR_BaseSystem.s_bNoIncomeForTest = true; // the RP sums below are the sites' alone
   ACR_BaseWorks.s_iMaxSitesForTest = 1;

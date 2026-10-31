@@ -254,6 +254,14 @@ class ACR_Fortify
   return "the covered post";
  }
 
+ // The small gun position, for one long piece's place in a line (ACR_BaseLines). FIA's has no small one.
+ static ResourceName CompactGun(string faction)
+ {
+  if (faction == "FIA") return "";
+  if (faction == "USSR" || faction == "RHS_AFRF") return HMG_USSR;
+  return HMG_US;
+ }
+
  static ResourceName PrefabFor(int spot, string faction, int tier)
  {
   bool east = faction == "USSR" || faction.Contains("AFRF") || faction.Contains("RU") || faction.Contains("SLA");
