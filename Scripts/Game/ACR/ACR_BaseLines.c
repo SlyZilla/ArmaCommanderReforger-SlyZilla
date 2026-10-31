@@ -95,6 +95,11 @@ class ACR_BaseLiner : Managed
  static const float MAX_LEAN = 0.7;         // m across it
  static const float ROAD_KEEP = 0.6;        // m from a road's edge to a piece
  static const float WIDE_PAVED = 18;        // m of concrete ahead that make it a runway or an apron, not a yard
+ static const float BAY_TURN = 25;          // degrees: a fire bay steps a long piece's width in or out
+ int m_iBayEvery;      // long pieces between fire bays, 0 none
+ float m_fBaySide = 1; // 1 out towards the enemy, -1 back
+ protected int m_iSinceBay;
+ protected int m_iBayStep;
 
  ACR_BaseSurvey m_Survey;
  ACR_BaseWork m_Work;
@@ -240,12 +245,49 @@ class ACR_BaseLiner : Managed
   return ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(to) - ACR_BaseDefences.Bearing(from) + 180) - 180;
  }
 
+ // A fire bay: a piece angled off, one along, one angled back, one along again, so a stretch stands 1.4 m
+ // off the rest and a man sees along the line. No room for its next piece: the line goes on as usual and
+ // turns back by itself. -acrBaseBays 0 turns them off.
+ static bool BaysOn()
+ {
+  string value;
+  return !(ACR_Options.Get("acrBaseBays", value) && value == "0");
+ }
+
+ protected bool BayStep(vector tip, vector heading, int sign, out vector next)
+ {
+  if (m_iBayStep == 0)
+  {
+   if (m_bTarget || m_iBayEvery <= 0 || m_iSinceBay < m_iBayEvery) return false;
+   m_iBayStep = 1;
+  }
+  // Towards the firing side is against Turned's sense when sign is 1.
+  float turn = -sign * BAY_TURN * m_fBaySide;
+  if (m_iBayStep == 2 || m_iBayStep == 3) turn = -turn;
+  vector way = Turned(heading, turn);
+  if (Fit(tip, way, ACR_BaseLines.LONG_STEP, sign, false) != FIT_OK)
+  {
+   m_iBayStep = 0;
+   m_iSinceBay = 0;
+   return false;
+  }
+  next = way;
+  m_iBayStep++;
+  if (m_iBayStep > 4)
+  {
+   m_iBayStep = 0;
+   m_iSinceBay = 0;
+  }
+  return true;
+ }
+
  // The next long piece: the turn towards where it wants to go, then wider and wider either way, to step
  // round a tree or a rock (the joint opens a little on the outside at the widest). FIT_OK with 'next' set,
  // or why it can't go straight on.
  protected int NextHeading(vector tip, vector heading, int sign, out vector next)
  {
   m_bBlindStep = false;
+  if (BayStep(tip, heading, sign, next)) return FIT_OK;
   float wanted = Math.Clamp(TurnBetween(heading, Wanted(tip, sign)), -GENTLE, GENTLE);
   // Straight for a target it can be asked to turn hard.
   if (m_bTarget) wanted = Math.Clamp(TurnBetween(heading, Wanted(tip, sign)), -26, 26);
@@ -304,6 +346,8 @@ class ACR_BaseLiner : Managed
   m_iBlind = 0;
   m_iSeeing = 0;
   m_iStop = -1;
+  m_iSinceBay = 0;
+  m_iBayStep = 0;
   while (made < most)
   {
    if (m_bTarget && vector.DistanceXZ(tip, m_vTarget) < ACR_BaseLines.LONG_STEP) return Closed(tip, heading, sign, run, kit, m_sTargetWord);
@@ -323,6 +367,7 @@ class ACR_BaseLiner : Managed
      m_iSeeing++;
      if (m_iSeeing >= 2) m_iBlind = 0;
     }
+    m_iSinceBay++;
     vector to = tip + next * ACR_BaseLines.LONG_STEP;
     vector facing = FacingOf(next, sign);
     run.Insert(Piece(tip, to, tip + next * (ACR_BaseLines.LONG_STEP * 0.5), ACR_BaseDefences.Bearing(facing), kit.m_sLong, facing));
@@ -553,7 +598,7 @@ class ACR_BaseLines
  static const float NEST_HALF = 5.2;      // m its bags reach to its sides (measured -5.2 .. 4.4; USSR -5.5 .. 4.5)
  static const float COMPACT_HALF = 1.9;   // the small gun position: its side bags reach 1.7 m (Sandbag_MG_US_01)
  static const float COMPACT_DEPTH = 1.1;
- static const float COMPACT_ROAD = 2;     // m from its middle to a road's edge
+ static const float COMPACT_ROAD = 4;     // m from its middle to a road's edge
  static const float COMPACT_HOUSE = 5;    // ... to a building, its middle and its gun (1.1 m forward)
  static ref array<float> s_aOffsets = {4, 9, 15, 22, 30, 40};
 
@@ -637,6 +682,12 @@ class ACR_BaseLines
   liner.m_fOffset = past;
   liner.m_fWobble = rng.RandFloat01() * 2.5;
   liner.m_fPhase = rng.RandFloat01() * 6.28;
+  // Most lines have fire bays, at their own spacing, mostly stepping out.
+  if (ACR_BaseLiner.BaysOn() && rng.RandFloat01() < 0.7)
+  {
+   liner.m_iBayEvery = 5 + rng.RandInt(0, 4);
+   if (rng.RandFloat01() < 0.3) liner.m_fBaySide = -1;
+  }
   vector facing = ACR_BaseSurvey.Dir(seedAt);
   vector heading = Vector(facing[2], 0, -facing[0]);
   ACR_BaseLine line = new ACR_BaseLine();

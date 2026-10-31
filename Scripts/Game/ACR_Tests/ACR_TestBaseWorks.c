@@ -372,7 +372,8 @@ class ACR_TestBaseWorks
    if (site.m_iTier != 2 || !site.m_bBuilt) continue;
    kinds += ACR_BaseWorks.SiteWords(site) + ", ";
    if (site.m_eKind == ACR_EBaseSite.NEST) nest = true;
-   if (site.m_eKind == ACR_EBaseSite.NEST && !site.m_aWalls[0].FindComponent(SCR_CampaignBuildingCompositionComponent)) real = false;
+   // The small gun position is one plain prop, the big nest a composition the game's own build menu knows.
+   if (site.m_eKind == ACR_EBaseSite.NEST && !site.m_bCompact && !site.m_aWalls[0].FindComponent(SCR_CampaignBuildingCompositionComponent)) real = false;
    if (site.m_eKind == ACR_EBaseSite.ROADBLOCK && !site.m_Roadblock) real = false;
   }
   ACR_TestRegress.Check("baseworks: tier II built", ACR_BaseWorks.BuiltSites(s_Work, 2) > 0 && real, kinds);
@@ -624,7 +625,7 @@ class ACR_TestBaseWorks
  protected static float s_fOurs, s_fEither;
  static const float COVER_FLOOR = 0.5;   // of a threatened arc, by lines, on average (the maps reach 55-68%)
  static const float ANCHOR_FLOOR = 0.5;  // the maps reach 55-78%
- protected static int s_iLongLine, s_iLongNoNest, s_iOnApron;
+ protected static int s_iLongLine, s_iLongNoNest, s_iOnApron, s_iBayLines, s_iLongLines;
  protected static int s_iFire, s_iClose, s_iFacing, s_iPlannedFacing, s_iBuilding, s_iDoor, s_iRoad, s_iDressRoad, s_iApart, s_iDoubled, s_iFarCheck, s_iWorstMs, s_iNestTowns;
  protected static string s_sWorst;
  protected static ref array<IEntity> s_aFound = {};
@@ -691,7 +692,8 @@ class ACR_TestBaseWorks
   SeedChecks(biggest);
   Draw(biggest);
   Replay();
-  ACR_TestRegress.Complete("baseworksplan", 39);
+  ACR_TestRegress.Check("baseworks plan: most long lines have fire bays", s_iBayLines * 2 >= s_iLongLines, string.Format("%1 of %2 lines of 60 m or more", s_iBayLines, s_iLongLines));
+  ACR_TestRegress.Complete("baseworksplan", 40);
  }
 
  protected static void PlanChecks(ACR_Base base)
@@ -760,7 +762,15 @@ class ACR_TestBaseWorks
   bool longLine = false;
   foreach (ACR_BaseLine line : work.m_aLines)
   {
-   if (line.m_fLength >= 60) longLine = true;
+   if (line.m_fLength >= 60)
+   {
+    longLine = true;
+    s_iLongLines++;
+    int sharp = 0;
+    for (int b = 1; b < line.m_aPieces.Count(); b++)
+     if (line.m_aPieces[b - 1].m_iBreak == 0 && ACR_BaseDefences.DotXZ(line.m_aPieces[b - 1].m_vFacing, line.m_aPieces[b].m_vFacing) < 0.95) sharp++;
+    if (sharp >= 3) s_iBayLines++;
+   }
    foreach (ACR_LinePiece bag : line.m_aPieces)
    {
     vector along = ACR_BaseDefences.FlatDir(bag.m_vFrom, bag.m_vTo);
