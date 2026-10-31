@@ -301,7 +301,7 @@ class ACR_Requisition : Managed
   {
    ACR_RequisitionEntry formation = purchase.m_Entry;
    if (!formation) formation = ACR_InfantryCatalog.Starting(faction, group);
-   SCR_AIGroup spawned = SpawnFormation(group, formation, groupPos);
+   SCR_AIGroup spawned = SpawnFormation(faction, group, formation, groupPos);
    if (!spawned) { purchase.m_sError = "group did not spawn"; return false; }
    SetUnitFaction(spawned, faction);
    purchase.m_Group = spawned;
@@ -311,7 +311,7 @@ class ACR_Requisition : Managed
   {
    ACR_RequisitionEntry passengerFormation;
    if (!purchase.m_Entry) passengerFormation = ACR_InfantryCatalog.Starting(faction, passengers);
-   SCR_AIGroup riders = SpawnFormation(passengers, passengerFormation, groupPos);
+   SCR_AIGroup riders = SpawnFormation(faction, passengers, passengerFormation, groupPos);
    if (!riders) { purchase.m_sError = "passengers did not spawn"; return false; }
    SetUnitFaction(riders, faction);
    purchase.m_Riders = riders;
@@ -322,18 +322,23 @@ class ACR_Requisition : Managed
  }
 
  // The same native group construction is used for purchased infantry and starting riders.
- protected SCR_AIGroup SpawnFormation(ResourceName group, ACR_RequisitionEntry formation, vector position)
+ // A content pack's soldier swaps (ACR_ContentSocket.Soldier) turn a catalog group into a
+ // formation of the swapped soldiers, which is then also its reinforcement recipe.
+ protected SCR_AIGroup SpawnFormation(string faction, ResourceName group, ACR_RequisitionEntry formation, vector position)
  {
-  bool customFormation = formation && formation.m_aSoldiers && !formation.m_aSoldiers.IsEmpty();
+  array<ResourceName> soldiers = {};
+  if (formation && formation.m_aSoldiers) soldiers.Copy(formation.m_aSoldiers);
+  ACR_ContentSocket.Get().SwapSoldiers(faction, group, soldiers);
+  bool customFormation = !soldiers.IsEmpty();
   if (customFormation) SCR_AIGroup.IgnoreSpawning(true);
   SCR_AIGroup spawned = SCR_AIGroup.Cast(SpawnForPurchase(group, position));
   if (customFormation) SCR_AIGroup.IgnoreSpawning(false);
   if (spawned && customFormation)
   {
    if (!spawned.m_aUnitPrefabSlots) spawned.m_aUnitPrefabSlots = {};
-   spawned.m_aUnitPrefabSlots.Copy(formation.m_aSoldiers);
-   spawned.m_eACRFormation = formation.m_eFormation;
-   if (!FillGroup(spawned, formation.m_aSoldiers, position)) return null;
+   spawned.m_aUnitPrefabSlots.Copy(soldiers);
+   if (formation) spawned.m_eACRFormation = formation.m_eFormation;
+   if (!FillGroup(spawned, soldiers, position)) return null;
   }
   else if (spawned) ACR_BaseSystem.SettleSoon(spawned); // the game's own formation spawn
   return spawned;

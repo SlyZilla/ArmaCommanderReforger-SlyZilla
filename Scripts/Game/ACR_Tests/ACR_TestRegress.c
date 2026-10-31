@@ -156,7 +156,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 134; // includes one garrison-spawn, two spawn-heap, eight BBB order-leash, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 135; // includes one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -373,16 +373,18 @@ class ACR_TestRegress
   crew.SetOrder(savedLabel, savedState);
  }
 
- // #31: an attacker gets squad tactics and a leash on the target's ring only on its ASSAULT order
- // inside the ring, with -acrSquadTactics 1; staging (MOVE) or outside the ring it keeps the old
- // policy. Off by default: without the option, inside the ring is the old policy too.
+ // #31/#101: one intent per squad for BBB. With -acrSquadTactics 1 a mover or attacker is PUSH,
+ // leashed to the target's ring only on its ASSAULT order inside the ring (else the order's own
+ // corridor, radius 0); a waiting squad is HOLD around its base; forced moves are TRANSIT; a
+ // squad a player commands is NONE. Off by default: no squad tactics, movers still PUSH (fire and
+ // manoeuvre as before), waiting squads TRANSIT, no ring.
  static void CheckSquadTacticLeash(ACR_BBBHooks hooks, ACR_Squad fixture)
  {
   ACR_Base target;
   foreach (ACR_Base base : ACR_Base.s_All) if (base && !base.m_bRetired) { target = base; break; }
   if (!target || !fixture.GetAnchor())
   {
-   Skip("BBB leash: attackers get squad tactics and the ring as leash only inside the objective", "no base or anchor");
+   Skip("BBB intent: attackers push, leashed to the ring only inside the objective", "no base or anchor");
    return;
   }
   ACR_Options.Set("acrSquadTactics", "1");
@@ -390,6 +392,14 @@ class ACR_TestRegress
   int savedTask = fixture.m_iAITask;
   ACR_Base savedTarget = fixture.m_AITarget;
   float savedRadius = target.m_fRadius;
+  ACR_EMoveMode savedMode = fixture.m_Mode;
+  int savedCommander = fixture.m_Commander;
+  int savedIssuer = fixture.m_iOrderedBy;
+  bool savedForced = fixture.m_bForced;
+  string savedLabel = fixture.m_Order;
+  ACR_EOrderState savedState = fixture.OrderState();
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
+  fixture.m_Commander = 0; fixture.m_iOrderedBy = 0; fixture.m_bForced = false;
   float gap = vector.DistanceXZ(fixture.GetAnchor().GetOrigin(), target.GetOrigin());
   fixture.m_iAITask = ACR_EAITask.ATTACK;
   fixture.m_AITarget = target;
@@ -397,21 +407,49 @@ class ACR_TestRegress
   float radius;
   target.m_fRadius = gap + 20;
   fixture.SetOrder("Leash policy fixture", ACR_EOrderState.ASSAULT);
-  bool inside = hooks.HostLeash(fixture.m_Group, centre, radius) && radius == gap + 20 && vector.DistanceXZ(centre, target.GetOrigin()) < 0.1 && hooks.AllowSquadTactic(fixture.m_Group);
+  bool inside = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && radius == gap + 20 && vector.DistanceXZ(centre, target.GetOrigin()) < 0.1 && hooks.AllowSquadTactic(fixture.m_Group);
   fixture.SetOrder("Leash policy fixture", ACR_EOrderState.MOVE);
-  bool staging = !hooks.HostLeash(fixture.m_Group, centre, radius) && !hooks.AllowSquadTactic(fixture.m_Group);
+  bool staging = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && radius == 0;
   fixture.SetOrder("Leash policy fixture", ACR_EOrderState.ASSAULT);
   target.m_fRadius = Math.Max(1, gap - 20);
-  bool outside = gap < 21 || !hooks.HostLeash(fixture.m_Group, centre, radius);
+  bool outside = gap < 21 || (hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && radius == 0);
+  target.m_fRadius = gap + 20;
+  fixture.m_iAITask = ACR_EAITask.FREE;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.NONE);
+  bool waits = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.HOLD && radius >= BBB_OrderLeash.DEFEND_RADIUS && vector.DistanceXZ(centre, target.GetOrigin()) < 0.1;
+  fixture.m_iAITask = ACR_EAITask.ATTACK;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.MOVE);
+  fixture.m_bForced = true;
+  bool forced = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT;
+  fixture.m_bForced = false;
+  // A FAST march that met the enemy: re-issued at combat level, still labelled FAST.
+  fixture.m_Mode = ACR_EMoveMode.FAST;
+  bool fastFights = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && !hooks.IsBinding(fixture.m_Group);
+  fixture.m_Mode = ACR_EMoveMode.SILENT;
+  bool quietOurs = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT && hooks.IsBinding(fixture.m_Group);
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
+  fixture.m_Commander = 1;
+  bool commanded = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.NONE;
+  fixture.m_Commander = 0;
   ACR_Options.Unset("acrSquadTactics");
   ACR_BBBHooks.RereadSquadTactics();
-  target.m_fRadius = gap + 20;
-  bool offByDefault = !hooks.HostLeash(fixture.m_Group, centre, radius) && !hooks.AllowSquadTactic(fixture.m_Group);
+  fixture.m_Mode = ACR_EMoveMode.FAST;
+  bool offFast = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT && hooks.IsBinding(fixture.m_Group);
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.ASSAULT);
+  bool offPush = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && radius == 0 && !hooks.AllowSquadTactic(fixture.m_Group);
+  fixture.m_iAITask = ACR_EAITask.FREE;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.NONE);
+  bool offWait = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT;
   target.m_fRadius = savedRadius;
   fixture.m_iAITask = savedTask;
   fixture.m_AITarget = savedTarget;
-  Check("BBB leash: attackers get squad tactics and the ring as leash only inside the objective", inside && staging && outside, string.Format("inside %1 staging-free %2 outside-free %3 (anchor %4 m from %5)", inside, staging, outside, (int)gap, target.m_sName));
-  Check("BBB leash: squad tactics in the objective are off by default", offByDefault);
+  fixture.m_Mode = savedMode; fixture.m_Commander = savedCommander;
+  fixture.m_iOrderedBy = savedIssuer; fixture.m_bForced = savedForced;
+  fixture.SetOrder(savedLabel, savedState);
+  Check("BBB intent: attackers push, leashed to the ring only inside the objective", inside && staging && outside, string.Format("inside %1 staging %2 outside %3 (anchor %4 m from %5)", inside, staging, outside, (int)gap, target.m_sName));
+  Check("BBB intent: waiting squads hold at their base, forced and quiet moves are ours, a FAST march in contact fights, commanded squads are left alone", waits && forced && fastFights && quietOurs && commanded, string.Format("waits %1 forced %2 fast %3 quiet %4 commanded %5", waits, forced, fastFights, quietOurs, commanded));
+  Check("BBB intent: squad tactics off by default, movers still push, waiting squads and FAST marches stay ours", offPush && offWait && offFast, string.Format("push %1 wait %2 fast %3", offPush, offWait, offFast));
  }
 
  // A roadblock click by a joint of two road pieces, or on a side road by a T-crossing, stays on
