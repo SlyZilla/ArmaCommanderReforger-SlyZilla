@@ -338,7 +338,8 @@ class ACR_TestBattle : Managed
    PrintFormat("[ACR] INTELTEST near: US contacts %1 (want >=1), feed %2, client contacts %3, client feed %4, USSR knows %5",
     us.m_Contacts.Count(), us.m_Feed.Count(), h.ClientContacts(pc), h.ClientFeed(pc), soviets.m_Contacts.Count());
    foreach (string line : us.m_Feed) PrintFormat("[ACR] INTELTEST feed: %1", line);
-   foreach (ACR_Contact c : us.m_Contacts) PrintFormat("[ACR] INTELTEST contact kind %1 count %2 at %3 by %4", c.m_iKind, c.m_iCount, c.m_Pos, c.m_sSpotter);
+   foreach (ACR_Contact c : us.m_Contacts) PrintFormat("[ACR] INTELTEST contact kind %1 count %2 at %3 by %4, icons %5 (%6), heading %7", c.m_iKind, c.m_iCount, c.m_Pos, c.m_sSpotter, c.m_iIcons, ACR_Intel.DescribeSymbol(c.m_iIcons, c.m_iKind, c.m_iCount), c.m_fHeading);
+   foreach (ACR_Contact roles : us.m_Contacts) foreach (IEntity seenBody : roles.m_Bodies) PrintFormat("[ACR] INTELTEST seen %1: role %2", seenBody.GetPrefabData().GetPrefabName(), ACR_Intel.RoleOf(seenBody));
    foreach (ACR_Contact sc : soviets.m_Contacts) PrintFormat("[ACR] INTELTEST soviet contact %1 count %2 at %3", sc.m_sKey, sc.m_iCount, sc.m_Pos);
    foreach (IEntity seenBody, float t : soviets.m_SeenTime) PrintFormat("[ACR] INTELTEST soviet sees %1 squad %2", seenBody, manager.FindSquadBySoldier(seenBody) != null);
   }

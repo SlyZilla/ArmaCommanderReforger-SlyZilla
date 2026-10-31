@@ -1757,7 +1757,7 @@ class ACR_Squad : Managed
   ACR_Intel intel;
   if (manager) intel = manager.IntelFor(plan.m_sFaction);
   if (intel) done += " " + intel.Place(plan.m_vSite);
-  if (manager) manager.Command().Feed(plan.m_sFaction, done);
+  if (manager) manager.Command().Feed(plan.m_sFaction, done, plan.m_vSite);
   ACR_Report.Event(plan.m_sFaction, done);
   PrintFormat("[ACR] SQUAD %1: %2", m_Name, done);
 
@@ -1924,7 +1924,7 @@ class ACR_Squad : Managed
    PrintFormat("[ACR] SQUAD %1: could not fortify (%2), refunded %3 RP", m_Name, why, plan.m_iCost);
    // Said where the player sees it (playtest 25 Oct: only the RP was seen to go).
    string lost = string.Format("%1 could not fortify: %2 (%3 RP refunded)", m_Name, why, plan.m_iCost);
-   if (manager) manager.Command().Feed(plan.m_sFaction, lost);
+   if (manager) manager.Command().Feed(plan.m_sFaction, lost, plan.m_vSite);
    if (manager && m_iOrderedBy != 0) manager.Notify(m_iOrderedBy, lost);
    return;
   }
@@ -1933,7 +1933,7 @@ class ACR_Squad : Managed
   ACR_Intel intel;
   if (manager) intel = manager.IntelFor(plan.m_sFaction);
   if (intel) done += " " + intel.Place(fort.m_vPos);
-  if (manager) manager.Command().Feed(plan.m_sFaction, done);
+  if (manager) manager.Command().Feed(plan.m_sFaction, done, fort.m_vPos);
   ACR_Report.Event(plan.m_sFaction, done);
   PrintFormat("[ACR] SQUAD %1: %2", m_Name, done);
   // Hold it: native Defend puts gunners on the position's guns.

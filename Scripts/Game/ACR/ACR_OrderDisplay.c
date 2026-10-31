@@ -58,6 +58,7 @@ class ACR_OrderDisplay : Managed
   DrawOtherSelections(mapEntity, data);
   DrawStatusBars(mapEntity, data);
   DrawPending(mapEntity, data);
+  DrawContactHeadings(mapEntity, data);
   if (boxing) DrawBox(mapEntity, boxStart);
   if (data.m_bAiming) DrawAim(mapEntity, data.m_vAimFrom, data.m_vAimTo);
   ACR_PingDisplay.DrawOnMap(this, mapEntity, data);
@@ -411,6 +412,52 @@ class ACR_OrderDisplay : Managed
    mapEntity.WorldToScreen(data.m_PendingFrom[i][0], data.m_PendingFrom[i][2], x0, y0, true);
    mapEntity.WorldToScreen(data.m_PendingTo[i][0], data.m_PendingTo[i][2], x1, y1, true);
    Line(x0, y0, x1, y1, faint.PackToInt(), 2);
+  }
+ }
+
+ static const float HEADING_FROM_PX = 16; // past the contact's symbol
+ static const float HEADING_TO_PX = 42;
+
+ // Spotted enemies seen moving: a red arrow from the symbol the way they were going.
+ protected void DrawContactHeadings(SCR_MapEntity mapEntity, ACR_MapData data)
+ {
+  foreach (int i, vector pos : data.m_ContactArrowPos)
+  {
+   float radians = data.m_ContactArrowHeading[i] * Math.DEG2RAD;
+   vector ahead = pos + Vector(Math.Sin(radians), 0, Math.Cos(radians)) * 100;
+   int x0, y0, x1, y1;
+   mapEntity.WorldToScreen(pos[0], pos[2], x0, y0, true);
+   mapEntity.WorldToScreen(ahead[0], ahead[2], x1, y1, true);
+   float dx = x1 - x0;
+   float dy = y1 - y0;
+   float length = Math.Sqrt(dx * dx + dy * dy);
+   if (length < 0.01) continue;
+   dx = dx / length;
+   dy = dy / length;
+   float alpha = data.m_ContactArrowAlpha[i];
+   Color shadeColor = new Color(0, 0, 0, 0.5 * alpha);
+   Color redColor = new Color(1, 0.25, 0.2, alpha);
+   float sx = x0 + dx * HEADING_FROM_PX;
+   float sy = y0 + dy * HEADING_FROM_PX;
+   float tx = x0 + dx * HEADING_TO_PX;
+   float ty = y0 + dy * HEADING_TO_PX;
+   float angle = Math.Atan2(dy, dx);
+   for (int pass = 0; pass < 2; pass++)
+   {
+    int color = shadeColor.PackToInt();
+    float width = 5;
+    if (pass == 1)
+    {
+     color = redColor.PackToInt();
+     width = 2.5;
+    }
+    Line(sx, sy, tx, ty, color, width);
+    for (int side = -1; side <= 1; side += 2)
+    {
+     float back = angle + Math.PI + side * 0.55;
+     Line(tx, ty, tx + Math.Cos(back) * 9, ty + Math.Sin(back) * 9, color, width);
+    }
+   }
   }
  }
 

@@ -541,6 +541,96 @@ class ACR_TestGenerate
   ACR_TestRegress.Check("Everon HQs far apart", hqs.Count() == 2 && vector.DistanceXZ(hqs[0].m_vPos, hqs[1].m_vPos) >= 5000, "");
   BeginBatch();
  }
+
+ // -acrGenerateMapTest 1 (srv:genmap<name>, any world without bases, ~60 s): the generator's
+ // basic promises on a map nobody tuned it for (third-party terrains in the ACA map add-ons).
+ // Thresholds scale with the surveyed extent; no names or positions are assumed.
+ static void RunAnyMap(int tick)
+ {
+  if (tick == 2) ACR_TestRegress.Check("map: generator built a layout", ACR_Generator.Built() && ACR_Base.s_All.Count() >= 8, string.Format("%1 bases, seed %2, %3", ACR_Base.s_All.Count(), ACR_Generator.s_iSeed, GetGame().GetWorldFile()));
+  if (tick == 21) ACR_TestRegress.Complete("generatemap", MAP_CHECKS);
+  if (tick != 20) return;
+  string west = ACR_FactionSelection.West();
+  string east = ACR_FactionSelection.East();
+  ACR_Base westHQ, eastHQ;
+  bool wet, overlap;
+  float minX = float.MAX, minZ = float.MAX, maxX = -float.MAX, maxZ = -float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   vector at = base.GetOrigin();
+   if (base.m_sOwner == west) westHQ = base;
+   else if (base.m_sOwner == east) eastHQ = base;
+   if (BBB_Terrain.IsWater(at[0], at[2])) wet = true;
+   foreach (ACR_Base other : ACR_Base.s_All)
+    if (other != base && vector.DistanceXZ(other.GetOrigin(), at) < other.m_fRadius + base.m_fRadius) overlap = true;
+   minX = Math.Min(minX, at[0]); maxX = Math.Max(maxX, at[0]);
+   minZ = Math.Min(minZ, at[2]); maxZ = Math.Max(maxZ, at[2]);
+   PrintFormat("[ACR] GEN MAP %1 | %2 %3 | v%4 r%5 income %6 hidden %7 owner %8", base.m_sName, (int)at[0], (int)at[2], base.m_iValue, (int)base.m_fRadius, base.m_bIncome, base.m_bHidden, base.m_sOwner);
+  }
+  float span = Math.Max(maxX - minX, maxZ - minZ);
+  float apart = 0;
+  if (westHQ && eastHQ) apart = vector.DistanceXZ(westHQ.GetOrigin(), eastHQ.GetOrigin());
+  ACR_TestRegress.Check("map: one HQ per side, far apart", westHQ && eastHQ && apart >= 1000 && apart >= 0.4 * span, string.Format("%1 m apart, layout span %2 m", (int)apart, (int)span));
+  ACR_TestRegress.Check("map: bases on dry ground, circles apart", !wet && !overlap, string.Format("wet %1, overlap %2", wet, overlap));
+  int earning;
+  foreach (ACR_Base e : ACR_Base.s_All) if (e.m_bIncome && e.m_sOwner == "") earning++;
+  ACR_TestRegress.Check("map: neutral objectives earn income", earning >= 2, string.Format("%1 earning", earning));
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  int westNear, eastNear;
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (!squad || !squad.m_Group || !squad.GetFaction()) continue;
+   vector sq = squad.m_Group.GetOrigin();
+   string squadSide = squad.GetFaction().GetFactionKey();
+   if (squadSide == west && westHQ && vector.DistanceXZ(sq, westHQ.GetOrigin()) < 250) westNear++;
+   if (squadSide == east && eastHQ && vector.DistanceXZ(sq, eastHQ.GetOrigin()) < 250) eastNear++;
+  }
+  ACR_TestRegress.Check("map: starting units at each HQ", westNear >= 3 && eastNear >= 3, string.Format("west %1, east %2", westNear, eastNear));
+  int spawnsOk, spawns;
+  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
+  {
+   if (!point) continue;
+   spawns++;
+   ACR_Base hq = westHQ;
+   if (point.GetFactionKey() == east) hq = eastHQ;
+   if (hq && vector.DistanceXZ(point.GetOrigin(), hq.GetOrigin()) < 60) spawnsOk++;
+  }
+  ACR_TestRegress.Check("map: spawn points at their HQ", spawns >= 2 && spawnsOk == spawns, string.Format("%1 of %2", spawnsOk, spawns));
+  array<ref ACR_GenSite> again = {};
+  array<ACR_GenSite> againHQs = {};
+  bool same = ACR_Generator.Plan(ACR_Generator.s_iSeed, -1, again, againHQs) && again.Count() == ACR_Generator.s_Sites.Count();
+  foreach (int i, ACR_GenSite a : again) if (same && (a.m_sName != ACR_Generator.s_Sites[i].m_sName || vector.DistanceXZ(a.m_vPos, ACR_Generator.s_Sites[i].m_vPos) > 1)) same = false;
+  ACR_TestRegress.Check("map: same seed plans the same layout", same, string.Format("%1 vs %2 sites", again.Count(), ACR_Generator.s_Sites.Count()));
+  array<string> pairs = {};
+  for (int seed = 1; seed <= 6; seed++)
+  {
+   array<ref ACR_GenSite> other = {};
+   array<ACR_GenSite> otherHQs = {};
+   if (!ACR_Generator.Plan(seed * 7919, -1, other, otherHQs) || otherHQs.Count() != 2) continue;
+   array<string> pairIds = {otherHQs[0].m_sId, otherHQs[1].m_sId};
+   pairIds.Sort();
+   string pair = pairIds[0] + "/" + pairIds[1];
+   if (!pairs.Contains(pair)) pairs.Insert(pair);
+  }
+  ACR_TestRegress.Check("map: seeds vary the HQs", pairs.Count() >= 2, string.Format("%1 HQ pairs in 6 seeds", pairs.Count()));
+  // Half and flashpoint on 8 fixed seeds each: islands and narrow maps fail only on some draws.
+  int halfGood, flashGood, halfMin = int.MAX;
+  for (int s = 1; s <= 8; s++)
+  {
+   array<ref ACR_GenSite> half = {};
+   array<ACR_GenSite> halfHQs = {};
+   if (ACR_Generator.Plan(s * 104729, ACR_ESkirmishSize.HALF, half, halfHQs) && half.Count() >= 5 && halfHQs.Count() == 2 && halfHQs[0] != halfHQs[1]) { halfGood++; halfMin = Math.Min(halfMin, half.Count()); }
+   array<ref ACR_GenSite> flash = {};
+   array<ACR_GenSite> flashHQs = {};
+   if (ACR_Generator.Plan(s * 104729, ACR_ESkirmishSize.FLASHPOINT, flash, flashHQs) && flash.Count() >= 5 && flash.Count() <= 7 && flashHQs.Count() == 2) flashGood++;
+  }
+  ACR_TestRegress.Check("map: half size on 8 seeds", halfGood == 8, string.Format("%1 of 8 planned, smallest %2 of %3 sites", halfGood, halfMin, ACR_Generator.s_Sites.Count()));
+  ACR_TestRegress.Check("map: flashpoint size on 8 seeds", flashGood == 8, string.Format("%1 of 8 planned", flashGood));
+  int unnamed;
+  foreach (ACR_Base named : ACR_Base.s_All) if (named.m_sName == "" || named.m_sName.StartsWith("Base ") || named.m_sName.StartsWith("#")) unnamed++;
+  ACR_TestRegress.Check("map: bases named from the map", unnamed == 0, string.Format("%1 unnamed", unnamed));
+ }
+ static const int MAP_CHECKS = 11;
 }
 
 // Synthetic terrain fixtures exercise the real sampler and graph traversal without relying on

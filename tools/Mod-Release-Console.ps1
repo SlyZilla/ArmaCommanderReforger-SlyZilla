@@ -53,6 +53,8 @@ function Open-CheckedProject {
   $bbbProject = Invoke-Guard @('check', 'BBB')
   $addonDirs += ',' + (Split-Path (Split-Path $bbbProject -Parent) -Parent)
  }
+ # Map add-ons open beside the downloaded Workshop ACA/BBB and their map.
+ if ($Mod.StartsWith('MAP-')) { $addonDirs += ',' + $InstalledAddons }
  # Tools supply core; the game supplies data. Neither may depend on the shortcut working folder.
  $addonDirs += ',' + (Find-BaseGameAddons)
  $launchArgs = '-gproj "' + $project + '" -addonsDir "' + $addonDirs + '"'
@@ -91,6 +93,15 @@ function Open-CheckedProject {
  Invoke-Guard @('record-publication', $Mod, '--version', $notes.version, '--candidate', (Split-Path (Split-Path $project -Parent) -Parent), '--evidence', ('Workbench upload and processing success: ' + $relativeLog)) | Out-Null
  Write-Host "Uploaded $Mod $($notes.version). Download its Workshop update, then use option 6." -ForegroundColor Green
 }
+$mapMods = @('MAP-CHERNARUS','MAP-GULFCOAST','MAP-KUNAR','MAP-WESTZAGORIA','MAP-ZIMNITRITA')
+$allMods = @('ACA','BBB','AIO') + $mapMods
+function Read-MapMod {
+ for ($i = 0; $i -lt $mapMods.Count; $i++) { Write-Host ("  {0}  {1}" -f ($i + 1), $mapMods[$i]) }
+ $pick = Read-Host 'Which map add-on (number)'
+ $index = 0
+ if (![int]::TryParse($pick, [ref]$index) -or $index -lt 1 -or $index -gt $mapMods.Count) { throw 'Choose one of the listed numbers.' }
+ return $mapMods[$index - 1]
+}
 if ($NoMenu) { return }
 while ($true) {
  Write-Host ''
@@ -106,6 +117,8 @@ while ($true) {
  Write-Host '6  Verify a downloaded Workshop update'
  Write-Host '7  Publish a checked update with automatic version/changelog (review first)'
  Write-Host '8  Record a confirmed manual Workshop publication and start the next version'
+ Write-Host '9  Prepare an ACA map add-on (checked against the downloaded ACA, BBB and map)'
+ Write-Host '10 Open a checked ACA map add-on for Workshop upload'
  Write-Host '0  Exit'
  $choice = Read-Host 'Choose'
  try {
@@ -117,23 +130,25 @@ while ($true) {
    '4' { Open-CheckedProject 'ACA' }
    '5' { Open-CheckedProject 'AIO' }
    '6' {
-    $mod = (Read-Host 'Which downloaded mod: ACA, BBB, or AIO').ToUpperInvariant()
-    if ($mod -notin @('ACA','BBB','AIO')) { throw 'Choose ACA, BBB, or AIO.' }
+    $mod = (Read-Host 'Which downloaded mod: ACA, BBB, AIO or a MAP- name').ToUpperInvariant()
+    if ($mod -notin $allMods) { throw ('Choose one of: ' + ($allMods -join ', ')) }
     Invoke-Guard @('installed', $mod, '--installed-root', $InstalledAddons) | Out-Host
    }
    '7' {
-    $mod = (Read-Host 'Which mod to update: ACA, BBB, or AIO').ToUpperInvariant()
-    if ($mod -notin @('ACA','BBB','AIO')) { throw 'Choose ACA, BBB, or AIO.' }
+    $mod = (Read-Host 'Which mod to update: ACA, BBB, AIO or a MAP- name').ToUpperInvariant()
+    if ($mod -notin $allMods) { throw ('Choose one of: ' + ($allMods -join ', ')) }
     Open-CheckedProject -Mod $mod -PublishUpdate
    }
    '8' {
-    $mod = (Read-Host 'Published mod: ACA, BBB, or AIO').ToUpperInvariant()
-    if ($mod -notin @('ACA','BBB','AIO')) { throw 'Choose ACA, BBB, or AIO.' }
+    $mod = (Read-Host 'Published mod: ACA, BBB, AIO or a MAP- name').ToUpperInvariant()
+    if ($mod -notin $allMods) { throw ('Choose one of: ' + ($allMods -join ', ')) }
     $version = Read-Host 'Confirmed published version'
     $evidence = Read-Host 'Publication confirmation (for example, Workshop page or owner confirmation)'
     Invoke-Guard @('record-publication', $mod, '--version', $version, '--evidence', $evidence) | Out-Host
     Write-Host 'Publication recorded in source; next version opened. Ask the coding agent to review and commit the records.'
    }
+   '9' { $mod = Read-MapMod; Invoke-Guard @('prepare', $mod, '--installed-root', $InstalledAddons) | Out-Host; Write-Host 'Prepared. Next: option 10.' -ForegroundColor Green }
+   '10' { Open-CheckedProject (Read-MapMod) }
    default { Write-Host 'Choose one of the listed numbers.' }
   }
  } catch {
