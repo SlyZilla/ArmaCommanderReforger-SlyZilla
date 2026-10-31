@@ -2183,10 +2183,10 @@ class ACR_AICommander : Managed
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
    float need = AttackNeed(target);
    if (attack.m_bAssaulting && attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > 90000) need *= 1.35;
-   if (strength >= need * 1.15) continue;
+   if (need * 1.15 <= strength) continue; // float first: an int on the left compares in ints
    SortByDistance(free, target.GetOrigin());
    int k = 0;
-   while (k < free.Count() && strength < need * 1.25)
+   while (k < free.Count() && need * 1.25 > strength)
    {
     ACR_Squad squad = free[k];
     float dist = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
@@ -2432,7 +2432,7 @@ class ACR_AICommander : Managed
    // Only the squads that can get there count (#27): a target beyond their reach is skipped.
    int reachable = ReachableStrength(free, candidate.GetOrigin());
    if (!wanted) { wanted = candidate; wantedRequired = need; wantedReach = reachable; }
-   if (reachable >= need) { target = candidate; required = need; break; }
+   if (need <= reachable) { target = candidate; required = need; break; }
   }
   if (!target)
   {
@@ -2486,11 +2486,11 @@ class ACR_AICommander : Managed
    remainingPool -= sqStrength;
    // Recon teams watch from overwatch; they never go in, so they don't make up an attack.
    if (!target.m_sOwner.IsEmpty() && IsReconTeam(squad)) continue;
-   if (squad.StrengthRatio() < 0.55 && strength + remainingPool >= required) continue;
+   if (squad.StrengthRatio() < 0.55 && required <= strength + remainingPool) continue;
    float distToTarget = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
-   if (strength >= required * margin)
+   if (required * margin <= strength)
    {
-    if (strength >= goal) break;
+    if (goal <= strength) break;
     float reach = REINFORCE_ATTACK_DISTANCE;
     if (squad.IsMounted()) reach = REINFORCE_ATTACK_MOUNTED;
     if (distToTarget > reach || IsSupportTeam(squad)) continue;
@@ -2505,7 +2505,7 @@ class ACR_AICommander : Managed
    attack.m_Squads.Insert(squad);
    strength += sqStrength;
   }
-  if (strength < required)
+  if (required > strength)
   {
    Say(string.Format("[ACR] AI %1: not strong enough for %2 (%3/%4)", m_sFaction, target.m_sName, strength, required));
    return; // Requisition() will add troops
@@ -6807,7 +6807,7 @@ class ACR_AICommander : Managed
   m_RequestedTarget = base;
   m_iRequestedBy = r.m_iId;
   r.m_fUntil = 0;
-  if (available >= need) r.Set(ACR_ETwoICState.COMING, string.Format("going for %1 with my free squads (strength %2 of the %3 it needs)", base.m_sName, available, (int)need));
+  if (need <= available) r.Set(ACR_ETwoICState.COMING, string.Format("going for %1 with my free squads (strength %2 of the %3 it needs)", base.m_sName, available, (int)need));
   else r.Set(ACR_ETwoICState.CANT, string.Format("not yet: I have %1 of the %2 strength it needs free", available, (int)need));
  }
 
