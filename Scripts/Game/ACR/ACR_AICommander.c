@@ -797,6 +797,11 @@ class ACR_AIAttack
  float m_fTravelSeconds;             // the slowest squad's way there on foot or by ride (#27): the forming up waits for it
  bool m_bFobRaid;                    // demolition raid against an enemy forward operating base
  ref ACR_SapperDemo m_SapperDemo;
+ // #101: time BBB's squad tactics spent fighting for it (gaining ground, or holding outnumbered or
+ // flanked) doesn't count as stalling; and when it last called support for a squad that asked.
+ float m_fBBBFightS;
+ float m_fBBBCheckAt;
+ float m_fBBBSupportAt;
 
  vector StagingOf(ACR_Squad squad)
  {
@@ -2179,10 +2184,10 @@ class ACR_AICommander : Managed
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
    float need = AttackNeed(target);
    if (attack.m_bAssaulting && attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > 90000) need *= 1.35;
-   if (strength >= need * 1.15) continue;
+   if (need * 1.15 <= strength) continue; // float first: an int on the left compares in ints
    SortByDistance(free, target.GetOrigin());
    int k = 0;
-   while (k < free.Count() && strength < need * 1.25)
+   while (k < free.Count() && need * 1.25 > strength)
    {
     ACR_Squad squad = free[k];
     float dist = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
@@ -2428,7 +2433,7 @@ class ACR_AICommander : Managed
    // Only the squads that can get there count (#27): a target beyond their reach is skipped.
    int reachable = ReachableStrength(free, candidate.GetOrigin());
    if (!wanted) { wanted = candidate; wantedRequired = need; wantedReach = reachable; }
-   if (reachable >= need) { target = candidate; required = need; break; }
+   if (need <= reachable) { target = candidate; required = need; break; }
   }
   if (!target)
   {
@@ -2482,11 +2487,11 @@ class ACR_AICommander : Managed
    remainingPool -= sqStrength;
    // Recon teams watch from overwatch; they never go in, so they don't make up an attack.
    if (!target.m_sOwner.IsEmpty() && IsReconTeam(squad)) continue;
-   if (squad.StrengthRatio() < 0.55 && strength + remainingPool >= required) continue;
+   if (squad.StrengthRatio() < 0.55 && required <= strength + remainingPool) continue;
    float distToTarget = vector.DistanceXZ(PositionOf(squad), target.GetOrigin());
-   if (strength >= required * margin)
+   if (required * margin <= strength)
    {
-    if (strength >= goal) break;
+    if (goal <= strength) break;
     float reach = REINFORCE_ATTACK_DISTANCE;
     if (squad.IsMounted()) reach = REINFORCE_ATTACK_MOUNTED;
     if (distToTarget > reach || IsSupportTeam(squad)) continue;
@@ -2501,7 +2506,7 @@ class ACR_AICommander : Managed
    attack.m_Squads.Insert(squad);
    strength += sqStrength;
   }
-  if (strength < required)
+  if (required > strength)
   {
    Say(string.Format("[ACR] AI %1: not strong enough for %2 (%3/%4)", m_sFaction, target.m_sName, strength, required));
    return; // Requisition() will add troops
@@ -3215,6 +3220,8 @@ class ACR_AICommander : Managed
   if (attack.m_bGrab && !s_bGrabByDistance) return seconds > GRAB_TIMEOUT;
   if (attack.m_bGrab) return seconds > Math.Max(GRAB_TIMEOUT, attack.m_fGrabSeconds);
   if (seconds > ASSAULT_HARD_TIMEOUT) return true;
+  // The soft limits don't count time BBB's squads spent fighting for it (#101); the hard one does.
+  seconds -= attack.m_fBBBFightS;
   if (seconds > ASSAULT_TIMEOUT * 0.5 && attack.m_Target && !attack.m_Target.m_bContested)
   {
    bool nearPerimeter = false;
@@ -3230,6 +3237,41 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : attack.m_Squads)
    if (vector.DistanceXZ(PositionOf(squad), attack.m_Target.GetOrigin()) < attack.m_Target.m_fRadius) return false;
   return true;
+ }
+
+ // #101: what BBB's squad tactics say about this attack's squads (BBB_Tactic.Report). A squad
+ // assaulting or flanking that really gains ground, or one holding because it is outnumbered or
+ // flanked, is fighting, not stalled: that time comes off the soft time limits (at most
+ // BBB_FIGHT_MAX_S; ASSAULT_HARD_TIMEOUT still counts everything). A squad that holds outnumbered
+ // or flanked asks for support: mortar fire on where its own men last saw the threat, through
+ // the same checks as any other call (ready, in range, no friendlies near the point).
+ static const float BBB_FIGHT_MAX_S = 300;
+ static const float BBB_SUPPORT_EVERY_S = 90;
+ static const float BBB_THREAT_FRESH_S = 20;
+ protected void NoteBBBFight(ACR_AIAttack attack)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  float elapsed = 0;
+  if (attack.m_fBBBCheckAt > 0) elapsed = (now - attack.m_fBBBCheckAt) / 1000;
+  attack.m_fBBBCheckAt = now;
+  if (!attack.m_bAssaulting || attack.m_fAssaultStart <= 0 || attack.m_bGrab) return;
+  bool fighting = false;
+  ACR_Squad needy;
+  BBB_TacticReport needyReport;
+  foreach (ACR_Squad squad : attack.m_Squads)
+  {
+   if (!squad || !squad.m_Group) continue;
+   BBB_TacticReport report = BBB_Tactic.Report(squad.m_Group);
+   if (!report) continue;
+   if (report.m_bGaining || report.m_bNeedsSupport) fighting = true;
+   if (!needy && report.m_bNeedsSupport && report.m_fThreatAge <= BBB_THREAT_FRESH_S && report.m_vThreat.LengthSq() > 0) { needy = squad; needyReport = report; }
+  }
+  // A long gap (paused game, first look) doesn't count.
+  if (fighting && elapsed > 0 && elapsed < 30) attack.m_fBBBFightS = Math.Min(BBB_FIGHT_MAX_S, attack.m_fBBBFightS + elapsed);
+  if (!needy || now < attack.m_fBBBSupportAt) return;
+  string why = string.Format("%1 held on %2 (%3)", needy.GetName(), attack.m_Target.m_sName, needyReport.m_sWhy);
+  if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, needyReport.m_vThreat, why) || CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, needyReport.m_vThreat, why))
+   attack.m_fBBBSupportAt = now + BBB_SUPPORT_EVERY_S * 1000;
  }
 
  // Every couple of minutes, send attackers that stopped short of the base in again.
@@ -3424,6 +3466,7 @@ class ACR_AICommander : Managed
    int strength;
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
    bool fusePrimed = attack.m_SapperDemo && attack.m_SapperDemo.InProgress();
+   NoteBBBFight(attack);
    bool broken = !fusePrimed && attack.m_iStartStrength > 0 && strength < attack.m_iStartStrength * m_Doctrine.m_fAbortRatio;
    bool stalled = !fusePrimed && !won && target && Stalled(attack);
    // Nobody left who can walk in (the infantry died or fell back): vehicles and support teams
@@ -3452,7 +3495,7 @@ class ACR_AICommander : Managed
       float gap = vector.DistanceXZ(PositionOf(stuck), target.GetOrigin());
       if (closest < 0 || gap < closest) { closest = gap; closestOrder = stuck.m_Order; }
      }
-     outcome = string.Format("called off (stalled; nearest squad %1 m out, '%2')", (int)closest, closestOrder);
+     outcome = string.Format("called off (stalled; nearest squad %1 m out, '%2'; BBB fighting %3 s)", (int)closest, closestOrder, (int)attack.m_fBBBFightS);
      m_StalledUntil.Set(target, GetGame().GetWorld().GetWorldTime() + STALLED_COOLDOWN * 1000);
     }
     if (target) Say(string.Format("[ACR] AI %1: attack on %2 %3", m_sFaction, target.m_sName, outcome));
@@ -4868,7 +4911,9 @@ class ACR_AICommander : Managed
    }
    if (!sweeper)
    {
-    if (road.m_iSweeps >= 2) continue;
+    int most = 2;
+    if (road.m_Hideout) most = 3;
+    if (road.m_iSweeps >= most) continue;
     sweeper = FindSweeper(road.m_vPos);
     if (!sweeper) continue;
     road.m_Sweeper = sweeper;
@@ -4876,7 +4921,9 @@ class ACR_AICommander : Managed
     sweeper.m_iAITask = ACR_EAITask.SWEEP;
     sweeper.SetMode(ACR_EMoveMode.COMBAT);
     Travel(sweeper, road.m_vPos, false, 0);
-    Say(string.Format("[ACR] AI %1: %2 to clear the road at %3 (FIA ambush)", m_sFaction, sweeper.GetName(), ACR_Manager.Grid(road.m_vPos)));
+    string what = "the road at %1 (FIA ambush)";
+    if (road.m_Hideout) what = "the FIA hideout at %1";
+    Say(string.Format("[ACR] AI %1: %2 to clear %3", m_sFaction, sweeper.GetName(), string.Format(what, ACR_Manager.Grid(road.m_vPos))));
     continue;
    }
    if (vector.DistanceXZ(PositionOf(sweeper), road.m_vPos) > 80 || sweeper.KnownEnemies(300) > 0)
@@ -4885,7 +4932,17 @@ class ACR_AICommander : Managed
     continue;
    }
    if (road.m_fQuietSince <= 0) road.m_fQuietSince = now;
-   if (now - road.m_fQuietSince >= ACR_Insurgency.CLEAR_QUIET_MS) cleared.Insert(road);
+   if (now - road.m_fQuietSince < ACR_Insurgency.CLEAR_QUIET_MS) continue;
+   // A hideout is only clear once it is destroyed: a quiet sweeper there is freed, and another
+   // may be sent.
+   if (!road.m_Hideout)
+   {
+    cleared.Insert(road);
+    continue;
+   }
+   sweeper.m_iAITask = ACR_EAITask.FREE;
+   road.m_Sweeper = null;
+   road.m_fQuietSince = 0;
   }
   foreach (ACR_DangerRoad done : cleared) ACR_Insurgency.Clear(done, done.m_Sweeper.GetName() + " found nobody there");
  }
@@ -6803,7 +6860,7 @@ class ACR_AICommander : Managed
   m_RequestedTarget = base;
   m_iRequestedBy = r.m_iId;
   r.m_fUntil = 0;
-  if (available >= need) r.Set(ACR_ETwoICState.COMING, string.Format("going for %1 with my free squads (strength %2 of the %3 it needs)", base.m_sName, available, (int)need));
+  if (need <= available) r.Set(ACR_ETwoICState.COMING, string.Format("going for %1 with my free squads (strength %2 of the %3 it needs)", base.m_sName, available, (int)need));
   else r.Set(ACR_ETwoICState.CANT, string.Format("not yet: I have %1 of the %2 strength it needs free", available, (int)need));
  }
 

@@ -19,6 +19,7 @@ class ACR_TestTwoICShots
  protected static string s_sTruck = "";
  protected static int s_iPings = -1;
  protected static int s_iSentId;
+ protected static RplId s_ShowId = RplId.Invalid();
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -139,7 +140,29 @@ class ACR_TestTwoICShots
   if (tick == 32) pc.ACR_TestTwoICHover(false);
   if (tick == 32) pc.ACR_TwoICTogglePanel();
   if (tick == 35) Shot("2ic_2_panel");
-  if (tick == 39) pc.ACR_TwoICTogglePanel();
+  // Show on 2nd Squad's row (playtest 30 Oct): the panel closes, the squad is selected, the map on it.
+  if (tick == 36)
+  {
+   ACR_Squad shown = h.NamedSquad(manager, "2nd Squad");
+   if (shown) s_ShowId = SCR_EntityHelper.EntityToRplId(shown.m_Group);
+   if (shown) pc.ACR_TwoICShowSquad(s_ShowId);
+  }
+  if (tick == 38)
+  {
+   SCR_MapEntity showMap = SCR_MapEntity.GetMapInstance();
+   ACR_Squad shownSquad = h.NamedSquad(manager, "2nd Squad");
+   float off = -1;
+   if (showMap && shownSquad && shownSquad.GetAnchor())
+   {
+    WorkspaceWidget showWs = GetGame().GetWorkspace();
+    float cx, cz;
+    showMap.ScreenToWorld(showWs.GetWidth() / 2, showWs.GetHeight() / 2, cx, cz);
+    off = vector.DistanceXZ(Vector(cx, 0, cz), shownSquad.GetAnchor().GetOrigin());
+   }
+   ACR_TestRegress.Check("twoicshots: the panel's Show closes it, selects the squad and centres the map on it", !pc.ACR_TwoICPanelOpen() && s_ShowId.IsValid() && pc.ACR_GetSelectedGroup() == s_ShowId && off >= 0 && off < 150, string.Format("panel open %1, selected %2, map centre %3 m from it", pc.ACR_TwoICPanelOpen(), pc.ACR_GetSelectedGroup() == s_ShowId, (int)off));
+  }
+  if (tick == 38) Shot("2ic_2b_show");
+  if (tick == 39 && pc.ACR_TwoICPanelOpen()) pc.ACR_TwoICTogglePanel();
   if (tick == 40)
   {
    ACR_Base enemy = Nearest(alpha.GetAnchor().GetOrigin(), false);

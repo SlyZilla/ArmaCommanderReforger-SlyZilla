@@ -1763,7 +1763,7 @@ class ACR_Squad : Managed
   ACR_Intel intel;
   if (manager) intel = manager.IntelFor(plan.m_sFaction);
   if (intel) done += " " + intel.Place(plan.m_vSite);
-  if (manager) manager.Command().Feed(plan.m_sFaction, done);
+  if (manager) manager.Command().Feed(plan.m_sFaction, done, plan.m_vSite);
   ACR_Report.Event(plan.m_sFaction, done);
   PrintFormat("[ACR] SQUAD %1: %2", m_Name, done);
 
@@ -1997,7 +1997,7 @@ class ACR_Squad : Managed
    PrintFormat("[ACR] SQUAD %1: could not fortify (%2), refunded %3 RP", m_Name, why, plan.m_iCost);
    // Said where the player sees it (playtest 25 Oct: only the RP was seen to go).
    string lost = string.Format("%1 could not fortify: %2 (%3 RP refunded)", m_Name, why, plan.m_iCost);
-   if (manager) manager.Command().Feed(plan.m_sFaction, lost);
+   if (manager) manager.Command().Feed(plan.m_sFaction, lost, plan.m_vSite);
    if (manager && m_iOrderedBy != 0) manager.Notify(m_iOrderedBy, lost);
    return;
   }
@@ -2006,7 +2006,7 @@ class ACR_Squad : Managed
   ACR_Intel intel;
   if (manager) intel = manager.IntelFor(plan.m_sFaction);
   if (intel) done += " " + intel.Place(fort.m_vPos);
-  if (manager) manager.Command().Feed(plan.m_sFaction, done);
+  if (manager) manager.Command().Feed(plan.m_sFaction, done, fort.m_vPos);
   ACR_Report.Event(plan.m_sFaction, done);
   PrintFormat("[ACR] SQUAD %1: %2", m_Name, done);
   // Hold it: native Defend puts gunners on the position's guns.
@@ -3168,6 +3168,53 @@ class ACR_Squad : Managed
  static const float REGROUP_COOLDOWN_MS = 60000;
  static const float REGROUP_FAILED_COOLDOWN_MS = 150000; // didn't close up: don't stop-start every minute
  static const float ORDER_SETTLE_MS = 20000; // a new order gets this long before a regroup can stop it
+ static const float STUCK_MOVED = 3; // m: a man who moved less than this in a whole regroup can't come
+
+ // A man a regroup didn't bring in and who hasn't moved since: the squad stops waiting for him, and
+ // its meeting point stops counting him, until he moves again (playtest pn16: a mortar man jammed
+ // at a door, 4 km behind by the end, stopped his team for a minute every 3.5 min for an hour, and
+ // drew it back towards him each time).
+ protected ref map<IEntity, vector> m_mRegroupFrom = new map<IEntity, vector>(); // stragglers as the regroup began
+ protected ref map<IEntity, vector> m_mStuck = new map<IEntity, vector>();       // ... those it couldn't bring in
+
+ protected bool Stuck(IEntity body)
+ {
+  vector at;
+  if (!m_mStuck.Find(body, at)) return false;
+  if (vector.DistanceXZ(body.GetOrigin(), at) < STUCK_MOVED) return true;
+  m_mStuck.Remove(body);
+  return false;
+ }
+
+ // Living members awake and on foot the squad has stopped waiting for.
+ int StuckMen()
+ {
+  int count;
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (body && IsConscious(body) && !ACR_Transport.VehicleOf(body) && Stuck(body)) count++;
+  }
+  return count;
+ }
+
+ // The regroup ran its full time: who stayed out and never moved.
+ protected void NoteStuck(IEntity leader)
+ {
+  int found;
+  for (int i = 0; i < m_mRegroupFrom.Count(); i++)
+  {
+   IEntity body = m_mRegroupFrom.GetKey(i);
+   if (!body || !IsConscious(body) || ACR_Transport.VehicleOf(body)) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), leader.GetOrigin()) <= REGROUPED_DISTANCE) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), m_mRegroupFrom.GetElement(i)) >= STUCK_MOVED) continue;
+   m_mStuck.Set(body, body.GetOrigin());
+   found++;
+  }
+  if (found > 0) PrintFormat("[ACR] TACTICS %1: %2 stuck where they stand, not waiting for them", m_Name, found);
+ }
 
  protected bool m_bRegrouping;
  protected float m_fRegroupSince;
@@ -3176,6 +3223,7 @@ class ACR_Squad : Managed
  void StartRegroupForTest() { m_bRegrouping = true; }
  bool RegroupingForTest() { return m_bRegrouping; }
  float NextRegroupForTest() { return m_fNextRegroup; }
+ bool MovementPendingForTest() { return MovementStillPending(); }
  static bool OrderSettled(float now, float orderedAt) { return now - orderedAt >= ORDER_SETTLE_MS; }
  protected ref ACR_OrderSnapshot m_Regroup; // the order resumed once regrouped
 
@@ -3189,7 +3237,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    IEntity body = agent.GetControlledEntity();
-   if (!body || !IsConscious(body) || ACR_Transport.VehicleOf(body)) continue;
+   if (!body || !IsConscious(body) || ACR_Transport.VehicleOf(body) || Stuck(body)) continue;
    sum = sum + body.GetOrigin();
    n++;
   }
@@ -3209,7 +3257,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    IEntity body = agent.GetControlledEntity();
-   if (!body || body == leader || !IsConscious(body) || ACR_Transport.VehicleOf(body)) continue;
+   if (!body || body == leader || !IsConscious(body) || ACR_Transport.VehicleOf(body) || Stuck(body)) continue;
    if (vector.DistanceXZ(body.GetOrigin(), leader.GetOrigin()) > radius) count++;
   }
   return count;
@@ -3224,6 +3272,8 @@ class ACR_Squad : Managed
    m_bRegrouping = false;
    m_fNextRegroup = now + REGROUP_COOLDOWN_MS;
    if (!closed) m_fNextRegroup = now + REGROUP_FAILED_COOLDOWN_MS;
+   IEntity waited = GetConsciousLeader();
+   if (!closed && !contact && waited) NoteStuck(waited);
    RestoreOrder(m_Regroup);
    PrintFormat("[ACR] TACTICS %1: regrouped (%2 s), moving on", m_Name, (int)((now - m_fRegroupSince) / 1000));
    return;
@@ -3236,10 +3286,11 @@ class ACR_Squad : Managed
   IEntity leader = GetConsciousLeader();
   if (waypoints.IsEmpty() || !leader || vector.DistanceXZ(leader.GetOrigin(), m_MoveTarget) < 200) return;
   // The knocked-out can't walk to a regroup point: count only those awake.
-  int alive = CountConscious();
+  int alive = CountConscious() - StuckMen();
   if (alive < 3) return;
   int behind = Stragglers(STRAGGLER_DISTANCE);
   if (behind * 3 < alive) return;
+  NoteRegroupStart(leader);
   m_Regroup = SnapshotOrder();
   ClearOrders();
   // Everyone heads for the middle of the squad: the front waits and walks
@@ -3254,6 +3305,19 @@ class ACR_Squad : Managed
   LogStragglers(leader);
  }
 
+ protected void NoteRegroupStart(IEntity leader)
+ {
+  m_mRegroupFrom.Clear();
+  array<AIAgent> agents = {};
+  GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || body == leader || !IsConscious(body) || ACR_Transport.VehicleOf(body) || Stuck(body)) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), leader.GetOrigin()) > STRAGGLER_DISTANCE) m_mRegroupFrom.Set(body, body.GetOrigin());
+  }
+ }
+
  // Who is behind and what he is doing (21 Oct live, Kolguyev: the same two or three men every
  // regroup, the heavily loaded ones by eye). One line per straggler, plus the leader for scale.
  protected void LogStragglers(IEntity leader)
@@ -3264,7 +3328,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    IEntity body = agent.GetControlledEntity();
-   if (!body || body == leader || !IsConscious(body) || ACR_Transport.VehicleOf(body)) continue;
+   if (!body || body == leader || !IsConscious(body) || ACR_Transport.VehicleOf(body) || Stuck(body)) continue;
    float distance = vector.DistanceXZ(body.GetOrigin(), leader.GetOrigin());
    if (distance <= STRAGGLER_DISTANCE) continue;
    string doing = "idle";

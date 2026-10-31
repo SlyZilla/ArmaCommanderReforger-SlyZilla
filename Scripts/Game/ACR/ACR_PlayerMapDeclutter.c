@@ -29,6 +29,7 @@ modded class ACR_MapData
 {
  bool m_bDeclOn;
  bool m_bDeclFar;
+ bool m_bDeclZonesOff;   // the Zones layer is off (ACR_MapLayers): no capture rings, no mortar ranges
  string m_sDeclSelectedBase;
  // per base
  ref array<int> m_DeclSide = {};
@@ -45,6 +46,7 @@ modded class ACR_MapData
  ref array<int> m_DeclCount = {};
  ref array<bool> m_DeclRep = {};
  ref array<int> m_DeclMark = {};       // ACR_ESquadMark, -1 none
+ ref array<bool> m_DeclHidden = {};    // its kind's layer is off (ACR_MapLayers): no icon, soldiers or order lines
  ref array<vector> m_DeclShown = {};
  ref array<float> m_DeclSymW = {};     // the symbol's size on screen (px)
  ref array<float> m_DeclSymH = {};
@@ -52,6 +54,11 @@ modded class ACR_MapData
  ref array<float> m_DeclSymY = {};
  // the legend's glyphs: x, y, mark
  ref array<float> m_DeclLegend = {};
+ // The squad under the cursor in a "×N"'s list (ACR_SquadPicker): a ring where it really stands.
+ RplId m_PickerHover = RplId.Invalid();
+ // A pulse on a spot the player was sent to (the 2IC panel's Show): until m_iPulseUntil (ms).
+ vector m_vPulseAt;
+ int m_iPulseUntil;
 
  // Where a squad's icon is shown: under its base's marker when it is at one.
  vector ShownPos(int g)
@@ -64,6 +71,12 @@ modded class ACR_MapData
  bool ShownByOther(int g)
  {
   return m_bDeclOn && g >= 0 && g < m_DeclRep.Count() && !m_DeclRep[g];
+ }
+
+ // A squad whose kind's layer is off (a hidden squad counts as shown by none: ShownByOther).
+ bool DeclHidden(int g)
+ {
+  return m_bDeclOn && g >= 0 && g < m_DeclHidden.Count() && m_DeclHidden[g];
  }
 }
 
@@ -145,7 +158,7 @@ modded class ACR_OrderDisplay
    bool keep = i >= data.m_DeclKeep.Count() || data.m_DeclKeep[i];
    bool contested = i < data.m_BaseContested.Count() && data.m_BaseContested[i] == 1;
    int color = ACR_MapDeclutter.SideColor(side).PackToInt();
-   if (!data.m_bDeclFar && i < data.m_BaseRadii.Count())
+   if (!data.m_bDeclFar && !data.m_bDeclZonesOff && i < data.m_BaseRadii.Count())
    {
     int ex, ey;
     mapEntity.WorldToScreen(pos[0] + data.m_BaseRadii[i], pos[2], ex, ey, true);
@@ -186,7 +199,7 @@ modded class ACR_OrderDisplay
   foreach (int i, RplId groupId : data.m_OrderGroups)
   {
    int g = data.m_GroupIds.Find(groupId);
-   if (g < 0 || g >= data.m_LeaderIds.Count()) continue;
+   if (g < 0 || g >= data.m_LeaderIds.Count() || data.DeclHidden(g)) continue;
    bool selected = data.IsSelected(groupId);
    if (data.m_bDeclFar && !selected) continue;
    vector from = data.ShownPos(g);
@@ -265,6 +278,7 @@ modded class ACR_OrderDisplay
  // Zoomed out: none. Then the corner marks.
  override protected void DrawStatusBars(SCR_MapEntity mapEntity, ACR_MapData data)
  {
+  DrawFocus(mapEntity, data);
   if (!data.m_bDeclOn)
   {
    super.DrawStatusBars(mapEntity, data);
@@ -298,6 +312,45 @@ modded class ACR_OrderDisplay
    }
   }
   DeclMarks(mapEntity, data);
+ }
+
+ // Where the player's eye is sent: the squad under the cursor in a "×N"'s list (a ring where it
+ // really stands, a line from the icon it is shown by) and the pulse after the 2IC panel's Show (two
+ // rings growing out from the spot, for PULSE_MS).
+ static const int PULSE_MS = 2400;
+ protected void DrawFocus(SCR_MapEntity mapEntity, ACR_MapData data)
+ {
+  int white = Color.FromRGBA(255, 255, 255, 235).PackToInt();
+  if (data.m_PickerHover.IsValid())
+  {
+   int g = data.m_GroupIds.Find(data.m_PickerHover);
+   if (g >= 0 && g < data.m_LeaderPositions.Count())
+   {
+    vector real = data.LeaderPos(g);
+    vector shown = data.ShownPos(g);
+    int rx, ry, ix, iy;
+    mapEntity.WorldToScreen(real[0], real[2], rx, ry, true);
+    mapEntity.WorldToScreen(shown[0], shown[2], ix, iy, true);
+    if (Math.AbsFloat(rx - ix) + Math.AbsFloat(ry - iy) > Px(6)) Line(ix, iy, rx, ry, white, Px(1.5));
+    Ring(rx, ry, Px(13), white, Px(2.5), 28);
+   }
+  }
+  int now = System.GetTickCount();
+  if (data.m_iPulseUntil > now)
+  {
+   int px, py;
+   mapEntity.WorldToScreen(data.m_vPulseAt[0], data.m_vPulseAt[2], px, py, true);
+   int elapsed = PULSE_MS - (data.m_iPulseUntil - now);
+   int cycle = elapsed - (elapsed / 800) * 800;
+   float phase = cycle / 800.0;
+   for (int k = 0; k < 2; k++)
+   {
+    float t = phase + k * 0.5;
+    if (t >= 1) t -= 1;
+    int alpha = (int)(230 * (1 - t));
+    Ring(px, py, Px(10 + 34 * t), Color.FromRGBA(242, 163, 58, alpha).PackToInt(), Px(3), 32);
+   }
+  }
  }
 
  // The corner mark at the bottom left of each icon shown.
@@ -837,6 +890,305 @@ modded class ACR_CommandPanel
 // ---------------------------------------------------------------- the player's map
 modded class SCR_PlayerController
 {
+ // ---------------------------------------------------------------- the squads behind a "×N"
+ protected ref ACR_SquadPicker m_ACR_SquadPicker;
+
+ // A click on an icon that stands for several squads opens the list of them (ACR_SquadPicker);
+ // Shift + click, a lone squad and the classic map keep the plain select.
+ override void ACR_PickGroup(ACR_UnitMarker marker)
+ {
+  if (ACR_DoubleClick(marker)) return;
+  ACR_CloseSquadPicker();
+  int g = -1;
+  if (marker && m_ACR_Data) g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (g < 0 || !m_ACR_Data.m_bDeclOn || ACR_ModifierHeld("ACR_MapShift") || g >= m_ACR_Data.m_DeclCount.Count() || m_ACR_Data.m_DeclCount[g] < 2 || g >= m_ACR_Data.m_DeclBaseOf.Count() || !mapEntity || !mapEntity.GetMapMenuRoot())
+  {
+   super.ACR_PickGroup(marker);
+   return;
+  }
+  int base = m_ACR_Data.m_DeclBaseOf[g];
+  array<RplId> ids = {};
+  array<string> names = {};
+  array<string> types = {};
+  array<string> doings = {};
+  array<string> strengths = {};
+  array<bool> selected = {};
+  foreach (int k, int at : m_ACR_Data.m_DeclBaseOf)
+  {
+   if (at != base || k >= m_ACR_Data.m_GroupIds.Count()) continue;
+   RplId id = m_ACR_Data.m_GroupIds[k];
+   ids.Insert(id);
+   string name = "Squad";
+   if (k < m_ACR_Data.m_GroupNames.Count()) name = m_ACR_Data.m_GroupNames[k];
+   names.Insert(name);
+   types.Insert(ACR_SquadPicker.TypeWord(ACR_GroupIcons(id)));
+   string doing = "";
+   if (k < m_ACR_Data.m_DeclMark.Count() && m_ACR_Data.m_DeclMark[k] >= 0) doing = ACR_MapDeclutter.MarkName(m_ACR_Data.m_DeclMark[k]);
+   doings.Insert(doing);
+   int health = -1;
+   int ammo = -1;
+   int s = m_ACR_Data.m_StatusGroups.Find(id);
+   if (s >= 0 && s * 6 + 1 < m_ACR_Data.m_Status.Count())
+   {
+    health = m_ACR_Data.m_Status[s * 6];
+    ammo = m_ACR_Data.m_Status[s * 6 + 1];
+   }
+   strengths.Insert(ACR_SquadPicker.Strength(health, ammo));
+   selected.Insert(ACR_IsSelected(id));
+  }
+  string where = "here";
+  if (base >= 0 && base < m_ACR_Data.m_BaseNames.Count()) where = m_ACR_Data.m_BaseNames[base];
+  // Without the size tag ("Farm [1]": the calm map shows size as pips). ToUpper changes the string
+  // itself and returns its length (the title read "5 SQUADS AT 8").
+  int tag = where.IndexOf(" [");
+  if (tag > 0) where = where.Substring(0, tag);
+  where.ToUpper();
+  int mx, my;
+  WidgetManager.GetMousePos(mx, my);
+  m_ACR_SquadPicker = new ACR_SquadPicker();
+  m_ACR_SquadPicker.Create(mapEntity.GetMapMenuRoot(), this, string.Format("%1 SQUADS AT %2", ids.Count(), where), ids, names, types, doings, strengths, selected, mx, my);
+ }
+
+ // Squad g's kind has its layer off (ACR_PlayerMapSquads); a selected squad always shows.
+ protected bool ACR_LayerHides(int g)
+ {
+  return false;
+ }
+
+ // A squad's symbol icons (EMilitarySymbolIcon), from its marker; 0 unknown.
+ protected int ACR_GroupIcons(RplId groupId)
+ {
+  foreach (ACR_UnitMarker marker : m_ACR_GroupMarkers)
+  {
+   if (marker && marker.m_GroupId == groupId && marker.m_GroupSymbol) return marker.m_GroupSymbol.GetIcons();
+  }
+  return 0;
+ }
+
+ void ACR_SquadPickerHover(RplId groupId)
+ {
+  if (m_ACR_Data) m_ACR_Data.m_PickerHover = groupId;
+ }
+
+ // Number keys 1-9 pick a row while the list is open.
+ override protected void ACR_UpdatePicker()
+ {
+  super.ACR_UpdatePicker();
+  if (!ACR_SquadPickerOpen()) return;
+  InputManager input = GetGame().GetInputManager();
+  if (!input) return;
+  input.ActivateContext("ACR_SquadPickerContext");
+  array<string> keys = {"ACR_Ping1", "ACR_Ping2", "ACR_Ping3", "ACR_Ping4", "ACR_Pick5", "ACR_Pick6", "ACR_Pick7", "ACR_Pick8", "ACR_Pick9"};
+  foreach (int k, string action : keys)
+  {
+   if (!input.GetActionTriggered(action)) continue;
+   m_ACR_SquadPicker.ChooseIndex(k);
+   return;
+  }
+ }
+
+ // The pulse on a spot the player was sent to (ACR_FocusMap).
+ void ACR_PulseAt(vector pos)
+ {
+  if (!m_ACR_Data) return;
+  m_ACR_Data.m_vPulseAt = pos;
+  m_ACR_Data.m_iPulseUntil = System.GetTickCount() + ACR_OrderDisplay.PULSE_MS;
+ }
+
+ // Sends the player's eye to 'at' (the 2IC panel's Show, an INTEL line, a double-click on a squad):
+ // the map pans there, zooms in to about 'span' m across the screen when it is further out than that
+ // (zoomed right out a squad was centred but tiny), and a pulse marks the spot.
+ static const float SHOW_SPAN = 3000;
+ static const float DOUBLE_CLICK_SPAN = 1200;
+ void ACR_FocusMap(vector at, float span = SHOW_SPAN)
+ {
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity || !mapEntity.IsOpen()) return;
+  float zoom = Math.Max(mapEntity.GetCurrentZoom(), GetGame().GetWorkspace().GetWidth() / span);
+  mapEntity.ZoomPanSmooth(zoom, at[0], at[2], 0.3);
+  ACR_PulseAt(at);
+  ACR_MarkUiClick();
+ }
+
+ // ---------------------------------------------------------------- INTEL lines that jump
+ // A click on an INTEL line that names a place (a sighting, a fire mission, a minefield laid, a
+ // position dug in, a support called, a ping: ACR_Intel.AddFeed's spot) sends the map there; the
+ // line under the cursor that would is lit. The feed's widgets ignore the cursor, so the click
+ // reaches the map and is matched here by where it fell.
+ protected bool ACR_FeedSpotAt(int x, int y, out vector spot, out int line)
+ {
+  line = -1;
+  if (!m_ACR_Panel) return false;
+  line = m_ACR_Panel.FeedLineAt(x, y);
+  if (line < 0 || line >= m_ACR_FeedShownPos.Count()) return false;
+  spot = m_ACR_FeedShownPos[line];
+  return spot != vector.Zero;
+ }
+
+ override protected void ACR_OnMapClick(vector screenPos)
+ {
+  int mx, my;
+  WidgetManager.GetMousePos(mx, my);
+  vector spot;
+  int line;
+  if (!ACR_EditorOpen() && ACR_FeedSpotAt(mx, my, spot, line))
+  {
+   ACR_FocusMap(spot);
+   return;
+  }
+  super.ACR_OnMapClick(screenPos);
+ }
+
+ protected void ACR_LightFeed()
+ {
+  if (!m_ACR_Panel) return;
+  int mx, my;
+  WidgetManager.GetMousePos(mx, my);
+  vector spot;
+  int line;
+  if (ACR_FeedSpotAt(mx, my, spot, line)) m_ACR_Panel.LightFeedLine(line);
+  else m_ACR_Panel.LightFeedLine(-1);
+ }
+
+ // Tests: the first INTEL line shown that names a place, clicked; its spot (vector.Zero: none).
+ vector ACR_FeedJumpForTest()
+ {
+  foreach (vector spot : m_ACR_FeedShownPos)
+  {
+   if (spot == vector.Zero) continue;
+   ACR_FocusMap(spot);
+   return spot;
+  }
+  return vector.Zero;
+ }
+
+ // Tests: a double-click on the first squad's own icon (not one in a "×N"); where it stands.
+ vector ACR_DoubleClickForTest()
+ {
+  if (!m_ACR_Data) return vector.Zero;
+  foreach (ACR_UnitMarker marker : m_ACR_GroupMarkers)
+  {
+   if (!marker || !marker.m_GroupId.IsValid()) continue;
+   int g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
+   if (g < 0 || m_ACR_Data.ShownByOther(g)) continue;
+   m_ACR_LastPickAt = 0;
+   ACR_PickGroup(marker);
+   ACR_PickGroup(marker);
+   return m_ACR_Data.LeaderPos(g);
+  }
+  return vector.Zero;
+ }
+
+ // ---------------------------------------------------------------- double-click on a squad
+ static const int DOUBLE_CLICK_MS = 400;
+ protected RplId m_ACR_LastPickId = RplId.Invalid();
+ protected int m_ACR_LastPickAt;
+
+ // A second click on the same squad's icon within DOUBLE_CLICK_MS: selected, the map centred and
+ // zoomed in on it (as in most RTS games).
+ protected bool ACR_DoubleClick(ACR_UnitMarker marker)
+ {
+  if (!marker || !marker.m_GroupId.IsValid() || !m_ACR_Data || ACR_ModifierHeld("ACR_MapShift")) return false;
+  int now = System.GetTickCount();
+  bool twice = marker.m_GroupId == m_ACR_LastPickId && now - m_ACR_LastPickAt < DOUBLE_CLICK_MS;
+  m_ACR_LastPickId = marker.m_GroupId;
+  m_ACR_LastPickAt = now;
+  if (!twice) return false;
+  m_ACR_LastPickAt = 0;
+  int g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
+  if (g < 0) return false;
+  ACR_CloseSquadPicker();
+  ACR_SelectGroup(marker.m_GroupId);
+  ACR_FocusMap(m_ACR_Data.LeaderPos(g), DOUBLE_CLICK_SPAN);
+  return true;
+ }
+
+ void ACR_SquadPickerChoose(RplId id)
+ {
+  ACR_MarkUiClick();
+  ACR_CloseSquadPicker();
+  ACR_SelectGroup(id);
+ }
+
+ void ACR_SquadPickerAll(array<RplId> ids)
+ {
+  ACR_MarkUiClick();
+  array<RplId> all = {};
+  all.Copy(ids);
+  ACR_CloseSquadPicker();
+  m_ACR_SelectedBase = "";
+  m_ACR_CursorMode = ACR_ECursorMode.MOVE;
+  ACR_SetSelection(all);
+ }
+
+ void ACR_CloseSquadPicker()
+ {
+  if (m_ACR_SquadPicker) m_ACR_SquadPicker.Destroy();
+  m_ACR_SquadPicker = null;
+ }
+
+ bool ACR_SquadPickerOpen() { return m_ACR_SquadPicker && m_ACR_SquadPicker.m_Root; }
+
+ void ACR_ClearSelectionForTest()
+ {
+  array<RplId> none = {};
+  ACR_SetSelection(none);
+ }
+
+ // Tests: a row hovered, a row's squad, a row picked as its number key would.
+ bool ACR_SquadPickerHoverForTest(int i)
+ {
+  if (!m_ACR_SquadPicker || !m_ACR_Data) return false;
+  m_ACR_SquadPicker.Hover(i);
+  return m_ACR_Data.m_PickerHover.IsValid();
+ }
+
+ RplId ACR_SquadPickerIdForTest(int i)
+ {
+  if (!m_ACR_SquadPicker) return RplId.Invalid();
+  return m_ACR_SquadPicker.IdAt(i);
+ }
+
+ void ACR_SquadPickerKeyForTest(int i)
+ {
+  if (m_ACR_SquadPicker) m_ACR_SquadPicker.ChooseIndex(i);
+ }
+
+ // Tests: opens the list for the first "×N" icon shown, as a click on it would.
+ bool ACR_SquadPickerForTest()
+ {
+  if (!m_ACR_Data) return false;
+  foreach (ACR_UnitMarker marker : m_ACR_GroupMarkers)
+  {
+   if (!marker) continue;
+   int g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
+   if (g < 0 || g >= m_ACR_Data.m_DeclCount.Count() || g >= m_ACR_Data.m_DeclRep.Count() || m_ACR_Data.m_DeclCount[g] < 2 || !m_ACR_Data.m_DeclRep[g]) continue;
+   ACR_PickGroup(marker);
+   return ACR_SquadPickerOpen();
+  }
+  return false;
+ }
+
+ // A click elsewhere on the map, or the map closing, closes it with the ping picker.
+ override protected void ACR_ClosePicker()
+ {
+  ACR_CloseSquadPicker();
+  super.ACR_ClosePicker();
+ }
+
+ override protected bool ACR_OverOwnUI(Widget widget)
+ {
+  if (m_ACR_SquadPicker && m_ACR_SquadPicker.Contains(widget)) return true;
+  return super.ACR_OverOwnUI(widget);
+ }
+
+ override bool ACR_HandleMapRightClick()
+ {
+  if (m_ACR_SquadPicker && m_ACR_SquadPicker.Contains(WidgetManager.GetWidgetUnderCursor())) return true;
+  return super.ACR_HandleMapRightClick();
+ }
+
  protected ref array<Widget> m_aDeclBadges = {};
  protected ref array<TextWidget> m_aDeclBadgeTexts = {};
  protected Widget m_wDeclLegend;
@@ -1020,9 +1372,12 @@ modded class SCR_PlayerController
   data.m_DeclSymH.Clear();
   data.m_DeclSymX.Clear();
   data.m_DeclSymY.Clear();
+  data.m_DeclHidden.Clear();
   for (int g = 0; g < groups; g++)
   {
-   clusterable.Insert(g < data.m_Commandable.Count() && data.m_Commandable[g] == 1);
+   bool hidden = ACR_LayerHides(g);
+   data.m_DeclHidden.Insert(hidden);
+   clusterable.Insert(!hidden && g < data.m_Commandable.Count() && data.m_Commandable[g] == 1);
    bool picked = g < data.m_GroupIds.Count() && data.IsSelected(data.m_GroupIds[g]);
    selected.Insert(picked);
    float w = ws.DPIScale(30);
@@ -1054,6 +1409,11 @@ modded class SCR_PlayerController
    data.m_DeclSymY.Insert(oy);
   }
   ACR_MapDeclutter.Clusters(data.m_LeaderPositions, clusterable, selected, data.m_BasePositions, data.m_BaseRadii, data.m_DeclBaseOf, data.m_DeclCount, data.m_DeclRep);
+  // A hidden squad is in no "×N" and its icon goes (shown by none).
+  foreach (int hg, bool off : data.m_DeclHidden)
+  {
+   if (off && hg < data.m_DeclRep.Count()) data.m_DeclRep[hg] = false;
+  }
   // What icons keep clear of: every base's dot, and its name where it is now.
   float dot = ws.DPIScale(10);
   float gap = ws.DPIScale(4);
@@ -1160,6 +1520,7 @@ modded class SCR_PlayerController
    }
    Widget root = marker.GetRootWidget();
    if (root && root.IsVisible() != show) root.SetVisible(show);
+   if (!show) ACR_Park(marker);
   }
  }
 
@@ -1264,6 +1625,7 @@ modded class SCR_PlayerController
   int since = ACR_MapData.Since(m_ACR_IntelAt);
   array<string> raw = {};
   array<int> rawAges = {};
+  array<vector> rawSpots = {};
   foreach (int i, string line : m_ACR_Feed)
   {
    int seconds = since;
@@ -1271,8 +1633,11 @@ modded class SCR_PlayerController
    if (seconds > 600) break;
    raw.Insert(line);
    rawAges.Insert(seconds);
+   vector spot = vector.Zero;
+   if (i < m_ACR_FeedPos.Count()) spot = m_ACR_FeedPos[i];
+   rawSpots.Insert(spot);
   }
-  ACR_MapDeclutter.MergeFeed(raw, rawAges, m_ACR_Data.TagOf(GetPlayerId()), texts, ages);
+  ACR_MapDeclutter.MergeFeed(raw, rawAges, m_ACR_Data.TagOf(GetPlayerId()), texts, ages, rawSpots, m_ACR_FeedShownPos);
  }
 
  // After the classic frame: soldiers, "×N" badges, the legend, the bars and the dark map.
@@ -1281,6 +1646,7 @@ modded class SCR_PlayerController
   super.ACR_UpdateMap();
   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
   if (!mapEntity || !mapEntity.IsOpen() || !m_ACR_Panel) return;
+  ACR_LightFeed();
   bool on = ACR_MapDeclutter.On();
   ACR_DeclTint(mapEntity, on && ACR_MapDeclutter.Dark());
   if (!on && !m_bDeclTouched) return;
@@ -1314,7 +1680,9 @@ modded class SCR_PlayerController
    marker.GetWorldPos(at);
    int sx, sy;
    mapEntity.WorldToScreen(at[0], at[1], sx, sy, true);
-   if (ACR_MapDeclutter.OnAName(sx, sy, r, obstacles)) marker.GetRootWidget().SetVisible(false);
+   if (!ACR_MapDeclutter.OnAName(sx, sy, r, obstacles)) continue;
+   marker.GetRootWidget().SetVisible(false);
+   ACR_Park(marker);
   }
   foreach (ACR_UnitMarker vehicle : m_ACR_VehicleMarkers) if (vehicle) movers.Insert(vehicle);
   foreach (ACR_UnitMarker mover : movers)
@@ -1341,6 +1709,7 @@ modded class SCR_PlayerController
    if (!vehicle || !vehicle.GetRootWidget()) continue;
    bool showVehicle = !on || !m_ACR_Data.m_bDeclFar;
    if (vehicle.GetRootWidget().IsVisible() != showVehicle) vehicle.GetRootWidget().SetVisible(showVehicle);
+   if (!showVehicle) ACR_Park(vehicle);
   }
   foreach (ACR_UnitMarker marker : m_ACR_Markers)
   {
@@ -1353,11 +1722,25 @@ modded class SCR_PlayerController
     {
      int g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
      if (g >= 0 && g < m_ACR_Data.m_DeclBaseOf.Count() && m_ACR_Data.m_DeclBaseOf[g] >= 0) show = false;
+     if (m_ACR_Data.DeclHidden(g)) show = false;
     }
    }
    Widget root = marker.GetRootWidget();
    if (root && root.IsVisible() != show) root.SetVisible(show);
+   if (!show) ACR_Park(marker);
   }
+ }
+
+ // A marker the calm map hides goes off the map as well: the game shows every marker's widget
+ // again each frame (SCR_MapMarkerManagerComponent.Update: SetStaticMarkerDisabled(false) ->
+ // SetUpdateDisabled(false)), so a hidden one came back before it was drawn (30 Oct: the soldiers
+ // of the squads at a base, and the squads under a "×N" stacked beneath its icon, all showed). Off
+ // the map it is out of sight and out of the cursor's way; its own update puts it back each frame
+ // before this.
+ static const int PARK = -100000;
+ protected void ACR_Park(ACR_UnitMarker marker)
+ {
+  if (marker) marker.SetWorldPos(PARK, PARK);
  }
 
  // "×N" right of each icon that stands for several squads.
@@ -1584,6 +1967,37 @@ modded class SCR_PlayerController
  // Tests (the shots test): the panel's state.
  bool ACR_DeclPanelCollapsed() { return m_ACR_Panel && m_ACR_Panel.DeclCollapsed(); }
  bool ACR_DeclIntelCollapsed() { return m_ACR_Panel && m_ACR_Panel.DeclIntelCollapsed(); }
+ // Tests: of the markers the calm map hides now (soldiers zoomed out or of an unselected squad at a
+ // base, squads under a "×N"), how many there are (hidden) and how many are still on the screen.
+ int ACR_DeclHiddenOnScreenForTest(out int hidden)
+ {
+  hidden = 0;
+  int onScreen;
+  array<ACR_UnitMarker> markers = {};
+  foreach (ACR_UnitMarker soldier : m_ACR_Markers)
+  {
+   if (!soldier || soldier.m_Original) continue;
+   bool hide = m_ACR_Data.m_bDeclFar;
+   int g = m_ACR_Data.m_GroupIds.Find(soldier.m_GroupId);
+   if (!hide && !m_ACR_Data.IsSelected(soldier.m_GroupId) && g >= 0 && g < m_ACR_Data.m_DeclBaseOf.Count() && m_ACR_Data.m_DeclBaseOf[g] >= 0) hide = true;
+   if (hide) markers.Insert(soldier);
+  }
+  foreach (int i, ACR_UnitMarker squad : m_ACR_GroupMarkers)
+  {
+   if (squad && i < m_ACR_Data.m_DeclRep.Count() && !m_ACR_Data.m_DeclRep[i]) markers.Insert(squad);
+  }
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  foreach (ACR_UnitMarker marker : markers)
+  {
+   hidden++;
+   Widget root = marker.GetRootWidget();
+   if (!root || !root.IsVisible()) continue;
+   float x, y;
+   root.GetScreenPos(x, y);
+   if (x > -200 && y > -200 && x < ws.GetWidth() + 200 && y < ws.GetHeight() + 200) onScreen++;
+  }
+  return onScreen;
+ }
  bool ACR_DeclPanelStyled() { return m_ACR_Panel && m_ACR_Panel.DeclStyled(); }
  bool ACR_DeclTintShown() { return m_wDeclTint && m_wDeclTint.IsVisible(); }
  int ACR_DeclBadgesShown()

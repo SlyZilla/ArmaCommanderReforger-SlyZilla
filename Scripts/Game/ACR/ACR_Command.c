@@ -233,10 +233,11 @@ class ACR_Command : Managed
   return at;
  }
 
- void Feed(string factionKey, string line)
+ // at: where it happened, if anywhere (ACR_Intel.AddFeed).
+ void Feed(string factionKey, string line, vector at = vector.Zero)
  {
   ACR_Intel intel = m_Manager.IntelFor(factionKey);
-  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), line);
+  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), line, at);
  }
 
  // ---------------------------------------------------------------- selections
