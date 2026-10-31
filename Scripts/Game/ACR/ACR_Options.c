@@ -69,7 +69,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrQuickStart", "acrGuerrillas", "acrFIAAllegiance", "acrFIALeaning", "acrFIAHidden", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrCompanyWest", "acrCompanyEast", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrCapScale", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrBaseWorks", "acrBaseBays", "acrBaseSmallGuns", "acrWings", "acrBaseStyles", "acrHoldGuns", "acrMapDeclutter", "acrSquadTactics", "acrRoadFlow", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrQuickStart", "acrGuerrillas", "acrFIAAllegiance", "acrFIALeaning", "acrFIAHidden", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrCompanyWest", "acrCompanyEast", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrCapScale", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrBaseWorks", "acrBaseBays", "acrBaseSmallGuns", "acrWings", "acrBaseStyles", "acrBasePlacement", "acrEmplacements", "acrHoldGuns", "acrMapDeclutter", "acrSquadTactics", "acrRoadFlow", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
   foreach (string name : names)
   {
    string value;
@@ -188,6 +188,10 @@ class ACR_MissionHeader : SCR_MissionHeader
  int m_iAcrWings;
  [Attribute("-1", UIWidgets.EditBox, "Each fortified town gets a defence style from its ground: 1 default, 0 makes every town a wall (-acrBaseStyles)")]
  int m_iAcrBaseStyles;
+ [Attribute("-1", UIWidgets.EditBox, "A fortified town's lines keep out of yards and off squares, and its guns look for the ways in: 1 default, 0 the older placement (-acrBasePlacement)")]
+ int m_iAcrBasePlacement;
+ [Attribute("-1", UIWidgets.EditBox, "Guns stand in emplacements built from parts as well as the game's ready-made nests: 1 default, 0 ready-made only (-acrEmplacements)")]
+ int m_iAcrEmplacements;
  [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a Fortify tier I position: 1 default, 0 none (-acrFortifyDefenders1)")]
  int m_iAcrFortifyDefenders1;
  [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a Fortify tier II position: 2 default, 0 none (-acrFortifyDefenders2)")]
@@ -251,6 +255,8 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrBaseSmallGuns", m_iAcrBaseSmallGuns);
   Number(values, "acrWings", m_iAcrWings);
   Number(values, "acrBaseStyles", m_iAcrBaseStyles);
+  Number(values, "acrBasePlacement", m_iAcrBasePlacement);
+  Number(values, "acrEmplacements", m_iAcrEmplacements);
   Number(values, "acrFortifyDefenders1", m_iAcrFortifyDefenders1);
   Number(values, "acrFortifyDefenders2", m_iAcrFortifyDefenders2);
   Number(values, "acrFortifyDefenders3", m_iAcrFortifyDefenders3);

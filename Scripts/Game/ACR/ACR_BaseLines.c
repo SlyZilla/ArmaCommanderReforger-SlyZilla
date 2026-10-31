@@ -31,6 +31,7 @@ class ACR_LinePiece : Managed
  int m_iBreak;         // what follows it: 0 the next piece, 1 a walk-through gap, 2 a road
  bool m_bCurve;        // part of an end curving back
  bool m_bLong;
+ float m_fLook = -1;   // m it sees out from behind its bags, up to ACR_BaseLiner.LOOK_FAR; -1 not looked
 }
 
 class ACR_BaseLine : Managed
@@ -48,6 +49,7 @@ class ACR_BaseLine : Managed
  vector m_vFacing;
  float m_fLength;
  float m_fView;
+ float m_fSeeing = 1;                          // its share of long pieces that see past SEES_FAR
  bool m_bGap;                                  // closes a gap in a wall
  int m_iSites;
 
@@ -87,8 +89,12 @@ class ACR_BaseLiner : Managed
  static const int FIT_WATER = 7;
  static const int FIT_BEHIND = 8;
  static const int FIT_PAVED = 9;
+ static const int FIT_BOXED = 10;
  static const float ROOM = 1.6;             // m clear behind the bags: a man stands and fires there
  static const float VIEW = 15;              // m clear on a piece's firing side, straight out or a little to either side
+ static const float LOOK_FAR = 45;          // m a piece is looked out from, and what's kept of it
+ static const float SEES_FAR = 25;          // m: seeing less it watches a fence, not an approach
+ static const float BOX = 25;               // m: less than this in front and behind is a yard, not a place for a line
  static const int MAX_BLIND = 2;            // pieces in a row that may go without (a tree in front of one)
  static const float GENTLE = 5.5;           // degrees at a joint while nothing's in the way
  static const float MAX_RISE = 1.0;         // m along a long piece (its ground tilt tops at 12 degrees: a little buried)
@@ -116,6 +122,7 @@ class ACR_BaseLiner : Managed
  string m_sTargetWord;
  int m_iStop;          // the last walk: what ended it (a FIT_ code), -1 its length or span
  protected bool m_bBlindStep;
+ protected float m_fLastLook = -1; // what the last Fit saw out
  protected int m_iBlind;
  protected int m_iSeeing;
 
@@ -159,6 +166,7 @@ class ACR_BaseLiner : Managed
    case FIT_WATER: return "water";
    case FIT_BEHIND: return "behind";
    case FIT_PAVED: return "paved";
+   case FIT_BOXED: return "boxed";
   }
   return "length";
  }
@@ -177,6 +185,7 @@ class ACR_BaseLiner : Managed
  // noView: the rest as usual, no view asked.
  int Fit(vector tip, vector heading, float length, int sign, bool loose, bool noView = false)
  {
+  m_fLastLook = -1;
   vector to = tip + heading * length;
   vector mid = tip + heading * (length * 0.5);
   float tipY = Ground(tip);
@@ -187,6 +196,8 @@ class ACR_BaseLiner : Managed
   if (loose) keep = 0.3;
   if (ACR_BaseDefences.RoadEdgeGap(m_aRoads, mid) < keep || ACR_BaseDefences.RoadEdgeGap(m_aRoads, to) < keep) return FIT_ROAD;
   if (WidePaved(to, heading)) return FIT_PAVED;
+  // A square or a yard's concrete: a line goes round it, unless it's closing a gap across it.
+  if (PlacementOn() && !m_bTarget && !loose && ACR_Fortify.HardSurface(mid) && ACR_Fortify.HardSurface(to)) return FIT_PAVED;
   if (Math.AbsFloat(toY - tipY) > MAX_RISE * length / ACR_BaseLines.LONG_STEP) return FIT_SLOPE;
   vector facing = FacingOf(heading, sign);
   vector front = mid + facing * 0.6;
@@ -204,10 +215,26 @@ class ACR_BaseLiner : Managed
   vector muzzle = mid - facing * 0.4;
   muzzle[1] = Ground(muzzle) + ACR_BaseSurvey.UP_BAGS;
   float look = ACR_BaseDefences.Bearing(facing);
-  if (ACR_BaseSurvey.Reach(muzzle, look, VIEW) >= VIEW - 0.5) return FIT_OK;
-  if (ACR_BaseSurvey.Reach(muzzle, look - 18, VIEW) >= VIEW - 0.5 || ACR_BaseSurvey.Reach(muzzle, look + 18, VIEW) >= VIEW - 0.5) return FIT_OK;
-  return FIT_VIEW;
+  float seen = ACR_BaseSurvey.Reach(muzzle, look, LOOK_FAR);
+  if (seen < SEES_FAR)
+  {
+   seen = Math.Max(seen, ACR_BaseSurvey.Reach(muzzle, look - 18, LOOK_FAR));
+   if (seen < SEES_FAR) seen = Math.Max(seen, ACR_BaseSurvey.Reach(muzzle, look + 18, LOOK_FAR));
+  }
+  m_fLastLook = seen;
+  if (seen < VIEW - 0.5) return FIT_VIEW;
+  // Boxed in: a short view in front and a short one behind. Closing a gap is what a line in a yard is for.
+  if (PlacementOn() && seen < BOX && !m_bTarget)
+  {
+   vector back = mid + facing * 0.6;
+   back[1] = Ground(back) + 1.0;
+   if (ACR_BaseSurvey.Reach(back, look + 180, BOX + 1.2) < BOX) return FIT_BOXED;
+  }
+  return FIT_OK;
  }
+
+ // -acrBasePlacement 0: the first version's looser placement.
+ static bool PlacementOn() { return ACR_LogisticsRules.Choice("acrBasePlacement", "1") != "0"; }
 
  // A runway, a taxiway or an apron ahead: no road on the network tells of these, and a line across one is
  // a wall dropped on the concrete (pn23 playtest, Airport). A yard or a track narrower than this goes
@@ -371,7 +398,9 @@ class ACR_BaseLiner : Managed
     m_iSinceBay++;
     vector to = tip + next * ACR_BaseLines.LONG_STEP;
     vector facing = FacingOf(next, sign);
-    run.Insert(Piece(tip, to, tip + next * (ACR_BaseLines.LONG_STEP * 0.5), ACR_BaseDefences.Bearing(facing), kit.m_sLong, facing));
+    ACR_LinePiece walked = Piece(tip, to, tip + next * (ACR_BaseLines.LONG_STEP * 0.5), ACR_BaseDefences.Bearing(facing), kit.m_sLong, facing);
+    walked.m_fLook = m_fLastLook;
+    run.Insert(walked);
     tip = to;
     heading = next;
     made++;
@@ -591,7 +620,7 @@ class ACR_BaseStyle : Managed
  float m_fClash = 22;                // m between lines
  float m_fMinThreat = 0.2;           // approaches less threatened than this get no line
  float m_fLengthCap = 120;           // m of a line that count for it
- float m_fLaneWorth = 0.15;          // what a road through it counts for
+ float m_fLaneWorth = 0.35;          // what a road through it counts for
  float m_fFirstShare = 1;            // tier I's share of its budget: the rest goes to tier II
  bool m_bApart;                      // lines don't tie into each other
  bool m_bGunsOnLanes;
@@ -734,6 +763,10 @@ class ACR_BaseLines
  static const float COMPACT_HALF = 1.9;   // the small gun position: its side bags reach 1.7 m (Sandbag_MG_US_01)
  static const float COMPACT_DEPTH = 1.1;
  static const float COMPACT_ROAD = 4;     // m from its middle to a road's edge
+ static const float GUN_ON_GATE = 150;    // m: a gun this close to a way into town, facing it, covers it
+ static const float GUN_GATE_DOT = 0.7;   // ... within about 45 degrees of its facing
+ static const float GUN_GATE_WORTH = 0.45;
+ static const float GUN_LOOK = 150;       // m a gun's view counts up to
  static const float COMPACT_HOUSE = 5;    // ... to a building, its middle and its gun (1.1 m forward)
 
  // ---------------------------------------------------------------- budgets
@@ -940,6 +973,32 @@ class ACR_BaseLines
   LookFrom(line.m_aLeft, seen, looked);
   LookFrom(line.m_aRight, seen, looked);
   line.m_fView = seen * 1.0 / Math.Max(looked, 1);
+  int longs, seeing;
+  CountSeeing(line.m_aLeft, longs, seeing);
+  CountSeeing(line.m_aRight, longs, seeing);
+  if (longs > 0) line.m_fSeeing = seeing * 1.0 / longs;
+ }
+
+ protected static void CountSeeing(array<ref ACR_LinePiece> run, inout int longs, inout int seeing)
+ {
+  foreach (ACR_LinePiece piece : run)
+  {
+   if (!piece.m_bLong || piece.m_fLook < 0) continue;
+   longs++;
+   if (piece.m_fLook >= ACR_BaseLiner.SEES_FAR) seeing++;
+  }
+ }
+
+ // An open end that sees little comes off, so the line ends where it still watches something.
+ protected static void TrimBlindEnd(array<ref ACR_LinePiece> run)
+ {
+  while (run.Count() > 2)
+  {
+   ACR_LinePiece last = run[run.Count() - 1];
+   if (!last.m_bLong || last.m_fLook < 0 || last.m_fLook >= ACR_BaseLiner.SEES_FAR) return;
+   run.Remove(run.Count() - 1);
+   run[run.Count() - 1].m_iBreak = 0;
+  }
  }
 
  protected static void LookFrom(array<ref ACR_LinePiece> run, inout int seen, inout int looked)
@@ -1029,6 +1088,8 @@ class ACR_BaseLines
    n++;
   }
   float score = weak / Math.Max(n, 1) + Math.Min(line.m_fLength, style.m_fLengthCap) / 60 + 0.3 * line.Anchors() + 0.6 * line.m_fView + style.m_fLaneWorth * line.m_aLanes.Count();
+  // What its bags see: a long line of them watching fences isn't worth a short one watching a field.
+  if (ACR_BaseLiner.PlacementOn()) score += 1.2 * line.m_fSeeing;
   if (line.m_bGap) score += 0.4;
   return score;
  }
@@ -1109,6 +1170,11 @@ class ACR_BaseLines
    }
   }
   if (line.m_aLeft.IsEmpty() && line.m_aRight.IsEmpty()) return 0;
+  if (ACR_BaseLiner.PlacementOn())
+  {
+   if (line.m_sEndB.IsEmpty()) TrimBlindEnd(line.m_aRight);
+   if (line.m_sEndA.IsEmpty()) TrimBlindEnd(line.m_aLeft);
+  }
   SeedStub(line.m_aRight, line.m_aLeft, line);
   SeedStub(line.m_aLeft, line.m_aRight, line);
   // Which end has lost its anchor to a cut.
@@ -1426,6 +1492,35 @@ class ACR_BaseLines
   for (int level = s_iFirstNestLevelForTest; level < levels && made < most; level++) made = NestsAt(work, survey, most, level, made);
  }
 
+ // What a place is worth to a gun beyond its sector: a way into the town in its fan, and how far it sees.
+ protected static float GunWorth(ACR_BaseWork work, ACR_BaseSurvey survey, vector place, float yaw)
+ {
+  if (!ACR_BaseLiner.PlacementOn()) return 0;
+  float worth = 0;
+  vector ahead = ACR_BaseSurvey.Dir(yaw);
+  foreach (ACR_BaseGate gate : survey.m_aGates)
+  {
+   if (survey.m_aThreat[gate.m_iSector] < ACR_BaseSurvey.MIN_SPOT_THREAT) continue;
+   vector to = gate.m_vPos - place;
+   to[1] = 0;
+   float apart = to.Length();
+   if (apart < 5 || apart > GUN_ON_GATE) continue;
+   to = to * (1.0 / apart);
+   if (ACR_BaseDefences.DotXZ(to, ahead) < GUN_GATE_DOT) continue;
+   // Seeing it, not only facing it.
+   vector muzzle = place + ahead * 0.5;
+   muzzle[1] = ACR_BaseLiner.Ground(muzzle) + ACR_BaseSurvey.UP_NEST;
+   if (ACR_BaseSurvey.Reach(muzzle, ACR_BaseDefences.Bearing(to), apart) < apart - 10) continue;
+   worth += GUN_GATE_WORTH;
+   if (work.m_Style.m_bGunsOnLanes) worth += GUN_GATE_WORTH;
+   break;
+  }
+  vector eye = place + ahead * 0.5;
+  eye[1] = ACR_BaseLiner.Ground(eye) + ACR_BaseSurvey.UP_NEST;
+  worth += 0.3 * ACR_BaseSurvey.Reach(eye, yaw, GUN_LOOK) / GUN_LOOK;
+  return worth;
+ }
+
  protected static bool LaneNear(ACR_BaseLine line, vector at)
  {
   foreach (vector lane : line.m_aLanes) if (vector.DistanceXZ(lane, at) < 30) return true;
@@ -1451,6 +1546,7 @@ class ACR_BaseLines
    aside.Insert(-25);
   }
   array<float> yaws = {};
+  array<float> worths = {};
   array<vector> places = {};
   array<ACR_BaseLine> onLines = {};
   array<int> firsts = {};
@@ -1536,6 +1632,7 @@ class ACR_BaseLines
     }
     places.Insert(place);
     yaws.Insert(yaw);
+    worths.Insert(GunWorth(work, survey, place, yaw));
     onLines.Insert(line);
     firsts.Insert(i);
    }
@@ -1548,7 +1645,7 @@ class ACR_BaseLines
    {
     if (ACR_BaseWorks.GunsNear(work, at, yaws[c])) continue;
     open.Insert(c);
-    float nestScore = survey.Weak(ACR_BaseSurvey.Sector(yaws[c]));
+    float nestScore = survey.Weak(ACR_BaseSurvey.Sector(yaws[c])) + worths[c];
     if (work.m_Style.m_bGunsOnLanes && LaneNear(onLines[c], at)) nestScore += 0.5;
     scores.Insert(nestScore);
    }

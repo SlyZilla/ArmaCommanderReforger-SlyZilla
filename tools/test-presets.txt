@@ -229,6 +229,10 @@ worksfightcompact|-acrWorksFightCompactTest 1|480|Worlds/ACR_Everon.ent
 baseworkscompact|-acrBaseWorksCompactTest 1|900|Worlds/ACR_Everon.ent
 worksshotscompact|-acrWorksShotsCompactTest 1|600|Worlds/ACR_Everon.ent
 worksshotseveron|-acrWorksShotsTest 1|600|Worlds/ACR_Everon.ent
+placeaudit|-acrPlaceAuditTest 1|180|Worlds/ACR_Everon.ent
+placeauditarland|-acrPlaceAuditTest 1|180|Worlds/ACR_Arland.ent
+placeauditkolguyev|-acrPlaceAuditTest 1|180|Worlds/ACR_Kolguyev.ent
+parts|-acrPartsTest 1|360
 wings|-acrWingsTest 1|240|Worlds/ACR_Everon.ent
 wingsarland|-acrWingsTest 1|240|Worlds/ACR_Arland.ent
 wingskolguyev|-acrWingsTest 1|240|Worlds/ACR_Kolguyev.ent
