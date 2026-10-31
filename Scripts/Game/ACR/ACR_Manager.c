@@ -231,6 +231,17 @@ class ACR_Manager : Managed
   ACR_Minefields.Reset();
   ACR_Fortify.Reset();
   ACR_SpawnPoints.Reset();
+  // Caches keyed by world time: on the next mission the clock starts near 0 again, so their
+  // "too recent" checks held for as long as the last match ran.
+  ACR_TwoIC.Reset();
+  ACR_LandingZone.Reset();
+  ACR_AirLift.Reset();
+  ACR_FobSiting.Reset();
+  ACR_RoadblockSiting.Reset();
+  ACR_MapFeed.Reset();
+  // Setup screen choices are per match (Jacob, 31 Oct), and a rotation reads its own header.
+  ACR_Options.ClearSet();
+  ACR_Options.ForgetHeader();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
@@ -955,6 +966,15 @@ class ACR_Manager : Managed
  static const float AI_JOIN_HOLD_MS = 60000;
  float m_fAIHoldStart = -1; // (regress test resets it)
  protected ref map<int, float> m_PlayerSeenAt = new map<int, float>();
+ // Tests: players already here count as joined long ago (a client run's own player has only
+ // just joined, so the join hold held his side's AI through the regress checks).
+ void EndJoinHoldsForTest()
+ {
+  float past = GetGame().GetWorld().GetWorldTime() - AI_JOIN_HOLD_MS;
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (int playerId : players) m_PlayerSeenAt.Set(playerId, past);
+ }
  protected ref array<string> m_AIHeld = {};
  bool HoldAIFor(string factionKey)
  {
@@ -1282,7 +1302,7 @@ class ACR_Manager : Managed
   if (m_Respawn) m_Respawn.Frame(timeSlice);
   ACR_Perf.Lap("frames", t);
   CheckLandingZones();
-  ACR_Transport.UpdateHorns();
+  // Horns: ACR_Mode.EOnPostFrame runs the governor once a frame, after the AI's inputs.
   BBB.Frame(); // backing stuck vehicles out (inputs every frame)
   if (m_Drives.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();

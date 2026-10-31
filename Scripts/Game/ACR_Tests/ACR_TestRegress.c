@@ -156,7 +156,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 135; // includes one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 136; // includes one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -757,6 +757,8 @@ class ACR_TestRegress
    CheckRoadblockSnap(harness.m_Range.GetOrigin());
    ACR_TestOptions.Run();
    ACR_TestDoctrine.Run(manager);
+   // Night audit 30 Oct: the abort share compared in ints (3 of 10 at 0.35 kept attacking).
+   Check("attack abort share compares as a float", ACR_AICommander.AttackBroken(3, 10, 0.35) && !ACR_AICommander.AttackBroken(4, 10, 0.35) && ACR_AICommander.AttackBroken(1, 6, 0.25) && !ACR_AICommander.AttackBroken(0, 0, 0.35), "3/10 and 1/6 must break, 4/10 and an unset start must not");
    ACR_TestAccess.Run();
    // R18 (14 Oct review): records of deleted vehicles are dropped.
    int recordsBefore = ACR_Vehicles.RecordCount();
@@ -932,6 +934,7 @@ class ACR_TestRegress
   if (tick == 24)
   {
    float savedStart = manager.m_fAIHoldStart;
+   manager.EndJoinHoldsForTest(); // a client run's own player joined seconds ago
    manager.m_fAIHoldStart = GetGame().GetWorld().GetWorldTime();
    ACR_Perf.s_bChecks = false;
    bool held = manager.HoldAIFor("US");
@@ -1114,6 +1117,8 @@ class ACR_TestRegress
    Check("debug: pause and resume the enemy AI", paused && !dbg.IsPaused("US"), dbg.Status(manager, "USSR"));
    string attack = dbg.Run(manager, ACR_EDebug.ATTACK_NOW, "USSR", "");
    if (attack.Contains("no free squads")) Skip("debug: forced AI attack", attack);
+   // a client run's own player commands that side, so its AI commander is rightly off
+   else if (attack.Contains("isn't in command") && GetGame().GetPlayerManager().GetPlayerCount() > 0) Skip("debug: forced AI attack", attack);
    else Check("debug: forced AI attack", attack.Contains("attacking"), attack);
    dbg.Run(manager, ACR_EDebug.REVEAL, "US", "");
   }

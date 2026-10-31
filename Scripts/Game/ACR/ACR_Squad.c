@@ -507,7 +507,11 @@ class ACR_Squad : Managed
   // player's command-wheel orders queue up behind it. It resumes when he leaves.
   // (Not a ride's: the ride re-issues its own order when he leaves.)
   m_Aside = null;
-  if (m_Waypoint != null && !m_sOrderPrefab.IsEmpty() && OrderState() != ACR_EOrderState.RIDE) m_Aside = SnapshotOrder();
+  // Not a paid job's (FOB, roadblock, mines, Fortify): FollowCommander's NewOrder cancels and
+  // refunds it, and restoring its state later finished the build with nothing paid (a player
+  // could possess the leader, let go, and get the FOB or roadblock for free, again and again).
+  bool paidJob = HasJob() || m_fReservedLoads > 0 || OrderState() == ACR_EOrderState.BUILD_FOB;
+  if (!paidJob && m_Waypoint != null && !m_sOrderPrefab.IsEmpty() && OrderState() != ACR_EOrderState.RIDE) m_Aside = SnapshotOrder();
   FollowCommander();
   PrintFormat("[ACR] %1: native command granted player=%2 group=%3 linked=%4", m_Name, leaderPlayer, component.GetGroupID(), m_CommandGroup.GetSlave() == m_Group);
  }
@@ -4667,6 +4671,7 @@ class ACR_Squad : Managed
   GetGame().GetCallqueue().Remove(EnsureGetOut);
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
   GetGame().GetCallqueue().Remove(WakeCrew);
+  GetGame().GetCallqueue().Remove(SweepOutForJob);
   // Detach orders before deleting them, including queued artillery/boarding orders.
   // A surviving native group must never keep following a deleted owned waypoint.
   ClearOrders();
@@ -4685,5 +4690,6 @@ class ACR_Squad : Managed
   GetGame().GetCallqueue().Remove(EnsureGetOut);
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
   GetGame().GetCallqueue().Remove(WakeCrew);
+  GetGame().GetCallqueue().Remove(SweepOutForJob);
  }
 }
