@@ -682,6 +682,23 @@ class ACR_BaseWorks
   return missing / (float)should;
  }
 
+ // A nest's or a checkpoint's gun of this side's works. A squad's man on one is still infantry: a stretch's
+ // repair was refused as 'only infantry can fortify' with the last man of the squad on a nest's gun.
+ static bool OwnGun(string faction, IEntity gun)
+ {
+  foreach (ACR_BaseWork work : s_aWorks)
+  {
+   if (work.m_sFaction != faction) continue;
+   foreach (ACR_BaseSite site : work.m_aSites)
+   {
+    if (site.m_eKind != ACR_EBaseSite.NEST && site.m_eKind != ACR_EBaseSite.ROADBLOCK) continue;
+    foreach (IEntity piece : site.m_aWalls)
+     if (piece && ACR_Roadblocks.FindTurretInHierarchy(piece) == gun) return true;
+   }
+  }
+  return false;
+ }
+
  // Something built here has been lost, whole or in part: a tier already up wants it back.
  static bool NeedsRepair(ACR_Base base)
  {

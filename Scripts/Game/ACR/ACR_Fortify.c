@@ -130,7 +130,7 @@ class ACR_Fortify
   string faction = squad.GetFaction().GetFactionKey();
   foreach (ACR_Fortification fort : s_Positions)
    if (fort.m_sFaction == faction && fort.m_aTurrets.Contains(vehicle)) return true;
-  return false;
+  return ACR_BaseWorks.OwnGun(faction, vehicle);
  }
 
  // ---------------------------------------------------------------- tiers and spots

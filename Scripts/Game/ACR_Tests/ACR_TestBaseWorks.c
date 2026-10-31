@@ -13,7 +13,7 @@ class ACR_TestBaseWorks
  static const string NAME = "Works Squad";
  static const int STEP_LIMIT = 420; // s a tier may take (a site it can't reach is given up on after its walk + 90 s)
  static const float ENEMY_CLEAR = 700; // m from the other side's men for the town the test picks
- static const int CHECKS = 49;
+ static const int CHECKS = 50;
  protected static int s_iStep;
  protected static int s_iStepAt;
  protected static int s_iRP;
@@ -401,10 +401,12 @@ class ACR_TestBaseWorks
     gun.GetWorldTransform(transform);
     turned = Math.AbsFloat(ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(transform[2]) - site.m_fYaw + 180) - 180);
    }
+   ACR_TestRegress.Check("baseworks: a man on its gun still counts as infantry", gun && ACR_BaseWorks.OwnGun(s_sSide, gun), "");
    ACR_TestRegress.Check("baseworks: ... and looks the way the planner checked", gun && turned < 45, string.Format("%1 deg off facing %2", (int)turned, (int)site.m_fYaw));
    return;
   }
   ACR_TestRegress.Check("baseworks: the built nest's gun has a clear line of fire", false, "no nest built");
+  ACR_TestRegress.Check("baseworks: a man on its gun still counts as infantry", false, "no nest built");
   ACR_TestRegress.Check("baseworks: ... and looks the way the planner checked", false, "no nest built");
  }
 
