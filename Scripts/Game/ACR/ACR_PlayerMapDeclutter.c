@@ -889,6 +889,7 @@ modded class SCR_PlayerController
  // Shift + click, a lone squad and the classic map keep the plain select.
  override void ACR_PickGroup(ACR_UnitMarker marker)
  {
+  if (ACR_DoubleClick(marker)) return;
   ACR_CloseSquadPicker();
   int g = -1;
   if (marker && m_ACR_Data) g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
@@ -973,12 +974,120 @@ modded class SCR_PlayerController
   }
  }
 
- // The pulse on a spot the player was sent to (the 2IC panel's Show).
+ // The pulse on a spot the player was sent to (ACR_FocusMap).
  void ACR_PulseAt(vector pos)
  {
   if (!m_ACR_Data) return;
   m_ACR_Data.m_vPulseAt = pos;
   m_ACR_Data.m_iPulseUntil = System.GetTickCount() + ACR_OrderDisplay.PULSE_MS;
+ }
+
+ // Sends the player's eye to 'at' (the 2IC panel's Show, an INTEL line, a double-click on a squad):
+ // the map pans there, zooms in to about 'span' m across the screen when it is further out than that
+ // (zoomed right out a squad was centred but tiny), and a pulse marks the spot.
+ static const float SHOW_SPAN = 3000;
+ static const float DOUBLE_CLICK_SPAN = 1200;
+ void ACR_FocusMap(vector at, float span = SHOW_SPAN)
+ {
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity || !mapEntity.IsOpen()) return;
+  float zoom = Math.Max(mapEntity.GetCurrentZoom(), GetGame().GetWorkspace().GetWidth() / span);
+  mapEntity.ZoomPanSmooth(zoom, at[0], at[2], 0.3);
+  ACR_PulseAt(at);
+  ACR_MarkUiClick();
+ }
+
+ // ---------------------------------------------------------------- INTEL lines that jump
+ // A click on an INTEL line that names a place (a sighting, a fire mission, a minefield laid, a
+ // position dug in, a support called, a ping: ACR_Intel.AddFeed's spot) sends the map there; the
+ // line under the cursor that would is lit. The feed's widgets ignore the cursor, so the click
+ // reaches the map and is matched here by where it fell.
+ protected bool ACR_FeedSpotAt(int x, int y, out vector spot, out int line)
+ {
+  line = -1;
+  if (!m_ACR_Panel) return false;
+  line = m_ACR_Panel.FeedLineAt(x, y);
+  if (line < 0 || line >= m_ACR_FeedShownPos.Count()) return false;
+  spot = m_ACR_FeedShownPos[line];
+  return spot != vector.Zero;
+ }
+
+ override protected void ACR_OnMapClick(vector screenPos)
+ {
+  int mx, my;
+  WidgetManager.GetMousePos(mx, my);
+  vector spot;
+  int line;
+  if (!ACR_EditorOpen() && ACR_FeedSpotAt(mx, my, spot, line))
+  {
+   ACR_FocusMap(spot);
+   return;
+  }
+  super.ACR_OnMapClick(screenPos);
+ }
+
+ protected void ACR_LightFeed()
+ {
+  if (!m_ACR_Panel) return;
+  int mx, my;
+  WidgetManager.GetMousePos(mx, my);
+  vector spot;
+  int line;
+  if (ACR_FeedSpotAt(mx, my, spot, line)) m_ACR_Panel.LightFeedLine(line);
+  else m_ACR_Panel.LightFeedLine(-1);
+ }
+
+ // Tests: the first INTEL line shown that names a place, clicked; its spot (vector.Zero: none).
+ vector ACR_FeedJumpForTest()
+ {
+  foreach (vector spot : m_ACR_FeedShownPos)
+  {
+   if (spot == vector.Zero) continue;
+   ACR_FocusMap(spot);
+   return spot;
+  }
+  return vector.Zero;
+ }
+
+ // Tests: a double-click on the first squad's own icon (not one in a "×N"); where it stands.
+ vector ACR_DoubleClickForTest()
+ {
+  if (!m_ACR_Data) return vector.Zero;
+  foreach (ACR_UnitMarker marker : m_ACR_GroupMarkers)
+  {
+   if (!marker || !marker.m_GroupId.IsValid()) continue;
+   int g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
+   if (g < 0 || m_ACR_Data.ShownByOther(g)) continue;
+   m_ACR_LastPickAt = 0;
+   ACR_PickGroup(marker);
+   ACR_PickGroup(marker);
+   return m_ACR_Data.LeaderPos(g);
+  }
+  return vector.Zero;
+ }
+
+ // ---------------------------------------------------------------- double-click on a squad
+ static const int DOUBLE_CLICK_MS = 400;
+ protected RplId m_ACR_LastPickId = RplId.Invalid();
+ protected int m_ACR_LastPickAt;
+
+ // A second click on the same squad's icon within DOUBLE_CLICK_MS: selected, the map centred and
+ // zoomed in on it (as in most RTS games).
+ protected bool ACR_DoubleClick(ACR_UnitMarker marker)
+ {
+  if (!marker || !marker.m_GroupId.IsValid() || !m_ACR_Data || ACR_ModifierHeld("ACR_MapShift")) return false;
+  int now = System.GetTickCount();
+  bool twice = marker.m_GroupId == m_ACR_LastPickId && now - m_ACR_LastPickAt < DOUBLE_CLICK_MS;
+  m_ACR_LastPickId = marker.m_GroupId;
+  m_ACR_LastPickAt = now;
+  if (!twice) return false;
+  m_ACR_LastPickAt = 0;
+  int g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
+  if (g < 0) return false;
+  ACR_CloseSquadPicker();
+  ACR_SelectGroup(marker.m_GroupId);
+  ACR_FocusMap(m_ACR_Data.LeaderPos(g), DOUBLE_CLICK_SPAN);
+  return true;
  }
 
  void ACR_SquadPickerChoose(RplId id)
@@ -1494,6 +1603,7 @@ modded class SCR_PlayerController
   int since = ACR_MapData.Since(m_ACR_IntelAt);
   array<string> raw = {};
   array<int> rawAges = {};
+  array<vector> rawSpots = {};
   foreach (int i, string line : m_ACR_Feed)
   {
    int seconds = since;
@@ -1501,8 +1611,11 @@ modded class SCR_PlayerController
    if (seconds > 600) break;
    raw.Insert(line);
    rawAges.Insert(seconds);
+   vector spot = vector.Zero;
+   if (i < m_ACR_FeedPos.Count()) spot = m_ACR_FeedPos[i];
+   rawSpots.Insert(spot);
   }
-  ACR_MapDeclutter.MergeFeed(raw, rawAges, m_ACR_Data.TagOf(GetPlayerId()), texts, ages);
+  ACR_MapDeclutter.MergeFeed(raw, rawAges, m_ACR_Data.TagOf(GetPlayerId()), texts, ages, rawSpots, m_ACR_FeedShownPos);
  }
 
  // After the classic frame: soldiers, "×N" badges, the legend, the bars and the dark map.
@@ -1511,6 +1624,7 @@ modded class SCR_PlayerController
   super.ACR_UpdateMap();
   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
   if (!mapEntity || !mapEntity.IsOpen() || !m_ACR_Panel) return;
+  ACR_LightFeed();
   bool on = ACR_MapDeclutter.On();
   ACR_DeclTint(mapEntity, on && ACR_MapDeclutter.Dark());
   if (!on && !m_bDeclTouched) return;

@@ -7,7 +7,10 @@ class ACR_TestMapDeclutterShots
 {
  static const ResourceName RIFLE_SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
- static const int CHECKS = 8;
+ static const int CHECKS = 10;
+ protected static vector s_Sighting;
+ protected static vector s_Jumped;
+ protected static vector s_Clicked;
  protected static vector s_Base;
  protected static bool s_bPicker;
  protected static bool s_bHover;
@@ -127,6 +130,22 @@ class ACR_TestMapDeclutterShots
    ACR_TestRegress.Check("mapdeclutter shots: with -acrMapDeclutter 0 the classic map is back", classic, string.Format("on %1, styled %2, frames %3 -> %4", ACR_MapDeclutter.On(), pc.ACR_DeclPanelStyled(), s_iFrames, ACR_OrderDisplay.s_iDeclFrames));
   }
   if (tick == 60) Shot("declutter_0_classic");
+  // A click on the sighting's INTEL line centres the map on it; a double-click on a squad centres
+  // and zooms in on it.
+  if (tick == 61) s_Jumped = pc.ACR_FeedJumpForTest();
+  if (tick == 62)
+  {
+   float off = MapCentreOff(s_Sighting);
+   ACR_TestRegress.Check("mapdeclutter shots: a click on an INTEL line that names a place centres the map there", s_Jumped != vector.Zero && vector.DistanceXZ(s_Jumped, s_Sighting) < 1 && off >= 0 && off < 100, string.Format("spot %1, sighting %2, map centre %3 m off", s_Jumped, s_Sighting, (int)off));
+   s_Clicked = pc.ACR_DoubleClickForTest();
+  }
+  if (tick == 63)
+  {
+   float squadOff = MapCentreOff(s_Clicked);
+   float zoom = 0;
+   if (mapEntity) zoom = mapEntity.GetCurrentZoom();
+   ACR_TestRegress.Check("mapdeclutter shots: a double-click on a squad centres the map on it and zooms in", s_Clicked != vector.Zero && squadOff >= 0 && squadOff < 100 && zoom >= ws.GetWidth() / 1300.0, string.Format("squad at %1, map centre %2 m off, zoom %3", s_Clicked, (int)squadOff, zoom));
+  }
   if (tick == 63)
   {
    ACR_Options.Unset(ACR_MapDeclutter.OPTION);
@@ -151,12 +170,25 @@ class ACR_TestMapDeclutterShots
   intel.AddFeed(now - 9000, tag + " is in command");
   intel.AddFeed(now - 8000, "Popp requisitioned Rifle Squad at Lamentin (-15 RP)");
   intel.AddFeed(now - 7500, "Popp requisitioned Transport Truck at Lamentin (-30 RP)");
-  intel.AddFeed(now - 6000, "Alpha 1: enemy rifle squad near Le Moule");
-  intel.AddFeed(now - 5000, "Alpha 1: enemy rifle squad near Le Moule");
+  // A sighting names a place: its INTEL line jumps the map there.
+  s_Sighting = ACR_Manager.Ground(s_Base + Vector(500, 0, 400));
+  intel.AddFeed(now - 6000, "Alpha 1: enemy rifle squad near Le Moule", s_Sighting);
+  intel.AddFeed(now - 5000, "Alpha 1: enemy rifle squad near Le Moule", s_Sighting);
   intel.AddFeed(now - 3000, tag + " requisitioned Grenadier Team at Lamentin (-10 RP)");
   intel.AddFeed(now - 2500, tag + " requisitioned MG Team at Lamentin (-10 RP)");
   intel.AddFeed(now - 2000, tag + " requisitioned Grenadier Team at Lamentin (-9 RP)");
   intel.AddFeed(now - 1000, tag + " requisitioned MG Team at Lamentin (-10 RP)");
+ }
+
+ // How far the map's centre is from 'at' (m; -1: no map or no spot).
+ protected static float MapCentreOff(vector at)
+ {
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity || at == vector.Zero) return -1;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float cx, cz;
+  mapEntity.ScreenToWorld(ws.GetWidth() / 2, ws.GetHeight() / 2, cx, cz);
+  return vector.DistanceXZ(Vector(cx, 0, cz), at);
  }
 
  protected static ACR_Base Nearest(vector pos, bool ours)

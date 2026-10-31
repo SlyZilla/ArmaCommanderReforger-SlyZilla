@@ -345,10 +345,14 @@ class ACR_MapDeclutter
  // Grenadier Team ×2, MG Team ×2 (-39 RP)"; "Popp bought ..." for another commander's), a line
  // repeated straight after itself becomes "line ×N"; only lines within MERGE_SECONDS of the run's
  // newest merge. texts and entryAges: the shown lines, newest first, and their newest line's age.
- static void MergeFeed(array<string> lines, array<int> ages, string myTag, notnull array<string> texts, notnull array<int> entryAges)
+ // spots (as lines) and entrySpots (as texts): where a line happened; a shown line takes its run's
+ // newest line's (vector.Zero: nowhere).
+ static void MergeFeed(array<string> lines, array<int> ages, string myTag, notnull array<string> texts, notnull array<int> entryAges, array<vector> spots = null, array<vector> entrySpots = null)
  {
   texts.Clear();
   entryAges.Clear();
+  if (entrySpots) entrySpots.Clear();
+  vector runSpot;
   // The open run: a purchase run (tag, units and counts, RP) or a repeated line (count).
   bool buying;
   string runTag;
@@ -384,7 +388,13 @@ class ACR_MapDeclutter
     runCount++;
     continue;
    }
-   if (runCount > 0) Close(texts, entryAges, buying, runTag, myTag, runLine, runAge, runCount, runRp, units, unitCounts);
+   if (runCount > 0)
+   {
+    Close(texts, entryAges, buying, runTag, myTag, runLine, runAge, runCount, runRp, units, unitCounts);
+    if (entrySpots) entrySpots.Insert(runSpot);
+   }
+   runSpot = vector.Zero;
+   if (spots && i < spots.Count()) runSpot = spots[i];
    buying = purchase;
    runTag = tag;
    runLine = line;
@@ -399,7 +409,11 @@ class ACR_MapDeclutter
     unitCounts.Insert(1);
    }
   }
-  if (runCount > 0) Close(texts, entryAges, buying, runTag, myTag, runLine, runAge, runCount, runRp, units, unitCounts);
+  if (runCount > 0)
+  {
+   Close(texts, entryAges, buying, runTag, myTag, runLine, runAge, runCount, runRp, units, unitCounts);
+   if (entrySpots) entrySpots.Insert(runSpot);
+  }
  }
 
  protected static void Close(array<string> texts, array<int> entryAges, bool buying, string tag, string myTag, string line, int age, int count, int rp, array<string> units, array<int> unitCounts)
