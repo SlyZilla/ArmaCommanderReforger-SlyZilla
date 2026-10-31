@@ -82,6 +82,13 @@ class ACR_TestWorksShots
   // High and oblique, from the threatened side: can the whole base's coverage be judged?
   float high = ACR_BaseDefences.SearchRadius(town) * 0.9;
   AddShot(center + look * high + Vector(0, Math.Clamp(high, 90, 120), 0), Vector(towards, -45, 0), string.Format("works_%1_high", tag), "the whole town, high");
+  // A style at a glance: the town from high above, and nothing closer.
+  if (ACR_TestBaseWorks.StyleTest("acrStyleShots"))
+  {
+   float above = Math.Clamp(ACR_BaseDefences.SearchRadius(town) * 1.5, 130, 260);
+   AddShot(center + Vector(0, above, 0), Vector(towards, -89, 0), string.Format("style%1_%2_above", work.m_Style.m_iKind, tag), ACR_BaseStyle.Word(work.m_Style.m_iKind));
+   return;
+  }
   foreach (int l, ACR_BaseLine line : work.m_aLines) LineShots(line, tag, l);
   foreach (int i, ACR_BaseSite site : work.m_aSites)
   {

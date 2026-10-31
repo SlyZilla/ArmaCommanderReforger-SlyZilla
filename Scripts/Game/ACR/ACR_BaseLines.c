@@ -570,6 +570,141 @@ class ACR_BaseLiner : Managed
  }
 }
 
+// How a town's works are laid out (the owner's defence styles, 31 Oct 2026). Each town gets one from its ground
+// and what threatens it, weighted among the near-best and seeded, per side: the same town can be a wall to one
+// side and strongpoints to the other. They differ in where lines are looked for and how they're chosen, so
+// the rest of the plan (nests, gaps, wire, posts) works on any of them. -acrBaseStyles 0: all WALL.
+class ACR_BaseStyle : Managed
+{
+ static const int WALL = 0;   // a long line across each approach, from cover to cover
+ static const int POINTS = 1; // strongpoints: short lines curving back at both ends, well apart, gaps on purpose
+ static const int DEPTH = 2;  // a thin line well out, the real one close in behind it
+ static const int FUNNEL = 3; // lines across the ways in, the guns on those
+ static const int RING = 4;   // a small place: close in, all the way round
+ static const int KINDS = 5;
+ static int s_iForceForTest = -1;
+
+ int m_iKind = WALL;
+ ref array<float> m_aOffsets = {4, 9, 15, 22, 30, 40}; // m past the town's edge lines are looked for at
+ ref array<float> m_aLater = {};     // ... at tier II, where it differs: that tier starts afresh
+ int m_iOneWay = 24;                 // long pieces from a seed each way
+ float m_fClash = 22;                // m between lines
+ float m_fMinThreat = 0.2;           // approaches less threatened than this get no line
+ float m_fLengthCap = 120;           // m of a line that count for it
+ float m_fLaneWorth = 0.15;          // what a road through it counts for
+ float m_fFirstShare = 1;            // tier I's share of its budget: the rest goes to tier II
+ bool m_bApart;                      // lines don't tie into each other
+ bool m_bGunsOnLanes;
+
+ static string Word(int kind)
+ {
+  switch (kind)
+  {
+   case WALL: return "wall";
+   case POINTS: return "strongpoints";
+   case DEPTH: return "depth";
+   case FUNNEL: return "funnel";
+   case RING: return "ring";
+  }
+  return "?";
+ }
+
+ static bool On()
+ {
+  string value;
+  return !(ACR_Options.Get("acrBaseStyles", value) && value == "0");
+ }
+
+ array<float> OffsetsFor(int tier)
+ {
+  if (tier >= 2 && !m_aLater.IsEmpty()) return m_aLater;
+  return m_aOffsets;
+ }
+
+ static ACR_BaseStyle For(ACR_BaseWork work, ACR_BaseSurvey survey)
+ {
+  ACR_BaseStyle style = new ACR_BaseStyle();
+  int threatened;
+  float open, walls;
+  int ways;
+  for (int s = 0; s < ACR_BaseSurvey.SECTORS; s++)
+  {
+   if (survey.m_aThreat[s] < 0.5) continue;
+   threatened++;
+   open += survey.m_aOpen[s];
+   walls += survey.m_aWall[s];
+   ways += survey.m_aRoads[s];
+  }
+  float arc = threatened * 1.0 / ACR_BaseSurvey.SECTORS;
+  open /= Math.Max(threatened, 1);
+  walls /= Math.Max(threatened, 1);
+  int town = survey.m_iTown;
+  array<float> scores = {};
+  for (int k = 0; k < KINDS; k++) scores.Insert(-1);
+  scores[WALL] = 0.55 + 0.2 * walls + 0.1 * (1 - arc);
+  scores[POINTS] = 0.6 + 0.35 * arc;
+  if (town >= 40) scores[POINTS] = scores[POINTS] + 0.1;
+  if (town >= 15) scores[DEPTH] = 0.55 + 0.55 * open;
+  if (ways >= 1) scores[FUNNEL] = 0.6 + 0.08 * Math.Min(ways, 3);
+  if (town <= 25) scores[RING] = 0.9 - 0.012 * town;
+  // The commander's doctrine leans it: a Fortress digs in depth, a Raider keeps to islands it can leave.
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  ACR_AICommander commander;
+  if (manager) commander = manager.AICommanderFor(work.m_sFaction);
+  ACR_AIDoctrine doctrine;
+  if (commander && commander.m_bActive) doctrine = commander.Doctrine();
+  if (doctrine)
+  {
+   if (doctrine.m_sKey == "fortress")
+   {
+    if (scores[DEPTH] >= 0) scores[DEPTH] = scores[DEPTH] + 0.2;
+    scores[WALL] = scores[WALL] + 0.1;
+   }
+   if (doctrine.m_sKey == "raider") scores[POINTS] = scores[POINTS] + 0.2;
+   if (doctrine.m_sKey == "blitz" && scores[FUNNEL] >= 0) scores[FUNNEL] = scores[FUNNEL] + 0.15;
+  }
+  int kind = ACR_Variety.Pick(scores, string.Format("base style %1 %2", work.m_Base.m_sName, work.m_sFaction), 0.25);
+  if (!On()) kind = WALL;
+  if (s_iForceForTest >= 0) kind = s_iForceForTest;
+  style.Set(kind);
+  PrintFormat("[ACR] BASEWORKS %1: style %2 (arc %3, open %4, walls %5, ways %6, %7 buildings)", work.m_Base.m_sName, Word(kind), arc, open, walls, ways, town);
+  return style;
+ }
+
+ protected void Set(int kind)
+ {
+  m_iKind = kind;
+  switch (kind)
+  {
+   case POINTS:
+    m_aOffsets = {9, 15, 22, 30};
+    m_iOneWay = 7;
+    m_fClash = 40;
+    m_fLengthCap = 50;
+    m_bApart = true;
+    break;
+   case DEPTH:
+    m_aOffsets = {40, 50, 32};
+    m_aLater = {4, 9, 15};
+    m_iOneWay = 12;
+    m_fFirstShare = 0.55;
+    break;
+   case FUNNEL:
+    m_aOffsets = {9, 15, 22};
+    m_iOneWay = 14;
+    m_fLaneWorth = 0.8;
+    m_bGunsOnLanes = true;
+    break;
+   case RING:
+    m_aOffsets = {3, 6, 10};
+    m_iOneWay = 12;
+    m_fMinThreat = 0;
+    m_fClash = 12;
+    break;
+  }
+ }
+}
+
 class ACR_BaseLines
 {
  // Long high piece: 3.43 m over its ends (x -1.69 .. 1.74); these leave a few cm of overlap at a joint.
@@ -580,14 +715,12 @@ class ACR_BaseLines
  static const int BREAK_ROAD = 2;
  static const float MIN_LINE = 30;        // m: shorter isn't a line, unless both ends stand on something
  static const float MIN_GAP = 6.5;        // m: ... and then not under this
- static const int MOST_ONE_WAY = 24;      // long pieces from a seed each way
  static const float EXTEND_REACH = 30;    // m an open end looks for something to end on
  static const int MOST_EXTEND = 10;       // long pieces it may spend getting there
  // Cap on one base's sandbag pieces: replicated props, each a streaming node and a navmesh rebuild. For
  // scale, one vanilla sandbag position is 26-40 pieces, and a medium checkpoint about 28.
  static const int MOST_PIECES = 140;
  static const int MOST_WIRE = 10;         // wire segments in front of one line
- static const float CLASH = 22;           // m between lines
  static const float WALK_APART = 28;      // m of bags between gaps for men on foot, and up to 10 more
  static const float NEST_CLEAR = 19;      // m from a nest's middle to a walk gap: its 12 m of bags each side stay unbroken
  static const int NEST_WINGS = 4;         // long pieces of bags either side of a nest: 13.5 m
@@ -603,7 +736,6 @@ class ACR_BaseLines
  static const float COMPACT_DEPTH = 1.1;
  static const float COMPACT_ROAD = 4;     // m from its middle to a road's edge
  static const float COMPACT_HOUSE = 5;    // ... to a building, its middle and its gun (1.1 m forward)
- static ref array<float> s_aOffsets = {4, 9, 15, 22, 30, 40};
 
  // ---------------------------------------------------------------- budgets
 
@@ -626,9 +758,21 @@ class ACR_BaseLines
   array<ref ACR_BaseLine> pool = {};
   array<int> tried = {};
   int started = System.GetTickCount();
-  GapLines(work, survey, kit, pool);
+  work.m_Style = ACR_BaseStyle.For(work, survey);
+  ACR_BaseStyle style = work.m_Style;
+  // A gap in a wall is close in: that's tier II's line where tier I's is far out.
+  bool startsFar = !style.m_aLater.IsEmpty();
+  if (!startsFar) GapLines(work, survey, kit, pool);
   int total = 0;
-  for (int tier = 1; tier <= 2; tier++) total += Fill(work, survey, kit, pool, tried, tier, Budget(tier, survey.m_iTown));
+  int first = Budget(1, survey.m_iTown) * style.m_fFirstShare;
+  total += Fill(work, survey, kit, pool, tried, 1, first);
+  if (startsFar)
+  {
+   pool.Clear();
+   tried.Clear();
+   GapLines(work, survey, kit, pool);
+  }
+  total += Fill(work, survey, kit, pool, tried, 2, Budget(2, survey.m_iTown) + Budget(1, survey.m_iTown) - first);
   array<ref ACR_BaseLine> behind = {};
   array<int> noMore = {};
   for (int s = 0; s < ACR_BaseSurvey.SECTORS; s++) noMore.Insert(s);
@@ -641,18 +785,19 @@ class ACR_BaseLines
 
  // Lines worth having on one approach: a few offsets and shifts past the town's edge, a seed nudged along
  // if it doesn't fit, until two have come up.
- protected static void WalkSector(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, notnull array<ref ACR_BaseLine> pool, int s)
+ protected static void WalkSector(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, notnull array<ref ACR_BaseLine> pool, int s, int tier)
  {
   string town = work.m_Base.m_sName;
   RandomGenerator rng = ACR_Variety.For(string.Format("base line %1 %2", town, s));
   // The second look at an approach starts from further out, and differently.
   array<float> offsets = {};
-  foreach (float each : s_aOffsets) offsets.Insert(each);
+  array<float> wanted = work.m_Style.OffsetsFor(tier);
+  foreach (float each : wanted) offsets.Insert(each);
   if (survey.m_iPass > 0)
   {
    rng = ACR_Variety.For(string.Format("base line again %1 %2", town, s));
    offsets.Clear();
-   for (int o = s_aOffsets.Count() - 1; o >= 0; o--) offsets.Insert(s_aOffsets[o] - 2);
+   for (int o = wanted.Count() - 1; o >= 0; o--) offsets.Insert(wanted[o] - 2);
   }
   float bearing = ACR_BaseSurvey.SectorBearing(s);
   array<float> nudges = {0, -7, 7};
@@ -714,7 +859,7 @@ class ACR_BaseLines
    }
    line.m_bGap = true;
    line.m_sEndA = "wall";
-   line.m_sEndB = liner.Walk(seed, heading, side, MOST_ONE_WAY, line.m_aRight, line.m_aLanes, line.m_aLaneOut, kit);
+   line.m_sEndB = liner.Walk(seed, heading, side, work.m_Style.m_iOneWay, line.m_aRight, line.m_aLanes, line.m_aLaneOut, kit);
    words = string.Format("gap, %1 pieces, ended %2", line.m_aRight.Count(), ACR_BaseLiner.FitWord(liner.m_iStop));
    if (side < 0)
    {
@@ -735,9 +880,9 @@ class ACR_BaseLines
     survey.LogWalk(work.m_Base.m_sName, sector, past, string.Format("seed: %1", ACR_BaseLiner.FitWord(fitRight)));
     return null;
    }
-   line.m_sEndB = liner.Walk(seed, heading, 1, MOST_ONE_WAY, line.m_aRight, line.m_aLanes, line.m_aLaneOut, kit);
+   line.m_sEndB = liner.Walk(seed, heading, 1, work.m_Style.m_iOneWay, line.m_aRight, line.m_aLanes, line.m_aLaneOut, kit);
    int stopRight = liner.m_iStop;
-   line.m_sEndA = liner.Walk(seed, heading * -1, -1, MOST_ONE_WAY, line.m_aLeft, line.m_aLanes, line.m_aLaneOut, kit);
+   line.m_sEndA = liner.Walk(seed, heading * -1, -1, work.m_Style.m_iOneWay, line.m_aLeft, line.m_aLanes, line.m_aLaneOut, kit);
    words = string.Format("%1 pieces ended %2, %3 pieces ended %4", line.m_aRight.Count(), ACR_BaseLiner.FitWord(stopRight), line.m_aLeft.Count(), ACR_BaseLiner.FitWord(liner.m_iStop));
   }
   Measure(line, survey);
@@ -766,7 +911,7 @@ class ACR_BaseLines
     vector middle = (a + b) * 0.5;
     float bearing = ACR_BaseDefences.Bearing(middle - survey.m_vCenter);
     int sector = ACR_BaseSurvey.Sector(bearing);
-    if (survey.m_aThreat[sector] < ACR_BaseSurvey.MIN_SPOT_THREAT) continue;
+    if (survey.m_aThreat[sector] < work.m_Style.m_fMinThreat) continue;
     // Roughly across the way out, not along it.
     vector across = ACR_BaseDefences.FlatDir(a, b);
     if (Math.AbsFloat(ACR_BaseDefences.DotXZ(across, ACR_BaseSurvey.Dir(bearing))) > 0.6) continue;
@@ -824,7 +969,7 @@ class ACR_BaseLines
    int next = -1;
    for (int s = 0; s < ACR_BaseSurvey.SECTORS; s++)
    {
-    if (tried.Contains(s) || survey.m_aThreat[s] < ACR_BaseSurvey.MIN_SPOT_THREAT) continue;
+    if (tried.Contains(s) || survey.m_aThreat[s] < work.m_Style.m_fMinThreat) continue;
     if (next < 0 || survey.WeakLight(s) > survey.WeakLight(next)) next = s;
    }
    float bestWeak = -100;
@@ -832,7 +977,7 @@ class ACR_BaseLines
    if (next >= 0 && (pool.IsEmpty() || survey.WeakLight(next) > bestWeak))
    {
     tried.Insert(next);
-    WalkSector(work, survey, kit, pool, next);
+    WalkSector(work, survey, kit, pool, next, tier);
     continue;
    }
    if (pool.IsEmpty())
@@ -848,7 +993,7 @@ class ACR_BaseLines
    foreach (ACR_BaseLine line : pool)
    {
     open.Insert(line);
-    scores.Insert(Score(line, survey));
+    scores.Insert(Score(line, survey, work.m_Style));
    }
    int picked = ACR_Variety.Pick(scores, string.Format("base line pick %1 %2 %3", work.m_Base.m_sName, tier, round), 0.15);
    ACR_BaseLine chosen = open[picked];
@@ -870,7 +1015,7 @@ class ACR_BaseLines
   return used;
  }
 
- protected static float Score(ACR_BaseLine line, ACR_BaseSurvey survey)
+ protected static float Score(ACR_BaseLine line, ACR_BaseSurvey survey, ACR_BaseStyle style)
  {
   float weak = 0;
   int n = 0;
@@ -884,7 +1029,7 @@ class ACR_BaseLines
    weak += survey.WeakLight(ACR_BaseSurvey.Sector(ACR_BaseDefences.Bearing(b.m_vFacing)));
    n++;
   }
-  float score = weak / Math.Max(n, 1) + Math.Min(line.m_fLength, 120) / 60 + 0.3 * line.Anchors() + 0.6 * line.m_fView + 0.15 * line.m_aLanes.Count();
+  float score = weak / Math.Max(n, 1) + Math.Min(line.m_fLength, style.m_fLengthCap) / 60 + 0.3 * line.Anchors() + 0.6 * line.m_fView + style.m_fLaneWorth * line.m_aLanes.Count();
   if (line.m_bGap) score += 0.4;
   return score;
  }
@@ -931,11 +1076,11 @@ class ACR_BaseLines
   foreach (ACR_BaseLine other : work.m_aLines)
   {
    if (other == line || other.m_aPieces.IsEmpty()) continue;
-   if (vector.DistanceXZ(other.m_vMiddle, line.m_vMiddle) > (other.m_fLength + line.m_fLength) * 0.5 + CLASH + 2) continue;
+   if (vector.DistanceXZ(other.m_vMiddle, line.m_vMiddle) > (other.m_fLength + line.m_fLength) * 0.5 + work.m_Style.m_fClash + 2) continue;
    foreach (int i, ACR_LinePiece piece : run)
    {
     foreach (ACR_LinePiece chosen : other.m_aPieces)
-     if (vector.DistanceXZ(piece.m_vPos, chosen.m_vPos) < CLASH) return i;
+     if (vector.DistanceXZ(piece.m_vPos, chosen.m_vPos) < work.m_Style.m_fClash) return i;
    }
   }
   return -1;
@@ -1282,6 +1427,12 @@ class ACR_BaseLines
   for (int level = s_iFirstNestLevelForTest; level < levels && made < most; level++) made = NestsAt(work, survey, most, level, made);
  }
 
+ protected static bool LaneNear(ACR_BaseLine line, vector at)
+ {
+  foreach (vector lane : line.m_aLanes) if (vector.DistanceXZ(lane, at) < 30) return true;
+  return false;
+ }
+
  // Those of a level, after the 'made' already placed: how many now.
  protected static int NestsAt(ACR_BaseWork work, ACR_BaseSurvey survey, int most, int level, int made)
  {
@@ -1398,7 +1549,9 @@ class ACR_BaseLines
    {
     if (ACR_BaseWorks.GunsNear(work, at, yaws[c])) continue;
     open.Insert(c);
-    scores.Insert(survey.Weak(ACR_BaseSurvey.Sector(yaws[c])));
+    float nestScore = survey.Weak(ACR_BaseSurvey.Sector(yaws[c]));
+    if (work.m_Style.m_bGunsOnLanes && LaneNear(onLines[c], at)) nestScore += 0.5;
+    scores.Insert(nestScore);
    }
    if (open.IsEmpty()) break;
    int picked = open[ACR_Variety.Pick(scores, string.Format("base nest %1 %2", work.m_Base.m_sName, made))];

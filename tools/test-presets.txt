@@ -213,6 +213,16 @@ baseworksai|-acrBaseWorksAITest 1|620|Worlds/ACR_Everon.ent
 baseworksplan|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Everon.ent
 baseworksplanarland|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Arland.ent
 baseworksplankolguyev|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Kolguyev.ent
+planwall|-acrStylePlanWallTest 1|120|Worlds/ACR_Everon.ent
+planpoints|-acrStylePlanPointsTest 1|120|Worlds/ACR_Everon.ent
+plandepth|-acrStylePlanDepthTest 1|120|Worlds/ACR_Everon.ent
+planfunnel|-acrStylePlanFunnelTest 1|120|Worlds/ACR_Everon.ent
+planring|-acrStylePlanRingTest 1|120|Worlds/ACR_Everon.ent
+shotswall|-acrStyleShotsWallTest 1|300|Worlds/ACR_Everon.ent
+shotspoints|-acrStyleShotsPointsTest 1|300|Worlds/ACR_Everon.ent
+shotsdepth|-acrStyleShotsDepthTest 1|300|Worlds/ACR_Everon.ent
+shotsfunnel|-acrStyleShotsFunnelTest 1|300|Worlds/ACR_Everon.ent
+shotsring|-acrStyleShotsRingTest 1|300|Worlds/ACR_Everon.ent
 worksfight|-acrWorksFightTest 1|480|Worlds/ACR_Everon.ent
 worksfightold|-acrWorksFightOldTest 1|480|Worlds/ACR_Everon.ent
 worksfightcompact|-acrWorksFightCompactTest 1|480|Worlds/ACR_Everon.ent

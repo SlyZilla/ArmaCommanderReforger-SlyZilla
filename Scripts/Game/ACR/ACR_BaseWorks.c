@@ -54,6 +54,7 @@ class ACR_BaseWork : Managed
 {
  ACR_Base m_Base;
  string m_sFaction;
+ ref ACR_BaseStyle m_Style = new ACR_BaseStyle();
  int m_iTier;                       // the highest tier finished (0: none yet)
  ref array<ref ACR_BaseSite> m_aSites = {};
  ref array<ref ACR_BaseLine> m_aLines = {};
