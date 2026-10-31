@@ -219,6 +219,11 @@ worksfightcompact|-acrWorksFightCompactTest 1|480|Worlds/ACR_Everon.ent
 baseworkscompact|-acrBaseWorksCompactTest 1|900|Worlds/ACR_Everon.ent
 worksshotscompact|-acrWorksShotsCompactTest 1|600|Worlds/ACR_Everon.ent
 worksshotseveron|-acrWorksShotsTest 1|600|Worlds/ACR_Everon.ent
+wings|-acrWingsTest 1|240|Worlds/ACR_Everon.ent
+wingsarland|-acrWingsTest 1|240|Worlds/ACR_Arland.ent
+wingskolguyev|-acrWingsTest 1|240|Worlds/ACR_Kolguyev.ent
+wingsoff|-acrWingsOffTest 1|240|Worlds/ACR_Everon.ent
+wingshots|-acrWingShotsTest 1|420|Worlds/ACR_Everon.ent
 worksaisoak|-acrWorksAISoakTest 1|1320|Worlds/ACR_Everon.ent
 worksshots|-acrWorksShotsTest 1|600|Worlds/ACR_Kolguyev.ent
 contentpack|-acrContentPackTest 1|120

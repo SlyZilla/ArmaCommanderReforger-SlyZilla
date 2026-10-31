@@ -35,6 +35,8 @@ class ACR_Roadblock : Managed
 	vector m_vPost;               // where its holders and defenders post, off the lane (ACR_RoadblockLane.Post)
 	float m_fPostRadius = 15;
 	int m_iLaneMoved;             // pieces slid out of the lane
+	ref array<IEntity> m_aWings = {}; // the bags running out from its ends (ACR_Wings)
+	ref array<ref ACR_WingPlan> m_aWingPlans = {};
 }
 
 class ACR_Roadblocks : Managed
@@ -525,6 +527,7 @@ class ACR_Roadblocks : Managed
 		if (!rb) return;
 		if (rb.m_Turret) VacateTurret(rb.m_Turret);
 		if (rb.m_Entity) ACR_Navmesh.DeleteStructure(rb.m_Entity);
+		ACR_Wings.Remove(rb.m_aWings);
 
 		// Half its price back where it was paid from (the medium checkpoint's DISMANTLE_REFUND RP);
 		// a destroyed truck's half is lost.
@@ -623,7 +626,11 @@ class ACR_Roadblocks : Managed
 			ACR_Roadblock rb = s_aRoadblocks[i];
 			if (!rb || !rb.m_Entity || rb.m_Entity.IsDeleted())
 			{
-				if (rb) ACR_Defenders.Remove(rb.m_Defenders);
+				if (rb)
+				{
+					ACR_Defenders.Remove(rb.m_Defenders);
+					ACR_Wings.Remove(rb.m_aWings);
+				}
 				s_aRoadblocks.RemoveOrdered(i);
 			}
 		}

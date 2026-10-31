@@ -1515,6 +1515,7 @@ class ACR_Squad : Managed
    CancelRoadblock("failed: the composition did not spawn");
    return;
   }
+  ACR_Wings.ForRoadblock(rb);
   // Built: nothing left to refund (a dismantle gives half back to whoever paid).
   rb.m_PaidTruck = m_RoadblockTruck;
   rb.m_fPaidLoads = m_fRoadblockLoads;
