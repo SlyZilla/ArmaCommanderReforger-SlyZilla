@@ -1845,6 +1845,7 @@ class ACR_Squad : Managed
    // neither the walk's limit nor the give-up timer.
    plan.m_fDeadline += (dt - 1.0) * 1000;
    plan.m_fLastProgress += (dt - 1.0) * 1000;
+   plan.m_fWalkAt += (dt - 1.0) * 1000;
    dt = 1.0;
   }
   if (CountAlive() <= 0)
@@ -1891,6 +1892,7 @@ class ACR_Squad : Managed
   if (!present)
   {
    if (m_Group && !m_Group.GetCurrentWaypoint() && !HasPlayer()) IssueWaypoint(WP_MOVE, plan.m_vStage, 4.0);
+   else if (!HasPlayer()) KeepWalking(plan, now);
    SetOrder(FortifyLabel("moving to the site"), ACR_EOrderState.FORTIFY);
    return;
   }
@@ -1917,6 +1919,41 @@ class ACR_Squad : Managed
  }
 
  // Base works go on to the next site, unless it's a fight that stopped the work: that stops the order.
+ // A squad can stop dead on the way with its waypoint still there, so the move's own recovery never
+ // sees it: the game's group tree logs "Failed move from ... to waypoint ..." once and the men stand
+ // (srv:baseworks seed 46199, Montignac: the leader 87 m off for the whole of the walk's limit, 9 men
+ // alive, no enemy; 31 Oct, Saint-Philippe: a man 1.7 m off the navmesh, and this got them going).
+ // Stopped for a while: onto the navmesh and the same order again; twice that and the nearest
+ // walkable point instead of the same one. The walk's limit still ends it.
+ static const float WALK_STOPPED_MS = 20000;
+ static const float WALK_MOVED_M = 2.0;
+ void KeepWalking(ACR_FortifyPlan plan, float now)
+ {
+  IEntity anchor = GetAnchor();
+  if (!anchor) return;
+  vector at = anchor.GetOrigin();
+  if ((plan.m_vWalkFrom[0] == 0 && plan.m_vWalkFrom[2] == 0) || vector.DistanceXZ(at, plan.m_vWalkFrom) > WALK_MOVED_M)
+  {
+   plan.m_vWalkFrom = at;
+   plan.m_fWalkAt = now;
+   return;
+  }
+  if (now - plan.m_fWalkAt < WALK_STOPPED_MS) return;
+  plan.m_fWalkAt = now;
+  plan.m_iWalkRetries++;
+  StepOntoNavmesh(0);
+  string how = "same spot";
+  vector walkable;
+  if (plan.m_iWalkRetries > 2 && ReachableNear(plan.m_vStage, 5 * plan.m_iWalkRetries, walkable))
+  {
+   how = string.Format("nearest walkable point, %1 m off", (int)vector.DistanceXZ(walkable, plan.m_vStage));
+   plan.m_vStage = walkable;
+   m_MoveTarget = walkable;
+  }
+  IssueWaypoint(WP_MOVE, plan.m_vStage, 4.0);
+  PrintFormat("[ACR] SQUAD %1: stopped at %2, %3 m from the site at %4; on again, try %5 (%6)", m_Name, at, (int)vector.DistanceXZ(at, plan.m_vSite), plan.m_vSite, plan.m_iWalkRetries, how);
+ }
+
  protected bool SkipWorksSite(ACR_FortifyPlan plan)
  {
   if (!plan.m_Work || ACR_FobBuild.IsContested(plan.m_vSite, plan.m_sFaction) || KnownEnemies(60, true) > 0) return false;

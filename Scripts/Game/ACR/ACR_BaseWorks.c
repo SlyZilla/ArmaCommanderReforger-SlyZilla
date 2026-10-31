@@ -397,6 +397,9 @@ class ACR_BaseWorks
   if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
   plan.m_Site.m_bSkipped = true;
   PrintFormat("[ACR] BASEWORKS %1: %2 gave up on the %3 at %4, refunded %5 RP", plan.m_sFaction, squad.GetName(), SiteWords(plan.m_Site), plan.m_vSite, plan.m_iCost);
+  // Where it got to, for a site it never reached: stuck, or just far.
+  IEntity anchor = squad.GetAnchor();
+  if (anchor) PrintFormat("[ACR] BASEWORKS %1: arrived %2, stage %3, the squad at %4, %5 m off (%6 men, %7)", plan.m_sFaction, plan.m_bArrived, plan.m_vStage, anchor.GetOrigin(), (int)vector.DistanceXZ(anchor.GetOrigin(), plan.m_vSite), squad.CountAlive(), squad.ThinkMovement());
   if (!s_aWorks.Contains(plan.m_Work) || plan.m_Work.m_sFaction != plan.m_sFaction)
   {
    squad.HoldBaseWorks(plan.m_Work);

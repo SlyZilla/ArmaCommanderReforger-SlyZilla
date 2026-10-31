@@ -47,6 +47,9 @@ class ACR_FortifyPlan : Managed
  float m_fLastProgress;              // world ms of the last progress (3 min without it at the site: give up)
  float m_fDeadline;                  // world ms by which the squad must reach the site
  bool m_bArrived;
+ vector m_vWalkFrom;                 // where the squad last was on its walk ...
+ float m_fWalkAt;                    // ... and when (ACR_Squad.KeepWalking)
+ int m_iWalkRetries;
  ACR_BaseWork m_Work;                // base works: the town it is part of (ACR_BaseWorks)
  ACR_BaseSite m_Site;                // ... and the site
 }
