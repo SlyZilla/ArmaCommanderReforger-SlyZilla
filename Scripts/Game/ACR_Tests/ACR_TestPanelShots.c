@@ -171,7 +171,7 @@ class ACR_TestPanelShots
   {
    ACR_TestRegress.Check("panelshots: the strip is back after the map", ACR_KeyHints.ShownForTest(), "");
    FileIO.DeleteFile(ACR_UiPrefs.TEST_PREFS);
-   ACR_TestRegress.Complete("panelshots", 51);
+   ACR_TestRegress.Complete("panelshots", 53);
   }
  }
 
@@ -247,6 +247,30 @@ class ACR_TestPanelShots
    pc.ACR_OnPanelAction(ACR_EPanelAction.DEFEND);
   }
   if (at == 40 && panel) ACR_TestRegress.Check("panelshots: cancelled, the words go", !panel.NoteShownForTest(), "");
+  // Radio lines, as a fight sends them: INTEL at home hid them.
+  if (at == 41)
+  {
+   SCR_ChatPanelManager chat = SCR_ChatPanelManager.GetInstance();
+   if (chat)
+   {
+    for (int line = 1; line <= 5; line++) chat.OnNewMessage(string.Format("[Radio] Alpha 1: contact, %1 infantry, 150 m E of Farm.", line));
+   }
+  }
+  if (at == 43)
+  {
+   float home = ACR_PanelMover.ChatLeftForTest();
+   ACR_TestRegress.Check("panelshots: radio lines stand clear of the panels at home", home > 0, string.Format("%1", home));
+   Shot("panel_11_radio");
+   // Where the lines went: they move on again.
+   ACR_UiPrefs.SetSpot(ACR_UiPrefs.FEED, home, 20);
+  }
+  if (at == 46)
+  {
+   float moved = ACR_PanelMover.ChatLeftForTest();
+   ACR_TestRegress.Check("panelshots: and of a panel put where they went", moved >= 0, string.Format("%1", moved));
+   Shot("panel_12_radio_moved");
+   ACR_UiPrefs.Forget(ACR_UiPrefs.FEED);
+  }
  }
 
  protected static bool s_bKeysBefore;
