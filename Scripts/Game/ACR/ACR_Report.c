@@ -149,8 +149,11 @@ modded class SCR_VehicleDamageManagerComponent
 {
  override void OnDamageStateChanged(EDamageState newState, EDamageState previousDamageState, bool isJIP)
  {
-  // The vehicle's side before it burns (an empty wreck reports none).
+  // The vehicle's side before it burns. The game clears that when the last occupant leaves, so with
+  // the crew dead or bailed out (nearly always, by the time it blows up) nobody lost it (2-hour
+  // matches: 8 destroyed, 0 lost): then the side that bought it. Nobody's if neither (a civilian car).
   string side = ACR_Intel.FactionKeyOf(GetOwner());
+  if (side.IsEmpty()) side = ACR_Vehicles.BoughtBy(GetOwner());
   super.OnDamageStateChanged(newState, previousDamageState, isJIP);
   if (newState == EDamageState.DESTROYED && previousDamageState != EDamageState.DESTROYED && !isJIP) ACR_Report.OnVehicleDown(GetOwner(), GetInstigator(), side);
  }
