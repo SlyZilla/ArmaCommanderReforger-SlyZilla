@@ -29,6 +29,7 @@ modded class ACR_MapData
 {
  bool m_bDeclOn;
  bool m_bDeclFar;
+ bool m_bDeclZonesOff;   // the Zones layer is off (ACR_MapLayers): no capture rings, no mortar ranges
  string m_sDeclSelectedBase;
  // per base
  ref array<int> m_DeclSide = {};
@@ -45,6 +46,7 @@ modded class ACR_MapData
  ref array<int> m_DeclCount = {};
  ref array<bool> m_DeclRep = {};
  ref array<int> m_DeclMark = {};       // ACR_ESquadMark, -1 none
+ ref array<bool> m_DeclHidden = {};    // its kind's layer is off (ACR_MapLayers): no icon, soldiers or order lines
  ref array<vector> m_DeclShown = {};
  ref array<float> m_DeclSymW = {};     // the symbol's size on screen (px)
  ref array<float> m_DeclSymH = {};
@@ -69,6 +71,12 @@ modded class ACR_MapData
  bool ShownByOther(int g)
  {
   return m_bDeclOn && g >= 0 && g < m_DeclRep.Count() && !m_DeclRep[g];
+ }
+
+ // A squad whose kind's layer is off (a hidden squad counts as shown by none: ShownByOther).
+ bool DeclHidden(int g)
+ {
+  return m_bDeclOn && g >= 0 && g < m_DeclHidden.Count() && m_DeclHidden[g];
  }
 }
 
@@ -150,7 +158,7 @@ modded class ACR_OrderDisplay
    bool keep = i >= data.m_DeclKeep.Count() || data.m_DeclKeep[i];
    bool contested = i < data.m_BaseContested.Count() && data.m_BaseContested[i] == 1;
    int color = ACR_MapDeclutter.SideColor(side).PackToInt();
-   if (!data.m_bDeclFar && i < data.m_BaseRadii.Count())
+   if (!data.m_bDeclFar && !data.m_bDeclZonesOff && i < data.m_BaseRadii.Count())
    {
     int ex, ey;
     mapEntity.WorldToScreen(pos[0] + data.m_BaseRadii[i], pos[2], ex, ey, true);
@@ -191,7 +199,7 @@ modded class ACR_OrderDisplay
   foreach (int i, RplId groupId : data.m_OrderGroups)
   {
    int g = data.m_GroupIds.Find(groupId);
-   if (g < 0 || g >= data.m_LeaderIds.Count()) continue;
+   if (g < 0 || g >= data.m_LeaderIds.Count() || data.DeclHidden(g)) continue;
    bool selected = data.IsSelected(groupId);
    if (data.m_bDeclFar && !selected) continue;
    vector from = data.ShownPos(g);
@@ -942,6 +950,12 @@ modded class SCR_PlayerController
   m_ACR_SquadPicker.Create(mapEntity.GetMapMenuRoot(), this, string.Format("%1 SQUADS AT %2", ids.Count(), where), ids, names, types, doings, strengths, selected, mx, my);
  }
 
+ // Squad g's kind has its layer off (ACR_PlayerMapSquads); a selected squad always shows.
+ protected bool ACR_LayerHides(int g)
+ {
+  return false;
+ }
+
  // A squad's symbol icons (EMilitarySymbolIcon), from its marker; 0 unknown.
  protected int ACR_GroupIcons(RplId groupId)
  {
@@ -1358,9 +1372,12 @@ modded class SCR_PlayerController
   data.m_DeclSymH.Clear();
   data.m_DeclSymX.Clear();
   data.m_DeclSymY.Clear();
+  data.m_DeclHidden.Clear();
   for (int g = 0; g < groups; g++)
   {
-   clusterable.Insert(g < data.m_Commandable.Count() && data.m_Commandable[g] == 1);
+   bool hidden = ACR_LayerHides(g);
+   data.m_DeclHidden.Insert(hidden);
+   clusterable.Insert(!hidden && g < data.m_Commandable.Count() && data.m_Commandable[g] == 1);
    bool picked = g < data.m_GroupIds.Count() && data.IsSelected(data.m_GroupIds[g]);
    selected.Insert(picked);
    float w = ws.DPIScale(30);
@@ -1392,6 +1409,11 @@ modded class SCR_PlayerController
    data.m_DeclSymY.Insert(oy);
   }
   ACR_MapDeclutter.Clusters(data.m_LeaderPositions, clusterable, selected, data.m_BasePositions, data.m_BaseRadii, data.m_DeclBaseOf, data.m_DeclCount, data.m_DeclRep);
+  // A hidden squad is in no "×N" and its icon goes (shown by none).
+  foreach (int hg, bool off : data.m_DeclHidden)
+  {
+   if (off && hg < data.m_DeclRep.Count()) data.m_DeclRep[hg] = false;
+  }
   // What icons keep clear of: every base's dot, and its name where it is now.
   float dot = ws.DPIScale(10);
   float gap = ws.DPIScale(4);
@@ -1700,6 +1722,7 @@ modded class SCR_PlayerController
     {
      int g = m_ACR_Data.m_GroupIds.Find(marker.m_GroupId);
      if (g >= 0 && g < m_ACR_Data.m_DeclBaseOf.Count() && m_ACR_Data.m_DeclBaseOf[g] >= 0) show = false;
+     if (m_ACR_Data.DeclHidden(g)) show = false;
     }
    }
    Widget root = marker.GetRootWidget();

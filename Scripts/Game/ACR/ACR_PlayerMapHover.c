@@ -194,7 +194,7 @@ modded class ACR_OrderDisplay
    int level = WarnLevel(data.m_Status[i * 6], data.m_Status[i * 6 + 1]);
    if (level == 0) continue;
    int g = data.m_GroupIds.Find(groupId);
-   if (g < 0) continue;
+   if (g < 0 || data.DeclHidden(g)) continue;
    int shown = g;
    if (data.ShownByOther(g)) shown = ACR_ShownBy(data, g);
    if (shown < 0) continue;
