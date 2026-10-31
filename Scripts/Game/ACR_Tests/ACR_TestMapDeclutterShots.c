@@ -7,7 +7,7 @@ class ACR_TestMapDeclutterShots
 {
  static const ResourceName RIFLE_SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
- static const int CHECKS = 15;
+ static const int CHECKS = 16;
  protected static int s_iListRows;
  protected static int s_iSearchRows;
  protected static string s_sSearchLabel;
@@ -119,7 +119,14 @@ class ACR_TestMapDeclutterShots
    bool lit = button && button.IsEntryActive();
    ACR_TestRegress.Check("mapdeclutter shots: the moon button darkens the map", pc.ACR_DeclTintShown() && ACR_MapDeclutter.Dark() && lit, string.Format("tint %1, dark %2, button %3 lit %4", pc.ACR_DeclTintShown(), ACR_MapDeclutter.Dark(), button != null, lit));
   }
-  if (tick == 42) Shot("declutter_5_dark");
+  if (tick == 42)
+  {
+   // The map's own place names, light over the dark film (they were dark on dark), the map's own off.
+   int places = pc.ACR_DarkPlacesShownForTest();
+   bool hidden = pc.ACR_MapNamesHiddenForTest();
+   ACR_TestRegress.Check("mapdeclutter shots: on the dark map the place names are drawn light (the map's own dark ones off)", places > 0 && hidden, string.Format("place names %1, map's own hidden %2", places, hidden));
+   Shot("declutter_5_dark");
+  }
   // UI size Normal.
   if (tick == 45)
   {
