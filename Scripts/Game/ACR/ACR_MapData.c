@@ -38,6 +38,10 @@ class ACR_MapData : Managed
  ref array<vector> m_PendingFrom = {};
  ref array<vector> m_PendingTo = {};
  ref array<int> m_PendingUntil = {};
+ // spotted enemies seen moving: where, heading (degrees, 0 = north) and fade
+ ref array<vector> m_ContactArrowPos = {};
+ ref array<int> m_ContactArrowHeading = {};
+ ref array<float> m_ContactArrowAlpha = {};
  // shared command
  ref array<int> m_CmdIds = {};
  ref array<string> m_CmdTags = {};

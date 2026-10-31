@@ -29,6 +29,7 @@ class ACR_TestHarness : Managed
  static const int MODE_TRANSPORT = 16;
  static const int MODE_STALL = 17;
  static const int MODE_RTSOVERLAY = 119; // #66: RTS camera order-line clipping and contact fading
+ static const int MODE_INTELMARKS = 146; // intel map markers: NATO symbols, labels, headings
  static const int MODE_STALLWAIT = 118; // #53: a vehicle waiting for its own crew to board isn't stuck
  static const int MODE_RECREW = 121; // a driver who bailed is put back (120: order voices, parked)
  static const int MODE_MORTARGIVEUP = 122; // a mortar that can't reach its base isn't sent there again
@@ -142,6 +143,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRoadHopsTest", flag)) mode = MODE_ROADHOPS;
   if (System.GetCLIParam("acrRoadHopsOffTest", flag)) mode = MODE_ROADHOPS;
   if (System.GetCLIParam("acrRTSOverlayTest", flag)) mode = MODE_RTSOVERLAY;
+  if (System.GetCLIParam("acrIntelMarksTest", flag)) mode = MODE_INTELMARKS;
   if (System.GetCLIParam("acrRideTest", flag)) mode = MODE_RIDE;
   if (System.GetCLIParam("acrLogisticsTest", flag)) mode = MODE_LOGISTICS;
   if (System.GetCLIParam("acrQueueTest", flag)) mode = MODE_QUEUE;
@@ -297,6 +299,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_MORTARGIVEUP) { ACR_TestMortarGiveUp.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADHOPS) { ACR_TestRoadHops.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RTSOVERLAY) { ACR_TestRTSOverlay.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_INTELMARKS) { ACR_TestIntelMarkers.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDE) { m_Vehicles.TestRide(); return; }
   if (m_Mode == MODE_LOGISTICS) { m_Logistics.TestLogistics(); return; }
   if (m_Mode == MODE_QUEUE) { m_Battle.TestQueue(); return; }
