@@ -100,6 +100,7 @@ class ACR_BaseLiner : Managed
  float m_fBaySide = 1; // 1 out towards the enemy, -1 back
  protected int m_iSinceBay;
  protected int m_iBayStep;
+ static int s_iBaysForTest;
 
  ACR_BaseSurvey m_Survey;
  ACR_BaseWork m_Work;
@@ -250,8 +251,7 @@ class ACR_BaseLiner : Managed
  // turns back by itself. -acrBaseBays 0 turns them off.
  static bool BaysOn()
  {
-  string value;
-  return !(ACR_Options.Get("acrBaseBays", value) && value == "0");
+  return ACR_LogisticsRules.Choice("acrBaseBays", "1") != "0";
  }
 
  protected bool BayStep(vector tip, vector heading, int sign, out vector next)
@@ -260,6 +260,7 @@ class ACR_BaseLiner : Managed
   {
    if (m_bTarget || m_iBayEvery <= 0 || m_iSinceBay < m_iBayEvery) return false;
    m_iBayStep = 1;
+   s_iBaysForTest++;
   }
   // Towards the firing side is against Turned's sense when sign is 1.
   float turn = -sign * BAY_TURN * m_fBaySide;
@@ -593,6 +594,8 @@ class ACR_BaseLines
  static const int NEST_LEVELS = 5;        // how far a town with too few places goes down (NestWings, NestReach)
  static const int NEST_COMPACT = 4;       // the last: the small gun position, one long piece wide
  static int s_iFirstNestLevelForTest;
+ // -acrBaseSmallGuns 0: nests only.
+ static bool SmallGunsOn() { return ACR_LogisticsRules.Choice("acrBaseSmallGuns", "1") != "0"; }
  static const float NEST_BEHIND = 1;      // m its middle stands behind the line: its wings' bags are on the line then
  static const float NEST_DEPTH = 2.8;     // m its bags reach either way from there (measured, 6 m in all)
  static const float NEST_HALF = 5.2;      // m its bags reach to its sides (measured -5.2 .. 4.4; USSR -5.5 .. 4.5)
@@ -1274,7 +1277,9 @@ class ACR_BaseLines
  static void Nests(ACR_BaseWork work, ACR_BaseSurvey survey, int most)
  {
   int made;
-  for (int level = s_iFirstNestLevelForTest; level < NEST_LEVELS && made < most; level++) made = NestsAt(work, survey, most, level, made);
+  int levels = NEST_LEVELS;
+  if (!SmallGunsOn()) levels = NEST_COMPACT;
+  for (int level = s_iFirstNestLevelForTest; level < levels && made < most; level++) made = NestsAt(work, survey, most, level, made);
  }
 
  // Those of a level, after the 'made' already placed: how many now.

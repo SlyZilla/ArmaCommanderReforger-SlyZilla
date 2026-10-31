@@ -693,7 +693,8 @@ class ACR_TestBaseWorks
   Draw(biggest);
   Replay();
   ACR_TestRegress.Check("baseworks plan: most long lines have fire bays", s_iBayLines * 2 >= s_iLongLines, string.Format("%1 of %2 lines of 60 m or more", s_iBayLines, s_iLongLines));
-  ACR_TestRegress.Complete("baseworksplan", 40);
+  SwitchChecks(biggest);
+  ACR_TestRegress.Complete("baseworksplan", 42);
  }
 
  protected static void PlanChecks(ACR_Base base)
@@ -1426,6 +1427,39 @@ class ACR_TestBaseWorks
   if (seedWas.IsEmpty()) ACR_Options.Unset("acrSeed");
   else ACR_Options.Set("acrSeed", seedWas);
   ACR_TestRegress.Check("baseworks plan: another seed plans otherwise", differs > 0, string.Format("%1 of %2 seeds differ at %3", differs, seeds.Count(), base.m_sName));
+ }
+
+ // The off switches: planned again with each off, then on.
+ protected static void SwitchChecks(ACR_Base base)
+ {
+  ACR_Options.Set("acrBaseBays", "0");
+  ACR_BaseLiner.s_iBaysForTest = 0;
+  PlanText(base);
+  int baysOff = ACR_BaseLiner.s_iBaysForTest;
+  ACR_Options.Unset("acrBaseBays");
+  ACR_BaseLiner.s_iBaysForTest = 0;
+  PlanText(base);
+  int baysOn = ACR_BaseLiner.s_iBaysForTest;
+  ACR_TestRegress.Check("baseworks plan: -acrBaseBays 0 turns fire bays off", baysOff == 0 && baysOn > 0, string.Format("%1 off, %2 on", baysOff, baysOn));
+  // From the small guns' own level, where a town gets those if it gets a gun at all.
+  int firstWas = ACR_BaseLines.s_iFirstNestLevelForTest;
+  ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
+  ACR_Options.Set("acrBaseSmallGuns", "0");
+  int gunsOff = CompactSites(base);
+  ACR_Options.Unset("acrBaseSmallGuns");
+  int gunsOn = CompactSites(base);
+  ACR_BaseLines.s_iFirstNestLevelForTest = firstWas;
+  ACR_TestRegress.Check("baseworks plan: -acrBaseSmallGuns 0 turns small guns off", gunsOff == 0 && gunsOn > 0, string.Format("%1 off, %2 on", gunsOff, gunsOn));
+ }
+
+ protected static int CompactSites(ACR_Base base)
+ {
+  PlanText(base);
+  string faction = base.m_sOwner;
+  if (faction.IsEmpty()) faction = s_sSide;
+  int count;
+  foreach (ACR_BaseSite site : ACR_BaseWorks.WorkFor(base, faction).m_aSites) if (site.m_bCompact) count++;
+  return count;
  }
 
  protected static string PlanText(ACR_Base base)
