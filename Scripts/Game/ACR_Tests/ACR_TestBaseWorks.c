@@ -13,7 +13,7 @@ class ACR_TestBaseWorks
  static const string NAME = "Works Squad";
  static const int STEP_LIMIT = 420; // s a tier may take (a site it can't reach is given up on after its walk + 90 s)
  static const float ENEMY_CLEAR = 700; // m from the other side's men for the town the test picks
- static const int CHECKS = 44;
+ static const int CHECKS = 49;
  protected static int s_iStep;
  protected static int s_iStepAt;
  protected static int s_iRP;
@@ -22,6 +22,9 @@ class ACR_TestBaseWorks
  protected static ACR_BaseWork s_Work;
  protected static ACR_BaseSite s_Lost;
  protected static ACR_BaseSite s_Skipped;
+ protected static ACR_BaseSite s_Chipped;
+ protected static int s_iChipWalls;
+ protected static int s_iRepairCost;
  protected static int s_iBuiltAtGive;
  protected static int s_iMen;
  protected static string s_sSide;
@@ -63,9 +66,11 @@ class ACR_TestBaseWorks
    case 6: if (Tier(2, waited)) { TierTwo(squad); OrderNext(squad); Next(second); } break;
    case 7: if (Tier(3, waited)) { TierThree(squad); Lose(); Next(second); } break;
    case 8: if (waited >= 7) { Lost(squad, us); Next(second); } break;
-   case 9: if (Rebuilt(waited)) { RebuiltChecks(us); EnemyNear(manager); Next(second); } break;
-   case 10: if (Deployed(waited)) { DeployedChecks(); s_Base.m_sOwner = ACR_FactionSelection.East(); Next(second); } break;
-   case 11: if (waited >= 7) { Fallen(); s_iStep = 99; } break;
+   case 9: if (Rebuilt(waited)) { RebuiltChecks(us); Chip(); Next(second); } break;
+   case 10: if (waited >= 7) { Chipped(squad, us); Next(second); } break;
+   case 11: if (Repaired(waited)) { RepairedChecks(us); EnemyNear(manager); Next(second); } break;
+   case 12: if (Deployed(waited)) { DeployedChecks(); s_Base.m_sOwner = ACR_FactionSelection.East(); Next(second); } break;
+   case 13: if (waited >= 7) { Fallen(); s_iStep = 99; } break;
   }
  }
 
@@ -460,7 +465,8 @@ class ACR_TestBaseWorks
   array<AIAgent> agents = {};
   group.GetAgents(agents);
   ACR_TestRegress.Check("baseworks: an enemy near deploys the reserve", agents.Count() > 0, string.Format("%1 men", agents.Count()));
-  ACR_TestRegress.Check("baseworks: ... into the buildings round the post or the base's middle", ACR_Garrison.HasPosts(group), string.Format("at %1", s_Work.m_Defenders.m_vPos));
+  ACR_TestRegress.Check("baseworks: ... each to his own place behind a line's bags", s_Work.m_Defenders.m_iMannedLine >= 0, string.Format("line %1", s_Work.m_Defenders.m_iMannedLine));
+  ACR_TestRegress.Check("baseworks: ... on posts of their own", ACR_Garrison.HasPosts(group), string.Format("at %1", s_Work.m_Defenders.m_vPos));
  }
 
  protected static void TierThree(ACR_Squad squad)
@@ -512,6 +518,43 @@ class ACR_TestBaseWorks
  {
   ACR_TestRegress.Check("baseworks: only the lost site is rebuilt and paid", us.m_iRP == s_iRP - ACR_BaseWorks.Cost(s_Lost) && ACR_BaseWorks.OpenTier(s_Work) == 0, string.Format("%1 -> %2", s_iRP, us.m_iRP));
   ACR_TestRegress.Check("baseworks: a rebuild adds no men", Men() == s_iMen, string.Format("%1 then %2", s_iMen, Men()));
+ }
+
+ // Two pieces of a stretch shot away, the rest up.
+ protected static void Chip()
+ {
+  foreach (ACR_BaseSite site : s_Work.m_aSites)
+  {
+   if (site.m_iTier != 1 || !site.m_bBuilt || !site.m_Plan || site.m_Plan.m_eKind != ACR_EBaseDefenceKind.LINE || site.m_aWalls.Count() < 4) continue;
+   s_Chipped = site;
+   s_iChipWalls = site.m_aWalls.Count();
+   SCR_EntityHelper.DeleteEntityAndChildren(site.m_aWalls[0]);
+   SCR_EntityHelper.DeleteEntityAndChildren(site.m_aWalls[1]);
+   return;
+  }
+ }
+
+ protected static void Chipped(ACR_Squad squad, ACR_FactionData us)
+ {
+  ACR_TestRegress.Check("baseworks: a stretch with pieces shot away stands, and opens for a repair", s_Chipped && s_Chipped.m_bBuilt && s_Chipped.m_bDamaged && ACR_BaseWorks.OpenTier(s_Work) == 1 && s_Work.m_iTier == 3 && ACR_BaseWorks.NeedsRepair(s_Base), string.Format("%1 walls of %2", s_Chipped.m_aWalls.Count(), s_iChipWalls));
+  s_iRP = us.m_iRP;
+  s_iRepairCost = Math.Max(1, Math.Round(ACR_BaseWorks.Cost(s_Chipped) * ACR_BaseWorks.MissingShare(s_Work, s_Chipped)));
+  OrderNext(squad);
+ }
+
+ protected static bool Repaired(int waited)
+ {
+  if (s_Chipped && !s_Chipped.m_bDamaged) return true;
+  if (waited % 30 == 29) PrintFormat("[ACR] TEST baseworks repair, %1 s: %2", waited, Where());
+  if (waited > STEP_LIMIT) ACR_TestRegress.Abort("baseworks", "the stretch wasn't repaired: " + Where());
+  return false;
+ }
+
+ protected static void RepairedChecks(ACR_FactionData us)
+ {
+  ACR_TestRegress.Check("baseworks: the repair puts back what was lost, no more", s_Chipped.m_aWalls.Count() == s_iChipWalls, string.Format("%1, was %2", s_Chipped.m_aWalls.Count(), s_iChipWalls));
+  ACR_TestRegress.Check("baseworks: and costs its share of the stretch", s_iRepairCost < ACR_BaseWorks.Cost(s_Chipped) && us.m_iRP == s_iRP - s_iRepairCost, string.Format("%1 -> %2, share %3", s_iRP, us.m_iRP, s_iRepairCost));
+  ACR_TestRegress.Check("baseworks: nothing else is open after", ACR_BaseWorks.OpenTier(s_Work) == 0, "");
  }
 
  protected static void Fallen()
@@ -576,6 +619,7 @@ class ACR_TestBaseWorks
  protected static float s_fOurs, s_fEither;
  static const float COVER_FLOOR = 0.5;   // of a threatened arc, by lines, on average (the maps reach 55-68%)
  static const float ANCHOR_FLOOR = 0.5;  // the maps reach 55-78%
+ protected static int s_iLongLine, s_iLongNoNest, s_iOnApron;
  protected static int s_iFire, s_iClose, s_iFacing, s_iPlannedFacing, s_iBuilding, s_iDoor, s_iRoad, s_iDressRoad, s_iApart, s_iDoubled, s_iFarCheck, s_iWorstMs, s_iNestTowns;
  protected static string s_sWorst;
  protected static ref array<IEntity> s_aFound = {};
@@ -607,7 +651,9 @@ class ACR_TestBaseWorks
   ACR_TestRegress.Check("baseworks plan: no sandbag piece or stub on its own", s_iShortRuns == 0, string.Format("%1 runs under 5 m or a single piece", s_iShortRuns));
   ACR_TestRegress.Check("baseworks plan: line ends stand on something or curve back", s_iEnds == 0, string.Format("%1 ends", s_iEnds));
   ACR_TestRegress.Check("baseworks plan: every gun touches a line", s_iGunAlone == 0, string.Format("%1 of %2 over 14 m from a sandbag", s_iGunAlone, s_iNests + s_iBunkers));
-  ACR_TestRegress.Check("baseworks plan: every nest is built into a line, 12 m of bags each side", s_iNestOff == 0, string.Format("%1 of %2 not", s_iNestOff, s_iNests));
+  ACR_TestRegress.Check("baseworks plan: a town with a long line gets a nest", s_iLongNoNest * 4 <= s_iLongLine, string.Format("%1 of %2 towns with a line of 60 m or more have none", s_iLongNoNest, s_iLongLine));
+  ACR_TestRegress.Check("baseworks plan: no sandbags across a runway or apron", s_iOnApron * 100 <= s_iPieces, string.Format("%1 of %2 pieces", s_iOnApron, s_iPieces));
+  ACR_TestRegress.Check("baseworks plan: every nest is built into a line, 6 m of bags each side", s_iNestOff == 0, string.Format("%1 of %2 not", s_iNestOff, s_iNests));
   ACR_TestRegress.Check("baseworks plan: no walk gap beside a nest", s_iGapByNest == 0, string.Format("%1", s_iGapByNest));
   ACR_TestRegress.Check("baseworks plan: no line is short of 30 m unless it closes a gap", s_iFragments == 0, string.Format("%1 of %2", s_iFragments, s_iLines));
   ACR_TestRegress.Check("baseworks plan: checkpoints stand in a line's gate", s_iLoneCheck == 0, string.Format("%1 of %2 over 16 m from the line", s_iLoneCheck, s_iChecks));
@@ -640,7 +686,7 @@ class ACR_TestBaseWorks
   SeedChecks(biggest);
   Draw(biggest);
   Replay();
-  ACR_TestRegress.Complete("baseworksplan", 37);
+  ACR_TestRegress.Complete("baseworksplan", 39);
  }
 
  protected static void PlanChecks(ACR_Base base)
@@ -706,6 +752,25 @@ class ACR_TestBaseWorks
    kinds.Insert(site.m_eKind);
   }
   if (nests > 0) s_iNestTowns++;
+  bool longLine = false;
+  foreach (ACR_BaseLine line : work.m_aLines)
+  {
+   if (line.m_fLength >= 60) longLine = true;
+   foreach (ACR_LinePiece bag : line.m_aPieces)
+   {
+    vector along = ACR_BaseDefences.FlatDir(bag.m_vFrom, bag.m_vTo);
+    if (ACR_BaseLiner.WidePaved(bag.m_vPos, along) && ACR_BaseLiner.WidePaved(bag.m_vPos, along * -1)) s_iOnApron++;
+   }
+  }
+  if (longLine)
+  {
+   s_iLongLine++;
+   if (nests == 0)
+   {
+    s_iLongNoNest++;
+    PrintFormat("[ACR] TEST baseworks plan %1: a line of 60 m or more and no nest", base.m_sName);
+   }
+  }
   JoinChecks(base, work, buildings, segs);
   CoverRow(base, faction, work, buildings);
   foreach (ACR_BaseSite check : work.m_aSites)
@@ -736,7 +801,7 @@ class ACR_TestBaseWorks
   // Walk gaps and nests.
   foreach (int k, ACR_LinePiece near : pieces)
    if (near.m_iBreak == ACR_BaseLines.BREAK_WALK && vector.DistanceXZ(near.m_vTo, nest.m_vPos) < 10) s_iGapByNest++;
-  return before >= 12 && after >= 12;
+  return before >= 6 && after >= 6;
  }
 
  // A town's coverage row, from its pieces and its own query of walls and buildings: the threatened arc from
@@ -1053,7 +1118,9 @@ class ACR_TestBaseWorks
     blocker = string.Format("%1 %2 m ahead (%3 deg)", hit, (int)clear, turn);
     if (s_bHitStructure) structure = true;
    }
-   if (turn == 0 && clear < 39)
+   float wanted = 39;
+   if (site.m_eKind == ACR_EBaseSite.NEST && site.m_fReach > 0) wanted = site.m_fReach - 6;
+   if (turn == 0 && clear < wanted)
    {
     s_iFacing++;
     PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3 facing %4: only %5 m clear (%6)", base.m_sName, what, site.m_vPos, (int)site.m_fYaw, (int)clear, hit);

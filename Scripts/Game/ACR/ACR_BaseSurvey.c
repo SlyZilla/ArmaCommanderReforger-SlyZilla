@@ -734,12 +734,13 @@ class ACR_BaseSurvey : Managed
  }
 
  // A nest's and a bunker's line of fire must also pass the check a Fortify position's guns do.
- static bool NestFan(vector place, float bearing)
+ static bool NestFan(vector place, float bearing, float reach = 45)
  {
   string why;
   // The gun stands 1.1 m forward of the nest's middle (measured): the same trace the built gun gets.
   vector gun = place + Dir(bearing) * 1.1;
-  return FanClear(gun, UP_NEST, bearing, 45, 30, 22) && ACR_Fortify.LineOfFireAt(gun, bearing, null, why);
+  float middle = Math.Max(reach * 2 / 3, 22);
+  return FanClear(gun, UP_NEST, bearing, reach, middle, 22) && ACR_Fortify.LineOfFireAt(gun, bearing, null, why);
  }
 
  // A bunker's firing slit is 4 m forward of its origin (measured).

@@ -86,6 +86,7 @@ class ACR_BaseLiner : Managed
  static const int FIT_VIEW = 6;
  static const int FIT_WATER = 7;
  static const int FIT_BEHIND = 8;
+ static const int FIT_PAVED = 9;
  static const float ROOM = 1.6;             // m clear behind the bags: a man stands and fires there
  static const float VIEW = 15;              // m clear on a piece's firing side, straight out or a little to either side
  static const int MAX_BLIND = 2;            // pieces in a row that may go without (a tree in front of one)
@@ -93,6 +94,7 @@ class ACR_BaseLiner : Managed
  static const float MAX_RISE = 1.0;         // m along a long piece (its ground tilt tops at 12 degrees: a little buried)
  static const float MAX_LEAN = 0.7;         // m across it
  static const float ROAD_KEEP = 0.6;        // m from a road's edge to a piece
+ static const float WIDE_PAVED = 18;        // m of concrete ahead that make it a runway or an apron, not a yard
 
  ACR_BaseSurvey m_Survey;
  ACR_BaseWork m_Work;
@@ -150,6 +152,7 @@ class ACR_BaseLiner : Managed
    case FIT_VIEW: return "view";
    case FIT_WATER: return "water";
    case FIT_BEHIND: return "behind";
+   case FIT_PAVED: return "paved";
   }
   return "length";
  }
@@ -177,6 +180,7 @@ class ACR_BaseLiner : Managed
   float keep = ROAD_KEEP;
   if (loose) keep = 0.3;
   if (ACR_BaseDefences.RoadEdgeGap(m_aRoads, mid) < keep || ACR_BaseDefences.RoadEdgeGap(m_aRoads, to) < keep) return FIT_ROAD;
+  if (WidePaved(to, heading)) return FIT_PAVED;
   if (Math.AbsFloat(toY - tipY) > MAX_RISE * length / ACR_BaseLines.LONG_STEP) return FIT_SLOPE;
   vector facing = FacingOf(heading, sign);
   vector front = mid + facing * 0.6;
@@ -197,6 +201,15 @@ class ACR_BaseLiner : Managed
   if (ACR_BaseSurvey.Reach(muzzle, look, VIEW) >= VIEW - 0.5) return FIT_OK;
   if (ACR_BaseSurvey.Reach(muzzle, look - 18, VIEW) >= VIEW - 0.5 || ACR_BaseSurvey.Reach(muzzle, look + 18, VIEW) >= VIEW - 0.5) return FIT_OK;
   return FIT_VIEW;
+ }
+
+ // A runway, a taxiway or an apron ahead: no road on the network tells of these, and a line across one is
+ // a wall dropped on the concrete (pn23 playtest, Airport). A yard or a track narrower than this goes
+ // under the bags like any ground.
+ static bool WidePaved(vector at, vector heading)
+ {
+  if (!ACR_Fortify.HardSurface(at)) return false;
+  return ACR_Fortify.HardSurface(at + heading * (WIDE_PAVED * 0.5)) && ACR_Fortify.HardSurface(at + heading * WIDE_PAVED);
  }
 
  // Whether a man can stand behind bags here: no fence or wall hard at their back. The trace starts 1.2 m
@@ -252,7 +265,7 @@ class ACR_BaseLiner : Managed
    }
    if (i == 0) first = fit;
    // A road straight ahead is the end of it, not something to wriggle along.
-   if (fit == FIT_ROAD && Math.AbsFloat(tried) < 6) return fit;
+   if ((fit == FIT_ROAD || fit == FIT_PAVED) && Math.AbsFloat(tried) < 6) return fit;
   }
   // Nowhere it can both stand and see, but somewhere it can stand: a piece or two blind.
   if (m_iBlind < MAX_BLIND)
@@ -337,7 +350,7 @@ class ACR_BaseLiner : Managed
     return Closed(tip, heading, sign, run, kit, "road");
    }
    // Round what's in the way, once a way: a round piece bends the line back.
-   if (!rounded && why != FIT_SLOPE && why != FIT_ROAD && !run.IsEmpty())
+   if (!rounded && why != FIT_SLOPE && why != FIT_ROAD && why != FIT_PAVED && !run.IsEmpty())
    {
     rounded = true;
     vector after;
@@ -532,6 +545,7 @@ class ACR_BaseLines
  static const float WALK_APART = 28;      // m of bags between gaps for men on foot, and up to 10 more
  static const float NEST_CLEAR = 19;      // m from a nest's middle to a walk gap: its 12 m of bags each side stay unbroken
  static const int NEST_WINGS = 4;         // long pieces of bags either side of a nest: 13.5 m
+ static const int NEST_LEVELS = 4;        // how far a town with too few places goes down (NestWings, NestReach)
  static const float NEST_BEHIND = 1;      // m its middle stands behind the line: its wings' bags are on the line then
  static const float NEST_DEPTH = 2.8;     // m its bags reach either way from there (measured, 6 m in all)
  static const float NEST_HALF = 5.2;      // m its bags reach to its sides (measured -5.2 .. 4.4; USSR -5.5 .. 4.5)
@@ -1176,11 +1190,46 @@ class ACR_BaseLines
   return 0.35;
  }
 
- // Up to 'most' nests, built into the lines: a straight run with the fan clear and at least NEST_WINGS long
- // pieces of unbroken bags either side, so it reads as part of a wall. Worst sector first, a weighted
- // pick; fewer if the lines have no such place.
+ // Bags either side of a nest and its field of fire, by level: the full run first; a town that has too few
+ // places takes shorter wings, then a shorter field of fire (pn23 playtest: Saint-Philippe, 101 buildings,
+ // no nest at all: 16 runs too short, 9 places with no fan). 6.8 m of bags and the nest's own wings still
+ // read as a wall.
+ static int NestWings(int level)
+ {
+  switch (level)
+  {
+   case 0: return NEST_WINGS;
+   case 1: return 3;
+  }
+  return 2;
+ }
+
+ static float NestReach(int level)
+ {
+  if (level >= 3) return 30;
+  return 45;
+ }
+
+ // Up to 'most' nests, built into the lines: a straight run with the fan clear and unbroken bags either
+ // side, so it reads as part of a wall. Worst sector first, a weighted pick; fewer if the lines have no
+ // such place even at the last level.
  static void Nests(ACR_BaseWork work, ACR_BaseSurvey survey, int most)
  {
+  int made;
+  for (int level = 0; level < NEST_LEVELS && made < most; level++) made = NestsAt(work, survey, most, level, made);
+ }
+
+ // Those of a level, after the 'made' already placed: how many now.
+ protected static int NestsAt(ACR_BaseWork work, ACR_BaseSurvey survey, int most, int level, int made)
+ {
+  int wings = NestWings(level);
+  float reach = NestReach(level);
+  array<float> aside = {15, -15};
+  if (level >= 2)
+  {
+   aside.Insert(25);
+   aside.Insert(-25);
+  }
   array<float> yaws = {};
   array<vector> places = {};
   array<ACR_BaseLine> onLines = {};
@@ -1192,15 +1241,15 @@ class ACR_BaseLines
   {
    if (line.m_iTier > 2) continue;
    int count = line.m_aPieces.Count();
-   for (int i = NEST_WINGS; i + width + NEST_WINGS <= count; i++)
+   for (int i = wings; i + width + wings <= count; i++)
    {
     ACR_LinePiece a = line.m_aPieces[i];
     ACR_LinePiece b = line.m_aPieces[i + width - 1];
     bool run = true;
-    for (int k = i - NEST_WINGS; k < i + width + NEST_WINGS; k++)
+    for (int k = i - wings; k < i + width + wings; k++)
     {
      ACR_LinePiece piece = line.m_aPieces[k];
-     if (!piece.m_bLong || (k < i + width + NEST_WINGS - 1 && piece.m_iBreak != 0)) run = false;
+     if (!piece.m_bLong || (k < i + width + wings - 1 && piece.m_iBreak != 0)) run = false;
     }
     if (!run || ACR_BaseDefences.DotXZ(a.m_vFacing, b.m_vFacing) < 0.85)
     {
@@ -1233,11 +1282,17 @@ class ACR_BaseLines
      continue;
     }
     // The gun may look a little aside of the line's own facing.
-    if (!ACR_BaseSurvey.NestFan(place, yaw))
+    if (!ACR_BaseSurvey.NestFan(place, yaw, reach))
     {
-     if (ACR_BaseSurvey.NestFan(place, yaw + 15)) yaw += 15;
-     else if (ACR_BaseSurvey.NestFan(place, yaw - 15)) yaw -= 15;
-     else
+     bool found = false;
+     foreach (float turn : aside)
+     {
+      if (!ACR_BaseSurvey.NestFan(place, yaw + turn, reach)) continue;
+      yaw += turn;
+      found = true;
+      break;
+     }
+     if (!found)
      {
       noFire++;
       continue;
@@ -1255,8 +1310,7 @@ class ACR_BaseLines
     firsts.Insert(i);
    }
   }
-  int made;
-  for (made = 0; made < most; made++)
+  for (; made < most; made++)
   {
    array<float> scores = {};
    array<int> open = {};
@@ -1278,12 +1332,14 @@ class ACR_BaseLines
    site.m_iSpot = ACR_FobDefences.POST_COUNT;
    site.m_sPrefab = ACR_FobDefences.PrefabFor(site.m_iSpot, work.m_sFaction, 1);
    site.m_iLine = work.m_aLines.Find(onLines[picked]);
+   site.m_fReach = reach;
    for (int cut = firsts[picked]; cut < firsts[picked] + width; cut++) site.m_aCuts.Insert(onLines[picked].m_aPieces[cut].m_vPos);
    work.m_aSites.Insert(site);
    survey.AddCover(site.m_iSector, ACR_BaseWorks.COVER_NEST);
   }
   if (made < most) PrintFormat("[ACR] BASEWORKS %1: %2 of %3 MG nests: %4 places on its lines, none or too close for more (short or not straight %5, road %6, building %7, door %8, no room %9", work.m_Base.m_sName, made, most, places.Count(), noRun, noRoad, noHouse, noDoor, noRoom);
-  if (made < most) PrintFormat("[ACR] BASEWORKS %1: nest places with no line of fire: %2", work.m_Base.m_sName, noFire);
+  if (made < most) PrintFormat("[ACR] BASEWORKS %1: nest places with no line of fire: %2 (level %3)", work.m_Base.m_sName, noFire, level);
+  return made;
  }
 
  // Up to 'most' bunkers and towers tied to the lines: a bunker past a line's end, flank to its last piece,

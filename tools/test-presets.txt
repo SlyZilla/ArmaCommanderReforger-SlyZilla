@@ -212,6 +212,9 @@ baseworksai|-acrBaseWorksAITest 1|620|Worlds/ACR_Everon.ent
 baseworksplan|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Everon.ent
 baseworksplanarland|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Arland.ent
 baseworksplankolguyev|-acrBaseWorksPlanTest 1|120|Worlds/ACR_Kolguyev.ent
+worksfight|-acrWorksFightTest 1|480|Worlds/ACR_Everon.ent
+worksfightold|-acrWorksFightOldTest 1|480|Worlds/ACR_Everon.ent
+worksaisoak|-acrWorksAISoakTest 1|1320|Worlds/ACR_Everon.ent
 worksshots|-acrWorksShotsTest 1|600|Worlds/ACR_Kolguyev.ent
 contentpack|-acrContentPackTest 1|120
 contentpackwinter|-acrContentPackWinterTest 1|120

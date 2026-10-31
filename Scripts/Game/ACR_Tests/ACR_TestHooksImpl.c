@@ -48,6 +48,10 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrWorksShotsTest")) ACR_TestWorksShots.Run(seconds);
   // -acrBaseWorksTest: Fortify on a base (ACR_TestBaseWorks, #105).
   if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
+  // -acrWorksFightTest / -acrWorksFightOldTest: what a fortified town costs an attacker (ACR_TestWorksFight).
+  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest")) ACR_TestWorksFight.Run(seconds);
+  // -acrWorksAISoakTest: does the AI fortify (ACR_TestWorksSoak).
+  if (System.IsCLIParam("acrWorksAISoakTest")) ACR_TestWorksSoak.Run(seconds);
   // -acrQuickStartFIATest: FIA's cells on a Quick start (ACR_TestQuickStartFIA).
   if (System.IsCLIParam("acrQuickStartFIATest")) ACR_TestQuickStartFIA.Run(seconds);
   // -acrGuerrillasTest: FIA guerrilla cells (ACR_TestGuerrillas, #89).
@@ -86,7 +90,7 @@ modded class ACR_TestHooks
  // Tests keep their worlds as authored; the guerrilla test and the balance soaks get guerrillas.
  override string Guerrillas()
  {
-  if (System.IsCLIParam("acrQuickStartFIATest")) return "many";
+  if (System.IsCLIParam("acrQuickStartFIATest") || System.IsCLIParam("acrWorksAISoakTest")) return "many";
   if (System.IsCLIParam("acrGuerrillasTest") || System.IsCLIParam("acrInsurgencyTest") || System.IsCLIParam("acrFIALeaningTest") || System.IsCLIParam("acrHideoutsTest") || System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrLongSoakTest")) return "few";
   return "";
  }
@@ -101,7 +105,7 @@ modded class ACR_TestHooks
 
  override string QuickStart()
  {
-  if (System.IsCLIParam("acrQuickStartTest") || System.IsCLIParam("acrQuickStartFIATest")) return "even";
+  if (System.IsCLIParam("acrQuickStartTest") || System.IsCLIParam("acrQuickStartFIATest") || System.IsCLIParam("acrWorksAISoakTest")) return "even";
   return "";
  }
 

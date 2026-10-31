@@ -374,6 +374,26 @@ class ACR_Squad : Managed
  // Grant or revoke native command authority to match who controls the leader.
  // Reforger disables AI far from every player ("max LOD"). Arma Commander
  // battles happen anywhere on the map, so commanded squads stay fully simulated.
+ // A group that isn't a squad (a reserve): the skill and perception a squad's men get each tick (Tactics),
+ // which ACR_Base's garrisons and ACR_Defenders' men never had. Works' reserves lost every fight to the same
+ // number of squad men without a kill (srv:worksfight).
+ static void FightLikeSquad(AIGroup group)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!group || !manager) return;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body) continue;
+   SCR_AICombatComponent combat = SCR_AICombatComponent.Cast(body.FindComponent(SCR_AICombatComponent));
+   if (!combat) continue;
+   if (combat.GetAISkill() != manager.m_iAISkill) combat.SetAISkill(manager.m_iAISkill);
+   if (combat.GetPerceptionFactor() != manager.m_fAIPerception) combat.SetPerceptionFactor(manager.m_fAIPerception);
+  }
+ }
+
  static void KeepSimulated(AIGroup group)
  {
   if (!group) return;
@@ -2021,7 +2041,10 @@ class ACR_Squad : Managed
   if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
-  if (work && work.m_Base) IssueWaypoint(WP_DEFEND, work.m_Base.GetOrigin(), 60);
+  vector at;
+  float radius;
+  if (work && ACR_BaseWorks.HoldSpot(work, at, radius)) IssueWaypoint(WP_DEFEND, at, radius);
+  else if (work && work.m_Base) IssueWaypoint(WP_DEFEND, work.m_Base.GetOrigin(), 60);
  }
 
  // Back to a position of ours that stands empty (ACR_AICommander.ManPositions): hold it as its

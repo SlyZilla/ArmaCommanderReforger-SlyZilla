@@ -37,6 +37,7 @@ class ACR_BaseSite : Managed
  ref array<IEntity> m_aDressing = {};
  ACR_Roadblock m_Roadblock;
  bool m_bBuilt;
+ bool m_bDamaged;                   // PLANNED: it stands with pieces gone: open again, for those alone
  bool m_bNoFit;                     // nothing could be placed: not tried again
  bool m_bSkipped;                   // a squad gave up on it (a truck parked there, no way in): the next order tries again
  int m_iSpot;                       // NEST, BUNKER: its spot in ACR_FobDefences.PrefabFor
@@ -255,7 +256,7 @@ class ACR_BaseWorks
  {
   int open;
   foreach (ACR_BaseSite site : work.m_aSites)
-   if (site.m_iTier == tier && !site.m_bBuilt && !site.m_bNoFit && !site.m_bSkipped) open++;
+   if (site.m_iTier == tier && (!site.m_bBuilt || site.m_bDamaged) && !site.m_bNoFit && !site.m_bSkipped) open++;
   return open;
  }
 
@@ -288,7 +289,7 @@ class ACR_BaseWorks
   array<float> scores = {};
   foreach (ACR_BaseSite site : work.m_aSites)
   {
-   if (site.m_iTier != tier || site.m_bBuilt || site.m_bNoFit || site.m_bSkipped || Claimed(site, squad)) continue;
+   if (site.m_iTier != tier || (site.m_bBuilt && !site.m_bDamaged) || site.m_bNoFit || site.m_bSkipped || Claimed(site, squad)) continue;
    open.Insert(site);
    float score = site.m_fScore - vector.DistanceXZ(from, site.m_vPos) / 200;
    // A checkpoint is out of the way: everything else in the town first, then the walk.
@@ -313,6 +314,12 @@ class ACR_BaseWorks
   plan.m_Work = work;
   plan.m_Site = site;
   plan.m_iCost = Cost(site);
+  float share = 1;
+  if (site.m_bDamaged)
+  {
+   share = MissingShare(work, site);
+   plan.m_iCost = Math.Max(1, Math.Round(plan.m_iCost * share));
+  }
   if (manager.m_Bases.GetRP(work.m_sFaction) + squad.PendingRP() < plan.m_iCost)
   {
    refusal = string.Format("not enough RP (%1 needed)", plan.m_iCost);
@@ -329,7 +336,7 @@ class ACR_BaseWorks
   vector walkable;
   if (squad.ReachableNear(plan.m_vStage, 12, walkable)) plan.m_vStage = walkable;
   plan.m_fRadius = SITE_RADIUS;
-  plan.m_fDuration = Duration(site) * ACR_Fortify.WORK_SCALE;
+  plan.m_fDuration = Math.Max(5, Duration(site) * share) * ACR_Fortify.WORK_SCALE;
   float now = GetGame().GetWorld().GetWorldTime();
   plan.m_fLastTick = now;
   plan.m_fLastProgress = now;
@@ -474,6 +481,7 @@ class ACR_BaseWorks
   if (more <= 0) return;
   work.m_iMannedTier = work.m_iTier;
   if (!work.m_Defenders) work.m_Defenders = ACR_Defenders.Add(work.m_sFaction, work.m_Base.GetOrigin(), work.m_Base.m_sName + " works", ACR_BaseDefences.SearchRadius(work.m_Base));
+  work.m_Defenders.m_Work = work;
   work.m_Defenders.m_iReserve += more;
  }
 
@@ -530,6 +538,7 @@ class ACR_BaseWorks
     MakeWay(work, site);
   }
   site.m_bBuilt = true;
+  site.m_bDamaged = false;
   PrintFormat("[ACR] BASEWORKS %1 %2: %3 at %4 (%5 pieces)", work.m_sFaction, work.m_Base.m_sName, SiteWords(site), site.m_vPos, site.m_aWalls.Count() + site.m_aDressing.Count());
   return true;
  }
@@ -630,6 +639,8 @@ class ACR_BaseWorks
   bool line = pos.m_eKind == ACR_EBaseDefenceKind.LINE;
   foreach (int i, vector at : pos.m_aPiecePos)
   {
+   // A repair: what was shot away, no more.
+   if (site.m_bDamaged && ((anyWall && !pos.m_aPieceWall[i]) || StandsAt(site, at))) continue;
    IEntity piece;
    if (line && pos.m_aPieceWall[i])
    {
@@ -645,6 +656,204 @@ class ACR_BaseWorks
    }
    else site.m_aDressing.Insert(piece);
   }
+ }
+
+ protected static bool StandsAt(ACR_BaseSite site, vector at)
+ {
+  foreach (IEntity wall : site.m_aWalls)
+   if (wall && vector.DistanceXZ(wall.GetOrigin(), at) < 0.6) return true;
+  return false;
+ }
+
+ // Of what should stand on this site, the share that doesn't.
+ static float MissingShare(ACR_BaseWork work, ACR_BaseSite site)
+ {
+  ACR_BaseDefencePos pos = site.m_Plan;
+  if (!pos) return 1;
+  bool anyWall = pos.Walls() > 0;
+  int should, missing;
+  foreach (int i, vector at : pos.m_aPiecePos)
+  {
+   if ((anyWall && !pos.m_aPieceWall[i]) || CutForNest(work, at)) continue;
+   should++;
+   if (!StandsAt(site, at)) missing++;
+  }
+  if (should == 0) return 1;
+  return missing / (float)should;
+ }
+
+ // Something built here has been lost, whole or in part: a tier already up wants it back.
+ static bool NeedsRepair(ACR_Base base)
+ {
+  ACR_BaseWork work = Find(base);
+  if (!work) return false;
+  for (int tier = 1; tier <= work.m_iTier; tier++)
+   if (OpenSites(work, tier) > 0) return true;
+  return false;
+ }
+
+ // ---------------------------------------------------------------- the men behind the bags
+
+ static bool s_bNoLineMenForTest; // the reserve as it was before: at the post, or in its buildings
+ static const float MAN_BEHIND = 1.0;       // m a man stands behind a piece's middle
+ static const float REMAN_MS = 60000;       // how often the line in use is looked at again
+ static const float FACES_ENOUGH = 0.2;     // of a line's facing towards the enemy, to man it
+ static const float STAY_CLOSE = 200;       // m from the line: they stay where they are
+ static const float THREAT_RANGE = 900;     // m: a man further off doesn't turn the defence round
+
+ // The nearest enemy man's side of the base: false with none in range.
+ protected static bool ThreatAt(ACR_DefenderPost post, out vector at)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return false;
+  float best = THREAT_RANGE;
+  bool found = false;
+  foreach (ACR_Squad squad : manager.m_Squads)
+  {
+   if (!squad.GetFaction() || ACR_Insurgency.Friendly(squad.GetFaction().GetFactionKey(), post.m_sFaction)) continue;
+   IEntity anchor = squad.GetAnchor();
+   if (!anchor) continue;
+   float d = vector.DistanceXZ(anchor.GetOrigin(), post.m_vPos);
+   if (d >= best) continue;
+   best = d;
+   at = anchor.GetOrigin();
+   found = true;
+  }
+  return found;
+ }
+
+ // Pieces of this line a man can stand behind: long, up, not made way for.
+ protected static int MannablePieces(ACR_BaseWork work, ACR_BaseLine line, notnull array<ACR_LinePiece> result)
+ {
+  result.Clear();
+  foreach (ACR_LinePiece piece : line.m_aPieces)
+  {
+   if (!piece.m_bLong || CutForNest(work, piece.m_vPos)) continue;
+   foreach (ACR_BaseSite site : work.m_aSites)
+   {
+    if (site.m_iLine != work.m_aLines.Find(line) || !site.m_bBuilt || !StandsAt(site, piece.m_vPos)) continue;
+    result.Insert(piece);
+    break;
+   }
+  }
+  return result.Count();
+ }
+
+ // The built lines a man could go to for an enemy at 'threat', the best first: those that face him, near
+ // him; the first is picked among the near-best. None at all with a threat only behind them.
+ protected static void LinesFor(ACR_BaseWork work, vector threat, bool hasThreat, notnull array<int> result)
+ {
+  result.Clear();
+  array<float> scores = {};
+  array<int> lines = {};
+  array<ACR_LinePiece> pieces = {};
+  foreach (int l, ACR_BaseLine line : work.m_aLines)
+  {
+   if (MannablePieces(work, line, pieces) < 2) continue;
+   float score = 1 - l * 0.05; // the worst approach first
+   if (hasThreat)
+   {
+    float faces = ACR_BaseDefences.DotXZ(line.m_vFacing, ACR_BaseDefences.FlatDir(line.m_vMiddle, threat));
+    if (faces < FACES_ENOUGH) continue;
+    score = faces * 2 - vector.DistanceXZ(line.m_vMiddle, threat) / 400;
+   }
+   scores.Insert(score);
+   lines.Insert(l);
+  }
+  if (lines.IsEmpty()) return;
+  work.m_iPicks++;
+  int first = ACR_Variety.Pick(scores, string.Format("base man %1 %2", work.m_Base.m_sName, work.m_iPicks));
+  result.Insert(lines[first]);
+  lines.Remove(first);
+  scores.Remove(first);
+  while (!lines.IsEmpty())
+  {
+   int best = 0;
+   foreach (int s, float value : scores) if (value > scores[best]) best = s;
+   result.Insert(lines[best]);
+   lines.Remove(best);
+   scores.Remove(best);
+  }
+ }
+
+ // The reserve out: each man to his own place behind the bags of the lines that face the enemy, nearest him
+ // first, standing to fire over them. Before, they stood in the town's middle or in its buildings and
+ // the works did nothing for them (pn23 playtest). False: no line for it, the caller does what it did.
+ static bool ManLine(ACR_DefenderPost post, int men)
+ {
+  ACR_BaseWork work = post.m_Work;
+  if (!work || !post.m_Group || s_bNoLineMenForTest || men <= 0) return false;
+  ACR_Squad.FightLikeSquad(post.m_Group);
+  vector threat;
+  bool hasThreat = ThreatAt(post, threat);
+  array<int> lines = {};
+  LinesFor(work, threat, hasThreat, lines);
+  if (lines.IsEmpty()) return false;
+  array<ref ACR_GarrisonSpot> spots = {};
+  array<ACR_LinePiece> pieces = {};
+  foreach (int index : lines)
+  {
+   MannablePieces(work, work.m_aLines[index], pieces);
+   vector aim = work.m_aLines[index].m_vMiddle;
+   if (hasThreat) aim = threat;
+   while (spots.Count() < men && !pieces.IsEmpty())
+   {
+    int nearest = 0;
+    foreach (int p, ACR_LinePiece candidate : pieces)
+     if (vector.DistanceXZ(candidate.m_vPos, aim) < vector.DistanceXZ(pieces[nearest].m_vPos, aim)) nearest = p;
+    ACR_LinePiece piece = pieces[nearest];
+    pieces.Remove(nearest);
+    ACR_GarrisonSpot spot = new ACR_GarrisonSpot();
+    spot.m_Pos = piece.m_vPos - piece.m_vFacing * MAN_BEHIND;
+    spot.m_Pos[1] = ACR_BaseLiner.Ground(spot.m_Pos);
+    spot.m_Look = piece.m_vFacing;
+    spot.m_bStand = true;
+    spots.Insert(spot);
+   }
+   if (spots.Count() >= men) break;
+  }
+  if (spots.IsEmpty()) return false;
+  vector center = spots[0].m_Pos;
+  float radius;
+  if (ACR_Garrison.PostsAt(post.m_Group, spots, center, radius) <= 0) return false;
+  ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_GARRISON, center, radius, true);
+  post.m_iMannedLine = lines[0];
+  post.m_fMannedAt = GetGame().GetWorld().GetWorldTime();
+  PrintFormat("[ACR] BASEWORKS %1 %2: %3 men to line %4 and on (%5 places)", work.m_sFaction, work.m_Base.m_sName, men, lines[0], spots.Count());
+  return true;
+ }
+
+ // While they're out: the enemy has gone round to a side the line in use doesn't face. Not with him close:
+ // up and running across the town under fire is worse than the wrong line.
+ static void KeepManned(ACR_DefenderPost post)
+ {
+  if (!post.m_Work || post.m_iMannedLine < 0 || post.m_iMannedLine >= post.m_Work.m_aLines.Count()) return;
+  ACR_Squad.FightLikeSquad(post.m_Group);
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - post.m_fMannedAt < REMAN_MS) return;
+  post.m_fMannedAt = now;
+  vector threat;
+  if (!ThreatAt(post, threat)) return;
+  ACR_BaseLine line = post.m_Work.m_aLines[post.m_iMannedLine];
+  if (vector.DistanceXZ(line.m_vMiddle, threat) < STAY_CLOSE) return;
+  if (ACR_BaseDefences.DotXZ(line.m_vFacing, ACR_BaseDefences.FlatDir(line.m_vMiddle, threat)) > -FACES_ENOUGH) return;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (manager) ManLine(post, manager.m_Bases.GuardsAlive(post.m_Group));
+ }
+
+ // Where a squad holds the base when a tier ends: behind the worst approach's line, not in the town's
+ // middle. False: no line up.
+ static bool HoldSpot(ACR_BaseWork work, out vector at, out float radius)
+ {
+  array<ACR_LinePiece> pieces = {};
+  foreach (ACR_BaseLine line : work.m_aLines)
+  {
+   if (MannablePieces(work, line, pieces) < 2) continue;
+   at = ACR_Manager.Ground(line.m_vMiddle - line.m_vFacing * 4);
+   radius = Math.Clamp(line.m_fLength * 0.6, 20, 45);
+   return true;
+  }
+  return false;
  }
 
  // Tier I up at once and free, nobody walking (Quick start's front towns). The sites built.
@@ -675,6 +884,11 @@ class ACR_BaseWorks
    else site.m_bNoFit = true;
   }
   return built;
+ }
+
+ static void TiersDoneForTest(ACR_BaseWork work)
+ {
+  for (int tier = 1; tier <= ACR_Fortify.MAX_TIER; tier++) TierDone(work, tier);
  }
 
  // ---------------------------------------------------------------- where the sites go
@@ -823,8 +1037,10 @@ class ACR_BaseWorks
    if (piece && ACR_Logistics.Health(piece) > 0) continue;
    site.m_aWalls.Remove(i);
    if (piece) ACR_Navmesh.DeleteStructure(piece);
+   site.m_bDamaged = site.m_Plan != null;
   }
   if (!site.m_aWalls.IsEmpty() || site.m_bAllCut) return;
+  site.m_bDamaged = false;
   // The dressing goes with it; the site can be built again.
   foreach (IEntity prop : site.m_aDressing) if (prop) SCR_EntityHelper.DeleteEntityAndChildren(prop);
   site.m_aDressing.Clear();

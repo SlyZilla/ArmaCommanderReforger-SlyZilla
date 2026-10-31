@@ -840,6 +840,7 @@ class ACR_PendingBuild
  vector m_vSite;     // a roadblock's road site (m_fYaw its facing); else where the ride goes (the base)
  float m_fYaw;
  float m_fDeadline;  // world ms
+ bool m_bWorks;      // FORTIFY: a whole base's works (ACR_BaseWorks), not a position
 }
 
 class ACR_AICommander : Managed
@@ -5895,6 +5896,17 @@ class ACR_AICommander : Managed
     paid = CanBuild(ACR_Minefields.Cost(ACR_EMineKind.MIXED), 30);
     ordered = paid && LayMines(squad, pending.m_Base, pending.m_vEnemy, from);
    }
+   else if (pending.m_bWorks)
+   {
+    paid = CanBuild(ACR_Fortify.Cost(1), 30);
+    string refusal;
+    ordered = paid && ACR_BaseWorks.Order(squad, pending.m_Base, refusal);
+    if (ordered)
+    {
+     squad.m_iAITask = ACR_EAITask.FORTIFY;
+     Say(string.Format("[ACR] AI %1: %2%3 fortifying the town at %4", m_sFaction, squad.GetName(), from, pending.m_Base.m_sName));
+    }
+   }
    else
    {
     paid = CanBuild(ACR_Fortify.Cost(1), 30);
@@ -6186,14 +6198,29 @@ class ACR_AICommander : Managed
   array<float> scores = {};
   foreach (ACR_Base front : fronts)
   {
+   // What it already built, shot away: back first, and it asks no bank.
+   bool repair = ACR_BaseWorks.NeedsRepair(front);
    int next = ACR_BaseWorks.TierOf(front) + 1;
-   if (next > ACR_Fortify.MAX_TIER || front.m_bBuilt || data.m_iRP < next * WORKS_BANK_STEP || !CanBuild(ACR_Fortify.Cost(next), 30)) continue;
+   if (front.m_bBuilt) continue;
+   if (!repair && (next > ACR_Fortify.MAX_TIER || data.m_iRP < next * WORKS_BANK_STEP || !CanBuild(ACR_Fortify.Cost(next), 30))) continue;
+   if (repair && !CanBuild(ACR_Fortify.Cost(1), 30)) continue;
    open.Insert(front);
-   scores.Insert(ThreatTo(front) + 1 - DefenceOf(front) * 0.1);
+   float score = ThreatTo(front) + 1 - DefenceOf(front) * 0.1;
+   if (repair) score += 1;
+   scores.Insert(score);
   }
   if (open.IsEmpty()) return false;
   ACR_Base base = open[ACR_Variety.Pick(scores, string.Format("base works %1 %2", m_sFaction, (int)GetGame().GetWorld().GetWorldTime()))];
   ACR_Squad worker = FortifyWorkerNear(base.GetOrigin());
+  if (!worker) worker = WorksWorkerFurther(base.GetOrigin());
+  // Far off it rides, as to a position. No truck: it walks only if that isn't the rest of the match.
+  if (worker && RideToBuild(worker, ACR_EAITask.FORTIFY, base, base.GetOrigin(), base.GetOrigin(), 0))
+  {
+   ACR_PendingBuild riding = PendingBuildOf(worker);
+   if (riding) riding.m_bWorks = true;
+   return true;
+  }
+  if (worker && vector.DistanceXZ(PositionOf(worker), base.GetOrigin()) > WORKS_WALK) worker = null;
   if (!worker)
   {
    NoteBuild("works squad " + base.m_sName, string.Format("[ACR] AI %1: works at %2 wait for a free squad within %3 m %4", m_sFaction, base.m_sName, FAR_BUILDER, NoBuilderWhy(base.GetOrigin(), BUILDER_FORTIFY)));
@@ -6208,6 +6235,48 @@ class ACR_AICommander : Managed
   worker.m_iAITask = ACR_EAITask.FORTIFY;
   Say(string.Format("[ACR] AI %1: %2 fortifying the town at %3", m_sFaction, worker.GetName(), base.m_sName));
   return true;
+ }
+
+ // With no free squad near, works still get a squad (pn23 playtest: one town started in 36 minutes, the
+ // log saying 'wait for a free squad' 14 times, with free squads 5 km off and 8 attacking): the nearest
+ // free one wherever it is, as it walks there; else one of an attack with squads to spare, on its way
+ // and out of contact, within FAR_BUILDER.
+ static const float WORKS_FAR = 7000;
+ static const float WORKS_WALK = 2500;
+ static const int WORKS_ATTACK_SPARE = 4;
+ protected ACR_Squad WorksWorkerFurther(vector pos)
+ {
+  array<ACR_Squad> squads = {};
+  MySquads(squads, false);
+  ACR_Squad free;
+  ACR_Squad attacker;
+  float freeBest = WORKS_FAR;
+  float attackBest = FAR_BUILDER;
+  int attacking;
+  foreach (ACR_Squad squad : squads)
+  {
+   if (!squad || squad.m_iAITask != ACR_EAITask.ATTACK) continue;
+   attacking++;
+  }
+  foreach (ACR_Squad other : squads)
+  {
+   if (!other || other.HasPlayer() || other.m_Commander != 0 || other == m_ReserveSquad || IsSupportTeam(other) || !ACR_Fortify.CanFortify(other) || DueForRefit(other)) continue;
+   if (other.m_MinePlan || other.m_ActiveRoadblock || other.m_Fortification || other.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || other.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
+   float d = vector.DistanceXZ(PositionOf(other), pos);
+   bool isFree = (other.m_iAITask == ACR_EAITask.FREE || other.m_iAITask == ACR_EAITask.POSTED) && other.IsCombatUnit() && !IsRetreating(other);
+   if (isFree && d < freeBest)
+   {
+    freeBest = d;
+    free = other;
+   }
+   if (other.m_iAITask == ACR_EAITask.ATTACK && attacking >= WORKS_ATTACK_SPARE && d < attackBest && other.KnownEnemies(60, true) == 0)
+   {
+    attackBest = d;
+    attacker = other;
+   }
+  }
+  if (free) return free;
+  return attacker;
  }
 
  // A position of ours at a front base that stands empty (its holder killed, gone to defend or
