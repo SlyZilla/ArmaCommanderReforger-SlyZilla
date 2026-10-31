@@ -13,7 +13,7 @@ class ACR_TestBaseWorks
  static const string NAME = "Works Squad";
  static const int STEP_LIMIT = 420; // s a tier may take (a site it can't reach is given up on after its walk + 90 s)
  static const float ENEMY_CLEAR = 700; // m from the other side's men for the town the test picks
- static const int CHECKS = 43;
+ static const int CHECKS = 44;
  protected static int s_iStep;
  protected static int s_iStepAt;
  protected static int s_iRP;
@@ -257,6 +257,15 @@ class ACR_TestBaseWorks
   squad.KeepWalking(plan, now);
   bool waypoint = squad.m_Group && squad.m_Group.GetCurrentWaypoint();
   ACR_TestRegress.Check("baseworks: a squad stopped on its walk is sent on", plan.m_iWalkRetries == 1 && waypoint, string.Format("%1 tries, waypoint %2", plan.m_iWalkRetries, waypoint));
+  // Still there on the third try: its leader goes ahead to walkable ground, nearer the site.
+  plan.m_iWalkRetries = 2;
+  plan.m_vWalkFrom = at;
+  plan.m_fWalkAt = now - ACR_Squad.WALK_STOPPED_MS - 1000;
+  float before = vector.DistanceXZ(at, plan.m_vStage);
+  squad.KeepWalking(plan, now);
+  vector stepped = squad.GetAnchor().GetOrigin();
+  float after = vector.DistanceXZ(stepped, plan.m_vStage);
+  ACR_TestRegress.Check("baseworks: a leader stuck for good is stepped ahead", before < 3 || after < before - 1, string.Format("%1 m to go, then %2", (int)before, (int)after));
   plan.m_iWalkRetries = 0;
  }
 

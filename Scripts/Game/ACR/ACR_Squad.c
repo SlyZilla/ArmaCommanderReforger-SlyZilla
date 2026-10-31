@@ -1923,10 +1923,14 @@ class ACR_Squad : Managed
  // sees it: the game's group tree logs "Failed move from ... to waypoint ..." once and the men stand
  // (srv:baseworks seed 46199, Montignac: the leader 87 m off for the whole of the walk's limit, 9 men
  // alive, no enemy; 31 Oct, Saint-Philippe: a man 1.7 m off the navmesh, and this got them going).
- // Stopped for a while: onto the navmesh and the same order again; twice that and the nearest
- // walkable point instead of the same one. The walk's limit still ends it.
+ // Stopped for a while: onto the navmesh and the same order again. A leader can also be stuck for good
+ // (31 Oct, Montignac: 5 minutes at <4813,167,7046> beside a house door, nine new orders,
+ // walking nowhere in either direction): from the third try he is stepped ahead to walkable ground,
+ // further each time. The walk's limit still ends it.
  static const float WALK_STOPPED_MS = 20000;
  static const float WALK_MOVED_M = 2.0;
+ static const float WALK_STEP_M = 6.0;
+ static const float WALK_STEP_MOST_M = 24.0;
  void KeepWalking(ACR_FortifyPlan plan, float now)
  {
   IEntity anchor = GetAnchor();
@@ -1943,12 +1947,18 @@ class ACR_Squad : Managed
   plan.m_iWalkRetries++;
   StepOntoNavmesh(0);
   string how = "same spot";
-  vector walkable;
-  if (plan.m_iWalkRetries > 2 && ReachableNear(plan.m_vStage, 5 * plan.m_iWalkRetries, walkable))
+  if (plan.m_iWalkRetries > 2 && !IsMounted() && !EntityUtils.IsPlayer(anchor))
   {
-   how = string.Format("nearest walkable point, %1 m off", (int)vector.DistanceXZ(walkable, plan.m_vStage));
-   plan.m_vStage = walkable;
-   m_MoveTarget = walkable;
+   vector ahead = plan.m_vStage - at;
+   ahead[1] = 0;
+   float left = ahead.Length();
+   float step = Math.Min(WALK_STEP_M * (plan.m_iWalkRetries - 2), WALK_STEP_MOST_M);
+   vector spot;
+   if (left > 1 && ReachableNear(at + ahead * (Math.Min(step, left) / left), WALK_STEP_M, spot))
+   {
+    anchor.SetOrigin(spot);
+    how = string.Format("leader stepped %1 m ahead", (int)vector.DistanceXZ(at, spot));
+   }
   }
   IssueWaypoint(WP_MOVE, plan.m_vStage, 4.0);
   PrintFormat("[ACR] SQUAD %1: stopped at %2, %3 m from the site at %4; on again, try %5 (%6)", m_Name, at, (int)vector.DistanceXZ(at, plan.m_vSite), plan.m_vSite, plan.m_iWalkRetries, how);
