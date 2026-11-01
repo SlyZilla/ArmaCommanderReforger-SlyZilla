@@ -50,6 +50,13 @@
 - When a possessed soldier dies and the takeover of the next man is refused, you go back to your command unit instead of staying in the body with a "Now controlling" message. Pressing F8 while already in the command unit no longer takes the map out of your hand.
 - A restarted mission starts clean in more places (statics outlive a restart in the same server): the forced-side spawn point (`-acrPlayers`) is placed again, a starting company kit still waiting stops instead of firing into the next match, the debug Think card closes, `-acrMarksmen` and the setup screen's waiting hint are read again, and the FIA's last alliances are forgotten before the next setup.
 - Hardening: a drag-aim or gunner-drive input that isn't a number is ignored, and Establish FOB site requests are rate-limited.
+- Skirmish layouts (half, flashpoint) on a hand-built world no longer hand a side's starting units to the enemy: they took the side of the base nearest where they stood, which could be the enemy's new HQ. On a generated-only world the world's own starting units take the side of the nearest player spawn point (all of them went to the west HQ).
+- The generator tries ordinary sites as HQs when no pair of military or airport sites works (two on different islands, or two labels on one airfield), instead of leaving the map with no bases. Maps that planned before keep their layouts.
+- Two generated places with the same name are told apart ("Name 2"): moving or deleting one in the setup editor moved or deleted both.
+- A generated layout that fails plays the world as placed, helipads included (every side got off-map helicopters).
+- The match report no longer counts destroying an empty vehicle (a wreck, a civilian car, one's own abandoned truck) as an enemy vehicle destroyed.
+- On/off host options accept off/on, false/true and no/yes as well as 0/1 (`-acrMines off` left mines on).
+- A mission end, restart or rotation no longer logs an engine replication error for every soldier in an ACA squad.
 
 ### Command and setup
 

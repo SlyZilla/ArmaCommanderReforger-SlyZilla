@@ -215,7 +215,21 @@ class ACR_Generator
    pending.RemoveOrdered(best);
   }
   NameIndustry(sites);
-  foreach (ACR_GenSite identified : sites) identified.m_sId = identified.m_sName;
+  // Names find the site to edit and ids key the edit: two places with one name (a town and a
+  // village label) were moved or deleted together and showed as two bases of one name. The second
+  // and later get " 2", " 3"... (the order is stable, so a seed keeps its names).
+  map<string, int> seen = new map<string, int>();
+  foreach (ACR_GenSite identified : sites)
+  {
+   int count = seen.Get(identified.m_sName) + 1;
+   seen.Set(identified.m_sName, count);
+   identified.m_sId = identified.m_sName;
+   if (count > 1)
+   {
+    identified.m_sName = identified.m_sName + " " + count.ToString();
+    identified.m_sId = identified.m_sName;
+   }
+  }
  }
 
  static bool HasLetter(string text)
@@ -352,8 +366,19 @@ class ACR_Generator
  {
   for (int retry = 0; retry < 6; retry++)
    if (PlanDraw(seed, seed + retry * 7919, size, layout, hqs, incomeCandidates)) return true;
-  return false;
+  // Every draw failed with military/airport HQs (the only two on different islands, or two labels
+  // on one airfield, so the same pair failed every time): the same draws with any site as HQ
+  // before the map gets no bases at all. Only after a full failure, so layouts that planned
+  // before are unchanged.
+  s_bAnyHQSite = true;
+  bool planned = false;
+  for (int anyRetry = 0; anyRetry < 6 && !planned; anyRetry++)
+   planned = PlanDraw(seed, seed + anyRetry * 7919, size, layout, hqs, incomeCandidates);
+  s_bAnyHQSite = false;
+  if (planned) PrintFormat("[ACR] GENERATOR seed %1: no military pair works, HQs from any site", seed);
+  return planned;
  }
+ protected static bool s_bAnyHQSite;
 
  protected static bool PlanDraw(int seed, int draw, int size, notnull array<ref ACR_GenSite> layout, notnull array<ACR_GenSite> hqs, array<ref ACR_GenSite> incomeCandidates)
  {
@@ -1062,7 +1087,7 @@ class ACR_Generator
  protected static void PickHQs(array<ACR_GenSite> pool, bool flashpoint, RandomGenerator rng, out ACR_GenSite west, out ACR_GenSite east, float spanShare = 0.8)
  {
   array<ACR_GenSite> candidates = {};
-  if (!flashpoint)
+  if (!flashpoint && !s_bAnyHQSite)
    foreach (ACR_GenSite site : pool) if (site.m_sKind == "military" || site.m_sKind == "airport") candidates.Insert(site);
   if (candidates.Count() < 2)
   {
@@ -1153,7 +1178,14 @@ class ACR_Generator
   string eastSide = ACR_FactionSelection.East();
   // Hand-built bases and pads go; their starting units follow their side to the new HQ.
   map<ACR_StartingUnit, string> unitSides = new map<ACR_StartingUnit, string>();
-  foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All) unitSides.Set(unit, NearestOwner(unit.GetOrigin()));
+  foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All)
+  {
+   string unitSide = NearestOwner(unit.GetOrigin());
+   // A generated-only world has no owned bases: the nearest player spawn point's side (else every
+   // unit went to the west HQ).
+   if (unitSide == "") unitSide = NearestSpawnSide(unit.GetOrigin(), westSide, eastSide);
+   unitSides.Set(unit, unitSide);
+  }
   array<ACR_Base> old = {};
   old.Copy(ACR_Base.s_All);
   foreach (ACR_Base gone : old) if (!gone.m_bBuilt) gone.Retire("generated layout");
@@ -1273,6 +1305,23 @@ class ACR_Generator
   unit.m_sVehicle = vehicle;
   unit.m_bCrewed = true;
   unit.m_MovedTo = hq;
+ }
+
+ protected static string NearestSpawnSide(vector position, string westSide, string eastSide)
+ {
+  string side = "";
+  float bestDistance = float.MAX;
+  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
+  {
+   if (!point || ACR_SpawnPoints.IsBasePoint(point)) continue;
+   string key = point.GetFactionKey();
+   if (key == "US") key = westSide;
+   else if (key == "USSR") key = eastSide;
+   if (key != westSide && key != eastSide) continue;
+   float distance = vector.DistanceXZ(point.GetOrigin(), position);
+   if (distance < bestDistance) { bestDistance = distance; side = key; }
+  }
+  return side;
  }
 
  protected static string NearestOwner(vector position)
