@@ -96,6 +96,8 @@ class ACR_SquadMarksmen
 			if (pending) GetGame().GetCallqueue().Remove(pending.Poll);
 		}
 		s_Pending.Clear(); s_Assigned.Clear(); s_Retry.Clear(); s_Diagnosed.Clear();
+		// -acrMarksmen is read again: a scenario that turned them off no longer did so for every later one.
+		s_bRead = false; s_bOn = true;
 	}
 
 	static bool IsDMR(IEntity item)

@@ -162,13 +162,20 @@ class ACR_Respawn : Managed
     }
    }
 
+   bool taken = false;
    if (target)
    {
-    m_Manager.m_Requests.Possess(pc, pending.m_Victim, SCR_EntityHelper.EntityToRplId(target));
-    m_Manager.Notify(id, string.Format("Now controlling %1-%2. F8 to return to command unit.", pending.m_sSquadName, pending.m_iSquadNumber));
-    PrintFormat("[ACR] POSSESSED KILLED player=%1 -> transferred to subordinate %2-%3", id, pending.m_sSquadName, pending.m_iSquadNumber);
+    string refused = m_Manager.m_Requests.Possess(pc, pending.m_Victim, SCR_EntityHelper.EntityToRplId(target));
+    // Possess reports a refused transfer only in its text: check who he controls (it does too).
+    taken = pc.GetControlledEntity() == target;
+    if (taken)
+    {
+     m_Manager.Notify(id, string.Format("Now controlling %1-%2. F8 to return to command unit.", pending.m_sSquadName, pending.m_iSquadNumber));
+     PrintFormat("[ACR] POSSESSED KILLED player=%1 -> transferred to subordinate %2-%3", id, pending.m_sSquadName, pending.m_iSquadNumber);
+    }
+    else PrintFormat("[ACR] POSSESSED KILLED player=%1 -> transfer to %2-%3 refused (%4)", id, pending.m_sSquadName, pending.m_iSquadNumber, refused);
    }
-   else
+   if (!taken)
    {
     if (IsAlive(pc.GetMainEntity()))
     {

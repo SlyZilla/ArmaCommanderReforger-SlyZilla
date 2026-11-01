@@ -234,7 +234,7 @@ class ACR_FactionCatalog
  // Results are cached (Jacob 18 Oct, Kolguyev with RHS: the mortar range ring resolved its shell
  // through a full catalog scan about four times a second, logging a fallback line each time).
  static ref map<string, ResourceName> s_Resolved = new map<string, ResourceName>();
- static void ForgetResolved() { s_Resolved.Clear(); }
+ static void ForgetResolved() { s_Resolved.Clear(); s_Crewmen.Clear(); }
 
  static ResourceName ResolvePrefab(string factionKey, ResourceName source, EEntityCatalogType type)
  {

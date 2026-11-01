@@ -34,6 +34,35 @@
 - Structures on a slope now look the same to every player. The ground tilt laid a composition's pieces on the ground only on the server; a client built it level from its prefab, so in a multiplayer game a remote player could see sandbags and barricades where the server's weren't. The server now records the final layout on the composition and every machine lays the pieces out from it.
 - A Get out order from the map panel gets men out of an LAV's rear seats too: those still aboard after 13 s go through the same steps as at a ride's drop (the action queue cleared, out without a door, another seat), and everyone is out within about 22 s. Before, only a ride's drop did that, and a player's Get out left two men of a squad aboard until the stuck-soldier fallback set them down beside it (playtest).
 - A player's Ride order can take the side's own APC or IFV (a LAV-25, a BTR-70: a fighting vehicle with room for a squad), crewed, gun manned, and not busy, as well as a transport. AI-ordered rides still never take a fighting vehicle, and an armed jeep isn't a carrier for either. A refused ride now names the nearest vehicle and why it can't come, e.g. "the nearest, LAV-25 ..., 15 m away: a fighting vehicle (manned gun)". Before, the Ride said "has a manned gun", which read as the LAV having no seats (playtest).
+- A single-spot air lift (two helicopters taking turns) no longer sends chalk 1 back. Once landed, the men it carried walked back to the pickup, and chalk 2's boarding gave them seats there; now the squad holds when chalk 1 lifts off, and chalk 2 boards only those still at the pickup and leaves for home at once when nobody is left.
+- An air lift with a man knocked out leaves once everyone awake is aboard. It waited for him for the full two minutes, though nobody puts an unconscious man aboard.
+- A player who hands a squad to the AI keeps his trucks where he parked them. The AI sent every idle transport of the side back to a hub every 15 seconds, not only the squads handed to it.
+- A paid mortar mission is refunded when the tube is destroyed or the team is wiped out before a round leaves.
+- A squad holding a roadblock that was dismantled (a shovel, Game Master) stops holding an empty road. It stayed "Holding roadblock" all match, the AI counted it as a holder and never freed it, and it kept sending tripwire alerts.
+- A vehicle that got past one stuck spot may re-route at the next one too; before, every later stuck spot on the same order went straight to "Stuck, holding".
+- The AI commander keeps its FOB project when the builder squad stops to regroup on the way, instead of giving the site up, dropping its escort and avoiding the site for 10 minutes.
+- With the 2IC on, a squad the player claimed back is out of the AI's attacks and defences: after taking command back, the AI's plans kept giving it orders that overrode his. A squad the 2IC hands to a player's request no longer ends its old attack with a false "Couldn't take" line.
+- AI sappers walking up to an HQ are ordered there at most every 20 seconds (it was every second, which kept an unreachable HQ from ever being given up).
+- F6 (drop the passengers) works for the driver or pilot and the commander only. Any rider in the back could throw the side's AI squads out of a flying helicopter.
+- Squads with a construction truck can be taken over from the map again (F7). Their "can establish FOB" flag was the same as the commander-marker flag, so F7 skipped them. The commander marker has its own flag now, and no longer offers Establish FOB.
+- The capture bar and on-screen ping markers clear when your soldier dies; they stayed frozen over the deploy screen until you spawned.
+- The 3D camera's base card shows the base's own supplies (other bases showed numbers from the first base's stock line), and "none" without a FOB.
+- When a possessed soldier dies and the takeover of the next man is refused, you go back to your command unit instead of staying in the body with a "Now controlling" message. Pressing F8 while already in the command unit no longer takes the map out of your hand.
+- A restarted mission starts clean in more places (statics outlive a restart in the same server): the forced-side spawn point (`-acrPlayers`) is placed again, a starting company kit still waiting stops instead of firing into the next match, the debug Think card closes, `-acrMarksmen` and the setup screen's waiting hint are read again, and the FIA's last alliances are forgotten before the next setup.
+- Hardening: a drag-aim or gunner-drive input that isn't a number is ignored, and Establish FOB site requests are rate-limited.
+- Skirmish layouts (half, flashpoint) on a hand-built world no longer hand a side's starting units to the enemy: they took the side of the base nearest where they stood, which could be the enemy's new HQ. On a generated-only world the world's own starting units take the side of the nearest player spawn point (all of them went to the west HQ).
+- The generator tries ordinary sites as HQs when no pair of military or airport sites works (two on different islands, or two labels on one airfield), instead of leaving the map with no bases. Maps that planned before keep their layouts.
+- Two generated places with the same name are told apart ("Name 2"): moving or deleting one in the setup editor moved or deleted both.
+- A generated layout that fails plays the world as placed, helipads included (every side got off-map helicopters).
+- The match report no longer counts destroying an empty vehicle (a wreck, a civilian car, one's own abandoned truck) as an enemy vehicle destroyed.
+- On/off host options accept off/on, false/true and no/yes as well as 0/1 (`-acrMines off` left mines on).
+- A mission end, restart or rotation no longer logs an engine replication error for every soldier in an ACA squad.
+- A support helicopter whose pad is lost (base captured, built pad dismantled) moves its base to another of the side's free pads. It sat on the old pad unusable for the rest of the match, the support list said "buy one", the AI never bought another, and the pad's new owner couldn't use the pad.
+- Gunships, door gunners, rocket runs and ambushes leave FIA alone when FIA is allied to (or friendly with) their side.
+- A FOB whose HQ was destroyed during an upgrade goes away once nothing of it is standing; before, the paused upgrade kept the empty FOB on the map and no new FOB could be built within 120 m.
+- A supply delivery on its way when a FOB's HQ is destroyed is refunded (it was lost without a word), and buying at a FOB with no HQ says so instead of asking for a radio relay.
+- AI and Quick Start minefields keep their 60 m from the side's own dug-in positions and roadblocks where the road is: the spot was checked before the field was moved onto the road through it, which could bring it a few metres inside.
+- A support helicopter coming home to a pad with a vehicle parked beside it sets down after 10 seconds instead of hovering a metre above the pad for the rest of the match (the vehicle in the rotor sweep kept stopping the last metre).
 
 ### Command and setup
 

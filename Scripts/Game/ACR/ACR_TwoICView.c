@@ -1619,9 +1619,14 @@ modded class SCR_PlayerController
  }
 
  // ---------------------------------------------------------------- Establish FOB
+ protected float m_ACR_LastSitesRequest = -1000;
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
  protected void ACR_TwoICSitesServer(RplId groupId)
  {
+  // Arming Establish FOB is a click: anything faster is spam (each call logs and rescores).
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastSitesRequest < 500) return;
+  m_ACR_LastSitesRequest = now;
   ACR_Manager manager = ACR_Manager.GetInstance();
   Faction faction = SCR_FactionManager.SGetPlayerFaction(GetPlayerId());
   if (!manager || !faction) return;

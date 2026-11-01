@@ -156,6 +156,17 @@ class ACR_Think
   Open(1 + side * 2 + page);
  }
 
+ // Per mission (ACR_Manager.Stop): the card isn't tracked by ACR_Hud, so it and its poll went on
+ // into the main menu and the next match.
+ static void Reset()
+ {
+  if (GetGame()) GetGame().GetCallqueue().Remove(Poll);
+  s_iMode = 0;
+  if (s_Root) s_Root.RemoveFromHierarchy();
+  s_Root = null;
+  s_Texts.Clear();
+ }
+
  protected static void Open(int mode)
  {
   s_iMode = mode;

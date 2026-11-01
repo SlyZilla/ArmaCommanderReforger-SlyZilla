@@ -230,6 +230,14 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
         if (Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) { Write-Result $id @('status=refused', 'reason=another Reforger server kept running (port 2001)'); return }
         if ($waited -gt 0) { Write-Host "[$time] Waited $waited s for another server to close" -ForegroundColor Yellow }
         $profileDir = $TestServerProfile
+        # Unpacked mods resolve their own prefabs only through resourceDatabase.rdb (gitignored,
+        # written when Workbench opens the project). A fresh worktree has none: the server logs
+        # 'Wrong GUID/name for resource' and tests fail or pass on half-loaded prefabs (1 Nov).
+        foreach ($modDir in @($ProjectRoot, (Join-Path $AddonsDir 'BetterBattleBuddies'))) {
+            if ((Test-Path -LiteralPath (Join-Path $modDir 'addon.gproj')) -and !(Test-Path -LiteralPath (Join-Path $modDir 'resourceDatabase.rdb'))) {
+                Write-Result $id @('status=refused', "reason=no resourceDatabase.rdb in $modDir (open its addon.gproj in Workbench once)"); return
+            }
+        }
         $serverAddons = $AddonsDir
         $template = '-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend -acrAdminPassword 1'
     }
@@ -267,8 +275,10 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
     while ($true) {
         Start-Sleep -Seconds 3
         if (!$log -and (Test-Path -LiteralPath $serverLogs)) {
-            $dir = Get-ChildItem -LiteralPath $serverLogs -Directory | Where-Object { $_.CreationTime -ge $started.AddSeconds(-5) } |
-                   Sort-Object CreationTime -Descending | Select-Object -First 1
+            # UTC: when the clock goes back (end of daylight saving) the last hour's log folders
+            # looked newer in local time, and a run read an old log (1 Nov, a stale verdict in 5 s).
+            $dir = Get-ChildItem -LiteralPath $serverLogs -Directory | Where-Object { $_.CreationTimeUtc -ge $started.ToUniversalTime().AddSeconds(-5) } |
+                   Sort-Object CreationTimeUtc -Descending | Select-Object -First 1
             if ($dir) { $log = Join-Path $dir.FullName 'console.log' }
         }
         if ($proc.HasExited) { $outcome = 'server exited'; break }
@@ -384,8 +394,8 @@ function Invoke-Request($file) {
     while ($true) {
         Start-Sleep -Seconds 3
         if (!$log -and (Test-Path -LiteralPath $LogRoot)) {
-            $dir = Get-ChildItem -LiteralPath $LogRoot -Directory | Where-Object { $_.CreationTime -ge $started.AddSeconds(-5) } |
-                   Sort-Object CreationTime -Descending | Select-Object -First 1
+            $dir = Get-ChildItem -LiteralPath $LogRoot -Directory | Where-Object { $_.CreationTimeUtc -ge $started.ToUniversalTime().AddSeconds(-5) } |
+                   Sort-Object CreationTimeUtc -Descending | Select-Object -First 1
             if ($dir) { $log = Join-Path $dir.FullName 'console.log' }
         }
         if ($proc.HasExited) { $outcome = 'game exited'; break }

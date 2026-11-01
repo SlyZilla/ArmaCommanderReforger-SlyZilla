@@ -225,6 +225,7 @@ class ACR_Manager : Managed
   ACR_Setup.Reset();
   ACR_SetupClient.Reset();
   ACR_FactionSelection.Reset();
+  ACR_PlayerSide.Reset();
   ACR_Vehicles.Reset();
   ACR_Generator.Reset();
   ACR_QuickStart.Reset();
@@ -239,7 +240,19 @@ class ACR_Manager : Managed
   ACR_FobSiting.Reset();
   ACR_RoadblockSiting.Reset();
   ACR_MapFeed.Reset();
+  // Lists and caches of the last match's entities (audit 31 Oct).
+  ACR_Roadblocks.Reset();
+  ACR_Garrison.Reset();
+  ACR_FireMissions.Reset();
+  ACR_Structures.Reset();
+  ACR_SquadAI.Reset();
+  ACR_BBBHooks.ResetIntents();
+  ACR_Transport.ResetHorns();
+  ACR_FactionCatalog.ForgetResolved();
   ACR_Supports.Reset();
+  ACR_DoctrineKits.Reset();
+  ACR_Think.Reset();
+  ACR_Insurgency.Reset();
   // Setup screen choices are per match (Jacob, 31 Oct), and a rotation reads its own header.
   ACR_Options.ClearSet();
   ACR_Options.ForgetHeader();
@@ -249,6 +262,19 @@ class ACR_Manager : Managed
   ACR_SquadMarksmen.Reset();
   ACR_UALoadout.Reset();
   s_Instance = null;
+ }
+
+ // The world is going away (mission end, restart, rotation): each squad is a slave of its hidden
+ // command group (LinkSquad), so vanilla's groups manager listens for members leaving it, and the
+ // teardown's removals each sent an RPC through the already-unregistered manager (one RPL error per
+ // soldier in the log). Nobody needs those removals broadcast now.
+ static void UnhookGroups()
+ {
+  if (!s_Instance) return;
+  SCR_GroupsManagerComponent groups = SCR_GroupsManagerComponent.GetInstance();
+  if (!groups) return;
+  foreach (ACR_Squad squad : s_Instance.m_Squads)
+   if (squad && squad.m_Group) squad.m_Group.GetOnAgentRemoved().Remove(groups.OnAIMemberRemoved);
  }
 
  static vector Ground(vector point)
@@ -1110,7 +1136,14 @@ class ACR_Manager : Managed
    for (int i = list.Count() - 1; i >= 0; i--)
    {
     Faction faction = SCR_FactionManager.SGetPlayerFaction(list[i]);
-    if (!players.Contains(list[i]) || !faction || faction.GetFactionKey() != key) list.RemoveOrdered(i);
+    if (players.Contains(list[i]) && faction && faction.GetFactionKey() == key) continue;
+    // Gone or on another side: his command state goes too, as for LeaveCommand (his last order
+    // showed on the other side's strip after a side move; audit 31 Oct).
+    string gone = Command().TagOf(list[i]);
+    if (gone.IsEmpty()) gone = GetGame().GetPlayerManager().GetPlayerName(list[i]);
+    if (gone.IsEmpty()) gone = "The commander";
+    Command().OnLeft(list[i], key, gone);
+    list.RemoveOrdered(i);
    }
   }
   for (int i = m_LeftCommand.Count() - 1; i >= 0; i--)
@@ -1267,6 +1300,9 @@ class ACR_Manager : Managed
    PrintFormat("[ACR] GUNNER DRIVE start: %1 (player %2)", squad.GetName(), playerId);
   }
   drive.m_PlayerId = playerId;
+  // NaN from a client fails both comparisons: no input.
+  if (!(throttle == throttle)) throttle = 0;
+  if (!(steer == steer)) steer = 0;
   drive.m_Throttle = Math.Clamp(throttle, -1, 1);
   drive.m_Steer = Math.Clamp(steer, -1, 1);
   drive.m_LastInput = GetGame().GetWorld().GetWorldTime();
@@ -1339,6 +1375,10 @@ class ACR_Manager : Managed
   if (!pc || !pc.GetControlledEntity())
   {
    ACR_RTSCameraManager.Close();
+   // Dead or on the deploy screen: the HUD pings and the hold hint are drawn only with a body,
+   // so the last frame's stayed frozen on screen until the next spawn.
+   if (pc && pc.ACR_GetData()) ACR_PingDisplay.UpdateHud(pc.ACR_GetData(), null, false);
+   ACR_PingDisplay.ShowHoldHint(-1);
    return;
   }
   InputManager input = GetGame().GetInputManager();
@@ -1452,5 +1492,14 @@ class ACR_Manager : Managed
    else GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   }
   if (input.GetActionTriggered("ACR_RTSCamera")) pc.ACR_ToggleRTSCamera();
+ }
+}
+
+modded class ArmaReforgerScripted
+{
+ protected override void OnBeforeWorldCleanup()
+ {
+  ACR_Manager.UnhookGroups();
+  super.OnBeforeWorldCleanup();
  }
 }
