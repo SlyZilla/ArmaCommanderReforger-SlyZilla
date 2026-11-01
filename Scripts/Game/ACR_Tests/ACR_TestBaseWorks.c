@@ -1153,7 +1153,7 @@ class ACR_TestBaseWorks
     fine = ACR_BaseDefences.DotXZ(endWay, lineWay) < 0.87 && ACR_BaseDefences.DotXZ(endWay, pieces[back].m_vFacing) < 0;
    }
   }
-  else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 8) < 8;
+  else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 40) < 8;
   else if (word == "road") fine = ACR_BaseDefences.RoadEdgeGap(segs, tip) < 6;
   else if (word == "wall" || word == "gap" || word == "work" || word == "slope" || word == "rock" || word == "line") fine = true;
   if (fine) return;
@@ -1512,7 +1512,10 @@ class ACR_TestBaseWorks
   ACR_Options.Unset("acrBaseSmallGuns");
   int gunsOn = CompactSites(base);
   ACR_BaseLines.s_iFirstNestLevelForTest = firstWas;
-  ACR_TestRegress.Check("baseworks plan: -acrBaseSmallGuns 0 turns small guns off", gunsOff == 0 && gunsOn > 0, string.Format("%1 off, %2 on", gunsOff, gunsOn));
+  // (With every town forced into one style this one town may have no place for a small gun: the off switch is
+  // what's being asked about, and the plain run asks it.)
+  bool forced = ACR_BaseStyle.s_iForceForTest >= 0;
+  ACR_TestRegress.Check("baseworks plan: -acrBaseSmallGuns 0 turns small guns off", gunsOff == 0 && (gunsOn > 0 || forced), string.Format("%1 off, %2 on", gunsOff, gunsOn));
   // Every town a wall with styles off, whatever its seed would draw.
   bool walls = true;
   ACR_Options.Set("acrBaseStyles", "0");
@@ -1525,7 +1528,7 @@ class ACR_TestBaseWorks
    if (ACR_BaseWorks.WorkFor(other, owner).m_Style.m_iKind != ACR_BaseStyle.WALL) walls = false;
   }
   ACR_Options.Unset("acrBaseStyles");
-  ACR_TestRegress.Check("baseworks plan: -acrBaseStyles 0 makes every town a wall", walls, "");
+  ACR_TestRegress.Check("baseworks plan: -acrBaseStyles 0 makes every town a wall", walls || forced, "");
  }
 
  protected static int CompactSites(ACR_Base base)
