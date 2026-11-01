@@ -93,7 +93,7 @@ class ACR_TestFobBuild
   for (int t = 0; t < 72 && standing == 0; t++)
   {
    float treeAngle = t * 20 * Math.DEG2RAD;
-   float treeDist = 150 + (t / 18) * 120;
+   float treeDist = 150 + (t / 18) * 120; // int-math ok: a new ring every 18 angles
    woods = ACR_Manager.Ground(anchorPos + Vector(Math.Cos(treeAngle) * treeDist, 0, Math.Sin(treeAngle) * treeDist));
    standing = ACR_FobBuild.CountTrees(woods, 12);
   }
