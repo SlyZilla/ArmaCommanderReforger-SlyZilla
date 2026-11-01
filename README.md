@@ -99,7 +99,7 @@ US vs Ukraine. RHS and Ukraine Armed Forces RHS are optional; the launcher adds 
 IDs when selected; it does not download those mods. ZIP launcher users may need to adjust addon
 search paths to match their installation. Ukraine Armed Forces RHS replaces
 the vanilla US faction for that session, so choose a pair containing **UA** to play it. ACE All in
-One is a separate optional toggle. Play/Host/Join also automatically load All-in-One Command Menu if
+One is a separate optional toggle. When an expansion pack (the Cold War or Modern content pack) or an ACA map add-on sits beside ACA in the addons folder, the menu offers it too (row **Expansion pack**; map add-ons join the **Map** row, and joiners pick the same pack and the host's map add-on in the join menu); its Workshop dependencies must already be downloaded. Play/Host/Join also automatically load All-in-One Command Menu if
 its Workshop copy is found locally; it is a separate optional mod and joiners need it when the host
 loads it. Joiners should select the same faction pair and ACE setting as the host; a mod mismatch
 can prevent joining, and a different faction choice can produce the wrong setup. The join menu
