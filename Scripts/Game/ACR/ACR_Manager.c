@@ -248,6 +248,7 @@ class ACR_Manager : Managed
   ACR_BBBHooks.ResetIntents();
   ACR_Transport.ResetHorns();
   ACR_FactionCatalog.ForgetResolved();
+  ACR_Supports.Reset();
   // Setup screen choices are per match (Jacob, 31 Oct), and a rotation reads its own header.
   ACR_Options.ClearSet();
   ACR_Options.ForgetHeader();
