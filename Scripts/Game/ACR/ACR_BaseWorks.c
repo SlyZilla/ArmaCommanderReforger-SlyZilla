@@ -39,6 +39,7 @@ class ACR_BaseSite : Managed
  bool m_bBuilt;
  bool m_bDamaged;                   // PLANNED: it stands with pieces gone: open again, for those alone
  bool m_bCompact;                   // NEST: the small gun position (ACR_BaseLines.NEST_COMPACT)
+ ref ACR_Emplacement m_Emplacement; // NEST: built from parts, in place of m_sPrefab
  bool m_bNoFit;                     // nothing could be placed: not tried again
  bool m_bSkipped;                   // a squad gave up on it (a truck parked there, no way in): the next order tries again
  int m_iSpot;                       // NEST, BUNKER: its spot in ACR_FobDefences.PrefabFor
@@ -67,6 +68,7 @@ class ACR_BaseWorks
 {
  static const float CLICK_RADIUS = 60;  // m from a base's centre: Fortify there means the whole base
  static const int MAX_NESTS = 3;
+ static const int MAX_GATE_GUNS = 2;
  static const int MAX_BUNKERS = 3;
  static const int MAX_ROADBLOCKS = 2;
  static const float SITE_RADIUS = 30;   // squad members this close to a site work
@@ -533,6 +535,12 @@ class ACR_BaseWorks
     }
     break;
    default:
+    if (site.m_Emplacement)
+    {
+     if (site.m_Emplacement.Build(site.m_aWalls) == 0) return false;
+     MakeWay(work, site);
+     break;
+    }
     ACR_FobBuild.FellTrees(site.m_vPos, ACR_FobDefences.PIECE_RADIUS);
     IEntity piece = ACR_Fortify.SpawnPiece(site.m_sPrefab, site.m_vPos, site.m_fYaw, work.m_sFaction);
     if (!piece) return false;
@@ -824,6 +832,8 @@ class ACR_BaseWorks
     pieces.Remove(nearest);
     ACR_GarrisonSpot spot = new ACR_GarrisonSpot();
     spot.m_Pos = piece.m_vPos - piece.m_vFacing * MAN_BEHIND;
+    // A net hangs down behind the bags: he stands clear of it.
+    if (ACR_BaseDefences.HalfSize(piece.m_sPrefab)[2] > 1) spot.m_Pos = spot.m_Pos - piece.m_vFacing * 0.5;
     spot.m_Pos[1] = ACR_BaseLiner.Ground(spot.m_Pos);
     spot.m_Look = piece.m_vFacing;
     spot.m_bStand = true;
@@ -921,8 +931,11 @@ class ACR_BaseWorks
   ACR_BaseLines.Plan(work, survey);
   // Nests first: gaps for men on foot keep clear of them, and stretches are cut after the gaps.
   ACR_BaseLines.Nests(work, survey, MAX_NESTS);
+  ACR_BaseLines.GateGuns(work, survey, MAX_GATE_GUNS);
+  ACR_BaseLines.DressLines(work);
   ACR_BaseLines.Stretches(work, survey);
   ACR_BaseLines.Wire(work, survey);
+  ACR_BaseLines.Obstacles(work, survey);
   ACR_BaseLines.Checkpoints(work, survey, MAX_ROADBLOCKS);
   ACR_BaseLines.Posts(work, survey, MAX_BUNKERS);
   ACR_BaseLines.CommandPost(work, survey);
@@ -1082,6 +1095,7 @@ class ACR_BaseWorks
    // Nests and bunkers still to build are the new owner's kind.
    if (!site.m_sPrefab.IsEmpty()) site.m_sPrefab = ACR_FobDefences.PrefabFor(site.m_iSpot, owner, site.m_iTier - 1);
    // FIA has no small one: its big nest wouldn't fit the place, so it stays out.
+   if (site.m_Emplacement && !site.m_bBuilt) site.m_Emplacement = site.m_Emplacement.ForOwner(owner);
    if (site.m_bCompact)
    {
     site.m_sPrefab = ACR_Fortify.CompactGun(owner);

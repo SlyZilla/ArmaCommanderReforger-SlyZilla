@@ -10,7 +10,6 @@ class ACR_TestPlaceAudit
  static const float SHORT = 25;         // m: a piece that sees less than this watches a fence, not an approach
  static const float BOX = 25;           // ... boxed: front and back both
  static const float GATE_NEAR = 30;     // m from a way in to a piece for it to be held
- static const float GUN_ON_GATE = 150;  // m a gun covers a way in from, within its fan
  static const float HUG = 3;            // m from a wall, running along it: pointless beside something as good
  static const float ALMOST = 14;        // m between two lines' ends that nearly meet: a hole, not a gap on purpose
  // What the planner has to reach, in percent (of long pieces, or of ways in).
@@ -22,7 +21,7 @@ class ACR_TestPlaceAudit
 
  protected static int s_iNext;
  protected static int s_iTowns;
- protected static int s_iPieces, s_iSeeing, s_iShort, s_iBoxed, s_iAway, s_iHard, s_iHug;
+ protected static int s_iPieces, s_iSeeing, s_iShort, s_iBoxed, s_iAway, s_iHard, s_iHug, s_iPlugs;
  protected static int s_iGates, s_iGatesHeld, s_iGatesGun, s_iNests, s_iNestsOnGate, s_iAlmost;
  protected static float s_fLookSum;
  protected static ref array<ACR_Base> s_aBases = {};
@@ -76,7 +75,14 @@ class ACR_TestPlaceAudit
   {
    foreach (ACR_LinePiece piece : line.m_aPieces)
    {
-    if (!piece.m_bLong) continue;
+    // (A redoubt's sides look out along its flank: they aren't what it's for.)
+    if (!piece.m_bLong || piece.m_bCurve) continue;
+    // (A plug watches the road through it: what its bags see past the houses isn't what it's for.)
+    if (line.m_bPlug)
+    {
+     s_iPlugs++;
+     continue;
+    }
     pieces++;
     float bearing = ACR_BaseDefences.Bearing(piece.m_vFacing);
     vector eye = piece.m_vPos - piece.m_vFacing * 0.4;
@@ -97,8 +103,10 @@ class ACR_TestPlaceAudit
     {
      boxed++;
      bad += " boxed";
+     if (line.m_bGap) bad += " gap";
+     else if (!line.m_aLanes.IsEmpty()) bad += " road";
     }
-    if (ACR_BaseDefences.ThreatDot(dirs, weights, piece.m_vFacing) < -0.2 && work.m_Style.m_iKind != ACR_BaseStyle.RING)
+    if (!piece.m_bCurve && ACR_BaseDefences.ThreatDot(dirs, weights, piece.m_vFacing) < -0.2 && work.m_Style.m_iKind != ACR_BaseStyle.RING)
     {
      away++;
      bad += " away";
@@ -122,23 +130,18 @@ class ACR_TestPlaceAudit
   {
    if (survey.m_aThreat[gate.m_iSector] < ACR_BaseSurvey.MIN_SPOT_THREAT) continue;
    gates++;
-   bool isHeld = false;
-   foreach (ACR_BaseLine gated : work.m_aLines)
-   {
-    foreach (vector lane : gated.m_aLanes) if (vector.DistanceXZ(lane, gate.m_vPos) < GATE_NEAR) isHeld = true;
-    foreach (ACR_LinePiece near : gated.m_aPieces) if (vector.DistanceXZ(near.m_vPos, gate.m_vPos) < GATE_NEAR) isHeld = true;
-   }
+   bool isHeld = ACR_BaseLines.GateHeld(work, gate);
    bool isGunned = false;
+   int geometry = 0;
+   int nestsThere = 0;
    foreach (ACR_BaseSite site : work.m_aSites)
    {
     if (site.m_eKind != ACR_EBaseSite.NEST && site.m_eKind != ACR_EBaseSite.BUNKER) continue;
-    vector to = gate.m_vPos - site.m_vPos;
-    to[1] = 0;
-    float apart = to.Length();
-    if (apart > GUN_ON_GATE || apart < 1) continue;
-    to.Normalize();
-    if (vector.Dot(to, ACR_BaseSurvey.Dir(site.m_fYaw)) > 0.7) isGunned = true;
+    nestsThere++;
+    if (ACR_BaseLines.GunCoversGate(site.m_vPos, site.m_fYaw, gate, false)) geometry++;
+    if (ACR_BaseLines.GunCoversGate(site.m_vPos, site.m_fYaw, gate, true)) isGunned = true;
    }
+   if (!isGunned) PrintFormat("AUDITGUN|%1|%2|%3|guns %4|pointing %5", base.m_sName, gate.m_vPos[0], gate.m_vPos[2], nestsThere, geometry);
    if (isHeld) held++;
    if (isGunned) gunned++;
    if (!isHeld) PrintFormat("AUDITGATE|%1|%2|%3|open", base.m_sName, gate.m_vPos[0], gate.m_vPos[2]);
@@ -204,13 +207,13 @@ class ACR_TestPlaceAudit
  {
   int mean = 0;
   if (s_iPieces > 0) mean = s_fLookSum / s_iPieces;
-  PrintFormat("AUDIT TOTAL pieces %1, sees %2%%, mean %3 m, short %4, boxed %5, away %6, hard %7, hug %8", s_iPieces, Percent(s_iSeeing, s_iPieces), mean, s_iShort, s_iBoxed, s_iAway, s_iHard, s_iHug);
+  PrintFormat("AUDIT TOTAL pieces %1, sees %2%%, mean %3 m, short %4, boxed %5, away %6, hard %7, hug %8, in plugs %9", s_iPieces, Percent(s_iSeeing, s_iPieces), mean, s_iShort, s_iBoxed, s_iAway, s_iHard, s_iHug, s_iPlugs);
   PrintFormat("AUDIT TOTAL gates %1, held %2%%, gunned %3%%, nests %4, almost meeting %5", s_iGates, Percent(s_iGatesHeld, s_iGates), Percent(s_iGatesGun, s_iGates), s_iNests, s_iAlmost);
-  ACR_TestRegress.Check("placeaudit: most pieces see out", Percent(s_iSeeing, s_iPieces) >= FLOOR_SEEING, string.Format("%1%%", Percent(s_iSeeing, s_iPieces)));
+  ACR_TestRegress.Check("placeaudit: most pieces see out", Percent(s_iSeeing, s_iPieces) >= FLOOR_SEEING, string.Format("%1%%", Percent(s_iSeeing, s_iPieces))); // int-math ok
   ACR_TestRegress.Check("placeaudit: few pieces boxed in", Percent(s_iBoxed, s_iPieces) <= FLOOR_BOXED, string.Format("%1%%", Percent(s_iBoxed, s_iPieces)));
   ACR_TestRegress.Check("placeaudit: few pieces face away from the threat", Percent(s_iAway, s_iPieces) <= FLOOR_AWAY, string.Format("%1%%", Percent(s_iAway, s_iPieces)));
-  ACR_TestRegress.Check("placeaudit: the ways in are held", Percent(s_iGatesHeld, s_iGates) >= FLOOR_GATES, string.Format("%1%%", Percent(s_iGatesHeld, s_iGates)));
-  ACR_TestRegress.Check("placeaudit: guns on the ways in", Percent(s_iGatesGun, s_iGates) >= FLOOR_GUN_GATES, string.Format("%1%%", Percent(s_iGatesGun, s_iGates)));
+  ACR_TestRegress.Check("placeaudit: the ways in are held", Percent(s_iGatesHeld, s_iGates) >= FLOOR_GATES, string.Format("%1%%", Percent(s_iGatesHeld, s_iGates))); // int-math ok
+  ACR_TestRegress.Check("placeaudit: guns on the ways in", Percent(s_iGatesGun, s_iGates) >= FLOOR_GUN_GATES, string.Format("%1%%", Percent(s_iGatesGun, s_iGates))); // int-math ok
   ACR_TestRegress.Complete("placeaudit", 5);
  }
 }

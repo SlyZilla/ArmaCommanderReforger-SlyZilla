@@ -23,6 +23,8 @@ class ACR_DefenderPost : Managed
  float m_fSpawnRange = 400;       // an enemy this close deploys them (ACR_Defenders.SPAWN_RANGE)
  float m_fGarrisonArea;           // > 0: they go into the buildings this close (ACR_Garrison)
  ACR_BaseWork m_Work;             // a whole base's works: its men go behind their bags (ACR_BaseWorks.ManLine)
+ ACR_Fortification m_Fort;        // a Fortify position's: its men go behind its wings if it has them (ACR_Wings.ManWings)
+ bool m_bOnWings;
  int m_iMannedLine = -1;
  float m_fMannedAt;
  ref ACR_GuerrillaCell m_Cell;    // an FIA guerrilla cell (ACR_Guerrillas): its own spring and pull-back
@@ -73,6 +75,7 @@ class ACR_Defenders
     if (manager.m_Bases.GuardsAlive(post.m_Group) > 0 && stay)
     {
      ACR_BaseWorks.KeepManned(post);
+     if (post.m_bOnWings) ACR_Squad.FightLikeSquad(post.m_Group);
      continue;
     }
     int back = manager.m_Bases.PackUpGuards(post.m_Group);
@@ -96,7 +99,9 @@ class ACR_Defenders
    post.m_Group = manager.m_Bases.SpawnGuards(post.m_sFaction, post.m_vPos, post.m_iReserve, post.m_sName + " defenders", post.m_fRadius);
    if (!post.m_Group) continue;
    PrintFormat("[ACR] DEFENDERS %1 deployed: %2 soldiers", post.m_sName, post.m_iReserve);
+   post.m_bOnWings = false;
    if (ACR_BaseWorks.ManLine(post, post.m_iReserve)) {}
+   else if (ACR_Wings.ManWings(post, post.m_iReserve)) {}
    else if (post.m_fGarrisonArea > 0 && ACR_Garrison.AssignArea(post.m_Group, post.m_Group.GetLeaderAgent(), post.m_vPos, post.m_fGarrisonArea, post.m_iReserve) > 0) ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_GARRISON, post.m_vPos, post.m_fGarrisonArea, true);
    post.m_iReserve = 0;
    if (post.m_Cell) ACR_Guerrillas.Deployed(manager, post);
@@ -186,6 +191,7 @@ class ACR_Defenders
  protected static int SeatCrew(ACR_DefenderPost post)
  {
   int seated;
+  array<IEntity> taken = {};
   array<AIAgent> agents = {};
   post.m_GunCrew.GetAgents(agents);
   foreach (AIAgent agent : agents)
@@ -202,7 +208,8 @@ class ACR_Defenders
    foreach (IEntity gun : post.m_aCrewGuns)
    {
     BaseCompartmentSlot slot = FreeTurret(gun);
-    if (!slot) continue;
+    if (!slot || taken.Contains(gun)) continue;
+    taken.Insert(gun);
     if (access.GetInVehicle(gun, slot, true, -1, ECloseDoorAfterActions.LEAVE_OPEN, false)) seated++;
     break;
    }

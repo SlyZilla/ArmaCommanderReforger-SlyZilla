@@ -51,6 +51,9 @@ class ACR_BaseLine : Managed
  float m_fView;
  float m_fSeeing = 1;                          // its share of long pieces that see past SEES_FAR
  bool m_bGap;                                  // closes a gap in a wall
+ int m_iSeam;                                  // what stands between its two walks' first pieces (BREAK_*)
+ float m_fLookMean;                            // m its pieces see out, on average (Fit's trace, LOOK_FAR at most)
+ bool m_bPlug;                                 // straight across a way in, hemmed in: what it watches is the road
  int m_iSites;
 
  int Count() { return m_aLeft.Count() + m_aRight.Count(); }
@@ -102,6 +105,7 @@ class ACR_BaseLiner : Managed
  static const float ROAD_KEEP = 0.6;        // m from a road's edge to a piece
  static const float WIDE_PAVED = 18;        // m of concrete ahead that make it a runway or an apron, not a yard
  static const float BAY_TURN = 25;          // degrees: a fire bay steps a long piece's width in or out
+ int m_iReturns;       // long pieces an open end bends back with after its round piece: a redoubt's sides
  int m_iBayEvery;      // long pieces between fire bays, 0 none
  float m_fBaySide = 1; // 1 out towards the enemy, -1 back
  protected int m_iSinceBay;
@@ -118,6 +122,7 @@ class ACR_BaseLiner : Managed
  float m_fSeed;        // the bearing it started from
  float m_fSpan;        // degrees it may run from there
  bool m_bTarget;       // straight for a point
+ bool m_bOpenOnly;     // ... and still not through a yard: a funnel's arm, not a gap being closed
  vector m_vTarget;
  string m_sTargetWord;
  int m_iStop;          // the last walk: what ended it (a FIT_ code), -1 its length or span
@@ -197,7 +202,7 @@ class ACR_BaseLiner : Managed
   if (ACR_BaseDefences.RoadEdgeGap(m_aRoads, mid) < keep || ACR_BaseDefences.RoadEdgeGap(m_aRoads, to) < keep) return FIT_ROAD;
   if (WidePaved(to, heading)) return FIT_PAVED;
   // A square or a yard's concrete: a line goes round it, unless it's closing a gap across it.
-  if (PlacementOn() && !m_bTarget && !loose && ACR_Fortify.HardSurface(mid) && ACR_Fortify.HardSurface(to)) return FIT_PAVED;
+  if (PlacementOn() && !m_Survey.m_bLoose && !m_bTarget && !loose && ACR_Fortify.HardSurface(mid) && ACR_Fortify.HardSurface(to)) return FIT_PAVED;
   if (Math.AbsFloat(toY - tipY) > MAX_RISE * length / ACR_BaseLines.LONG_STEP) return FIT_SLOPE;
   vector facing = FacingOf(heading, sign);
   vector front = mid + facing * 0.6;
@@ -224,7 +229,7 @@ class ACR_BaseLiner : Managed
   m_fLastLook = seen;
   if (seen < VIEW - 0.5) return FIT_VIEW;
   // Boxed in: a short view in front and a short one behind. Closing a gap is what a line in a yard is for.
-  if (PlacementOn() && seen < BOX && !m_bTarget)
+  if (PlacementOn() && !m_Survey.m_bLoose && seen < BOX && (!m_bTarget || m_bOpenOnly))
   {
    vector back = mid + facing * 0.6;
    back[1] = Ground(back) + 1.0;
@@ -547,9 +552,23 @@ class ACR_BaseLiner : Managed
   m_sTargetWord = word;
   string got = Walk(tip, heading, sign, most, run, lanes, laneOut, kit);
   m_bTarget = false;
-  if (!got.IsEmpty()) return got;
+  if (!got.IsEmpty() && !MostlyBlind(run, had)) return got;
   while (run.Count() > had) run.Remove(run.Count() - 1);
   return "";
+ }
+
+ // Of the pieces from 'from' on, do most of at least three see too little to be worth laying?
+ protected bool MostlyBlind(notnull array<ref ACR_LinePiece> run, int from)
+ {
+  if (!PlacementOn() || m_Survey.m_bLoose) return false;
+  int longs, blind;
+  for (int i = from; i < run.Count(); i++)
+  {
+   if (!run[i].m_bLong) continue;
+   longs++;
+   if (run[i].m_fLook >= 0 && run[i].m_fLook < SEES_FAR) blind++;
+  }
+  return longs >= 3 && blind * 2 > longs;
  }
 
  // The open end of a line curves back: a round piece and an end piece with its taper trailing, or just
@@ -575,8 +594,10 @@ class ACR_BaseLiner : Managed
    {
     ACR_LinePiece bend = run[run.Count() - 1];
     bend.m_bCurve = true;
-    if (AddEnd(bend.m_vTo, after, sign, run, kit)) return true;
-    run.Remove(run.Count() - 1);
+    vector endAt = bend.m_vTo;
+    int sides = ReturnPieces(sign, run, kit, endAt, after);
+    if (AddEnd(endAt, after, sign, run, kit)) return true;
+    for (int off = 0; off <= sides; off++) run.Remove(run.Count() - 1);
    }
    vector sharp = TurnedBack(heading, sign, 50);
    if (AddEnd(tip, sharp, sign, run, kit)) return true;
@@ -584,6 +605,68 @@ class ACR_BaseLiner : Managed
    run.Remove(run.Count() - 1);
   }
   return false;
+ }
+
+ // Where a road goes through a line, the bags turn back along it either side: a gate, not two ends that
+ // happen to stop at a road. Back the way the line's men stand, one piece each, a short or a long one.
+ void GateShoulders(ACR_BaseLine line, ACR_BaseDefenceKit kit, ACR_BaseWork work)
+ {
+  array<ref ACR_LinePiece> pieces = line.m_aPieces;
+  RandomGenerator rng = ACR_Variety.For(string.Format("base gate %1 %2", work.m_Base.m_sName, work.m_aLines.Count()));
+  for (int i = pieces.Count() - 2; i >= 0; i--)
+  {
+   ACR_LinePiece before = pieces[i];
+   if (before.m_iBreak != ACR_BaseLines.BREAK_ROAD) continue;
+   ACR_LinePiece after = pieces[i + 1];
+   float length = ACR_BaseLines.SHORT_STEP;
+   ResourceName prefab = kit.m_sShort;
+   if (rng.RandFloat01() < 0.5)
+   {
+    length = ACR_BaseLines.LONG_STEP;
+    prefab = kit.m_sLong;
+   }
+   vector inward = (before.m_vFacing + after.m_vFacing) * -0.5;
+   inward[1] = 0;
+   inward.Normalize();
+   // Each side's facing: towards the road.
+   vector toAfter = ACR_BaseDefences.FlatDir(before.m_vTo, after.m_vFrom);
+   if (Fit(after.m_vFrom, inward, length, 1, true, true) == FIT_OK)
+   {
+    vector afterEnd = after.m_vFrom + inward * length;
+    ACR_LinePiece shoulder = Piece(afterEnd, after.m_vFrom, after.m_vFrom + inward * (length * 0.5), ACR_BaseDefences.Bearing(toAfter * -1), prefab, toAfter * -1);
+    shoulder.m_bCurve = true;
+    pieces.InsertAt(shoulder, i + 1);
+   }
+   if (Fit(before.m_vTo, inward, length, 1, true, true) == FIT_OK)
+   {
+    vector beforeEnd = before.m_vTo + inward * length;
+    ACR_LinePiece other = Piece(before.m_vTo, beforeEnd, before.m_vTo + inward * (length * 0.5), ACR_BaseDefences.Bearing(toAfter), prefab, toAfter);
+    other.m_bCurve = true;
+    other.m_iBreak = ACR_BaseLines.BREAK_ROAD;
+    before.m_iBreak = 0;
+    pieces.InsertAt(other, i + 1);
+   }
+  }
+ }
+
+ // A redoubt's sides: long pieces bending further back, as far as the ground lets them. How many went in.
+ protected int ReturnPieces(int sign, notnull array<ref ACR_LinePiece> run, ACR_BaseDefenceKit kit, inout vector tip, inout vector heading)
+ {
+  int made;
+  while (made < m_iReturns)
+  {
+   vector way = TurnedBack(heading, sign, 16);
+   if (Fit(tip, way, ACR_BaseLines.LONG_STEP, sign, true) != FIT_OK) break;
+   vector to = tip + way * ACR_BaseLines.LONG_STEP;
+   vector facing = FacingOf(way, sign);
+   ACR_LinePiece side = Piece(tip, to, tip + way * (ACR_BaseLines.LONG_STEP * 0.5), ACR_BaseDefences.Bearing(facing), kit.m_sLong, facing);
+   side.m_bCurve = true;
+   run.Insert(side);
+   tip = to;
+   heading = way;
+   made++;
+  }
+  return made;
  }
 
  protected bool AddEnd(vector tip, vector heading, int sign, notnull array<ref ACR_LinePiece> run, ACR_BaseDefenceKit kit)
@@ -744,6 +827,24 @@ class ACR_BaseLines
  static const float MIN_LINE = 30;        // m: shorter isn't a line, unless both ends stand on something
  static const float MIN_GAP = 6.5;        // m: ... and then not under this
  static const float EXTEND_REACH = 30;    // m an open end looks for something to end on
+ static const int WAY_IN_WALKS = 3;       // ways into town walked for a line across them
+ static const float GATE_HELD = 30;       // m from a way in that a line holds it (the audit's GATE_NEAR)
+ static const float GATE_OUT = 50;        // m on along the road where a lane still holds it: a line further out
+ static const int PLUG_ARM = 3;           // long pieces each way across a way in, and up to 2 more
+ static const float SEED_LOOK = 60;       // m a seed is looked out from before it's walked
+ static const float SEED_BLIND = 8;       // m: seeing less it isn't walked at all
+ static const float SEED_CHANCE = 0.25;   // how much luck counts against that (1 = the whole 60 m)
+ static const int SEED_WALKS = 4;         // seeds walked on an approach at most
+ static const float SEED_APART = 12;      // m: a seed nearer a walked line's than this is the same line
+ static const int HUG_RUN = 3;            // pieces in a row along a wall that come out: the wall's the line there
+ static const float HUG_NEAR = 4;         // m from a wall that's along it
+ static const float HUG_DOT = 0.85;       // and how nearly parallel
+ static const int GATE_PIECES = 12;       // what's left in a town's budget that a way in nobody holds can still have
+ static const float FUNNEL_OPEN_MIN = 15; // degrees a funnel's arm opens out from straight across the road
+ static const float FUNNEL_OPEN_MORE = 25;
+ static const int FUNNEL_ARM = 6;         // long pieces in an arm, and up to 4 more
+ static const int BLIND_RUN = 4;          // long pieces in a row seeing nothing that come out of a line
+ static const float WAY_IN_ASIDE = 6;     // m from a road's middle a line across it starts from
  static const int MOST_EXTEND = 10;       // long pieces it may spend getting there
  // Cap on one base's sandbag pieces: replicated props, each a streaming node and a navmesh rebuild. For
  // scale, one vanilla sandbag position is 26-40 pieces, and a medium checkpoint about 28.
@@ -762,10 +863,35 @@ class ACR_BaseLines
  static const float NEST_HALF = 5.2;      // m its bags reach to its sides (measured -5.2 .. 4.4; USSR -5.5 .. 4.5)
  static const float COMPACT_HALF = 1.9;   // the small gun position: its side bags reach 1.7 m (Sandbag_MG_US_01)
  static const float COMPACT_DEPTH = 1.1;
+ static const float BEND_DOT = 0.94;      // two pieces' facings closer than this aren't a bend (about 20 degrees)
+ static const float BEND_WORTH = 0.25;    // a gun at a bend sees along both runs
+ static const float GUN_OPEN_GATE = 1.5;  // a gun on a way in that has none
+ static const float GATE_TURN = 20;       // degrees a gun on a straight run turns for one
+ static const float DRESS_CHANCE = 0.65;  // a line has stretches of low or netted bags
+ static const int DRESS_LEAST = 6;        // pieces in a line for that
+ static const int DIRT_EVERY = 5;         // pieces of a stretch to a mound of dirt
+ static const float DIRT_OUT = 1.6;       // m in front of the bags' middle
+ static const float OBSTACLE_CHANCE = 0.6; // a line with a road through it has obstacles out in front
+ static const int OBSTACLE_MOST = 6;      // hedgehogs each side of the road
+ static const float OBSTACLE_STEP = 3.2;  // m from one to the next
+ static const float OBSTACLE_OUT = 14;    // m out in front of the line
+ static const float OBSTACLE_ASIDE = 8;   // m from the road's middle to the first
+ static const float OBSTACLE_ROAD = 4;    // m it keeps from any road's edge
+ static const ResourceName DIRT_LONG_1 = "{FD625252F3654B76}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_long_v1.et";
+ static const ResourceName DIRT_LONG_2 = "{913666B24FA1C458}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_long_v2.et";
+ static const ResourceName DIRT_LONG_3 = "{74AA2A4B43445333}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_long_v3.et";
+ static const ResourceName DIRT_SHORT = "{D7FB89CF21DDA2A3}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_short.et";
+ static const ResourceName HEDGEHOG = "{E6AE368A342034CB}PrefabsEditable/Auto/Props/Military/Fortification/E_CzechHedgehog_01_rusty.et";
+ static const ResourceName LOGS_BARRICADE = "{3BAF6AA8C20D924E}Prefabs/Compositions/Misc/SubCompositions/Fortifications/Barricade_Logs_01.et";
+ static const float GATE_GUN_ASIDE = 7;   // m from the road a gun on its own stands, or a little more
+ static const float GATE_GUN_HALF = 3;    // m it reaches round its middle
+ static const float GATE_GUN_REACH = 30;  // m its fan must be clear
+ static const int GATE_GUN_LOOKS = 32;    // ways of standing tried for one way in: each is several traces
+ static const float WALK_GAP_NEAR = 10.5; // m: nests stand no nearer a walk gap
  static const float COMPACT_ROAD = 4;     // m from its middle to a road's edge
  static const float GUN_ON_GATE = 150;    // m: a gun this close to a way into town, facing it, covers it
  static const float GUN_GATE_DOT = 0.7;   // ... within about 45 degrees of its facing
- static const float GUN_GATE_WORTH = 0.45;
+ static const float GUN_GATE_WORTH = 0.7;
  static const float GUN_LOOK = 150;       // m a gun's view counts up to
  static const float COMPACT_HOUSE = 5;    // ... to a building, its middle and its gun (1.1 m forward)
 
@@ -794,7 +920,11 @@ class ACR_BaseLines
   ACR_BaseStyle style = work.m_Style;
   // A gap in a wall is close in: that's tier II's line where tier I's is far out.
   bool startsFar = !style.m_aLater.IsEmpty();
-  if (!startsFar) GapLines(work, survey, kit, pool);
+  if (!startsFar)
+  {
+   GapLines(work, survey, kit, pool);
+   WayInLines(work, survey, kit, pool);
+  }
   int total = 0;
   int first = Budget(1, survey.m_iTown) * style.m_fFirstShare;
   total += Fill(work, survey, kit, pool, tried, 1, first);
@@ -803,8 +933,21 @@ class ACR_BaseLines
    pool.Clear();
    tried.Clear();
    GapLines(work, survey, kit, pool);
+   WayInLines(work, survey, kit, pool);
   }
   total += Fill(work, survey, kit, pool, tried, 2, Budget(2, survey.m_iTown) + Budget(1, survey.m_iTown) - first);
+  // Nothing came of it (a mine's concrete, a walled yard): better a line that watches a fence than none.
+  if (ACR_BaseLiner.PlacementOn() && work.m_aLines.IsEmpty() && !survey.m_bLoose)
+  {
+   survey.m_bLoose = true;
+   survey.m_iPass = 0;
+   pool.Clear();
+   tried.Clear();
+   GapLines(work, survey, kit, pool);
+   total += Fill(work, survey, kit, pool, tried, 1, first);
+   total += Fill(work, survey, kit, pool, tried, 2, Budget(2, survey.m_iTown) + Budget(1, survey.m_iTown) - first);
+  }
+  if (ACR_BaseLiner.PlacementOn() && !survey.m_bLoose) total += OpenGateLines(work, survey, kit, total);
   array<ref ACR_BaseLine> behind = {};
   array<int> noMore = {};
   for (int s = 0; s < ACR_BaseSurvey.SECTORS; s++) noMore.Insert(s);
@@ -834,6 +977,11 @@ class ACR_BaseLines
   float bearing = ACR_BaseSurvey.SectorBearing(s);
   array<float> nudges = {0, -7, 7};
   int found = 0;
+  if (ACR_BaseLiner.PlacementOn() && !survey.m_bLoose)
+  {
+   LookedWalks(work, survey, kit, pool, s, offsets, nudges, bearing, rng);
+   return;
+  }
   foreach (float offset : offsets)
   {
    if (found >= 2) return;
@@ -850,6 +998,71 @@ class ACR_BaseLines
     pool.Insert(line);
     found++;
     break;
+   }
+  }
+ }
+
+ // Every offset and nudge looked out from first, then walked best first until two have come up: the ground
+ // decides where the line goes, not which offset happened to be tried first. Weighted, so it isn't the same
+ // spot every time a town's fortified.
+ protected static void LookedWalks(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, notnull array<ref ACR_BaseLine> pool, int s, notnull array<float> offsets, notnull array<float> nudges, float bearing, RandomGenerator rng)
+ {
+  array<vector> seeds = {};
+  array<float> bearings = {};
+  array<float> pasts = {};
+  array<float> looks = {};
+  foreach (float offset : offsets)
+  {
+   float shift = rng.RandFloat01() * 16 - 8;
+   float past = offset + rng.RandFloat01() * 3;
+   foreach (float nudge : nudges)
+   {
+    float seedAt = bearing + shift + nudge;
+    float reach = survey.EdgeSmooth(seedAt) + past;
+    if (reach < 15) continue;
+    vector seed = survey.m_vCenter + ACR_BaseSurvey.Dir(seedAt) * reach;
+    vector eye = seed;
+    eye[1] = ACR_BaseLiner.Ground(seed) + ACR_BaseSurvey.UP_BAGS;
+    seeds.Insert(seed);
+    bearings.Insert(seedAt);
+    pasts.Insert(past);
+    float seedSees = ACR_BaseSurvey.Reach(eye, seedAt, SEED_LOOK);
+    if (seedSees < SEED_BLIND)
+    {
+     seeds.Remove(seeds.Count() - 1);
+     bearings.Remove(bearings.Count() - 1);
+     pasts.Remove(pasts.Count() - 1);
+     continue;
+    }
+    looks.Insert(seedSees / SEED_LOOK + rng.RandFloat01() * SEED_CHANCE);
+   }
+  }
+  int found = 0;
+  int walked = 0;
+  while (found < 2 && walked < SEED_WALKS && !looks.IsEmpty())
+  {
+   int best = 0;
+   foreach (int i, float look : looks) if (look > looks[best]) best = i;
+   vector at = seeds[best];
+   float seedBearing = bearings[best];
+   float seedPast = pasts[best];
+   seeds.Remove(best);
+   bearings.Remove(best);
+   pasts.Remove(best);
+   looks.Remove(best);
+   walked++;
+   ACR_BaseLine line = WalkFrom(work, survey, kit, at, seedBearing, seedPast, rng, s, false, vector.Zero);
+   if (!line) continue;
+   pool.Insert(line);
+   found++;
+   // The next one from somewhere else: not the same stretch again from a few metres along.
+   for (int k = seeds.Count() - 1; k >= 0; k--)
+   {
+    if (vector.DistanceXZ(seeds[k], at) >= SEED_APART) continue;
+    seeds.Remove(k);
+    bearings.Remove(k);
+    pasts.Remove(k);
+    looks.Remove(k);
    }
   }
  }
@@ -955,6 +1168,220 @@ class ACR_BaseLines
   }
  }
 
+ // A candidate across each way into town that's threatened: the road goes through it as a lane. Worst first,
+ // a few at most: each is a walk.
+ protected static void WayInLines(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, notnull array<ref ACR_BaseLine> pool)
+ {
+  if (!ACR_BaseLiner.PlacementOn()) return;
+  array<ACR_BaseGate> gates = {};
+  foreach (ACR_BaseGate gate : survey.m_aGates)
+   if (survey.m_aThreat[gate.m_iSector] >= work.m_Style.m_fMinThreat) gates.Insert(gate);
+  RandomGenerator rng = ACR_Variety.For("base line ways in " + work.m_Base.m_sName);
+  for (int n = 0; n < WAY_IN_WALKS && !gates.IsEmpty(); n++)
+  {
+   int worst = 0;
+   foreach (int g, ACR_BaseGate each : gates)
+    if (survey.WeakLight(each.m_iSector) > survey.WeakLight(gates[worst].m_iSector)) worst = g;
+   ACR_BaseGate way = gates[worst];
+   gates.Remove(worst);
+   float bearing = ACR_BaseDefences.Bearing(way.m_vPos - survey.m_vCenter);
+   if (work.m_Style.m_iKind == ACR_BaseStyle.FUNNEL && FunnelLine(work, survey, kit, way, rng, pool)) continue;
+   // Beside the road, a step clear of it: the walk finds its far side by itself.
+   vector across = Vector(way.m_vOut[2], 0, -way.m_vOut[0]);
+   array<float> sides = {1, -1};
+   foreach (float side : sides)
+   {
+    vector seed = way.m_vPos + across * (side * WAY_IN_ASIDE);
+    if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, seed) < 1) continue;
+    float past = vector.DistanceXZ(seed, survey.m_vCenter) - survey.EdgeSmooth(bearing);
+    ACR_BaseLine line = WalkFrom(work, survey, kit, seed, bearing, past, rng, way.m_iSector, false, vector.Zero);
+    if (!line || line.m_aLanes.IsEmpty()) continue;
+    pool.Insert(line);
+    break;
+   }
+  }
+ }
+
+ // A threatened way in with no line near it, once the rest is chosen: a line across it if it can have one, the
+ // road its lane, short of the town's most pieces. The pieces used.
+ protected static int OpenGateLines(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, int total)
+ {
+  int used = 0;
+  RandomGenerator rng = ACR_Variety.For("base line open ways " + work.m_Base.m_sName);
+  foreach (ACR_BaseGate way : survey.m_aGates)
+  {
+   if (survey.m_aThreat[way.m_iSector] < work.m_Style.m_fMinThreat) continue;
+   if (total + used + 4 >= MOST_PIECES) break;
+   if (GateHeld(work, way)) continue;
+   float bearing = ACR_BaseDefences.Bearing(way.m_vPos - survey.m_vCenter);
+   vector across = Vector(way.m_vOut[2], 0, -way.m_vOut[0]);
+   array<float> sides = {1, -1};
+   array<float> alongs = {0, 15};
+   bool done = false;
+   string words = "";
+   foreach (float along : alongs)
+   {
+    if (done) break;
+    foreach (float side : sides)
+    {
+     vector seed = way.m_vPos + way.m_vOut * along + across * (side * WAY_IN_ASIDE);
+     if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, seed) < 1)
+     {
+      words += " road";
+      continue;
+     }
+     float past = vector.DistanceXZ(seed, survey.m_vCenter) - survey.EdgeSmooth(bearing);
+     ACR_BaseLine line = WalkFrom(work, survey, kit, seed, bearing, past, rng, way.m_iSector, false, vector.Zero);
+     if (!line)
+     {
+      words += " walk";
+      continue;
+     }
+     if (line.m_aLanes.IsEmpty())
+     {
+      words += " nolane";
+      continue;
+     }
+     work.m_aLines.Insert(line);
+     int count = Realize(work, line, survey, kit, Math.Min(GATE_PIECES, MOST_PIECES - total - used));
+     if (count == 0)
+     {
+      words += " realize";
+      work.m_aLines.RemoveItem(line);
+      continue;
+     }
+     line.m_iTier = 2;
+     used += count;
+     done = true;
+     PrintFormat("[ACR] BASEWORKS %1: a way in nobody held gets %2 pieces of its own", work.m_Base.m_sName, count);
+     break;
+    }
+   }
+   // Hemmed in, nowhere a line starts by itself: from the road's edge out, each way, to what it can end on.
+   foreach (float plugAt : alongs)
+   {
+    if (done) break;
+    ACR_BaseLine plug = PlugLine(work, survey, kit, way, plugAt, rng);
+    if (!plug)
+    {
+     words += " noplug";
+     continue;
+    }
+    work.m_aLines.Insert(plug);
+    int plugged = Realize(work, plug, survey, kit, Math.Min(GATE_PIECES, MOST_PIECES - total - used));
+    if (plugged == 0)
+    {
+     words += " plugrealize";
+     work.m_aLines.RemoveItem(plug);
+     continue;
+    }
+    plug.m_iTier = 2;
+    used += plugged;
+    done = true;
+    PrintFormat("[ACR] BASEWORKS %1: a way in nobody held gets a plug of %2 pieces", work.m_Base.m_sName, plugged);
+   }
+   if (!done) PrintFormat("[ACR] BASEWORKS %1: no line for the way in at %2:%3", work.m_Base.m_sName, way.m_vPos, words);
+  }
+  return used;
+ }
+
+ // A short line across a way in 'along' m out from where the road leaves town: an arm from each edge of the road
+ // straight across it. Null if they come to too little.
+ protected static ACR_BaseLine PlugLine(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, ACR_BaseGate way, float along, RandomGenerator rng)
+ {
+  vector at = way.m_vPos + way.m_vOut * along;
+  vector across = Vector(way.m_vOut[2], 0, -way.m_vOut[0]);
+  ACR_BaseLiner liner = new ACR_BaseLiner(survey, work, ACR_BaseDefences.Bearing(way.m_vPos - survey.m_vCenter));
+  liner.m_bTarget = true;
+  liner.m_sTargetWord = "";
+  ACR_BaseLine line = new ACR_BaseLine();
+  line.m_iSector = way.m_iSector;
+  line.m_vFacing = way.m_vOut;
+  line.m_iSeam = BREAK_ROAD;
+  survey.m_iWalks++;
+  int arm = PLUG_ARM + rng.RandInt(0, 3);
+  vector rightSeed, leftSeed;
+  if (!RoadSide(survey, at, across, rightSeed) || !RoadSide(survey, at, across * -1, leftSeed)) return null;
+  liner.m_vTarget = rightSeed + across * ((arm + 4) * LONG_STEP);
+  line.m_sEndB = liner.Walk(rightSeed, across, 1, arm, line.m_aRight, line.m_aLanes, line.m_aLaneOut, kit);
+  liner.m_vTarget = leftSeed - across * ((arm + 4) * LONG_STEP);
+  line.m_sEndA = liner.Walk(leftSeed, across * -1, -1, arm, line.m_aLeft, line.m_aLanes, line.m_aLaneOut, kit);
+  if (line.m_aRight.Count() + line.m_aLeft.Count() < 3) return null;
+  // An arm that didn't go: the line ends there on the road, whatever stopped it.
+  if (line.m_aRight.IsEmpty()) line.m_sEndB = "road";
+  if (line.m_aLeft.IsEmpty()) line.m_sEndA = "road";
+  line.m_bPlug = true;
+  line.m_aLanes.Clear();
+  line.m_aLaneOut.Clear();
+  line.m_aLanes.Insert(at);
+  line.m_aLaneOut.Insert(way.m_vOut);
+  Measure(line, survey);
+  return line;
+ }
+
+ // The first place clear of the road going 'way' from a point on it.
+ protected static bool RoadSide(ACR_BaseSurvey survey, vector at, vector way, out vector side)
+ {
+  for (float off = 3; off <= 12; off += 1.5)
+  {
+   side = at + way * off;
+   if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, side) < 1) continue;
+   side[1] = ACR_BaseLiner.Ground(side);
+   return true;
+  }
+  return false;
+ }
+
+ static bool GateHeld(ACR_BaseWork work, ACR_BaseGate gate)
+ {
+  foreach (ACR_BaseLine line : work.m_aLines)
+  {
+   foreach (vector lane : line.m_aLanes)
+    if (vector.DistanceXZ(lane, gate.m_vPos) < GATE_HELD || vector.DistanceXZ(lane, gate.m_vPos + gate.m_vOut * GATE_OUT) < GATE_HELD) return true;
+   foreach (ACR_LinePiece piece : line.m_aPieces) if (vector.DistanceXZ(piece.m_vPos, gate.m_vPos) < GATE_HELD) return true;
+  }
+  return false;
+ }
+
+ // A funnel across a way in: an arm from each side of the road, opening out towards the enemy and facing in over
+ // it, so whoever comes along the road comes into their fire. False if both arms won't go.
+ protected static bool FunnelLine(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, ACR_BaseGate way, RandomGenerator rng, notnull array<ref ACR_BaseLine> pool)
+ {
+  vector out_way = way.m_vOut;
+  vector across = Vector(out_way[2], 0, -out_way[0]);
+  float open = (FUNNEL_OPEN_MIN + rng.RandFloat01() * FUNNEL_OPEN_MORE) * Math.DEG2RAD;
+  int arm = FUNNEL_ARM + rng.RandInt(0, 4);
+  float bearing = ACR_BaseDefences.Bearing(way.m_vPos - survey.m_vCenter);
+  ACR_BaseLiner liner = new ACR_BaseLiner(survey, work, bearing);
+  liner.m_bTarget = true;
+  liner.m_bOpenOnly = true;
+  liner.m_sTargetWord = "";
+  ACR_BaseLine line = new ACR_BaseLine();
+  line.m_iSector = way.m_iSector;
+  line.m_vFacing = out_way;
+  line.m_iSeam = BREAK_ROAD;
+  survey.m_iWalks++;
+  vector rightWay = across * Math.Cos(open) + out_way * Math.Sin(open);
+  vector leftWay = across * -Math.Cos(open) + out_way * Math.Sin(open);
+  vector rightSeed = way.m_vPos + across * WAY_IN_ASIDE;
+  vector leftSeed = way.m_vPos - across * WAY_IN_ASIDE;
+  rightSeed[1] = ACR_BaseLiner.Ground(rightSeed);
+  leftSeed[1] = ACR_BaseLiner.Ground(leftSeed);
+  if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, rightSeed) < 1 || ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, leftSeed) < 1) return false;
+  liner.m_vTarget = rightSeed + rightWay * ((arm + 4) * LONG_STEP);
+  line.m_sEndB = liner.Walk(rightSeed, rightWay, 1, arm, line.m_aRight, line.m_aLanes, line.m_aLaneOut, kit);
+  liner.m_vTarget = leftSeed + leftWay * ((arm + 4) * LONG_STEP);
+  line.m_sEndA = liner.Walk(leftSeed, leftWay, -1, arm, line.m_aLeft, line.m_aLanes, line.m_aLaneOut, kit);
+  if (line.m_aRight.Count() < 3 || line.m_aLeft.Count() < 3) return false;
+  line.m_aLanes.Clear();
+  line.m_aLaneOut.Clear();
+  line.m_aLanes.Insert(way.m_vPos);
+  line.m_aLaneOut.Insert(out_way);
+  Measure(line, survey);
+  pool.Insert(line);
+  return true;
+ }
+
  protected static void Measure(ACR_BaseLine line, ACR_BaseSurvey survey)
  {
   float length = 0;
@@ -974,17 +1401,23 @@ class ACR_BaseLines
   LookFrom(line.m_aRight, seen, looked);
   line.m_fView = seen * 1.0 / Math.Max(looked, 1);
   int longs, seeing;
-  CountSeeing(line.m_aLeft, longs, seeing);
-  CountSeeing(line.m_aRight, longs, seeing);
-  if (longs > 0) line.m_fSeeing = seeing * 1.0 / longs;
+  float sum;
+  CountSeeing(line.m_aLeft, longs, seeing, sum);
+  CountSeeing(line.m_aRight, longs, seeing, sum);
+  if (longs > 0)
+  {
+   line.m_fSeeing = seeing * 1.0 / longs;
+   line.m_fLookMean = sum / longs;
+  }
  }
 
- protected static void CountSeeing(array<ref ACR_LinePiece> run, inout int longs, inout int seeing)
+ protected static void CountSeeing(array<ref ACR_LinePiece> run, inout int longs, inout int seeing, inout float sum)
  {
   foreach (ACR_LinePiece piece : run)
   {
    if (!piece.m_bLong || piece.m_fLook < 0) continue;
    longs++;
+   sum += piece.m_fLook;
    if (piece.m_fLook >= ACR_BaseLiner.SEES_FAR) seeing++;
   }
  }
@@ -1089,7 +1522,7 @@ class ACR_BaseLines
   }
   float score = weak / Math.Max(n, 1) + Math.Min(line.m_fLength, style.m_fLengthCap) / 60 + 0.3 * line.Anchors() + 0.6 * line.m_fView + style.m_fLaneWorth * line.m_aLanes.Count();
   // What its bags see: a long line of them watching fences isn't worth a short one watching a field.
-  if (ACR_BaseLiner.PlacementOn()) score += 1.2 * line.m_fSeeing;
+  if (ACR_BaseLiner.PlacementOn()) score += 0.7 * line.m_fSeeing + 0.9 * line.m_fLookMean / ACR_BaseLiner.LOOK_FAR;
   if (line.m_bGap) score += 0.4;
   return score;
  }
@@ -1151,6 +1584,11 @@ class ACR_BaseLines
  protected static int Realize(ACR_BaseWork work, ACR_BaseLine line, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, int most)
  {
   ACR_BaseLiner liner = new ACR_BaseLiner(survey, work, ACR_BaseDefences.Bearing(line.m_vFacing));
+  if (ACR_BaseLiner.PlacementOn() && work.m_Style.m_iKind == ACR_BaseStyle.POINTS)
+  {
+   RandomGenerator sides = ACR_Variety.For(string.Format("base redoubt %1 %2", work.m_Base.m_sName, work.m_aLines.Count()));
+   liner.m_iReturns = 1 + sides.RandInt(0, 3);
+  }
   // Curves take two pieces each.
   int room = most - 4;
   while (line.Count() > room && line.Count() > 0)
@@ -1213,11 +1651,17 @@ class ACR_BaseLines
    piece.m_vTo = from;
    // What follows it now is what came before it on the walk.
    if (i > 0) piece.m_iBreak = line.m_aLeft[i - 1].m_iBreak;
-   else piece.m_iBreak = 0;
+   else piece.m_iBreak = line.m_iSeam;
    line.m_aPieces.Insert(piece);
   }
   foreach (ACR_LinePiece right : line.m_aRight) line.m_aPieces.Insert(right);
+  if (ACR_BaseLiner.PlacementOn() && !survey.m_bLoose)
+  {
+   CutBlindStretches(line);
+   if (!line.m_bGap) CutHuggingRuns(line, survey);
+  }
   DropLoneRuns(line);
+  if (ACR_BaseLiner.PlacementOn()) liner.GateShoulders(line, kit, work);
   float length = 0;
   foreach (ACR_LinePiece counted : line.m_aPieces) length += vector.DistanceXZ(counted.m_vFrom, counted.m_vTo);
   line.m_fLength = length;
@@ -1265,6 +1709,65 @@ class ACR_BaseLines
   else line.m_sEndB = word;
   other.Clear();
   for (int k = 0; k <= cut; k++) run.RemoveOrdered(0);
+ }
+
+ // Four or more pieces in a row that see nothing, with a line either side of them: they come out and the line
+ // has a gap there, which a man can walk through and nobody was firing from.
+ protected static void CutBlindStretches(ACR_BaseLine line)
+ {
+  array<ref ACR_LinePiece> pieces = line.m_aPieces;
+  int i = 2;
+  while (i < pieces.Count() - 2)
+  {
+   int run = 0;
+   while (i + run < pieces.Count() - 2 && pieces[i + run].m_bLong && pieces[i + run].m_iBreak == 0 && pieces[i + run].m_fLook >= 0 && pieces[i + run].m_fLook < ACR_BaseLiner.SEES_FAR) run++;
+   if (run < BLIND_RUN)
+   {
+    i += Math.Max(run, 1);
+    continue;
+   }
+   pieces[i - 1].m_iBreak = BREAK_WALK;
+   for (int k = 0; k < run; k++) pieces.RemoveOrdered(i);
+  }
+ }
+
+ // A stretch running along a wall a step behind it adds nothing the wall doesn't give: it comes out, a gap in
+ // the bags where the wall does the work.
+ protected static void CutHuggingRuns(ACR_BaseLine line, ACR_BaseSurvey survey)
+ {
+  array<ref ACR_LinePiece> pieces = line.m_aPieces;
+  int i = 2;
+  while (i < pieces.Count() - 2)
+  {
+   int run = 0;
+   while (i + run < pieces.Count() - 2 && pieces[i + run].m_bLong && pieces[i + run].m_iBreak == 0 && !pieces[i + run].m_bCurve && AlongWall(survey, pieces[i + run])) run++;
+   if (run < HUG_RUN)
+   {
+    i += Math.Max(run, 1);
+    continue;
+   }
+   pieces[i - 1].m_iBreak = BREAK_WALK;
+   for (int k = 0; k < run; k++) pieces.RemoveOrdered(i);
+  }
+ }
+
+ protected static bool AlongWall(ACR_BaseSurvey survey, ACR_LinePiece piece)
+ {
+  vector along = ACR_BaseDefences.FlatDir(piece.m_vFrom, piece.m_vTo);
+  int count = survey.m_aWallEnds.Count();
+  for (int i = 0; i + 1 < count; i += 2)
+  {
+   vector a = survey.m_aWallEnds[i];
+   vector b = survey.m_aWallEnds[i + 1];
+   if (vector.DistanceXZ(a, piece.m_vPos) > HUG_NEAR + 15 && vector.DistanceXZ(b, piece.m_vPos) > HUG_NEAR + 15) continue;
+   if (Math.AbsFloat(ACR_BaseDefences.DotXZ(ACR_BaseDefences.FlatDir(a, b), along)) < HUG_DOT) continue;
+   ACR_BaseDefenceSeg seg = new ACR_BaseDefenceSeg();
+   seg.m_vA = a;
+   seg.m_vB = b;
+   vector q;
+   if (ACR_BaseDefences.SegDistance(seg, piece.m_vPos, q) < HUG_NEAR) return true;
+  }
+  return false;
  }
 
  // A single piece on its own between roads, or between a road and the line's end, comes off. (Only roads
@@ -1418,6 +1921,7 @@ class ACR_BaseLines
    pos.m_aPiecePrefab.Insert(piece.m_sPrefab);
    pos.m_aPieceWall.Insert(true);
   }
+  DirtOn(pos, pieces, survey);
   // A few things behind the bags, so people seem to live here.
   ACR_BaseDefences.Seed(mid.m_vPos);
   vector first = pieces[0].m_vPos;
@@ -1492,6 +1996,51 @@ class ACR_BaseLines
   for (int level = s_iFirstNestLevelForTest; level < levels && made < most; level++) made = NestsAt(work, survey, most, level, made);
  }
 
+ // Whether this gun stands in an emplacement built from parts rather than the game's ready-made nest: weighted
+ // and seeded, where its shape fits. A wide cut gives a bastion out ahead of the line, one piece a notch.
+ protected static void PartsFor(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseSite site, ACR_BaseLine line, int first, int width, int index, bool must)
+ {
+  if (!ACR_Emplacement.On()) return;
+  ACR_Emplacement e = EmplacementAt(work, survey, line.m_aPieces[first], line.m_aPieces[first + width - 1], site.m_fReach);
+  if (!e) return;
+  if (!must)
+  {
+   array<float> scores = {1.0, 1.0};
+   if (work.m_Style.m_iKind == ACR_BaseStyle.POINTS) scores[1] = 1.1;
+   if (ACR_Variety.Pick(scores, string.Format("base gun parts %1 %2", work.m_Base.m_sName, index), 0.2) != 1) return;
+  }
+  site.m_Emplacement = e;
+  site.m_vPos = e.m_vPos;
+  site.m_fYaw = ACR_FobDefences.BearingYaw(e.m_fYaw);
+  site.m_sPrefab = "";
+  site.m_bCompact = false;
+  PrintFormat("[ACR] BASEWORKS %1: gun %2 built from parts at %3 (%4 pieces)", work.m_Base.m_sName, ACR_Emplacement.ShapeWord(e.m_iShape), e.m_vPos, e.m_aPieces.Count());
+ }
+
+ // An emplacement in the gap from one piece to another, if the ground has room for it out ahead and a field of
+ // fire from there.
+ protected static ACR_Emplacement EmplacementAt(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_LinePiece a, ACR_LinePiece b, float reach)
+ {
+  // Left and right as the enemy's the other way: the walk's order may be either.
+  vector facing = (a.m_vFacing + b.m_vFacing) * 0.5;
+  vector from = a.m_vFrom;
+  vector to = b.m_vTo;
+  if (ACR_BaseDefences.DotXZ(ACR_BaseDefences.RightOf(facing), to - from) < 0)
+  {
+   from = b.m_vTo;
+   to = a.m_vFrom;
+  }
+  ACR_Emplacement e = ACR_Emplacement.Between(work.m_sFaction, from, to, facing);
+  if (!e) return null;
+  float half = ACR_Emplacement.TIP_X + 0.3;
+  if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, e.m_vPos) < COMPACT_ROAD) return null;
+  if (ACR_BaseDefences.BuildingGap(survey.m_aBuildings, e.m_vPos, COMPACT_HOUSE) < COMPACT_HOUSE) return null;
+  if (survey.DoorGap(e.m_vPos) < ACR_BaseSurvey.DOOR_CLEAR) return null;
+  if (e.m_iShape != ACR_Emplacement.NOTCH && !ACR_BaseDefences.WorldClear(e.m_vPos, e.m_fYaw, Vector(half, 0, 1.2), null, true)) return null;
+  if (!ACR_BaseSurvey.NestFan(e.m_vPos, e.m_fYaw, reach)) return null;
+  return e;
+ }
+
  // What a place is worth to a gun beyond its sector: a way into the town in its fan, and how far it sees.
  protected static float GunWorth(ACR_BaseWork work, ACR_BaseSurvey survey, vector place, float yaw)
  {
@@ -1501,16 +2050,7 @@ class ACR_BaseLines
   foreach (ACR_BaseGate gate : survey.m_aGates)
   {
    if (survey.m_aThreat[gate.m_iSector] < ACR_BaseSurvey.MIN_SPOT_THREAT) continue;
-   vector to = gate.m_vPos - place;
-   to[1] = 0;
-   float apart = to.Length();
-   if (apart < 5 || apart > GUN_ON_GATE) continue;
-   to = to * (1.0 / apart);
-   if (ACR_BaseDefences.DotXZ(to, ahead) < GUN_GATE_DOT) continue;
-   // Seeing it, not only facing it.
-   vector muzzle = place + ahead * 0.5;
-   muzzle[1] = ACR_BaseLiner.Ground(muzzle) + ACR_BaseSurvey.UP_NEST;
-   if (ACR_BaseSurvey.Reach(muzzle, ACR_BaseDefences.Bearing(to), apart) < apart - 10) continue;
+   if (!GunCoversGate(place, yaw, gate, true)) continue;
    worth += GUN_GATE_WORTH;
    if (work.m_Style.m_bGunsOnLanes) worth += GUN_GATE_WORTH;
    break;
@@ -1519,6 +2059,74 @@ class ACR_BaseLines
   eye[1] = ACR_BaseLiner.Ground(eye) + ACR_BaseSurvey.UP_NEST;
   worth += 0.3 * ACR_BaseSurvey.Reach(eye, yaw, GUN_LOOK) / GUN_LOOK;
   return worth;
+ }
+
+ // A gun covers a way into town if a stretch of the road coming in lies in its fan, in range. 'seeing': and
+ // nothing stands in the way of it.
+ static bool GunCoversGate(vector place, float yaw, ACR_BaseGate gate, bool seeing)
+ {
+  vector ahead = ACR_BaseSurvey.Dir(yaw);
+  array<float> outs = {0, 40, 80, 120};
+  foreach (float out_m : outs)
+  {
+   vector point = gate.m_vPos + gate.m_vOut * out_m;
+   vector to = point - place;
+   to[1] = 0;
+   float apart = to.Length();
+   if (apart < 5 || apart > GUN_ON_GATE) continue;
+   to = to * (1.0 / apart);
+   if (ACR_BaseDefences.DotXZ(to, ahead) < GUN_GATE_DOT) continue;
+   if (!seeing) return true;
+   vector muzzle = place + ahead * 0.5;
+   muzzle[1] = ACR_BaseLiner.Ground(muzzle) + ACR_BaseSurvey.UP_NEST;
+   if (ACR_BaseSurvey.Reach(muzzle, ACR_BaseDefences.Bearing(to), apart) >= apart - 10) return true;
+  }
+  return false;
+ }
+
+ protected static bool WalkGapNear(ACR_BaseLine line, vector at)
+ {
+  foreach (ACR_LinePiece piece : line.m_aPieces)
+   if (piece.m_iBreak == BREAK_WALK && vector.DistanceXZ(piece.m_vTo, at) < WALK_GAP_NEAR) return true;
+  return false;
+ }
+
+ // 'yaw', or up to GATE_TURN off it where that brings a threatened way in into the fan and the fan's clear there.
+ protected static float YawToGate(ACR_BaseSurvey survey, vector place, float yaw, float reach)
+ {
+  array<float> turns = {GATE_TURN, -GATE_TURN};
+  foreach (ACR_BaseGate gate : survey.m_aGates)
+  {
+   if (survey.m_aThreat[gate.m_iSector] < ACR_BaseSurvey.MIN_SPOT_THREAT) continue;
+   if (GunCoversGate(place, yaw, gate, false)) return yaw;
+   foreach (float turn : turns)
+   {
+    if (!GunCoversGate(place, yaw + turn, gate, false)) continue;
+    if (ACR_BaseSurvey.NestFan(place, yaw + turn, reach)) return yaw + turn;
+   }
+  }
+  return yaw;
+ }
+
+ // The most threatened way in no gun of the town covers yet. Null: every one is covered.
+ protected static ACR_BaseGate NextOpenGate(ACR_BaseWork work, ACR_BaseSurvey survey, bool seeing = false, array<ACR_BaseGate> skip = null)
+ {
+  if (!ACR_BaseLiner.PlacementOn()) return null;
+  ACR_BaseGate worst;
+  foreach (ACR_BaseGate gate : survey.m_aGates)
+  {
+   if (survey.m_aThreat[gate.m_iSector] < ACR_BaseSurvey.MIN_SPOT_THREAT) continue;
+   if (skip && skip.Contains(gate)) continue;
+   if (worst && survey.m_aThreat[gate.m_iSector] <= survey.m_aThreat[worst.m_iSector]) continue;
+   bool covered = false;
+   foreach (ACR_BaseSite site : work.m_aSites)
+   {
+    if (site.m_eKind != ACR_EBaseSite.NEST) continue;
+    if (GunCoversGate(site.m_vPos, site.m_fYaw, gate, seeing)) covered = true;
+   }
+   if (!covered) worst = gate;
+  }
+  return worst;
  }
 
  protected static bool LaneNear(ACR_BaseLine line, vector at)
@@ -1535,7 +2143,7 @@ class ACR_BaseLines
   if (compact)
   {
    small = ACR_Fortify.CompactGun(work.m_sFaction);
-   if (small.IsEmpty()) return made;
+   if (small.IsEmpty() && !ACR_Emplacement.On()) return made;
   }
   int wings = NestWings(level);
   float reach = NestReach(level);
@@ -1550,6 +2158,8 @@ class ACR_BaseLines
   array<vector> places = {};
   array<ACR_BaseLine> onLines = {};
   array<int> firsts = {};
+  array<int> widths = {};
+  array<bool> bends = {};
   int width = NestPieces(work.m_sFaction);
   vector half = Vector(NEST_HALF, 0, NEST_DEPTH);
   float roadKeep = ACR_BaseSurvey.NEST_ROAD;
@@ -1624,8 +2234,21 @@ class ACR_BaseLines
       continue;
      }
     }
+    if (WalkGapNear(line, place))
+    {
+     noRun++;
+     continue;
+    }
+    // Turned a little to a way in it would otherwise just miss.
+    if (ACR_BaseLiner.PlacementOn()) yaw = YawToGate(survey, place, yaw, reach);
     // Not with another line's bags close in front of the gun.
     if (BagsAhead(work, place, yaw, line))
+    {
+     noFire++;
+     continue;
+    }
+    bool onlyParts = compact && small.IsEmpty();
+    if (onlyParts && !EmplacementAt(work, survey, a, b, reach))
     {
      noFire++;
      continue;
@@ -1635,18 +2258,50 @@ class ACR_BaseLines
     worths.Insert(GunWorth(work, survey, place, yaw));
     onLines.Insert(line);
     firsts.Insert(i);
+    widths.Insert(width);
+    bends.Insert(onlyParts);
+   }
+   // A bend: only an emplacement built from parts will stand there.
+   if (ACR_Emplacement.On())
+   {
+    for (int j = wings; j + 2 + wings <= count; j++)
+    {
+     ACR_LinePiece first = line.m_aPieces[j];
+     ACR_LinePiece second = line.m_aPieces[j + 1];
+     if (!first.m_bLong || !second.m_bLong || first.m_iBreak != 0 || second.m_iBreak != 0) continue;
+     if (ACR_BaseDefences.DotXZ(first.m_vFacing, second.m_vFacing) > BEND_DOT) continue;
+     bool whole = true;
+     for (int w = j - wings; w < j + 2 + wings; w++)
+     {
+      if (!line.m_aPieces[w].m_bLong) whole = false;
+      if (w < j + 1 + wings && line.m_aPieces[w].m_iBreak != 0) whole = false;
+     }
+     if (!whole) continue;
+     ACR_Emplacement corner = EmplacementAt(work, survey, first, second, reach);
+     if (!corner || WalkGapNear(line, corner.m_vPos) || BagsAhead(work, corner.m_vPos, corner.m_fYaw, line)) continue;
+     places.Insert(corner.m_vPos);
+     yaws.Insert(corner.m_fYaw);
+     worths.Insert(GunWorth(work, survey, corner.m_vPos, corner.m_fYaw) + BEND_WORTH);
+     onLines.Insert(line);
+     firsts.Insert(j);
+     widths.Insert(2);
+     bends.Insert(true);
+    }
    }
   }
   for (; made < most; made++)
   {
    array<float> scores = {};
    array<int> open = {};
+   ACR_BaseGate uncovered = NextOpenGate(work, survey);
    foreach (int c, vector at : places)
    {
     if (ACR_BaseWorks.GunsNear(work, at, yaws[c])) continue;
     open.Insert(c);
     float nestScore = survey.Weak(ACR_BaseSurvey.Sector(yaws[c])) + worths[c];
     if (work.m_Style.m_bGunsOnLanes && LaneNear(onLines[c], at)) nestScore += 0.5;
+    // A way in with no gun on it counts for more than an approach with few.
+    if (uncovered && GunCoversGate(at, yaws[c], uncovered, false)) nestScore += GUN_OPEN_GATE;
     scores.Insert(nestScore);
    }
    if (open.IsEmpty()) break;
@@ -1667,13 +2322,89 @@ class ACR_BaseLines
    }
    site.m_iLine = work.m_aLines.Find(onLines[picked]);
    site.m_fReach = reach;
-   for (int cut = firsts[picked]; cut < firsts[picked] + width; cut++) site.m_aCuts.Insert(onLines[picked].m_aPieces[cut].m_vPos);
+   for (int cut = firsts[picked]; cut < firsts[picked] + widths[picked]; cut++) site.m_aCuts.Insert(onLines[picked].m_aPieces[cut].m_vPos);
+   PartsFor(work, survey, site, onLines[picked], firsts[picked], widths[picked], made, bends[picked]);
    work.m_aSites.Insert(site);
    survey.AddCover(site.m_iSector, ACR_BaseWorks.COVER_NEST);
   }
   if (made < most) PrintFormat("[ACR] BASEWORKS %1: %2 of %3 MG nests: %4 places on its lines, none or too close for more (short or not straight %5, road %6, building %7, door %8, no room %9", work.m_Base.m_sName, made, most, places.Count(), noRun, noRoad, noHouse, noDoor, noRoom);
   if (made < most) PrintFormat("[ACR] BASEWORKS %1: nest places with no line of fire: %2 (level %3)", work.m_Base.m_sName, noFire, level);
   return made;
+ }
+
+ // A way in no gun covers, once the lines' own guns are placed: a gun in a ring of its own beside the road, looking
+ // out along it. Up to 'most' of them, the most threatened first.
+ static void GateGuns(ACR_BaseWork work, ACR_BaseSurvey survey, int most)
+ {
+  if (!ACR_BaseLiner.PlacementOn() || !ACR_Emplacement.On()) return;
+  RandomGenerator rng = ACR_Variety.For("base gate guns " + work.m_Base.m_sName);
+  array<float> sides = {1, -1};
+  if (rng.RandFloat01() < 0.5) sides = {-1, 1};
+  array<float> asides = {GATE_GUN_ASIDE, GATE_GUN_ASIDE + 6, GATE_GUN_ASIDE + 12};
+  array<float> alongs = {4, 14, -6, 24};
+  array<float> inwards = {0.25, 0, 0.5, -0.25};
+  array<ACR_BaseGate> skip = {};
+  int made = 0;
+  while (made < most)
+  {
+   ACR_BaseGate gate = NextOpenGate(work, survey, true, skip);
+   if (!gate) return;
+   vector across = Vector(gate.m_vOut[2], 0, -gate.m_vOut[0]);
+   bool placed = false;
+   int looks = 0;
+   foreach (float along : alongs)
+   {
+    foreach (float side : sides)
+    {
+     foreach (float aside : asides)
+     {
+      if (placed || looks >= GATE_GUN_LOOKS) break;
+      vector at = gate.m_vPos + gate.m_vOut * along + across * (side * aside);
+      at[1] = ACR_BaseLiner.Ground(at);
+      if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, at) < COMPACT_ROAD) continue;
+      if (ACR_BaseDefences.BuildingGap(survey.m_aBuildings, at, COMPACT_HOUSE) < COMPACT_HOUSE) continue;
+      if (survey.DoorGap(at) < ACR_BaseSurvey.DOOR_CLEAR || ACR_Fortify.HardSurface(at)) continue;
+      if (PieceWithin(work, at, GATE_GUN_HALF + 1, {})) continue;
+      if (!ACR_BaseDefences.WorldClear(at, 0, Vector(GATE_GUN_HALF, 0, GATE_GUN_HALF), null, true)) continue;
+      // Turned towards the road it's there to watch, or as near that as its fan is clear.
+      foreach (float inward : inwards)
+      {
+       vector look = gate.m_vOut - across * (side * inward);
+       look[1] = 0;
+       look.Normalize();
+       float yaw = ACR_BaseDefences.Bearing(look);
+       looks++;
+       if (!GunCoversGate(at, yaw, gate, true) || ACR_BaseWorks.GunsNear(work, at, yaw)) continue;
+       if (!ACR_BaseSurvey.NestFan(at, yaw, GATE_GUN_REACH) || BagsAhead(work, at, yaw, null)) continue;
+       ACR_BaseSite site = new ACR_BaseSite();
+       site.m_eKind = ACR_EBaseSite.NEST;
+       site.m_iTier = 2;
+       site.m_vPos = at;
+       site.m_fYaw = ACR_FobDefences.BearingYaw(yaw);
+       site.m_iSector = ACR_BaseSurvey.Sector(yaw);
+       site.m_fScore = survey.Weak(site.m_iSector);
+       site.m_iSpot = ACR_FobDefences.POST_COUNT;
+       site.m_sPrefab = "";
+       site.m_iLine = -1;
+       site.m_fReach = GATE_GUN_REACH;
+       site.m_Emplacement = ACR_Emplacement.Ring(work.m_sFaction, at, look);
+       work.m_aSites.Insert(site);
+       survey.AddCover(site.m_iSector, ACR_BaseWorks.COVER_NEST);
+       PrintFormat("[ACR] BASEWORKS %1: a gun on its own at the way in at %2", work.m_Base.m_sName, gate.m_vPos);
+       placed = true;
+       break;
+      }
+     }
+    }
+   }
+   if (placed)
+   {
+    made++;
+    continue;
+   }
+   PrintFormat("[ACR] BASEWORKS %1: no room for a gun at the way in at %2", work.m_Base.m_sName, gate.m_vPos);
+   skip.Insert(gate);
+  }
  }
 
  // Up to 'most' bunkers and towers tied to the lines: a bunker past a line's end, flank to its last piece,
@@ -1862,6 +2593,141 @@ class ACR_BaseLines
    }
   }
   return false;
+ }
+
+ // ---------------------------------------------------------------- what the bags are like, and what's out in front
+
+ // -acrBaseDress 0: every line plain high bags.
+ static bool DressOn() { return ACR_LogisticsRules.Choice("acrBaseDress", "1") != "0"; }
+ // -acrBaseObstacles 0: only wire out in front of the lines.
+ static bool ObstaclesOn() { return ACR_LogisticsRules.Choice("acrBaseObstacles", "1") != "0"; }
+
+ // Stretches that aren't plain high bags: a line that goes up first is hasty, low in places; one that comes later
+ // has had time for nets. FIA makes do: low ones whenever. By the piece, seeded per town and line, so no two
+ // lines are alike and no piece more stands than would anyway.
+ static void DressLines(ACR_BaseWork work)
+ {
+  if (!DressOn()) return;
+  bool fia = work.m_sFaction == "FIA";
+  bool east = ACR_Emplacement.East(work.m_sFaction);
+  ResourceName low = ACR_BaseDefences.LONG_LOW_PLASTIC;
+  ResourceName camo = ACR_BaseDefences.LONG_CAMO_US;
+  if (east)
+  {
+   low = ACR_BaseDefences.LONG_LOW_BURLAP;
+   camo = ACR_BaseDefences.LONG_CAMO_EAST;
+  }
+  foreach (int l, ACR_BaseLine line : work.m_aLines)
+  {
+   RandomGenerator rng = ACR_Variety.For(string.Format("base dress %1 %2", work.m_Base.m_sName, l));
+   ResourceName swap = low;
+   if (line.m_iTier > 1 && !fia) swap = camo;
+   float chance = DRESS_CHANCE;
+   if (fia) chance = 0.85;
+   if (rng.RandFloat01() >= chance) continue;
+   int runs = 1 + rng.RandInt(0, 2);
+   if (fia) runs++;
+   int count = line.m_aPieces.Count();
+   if (count < DRESS_LEAST) continue;
+   for (int r = 0; r < runs; r++)
+   {
+    int from = rng.RandInt(1, count - 1);
+    int length = 2 + rng.RandInt(0, 3);
+    for (int k = from; k < from + length && k < count; k++)
+    {
+     ACR_LinePiece piece = line.m_aPieces[k];
+     if (!piece.m_bLong || piece.m_bCurve) break;
+     piece.m_sPrefab = swap;
+    }
+   }
+  }
+ }
+
+ protected static int Mod(int a, int b) { return a - b * (a / b); }
+
+ // Dirt thrown up against the front of a stretch, here and there. Its slots in a stretch's plan.
+ protected static void DirtOn(ACR_BaseDefencePos pos, array<ACR_LinePiece> pieces, ACR_BaseSurvey survey)
+ {
+  if (!DressOn()) return;
+  array<ResourceName> mounds = {DIRT_LONG_1, DIRT_LONG_2, DIRT_LONG_3, DIRT_SHORT};
+  foreach (int i, ACR_LinePiece piece : pieces)
+  {
+   if (Mod(i, DIRT_EVERY) != DIRT_EVERY / 2 || !piece.m_bLong) continue;
+   vector at = piece.m_vPos + piece.m_vFacing * DIRT_OUT;
+   at[1] = ACR_BaseLiner.Ground(at);
+   if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, at) < 3 || ACR_Fortify.HardSurface(at)) continue;
+   if (ACR_BaseDefences.BuildingGap(survey.m_aBuildings, at, 4) < 3) continue;
+   if (!ACR_BaseDefences.WorldClear(at, piece.m_fYaw, Vector(2.5, 0, 1), null)) continue;
+   // A mound for the place, and the same one every time for it.
+   int which = Mod(Math.AbsInt((int)(at[0] * 3 + at[2] * 7)), mounds.Count());
+   pos.m_aPiecePos.Insert(at);
+   pos.m_aPieceYaw.Insert(piece.m_fYaw);
+   pos.m_aPiecePrefab.Insert(mounds[which]);
+   pos.m_aPieceWall.Insert(false);
+  }
+ }
+
+ // Out in front of a line with a road through it, either side of the road: what stops a vehicle going round the
+ // gate. Czech hedgehogs for regulars, log barricades for FIA. As a line's wire is, a site of its own.
+ static void Obstacles(ACR_BaseWork work, ACR_BaseSurvey survey)
+ {
+  if (!ObstaclesOn()) return;
+  bool fia = work.m_sFaction == "FIA";
+  foreach (int l, ACR_BaseLine line : work.m_aLines)
+  {
+   if (line.m_iTier > 2 || line.m_aLanes.IsEmpty()) continue;
+   RandomGenerator rng = ACR_Variety.For(string.Format("base obstacles %1 %2", work.m_Base.m_sName, l));
+   if (rng.RandFloat01() >= OBSTACLE_CHANCE) continue;
+   ACR_BaseDefencePos pos = new ACR_BaseDefencePos();
+   pos.m_eKind = ACR_EBaseDefenceKind.WIRE;
+   pos.m_vPos = line.m_vMiddle;
+   pos.m_vFacing = line.m_vFacing;
+   foreach (int n, vector lane : line.m_aLanes)
+   {
+    vector out_way = line.m_aLaneOut[n];
+    vector across = Vector(out_way[2], 0, -out_way[0]);
+    array<float> sides = {1, -1};
+    foreach (float side : sides)
+    {
+     int most = OBSTACLE_MOST - rng.RandInt(0, 3);
+     float step = OBSTACLE_STEP;
+     if (fia)
+     {
+      most = 2;
+      step = 7;
+     }
+     float out_m = OBSTACLE_OUT + rng.RandFloat01() * 5;
+     for (int k = 0; k < most; k++)
+     {
+      vector at = lane + out_way * (out_m + Mod(k, 2) * 2.5) + across * (side * (OBSTACLE_ASIDE + k * step));
+      at[1] = ACR_BaseLiner.Ground(at);
+      if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, at) < OBSTACLE_ROAD) continue;
+      if (ACR_BaseDefences.BuildingGap(survey.m_aBuildings, at, 4) < 3 || BBB_Terrain.IsWaterAt(at)) continue;
+      float half = 1.1;
+      if (fia) half = 3.4;
+      float yaw = ACR_BaseDefences.Bearing(across) + rng.RandFloat01() * 40 - 20;
+      if (!ACR_BaseDefences.WorldClear(at, yaw, Vector(half, 0, 1.1), null)) continue;
+      pos.m_aPiecePos.Insert(at);
+      pos.m_aPieceYaw.Insert(yaw);
+      if (fia) pos.m_aPiecePrefab.Insert(LOGS_BARRICADE);
+      else pos.m_aPiecePrefab.Insert(HEDGEHOG);
+      pos.m_aPieceWall.Insert(false);
+     }
+    }
+   }
+   if (pos.m_aPiecePos.Count() < 2) continue;
+   ACR_BaseSite site = new ACR_BaseSite();
+   site.m_eKind = ACR_EBaseSite.PLANNED;
+   site.m_Plan = pos;
+   site.m_vPos = line.m_vMiddle;
+   site.m_fYaw = ACR_BaseDefences.Bearing(line.m_vFacing);
+   site.m_iSector = line.m_iSector;
+   site.m_iTier = 2;
+   site.m_iLine = l;
+   site.m_fScore = survey.WeakLight(site.m_iSector);
+   work.m_aSites.Insert(site);
+   PrintFormat("[ACR] BASEWORKS %1 line %2: %3 obstacles out in front of its road", work.m_Base.m_sName, l, pos.m_aPiecePos.Count());
+  }
  }
 
  // ---------------------------------------------------------------- wire and the command post

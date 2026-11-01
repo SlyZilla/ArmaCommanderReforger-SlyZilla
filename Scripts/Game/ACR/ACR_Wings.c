@@ -39,6 +39,7 @@ class ACR_Wings
  static const int FEW = 2;              // a free wing with fewer isn't worth building
  static const int GAP_FROM = 7;         // a tied wing this long leaves a gap for men on foot ...
  static const float GAP_AT = 0.6;       // ... this far along
+ static const int MEN_LEAST = 3;        // long pieces standing before a reserve goes behind them
  static const float GUN_ROOM = 2.6;     // m round a gun or post its bags make way
  static const float GUN_FIRE_HALF = 1.6; // m either side of a gun's line of fire, out to ACR_Fortify.FIRE_CLEAR
  static int s_iWorstMs;                 // tests: the most a work's wings have cost to plan
@@ -48,6 +49,51 @@ class ACR_Wings
  static bool On()
  {
   return ACR_LogisticsRules.Choice("acrWings", "1") != "0";
+ }
+
+ // A position's reserve out and wings standing: each man to his own place behind the bags, from the position
+ // outwards, so the wings are held and not only there to look at. False: too little wing, they do what they did.
+ // -acrWingMen 0 leaves them round the position.
+ static bool ManWings(ACR_DefenderPost post, int men)
+ {
+  ACR_Fortification fort = post.m_Fort;
+  if (!fort || !post.m_Group || men <= 0 || ACR_LogisticsRules.Choice("acrWingMen", "1") == "0") return false;
+  array<ACR_LinePiece> pieces = {};
+  foreach (ACR_WingPlan plan : fort.m_aWingPlans)
+  {
+   foreach (ACR_LinePiece piece : plan.m_aPieces)
+    if (piece.m_bLong && PieceStands(fort, piece.m_vPos)) pieces.Insert(piece);
+  }
+  if (pieces.Count() < MEN_LEAST) return false;
+  array<ref ACR_GarrisonSpot> spots = {};
+  while (spots.Count() < men && !pieces.IsEmpty())
+  {
+   int nearest = 0;
+   foreach (int p, ACR_LinePiece candidate : pieces)
+    if (vector.DistanceXZ(candidate.m_vPos, fort.m_vPos) < vector.DistanceXZ(pieces[nearest].m_vPos, fort.m_vPos)) nearest = p;
+   ACR_LinePiece piece = pieces[nearest];
+   pieces.Remove(nearest);
+   ACR_GarrisonSpot spot = new ACR_GarrisonSpot();
+   spot.m_Pos = piece.m_vPos - piece.m_vFacing * ACR_BaseWorks.MAN_BEHIND;
+   spot.m_Pos[1] = ACR_BaseLiner.Ground(spot.m_Pos);
+   spot.m_Look = piece.m_vFacing;
+   spot.m_bStand = true;
+   spots.Insert(spot);
+  }
+  float radius;
+  if (ACR_Garrison.PostsAt(post.m_Group, spots, fort.m_vPos, radius) <= 0) return false;
+  ACR_Squad.FightLikeSquad(post.m_Group);
+  ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_GARRISON, fort.m_vPos, radius, true);
+  post.m_bOnWings = true;
+  PrintFormat("[ACR] WINGS %1: %2 men behind the bags (%3 places)", post.m_sName, men, spots.Count());
+  return true;
+ }
+
+ protected static bool PieceStands(ACR_Fortification fort, vector at)
+ {
+  foreach (IEntity wing : fort.m_aWings)
+   if (wing && vector.DistanceXZ(wing.GetOrigin(), at) < 0.5) return true;
+  return false;
  }
 
  static string ShapeWord(int shape)

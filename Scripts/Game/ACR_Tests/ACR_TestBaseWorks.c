@@ -387,7 +387,7 @@ class ACR_TestBaseWorks
    kinds += ACR_BaseWorks.SiteWords(site) + ", ";
    if (site.m_eKind == ACR_EBaseSite.NEST) nest = true;
    // The small gun position is one plain prop, the big nest a composition the game's own build menu knows.
-   if (site.m_eKind == ACR_EBaseSite.NEST && !site.m_bCompact && !site.m_aWalls[0].FindComponent(SCR_CampaignBuildingCompositionComponent)) real = false;
+   if (site.m_eKind == ACR_EBaseSite.NEST && !site.m_bCompact && !site.m_Emplacement && !site.m_aWalls[0].FindComponent(SCR_CampaignBuildingCompositionComponent)) real = false;
    if (site.m_eKind == ACR_EBaseSite.ROADBLOCK && !site.m_Roadblock) real = false;
   }
   ACR_TestRegress.Check("baseworks: tier II built", ACR_BaseWorks.BuiltSites(s_Work, 2) > 0 && real, kinds);
@@ -637,7 +637,7 @@ class ACR_TestBaseWorks
  protected static ref set<int> s_aLengths = new set<int>();
  protected static int s_iSeeing, s_iLooked, s_iGapByNest, s_iFragments, s_iLoneCheck, s_iAnchored, s_iEnds2, s_iBehind, s_iCramped;
  protected static float s_fOurs, s_fEither;
- static const float COVER_FLOOR = 0.5;   // of a threatened arc, by lines, on average (the maps reach 55-68%)
+ static const float COVER_FLOOR = 0.45;  // of a threatened arc, by lines, on average (the maps reach 49-61%: a blind or wall-side stretch no longer counts)
  static const float ANCHOR_FLOOR = 0.5;  // the maps reach 55-78%
  protected static int s_iLongLine, s_iLongNoNest, s_iOnApron, s_iBayLines, s_iLongLines;
  protected static ref array<int> s_aStyles = {0, 0, 0, 0, 0};
@@ -805,8 +805,10 @@ class ACR_TestBaseWorks
    }
    else s_iBunkers++;
    GunChecks(base, site, buildings, segs, doors);
-   if (site.m_eKind == ACR_EBaseSite.NEST && !Winged(work, site)) s_iNestOff++;
-   if (!NearBags(work, site.m_vPos, 14))
+   // (A gun on its own at a way in isn't in a line on purpose.)
+   if (site.m_eKind == ACR_EBaseSite.NEST && site.m_iLine >= 0 && !Winged(work, site)) s_iNestOff++;
+   bool lone = site.m_Emplacement && site.m_Emplacement.m_iShape == ACR_Emplacement.RING;
+   if (!lone && !NearBags(work, site.m_vPos, 14))
    {
     s_iGunAlone++;
     PrintFormat("[ACR] TEST baseworks plan %1: %2 at %3: no sandbags within 14 m", base.m_sName, ACR_BaseWorks.SiteWords(site), site.m_vPos);
@@ -1142,8 +1144,9 @@ class ACR_TestBaseWorks
   if (word == "curve")
   {
    // The end piece, against the last long piece: turned at least 30 degrees, away from the firing side.
+   // (A redoubt's sides are long and already bending back: the line's own run is what it turns from.)
    int back = last + inward;
-   while (back >= 0 && back < pieces.Count() && !pieces[back].m_bLong) back += inward;
+   while (back >= 0 && back < pieces.Count() && (!pieces[back].m_bLong || pieces[back].m_bCurve)) back += inward;
    if (back >= 0 && back < pieces.Count())
    {
     // Both outward along the chain: a first piece's chain runs into the line, a last one's out of it.
@@ -1153,7 +1156,7 @@ class ACR_TestBaseWorks
     fine = ACR_BaseDefences.DotXZ(endWay, lineWay) < 0.87 && ACR_BaseDefences.DotXZ(endWay, pieces[back].m_vFacing) < 0;
    }
   }
-  else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 8) < 8;
+  else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 40) < 8;
   else if (word == "road") fine = ACR_BaseDefences.RoadEdgeGap(segs, tip) < 6;
   else if (word == "wall" || word == "gap" || word == "work" || word == "slope" || word == "rock" || word == "line") fine = true;
   if (fine) return;
@@ -1507,10 +1510,22 @@ class ACR_TestBaseWorks
   // From the small guns' own level, where a town gets those if it gets a gun at all.
   int firstWas = ACR_BaseLines.s_iFirstNestLevelForTest;
   ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
-  ACR_Options.Set("acrBaseSmallGuns", "0");
-  int gunsOff = CompactSites(base);
-  ACR_Options.Unset("acrBaseSmallGuns");
-  int gunsOn = CompactSites(base);
+  // (Ready-made ones: a gun from parts counts for itself.)
+  ACR_Options.Set("acrEmplacements", "0");
+  int gunsOff = 0;
+  int gunsOn = 0;
+  int asked = 0;
+  // A town may have no place for one: the first few that do.
+  foreach (ACR_Base some : ACR_Base.s_All)
+  {
+   if (!some || some.m_bRetired || some.m_bHidden || some.m_bBuilt || asked >= 15 || gunsOn > 0) continue;
+   asked++;
+   ACR_Options.Set("acrBaseSmallGuns", "0");
+   gunsOff += CompactSites(some);
+   ACR_Options.Unset("acrBaseSmallGuns");
+   gunsOn += CompactSites(some);
+  }
+  ACR_Options.Unset("acrEmplacements");
   ACR_BaseLines.s_iFirstNestLevelForTest = firstWas;
   ACR_TestRegress.Check("baseworks plan: -acrBaseSmallGuns 0 turns small guns off", gunsOff == 0 && gunsOn > 0, string.Format("%1 off, %2 on", gunsOff, gunsOn));
   // Every town a wall with styles off, whatever its seed would draw.

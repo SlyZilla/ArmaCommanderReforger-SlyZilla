@@ -96,6 +96,7 @@ class ACR_BaseSurvey : Managed
  int m_iLineMs;                           // what its lines cost to plan
  int m_iWalks;                            // lines walked to get them
  int m_iPass;                             // 1: the approaches are being walked a second time
+ bool m_bLoose;                           // no line came of the strict placement: a town gets one anyway
  protected ref map<int, ref array<ref ACR_BaseDefenceSeg>> m_mRoads = new map<int, ref array<ref ACR_BaseDefenceSeg>>();
  protected ref map<int, ref array<IEntity>> m_mHouses = new map<int, ref array<IEntity>>();
  ref map<string, int> m_mRefused = new map<string, int>(); // command post pieces left out, and why
