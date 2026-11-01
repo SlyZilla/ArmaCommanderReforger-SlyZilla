@@ -549,6 +549,35 @@ class ACR_AirLift : ACR_SupportRun
   return alive;
  }
 
+ // The men a loading helicopter waits for: alive and awake (Board leaves the unconscious behind,
+ // so counting them held every lift with a man down for the whole BOARD_WAIT_MS), and on a
+ // single-spot lift not those chalk 1 already put down.
+ protected int ToBoard()
+ {
+  int count;
+  if (!m_Squad) return 0;
+  array<AIAgent> agents = {};
+  m_Squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   if (!agent) continue;
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!body || !ACR_Respawn.IsAlive(body) || Landed(body)) continue;
+   if (!ACR_Transport.VehicleOf(body) && body.GetCharacterController().IsUnconscious()) continue;
+   count++;
+  }
+  return count;
+ }
+
+ // Single-spot lift: a man on foot nearer the drop than the pickup came in on chalk 1. Before,
+ // chalk 2's boarding sent him walking back to the pickup.
+ protected bool Landed(ChimeraCharacter body)
+ {
+  if (!m_bSequential || m_iChalksOut == 0 || m_Drops.IsEmpty() || m_Pickups.IsEmpty()) return false;
+  if (ACR_Transport.VehicleOf(body)) return false;
+  return vector.DistanceXZ(body.GetOrigin(), m_Drops[0]) < vector.DistanceXZ(body.GetOrigin(), m_Pickups[0]);
+ }
+
  // The support call (from ACR_Supports.Call). Nothing is spent unless helicopters can come.
  static string Call(ACR_Supports supports, string factionKey, ACR_SupportEntry entry, vector target, bool byAI, ACR_Squad squad, ResourceName finalPrefab = "", vector finalTarget = vector.Zero, float finalRadius = -1, string finalOrder = "", int finalKind = 0)
  {
@@ -725,8 +754,9 @@ class ACR_AirLift : ACR_SupportRun
    {
     if (squadGone) { Leave(supports, now, "the squad is gone"); break; }
     int aboard = Board(now);
-    int alive = Alive(m_Squad);
-    if (aboard >= alive || (now - m_fStageAt > BOARD_WAIT_MS && aboard > 0))
+    int alive = ToBoard();
+    // (aboard > 0: with every man left down, ToBoard is 0 and an empty lift took off.)
+    if ((aboard >= alive && aboard > 0) || (now - m_fStageAt > BOARD_WAIT_MS && aboard > 0))
     {
      if (aboard < alive) PrintFormat("[ACR] AIRLIFT %1: leaving with %2 of %3 aboard", m_sSquadName, aboard, alive);
      ClearBoarding();
@@ -866,7 +896,7 @@ class ACR_AirLift : ACR_SupportRun
   {
    if (!member) continue;
    ChimeraCharacter body = ChimeraCharacter.Cast(member.GetControlledEntity());
-   if (body && ACR_Respawn.IsAlive(body) && ACR_Squad.FindController(body) == 0) eligible.Insert(body);
+   if (body && ACR_Respawn.IsAlive(body) && ACR_Squad.FindController(body) == 0 && !Landed(body)) eligible.Insert(body);
   }
   for (int prune = m_Boarding.Count() - 1; prune >= 0; prune--)
   {
@@ -1053,7 +1083,7 @@ class ACR_AirLift : ACR_SupportRun
   }
   ACR_LiftHeli h0 = m_Helis[0];
   ACR_LiftHeli h1 = m_Helis[1];
-  int alive = Alive(m_Squad);
+  int alive = ToBoard();
 
   // Handle destruction of either helicopter gracefully
   if (h0.m_bDestroyed && h0.m_iLeg < 4)
@@ -1091,13 +1121,16 @@ class ACR_AirLift : ACR_SupportRun
   {
    int aboard0 = Board(now);
    float waited0 = now - h0.m_fLegAt;
-   if (Passengers(h0) >= h0.CargoSeats() || aboard0 >= alive || (waited0 > BOARD_WAIT_MS && Passengers(h0) > 0))
+   if (Passengers(h0) >= h0.CargoSeats() || (aboard0 >= alive && Passengers(h0) > 0) || (waited0 > BOARD_WAIT_MS && Passengers(h0) > 0))
    {
     ClearBoarding(h0);
     h0.TakeOff(m_Drops[0], false);
     h0.m_iLeg = 2;
     h0.m_fLegAt = now;
     m_iChalksOut++;
+    // As the two-spot lift does once all are aboard: the squad's walk to the landing zone is over.
+    // Left as a move, the men chalk 1 carried were sent back to the pickup when it landed.
+    m_Squad.Halt("Air lift: in the air", ACR_EOrderState.HOLD);
     PrintFormat("[ACR] AIRLIFT %1: chalk 1 taking off with %2 passengers", m_sSquadName, Passengers(h0));
     if (h1 && !h1.m_bDestroyed && !h1.m_bAway)
     {
@@ -1126,7 +1159,10 @@ class ACR_AirLift : ACR_SupportRun
   {
    int aboard1 = Board(now);
    float waited1 = now - h1.m_fLegAt;
-   if (Passengers(h1) >= h1.CargoSeats() || aboard1 >= alive || (waited1 > BOARD_WAIT_MS && Passengers(h1) > 0))
+   // Nobody left at the pickup (chalk 1 carried them all, or the rest are down): chalk 2 goes home
+   // now instead of after BOARD_WAIT_MS.
+   bool nobodyLeft = aboard1 >= alive && Passengers(h1) == 0;
+   if (Passengers(h1) >= h1.CargoSeats() || (aboard1 >= alive && Passengers(h1) > 0) || (waited1 > BOARD_WAIT_MS && Passengers(h1) > 0))
    {
     ClearBoarding(h1);
     h1.TakeOff(m_Drops[0], false);
@@ -1135,7 +1171,7 @@ class ACR_AirLift : ACR_SupportRun
     m_iChalksOut++;
     PrintFormat("[ACR] AIRLIFT %1: chalk 2 taking off with %2 passengers", m_sSquadName, Passengers(h1));
    }
-   else if (waited1 > BOARD_WAIT_MS)
+   else if (waited1 > BOARD_WAIT_MS || nobodyLeft)
    {
     ClearBoarding(h1);
     h1.TakeOff(h1.m_Start, true);
