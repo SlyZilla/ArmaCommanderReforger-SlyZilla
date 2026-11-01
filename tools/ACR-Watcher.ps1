@@ -337,6 +337,64 @@ function Write-Result($id, $lines) {
     $lines | Set-Content -LiteralPath $path -Encoding UTF8
 }
 
+# What a test checks, for the banner: the comment that names its flag in the test scripts
+# ("// -acrPadsTest: helipads on this scenario's map"), else the header of the file that reads it.
+function Get-FirstSentence($text) {
+    $cut = $text.IndexOf('. ')
+    if ($cut -gt 0) { $text = $text.Substring(0, $cut + 1) }
+    if ($text.Length -gt 150) { $text = $text.Substring(0, 147).TrimEnd() + '...' }
+    if ($text) { $text = $text.Substring(0, 1).ToUpper() + $text.Substring(1) }
+    return $text
+}
+
+function Get-TestPurpose($flags) {
+    if ($flags -notmatch '-(acr[A-Za-z]+Test)') { return '' }
+    $name = $Matches[1]
+    $testDir = Join-Path $ProjectRoot 'Scripts\Game\ACR_Tests'
+    if (!(Test-Path -LiteralPath $testDir)) { return '' }
+    $hit = Select-String -Path (Join-Path $testDir '*.c') -Pattern ('//.*-' + $name + '\b[^:]*:\s*(.+)') | Select-Object -First 1
+    if ($hit) {
+        # The comment may run on over the next lines (up to three more).
+        $text = $hit.Matches[0].Groups[1].Value.Trim()
+        $next = @(Get-Content -LiteralPath $hit.Path | Select-Object -Skip $hit.LineNumber -First 3)
+        foreach ($line in $next) {
+            if ($text -match '[.)]$' -or $line -notmatch '^\s*//\s*(.+)' -or $line -match '//\s*-acr') { break }
+            $text += ' ' + $Matches[1].Trim()
+        }
+        return (Get-FirstSentence $text)
+    }
+    $file = Select-String -Path (Join-Path $testDir '*.c') -Pattern ('"' + $name + '"') -List | Where-Object { $_.Filename -notmatch '^ACR_Test(Harness|HooksImpl)\.c$' } | Select-Object -First 1
+    if ($file) {
+        $first = Get-Content -LiteralPath $file.Path -TotalCount 1
+        if ($first -match '^\s*//\s*(.+)') { return (Get-FirstSentence $Matches[1].Trim()) }
+    }
+    return ''
+}
+
+# Jacob, 1 Nov: a test that opens the game on his screen says so on screen. The banner is a
+# separate click-through window (tools\Show-TestBanner.ps1) that closes with the game.
+function Start-TestBanner($id, $preset, $config, $gamePid, $started) {
+    try {
+        $lines = @()
+        $purpose = Get-TestPurpose $config.Flags
+        if ($purpose) { $lines += $purpose }
+        $build = ''
+        $buildFile = Join-Path $RequestDir "$id.build.txt"
+        if (Test-Path -LiteralPath $buildFile) { $build = ' | build ' + (Get-Content -LiteralPath $buildFile -Raw).Trim() }
+        $lines += "Run '$id'$build | started $($started.ToString('HH:mm'))"
+        $lines += "Requested by an agent. Closes by itself; leave mouse and keyboard alone until then."
+        $spec = Join-Path $RequestDir "$id.banner.json"
+        @{ title = "AUTOMATED TEST: AC: Actual '$preset'"; lines = $lines; timeoutSec = $config.TimeoutSec; started = $started.ToString('o') } |
+            ConvertTo-Json | Set-Content -LiteralPath $spec -Encoding UTF8
+        $script = Join-Path $PSScriptRoot 'Show-TestBanner.ps1'
+        $bannerArgs = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $script + '" -SpecFile "' + $spec + '" -WatchPid ' + $gamePid
+        return Start-Process -FilePath 'powershell.exe' -ArgumentList $bannerArgs -WindowStyle Hidden -PassThru
+    } catch {
+        Write-Host "Banner not shown: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $null
+    }
+}
+
 function Invoke-Request($file) {
     $id = [IO.Path]::GetFileNameWithoutExtension($file.Name)
     $preset = (Get-Content -LiteralPath $file.FullName -Raw).Trim().ToLower()
@@ -388,6 +446,7 @@ function Invoke-Request($file) {
     Write-Host "[$time] Running '$preset'..." -ForegroundColor Cyan
     $started = Get-Date
     $proc = Start-Process -FilePath $game -ArgumentList $gameArgs -WorkingDirectory (Split-Path $game -Parent) -PassThru
+    $banner = Start-TestBanner $id $preset $config $proc.Id $started
 
     $outcome = 'timeout'
     $log = $null
@@ -410,6 +469,7 @@ function Invoke-Request($file) {
         if (((Get-Date) - $started).TotalSeconds -gt $config.TimeoutSec) { break }
     }
     if (!$proc.HasExited) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue }
+    if ($banner -and !$banner.HasExited) { Stop-Process -Id $banner.Id -ErrorAction SilentlyContinue }
 
     $result = @("status=$outcome", "preset=$preset", "started=$($started.ToString('s'))", "seconds=$([int]((Get-Date) - $started).TotalSeconds)", "log=$log", '---')
     if ($log -and (Test-Path -LiteralPath $log)) {
