@@ -41,6 +41,7 @@ class ACR_TestPanelShots
   if (tick == 4)
   {
    ACR_UiPrefs.UseTestFileForTest();
+   ACR_UiPrefs.s_bMoreOpen = true; // the key reminders button is under it
    ACR_Manager manager = ACR_Manager.GetInstance();
    ACR_Intel intel = null;
    if (manager) intel = manager.IntelFor("US");

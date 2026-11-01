@@ -25,11 +25,13 @@ class ACR_TestKeyHints
   foreach (int i, string id : ids) ACR_UiPrefs.SetSpot(id, -400.5 - i, 250 + i);
   ACR_UiPrefs.s_bKeyHints = false;
   ACR_UiPrefs.s_bBuildOpen = true;
+  ACR_UiPrefs.s_bUpgradesOpen = true;
+  ACR_UiPrefs.s_bMoreOpen = true;
   ACR_UiPrefs.Save();
   ACR_UiPrefs.ResetForTest();
   ACR_TestRegress.Check("keyhints: a reset forgets until the file is read", !ACR_UiPrefs.Moved(ACR_UiPrefs.PANEL), "");
   ACR_UiPrefs.Load();
-  bool kept = !ACR_UiPrefs.s_bKeyHints && ACR_UiPrefs.s_bBuildOpen;
+  bool kept = !ACR_UiPrefs.s_bKeyHints && ACR_UiPrefs.s_bBuildOpen && ACR_UiPrefs.s_bUpgradesOpen && ACR_UiPrefs.s_bMoreOpen;
   string keptWhy = "";
   foreach (int k, string keptId : ids)
   {
