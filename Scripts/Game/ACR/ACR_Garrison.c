@@ -261,6 +261,8 @@ class ACR_Garrison
   s_Replans.Clear();
   s_Tight.Clear();
   s_aBad.Clear();
+  s_StragglerAt.Clear();
+  s_StragglerFor.Clear();
  }
  static int s_iDropped; // tests
 

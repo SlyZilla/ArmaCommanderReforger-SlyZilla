@@ -196,6 +196,19 @@ class ACR_Insurgency
 
  static bool Leaning() { return s_bLeaning; }
 
+ // Per match (ACR_Manager.Stop): the next mission's setup asked the last one's alliances, and its
+ // Apply un-friended the last ally on the new world's faction manager. No Unfriend here: those
+ // factions went with the old world.
+ static void Reset()
+ {
+  s_aRoads.Clear();
+  s_aSides.Clear();
+  s_aFriends.Clear();
+  s_sAlly = "";
+  s_bLeaning = false;
+  s_iSeconds = 0;
+ }
+
  protected static bool LeaningOption()
  {
   string value;

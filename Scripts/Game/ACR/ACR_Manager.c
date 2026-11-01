@@ -225,6 +225,7 @@ class ACR_Manager : Managed
   ACR_Setup.Reset();
   ACR_SetupClient.Reset();
   ACR_FactionSelection.Reset();
+  ACR_PlayerSide.Reset();
   ACR_Vehicles.Reset();
   ACR_Generator.Reset();
   ACR_QuickStart.Reset();
@@ -249,6 +250,9 @@ class ACR_Manager : Managed
   ACR_Transport.ResetHorns();
   ACR_FactionCatalog.ForgetResolved();
   ACR_Supports.Reset();
+  ACR_DoctrineKits.Reset();
+  ACR_Think.Reset();
+  ACR_Insurgency.Reset();
   // Setup screen choices are per match (Jacob, 31 Oct), and a rotation reads its own header.
   ACR_Options.ClearSet();
   ACR_Options.ForgetHeader();
