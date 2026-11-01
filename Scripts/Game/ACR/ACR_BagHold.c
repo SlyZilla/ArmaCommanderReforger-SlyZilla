@@ -19,6 +19,8 @@ class ACR_BagPlace : Managed
  float m_fCheckedAt;
  float m_fCheckedGap;
  float m_fSentUntil;  // his last try at getting there, if it was the last thing he did
+ float m_fBarrelUntil; // MayFire's last look down his barrel, good till then
+ bool m_bBarrelClear;
 }
 
 class ACR_BagHold
@@ -34,6 +36,9 @@ class ACR_BagHold
  static const float PROGRESS_MS = 6000;
  static const float PROGRESS_M = 1;
  static const float HEIGHT_DEFAULT = 1.3; // m, the long high piece's real top; its bounds say 1.46
+ static const float BARREL_MS = 200;
+ static const float BARREL_LOOK = 3;     // m along his barrel
+ static const vector MESH_LOOK = "1.5 1.5 1.5"; // round his place, for the nearest navmesh to it
  // Nothing to shoot at: down, and up now and then for a look (srv:worksfight: on his feet all the while, a man was
  // shot from 150 m by attackers lying in the grass he never saw). Up for good with someone in his sights or close.
  static const float SEEN_S = 4;          // s since he saw his target: he has someone to shoot
@@ -330,7 +335,14 @@ class ACR_BagHold
   SCR_AICombatMoveRequest_Move rq = new SCR_AICombatMoveRequest_Move();
   rq.m_eReason = SCR_EAICombatMoveReason.STANDARD;
   rq.m_vTargetPos = target;
+  // A place hard up against the bags can be off the navmesh, and a move to it fails wherever he starts from (139 of
+  // 290 in one srv:bagholdlow): the nearest point on it.
   rq.m_vMovePos = place.m_vPos;
+  AIAgent agent = utility.GetAIAgent();
+  AIPathfindingComponent pathing;
+  if (agent) pathing = AIPathfindingComponent.Cast(agent.FindComponent(AIPathfindingComponent));
+  vector onMesh;
+  if (pathing && pathing.GetClosestPositionOnNavmesh(place.m_vPos, MESH_LOOK, onMesh)) rq.m_vMovePos = onMesh;
   rq.m_eDirection = SCR_EAICombatMoveDirection.CUSTOM_POS;
   rq.m_bTryFindCover = false;
   rq.m_bFailIfNoCover = false;
@@ -357,18 +369,32 @@ class ACR_BagHold
   s_iMoveFails++;
  }
 
- // Down behind his bags, or not yet up over them, a shot goes into them (172 rounds of 434 in one srv:worksfight).
- // Asked by the game's fire nodes every time they'd fire.
+ // Down behind his bags, or not yet up over them, his shots can go into them (172 rounds of 434 in one srv:worksfight).
+ // Asked by the game's fire nodes as they fire, so looked at only so often. Only the barrel decides: stopping every
+ // man who's down from firing cut the clear shots to a quarter and the kills by half (covering fire over the top).
  static bool MayFire(SCR_AIUtilityComponent utility)
  {
   if (!utility || !utility.m_ACRBagPlace || !utility.m_CombatMoveState) return true;
   SCR_AICombatMoveState state = utility.m_CombatMoveState;
   SCR_AICoverLock lock = state.GetAssignedCover();
   if (!state.m_bInCover || !lock || !lock.m_bACRBag) return true;
-  if (!state.m_bExposedInCover) return false;
   ChimeraCharacter body = ChimeraCharacter.Cast(utility.m_OwnerEntity);
   if (!body || !body.GetCharacterController()) return true;
-  return body.GetCharacterController().GetStance() <= ShowStance(utility.m_ACRBagPlace.m_fHeight);
+  if (state.m_bExposedInCover && body.GetCharacterController().GetStance() <= ShowStance(utility.m_ACRBagPlace.m_fHeight)) return true;
+  ACR_BagPlace place = utility.m_ACRBagPlace;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < place.m_fBarrelUntil) return place.m_bBarrelClear;
+  place.m_fBarrelUntil = now + BARREL_MS;
+  place.m_bBarrelClear = true;
+  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(body.FindComponent(BaseWeaponManagerComponent));
+  vector mat[4];
+  if (!weapons || !weapons.GetCurrentMuzzleTransform(mat)) return true;
+  TraceParam trace = new TraceParam();
+  trace.Start = mat[3];
+  trace.End = mat[3] + mat[2] * BARREL_LOOK;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  place.m_bBarrelClear = GetGame().GetWorld().TraceMove(trace, ACR_Garrison.SolidFilter) >= 1;
+  return place.m_bBarrelClear;
  }
 
  // Shot at with nothing to shoot back at: pinned, hide-and-peek as SuppressedInCoverLogic does it (the game's own
