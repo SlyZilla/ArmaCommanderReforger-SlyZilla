@@ -57,6 +57,10 @@
 - The match report no longer counts destroying an empty vehicle (a wreck, a civilian car, one's own abandoned truck) as an enemy vehicle destroyed.
 - On/off host options accept off/on, false/true and no/yes as well as 0/1 (`-acrMines off` left mines on).
 - A mission end, restart or rotation no longer logs an engine replication error for every soldier in an ACA squad.
+- A support helicopter whose pad is lost (base captured, built pad dismantled) moves its base to another of the side's free pads. It sat on the old pad unusable for the rest of the match, the support list said "buy one", the AI never bought another, and the pad's new owner couldn't use the pad.
+- Gunships, door gunners, rocket runs and ambushes leave FIA alone when FIA is allied to (or friendly with) their side.
+- A FOB whose HQ was destroyed during an upgrade goes away once nothing of it is standing; before, the paused upgrade kept the empty FOB on the map and no new FOB could be built within 120 m.
+- A supply delivery on its way when a FOB's HQ is destroyed is refunded (it was lost without a word), and buying at a FOB with no HQ says so instead of asking for a radio relay.
 
 ### Command and setup
 

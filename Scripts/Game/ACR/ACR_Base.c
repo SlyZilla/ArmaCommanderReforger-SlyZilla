@@ -59,6 +59,13 @@ class ACR_Base : GenericEntity
  {
   if (m_bRetired || !m_bBuilt || m_bHqLost) return;
   m_bHqLost = true;
+  // A delivery on its way is called off: its RP goes back (it was lost without a word).
+  ACR_Manager owner = ACR_Manager.GetInstance();
+  if (m_iSupplyDelivery > 0 && !m_sSupplyDeliveryFaction.IsEmpty() && owner && owner.m_Bases)
+  {
+   owner.m_Bases.Refund(m_sSupplyDeliveryFaction, ACR_FobSupply.DELIVERY_COST);
+   PrintFormat("[ACR] BASE %1 supply delivery called off (HQ lost): %2 RP refunded to %3", m_sName, ACR_FobSupply.DELIVERY_COST, m_sSupplyDeliveryFaction);
+  }
   m_iSupplyDelivery = 0;
   m_fSupplyDeliveryLeft = 0;
   PrintFormat("[ACR] BASE %1 offline (%2)", m_sName, why);

@@ -2386,14 +2386,15 @@ class ACR_Supports : Managed
   array<AIAgent> agents = {};
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
-   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == factionKey) continue;
+   // Friendly, not equal: FIA allied to the caller (acrFIAAllegiance / leaning) is no target.
+   if (!squad.GetFaction() || ACR_Insurgency.Friendly(squad.GetFaction().GetFactionKey(), factionKey)) continue;
    agents.Clear();
    squad.GetAgents(agents);
    foreach (AIAgent agent : agents) AddIfNear(agent.GetControlledEntity(), center, radius, result);
   }
   foreach (SCR_AIGroup garrison : m_Manager.m_Bases.m_GarrisonGroups)
   {
-   if (!garrison || !garrison.GetFaction() || garrison.GetFaction().GetFactionKey() == factionKey) continue;
+   if (!garrison || !garrison.GetFaction() || ACR_Insurgency.Friendly(garrison.GetFaction().GetFactionKey(), factionKey)) continue;
    agents.Clear();
    garrison.GetAgents(agents);
    foreach (AIAgent guard : agents) AddIfNear(guard.GetControlledEntity(), center, radius, result);
@@ -2403,7 +2404,7 @@ class ACR_Supports : Managed
   foreach (int id : players)
   {
    Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
-   if (!faction || faction.GetFactionKey() == factionKey) continue;
+   if (!faction || ACR_Insurgency.Friendly(faction.GetFactionKey(), factionKey)) continue;
    PlayerController pc = GetGame().GetPlayerManager().GetPlayerController(id);
    if (pc) AddIfNear(pc.GetControlledEntity(), center, radius, result);
   }

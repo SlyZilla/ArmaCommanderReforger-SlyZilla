@@ -333,7 +333,9 @@ class ACR_Structures : Managed
    UpdateCapacity(fob);
    UpdateHousing(fob);
    // An HQ-less FOB with nothing of its owner's left standing is gone for good.
-   if (fob.m_bHqLost && !HasStructuresAt(fob) && !ACR_FobSlots.AnyBuilding(fob)) fob.Retire("its HQ and buildings are gone");
+   // (Not held by an upgrade "building": progress pauses while the HQ is lost, so a slot caught
+   // mid-upgrade stayed BUILDING and kept an empty FOB on the map, blocking new FOBs within 120 m.)
+   if (fob.m_bHqLost && !HasStructuresAt(fob)) fob.Retire("its HQ and buildings are gone");
   }
  }
 

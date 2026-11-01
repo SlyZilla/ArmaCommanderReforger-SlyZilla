@@ -212,7 +212,8 @@ class ACR_HeliStation : Managed
 
  bool PadTaken(ACR_Helipad pad)
  {
-  foreach (ACR_StationedHeli heli : m_Helis) if (heli.m_Pad == pad) return true;
+  // (A helicopter whose pad changed hands doesn't hold it for the new owner.)
+  foreach (ACR_StationedHeli heli : m_Helis) if (heli.m_Pad == pad && pad.Faction() == heli.m_sFaction) return true;
   return false;
  }
 
@@ -527,6 +528,22 @@ class ACR_HeliStation : Managed
    {
     Lost(heli);
     continue;
+   }
+   // Its pad's base was captured, or a built pad dismantled: Usable needs the side's own pad, so the
+   // helicopter sat there unusable for good (and blocked the pad). Re-home it to a free pad of the
+   // side: it flies from where it stands and lands there after its next run.
+   bool parked = heli.m_eState == ACR_EHeliState.READY || heli.m_eState == ACR_EHeliState.SERVICING;
+   if (parked && heli.m_Pad && heli.m_Pad.Faction() != heli.m_sFaction)
+   {
+    ACR_Helipad home = ClearPad(heli.m_sFaction, null);
+    if (home)
+    {
+     heli.m_Pad = home;
+     string where = "another pad";
+     if (home.Base()) where = home.Base().m_sName;
+     m_Supports.m_Manager.NotifyFaction(heli.m_sFaction, string.Format("%1 lost its pad: it is based at %2 now.", heli.m_sName, where));
+     PrintFormat("[ACR] HELIPAD %1 re-homed to %2", heli.m_sName, where);
+    }
    }
    if (heli.m_eState == ACR_EHeliState.SERVICING && now >= heli.m_fReadyAt)
    {

@@ -135,6 +135,7 @@ class ACR_Requisition : Managed
   ACR_RequisitionEntry entry = data.m_aRequisitions[entryIndex];
   if (entry.m_iRemaining <= 0) return entry.m_sName + ": none left";
   if (!base || base.m_sOwner != key) return "Deploy at one of your own bases";
+  if (base.m_bHqLost) return base.m_sName + "'s HQ is destroyed: an Establish FOB order rebuilds it";
   if (ACR_LogisticsRules.RelayBlocked(base)) return base.m_sName + " needs a completed friendly radio relay inside its circle before deploying new units";
   if (!ACR_LogisticsRules.CanDeploy(base)) return base.m_sName + " cannot deploy new units (use a military base, HQ or FOB)";
   if (base.m_bContested) return base.m_sName + " is under attack";
