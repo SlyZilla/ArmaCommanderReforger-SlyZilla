@@ -1,13 +1,18 @@
 // -acrMapDeclutterShotsTest 1 (a game client, not srv; ~1.5 min): the calm command map as the player
 // sees it, one in-engine shot per sketch board ("Declutter - 1 Map view", "4 Zoomed out", "5 Dark
 // map"), plus the UI size Normal and the classic map with -acrMapDeclutter 0 for comparison. Three
-// more US squads sit at our nearest base (one icon, "×N"), Alpha moves off (a moving mark), INTEL
-// gets a run of purchases to merge.
+// more US squads sit at our nearest base (its count beside the dot), two more on top of each other
+// out in the open (one icon, "×N"), Alpha moves off (a moving mark), INTEL gets a run of purchases
+// to merge. Then the base's markers across the zoom: no marker on the map anywhere but where its unit
+// is, the count right at each step; its list by a real click when something outside moves the mouse
+// ("[ACR] PANELSHOTS DO", as ACR_TestPanelShots), else by the same call the click makes.
 class ACR_TestMapDeclutterShots
 {
  static const ResourceName RIFLE_SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
- static const int CHECKS = 16;
+ static const int CHECKS = 25;
+ static const int SWEEP_FROM = 85;
+ static const int LIST_FROM = 105;
  protected static int s_iListRows;
  protected static int s_iSearchRows;
  protected static string s_sSearchLabel;
@@ -25,6 +30,203 @@ class ACR_TestMapDeclutterShots
  protected static bool s_bHover;
  protected static RplId s_Picked = RplId.Invalid();
  protected static int s_iFrames;
+ protected static int s_iSweepWrong;
+ protected static string s_sSweep;
+ protected static string s_sSweepWrong;
+ protected static int s_iSweepBadCount;
+ protected static int s_iFarCounted;
+ protected static int s_iNearCounted;
+ protected static int s_iEnemyCounted;
+ protected static int s_iClicksReal;
+ protected static int s_iClicksHooked;
+ protected static RplId s_RowId = RplId.Invalid();
+ protected static int s_iChipBase = -1;
+ protected static float s_fZoomBefore;
+ protected static float s_fWheeled;
+ protected static bool s_bWheelReal;
+ protected static bool s_bTopRowShown;
+ protected static bool s_bLastRowHidden;
+ protected static bool s_bLastRowShown;
+
+ // The map's width at each step of the sweep (m): from the whole map to right in.
+ protected static array<float> Spans()
+ {
+  array<float> spans = {14000, 9000, 6500, 5000, 4000, 3000, 2000, 1200, 700};
+  return spans;
+ }
+
+ // The list came by a real click, or (nothing outside moves the mouse) by the click's own call.
+ protected static void OpenIfNoMouse(SCR_PlayerController pc)
+ {
+  if (pc.ACR_SquadPickerOpen())
+  {
+   s_iClicksReal++;
+   return;
+  }
+  s_iClicksHooked++;
+  pc.ACR_ChipClickForTest();
+ }
+
+ // Far zoom, a base with something in its count (at the screen's middle): real clicks, the list, a
+ // pick, a click away; the base's dot; the dark map; a very long list; a pile's list.
+ protected static void Lists(SCR_PlayerController pc, SCR_MapEntity mapEntity, WorkspaceWidget ws, int t)
+ {
+  float x, y;
+  if (t == 0)
+  {
+   pc.ACR_ClearSelectionForTest();
+   pc.ACR_ContactsClearForTest();
+   pc.ACR_ContactForTest(s_Base + Vector(8, 0, -6));
+   mapEntity.ZoomPanSmooth(ws.GetWidth() / 14000.0, s_Base[0], s_Base[2], 0.05);
+  }
+  if (t == 2)
+  {
+   s_iChipBase = pc.ACR_FirstChipBaseForTest();
+   if (pc.ACR_ChipPointForTest(x, y)) PrintFormat("[ACR] PANELSHOTS DO click %1 %2 0 0", (int)x, (int)y);
+  }
+  if (t == 6) OpenIfNoMouse(pc);
+  if (t == 7)
+  {
+   ACR_TestRegress.Check("mapdeclutter shots: far out, a click on a base's count lists its units and the enemy seen there, clear of the panels", pc.ACR_SquadPickerOpen() && pc.ACR_ListedBaseForTest() == s_iChipBase && pc.ACR_SquadListClearForTest() && s_iEnemyCounted > 0, string.Format("open %1, base %2/%3, clear %4, enemy %5", pc.ACR_SquadPickerOpen(), pc.ACR_ListedBaseForTest(), s_iChipBase, pc.ACR_SquadListClearForTest(), s_iEnemyCounted));
+   Shot("base_markers_4_far_list");
+  }
+  // A row, by the mouse: selected as a click on its marker would, the list gone, its icon up.
+  if (t == 8)
+  {
+   s_RowId = pc.ACR_SquadPickerIdForTest(0);
+   if (pc.ACR_ListRowPointForTest(0, x, y)) PrintFormat("[ACR] PANELSHOTS DO click %1 %2 0 0", (int)x, (int)y);
+  }
+  if (t == 12)
+  {
+   if (pc.ACR_SquadPickerOpen())
+   {
+    s_iClicksHooked++;
+    pc.ACR_SquadPickerKeyForTest(0);
+   }
+   else s_iClicksReal++;
+  }
+  if (t == 14)
+  {
+   int standing;
+   string wrong;
+   int falseMarkers = pc.ACR_FalseMarkersForTest(standing, wrong);
+   ACR_TestRegress.Check("mapdeclutter shots: a row picked: that squad is selected, the list closes, its icon stands where it really is", s_RowId.IsValid() && pc.ACR_GetSelectedGroup() == s_RowId && !pc.ACR_SquadPickerOpen() && pc.ACR_GroupMarkerShownForTest(s_RowId) && falseMarkers == 0, string.Format("selected %1, open %2, shown %3, false %4 %5", pc.ACR_GetSelectedGroup() == s_RowId, pc.ACR_SquadPickerOpen(), pc.ACR_GroupMarkerShownForTest(s_RowId), falseMarkers, wrong));
+   Shot("base_markers_5_picked");
+   pc.ACR_ClearSelectionForTest();
+  }
+  // A click away closes it.
+  if (t == 15 && pc.ACR_ChipPointForTest(x, y)) PrintFormat("[ACR] PANELSHOTS DO click %1 %2 0 0", (int)x, (int)y);
+  if (t == 19)
+  {
+   OpenIfNoMouse(pc);
+   float cx = ws.GetWidth() / 2 - ws.DPIScale(170);
+   float cy = ws.GetHeight() / 2 + ws.DPIScale(130);
+   PrintFormat("[ACR] PANELSHOTS DO click %1 %2 0 0", (int)cx, (int)cy);
+  }
+  if (t == 23)
+  {
+   if (pc.ACR_SquadPickerOpen())
+   {
+    s_iClicksHooked++;
+    pc.ACR_MapClickForTest();
+   }
+   else s_iClicksReal++;
+  }
+  if (t == 24)
+  {
+   ACR_TestRegress.Check("mapdeclutter shots: a click away closes a base's list", !pc.ACR_SquadPickerOpen(), string.Format("real clicks %1, by their calls %2", s_iClicksReal, s_iClicksHooked));
+   // The base itself, by a click on its dot.
+   if (pc.ACR_DotPointForTest(s_iChipBase, x, y)) PrintFormat("[ACR] PANELSHOTS DO click %1 %2 0 0", (int)x, (int)y);
+  }
+  if (t == 28)
+  {
+   Widget under = WidgetManager.GetWidgetUnderCursor();
+   string underName = "";
+   if (under) underName = under.GetName();
+   PrintFormat("[ACR] DECLSHOTS dot click: base '%1', list %2, under the cursor '%3'", pc.ACR_SelectedBase(), pc.ACR_SquadPickerOpen(), underName);
+   if (pc.ACR_SquadPickerOpen()) s_iClicksReal++;
+   else
+   {
+    s_iClicksHooked++;
+    pc.ACR_DotClickForTest(s_iChipBase);
+   }
+  }
+  if (t == 30)
+  {
+   bool selectedBase = !pc.ACR_SelectedBase().IsEmpty();
+   ACR_TestRegress.Check("mapdeclutter shots: a click on the base selects it and lists its units, beside the ACA panel it opens", selectedBase && pc.ACR_SquadPickerOpen() && pc.ACR_SquadListClearForTest(), string.Format("base '%1', open %2, clear %3", pc.ACR_SelectedBase(), pc.ACR_SquadPickerOpen(), pc.ACR_SquadListClearForTest()));
+   Shot("base_markers_6_base_click");
+   pc.ACR_CloseSquadPicker();
+   pc.ACR_ClearSelectionForTest();
+   pc.ACR_DeclToggleDark();
+  }
+  if (t == 32) pc.ACR_ChipClickForTest();
+  if (t == 33) Shot("base_markers_7_far_dark");
+  if (t == 34)
+  {
+   pc.ACR_CloseSquadPicker();
+   pc.ACR_DeclToggleDark();
+   pc.ACR_BigListForTest();
+  }
+  if (t == 35)
+  {
+   ACR_TestRegress.Check("mapdeclutter shots: a list too long for the screen stays on it and clear of the panels", pc.ACR_SquadListClearForTest(), string.Format("clear %1", pc.ACR_SquadListClearForTest()));
+   Shot("base_markers_8_long_list");
+   s_bTopRowShown = pc.ACR_ListRowInViewForTest(0);
+   s_bLastRowHidden = !pc.ACR_ListRowInViewForTest(39);
+   s_fZoomBefore = mapEntity.GetCurrentZoom();
+   // The wheel over its rows, a few notches ("[ACR] DECLSHOTS WHEEL x y notches": something outside
+   // the game turns it, if anything does).
+   if (pc.ACR_ListRowPointForTest(4, x, y)) PrintFormat("[ACR] DECLSHOTS WHEEL %1 %2 -3", (int)x, (int)y);
+  }
+  if (t == 39)
+  {
+   s_fWheeled = pc.ACR_ListScrollForTest();
+   s_bWheelReal = s_fWheeled > 0;
+   // On to the end, by the wheel or else directly.
+   if (s_bWheelReal && pc.ACR_ListRowPointForTest(8, x, y)) PrintFormat("[ACR] DECLSHOTS WHEEL %1 %2 -80", (int)x, (int)y);
+  }
+  if (t == 46)
+  {
+   if (!s_bWheelReal) pc.ACR_ListScrollEndForTest();
+  }
+  if (t == 47)
+  {
+   s_bLastRowShown = pc.ACR_ListRowInViewForTest(39);
+   Shot("base_markers_8b_long_list_end");
+   // The last row, by the mouse.
+   s_RowId = pc.ACR_SquadPickerIdForTest(39);
+   if (pc.ACR_ListRowPointForTest(39, x, y)) PrintFormat("[ACR] PANELSHOTS DO click %1 %2 0 0", (int)x, (int)y);
+  }
+  if (t == 51)
+  {
+   if (pc.ACR_SquadPickerOpen())
+   {
+    s_iClicksHooked++;
+    pc.ACR_SquadPickerKeyForTest(39);
+   }
+   else s_iClicksReal++;
+  }
+  if (t == 52)
+  {
+   bool zoomKept = !s_bWheelReal || Math.AbsFloat(mapEntity.GetCurrentZoom() - s_fZoomBefore) < 0.001;
+   bool picked = s_RowId.IsValid() && pc.ACR_GetSelectedGroup() == s_RowId && !pc.ACR_SquadPickerOpen();
+   ACR_TestRegress.Check("mapdeclutter shots: a long list scrolls to its last row, which picks like any other; the wheel over it doesn't zoom the map", s_bTopRowShown && s_bLastRowHidden && s_bLastRowShown && picked && zoomKept, string.Format("top row shown %1, last row hidden at first %2 and shown at the end %3, picked %4, wheel real %5 (%6 after 3 notches), zoom kept %7", s_bTopRowShown, s_bLastRowHidden, s_bLastRowShown, picked, s_bWheelReal, s_fWheeled, zoomKept));
+   pc.ACR_ClearSelectionForTest();
+   // Two squads on top of each other in the open: one icon, "×2", its own list. From far out: they
+   // spread a few tens of metres while they wait, and near that's two icons, each where it is.
+   vector pile = s_Base + Vector(330, 0, 280);
+   mapEntity.ZoomPanSmooth(ws.GetWidth() / 14000.0, pile[0], pile[2], 0.05);
+  }
+  if (t == 53) s_bPicker = pc.ACR_SquadPickerForTest();
+  if (t == 54)
+  {
+   ACR_TestRegress.Check("mapdeclutter shots: squads on top of each other in the open are one icon with ×N, and a click lists them", pc.ACR_DeclBadgesShown() > 0 && s_bPicker && pc.ACR_SquadPickerOpen(), string.Format("badges %1, opened %2", pc.ACR_DeclBadgesShown(), s_bPicker));
+   Shot("base_markers_9_pile_list");
+   pc.ACR_CloseSquadPicker();
+   pc.ACR_ContactsClearForTest();
+  }
+ }
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -45,6 +247,10 @@ class ACR_TestMapDeclutterShots
    if (second) second.SetCustomName("2nd Squad", 0);
    SCR_AIGroup third = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(FIRE_TEAM, ACR_Manager.Ground(s_Base + Vector(5, 0, 30))));
    if (third) third.SetCustomName("Light Fire Team 1", 0);
+   SCR_AIGroup pileA = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(FIRE_TEAM, ACR_Manager.Ground(s_Base + Vector(330, 0, 280))));
+   if (pileA) pileA.SetCustomName("Pile Team 1", 0);
+   SCR_AIGroup pileB = SCR_AIGroup.Cast(ACR_Manager.SpawnPrefab(FIRE_TEAM, ACR_Manager.Ground(s_Base + Vector(332, 0, 282))));
+   if (pileB) pileB.SetCustomName("Pile Team 2", 0);
    return;
   }
   if (!pc || tick < 4) return;
@@ -62,7 +268,7 @@ class ACR_TestMapDeclutterShots
   if (tick == 26)
   {
    ACR_TestRegress.Check("mapdeclutter shots: the calm map is drawn and the panels are dark-styled", ACR_OrderDisplay.s_iDeclFrames > 0 && pc.ACR_DeclPanelStyled(), string.Format("frames %1, styled %2", ACR_OrderDisplay.s_iDeclFrames, pc.ACR_DeclPanelStyled()));
-   ACR_TestRegress.Check("mapdeclutter shots: squads at our base are one icon with ×N", pc.ACR_DeclBadgesShown() > 0, string.Format("badges %1", pc.ACR_DeclBadgesShown()));
+   ACR_TestRegress.Check("mapdeclutter shots: units at our base go into the count beside its dot", pc.ACR_DeclChipsShown() > 0 && pc.ACR_ChipCountRightForTest(), string.Format("counts %1, right %2, '%3'", pc.ACR_DeclChipsShown(), pc.ACR_ChipCountRightForTest(), pc.ACR_ChipTextForTest()));
   }
   if (tick == 27)
   {
@@ -70,14 +276,14 @@ class ACR_TestMapDeclutterShots
    // screen, not just a hidden widget the game shows again (30 Oct).
    int hidden;
    int onScreen = pc.ACR_DeclHiddenOnScreenForTest(hidden);
-   ACR_TestRegress.Check("mapdeclutter shots: what the calm map hides at a base stays off the screen (soldiers, squads under a ×N)", hidden > 0 && onScreen == 0, string.Format("hidden %1, still on screen %2", hidden, onScreen));
+   ACR_TestRegress.Check("mapdeclutter shots: what the calm map hides at a base stays off the screen (soldiers, squads in its count)", hidden > 0 && onScreen == 0, string.Format("hidden %1, still on screen %2", hidden, onScreen));
    Shot("declutter_1_map");
   }
-  // The "×N" icon's list of its squads (playtest 30 Oct: picking the right squad was hard).
-  if (tick == 28) s_bPicker = pc.ACR_SquadPickerForTest();
+  // The count's list of its squads (playtest 30 Oct: picking the right squad was hard).
+  if (tick == 28) s_bPicker = pc.ACR_ChipClickForTest();
   if (tick == 29)
   {
-   ACR_TestRegress.Check("mapdeclutter shots: a click on the ×N icon lists its squads to pick from", s_bPicker && pc.ACR_SquadPickerOpen(), string.Format("opened %1, open %2", s_bPicker, pc.ACR_SquadPickerOpen()));
+   ACR_TestRegress.Check("mapdeclutter shots: a click on a base's count lists its squads to pick from", s_bPicker && pc.ACR_SquadPickerOpen(), string.Format("opened %1, open %2", s_bPicker, pc.ACR_SquadPickerOpen()));
    Shot("declutter_7_cluster_list");
    // Hovering the second row rings where that squad really stands.
    s_bHover = pc.ACR_SquadPickerHoverForTest(1);
@@ -146,7 +352,7 @@ class ACR_TestMapDeclutterShots
   if (tick == 57) s_iFrames = ACR_OrderDisplay.s_iDeclFrames;
   if (tick == 59)
   {
-   bool classic = !ACR_MapDeclutter.On() && !pc.ACR_DeclPanelStyled() && !pc.ACR_DeclTintShown() && ACR_OrderDisplay.s_iDeclFrames == s_iFrames && pc.ACR_DeclBadgesShown() == 0;
+   bool classic = !ACR_MapDeclutter.On() && !pc.ACR_DeclPanelStyled() && !pc.ACR_DeclTintShown() && ACR_OrderDisplay.s_iDeclFrames == s_iFrames && pc.ACR_DeclBadgesShown() == 0 && pc.ACR_DeclChipsShown() == 0;
    ACR_TestRegress.Check("mapdeclutter shots: with -acrMapDeclutter 0 the classic map is back", classic, string.Format("on %1, styled %2, frames %3 -> %4", ACR_MapDeclutter.On(), pc.ACR_DeclPanelStyled(), s_iFrames, ACR_OrderDisplay.s_iDeclFrames));
   }
   if (tick == 60) Shot("declutter_0_classic");
@@ -185,9 +391,13 @@ class ACR_TestMapDeclutterShots
    ACR_TestRegress.Check("mapdeclutter shots: control groups: Ctrl + 1 keeps the selection, 1 selects it again, 1 twice centres the map on it, labels show [1]", both && pc.ACR_ControlGroupSizeForTest(0) == 2 && groupOff >= 0 && groupOff < 150 && label.Contains("[1]"), string.Format("selected %1, group %2, map centre %3 m off, label '%4'", both, pc.ACR_ControlGroupSizeForTest(0), (int)groupOff, label));
    Shot("declutter_9_control_group");
   }
-  // The calm map again: the hover card on 1st Squad, and 2nd Squad (at the Farm "×N") shown hurt:
-  // a red dot on the icon that stands for it.
-  if (tick == 66) ACR_Options.Unset(ACR_MapDeclutter.OPTION);
+  // The calm map again, zoomed out: the hover card on 1st Squad, and 2nd Squad (in the Farm's count)
+  // shown hurt: a red dot on the count that stands for it.
+  if (tick == 66)
+  {
+   ACR_Options.Unset(ACR_MapDeclutter.OPTION);
+   if (mapEntity) mapEntity.ZoomPanSmooth(ws.GetWidth() / 6000.0, s_Base[0], s_Base[2], 0.1);
+  }
   if (tick == 67)
   {
    ACR_Squad hovered = h.NamedSquad(manager, "1st Squad");
@@ -205,7 +415,7 @@ class ACR_TestMapDeclutterShots
   {
    bool levels = ACR_OrderDisplay.WarnLevel(100, 100) == 0 && ACR_OrderDisplay.WarnLevel(50, 100) == 1 && ACR_OrderDisplay.WarnLevel(100, 20) == 2 && ACR_OrderDisplay.WarnLevel(-1, -1) == 0;
    int dots = ACR_OrderDisplay.s_iWarnDots - s_iDots;
-   ACR_TestRegress.Check("mapdeclutter shots: hovering a squad shows its card; a hurt squad in a ×N marks the icon with a dot", s_bHovered && pc.ACR_CardShownForTest() && dots > 0 && levels, string.Format("hovered %1, card %2, dots drawn %3, levels %4", s_bHovered, pc.ACR_CardShownForTest(), dots, levels));
+   ACR_TestRegress.Check("mapdeclutter shots: hovering a squad shows its card; a hurt squad in a base's count marks the count with a dot", s_bHovered && pc.ACR_CardShownForTest() && dots > 0 && levels, string.Format("hovered %1, card %2, dots drawn %3, levels %4", s_bHovered, pc.ACR_CardShownForTest(), dots, levels));
    Shot("declutter_10_card_and_warning");
   }
   // The Squads list: every squad of ours; "2nd" typed keeps 2nd Squad, and its Show selects it and
@@ -269,8 +479,52 @@ class ACR_TestMapDeclutterShots
    ACR_MapLayers.Set(ACR_MapLayers.INFANTRY, false);
    pc.ACR_ClearSelectionForTest();
   }
-  if (tick == 80)
+  // The map again, as a player opens it with the calm map on (it was built classic above).
+  if (tick == 81) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+  if (tick == 83) GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
+  // The base across the zoom, an enemy seen on it: at every step every marker on the map is where
+  // its unit is, and the count is right; zoomed out the units are in it, near they stand. (The base
+  // right of the middle: the cursor isn't on it, and no hover card over the shots.)
+  array<float> spans = Spans();
+  int sweepEnd = SWEEP_FROM + 2 * spans.Count();
+  if (tick >= SWEEP_FROM && tick < sweepEnd && mapEntity)
   {
+   int step = (tick - SWEEP_FROM) / 2;
+   bool read = (tick - SWEEP_FROM) % 2 == 1;
+   if (!read)
+   {
+    pc.ACR_ClearSelectionForTest();
+    pc.ACR_ContactsClearForTest();
+    pc.ACR_ContactForTest(s_Base + Vector(8, 0, -6));
+    mapEntity.ZoomPanSmooth(ws.GetWidth() / spans[step], s_Base[0] - spans[step] * 0.14, s_Base[2], 0.05);
+   }
+   else
+   {
+    int standing;
+    string wrong;
+    int falseMarkers = pc.ACR_FalseMarkersForTest(standing, wrong);
+    s_iSweepWrong += falseMarkers;
+    if (falseMarkers > 0) s_sSweepWrong += string.Format("%1 m: %2; ", spans[step], wrong);
+    if (!pc.ACR_ChipCountRightForTest()) s_iSweepBadCount++;
+    s_sSweep += string.Format("%1 m: %2 stand, %3 counted, %4 enemy, '%5' | ", spans[step], standing, pc.ACR_ChipTotalForTest(), pc.ACR_ChipEnemyForTest(), pc.ACR_ChipTextForTest());
+    s_iEnemyCounted = Math.Max(s_iEnemyCounted, pc.ACR_ChipEnemyForTest());
+    if (step == 0) s_iFarCounted = pc.ACR_ChipTotalForTest();
+    if (step == spans.Count() - 1) s_iNearCounted = pc.ACR_ChipTotalForTest();
+    if (step == 0) Shot("base_markers_1_far");
+    if (step == 4) Shot("base_markers_2_threshold");
+    if (step == spans.Count() - 1) Shot("base_markers_3_near");
+   }
+  }
+  if (tick == sweepEnd)
+  {
+   PrintFormat("[ACR] DECLSHOTS sweep %1", s_sSweep);
+   ACR_TestRegress.Check("mapdeclutter shots: across the zoom no marker stands anywhere but where its unit is", s_iSweepWrong == 0, s_sSweepWrong);
+   ACR_TestRegress.Check("mapdeclutter shots: across the zoom the count is right: zoomed out the units are in it, near they stand", s_iSweepBadCount == 0 && s_iFarCounted >= 3 && s_iNearCounted < s_iFarCounted && s_iEnemyCounted > 0, s_sSweep);
+  }
+  if (tick >= LIST_FROM && tick <= LIST_FROM + 54 && mapEntity) Lists(pc, mapEntity, ws, tick - LIST_FROM);
+  if (tick == LIST_FROM + 56)
+  {
+   PrintFormat("[ACR] DECLSHOTS real clicks %1, by their calls %2", s_iClicksReal, s_iClicksHooked);
    ACR_Options.Unset(ACR_MapDeclutter.OPTION);
    ACR_TestRegress.Complete("mapdeclutter shots", CHECKS);
   }

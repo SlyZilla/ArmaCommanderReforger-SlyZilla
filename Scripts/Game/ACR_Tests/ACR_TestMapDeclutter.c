@@ -1,10 +1,11 @@
 // -acrMapDeclutterTest 1 (server-capable, ~20 s): the calm command map's rules (ACR_MapDeclutter), as
 // pure functions: INTEL merging (counts, RP totals, "+N older", "N new"), which bases keep their
-// names at each zoom, squads at one base becoming one icon with "×N", the owner colours, the size
-// pips, the corner marks, and the host option's default and setup row.
+// names at each zoom, which markers stand and which go into a base's count at each zoom (none is ever
+// moved), the counts and their list's place, the owner colours, the size pips, the corner marks, and
+// the host option's default and setup row.
 class ACR_TestMapDeclutter
 {
- static const int CHECKS = 17;
+ static const int CHECKS = 23;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -124,31 +125,90 @@ class ACR_TestMapDeclutter
 
  static void CheckSquads()
  {
-  // Three squads in Lamentin's ring (the second selected), one out in the field, a player group in
-  // the ring (not clustered), one at the edge of Sawmill's 300 m ring.
-  array<vector> groups = {Vector(10, 0, 0), Vector(-40, 0, 30), Vector(60, 0, -20), Vector(600, 0, 600), Vector(5, 0, 5), Vector(1280, 0, 0)};
-  array<bool> clusterable = {true, true, true, true, false, true};
-  array<bool> selected = {false, true, false, false, false, false};
+  // Lamentin at the origin (ring 100 m: 80 given, raised to the least), Sawmill 1000 m east (ring
+  // 300 m). Squads, world m: on Lamentin's dot, 60 m out in its ring, 150 m out past its ring, 600 m
+  // out in the open, 280 m from Sawmill in its ring.
   array<vector> bases = {Vector(0, 0, 0), Vector(1000, 0, 0)};
   array<float> radii = {80, 300};
-  array<int> baseOf = {};
+  array<vector> squads = {Vector(5, 0, 5), Vector(60, 0, 0), Vector(150, 0, 0), Vector(600, 0, 600), Vector(1280, 0, 0)};
+  bool ground = ACR_MapDeclutter.BaseAt(squads[0], bases, radii) == 0 && ACR_MapDeclutter.BaseAt(squads[1], bases, radii) == 0 && ACR_MapDeclutter.BaseAt(squads[2], bases, radii) == -1 && ACR_MapDeclutter.BaseAt(squads[3], bases, radii) == -1 && ACR_MapDeclutter.BaseAt(squads[4], bases, radii) == 1;
+  ACR_TestRegress.Check("mapdeclutter: a squad is at a base on the ground when in its ring (100 m at least), nearest first", ground, "");
+
+  // Across the zoom (px/m), each squad where it would stand: at each zoom it goes into a count only
+  // for touching a dot or being in a ring too small to tell; zooming in, once out it stays out.
+  array<float> zooms = {0.1, 0.2, 0.3, 0.42, 0.5, 0.8, 1.5, 3};
+  string table = "";
+  array<bool> everOut = {false, false, false, false, false};
+  bool monotone = true;
+  array<int> farInto = {};
+  array<int> nearInto = {};
+  foreach (int z, float zoom : zooms)
+  {
+   array<float> dots = {};
+   array<float> rings = {};
+   foreach (int b, vector base : bases)
+   {
+    dots.Insert(500 + base[0] * zoom);
+    dots.Insert(500 + base[2] * zoom);
+    rings.Insert(ACR_MapDeclutter.RingOf(b, radii) * zoom);
+   }
+   foreach (int g, vector squad : squads)
+   {
+    int into = ACR_MapDeclutter.CondensesInto(500 + squad[0] * zoom, 500 + squad[2] * zoom, 0, 0, 30, 22, dots, 10, rings, 44);
+    table += string.Format("%1 ", into);
+    if (z == 0) farInto.Insert(into);
+    if (z == zooms.Count() - 1) nearInto.Insert(into);
+    if (into >= 0 && everOut[g]) monotone = false;
+    if (into < 0) everOut[g] = true;
+   }
+   table += "| ";
+  }
+  // Far (0.1 px/m): the first three on Lamentin (the third's icon touches its dot), the fourth stands,
+  // the fifth in Sawmill's small ring. Near (3 px/m): only the one on the dot; the rest stand.
+  bool far = farInto[0] == 0 && farInto[1] == 0 && farInto[2] == 0 && farInto[3] == -1 && farInto[4] == 1;
+  bool near = nearInto[0] == 0 && nearInto[1] == -1 && nearInto[2] == -1 && nearInto[3] == -1 && nearInto[4] == -1;
+  ACR_TestRegress.Check("mapdeclutter: zooming in, a squad goes from its base's count to its own place and stays there; in the open it always stands", far && near && monotone, table);
+
+  // A big ring on screen doesn't take in what stands in it; one too small to tell does; the nearest
+  // base wins.
+  array<float> twoDots = {100, 100, 160, 100};
+  array<float> big = {200, 200};
+  array<float> small = {30, 30};
+  bool rule = ACR_MapDeclutter.CondensesInto(100, 60, 0, 0, 30, 22, twoDots, 10, big, 44) == -1 && ACR_MapDeclutter.CondensesInto(115, 100, 0, 0, 30, 22, twoDots, 10, big, 44) == 0 && ACR_MapDeclutter.CondensesInto(145, 100, 0, 0, 30, 22, twoDots, 10, big, 44) == 1 && ACR_MapDeclutter.CondensesInto(100, 75, 0, 0, 30, 22, twoDots, 10, small, 44) == 0 && ACR_MapDeclutter.CondensesInto(100, 60, 0, 0, 30, 22, twoDots, 10, small, 44) == -1;
+  // A symbol drawn 20 px above its point: what counts is the icon as drawn (the first shots: one
+  // stood half under the dot).
+  bool drawn = ACR_MapDeclutter.CondensesInto(100, 125, 0, -20, 30, 22, twoDots, 10, big, 44) == 0 && ACR_MapDeclutter.CondensesInto(100, 125, 0, 0, 30, 22, twoDots, 10, big, 44) == -1;
+  ACR_TestRegress.Check("mapdeclutter: an icon touching a dot as drawn, or in a too-small ring, goes into the nearest base; else it stands", rule && drawn, string.Format("rule %1, as drawn %2", rule, drawn));
+
+  // Piles: two on top of each other (the second selected), one a little off, one elsewhere, one not
+  // standing (in a base's count) on top of the first.
+  array<float> centres = {100, 100, 105, 103, 130, 100, 400, 400, 101, 101};
+  array<bool> standing = {true, true, true, true, false};
+  array<bool> selected = {false, true, false, false, false};
+  array<int> pileOf = {};
   array<int> count = {};
   array<bool> rep = {};
-  ACR_MapDeclutter.Clusters(groups, clusterable, selected, bases, radii, baseOf, count, rep);
+  ACR_MapDeclutter.Piles(centres, standing, selected, 12, pileOf, count, rep);
   string got = "";
-  foreach (int g, int at : baseOf) got += string.Format("%1/%2/%3 ", at, count[g], rep[g]);
-  bool ok = baseOf.Count() == 6 && baseOf[0] == 0 && baseOf[1] == 0 && baseOf[2] == 0 && baseOf[3] == -1 && baseOf[4] == -1 && baseOf[5] == 1;
-  ok = ok && count[0] == 3 && count[1] == 3 && count[2] == 3 && count[3] == 1 && count[5] == 1;
-  ok = ok && !rep[0] && rep[1] && !rep[2] && rep[3] && rep[4] && rep[5];
-  ACR_TestRegress.Check("mapdeclutter: squads at one base become one icon with ×N (the selected one shown)", ok, got);
+  foreach (int k, int pile : pileOf) got += string.Format("%1/%2/%3 ", pile, count[k], rep[k]);
+  bool ok = pileOf[0] == 1 && pileOf[1] == 1 && pileOf[2] == 2 && pileOf[3] == 3 && pileOf[4] == -1;
+  ok = ok && count[0] == 2 && count[1] == 2 && count[2] == 1 && count[3] == 1;
+  ok = ok && !rep[0] && rep[1] && rep[2] && rep[3];
+  ACR_TestRegress.Check("mapdeclutter: squads on top of each other are one icon with ×N (the selected one shown); a squad a little off stands", ok, got);
+
+  // The count's words, by side; the list's title; how far out.
+  bool words = ACR_MapDeclutter.ChipText(4, 0) == "×4 units" && ACR_MapDeclutter.ChipText(1, 0) == "×1 unit" && ACR_MapDeclutter.ChipText(0, 2) == "×2 enemy" && ACR_MapDeclutter.ChipText(3, 1) == "×3 units · ×1 enemy" && ACR_MapDeclutter.ChipText(0, 0).IsEmpty();
+  bool titles = ACR_MapDeclutter.ListTitle(4, 0, "Pusta") == "4 UNITS AT PUSTA" && ACR_MapDeclutter.ListTitle(1, 2, "Pusta") == "1 UNIT + 2 ENEMY AT PUSTA" && ACR_MapDeclutter.ListTitle(0, 2, "Pusta") == "2 ENEMY AT PUSTA";
+  bool away = ACR_MapDeclutter.OutOfRing(50, 100).IsEmpty() && ACR_MapDeclutter.OutOfRing(424, 100) == "420 m out" && ACR_MapDeclutter.OutOfRing(426, 100) == "430 m out";
+  ACR_TestRegress.Check("mapdeclutter: a base's count says units and enemy; its list's title and a far unit's row say so too", words && titles && away, string.Format("words %1 (%2), titles %3 (%4), away %5 (%6)", words, ACR_MapDeclutter.ChipText(3, 1), titles, ACR_MapDeclutter.ListTitle(1, 2, "Pusta"), away, ACR_MapDeclutter.OutOfRing(424, 100)));
 
   bool marks = ACR_MapDeclutter.SquadMark(true, 300, -1) == ACR_ESquadMark.MOVING && ACR_MapDeclutter.SquadMark(true, 10, -1) == ACR_ESquadMark.HOLDING && ACR_MapDeclutter.SquadMark(false, -1, 150) == ACR_ESquadMark.FIGHTING && ACR_MapDeclutter.SquadMark(true, 300, 500) == ACR_ESquadMark.MOVING && ACR_MapDeclutter.SquadMark(false, -1, -1) == ACR_ESquadMark.HOLDING;
   ACR_TestRegress.Check("mapdeclutter: the corner mark says fighting, moving or holding", marks, "");
  }
 
  // Placement (pn12f shots: "Farm · HQ" under squad icons, order dots and "Crossroads"): names keep
- // their spot unless they'd cover another name or dot; icons keep clear of every name and dot;
- // order ends near a base end at it.
+ // their spot unless they'd cover another name or dot, or what must stay where it is (an icon, a
+ // count); order ends near a base end at it.
  static void CheckPlacement()
  {
   // Three bases: Farm, Crossroads 30 px to its right and 10 up, Outpost far off. Captions centred under
@@ -180,7 +240,17 @@ class ACR_TestMapDeclutter
   bool kept = shift[0] == 0 && shift[1] == 0 && shift[4] == 0 && shift[5] == 0 && (shift[2] != 0 || shift[3] != 0);
   ACR_TestRegress.Check("mapdeclutter: base names near each other separate (the first keeps its spot)", apart && kept, string.Format("shifts %1,%2 %3,%4 %5,%6", shift[0], shift[1], shift[2], shift[3], shift[4], shift[5]));
 
-  // Squad icons (30 x 22): one wanted on Farm's name, one on Crossroads' dot, one in the open.
+  // An icon standing on Outpost's name's spot: the name gives way, the icon doesn't move.
+  array<float> icon = {885, 516, 915, 538};
+  array<float> gave = {};
+  ACR_MapDeclutter.PlaceNames(dots, captions, order, 10, 4, gave, icon);
+  float nameY0 = dots[5] + gave[5] + captions[9];
+  float nameY1 = dots[5] + gave[5] + captions[11];
+  float nameX0 = dots[4] + gave[4] + captions[8];
+  float nameX1 = dots[4] + gave[4] + captions[10];
+  bool gaveWay = (gave[4] != 0 || gave[5] != 0) && !ACR_MapDeclutter.Overlaps(nameX0, nameY0, nameX1, nameY1, icon[0], icon[1], icon[2], icon[3]);
+  ACR_TestRegress.Check("mapdeclutter: a base's name gives way to an icon standing on it", gaveWay, string.Format("moved %1,%2", gave[4], gave[5]));
+
   array<float> obstacles = {};
   for (int d = 0; d < 3; d++)
   {
@@ -190,17 +260,39 @@ class ACR_TestMapDeclutter
    obstacles.Insert(dots[d * 2 + 1] + 10);
   }
   foreach (float edge : names) obstacles.Insert(edge);
-  array<float> wanted = {500, 524, 530, 490, 700, 700};
-  bool clear = true;
-  string where = "";
-  for (int k = 0; k < 3; k++)
-  {
-   vector at = ACR_MapDeclutter.Avoid(wanted[k * 2], wanted[k * 2 + 1], 30, 22, obstacles, 4);
-   where += string.Format("(%1,%2) ", at[0], at[1]);
-   if (ACR_MapDeclutter.FirstHit(at[0] - 15, at[1] - 11, at[0] + 15, at[1] + 11, obstacles) >= 0) clear = false;
-   if (k == 2 && (at[0] != 700 || at[1] != 700)) clear = false;
-  }
-  ACR_TestRegress.Check("mapdeclutter: squad icons move off base names and dots (below or aside); one in the open stays", clear, where);
+
+  // A base's count (60 x 20): right of its dot in the open; left of it when another dot is there;
+  // past an icon, at a dot's cost only when nothing else will do; over its own name before an icon
+  // (the first shots: it hid a squad to leave the name alone); to the right when boxed in.
+  array<float> noRects = {};
+  vector open = ACR_MapDeclutter.PlaceChip(900, 500, 60, 20, 10, 3, noRects, obstacles, noRects);
+  array<float> neighbour = {930, 490, 950, 510};
+  vector left = ACR_MapDeclutter.PlaceChip(900, 500, 60, 20, 10, 3, neighbour, noRects, noRects);
+  array<float> iconsAround = {820, 470, 980, 530};
+  vector corner = ACR_MapDeclutter.PlaceChip(900, 500, 60, 20, 10, 3, noRects, iconsAround, noRects);
+  vector overIcons = ACR_MapDeclutter.PlaceChip(900, 500, 60, 20, 10, 3, neighbour, iconsAround, noRects);
+  array<float> iconsRight = {913, 440, 990, 535, 820, 440, 990, 487};
+  array<float> ownName = {820, 505, 900, 535};
+  vector overName = ACR_MapDeclutter.PlaceChip(900, 500, 60, 20, 10, 3, noRects, iconsRight, ownName);
+  array<float> boxed = {700, 300, 1100, 700};
+  vector stuck = ACR_MapDeclutter.PlaceChip(900, 500, 60, 20, 10, 3, boxed, noRects, noRects);
+  bool chips = open[0] == 943 && open[1] == 500 && left[0] == 857 && left[1] == 500 && corner[0] == 943 && corner[1] == 500 && overIcons[0] == 857 && overName[0] == 857 && overName[1] == 500 && stuck[0] == 943;
+  ACR_TestRegress.Check("mapdeclutter: a base's count goes beside its dot, clear of what is there: over its own name before an icon, over an icon before a dot", chips, string.Format("open %1, beside another %2, icons around %3, both %4, over its name %5, boxed in %6", open, left, corner, overIcons, overName, stuck));
+
+  // The list (500 x 300) on a 1920 x 1080 screen, with the ACA panel top right and INTEL top left:
+  // right of what it opens from, or left of it at the screen's edge, or beside the panel; on the screen.
+  array<float> panels = {1600, 96, 1896, 700, 110, 96, 450, 190};
+  vector plain = ACR_MapDeclutter.PlaceBox(600, 600, 500, 500, 300, 60, 30, 1920, 1080, 8, panels);
+  vector byPanel = ACR_MapDeclutter.PlaceBox(1300, 1300, 500, 500, 300, 60, 30, 1920, 1080, 8, panels);
+  vector low = ACR_MapDeclutter.PlaceBox(600, 600, 1000, 500, 300, 60, 30, 1920, 1080, 8, panels);
+  array<float> noPanels = {};
+  vector edge2 = ACR_MapDeclutter.PlaceBox(1800, 1800, 500, 500, 300, 60, 30, 1920, 1080, 8, noPanels);
+  // Beside a count 100 px wide: past its far end to the right, before its near end to the left.
+  vector pastChip = ACR_MapDeclutter.PlaceBox(600, 700, 500, 500, 300, 20, 30, 1920, 1080, 8, noPanels);
+  vector beforeChip = ACR_MapDeclutter.PlaceBox(1400, 1500, 500, 500, 300, 20, 30, 1920, 1080, 8, noPanels);
+  bool placed = plain[0] == 660 && plain[1] == 470 && byPanel[0] == 740 && low[1] == 772 && edge2[0] == 1240 && pastChip[0] == 720 && beforeChip[0] == 880;
+  bool clearOf = ACR_MapDeclutter.FirstHit(byPanel[0], byPanel[1], byPanel[0] + 500, byPanel[1] + 300, panels) < 0;
+  ACR_TestRegress.Check("mapdeclutter: a base's list opens beside its count, clear of the panels and on the screen", placed && clearOf, string.Format("%1, %2, %3, %4, %5, %6", plain, byPanel, low, edge2, pastChip, beforeChip));
 
   // Order ends near a base end at it: two orders to Farm merge into one mark.
   // ... and one landing on a base's name (Crossroads', moved above its dot) ends at that base too.
@@ -209,13 +301,10 @@ class ACR_TestMapDeclutter
   bool onName = ACR_MapDeclutter.SnapToBase(580, 460, dots, 26, names) == 1 && ACR_MapDeclutter.SnapToBase(580, 460, dots, 26, none) == -1;
   ACR_TestRegress.Check("mapdeclutter: order ends near a base or on its name merge at its dot", snaps && onName, string.Format("near %1, on a name %2", snaps, onName));
 
-  // Round markers (soldiers, the command unit, empty vehicles; 14 px): one on Farm's name or
-  // touching Crossroads' dot counts as on it (hidden, or moved), one in the open doesn't; moved,
-  // it's clear.
+  // Soldiers' round markers (14 px) on Farm's name or touching Crossroads' dot count as on it
+  // (hidden); one in the open doesn't.
   bool onIt = ACR_MapDeclutter.OnAName(500, 524, 14, obstacles) && ACR_MapDeclutter.OnAName(552, 490, 14, obstacles) && !ACR_MapDeclutter.OnAName(700, 700, 14, obstacles);
-  vector moved = ACR_MapDeclutter.Avoid(500, 524, 28, 28, obstacles, 4);
-  bool movedClear = !ACR_MapDeclutter.OnAName(moved[0], moved[1], 14, obstacles);
-  ACR_TestRegress.Check("mapdeclutter: round markers on a base's name or dot are hidden or moved clear", onIt && movedClear, string.Format("on %1, moved to (%2,%3)", onIt, moved[0], moved[1]));
+  ACR_TestRegress.Check("mapdeclutter: soldiers' markers on a base's name or dot count as on it", onIt, string.Format("on %1", onIt));
  }
 
  static void CheckOption()
