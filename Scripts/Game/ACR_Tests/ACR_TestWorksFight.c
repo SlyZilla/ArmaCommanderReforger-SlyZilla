@@ -37,6 +37,14 @@ class ACR_TestWorksFight
   int fought = second - s_iStart;
   Sample(manager);
   if (fought % 15 == 0) Report(manager, fought);
+  if (fought % 30 == 0 && s_Work.m_Defenders && s_Work.m_Defenders.m_Group)
+  {
+   array<IEntity> posts = {};
+   ACR_Garrison.PostEntities(s_Work.m_Defenders.m_Group, posts);
+   array<vector> places = {};
+   foreach (IEntity post : posts) if (post) places.Insert(post.GetOrigin());
+   ACR_BagSampler.Dump(string.Format("t=%1", fought), s_Work.m_Defenders.m_Group, places);
+  }
   if (fought >= LENGTH || (fought > 20 && (Attackers(manager) == 0 || Defenders(manager) == 0)))
   {
    Report(manager, fought);

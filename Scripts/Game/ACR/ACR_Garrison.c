@@ -35,6 +35,7 @@ class ACR_Garrison
  static const float BAGS_CLOSE = 6;   // a garrison order this close to bags of ours means them, whatever house stands near
  static const float BAGS_DEFEND = 15; // a defend order this close means them too
  static const float BAGS_REACH = 30;  // a garrison order with no house to be had takes bags this close
+ static const float BAGS_WALK = 250;  // men this far from places behind bags go there each on his own, not as a group
 
  protected static ref map<SCR_AIGroup, ref array<IEntity>> s_Posts = new map<SCR_AIGroup, ref array<IEntity>>();
  protected static ref map<IEntity, ref array<ref ACR_GarrisonSpot>> s_Survey = new map<IEntity, ref array<ref ACR_GarrisonSpot>>();
@@ -215,6 +216,21 @@ class ACR_Garrison
    tight = Math.Max(tight, vector.DistanceXZ(center, placed.GetOrigin()) + 2);
   }
   s_Tight.Set(group, tight);
+  // Behind bags: the game hands out posts once every man is inside the radius, and a group that can't path to the
+  // first of them stands where its path ends with nobody on the bags (srv:worksfight, 1 Nov: 38 m off, and the town
+  // taken without a shot). With every man inside it from the start each goes to his own place.
+  if (ACR_BagHold.HasPlaces(group))
+  {
+   array<AIAgent> agents = {};
+   group.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (!body) continue;
+    float away = vector.DistanceXZ(center, body.GetOrigin());
+    if (away < BAGS_WALK) radius = Math.Max(radius, away + 5);
+   }
+  }
   return posts.Count();
  }
 

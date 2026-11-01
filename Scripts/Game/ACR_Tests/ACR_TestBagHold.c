@@ -13,13 +13,74 @@ class ACR_BagSampler : Managed
  int m_iMuzzleSamples;
  float m_fMuzzleHeight, m_fMuzzleOut;
  int m_iAxisPrints;
+ int m_iShots, m_iShotsClear, m_iShotsBags, m_iShotsOther, m_iShotsLow;
  ref map<IEntity, int> m_Ammo = new map<IEntity, int>();
+ ref array<IEntity> m_aMen = {};
+ static ACR_BagSampler s_Listening; // the one that hears shots (the modded muzzle effects below)
+
+ // The moment one of the sampled men fires: where his barrel points, for the first few metres.
+ static void Heard(BaseMuzzleComponent muzzle)
+ {
+  if (!s_Listening || !muzzle || !muzzle.GetOwner()) return;
+  IEntity body = muzzle.GetOwner().GetRootParent();
+  if (!body || !s_Listening.m_aMen.Contains(body)) return;
+  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(body.FindComponent(BaseWeaponManagerComponent));
+  vector mat[4];
+  if (!weapons || !weapons.GetCurrentMuzzleTransform(mat)) return;
+  s_Listening.m_iShots++;
+  TraceParam trace = new TraceParam();
+  trace.Start = mat[3];
+  trace.End = mat[3] + mat[2] * 6;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  float fraction = GetGame().GetWorld().TraceMove(trace, ACR_Garrison.SolidFilter);
+  if (fraction >= 1) s_Listening.m_iShotsClear++;
+  else if (IsBag(trace.TraceEnt)) s_Listening.m_iShotsBags++;
+  else s_Listening.m_iShotsOther++;
+ }
+
+ void ACR_BagSampler()
+ {
+  s_Listening = this;
+ }
+
+ // One line per man: what he's up to (a stuck reserve, a man off his place).
+ static void Dump(string tag, SCR_AIGroup group, notnull array<vector> places)
+ {
+  if (!group) return;
+  SCR_AIGroupUtilityComponent groupUtility = SCR_AIGroupUtilityComponent.Cast(group.FindComponent(SCR_AIGroupUtilityComponent));
+  string activity = "none";
+  if (groupUtility && groupUtility.GetCurrentAction()) activity = groupUtility.GetCurrentAction().ClassName();
+  AIWaypoint waypoint = group.GetCurrentWaypoint();
+  string where = "no waypoint";
+  if (waypoint) where = string.Format("waypoint %1 radius %2", waypoint.GetOrigin(), waypoint.GetCompletionRadius());
+  PrintFormat("[ACR] BAGMAN %1 group: %2, %3", tag, activity, where);
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
+   float gap = 9999;
+   foreach (vector place : places) gap = Math.Min(gap, vector.DistanceXZ(place, body.GetOrigin()));
+   string behaviour = "none";
+   string cover = "";
+   if (utility)
+   {
+    if (utility.GetCurrentAction()) behaviour = utility.GetCurrentAction().ClassName();
+    if (utility.m_CombatMoveState) cover = string.Format("in cover %1 exposed %2 moving %3", utility.m_CombatMoveState.m_bInCover, utility.m_CombatMoveState.m_bExposedInCover, utility.m_CombatMoveState.IsMoving());
+    if (utility.m_ACRBagPlace) cover += string.Format(", own place %1 m", vector.DistanceXZ(utility.m_ACRBagPlace.m_vPos, body.GetOrigin()).ToString(-1, 1));
+   }
+   PrintFormat("[ACR] BAGMAN %1 %2 m, %3, stance %4, %5", tag, gap.ToString(-1, 1), behaviour, typename.EnumToString(ECharacterStance, body.GetCharacterController().GetStance()), cover);
+  }
+ }
 
  // 'facing' is the bags' firing side, for how far past his feet the muzzle reaches; zero to skip it.
  void Sample(IEntity body, IEntity enemy, notnull array<vector> places, vector facing)
  {
   if (!body) return;
   m_iSamples++;
+  if (!m_aMen.Contains(body)) m_aMen.Insert(body);
   vector at = body.GetOrigin();
   float gap = 9999;
   foreach (vector place : places) gap = Math.Min(gap, vector.DistanceXZ(place, at));
@@ -115,7 +176,7 @@ class ACR_BagSampler : Managed
  // Bags on the way from his chest to the enemy, close by.
  static bool BagsBetween(vector at, vector enemy)
  {
-  vector from = at + Vector(0, 0.8, 0);
+  vector from = at + Vector(0, 0.5, 0);
   vector dir = enemy - from;
   dir[1] = 0;
   if (dir.Length() < 0.1) return false;
@@ -167,8 +228,26 @@ class ACR_BagSampler : Managed
   }
   string where = string.Format("on post %1%%, behind bags %2%%, mean gap %3 m, farthest %4 m", Percent(m_iOnPost, m_iSamples), Percent(m_iBehind, m_iSamples), gap.ToString(-1, 1), m_fFarthest.ToString(-1, 1));
   string stance = string.Format("stand %1%%, crouch %2%%, prone %3%%, sees the enemy %4%%, blind behind bags %5%%", Percent(m_iStand, m_iSamples), Percent(m_iCrouch, m_iSamples), Percent(m_iProne, m_iSamples), Percent(m_iSees, m_iSamples), Percent(m_iBlindBags, m_iSamples));
-  string fire = string.Format("rounds %1, shots looked at %2: clear %3, bags %4, other %5; muzzle height %6, %7 m past his feet", m_iRounds, m_iFireSamples, m_iFireClear, m_iFireBags, m_iFireOther, height.ToString(-1, 2), past.ToString(-1, 2));
+  string fire = string.Format("rounds %1, shots heard %2: clear %3, into bags %4, other %5; muzzle height %6, %7 m past his feet", m_iRounds, m_iShots, m_iShotsClear, m_iShotsBags, m_iShotsOther, height.ToString(-1, 2), past.ToString(-1, 2));
   return string.Format("%1, %2, %3 (%4 samples)", where, stance, fire, m_iSamples);
+ }
+}
+
+modded class SCR_MuzzleEffectComponent
+{
+ override void OnFired(IEntity effectEntity, BaseMuzzleComponent muzzle, IEntity projectileEntity)
+ {
+  super.OnFired(effectEntity, muzzle, projectileEntity);
+  ACR_BagSampler.Heard(muzzle);
+ }
+}
+
+modded class SCR_OptimizedMuzzleEffectComponent
+{
+ override void OnFired(IEntity effectEntity, BaseMuzzleComponent muzzle, IEntity projectileEntity)
+ {
+  super.OnFired(effectEntity, muzzle, projectileEntity);
+  ACR_BagSampler.Heard(muzzle);
  }
 }
 
@@ -233,6 +312,7 @@ class ACR_TestBagHold
   }
   int fought = second - s_iContact;
   if (fought % 15 == 0) Report(manager, fought);
+  if (fought % 30 == 0) ACR_BagSampler.Dump(string.Format("t=%1", fought), s_Group, s_aPlaces);
   if (fought >= LENGTH || (fought > 5 && (Defenders(manager) == 0 || AttackersAlive(manager) == 0))) Finish(manager, second);
  }
 

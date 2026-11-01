@@ -15,18 +15,21 @@ class ACR_BagPlace : Managed
  IEntity m_Bags;      // they go, so does the place
  IEntity m_Post;      // its post (ACR_Garrison)
  SCR_AIUtilityComponent m_Man;
- int m_iFails;        // tries to get there that got him no nearer
- float m_fLastGap = float.MAX;
+ int m_iFails;        // spells of going there that got him no nearer
+ float m_fCheckedAt;
+ float m_fCheckedGap;
 }
 
 class ACR_BagHold
 {
- static const float ARRIVE = 1.3;        // m from his place: he's on it
+ static const float ARRIVE = 1.6;        // m from his place: he's on it
  static const float FRONT = 0;           // of his facing towards the enemy: less, and the bags are no use to him
  static const float NO_RUN_GAP = 8;      // m from his place he doesn't run for it ...
  static const float NO_RUN_ENEMY = 15;   // ... with an enemy this close
  static const float HAND_TO_HAND = 6;    // m: an enemy this close is fought from wherever he stands
- static const int MOST_FAILS = 3;
+ static const int MOST_FAILS = 3;        // of PROGRESS_MS with no headway towards his place: he gives it up
+ static const float PROGRESS_MS = 6000;
+ static const float PROGRESS_M = 1;
  static const float HEIGHT_DEFAULT = 1.3; // m, the long high piece's real top; its bounds say 1.46
  protected static ref map<SCR_AIGroup, ref array<ref ACR_BagPlace>> s_Places = new map<SCR_AIGroup, ref array<ref ACR_BagPlace>>();
  static int s_iEntered, s_iSentBack, s_iHolds, s_iLost; // tests
@@ -39,6 +42,13 @@ class ACR_BagHold
  static bool HasPlaces(SCR_AIGroup group)
  {
   return group && !s_Places.IsEmpty() && s_Places.Contains(group);
+ }
+
+ static IEntity BagsForTest(SCR_AIGroup group)
+ {
+  array<ref ACR_BagPlace> places = s_Places.Get(group);
+  if (!places || places.IsEmpty()) return null;
+  return places[0].m_Bags;
  }
 
  static int PlaceCount()
@@ -124,7 +134,7 @@ class ACR_BagHold
   man.m_ACRBagPlace = place;
   place.m_Man = man;
   place.m_iFails = 0;
-  place.m_fLastGap = float.MAX;
+  place.m_fCheckedAt = 0;
  }
 
  // Every second from ACR_Garrison.Sweep: bags gone, men gone, and each man on the place the game sent him to.
@@ -239,15 +249,25 @@ class ACR_BagHold
 
  protected static void SendBack(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, ACR_BagPlace place, vector target, float gap)
  {
-  // Not getting any nearer (bags, a house, a fence in the way): a few tries, then another place or none.
-  if (gap > place.m_fLastGap - 0.3) place.m_iFails++;
-  else place.m_iFails = 0;
-  place.m_fLastGap = gap;
-  if (place.m_iFails >= MOST_FAILS)
+  // Not getting any nearer (bags, a house, a fence in the way): another place, or none.
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (place.m_fCheckedAt == 0)
   {
-   PrintFormat("[ACR] BAGHOLD %1 m short of a place, giving it up", gap.ToString(-1, 1));
-   Free(place);
-   return;
+   place.m_fCheckedAt = now;
+   place.m_fCheckedGap = gap;
+  }
+  else if (now - place.m_fCheckedAt > PROGRESS_MS)
+  {
+   if (gap > place.m_fCheckedGap - PROGRESS_M) place.m_iFails++;
+   else place.m_iFails = 0;
+   place.m_fCheckedAt = now;
+   place.m_fCheckedGap = gap;
+   if (place.m_iFails >= MOST_FAILS)
+   {
+    PrintFormat("[ACR] BAGHOLD %1 m short of a place, giving it up", gap.ToString(-1, 1));
+    Free(place);
+    return;
+   }
   }
   SCR_AICombatMoveRequest_Move rq = new SCR_AICombatMoveRequest_Move();
   rq.m_eReason = SCR_EAICombatMoveReason.STANDARD;

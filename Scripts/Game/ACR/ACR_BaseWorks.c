@@ -844,7 +844,8 @@ class ACR_BaseWorks
   vector center = spots[0].m_Pos;
   float radius;
   if (ACR_Garrison.PostsAt(post.m_Group, spots, center, radius) <= 0) return false;
-  ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_GARRISON, center, radius, true);
+  // Just out, they're on their places at once; men already out run across the town to the new line.
+  ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_GARRISON, center, radius, post.m_iMannedLine < 0);
   post.m_iMannedLine = lines[0];
   post.m_fMannedAt = GetGame().GetWorld().GetWorldTime();
   PrintFormat("[ACR] BASEWORKS %1 %2: %3 men to line %4 and on (%5 places)", work.m_sFaction, work.m_Base.m_sName, men, lines[0], spots.Count());
