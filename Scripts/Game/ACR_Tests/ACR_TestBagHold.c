@@ -6,6 +6,7 @@ class ACR_BagSampler : Managed
  static const float ON_POST = 2.0;     // m from a place: he's on it
  static const float BEHIND_REACH = 3;  // m the bags can be away and still cover him
  int m_iSamples, m_iOnPost, m_iBehind, m_iStand, m_iCrouch, m_iProne;
+ int m_iSees, m_iBlindBags;
  float m_fGap, m_fFarthest;
  int m_iRounds;
  int m_iFireSamples, m_iFireClear, m_iFireBags, m_iFireOther;
@@ -37,6 +38,16 @@ class ACR_BagSampler : Managed
    else if (stance == ECharacterStance.CROUCH) m_iCrouch++;
    else m_iProne++;
   }
+  if (character && enemy)
+  {
+   TraceParam look = new TraceParam();
+   look.Start = character.EyePosition();
+   look.End = aim;
+   look.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+   float view = GetGame().GetWorld().TraceMove(look, ACR_Garrison.SolidFilter);
+   if (view >= 1) m_iSees++;
+   else if (IsBag(look.TraceEnt)) m_iBlindBags++;
+  }
   int fired = Fired(body);
   if (fired <= 0 || !enemy) return;
   m_iRounds += fired;
@@ -62,6 +73,36 @@ class ACR_BagSampler : Managed
   if (fraction >= 1) m_iFireClear++;
   else if (IsBag(trace.TraceEnt)) m_iFireBags++;
   else m_iFireOther++;
+ }
+
+ static IEntity Nearest(notnull array<IEntity> bodies, vector at)
+ {
+  IEntity best;
+  float nearest = float.MAX;
+  foreach (IEntity body : bodies)
+  {
+   if (!body) continue;
+   float d = vector.DistanceXZ(body.GetOrigin(), at);
+   if (d < nearest)
+   {
+    nearest = d;
+    best = body;
+   }
+  }
+  return best;
+ }
+
+ // The living bodies of a group, added to 'bodies'.
+ static void Alive(AIGroup group, notnull array<IEntity> bodies)
+ {
+  if (!group) return;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (body && ACR_Respawn.IsAlive(body)) bodies.Insert(body);
+  }
  }
 
  static vector Target(IEntity enemy)
@@ -125,7 +166,7 @@ class ACR_BagSampler : Managed
    past = m_fMuzzleOut / m_iMuzzleSamples;
   }
   string where = string.Format("on post %1%%, behind bags %2%%, mean gap %3 m, farthest %4 m", Percent(m_iOnPost, m_iSamples), Percent(m_iBehind, m_iSamples), gap.ToString(-1, 1), m_fFarthest.ToString(-1, 1));
-  string stance = string.Format("stand %1%%, crouch %2%%, prone %3%%", Percent(m_iStand, m_iSamples), Percent(m_iCrouch, m_iSamples), Percent(m_iProne, m_iSamples));
+  string stance = string.Format("stand %1%%, crouch %2%%, prone %3%%, sees the enemy %4%%, blind behind bags %5%%", Percent(m_iStand, m_iSamples), Percent(m_iCrouch, m_iSamples), Percent(m_iProne, m_iSamples), Percent(m_iSees, m_iSamples), Percent(m_iBlindBags, m_iSamples));
   string fire = string.Format("rounds %1, shots looked at %2: clear %3, bags %4, other %5; muzzle height %6, %7 m past his feet", m_iRounds, m_iFireSamples, m_iFireClear, m_iFireBags, m_iFireOther, height.ToString(-1, 2), past.ToString(-1, 2));
   return string.Format("%1, %2, %3 (%4 samples)", where, stance, fire, m_iSamples);
  }
@@ -368,22 +409,9 @@ class ACR_TestBagHold
  {
   ACR_Squad squad = Attack(manager);
   if (!squad) return null;
-  array<AIAgent> agents = {};
-  squad.GetAgents(agents);
-  IEntity best;
-  float nearest = float.MAX;
-  foreach (AIAgent agent : agents)
-  {
-   IEntity body = agent.GetControlledEntity();
-   if (!body || !ACR_Respawn.IsAlive(body)) continue;
-   float d = vector.DistanceXZ(body.GetOrigin(), at);
-   if (d < nearest)
-   {
-    nearest = d;
-    best = body;
-   }
-  }
-  return best;
+  array<IEntity> bodies = {};
+  ACR_BagSampler.Alive(squad.m_Group, bodies);
+  return ACR_BagSampler.Nearest(bodies, at);
  }
 
  protected static void Sample(ACR_Manager manager, int second)

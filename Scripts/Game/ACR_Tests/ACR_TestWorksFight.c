@@ -16,6 +16,8 @@ class ACR_TestWorksFight
  protected static int s_iStart;
  protected static bool s_bDone;
  protected static int s_iDefendersLeft;
+ protected static ref ACR_BagSampler s_Sampler = new ACR_BagSampler();
+ protected static bool s_bShots;
 
  static void Run(int second)
  {
@@ -33,11 +35,13 @@ class ACR_TestWorksFight
    return;
   }
   int fought = second - s_iStart;
+  Sample(manager);
   if (fought % 15 == 0) Report(manager, fought);
   if (fought >= LENGTH || (fought > 20 && (Attackers(manager) == 0 || Defenders(manager) == 0)))
   {
    Report(manager, fought);
    s_bDone = true;
+   PrintFormat("[ACR] WORKSFIGHT MEN %1", s_Sampler.Words());
    PrintFormat("[ACR] WORKSFIGHT RESULT %1: attackers lost %2 of %3, defenders lost %4 of %5, walls lost %6 of %7, %8 s, line men %9", s_Base.m_sName, s_iAttackers - Attackers(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, s_iWalls - Walls(), s_iWalls, fought, !ACR_BaseWorks.s_bNoLineMenForTest);
    ACR_TestRegress.Check("worksfight: reached the end", true, "");
    ACR_TestRegress.Complete("worksfight", 1);
@@ -140,6 +144,43 @@ class ACR_TestWorksFight
   foreach (ACR_BaseSite site : s_Work.m_aSites)
    foreach (IEntity wall : site.m_aWalls) if (wall) alive++;
   return alive;
+ }
+
+ // What the men out do by the second, from their first shot on: where they stand, their stance, their fire.
+ protected static void Sample(ACR_Manager manager)
+ {
+  SCR_AIGroup group;
+  if (s_Work.m_Defenders) group = s_Work.m_Defenders.m_Group;
+  if (!group) return;
+  array<IEntity> enemies = {};
+  array<string> names = {ONE, TWO};
+  foreach (string name : names)
+  {
+   ACR_Squad squad = Find(manager, name);
+   if (squad) ACR_BagSampler.Alive(squad.m_Group, enemies);
+  }
+  array<IEntity> posts = {};
+  ACR_Garrison.PostEntities(group, posts);
+  array<vector> places = {};
+  foreach (IEntity post : posts) if (post) places.Insert(post.GetOrigin());
+  array<IEntity> men = {};
+  ACR_BagSampler.Alive(group, men);
+  foreach (IEntity man : men)
+  {
+   if (!s_bShots)
+   {
+    if (s_Sampler.Fired(man) > 0) s_bShots = true;
+    continue;
+   }
+   IEntity enemy = ACR_BagSampler.Nearest(enemies, man.GetOrigin());
+   vector facing = vector.Zero;
+   foreach (ACR_BaseLine line : s_Work.m_aLines)
+   {
+    facing = line.m_vFacing;
+    break;
+   }
+   s_Sampler.Sample(man, enemy, places, facing);
+  }
  }
 
  // How far the men stand from the nearest bags, on average, and how many are on a line.
