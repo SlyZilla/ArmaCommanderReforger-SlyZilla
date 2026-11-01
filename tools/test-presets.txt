@@ -225,3 +225,4 @@ worksshots|-acrWorksShotsTest 1|600|Worlds/ACR_Kolguyev.ent
 contentpack|-acrContentPackTest 1|120
 contentpackwinter|-acrContentPackWinterTest 1|120
 quickstartfia|-acrQuickStartFIATest 1|90|Worlds/ACR_Everon.ent
+basedefenceskolguyev|-acrBaseDefencesTest 1|120|Worlds/ACR_Kolguyev.ent
