@@ -830,6 +830,8 @@ class ACR_BaseLines
  static const int WAY_IN_WALKS = 3;       // ways into town walked for a line across them
  static const float GATE_HELD = 30;       // m from a way in that a line holds it (the audit's GATE_NEAR)
  static const float GATE_OUT = 50;        // m on along the road where a lane still holds it: a line further out
+ static const float GATE_CHECKPOINT = 0.5; // a checkpoint where it's the only thing that would hold a way in
+ static const int GATE_CHECKPOINT_ASKS = 2; // ways in looked at for one each time: asking the road is dear
  static const int PLUG_ARM = 3;           // long pieces each way across a way in, and up to 2 more
  static const float SEED_LOOK = 60;       // m a seed is looked out from before it's walked
  static const float SEED_BLIND = 8;       // m: seeing less it isn't walked at all
@@ -1340,6 +1342,8 @@ class ACR_BaseLines
     if (vector.DistanceXZ(lane, gate.m_vPos) < GATE_HELD || vector.DistanceXZ(lane, gate.m_vPos + gate.m_vOut * GATE_OUT) < GATE_HELD) return true;
    foreach (ACR_LinePiece piece : line.m_aPieces) if (vector.DistanceXZ(piece.m_vPos, gate.m_vPos) < GATE_HELD) return true;
   }
+  foreach (ACR_BaseSite site : work.m_aSites)
+   if (site.m_eKind == ACR_EBaseSite.ROADBLOCK && vector.DistanceXZ(site.m_vPos, gate.m_vPos) < GATE_HELD + GATE_OUT) return true;
   return false;
  }
 
@@ -2842,6 +2846,7 @@ class ACR_BaseLines
    array<float> yaws = {};
    array<float> scores = {};
    array<int> sectors = {};
+   array<bool> onLine = {};
    foreach (ACR_BaseLine line : work.m_aLines)
    {
     foreach (int l, vector lane : line.m_aLanes)
@@ -2856,6 +2861,29 @@ class ACR_BaseLines
      yaws.Insert(yaw);
      sectors.Insert(line.m_iSector);
      scores.Insert(survey.Weak(line.m_iSector) + ACR_BaseDefences.DotXZ(line.m_aLaneOut[l], toEnemy));
+     onLine.Insert(true);
+    }
+   }
+   // A way in no line crosses: where it can have one, nothing else will hold it.
+   if (ACR_BaseLiner.PlacementOn())
+   {
+    int asked = 0;
+    foreach (ACR_BaseGate open : survey.m_aGates)
+    {
+     if (asked >= GATE_CHECKPOINT_ASKS) break;
+     if (survey.m_aThreat[open.m_iSector] < work.m_Style.m_fMinThreat || GateHeld(work, open)) continue;
+     if (ACR_BaseDefences.DotXZ(open.m_vOut, toEnemy) < -0.1) continue;
+     asked++;
+     vector gatePos;
+     float gateYaw;
+     string gateRefusal;
+     if (!ACR_Roadblocks.ValidateSite(open.m_vPos, gatePos, gateYaw, gateRefusal, work.m_sFaction, enemy.GetOrigin(), work.m_Base)) continue;
+     if (ACR_BaseWorks.CheckpointNear(work, gatePos, 60)) continue;
+     spots.Insert(gatePos);
+     yaws.Insert(gateYaw);
+     sectors.Insert(open.m_iSector);
+     scores.Insert(survey.Weak(open.m_iSector) + ACR_BaseDefences.DotXZ(open.m_vOut, toEnemy) + GATE_CHECKPOINT);
+     onLine.Insert(false);
     }
    }
    if (spots.IsEmpty())
@@ -2867,6 +2895,7 @@ class ACR_BaseLines
    ACR_BaseSite site = new ACR_BaseSite();
    site.m_eKind = ACR_EBaseSite.ROADBLOCK;
    site.m_iTier = 2;
+   site.m_bOwnGate = !onLine[picked];
    site.m_vPos = spots[picked];
    site.m_fYaw = yaws[picked];
    site.m_iSector = sectors[picked];

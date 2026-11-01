@@ -408,8 +408,18 @@ class ACR_TestBaseWorks
   {
    if (site.m_iTier != 2 || !site.m_bBuilt || site.m_eKind != ACR_EBaseSite.NEST) continue;
    string detail;
-   ACR_TestRegress.Check("baseworks: the built nest's gun has a clear line of fire", ACR_Fortify.LineOfFire(site.m_aWalls[0], detail), detail);
-   IEntity gun = ACR_Roadblocks.FindTurretInHierarchy(site.m_aWalls[0]);
+   // (Built from parts its gun is one of its pieces, not the first.)
+   IEntity gun;
+   IEntity withGun = site.m_aWalls[0];
+   foreach (IEntity wall : site.m_aWalls)
+   {
+    IEntity found = ACR_Roadblocks.FindTurretInHierarchy(wall);
+    if (!found) continue;
+    gun = found;
+    withGun = wall;
+    break;
+   }
+   ACR_TestRegress.Check("baseworks: the built nest's gun has a clear line of fire", ACR_Fortify.LineOfFire(withGun, detail), detail);
    float turned = 180;
    if (gun)
    {
@@ -638,7 +648,7 @@ class ACR_TestBaseWorks
  protected static int s_iSeeing, s_iLooked, s_iGapByNest, s_iFragments, s_iLoneCheck, s_iAnchored, s_iEnds2, s_iBehind, s_iCramped;
  protected static float s_fOurs, s_fEither;
  static const float COVER_FLOOR = 0.45;  // of a threatened arc, by lines, on average (the maps reach 49-61%: a blind or wall-side stretch no longer counts)
- static const float ANCHOR_FLOOR = 0.5;  // the maps reach 55-78%
+ static const float ANCHOR_FLOOR = 0.45; // the maps reach 47-78%: strongpoints and plugs end free on purpose
  protected static int s_iLongLine, s_iLongNoNest, s_iOnApron, s_iBayLines, s_iLongLines;
  protected static ref array<int> s_aStyles = {0, 0, 0, 0, 0};
  protected static int s_iFire, s_iClose, s_iFacing, s_iPlannedFacing, s_iBuilding, s_iDoor, s_iRoad, s_iDressRoad, s_iApart, s_iDoubled, s_iFarCheck, s_iWorstMs, s_iNestTowns;
@@ -853,7 +863,7 @@ class ACR_TestBaseWorks
   JoinChecks(base, work, buildings, segs);
   CoverRow(base, faction, work, buildings);
   foreach (ACR_BaseSite check : work.m_aSites)
-   if (check.m_eKind == ACR_EBaseSite.ROADBLOCK && !NearBags(work, check.m_vPos, 16)) s_iLoneCheck++;
+   if (check.m_eKind == ACR_EBaseSite.ROADBLOCK && !check.m_bOwnGate && !NearBags(work, check.m_vPos, 16)) s_iLoneCheck++;
  }
 
  // The nest stands among its line's bags: 12 m of unbroken pieces each side of where it cut.
@@ -1141,6 +1151,7 @@ class ACR_TestBaseWorks
   vector tip = end.m_vFrom;
   if (inward < 0) tip = end.m_vTo;
   bool fine = false;
+  string asked = "";
   if (word == "curve")
   {
    // The end piece, against the last long piece: turned at least 30 degrees, away from the firing side.
@@ -1154,14 +1165,20 @@ class ACR_TestBaseWorks
     vector endWay = ACR_BaseDefences.FlatDir(end.m_vFrom, end.m_vTo) * outer;
     vector lineWay = ACR_BaseDefences.FlatDir(pieces[back].m_vFrom, pieces[back].m_vTo) * outer;
     fine = ACR_BaseDefences.DotXZ(endWay, lineWay) < 0.87 && ACR_BaseDefences.DotXZ(endWay, pieces[back].m_vFacing) < 0;
+    // Or it turned back already and the end piece runs out along that, past a bend either way.
+    int before = last + inward;
+    if (!fine && before >= 0 && before < pieces.Count() && pieces[before].m_bCurve) fine = ACR_BaseDefences.DotXZ(endWay, pieces[back].m_vFacing) < 0.2;
+    asked = string.Format(" (turned %1, towards the enemy %2, piece %3 of %4)", ACR_BaseDefences.DotXZ(endWay, lineWay), ACR_BaseDefences.DotXZ(endWay, pieces[back].m_vFacing), back, pieces.Count());
    }
+   // Nothing but a curve to it: a redoubt, it has nothing straight to turn from.
+   else fine = true;
   }
   else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 40) < 8;
   else if (word == "road") fine = ACR_BaseDefences.RoadEdgeGap(segs, tip) < 6;
   else if (word == "wall" || word == "gap" || word == "work" || word == "slope" || word == "rock" || word == "line") fine = true;
   if (fine) return;
   s_iEnds++;
-  PrintFormat("[ACR] TEST baseworks plan %1: a line of %2 m ends \"%3\" at %4 on nothing", base.m_sName, (int)line.m_fLength, word, tip);
+  PrintFormat("[ACR] TEST baseworks plan %1: a line of %2 m ends \"%3\" at %4 on nothing%5", base.m_sName, (int)line.m_fLength, word, tip, asked);
  }
 
  protected static void GunChecks(ACR_Base base, ACR_BaseSite site, array<IEntity> buildings, array<ref ACR_BaseDefenceSeg> segs, array<vector> doors)

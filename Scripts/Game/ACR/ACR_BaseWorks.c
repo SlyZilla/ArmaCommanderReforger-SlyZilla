@@ -40,6 +40,7 @@ class ACR_BaseSite : Managed
  bool m_bDamaged;                   // PLANNED: it stands with pieces gone: open again, for those alone
  bool m_bCompact;                   // NEST: the small gun position (ACR_BaseLines.NEST_COMPACT)
  ref ACR_Emplacement m_Emplacement; // NEST: built from parts, in place of m_sPrefab
+ bool m_bOwnGate;                   // ROADBLOCK: holds a way in no line crosses, so it stands in none
  bool m_bNoFit;                     // nothing could be placed: not tried again
  bool m_bSkipped;                   // a squad gave up on it (a truck parked there, no way in): the next order tries again
  int m_iSpot;                       // NEST, BUNKER: its spot in ACR_FobDefences.PrefabFor

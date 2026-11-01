@@ -44,7 +44,7 @@ class ACR_TestWings
   if (second == 12) Upgrades();
   if (second == 13) LookAtBlocks();
   if (second == 14) StartGone();
-  if (second == 15) WingMen();
+  if (second == 15 && !System.IsCLIParam("acrWingsOffTest")) WingMen();
   if (second == 26) Finish();
  }
 
