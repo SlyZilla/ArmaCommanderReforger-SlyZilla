@@ -16,31 +16,45 @@ class ACR_BagSampler : Managed
  int m_iShots, m_iShotsClear, m_iShotsBags, m_iShotsOther, m_iShotsLow;
  ref map<IEntity, int> m_Ammo = new map<IEntity, int>();
  ref array<IEntity> m_aMen = {};
- static ACR_BagSampler s_Listening; // the one that hears shots (the modded muzzle effects below)
+ ref map<IEntity, int> m_ShotAmmo = new map<IEntity, int>();
 
- // The moment one of the sampled men fires: where his barrel points, for the first few metres.
- static void Heard(BaseMuzzleComponent muzzle)
+ // Ten times a second: whoever's magazine went down fired just now. Where his barrel points, for the first few
+ // metres (muzzle effects don't run on a server, and a look a second later finds him ducked).
+ void ListenForShots()
  {
-  if (!s_Listening || !muzzle || !muzzle.GetOwner()) return;
-  IEntity body = muzzle.GetOwner().GetRootParent();
-  if (!body || !s_Listening.m_aMen.Contains(body)) return;
-  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(body.FindComponent(BaseWeaponManagerComponent));
-  vector mat[4];
-  if (!weapons || !weapons.GetCurrentMuzzleTransform(mat)) return;
-  s_Listening.m_iShots++;
-  TraceParam trace = new TraceParam();
-  trace.Start = mat[3];
-  trace.End = mat[3] + mat[2] * 6;
-  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
-  float fraction = GetGame().GetWorld().TraceMove(trace, ACR_Garrison.SolidFilter);
-  if (fraction >= 1) s_Listening.m_iShotsClear++;
-  else if (IsBag(trace.TraceEnt)) s_Listening.m_iShotsBags++;
-  else s_Listening.m_iShotsOther++;
+  GetGame().GetCallqueue().CallLater(HearShots, 100, true);
  }
 
- void ACR_BagSampler()
+ protected void HearShots()
  {
-  s_Listening = this;
+  foreach (IEntity body : m_aMen)
+  {
+   if (!body || !ACR_Respawn.IsAlive(body)) continue;
+   SCR_AICombatComponent combat = SCR_AICombatComponent.Cast(body.FindComponent(SCR_AICombatComponent));
+   if (!combat || !combat.GetCurrentWeapon() || !combat.GetCurrentWeapon().GetCurrentMagazine()) continue;
+   int ammo = combat.GetCurrentWeapon().GetCurrentMagazine().GetAmmoCount();
+   int was = ammo;
+   if (m_ShotAmmo.Contains(body)) was = m_ShotAmmo.Get(body);
+   m_ShotAmmo.Set(body, ammo);
+   if (ammo >= was) continue;
+   BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(body.FindComponent(BaseWeaponManagerComponent));
+   vector mat[4];
+   if (!weapons || !weapons.GetCurrentMuzzleTransform(mat)) continue;
+   m_iShots++;
+   TraceParam trace = new TraceParam();
+   trace.Start = mat[3];
+   trace.End = mat[3] + mat[2] * 6;
+   trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+   float fraction = GetGame().GetWorld().TraceMove(trace, ACR_Garrison.SolidFilter);
+   if (fraction >= 1) m_iShotsClear++;
+   else if (IsBag(trace.TraceEnt)) m_iShotsBags++;
+   else m_iShotsOther++;
+  }
+ }
+
+ void StopListening()
+ {
+  GetGame().GetCallqueue().Remove(HearShots);
  }
 
  // One line per man: what he's up to (a stuck reserve, a man off his place).
@@ -233,24 +247,6 @@ class ACR_BagSampler : Managed
  }
 }
 
-modded class SCR_MuzzleEffectComponent
-{
- override void OnFired(IEntity effectEntity, BaseMuzzleComponent muzzle, IEntity projectileEntity)
- {
-  super.OnFired(effectEntity, muzzle, projectileEntity);
-  ACR_BagSampler.Heard(muzzle);
- }
-}
-
-modded class SCR_OptimizedMuzzleEffectComponent
-{
- override void OnFired(IEntity effectEntity, BaseMuzzleComponent muzzle, IEntity projectileEntity)
- {
-  super.OnFired(effectEntity, muzzle, projectileEntity);
-  ACR_BagSampler.Heard(muzzle);
- }
-}
-
 // srv:baghold (about 4 min, Everon): do men with a place behind bags stay there and shoot from there? Open ground,
 // a real line of long pieces, eight men on places behind it, one USSR rifle squad walking in from 150 m, damage on.
 // It reports; AI fights differ by the run, so compare several. srv:bagholdlate has the same men start 60 m behind
@@ -425,6 +421,7 @@ class ACR_TestBagHold
    return;
   }
   s_iDefenders = MEN;
+  s_Sampler.ListenForShots();
   array<ref ACR_GarrisonSpot> spots = {};
   // From the middle of the line out, as ManLine does from the enemy's side.
   for (int n = 0; n < MEN; n++)
@@ -508,6 +505,7 @@ class ACR_TestBagHold
    IEntity body = agent.GetControlledEntity();
    if (!body || !ACR_Respawn.IsAlive(body)) continue;
    // Before the first shot only the magazines are read: what counts is what they do in the fight.
+   if (!s_Sampler.m_aMen.Contains(body)) s_Sampler.m_aMen.Insert(body);
    if (s_iContact < 0)
    {
     int fired = s_Sampler.Fired(body);
@@ -556,6 +554,7 @@ class ACR_TestBagHold
  protected static void Finish(ACR_Manager manager, int second)
  {
   s_bDone = true;
+  s_Sampler.StopListening();
   int fought = 0;
   if (s_iContact >= 0) fought = second - s_iContact;
   PrintFormat("[ACR] BAGHOLD RESULT attackers lost %1 of %2, defenders lost %3 of %4, %5 s, %6", s_iAttackers - AttackersAlive(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, fought, s_Sampler.Words());

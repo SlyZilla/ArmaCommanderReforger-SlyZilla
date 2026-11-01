@@ -724,7 +724,8 @@ class ACR_BaseWorks
 
  static bool s_bNoLineMenForTest; // the reserve as it was before: at the post, or in its buildings
  static const float MAN_BEHIND = 1.0;       // m a man stands behind a piece's middle
- static const float REMAN_MS = 60000;       // how often the line in use is looked at again
+ static const float REMAN_MS = 30000;       // how often the line in use is looked at again
+ static const float CONTACT_S = 20;         // s since a man saw his target: they're in a fight
  static const float FACES_ENOUGH = 0.2;     // of a line's facing towards the enemy, to man it
  static const float STAY_CLOSE = 200;       // m from the line: they stay where they are
  static const float THREAT_RANGE = 900;     // m: a man further off doesn't turn the defence round
@@ -982,10 +983,33 @@ class ACR_BaseWorks
   vector threat;
   if (!ThreatAt(post, threat)) return;
   ACR_BaseLine line = post.m_Work.m_aLines[post.m_iMannedLine];
-  if (vector.DistanceXZ(line.m_vMiddle, threat) < STAY_CLOSE) return;
   if (ACR_BaseDefences.DotXZ(line.m_vFacing, ACR_BaseDefences.FlatDir(line.m_vMiddle, threat)) > -FACES_ENOUGH) return;
+  // Close and being fought is no time to run. Close with nobody fighting him is: holding bags while he walks past
+  // them into the town is how a town falls without a shot (srv:worksfight, 1 Nov).
+  if (vector.DistanceXZ(line.m_vMiddle, threat) < STAY_CLOSE && InContact(post.m_Group)) return;
   ACR_Manager manager = ACR_Manager.GetInstance();
-  if (manager) ManLine(post, manager.m_Bases.GuardsAlive(post.m_Group));
+  if (!manager) return;
+  if (ManLine(post, manager.m_Bases.GuardsAlive(post.m_Group))) return;
+  // No line faces him: he's inside them. They go for him, off the bags.
+  ACR_Garrison.Release(post.m_Group);
+  post.m_iMannedLine = -1;
+  ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_DEFEND, ACR_Manager.Ground(post.m_vPos), post.m_fRadius, false);
+  PrintFormat("[ACR] BASEWORKS %1 %2: the enemy is inside the lines, the reserve leaves the bags", post.m_Work.m_sFaction, post.m_Work.m_Base.m_sName);
+ }
+
+ // Someone in the group has an enemy he saw lately.
+ protected static bool InContact(SCR_AIGroup group)
+ {
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
+   if (!utility || !utility.m_CombatComponent) continue;
+   BaseTarget target = utility.m_CombatComponent.GetCurrentTarget();
+   if (target && target.GetTimeSinceSeen() >= 0 && target.GetTimeSinceSeen() < CONTACT_S) return true;
+  }
+  return false;
  }
 
  // Where a squad holds the base when a tier ends: behind the worst approach's line, not in the town's

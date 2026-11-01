@@ -18,6 +18,7 @@ class ACR_TestWorksFight
  protected static int s_iDefendersLeft;
  protected static ref ACR_BagSampler s_Sampler = new ACR_BagSampler();
  protected static bool s_bShots;
+ protected static bool s_bListening;
 
  static void Run(int second)
  {
@@ -49,6 +50,7 @@ class ACR_TestWorksFight
   {
    Report(manager, fought);
    s_bDone = true;
+   s_Sampler.StopListening();
    PrintFormat("[ACR] WORKSFIGHT MEN %1", s_Sampler.Words());
    PrintFormat("[ACR] WORKSFIGHT held: into cover %1 times, sent back %2 times, holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost);
    PrintFormat("[ACR] WORKSFIGHT RESULT %1: attackers lost %2 of %3, defenders lost %4 of %5, walls lost %6 of %7, %8 s, line men %9", s_Base.m_sName, s_iAttackers - Attackers(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, s_iWalls - Walls(), s_iWalls, fought, !ACR_BaseWorks.s_bNoLineMenForTest);
@@ -174,8 +176,14 @@ class ACR_TestWorksFight
   foreach (IEntity post : posts) if (post) places.Insert(post.GetOrigin());
   array<IEntity> men = {};
   ACR_BagSampler.Alive(group, men);
+  if (!s_bListening)
+  {
+   s_bListening = true;
+   s_Sampler.ListenForShots();
+  }
   foreach (IEntity man : men)
   {
+   if (!s_Sampler.m_aMen.Contains(man)) s_Sampler.m_aMen.Insert(man);
    if (!s_bShots)
    {
     if (s_Sampler.Fired(man) > 0) s_bShots = true;

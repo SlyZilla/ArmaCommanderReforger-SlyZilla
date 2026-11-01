@@ -23,6 +23,7 @@ class ACR_TestBagHoldSquads
   if (!s_Base || s_bDone) return;
   if (second == 12) Squads(manager);
   if (second == 25) DefendAtBags(manager);
+  if (second == 55 || second == 84) DumpOne(manager, second);
   if (second == 85) OnPlaces(manager);
   if (second == 86) SecondSquad(manager);
   if (second == 88) MoveAway(manager);
@@ -85,6 +86,18 @@ class ACR_TestBagHoldSquads
   squad.Defend(s_vPoint);
   ACR_TestRegress.Check("bagholdsquads: a defend order at bags takes places behind them", ACR_BagHold.HasPlaces(squad.m_Group), string.Format("%1 places", ACR_BagHold.PlaceCount()));
   ACR_TestRegress.Check("bagholdsquads: it's a garrison waypoint, its label Defending", squad.m_sOrderPrefab == ACR_Squad.WP_GARRISON && squad.OrderState() == ACR_EOrderState.DEFEND, squad.m_sOrderPrefab);
+ }
+
+ protected static void DumpOne(ACR_Manager manager, int second)
+ {
+  ACR_Squad squad = Find(manager, ONE);
+  if (!squad) return;
+  array<IEntity> posts = {};
+  ACR_Garrison.PostEntities(squad.m_Group, posts);
+  array<vector> places = {};
+  foreach (IEntity post : posts) if (post) places.Insert(post.GetOrigin());
+  ACR_BagSampler.Dump(string.Format("t=%1", second), squad.m_Group, places);
+  PrintFormat("[ACR] BAGMAN order %1 %2, target %3, radius %4", squad.m_sOrderPrefab, squad.OrderState(), s_vPoint, squad.m_Group.GetCurrentWaypoint());
  }
 
  protected static void OnPlaces(ACR_Manager manager)

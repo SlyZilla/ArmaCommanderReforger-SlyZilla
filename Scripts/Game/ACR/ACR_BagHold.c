@@ -161,6 +161,7 @@ class ACR_BagHold
      continue;
     }
     if (place.m_Man && !ACR_Respawn.IsAlive(place.m_Man.m_OwnerEntity)) Free(place);
+    if (place.m_Man) BackOnWatch(place);
     if (!place.m_Post) continue;
     AISmartActionComponent action = AISmartActionComponent.Cast(place.m_Post.FindComponent(AISmartActionComponent));
     if (!action) continue;
@@ -170,6 +171,17 @@ class ACR_BagHold
     if (utility && utility != place.m_Man) Take(utility, place);
    }
   }
+ }
+
+ // The fight over, he's back at his post in whatever stance it left him: crouched behind the bags he'd never
+ // see the next one coming.
+ protected static void BackOnWatch(ACR_BagPlace place)
+ {
+  SCR_AIUtilityComponent man = place.m_Man;
+  if (!SCR_AIPerformActionBehavior.Cast(man.GetCurrentBehavior())) return;
+  ChimeraCharacter body = ChimeraCharacter.Cast(man.m_OwnerEntity);
+  if (!body || !body.GetCharacterController()) return;
+  if (body.GetCharacterController().GetStance() != ECharacterStance.STAND) SCR_AIStanceHandling.SetStance(body.GetCharacterController(), ECharacterStance.STAND);
  }
 
  // His place, or the nearest free one of his group's now he's in a fight and the game gave him none.
@@ -220,6 +232,7 @@ class ACR_BagHold
   if (gap <= ARRIVE)
   {
    EnterCover(utility, state, place, here);
+   KeepShowing(utility, state, place);
    s_iHolds++;
    return true;
   }
@@ -245,6 +258,23 @@ class ACR_BagHold
   state.m_bInCover = true;
   state.m_bExposedInCover = false;
   s_iEntered++;
+ }
+
+ // The stance he shows himself in over these bags, as the game's SCR_AIGetCoverParameters works it out.
+ protected static ECharacterStance ShowStance(float height)
+ {
+  if (height > 0.85) return ECharacterStance.STAND;
+  return ECharacterStance.CROUCH;
+ }
+
+ // The game thinks he's showing, but something else (his post, a stance order while he was elsewhere) has him lower:
+ // it only sets a stance when that flag changes, so he'd stay blind.
+ protected static void KeepShowing(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, ACR_BagPlace place)
+ {
+  if (!state.m_bExposedInCover || state.IsExecutingRequest()) return;
+  ChimeraCharacter body = ChimeraCharacter.Cast(utility.m_OwnerEntity);
+  if (!body || !body.GetCharacterController()) return;
+  if (body.GetCharacterController().GetStance() > ShowStance(place.m_fHeight)) state.ApplyRequestChangeStanceInCover(true);
  }
 
  protected static void SendBack(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, ACR_BagPlace place, vector target, float gap)
