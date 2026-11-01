@@ -24,6 +24,7 @@
 
 ### Fixes
 
+- The arsenal at a built FOB's ammo dump works for players again (#156). Since FOB supplies moved into the command post's storage, nothing but FOB construction could draw on them, so the ammo dump's arsenal (and the FOB's other supply-using service points) had no supplies to give. Arsenals and service points inside the FOB now draw on the FOB's supplies, the same balance construction uses. Supply trucks still can't load from it.
 - A squad told to garrison a building gets into it when one man is stuck on the way (#128). The game hands out the posts only once every soldier is near the building, so a man jammed at a fence or doorway kept the whole squad milling about outside with no posts (in the test, 3 of 9 on posts after a minute). A man who hasn't moved for 8 seconds short of the building no longer holds the others back.
 - The calm command map hides what it means to again (#14): the soldiers of a squad at a base (unless it is selected), our soldiers on a base's name, and the squads under a "×N" icon. The game shows every map marker again each frame, so a hidden one came back before it was drawn: a base with squads at it showed all their soldiers' dots around its marker, and the squads behind a "×N" sat stacked under its icon, where the cursor could catch one of them. Now each goes off the map until it is shown again.
 - FIA ambushes no longer lie inside what stands on the ground. Their hide sites and men went by terrain height alone, so a bunker's mound or a gravel heap could swallow them.
