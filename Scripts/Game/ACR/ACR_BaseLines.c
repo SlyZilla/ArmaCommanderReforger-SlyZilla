@@ -54,6 +54,8 @@ class ACR_BaseLine : Managed
  int m_iSeam;                                  // what stands between its two walks' first pieces (BREAK_*)
  float m_fLookMean;                            // m its pieces see out, on average (Fit's trace, LOOK_FAR at most)
  bool m_bPlug;                                 // straight across a way in, hemmed in: what it watches is the road
+ float m_fRise;                                // m its middle stands over the ground round it (negative: a hollow)
+ int m_iDeadFront;                             // of the spots 20-65 m in front of its middle, those it can't see
  int m_iSites;
 
  int Count() { return m_aLeft.Count() + m_aRight.Count(); }
@@ -828,6 +830,9 @@ class ACR_BaseLines
  static const float MIN_GAP = 6.5;        // m: ... and then not under this
  static const float EXTEND_REACH = 30;    // m an open end looks for something to end on
  static const int WAY_IN_WALKS = 3;       // ways into town walked for a line across them
+ static const float SHORT_RUN = 5.5;      // m of bags at a line's end that are worth leaving
+ static const float RISE_WORTH = 0.08;    // of a line's score, per metre it stands up over the ground round it
+ static const float DEAD_COST = 0.15;     // ... per spot of dead ground close in front
  static const float GATE_HELD = 30;       // m from a way in that a line holds it (the audit's GATE_NEAR)
  static const float GATE_OUT = 50;        // m on along the road where a lane still holds it: a line further out
  static const float GATE_CHECKPOINT = 0.5; // a checkpoint where it's the only thing that would hold a way in
@@ -869,6 +874,7 @@ class ACR_BaseLines
  static const float BEND_WORTH = 0.25;    // a gun at a bend sees along both runs
  static const float GUN_OPEN_GATE = 1.5;  // a gun on a way in that has none
  static const float GATE_TURN = 20;       // degrees a gun on a straight run turns for one
+ static const float GUN_TURN_MOST = 25;   // degrees off its bags' front a gun built from parts can stand
  static const float DRESS_CHANCE = 0.65;  // a line has stretches of low or netted bags
  static const int DRESS_LEAST = 6;        // pieces in a line for that
  static const int DIRT_EVERY = 5;         // pieces of a stretch to a mound of dirt
@@ -1413,6 +1419,24 @@ class ACR_BaseLines
    line.m_fSeeing = seeing * 1.0 / longs;
    line.m_fLookMean = sum / longs;
   }
+  if (!ACR_BaseLiner.PlacementOn()) return;
+  // The ground as the AI's own positions are judged on it (ACR_PositionSiting): a little up, and nowhere close in
+  // front where attackers can gather unseen.
+  line.m_fRise = ACR_SiteScore.Elevation(line.m_vMiddle, 40);
+  line.m_iDeadFront = DeadFront(line.m_vMiddle, line.m_vFacing);
+ }
+
+ // Of the spots 20-65 m out, those a man behind the bags can't see the ground at.
+ static int DeadFront(vector at, vector facing)
+ {
+  vector eye = at;
+  eye[1] = ACR_BaseLiner.Ground(at) + ACR_BaseSurvey.UP_BAGS;
+  int dead = 0;
+  for (float near = 20; near <= 65; near += 15)
+  {
+   if (!ACR_SiteScore.Visible(eye, at + facing * near)) dead++;
+  }
+  return dead;
  }
 
  protected static void CountSeeing(array<ref ACR_LinePiece> run, inout int longs, inout int seeing, inout float sum)
@@ -1526,7 +1550,11 @@ class ACR_BaseLines
   }
   float score = weak / Math.Max(n, 1) + Math.Min(line.m_fLength, style.m_fLengthCap) / 60 + 0.3 * line.Anchors() + 0.6 * line.m_fView + style.m_fLaneWorth * line.m_aLanes.Count();
   // What its bags see: a long line of them watching fences isn't worth a short one watching a field.
-  if (ACR_BaseLiner.PlacementOn()) score += 0.7 * line.m_fSeeing + 0.9 * line.m_fLookMean / ACR_BaseLiner.LOOK_FAR;
+  if (ACR_BaseLiner.PlacementOn())
+  {
+   score += 0.7 * line.m_fSeeing + 0.9 * line.m_fLookMean / ACR_BaseLiner.LOOK_FAR;
+   score += RISE_WORTH * Math.Clamp(line.m_fRise, -3, 3) - DEAD_COST * line.m_iDeadFront;
+  }
   if (line.m_bGap) score += 0.4;
   return score;
  }
@@ -1665,6 +1693,7 @@ class ACR_BaseLines
    if (!line.m_bGap) CutHuggingRuns(line, survey);
   }
   DropLoneRuns(line);
+  if (ACR_BaseLiner.PlacementOn()) DropShortRuns(line);
   if (ACR_BaseLiner.PlacementOn()) liner.GateShoulders(line, kit, work);
   float length = 0;
   foreach (ACR_LinePiece counted : line.m_aPieces) length += vector.DistanceXZ(counted.m_vFrom, counted.m_vTo);
@@ -1793,6 +1822,45 @@ class ACR_BaseLines
    pieces[pieces.Count() - 2].m_iBreak = 0;
    pieces.Remove(pieces.Count() - 1);
    line.m_sEndB = "road";
+  }
+ }
+
+ // What a cut leaves at a line's end, too little to stand by itself, comes off and the line ends at the cut.
+ protected static void DropShortRuns(ACR_BaseLine line)
+ {
+  array<ref ACR_LinePiece> pieces = line.m_aPieces;
+  while (pieces.Count() >= 2)
+  {
+   float length = 0;
+   int count = 0;
+   foreach (ACR_LinePiece first : pieces)
+   {
+    length += vector.DistanceXZ(first.m_vFrom, first.m_vTo);
+    count++;
+    if (first.m_iBreak != 0) break;
+   }
+   if (count == pieces.Count() || length >= SHORT_RUN) break;
+   string word = "gap";
+   if (pieces[count - 1].m_iBreak == BREAK_ROAD) word = "road";
+   for (int off = 0; off < count; off++) pieces.RemoveOrdered(0);
+   line.m_sEndA = word;
+  }
+  while (pieces.Count() >= 2)
+  {
+   float tail = 0;
+   int back = pieces.Count() - 1;
+   while (back >= 0)
+   {
+    if (back < pieces.Count() - 1 && pieces[back].m_iBreak != 0) break;
+    tail += vector.DistanceXZ(pieces[back].m_vFrom, pieces[back].m_vTo);
+    back--;
+   }
+   if (back < 0 || tail >= SHORT_RUN) break;
+   string tailWord = "gap";
+   if (pieces[back].m_iBreak == BREAK_ROAD) tailWord = "road";
+   pieces[back].m_iBreak = 0;
+   while (pieces.Count() > back + 1) pieces.Remove(pieces.Count() - 1);
+   line.m_sEndB = tailWord;
   }
  }
 
@@ -2002,23 +2070,30 @@ class ACR_BaseLines
 
  // Whether this gun stands in an emplacement built from parts rather than the game's ready-made nest: weighted
  // and seeded, where its shape fits. A wide cut gives a bastion out ahead of the line, one piece a notch.
- protected static void PartsFor(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseSite site, ACR_BaseLine line, int first, int width, int index, bool must)
+ // False: it had to be from parts ('must') and can't be.
+ protected static bool PartsFor(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseSite site, ACR_BaseLine line, int first, int width, int index, bool must, float yaw)
  {
-  if (!ACR_Emplacement.On()) return;
+  if (!ACR_Emplacement.On()) return !must;
   ACR_Emplacement e = EmplacementAt(work, survey, line.m_aPieces[first], line.m_aPieces[first + width - 1], site.m_fReach);
-  if (!e) return;
+  if (!e) return !must;
+  // The gun keeps the turn it was given for a way in, if the front of its bags allows that.
+  float turned = Math.AbsFloat(ACR_BaseSurvey.Normal(yaw - e.m_fYaw + 180) - 180);
+  if (turned <= GUN_TURN_MOST && ACR_BaseSurvey.NestFan(e.m_vPos, yaw, site.m_fReach)) e.m_fGunYaw = yaw;
+  // Out ahead of the line, or turned, it may now look the same way as a gun beside it.
+  if (ACR_BaseWorks.GunsNear(work, e.m_vPos, e.m_fGunYaw)) return !must;
   if (!must)
   {
    array<float> scores = {1.0, 1.0};
    if (work.m_Style.m_iKind == ACR_BaseStyle.POINTS) scores[1] = 1.1;
-   if (ACR_Variety.Pick(scores, string.Format("base gun parts %1 %2", work.m_Base.m_sName, index), 0.2) != 1) return;
+   if (ACR_Variety.Pick(scores, string.Format("base gun parts %1 %2", work.m_Base.m_sName, index), 0.2) != 1) return true;
   }
   site.m_Emplacement = e;
   site.m_vPos = e.m_vPos;
-  site.m_fYaw = ACR_FobDefences.BearingYaw(e.m_fYaw);
+  site.m_fYaw = ACR_FobDefences.BearingYaw(e.m_fGunYaw);
   site.m_sPrefab = "";
   site.m_bCompact = false;
   PrintFormat("[ACR] BASEWORKS %1: gun %2 built from parts at %3 (%4 pieces)", work.m_Base.m_sName, ACR_Emplacement.ShapeWord(e.m_iShape), e.m_vPos, e.m_aPieces.Count());
+  return true;
  }
 
  // An emplacement in the gap from one piece to another, if the ground has room for it out ahead and a field of
@@ -2327,7 +2402,18 @@ class ACR_BaseLines
    site.m_iLine = work.m_aLines.Find(onLines[picked]);
    site.m_fReach = reach;
    for (int cut = firsts[picked]; cut < firsts[picked] + widths[picked]; cut++) site.m_aCuts.Insert(onLines[picked].m_aPieces[cut].m_vPos);
-   PartsFor(work, survey, site, onLines[picked], firsts[picked], widths[picked], made, bends[picked]);
+   if (!PartsFor(work, survey, site, onLines[picked], firsts[picked], widths[picked], made, bends[picked], yaws[picked]))
+   {
+    places.Remove(picked);
+    yaws.Remove(picked);
+    worths.Remove(picked);
+    onLines.Remove(picked);
+    firsts.Remove(picked);
+    widths.Remove(picked);
+    bends.Remove(picked);
+    made--;
+    continue;
+   }
    work.m_aSites.Insert(site);
    survey.AddCover(site.m_iSector, ACR_BaseWorks.COVER_NEST);
   }

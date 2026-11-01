@@ -42,6 +42,7 @@ class ACR_Emplacement : Managed
  int m_iShape;
  vector m_vPos;
  float m_fYaw;
+ float m_fGunYaw;      // the gun's own bearing: a little off the bags' for a way in it would just miss
  ResourceName m_sGun;
  ref array<ref ACR_EmplacementPiece> m_aPieces = {};
 
@@ -122,6 +123,7 @@ class ACR_Emplacement : Managed
   ACR_Emplacement e = new ACR_Emplacement();
   ACR_BaseDefenceKit kit = ACR_BaseDefences.Kit(faction);
   e.m_fYaw = ACR_BaseDefences.Bearing(facing);
+  e.m_fGunYaw = e.m_fYaw;
   e.Kernel(faction, kit);
   // How far out: what makes the side pieces their own length.
   float forward = 0;
@@ -156,6 +158,7 @@ class ACR_Emplacement : Managed
   ACR_BaseDefenceKit kit = ACR_BaseDefences.Kit(faction);
   e.m_iShape = RING;
   e.m_fYaw = ACR_BaseDefences.Bearing(facing);
+  e.m_fGunYaw = e.m_fYaw;
   e.m_vPos = at;
   e.m_vPos[1] = ACR_BaseLiner.Ground(at);
   e.Kernel(faction, kit);
@@ -202,7 +205,7 @@ class ACR_Emplacement : Managed
   if (!resource.IsValid()) return made;
   EntitySpawnParams spawnParams = new EntitySpawnParams();
   spawnParams.TransformMode = ETransformMode.WORLD;
-  Math3D.AnglesToMatrix(Vector(m_fYaw, 0, 0), spawnParams.Transform);
+  Math3D.AnglesToMatrix(Vector(m_fGunYaw, 0, 0), spawnParams.Transform);
   spawnParams.Transform[3] = GunWorld();
   IEntity gun = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
   if (gun)
@@ -222,6 +225,7 @@ class ACR_Emplacement : Managed
   e.m_iShape = m_iShape;
   e.m_vPos = m_vPos;
   e.m_fYaw = m_fYaw;
+  e.m_fGunYaw = m_fGunYaw;
   e.m_sGun = GUN_US;
   if (East(owner)) e.m_sGun = GUN_EAST;
   foreach (ACR_EmplacementPiece piece : m_aPieces)

@@ -21,7 +21,7 @@ class ACR_TestPlaceAudit
 
  protected static int s_iNext;
  protected static int s_iTowns;
- protected static int s_iPieces, s_iSeeing, s_iShort, s_iBoxed, s_iAway, s_iHard, s_iHug, s_iPlugs;
+ protected static int s_iPieces, s_iSeeing, s_iShort, s_iBoxed, s_iAway, s_iHard, s_iHug, s_iPlugs, s_iDeadAsked, s_iDeadGround;
  protected static int s_iGates, s_iGatesHeld, s_iGatesGun, s_iNests, s_iNestsOnGate, s_iAlmost;
  protected static float s_fLookSum;
  protected static ref array<ACR_Base> s_aBases = {};
@@ -69,7 +69,7 @@ class ACR_TestPlaceAudit
   array<vector> dirs = {};
   array<float> weights = {};
   ACR_BaseDefences.Threats(base, faction, dirs, weights);
-  int pieces, seeing, shortView, boxed, away, hard, hug;
+  int pieces, seeing, shortView, boxed, away, hard, hug, pieceIndex, deadAsked, deadGround;
   float lookSum;
   foreach (ACR_BaseLine line : work.m_aLines)
   {
@@ -93,6 +93,12 @@ class ACR_TestPlaceAudit
     rear[1] = ACR_BaseLiner.Ground(rear) + 1.0;
     float back = ACR_BaseSurvey.Reach(rear, bearing + 180, LOOK);
     string bad = "";
+    pieceIndex++;
+    if (pieceIndex % 3 == 0)
+    {
+     deadAsked++;
+     if (ACR_BaseLines.DeadFront(piece.m_vPos, piece.m_vFacing) >= 2) deadGround++;
+    }
     if (look >= SHORT) seeing++;
     else
     {
@@ -165,6 +171,8 @@ class ACR_TestPlaceAudit
   int nests;
   foreach (ACR_BaseSite gun : work.m_aSites) if (gun.m_eKind == ACR_EBaseSite.NEST) nests++;
   s_iPieces += pieces;
+  s_iDeadAsked += deadAsked;
+  s_iDeadGround += deadGround;
   s_iSeeing += seeing;
   s_iShort += shortView;
   s_iBoxed += boxed;
@@ -208,6 +216,7 @@ class ACR_TestPlaceAudit
   int mean = 0;
   if (s_iPieces > 0) mean = s_fLookSum / s_iPieces;
   PrintFormat("AUDIT TOTAL pieces %1, sees %2%%, mean %3 m, short %4, boxed %5, away %6, hard %7, hug %8, in plugs %9", s_iPieces, Percent(s_iSeeing, s_iPieces), mean, s_iShort, s_iBoxed, s_iAway, s_iHard, s_iHug, s_iPlugs);
+  PrintFormat("AUDIT TOTAL dead ground close in front of %1%% of pieces", Percent(s_iDeadGround, s_iDeadAsked));
   PrintFormat("AUDIT TOTAL gates %1, held %2%%, gunned %3%%, nests %4, almost meeting %5", s_iGates, Percent(s_iGatesHeld, s_iGates), Percent(s_iGatesGun, s_iGates), s_iNests, s_iAlmost);
   ACR_TestRegress.Check("placeaudit: most pieces see out", Percent(s_iSeeing, s_iPieces) >= FLOOR_SEEING, string.Format("%1%%", Percent(s_iSeeing, s_iPieces))); // int-math ok
   ACR_TestRegress.Check("placeaudit: few pieces boxed in", Percent(s_iBoxed, s_iPieces) <= FLOOR_BOXED, string.Format("%1%%", Percent(s_iBoxed, s_iPieces)));
