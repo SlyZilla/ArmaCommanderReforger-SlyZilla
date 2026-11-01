@@ -357,6 +357,20 @@ class ACR_BagHold
   s_iMoveFails++;
  }
 
+ // Down behind his bags, or not yet up over them, a shot goes into them (172 rounds of 434 in one srv:worksfight).
+ // Asked by the game's fire nodes every time they'd fire.
+ static bool MayFire(SCR_AIUtilityComponent utility)
+ {
+  if (!utility || !utility.m_ACRBagPlace || !utility.m_CombatMoveState) return true;
+  SCR_AICombatMoveState state = utility.m_CombatMoveState;
+  SCR_AICoverLock lock = state.GetAssignedCover();
+  if (!state.m_bInCover || !lock || !lock.m_bACRBag) return true;
+  if (!state.m_bExposedInCover) return false;
+  ChimeraCharacter body = ChimeraCharacter.Cast(utility.m_OwnerEntity);
+  if (!body || !body.GetCharacterController()) return true;
+  return body.GetCharacterController().GetStance() <= ShowStance(utility.m_ACRBagPlace.m_fHeight);
+ }
+
  // Shot at with nothing to shoot back at: pinned, hide-and-peek as SuppressedInCoverLogic does it (the game's own
  // times); not pinned, up, or he'd never see who it was.
  static void Peek(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state)
@@ -493,6 +507,22 @@ modded class SCR_AICombatMoveLogic_HideFromUnknownFire
    return;
   }
   super.CombatMoveLogic(threatPos, distToThreat);
+ }
+}
+
+modded class SCR_AIDecoWeaponUnobstructed
+{
+ protected SCR_AIUtilityComponent m_ACRUtility;
+
+ override void OnInit(AIAgent owner)
+ {
+  super.OnInit(owner);
+  m_ACRUtility = SCR_AIUtilityComponent.Cast(owner.FindComponent(SCR_AIUtilityComponent));
+ }
+
+ override bool TestFunction(AIAgent owner)
+ {
+  return super.TestFunction(owner) && ACR_BagHold.MayFire(m_ACRUtility);
  }
 }
 
