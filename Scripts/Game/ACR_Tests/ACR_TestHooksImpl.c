@@ -53,7 +53,7 @@ modded class ACR_TestHooks
   if (ACR_TestBaseWorks.StyleTest("acrStylePlan")) ACR_TestBaseWorks.Run(seconds);
   if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksCompactTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
   // -acrWorksFightTest / -acrWorksFightOldTest: what a fortified town costs an attacker (ACR_TestWorksFight).
-  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest")) ACR_TestWorksFight.Run(seconds);
+  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest") || System.IsCLIParam("acrWorksFightOffTest")) ACR_TestWorksFight.Run(seconds);
   // -acrBagHoldTest / -acrBagHoldLateTest: men behind bags in a fight (ACR_TestBagHold).
   if (System.IsCLIParam("acrBagHoldTest") || System.IsCLIParam("acrBagHoldLateTest") || System.IsCLIParam("acrBagHoldOffTest") || System.IsCLIParam("acrBagHoldLowTest")) ACR_TestBagHold.Run(seconds);
   if (System.IsCLIParam("acrBagHoldSquadsTest")) ACR_TestBagHoldSquads.Run(seconds);

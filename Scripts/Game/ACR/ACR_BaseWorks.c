@@ -724,7 +724,7 @@ class ACR_BaseWorks
 
  static bool s_bNoLineMenForTest; // the reserve as it was before: at the post, or in its buildings
  static const float MAN_BEHIND = 1.0;       // m a man stands behind a piece's middle
- static const float REMAN_MS = 30000;       // how often the line in use is looked at again
+ static const float REMAN_MS = 30000;       // how often the line in use is looked at again (men out of a fight only, close by)
  static const float CONTACT_S = 20;         // s since a man saw his target: they're in a fight
  static const float FACES_ENOUGH = 0.2;     // of a line's facing towards the enemy, to man it
  static const float STAY_CLOSE = 200;       // m from the line: they stay where they are
@@ -986,10 +986,11 @@ class ACR_BaseWorks
   if (ACR_BaseDefences.DotXZ(line.m_vFacing, ACR_BaseDefences.FlatDir(line.m_vMiddle, threat)) > -FACES_ENOUGH) return;
   // Close and being fought is no time to run. Close with nobody fighting him is: holding bags while he walks past
   // them into the town is how a town falls without a shot (srv:worksfight, 1 Nov).
-  if (vector.DistanceXZ(line.m_vMiddle, threat) < STAY_CLOSE && InContact(post.m_Group)) return;
+  bool holding = ACR_BagHold.On();
+  if (vector.DistanceXZ(line.m_vMiddle, threat) < STAY_CLOSE && (!holding || InContact(post.m_Group))) return;
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
-  if (ManLine(post, manager.m_Bases.GuardsAlive(post.m_Group))) return;
+  if (ManLine(post, manager.m_Bases.GuardsAlive(post.m_Group)) || !holding) return;
   // No line faces him: he's inside them. They go for him, off the bags.
   ACR_Garrison.Release(post.m_Group);
   post.m_iMannedLine = -1;
@@ -997,7 +998,7 @@ class ACR_BaseWorks
   PrintFormat("[ACR] BASEWORKS %1 %2: the enemy is inside the lines, the reserve leaves the bags", post.m_Work.m_sFaction, post.m_Work.m_Base.m_sName);
  }
 
- // Someone in the group has an enemy he saw lately.
+ // Someone in the group is under fire or has an enemy he saw lately.
  protected static bool InContact(SCR_AIGroup group)
  {
   array<AIAgent> agents = {};
@@ -1006,6 +1007,7 @@ class ACR_BaseWorks
   {
    SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
    if (!utility || !utility.m_CombatComponent) continue;
+   if (utility.m_ThreatSystem && utility.m_ThreatSystem.GetState() >= EAIThreatState.ALERTED) return true;
    BaseTarget target = utility.m_CombatComponent.GetCurrentTarget();
    if (target && target.GetTimeSinceSeen() >= 0 && target.GetTimeSinceSeen() < CONTACT_S) return true;
   }

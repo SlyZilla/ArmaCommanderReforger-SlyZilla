@@ -62,6 +62,7 @@ class ACR_TestWorksFight
  protected static void Setup(ACR_Manager manager)
  {
   ACR_BaseWorks.s_bNoLineMenForTest = System.IsCLIParam("acrWorksFightOldTest");
+  if (System.IsCLIParam("acrWorksFightOffTest")) ACR_Options.Set("acrBagHold", "0");
   if (System.IsCLIParam("acrWorksFightCompactTest")) ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
   string side = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
@@ -198,6 +199,7 @@ class ACR_TestWorksFight
    }
    s_Sampler.Sample(man, enemy, places, facing);
   }
+  s_Sampler.Deaths(GetGame().GetWorld().GetWorldTime() / 1000);
  }
 
  // How far the men stand from the nearest bags, on average, and how many are on a line.

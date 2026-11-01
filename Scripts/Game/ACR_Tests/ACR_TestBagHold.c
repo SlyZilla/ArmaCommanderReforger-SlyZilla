@@ -17,6 +17,19 @@ class ACR_BagSampler : Managed
  ref map<IEntity, int> m_Ammo = new map<IEntity, int>();
  ref array<IEntity> m_aMen = {};
  ref map<IEntity, int> m_ShotAmmo = new map<IEntity, int>();
+ ref map<IEntity, string> m_LastState = new map<IEntity, string>();
+ ref array<IEntity> m_aDeaths = {};
+
+ // Men hit since the last look, and what they were doing a second before.
+ void Deaths(int second)
+ {
+  foreach (IEntity body : m_aMen)
+  {
+   if (!body || ACR_Respawn.IsAlive(body) || m_aDeaths.Contains(body)) continue;
+   m_aDeaths.Insert(body);
+   PrintFormat("[ACR] BAGMAN hit at t=%1: %2", second, m_LastState.Get(body));
+  }
+ }
 
  // Ten times a second: whoever's magazine went down fired just now. Where his barrel points, for the first few
  // metres (muzzle effects don't run on a server, and a look a second later finds him ducked).
@@ -96,6 +109,13 @@ class ACR_BagSampler : Managed
   m_iSamples++;
   if (!m_aMen.Contains(body)) m_aMen.Insert(body);
   vector at = body.GetOrigin();
+  // What he was doing, for the line that goes out when he's hit (Deaths).
+  string state = "";
+  float away = -1;
+  if (enemy) away = vector.DistanceXZ(enemy.GetOrigin(), at);
+  ChimeraCharacter who = ChimeraCharacter.Cast(body);
+  if (who && who.GetCharacterController()) state = typename.EnumToString(ECharacterStance, who.GetCharacterController().GetStance());
+  m_LastState.Set(body, string.Format("%1, nearest enemy %2 m", state, (int)away));
   float gap = 9999;
   foreach (vector place : places) gap = Math.Min(gap, vector.DistanceXZ(place, at));
   if (places.IsEmpty()) gap = 0;
@@ -301,6 +321,7 @@ class ACR_TestBagHold
   ACR_Squad.KeepSimulated(s_Group);
   ACR_Squad.FightLikeSquad(s_Group);
   Sample(manager, second);
+  s_Sampler.Deaths(second);
   if (s_iContact < 0)
   {
    if (second - s_iOrdered > LENGTH) Finish(manager, second);

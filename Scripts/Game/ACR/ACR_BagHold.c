@@ -31,6 +31,14 @@ class ACR_BagHold
  static const float PROGRESS_MS = 6000;
  static const float PROGRESS_M = 1;
  static const float HEIGHT_DEFAULT = 1.3; // m, the long high piece's real top; its bounds say 1.46
+ // Nothing to shoot at: down, and up now and then for a look (srv:worksfight: on his feet all the while, a man was
+ // shot from 150 m by attackers lying in the grass he never saw). Up for good with someone in his sights or close.
+ static const float SEEN_S = 4;          // s since he saw his target: he has someone to shoot
+ static const float WATCH_NEAR = 40;     // m: an enemy this close, he stays up
+ static const float LOOK_MIN_S = 2.5;    // how long he looks
+ static const float LOOK_MAX_S = 4;
+ static const float DOWN_MIN_S = 3;      // how long he stays down
+ static const float DOWN_MAX_S = 6;
  protected static ref map<SCR_AIGroup, ref array<ref ACR_BagPlace>> s_Places = new map<SCR_AIGroup, ref array<ref ACR_BagPlace>>();
  static int s_iEntered, s_iSentBack, s_iHolds, s_iLost; // tests
 
@@ -210,8 +218,9 @@ class ACR_BagHold
  }
 
  // From the combat move nodes, before the game moves a man on. True: he has a place and the fight is one for it,
- // so the game leaves him be (he's on it, or on his way back). 'target' is where the enemy is; 'distance' how far.
- static bool Holds(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, vector target, float distance)
+ // so the game leaves him be (he's on it, or on his way back). 'target' is where the enemy is; 'distance' how far;
+ // 'sinceSeen' how long since he saw him (below 0: never).
+ static bool Holds(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, vector target, float distance, float sinceSeen = 0)
  {
   if (s_Places.IsEmpty() || !utility || !state || !utility.m_OwnerEntity) return false;
   vector here = utility.m_OwnerEntity.GetOrigin();
@@ -233,6 +242,8 @@ class ACR_BagHold
   {
    EnterCover(utility, state, place, here);
    KeepShowing(utility, state, place);
+   if (distance >= WATCH_NEAR && (sinceSeen < 0 || sinceSeen >= SEEN_S)) LowWatch(state);
+   else state.m_fACRDownUntil = 0;
    s_iHolds++;
    return true;
   }
@@ -265,6 +276,17 @@ class ACR_BagHold
  {
   if (height > 0.85) return ECharacterStance.STAND;
   return ECharacterStance.CROUCH;
+ }
+
+ // Nothing to shoot at just now: once he's had his look, down for a while. The game stands a man up as soon as it finds
+ // him hidden, so SCR_AICombatMoveState holds that off until he's due up again.
+ protected static void LowWatch(SCR_AICombatMoveState state)
+ {
+  if (!state.m_bExposedInCover || state.IsExecutingRequest()) return;
+  if (state.m_fTimerRequest_s < state.m_fACRLookS) return;
+  state.m_fACRLookS = Math.RandomFloat(LOOK_MIN_S, LOOK_MAX_S);
+  state.m_fACRDownUntil = GetGame().GetWorld().GetWorldTime() + Math.RandomFloat(DOWN_MIN_S, DOWN_MAX_S) * 1000;
+  state.ApplyRequestChangeStanceInCover(false);
  }
 
  // The game thinks he's showing, but something else (his post, a stance order while he was elsewhere) has him lower:
@@ -330,7 +352,8 @@ class ACR_BagHold
   bool exposed = state.m_bExposedInCover;
   if (!utility.m_ThreatSystem || utility.m_ThreatSystem.GetState() != EAIThreatState.THREATENED)
   {
-   if (!exposed) state.ApplyRequestChangeStanceInCover(true);
+   if (exposed) LowWatch(state);
+   else state.ApplyRequestChangeStanceInCover(true);
    return;
   }
   float wait = 3.0;
@@ -381,6 +404,15 @@ modded class SCR_AICoverLock
 
 modded class SCR_AICombatMoveState
 {
+ float m_fACRDownUntil;     // world time: he stays down behind his bags till then (ACR_BagHold.LowWatch)
+ float m_fACRLookS = 3;     // how long his next look lasts
+
+ override void ApplyRequestChangeStanceInCover(bool exposed)
+ {
+  if (exposed && m_CoverLock && m_CoverLock.m_bACRBag && GetGame().GetWorld().GetWorldTime() < m_fACRDownUntil) return;
+  super.ApplyRequestChangeStanceInCover(exposed);
+ }
+
  // The game's stance handling outside cover also runs for a man in cover when he's being shot at from far off.
  // He doesn't lie down behind his bags, where he can't see: he hides by his cover's own stance, or shows.
  override void ApplyRequestChangeStanceOutsideCover(ECharacterStance stance)
@@ -401,7 +433,7 @@ modded class SCR_AICombatMoveLogic_Attack
 {
  protected override bool MoveToNextPosCondition()
  {
-  if (m_Target && ACR_BagHold.Holds(m_Utility, m_State, m_Target.GetLastSeenPosition(), m_fTargetDist)) return false;
+  if (m_Target && ACR_BagHold.Holds(m_Utility, m_State, m_Target.GetLastSeenPosition(), m_fTargetDist, m_Target.GetTimeSinceSeen())) return false;
   return super.MoveToNextPosCondition();
  }
 }
