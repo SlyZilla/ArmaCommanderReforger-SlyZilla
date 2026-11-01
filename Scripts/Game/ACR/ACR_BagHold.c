@@ -25,7 +25,10 @@ class ACR_BagHold
 {
  static const float ARRIVE = 1.6;        // m from his place: he's on it
  static const float FRONT = -0.3;        // of his facing towards the enemy: less, and the bags are no use to him
- static const float SIDE_ON = 0.25;      // less than this, the enemy is along the bags: he fights low, as over low bags
+ static const float SIDE_ON = 0.25;      // less than this, the enemy may be along the bags: he fights low if they don't
+                                         // stop a low shot (srv:worksfight: 220 of 360 shots into his own line without that look)
+ static const float LOW_MUZZLE = 1.05;   // m, crouched
+ static const float LOW_LOOK = 6;        // m looked along
  static const float SIDE_ON_HEIGHT = 0.7;
  static const float NO_RUN_GAP = 8;      // m from his place he doesn't run for it ...
  static const float NO_RUN_ENEMY = 15;   // ... with an enemy this close
@@ -247,7 +250,7 @@ class ACR_BagHold
   {
    EnterCover(utility, state, place, here);
    float height = place.m_fHeight;
-   if (faces < SIDE_ON) height = Math.Min(height, SIDE_ON_HEIGHT);
+   if (faces < SIDE_ON && LowWayClear(here, target)) height = Math.Min(height, SIDE_ON_HEIGHT);
    SCR_AICoverLock lock = state.GetAssignedCover();
    if (lock && lock.m_bACRBag) lock.m_vCoverTallestPos[1] = lock.m_vCoverPos[1] + height;
    KeepShowing(utility, state, height);
@@ -260,6 +263,20 @@ class ACR_BagHold
   if (state.IsExecutingRequest()) return true;
   SendBack(utility, state, place, target, gap);
   return true;
+ }
+
+ // A shot from low down at the enemy doesn't go into the bags beside him.
+ protected static bool LowWayClear(vector here, vector target)
+ {
+  vector dir = target - here;
+  dir[1] = 0;
+  if (dir.Length() < 0.1) return false;
+  dir.Normalize();
+  TraceParam trace = new TraceParam();
+  trace.Start = here + Vector(0, LOW_MUZZLE, 0);
+  trace.End = trace.Start + dir * LOW_LOOK;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  return GetGame().GetWorld().TraceMove(trace, ACR_Garrison.SolidFilter) >= 1;
  }
 
  // Vanilla sets these when a man reaches a cover it found him. Hidden first: the node then stands him up, which
