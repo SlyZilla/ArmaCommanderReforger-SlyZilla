@@ -18,12 +18,14 @@ class ACR_TestPlaceAudit
  static const float FLOOR_AWAY = 15;
  static const float FLOOR_GATES = 85;
  static const float FLOOR_GUN_GATES = 50;
+ static const float FLOOR_RING_CLOSED = 55;
 
  protected static int s_iNext;
  protected static int s_iTowns;
  protected static int s_iPieces, s_iSeeing, s_iShort, s_iBoxed, s_iAway, s_iHard, s_iHug, s_iPlugs, s_iDeadAsked, s_iDeadGround;
  protected static int s_iGates, s_iGatesHeld, s_iGatesGun, s_iNests, s_iNestsOnGate, s_iAlmost;
  protected static float s_fLookSum;
+ protected static int s_iRingAsked, s_iRingClosed;
  protected static ref array<ACR_Base> s_aBases = {};
  protected static string s_sSide;
 
@@ -51,6 +53,111 @@ class ACR_TestPlaceAudit
   }
  }
 
+ // Every town as text, for working on placement away from the game: the ground on a 6 m grid and all that stands.
+ static const float DUMP_CELL = 6;
+ static const float DUMP_OUT = 140;
+ protected static ref map<int, int> s_mDumpTrees;
+ protected static float s_fDumpX, s_fDumpZ;
+ protected static int s_iDumpN;
+
+ protected static bool DumpTree(IEntity e)
+ {
+  if (!Tree.Cast(e)) return true;
+  vector at = e.GetOrigin();
+  int ix = (at[0] - s_fDumpX) / DUMP_CELL;
+  int iz = (at[2] - s_fDumpZ) / DUMP_CELL;
+  if (ix < 0 || iz < 0 || ix >= s_iDumpN || iz >= s_iDumpN) return true;
+  int key = iz * s_iDumpN + ix;
+  int have;
+  s_mDumpTrees.Find(key, have);
+  s_mDumpTrees.Set(key, have + 1);
+  return true;
+ }
+
+ protected static void Dump(ACR_Base base, ACR_BaseWork work, ACR_BaseSurvey survey, array<vector> dirs, array<float> weights)
+ {
+  string town = base.m_sName;
+  vector center = base.GetOrigin();
+  float half = survey.m_fRadius + DUMP_OUT;
+  s_iDumpN = half * 2 / DUMP_CELL;
+  s_fDumpX = center[0] - half;
+  s_fDumpZ = center[2] - half;
+  PrintFormat("TOWN|%1|S|%2|%3|%4|%5|%6|%7|%8", town, ACR_BaseStyle.Word(work.m_Style.m_iKind), center[0], center[2], survey.m_fRadius, s_fDumpX, s_fDumpZ, s_iDumpN);
+  foreach (int d, vector dir : dirs) PrintFormat("TOWN|%1|T|%2|%3|%4", town, dir[0], dir[2], weights[d]);
+  string edge = "";
+  foreach (float e : survey.m_aEdge) edge += string.Format("%1,", (int)e);
+  PrintFormat("TOWN|%1|E|%2", town, edge);
+  string threat = "";
+  foreach (float t : survey.m_aThreat) threat += string.Format("%1,", t.ToString(-1, 2));
+  PrintFormat("TOWN|%1|X|%2", town, threat);
+  foreach (IEntity b : survey.m_aBuildings)
+  {
+   if (!b) continue;
+   vector mins, maxs;
+   b.GetBounds(mins, maxs);
+   vector c1 = b.CoordToParent(Vector(mins[0], 0, mins[2]));
+   vector c2 = b.CoordToParent(Vector(maxs[0], 0, mins[2]));
+   vector c3 = b.CoordToParent(Vector(maxs[0], 0, maxs[2]));
+   vector c4 = b.CoordToParent(Vector(mins[0], 0, maxs[2]));
+   PrintFormat("TOWN|%1|H|%2|%3|%4|%5|%6|%7|%8|%9", town, c1[0], c1[2], c2[0], c2[2], c3[0], c3[2], c4[0], c4[2]);
+  }
+  foreach (ACR_BaseDefenceSeg seg : survey.m_aSegs) PrintFormat("TOWN|%1|R|%2|%3|%4|%5", town, seg.m_vA[0], seg.m_vA[2], seg.m_vB[0], seg.m_vB[2]);
+  for (int w = 0; w + 1 < survey.m_aWallEnds.Count(); w += 2)
+  {
+   vector wa = survey.m_aWallEnds[w];
+   vector wb = survey.m_aWallEnds[w + 1];
+   string wallName = survey.m_aWallNames[w / 2];
+   int wallSlash = wallName.LastIndexOf("/");
+   if (wallSlash >= 0) wallName = wallName.Substring(wallSlash + 1, wallName.Length() - wallSlash - 1);
+   PrintFormat("TOWN|%1|W|%2|%3|%4|%5|%6|%7", town, wa[0], wa[2], wb[0], wb[2], survey.m_aWallTall[w / 2].ToString(-1, 1), wallName);
+  }
+  foreach (vector rock : survey.m_aRocks) PrintFormat("TOWN|%1|K|%2|%3", town, rock[0], rock[2]);
+  foreach (ACR_BaseGate gate : survey.m_aGates) PrintFormat("TOWN|%1|A|%2|%3|%4|%5|%6", town, gate.m_vPos[0], gate.m_vPos[2], gate.m_vOut[0], gate.m_vOut[2], survey.m_aThreat[gate.m_iSector].ToString(-1, 2));
+  foreach (int li, ACR_BaseLine line : work.m_aLines)
+   foreach (ACR_LinePiece piece : line.m_aPieces)
+    PrintFormat("TOWN|%1|L|%2|%3|%4|%5|%6|%7", town, piece.m_vFrom[0], piece.m_vFrom[2], piece.m_vTo[0], piece.m_vTo[2], line.m_iTier, li);
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   if (site.m_eKind == ACR_EBaseSite.PLANNED) continue;
+   PrintFormat("TOWN|%1|G|%2|%3|%4|%5|%6", town, ACR_BaseWorks.SiteWords(site), site.m_vPos[0], site.m_vPos[2], site.m_fYaw, site.m_iTier);
+  }
+  foreach (vector ringAt : ACR_BaseRing.s_aLastPath) PrintFormat("TOWN|%1|P|%2|%3", town, ringAt[0], ringAt[2]);
+  ACR_BaseRing.s_aLastPath.Clear();
+  s_mDumpTrees = new map<int, int>();
+  GetGame().GetWorld().QueryEntitiesBySphere(center, half * 1.45, DumpTree, null, EQueryEntitiesFlags.STATIC);
+  BaseWorld world = GetGame().GetWorld();
+  for (int iz = 0; iz < s_iDumpN; iz++)
+  {
+   string row = "";
+   string water = "";
+   string trees = "";
+   string hard = "";
+   for (int ix = 0; ix < s_iDumpN; ix++)
+   {
+    float x = s_fDumpX + (ix + 0.5) * DUMP_CELL;
+    float z = s_fDumpZ + (iz + 0.5) * DUMP_CELL;
+    vector at = Vector(x, 0, z);
+    at[1] = world.GetSurfaceY(x, z);
+    row += string.Format("%1,", (int)(at[1] * 10));
+    if (BBB_Terrain.IsWaterAt(at)) water += "1";
+    else water += "0";
+    int count;
+    s_mDumpTrees.Find(iz * s_iDumpN + ix, count);
+    trees += string.Format("%1", Math.Min(count, 9));
+    if (ACR_Fortify.HardSurface(at)) hard += "1";
+    else hard += "0";
+    if ((ix + 1) % 40 == 0 || ix == s_iDumpN - 1)
+    {
+     PrintFormat("TOWN|%1|Z|%2|%3|%4|%5|%6|%7", town, iz, ix / 40, row, water, trees, hard);
+     row = "";
+     hard = "";
+     water = "";
+     trees = "";
+    }
+   }
+  }
+ }
+
  protected static int Percent(int part, int whole)
  {
   if (whole <= 0) return 100;
@@ -62,13 +169,19 @@ class ACR_TestPlaceAudit
   string faction = base.m_sOwner;
   if (faction.IsEmpty()) faction = s_sSide;
   ACR_BaseWorks.Reset();
+  ACR_BaseRing.s_bMeasureForTest = true;
+  ACR_BaseRing.s_iLastAsked = 0;
+  ACR_BaseRing.s_iLastClosed = 0;
   ACR_BaseWork work = ACR_BaseWorks.WorkFor(base, faction);
   ACR_BaseSurvey survey = ACR_BaseWorks.s_LastSurvey;
   if (!work || !survey) return;
+  s_iRingAsked += ACR_BaseRing.s_iLastAsked;
+  s_iRingClosed += ACR_BaseRing.s_iLastClosed;
   s_iTowns++;
   array<vector> dirs = {};
   array<float> weights = {};
   ACR_BaseDefences.Threats(base, faction, dirs, weights);
+  Dump(base, work, survey, dirs, weights);
   int pieces, seeing, shortView, boxed, away, hard, hug, pieceIndex, deadAsked, deadGround;
   float lookSum;
   foreach (ACR_BaseLine line : work.m_aLines)
@@ -223,6 +336,8 @@ class ACR_TestPlaceAudit
   ACR_TestRegress.Check("placeaudit: few pieces face away from the threat", Percent(s_iAway, s_iPieces) <= FLOOR_AWAY, string.Format("%1%%", Percent(s_iAway, s_iPieces)));
   ACR_TestRegress.Check("placeaudit: the ways in are held", Percent(s_iGatesHeld, s_iGates) >= FLOOR_GATES, string.Format("%1%%", Percent(s_iGatesHeld, s_iGates))); // int-math ok
   ACR_TestRegress.Check("placeaudit: guns on the ways in", Percent(s_iGatesGun, s_iGates) >= FLOOR_GUN_GATES, string.Format("%1%%", Percent(s_iGatesGun, s_iGates))); // int-math ok
-  ACR_TestRegress.Complete("placeaudit", 5);
+  PrintFormat("AUDIT TOTAL threatened way round closed %1%% (%2 of %3 cells)", Percent(s_iRingClosed, s_iRingAsked), s_iRingClosed, s_iRingAsked);
+  ACR_TestRegress.Check("placeaudit: the threatened way round is closed", Percent(s_iRingClosed, s_iRingAsked) >= FLOOR_RING_CLOSED, string.Format("%1%%", Percent(s_iRingClosed, s_iRingAsked))); // int-math ok
+  ACR_TestRegress.Complete("placeaudit", 6);
  }
 }

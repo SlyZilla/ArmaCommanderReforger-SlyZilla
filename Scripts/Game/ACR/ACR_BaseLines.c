@@ -56,6 +56,7 @@ class ACR_BaseLine : Managed
  bool m_bPlug;                                 // straight across a way in, hemmed in: what it watches is the road
  float m_fRise;                                // m its middle stands over the ground round it (negative: a hollow)
  int m_iDeadFront;                             // of the spots 20-65 m in front of its middle, those it can't see
+ bool m_bRing;                                  // a stretch of the line that closes the town (ACR_BaseRing)
  int m_iSites;
 
  int Count() { return m_aLeft.Count() + m_aRight.Count(); }
@@ -107,6 +108,10 @@ class ACR_BaseLiner : Managed
  static const float ROAD_KEEP = 0.6;        // m from a road's edge to a piece
  static const float WIDE_PAVED = 18;        // m of concrete ahead that make it a runway or an apron, not a yard
  static const float BAY_TURN = 25;          // degrees: a fire bay steps a long piece's width in or out
+ static const float RING_PAST = 15;         // m a stretch of the ring looks on past what's in its way
+ static const float RING_PASSED = 11;       // m from a point it's heading for that it may have gone past
+ static const float RING_PAST_ROAD = 27;    // ... and past a road it meets at a slant
+ static const float RING_TURN = 14;         // degrees at a joint on its way there: a wide curve, its joints closed
  int m_iReturns;       // long pieces an open end bends back with after its round piece: a redoubt's sides
  int m_iBayEvery;      // long pieces between fire bays, 0 none
  float m_fBaySide = 1; // 1 out towards the enemy, -1 back
@@ -125,6 +130,9 @@ class ACR_BaseLiner : Managed
  float m_fSpan;        // degrees it may run from there
  bool m_bTarget;       // straight for a point
  bool m_bOpenOnly;     // ... and still not through a yard: a funnel's arm, not a gap being closed
+ bool m_bRing;         // a stretch of the ring: it has to get there, so what it sees doesn't stop it (the plan looked)
+ ref array<vector> m_aWay; // ... through these, m_vTarget the one it's heading for
+ int m_iWay;
  vector m_vTarget;
  string m_sTargetWord;
  int m_iStop;          // the last walk: what ended it (a FIT_ code), -1 its length or span
@@ -229,7 +237,7 @@ class ACR_BaseLiner : Managed
    if (seen < SEES_FAR) seen = Math.Max(seen, ACR_BaseSurvey.Reach(muzzle, look + 18, LOOK_FAR));
   }
   m_fLastLook = seen;
-  if (seen < VIEW - 0.5) return FIT_VIEW;
+  if (seen < VIEW - 0.5 && !m_bRing) return FIT_VIEW;
   // Boxed in: a short view in front and a short one behind. Closing a gap is what a line in a yard is for.
   if (PlacementOn() && !m_Survey.m_bLoose && seen < BOX && (!m_bTarget || m_bOpenOnly))
   {
@@ -292,7 +300,7 @@ class ACR_BaseLiner : Managed
  {
   if (m_iBayStep == 0)
   {
-   if (m_bTarget || m_iBayEvery <= 0 || m_iSinceBay < m_iBayEvery) return false;
+   if ((m_bTarget && !m_bRing) || m_iBayEvery <= 0 || m_iSinceBay < m_iBayEvery) return false;
    m_iBayStep = 1;
    s_iBaysForTest++;
   }
@@ -326,10 +334,11 @@ class ACR_BaseLiner : Managed
   float wanted = Math.Clamp(TurnBetween(heading, Wanted(tip, sign)), -GENTLE, GENTLE);
   // Straight for a target it can be asked to turn hard.
   if (m_bTarget) wanted = Math.Clamp(TurnBetween(heading, Wanted(tip, sign)), -26, 26);
+  if (m_bRing) wanted = Math.Clamp(wanted, -RING_TURN, RING_TURN);
   array<float> turns = {wanted};
   array<float> more = {-GENTLE, GENTLE, 0, -11, 11, -18, 18, -26, 26, -34, 34};
   foreach (float turn : more)
-   if (Math.AbsFloat(turn - wanted) > 2) turns.Insert(turn);
+   if (Math.AbsFloat(turn - wanted) > 2 && (!m_bRing || Math.AbsFloat(turn) <= 26)) turns.Insert(turn);
   int first = FIT_OK;
   foreach (int i, float tried : turns)
   {
@@ -385,7 +394,11 @@ class ACR_BaseLiner : Managed
   m_iBayStep = 0;
   while (made < most)
   {
-   if (m_bTarget && vector.DistanceXZ(tip, m_vTarget) < ACR_BaseLines.LONG_STEP) return Closed(tip, heading, sign, run, kit, m_sTargetWord);
+   if (m_bTarget && (vector.DistanceXZ(tip, m_vTarget) < ACR_BaseLines.LONG_STEP || (m_bRing && WentPast(tip, heading))))
+   {
+    if (NextWay()) continue;
+    return Closed(tip, heading, sign, run, kit, m_sTargetWord);
+   }
    if (!m_bTarget && OffSeed(tip) > m_fSpan) return "";
    vector next;
    int why = NextHeading(tip, heading, sign, next);
@@ -427,9 +440,38 @@ class ACR_BaseLiner : Managed
       tip = across;
       continue;
      }
+     vector pastRoad, pastRoadWay;
+     if (m_bRing && made < most && PastIt(across, sign, pastRoad, pastRoadWay))
+     {
+      run[run.Count() - 1].m_iBreak = ACR_BaseLines.BREAK_ROAD;
+      tip = pastRoad;
+      heading = pastRoadWay;
+      continue;
+     }
     }
-    else AddLane(tip + heading * 3, lanes, laneOut);
+    else
+    {
+     AddLane(tip + heading * 3, lanes, laneOut);
+     vector pastAlong, pastAlongWay;
+     if (m_bRing && made < most && !NearLastWay(tip) && PastIt(tip, sign, pastAlong, pastAlongWay, RING_PAST_ROAD))
+     {
+      run[run.Count() - 1].m_iBreak = ACR_BaseLines.BREAK_ROAD;
+      tip = pastAlong;
+      heading = pastAlongWay;
+      continue;
+     }
+    }
     return Closed(tip, heading, sign, run, kit, "road");
+   }
+   // A stretch of the ring goes on past a tree or a shed, and a gap there is one men can walk through. Not past
+   // what it's closing on.
+   vector past, pastWay;
+   if (m_bRing && !run.IsEmpty() && !NearLastWay(tip) && PastIt(tip, sign, past, pastWay))
+   {
+    run[run.Count() - 1].m_iBreak = ACR_BaseLines.BREAK_WALK;
+    tip = past;
+    heading = pastWay;
+    continue;
    }
    // Round what's in the way, once a way: a round piece bends the line back.
    if (!rounded && why != FIT_SLOPE && why != FIT_ROAD && why != FIT_PAVED && !run.IsEmpty())
@@ -447,6 +489,50 @@ class ACR_BaseLiner : Managed
    return Ended(tip, heading, sign, why, run, kit);
   }
   return "";
+ }
+
+ // Close to the point it's heading for and not facing it: a piece turns only so far, and it would circle it.
+ protected bool WentPast(vector tip, vector heading)
+ {
+  if (vector.DistanceXZ(tip, m_vTarget) > RING_PASSED) return false;
+  return ACR_BaseDefences.DotXZ(heading, ACR_BaseDefences.FlatDir(tip, m_vTarget)) < 0.4;
+ }
+
+ // Every road and building round the town, not those one sector's way: a stretch of the ring ends up further round
+ // than that list knows.
+ void AllRoads()
+ {
+  m_aRoads = m_Survey.m_aSegs;
+  m_aHouses = m_Survey.m_aBuildings;
+ }
+
+ // On to the next point of a stretch of the ring, if there is one.
+ protected bool NextWay()
+ {
+  if (!m_aWay || m_iWay + 1 >= m_aWay.Count()) return false;
+  m_iWay++;
+  m_vTarget = m_aWay[m_iWay];
+  return true;
+ }
+
+ protected bool NearLastWay(vector tip)
+ {
+  if (!m_aWay || m_aWay.IsEmpty() || m_sTargetWord.IsEmpty() || m_sTargetWord == "line") return false;
+  return vector.DistanceXZ(tip, m_aWay[m_aWay.Count() - 1]) < RING_PASSED;
+ }
+
+ // The first spot on the way on where a piece fits again.
+ bool PastIt(vector tip, int sign, out vector beyond, out vector way, float reach = RING_PAST)
+ {
+  way = Wanted(tip, sign);
+  for (float d = 3; d <= reach; d += 3)
+  {
+   vector tried = tip + way * d;
+   if (Fit(tried, way, ACR_BaseLines.LONG_STEP, sign, false) != FIT_OK) continue;
+   beyond = tried;
+   return true;
+  }
+  return false;
  }
 
  protected float OffSeed(vector tip)
@@ -632,6 +718,12 @@ class ACR_BaseLiner : Managed
    inward.Normalize();
    // Each side's facing: towards the road.
    vector toAfter = ACR_BaseDefences.FlatDir(before.m_vTo, after.m_vFrom);
+   if (line.m_bRing)
+   {
+    vector square = Vector(inward[2], 0, -inward[0]);
+    if (ACR_BaseDefences.DotXZ(square, toAfter) < 0) square = square * -1;
+    toAfter = square;
+   }
    if (Fit(after.m_vFrom, inward, length, 1, true, true) == FIT_OK)
    {
     vector afterEnd = after.m_vFrom + inward * length;
@@ -831,6 +923,9 @@ class ACR_BaseLines
  static const float EXTEND_REACH = 30;    // m an open end looks for something to end on
  static const int WAY_IN_WALKS = 3;       // ways into town walked for a line across them
  static const float SHORT_RUN = 5.5;      // m of bags at a line's end that are worth leaving
+ static const float RING_STANDS = 7;      // m from a building or a wall that a stretch of the ring's end stands on it
+ static const float RING_SHORT = 10;      // m: shorter with one end free isn't worth having
+ static const float RING_PLUG = 24;       // m: shorter with both ends on something is a plug in a gap
  static const float RISE_WORTH = 0.08;    // of a line's score, per metre it stands up over the ground round it
  static const float DEAD_COST = 0.15;     // ... per spot of dead ground close in front
  static const float GATE_HELD = 30;       // m from a way in that a line holds it (the audit's GATE_NEAR)
@@ -926,6 +1021,11 @@ class ACR_BaseLines
   int started = System.GetTickCount();
   work.m_Style = ACR_BaseStyle.For(work, survey);
   ACR_BaseStyle style = work.m_Style;
+  if (ACR_BaseRing.On() && ACR_BaseLiner.PlacementOn() && ACR_BaseRing.Plan(work, survey, kit))
+  {
+   survey.m_iLineMs = System.GetTickCount() - started;
+   return;
+  }
   // A gap in a wall is close in: that's tier II's line where tier I's is far out.
   bool startsFar = !style.m_aLater.IsEmpty();
   if (!startsFar)
@@ -1144,6 +1244,155 @@ class ACR_BaseLines
   if (line.Count() < 2 || (line.m_fLength < MIN_LINE - 10 && !line.Closes())) return null;
   if (line.m_fLength < MIN_GAP) return null;
   return line;
+ }
+
+ // A stretch of the ring (ACR_BaseRing) as a line on the work: walked through its points, the bags' firing side
+ // away from the town. The pieces it came to, 0 if it came to nothing.
+ static int RingLine(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, ACR_RingRun run, int tier, int most)
+ {
+  if (run.m_aWay.Count() < 2 || most < 2) return 0;
+  float bearing = ACR_BaseDefences.Bearing(run.m_vOut);
+  ACR_BaseLiner liner = new ACR_BaseLiner(survey, work, ACR_BaseDefences.Bearing(run.m_vMiddle - survey.m_vCenter));
+  liner.m_bRing = true;
+  liner.AllRoads();
+  liner.m_bTarget = true;
+  liner.m_aWay = run.m_aWay;
+  liner.m_iWay = 1;
+  liner.m_vTarget = run.m_aWay[1];
+  liner.m_sTargetWord = run.m_sEnd;
+  RandomGenerator rng = ACR_Variety.For(string.Format("base ring line %1 %2", work.m_Base.m_sName, work.m_aLines.Count()));
+  if (ACR_BaseLiner.BaysOn() && rng.RandFloat01() < 0.7)
+  {
+   liner.m_iBayEvery = 5 + rng.RandInt(0, 4);
+   if (rng.RandFloat01() < 0.3) liner.m_fBaySide = -1;
+  }
+  vector start = run.m_aWay[0];
+  start[1] = ACR_BaseLiner.Ground(start);
+  vector heading = ACR_BaseDefences.FlatDir(start, liner.m_vTarget);
+  int side = 1;
+  if (ACR_BaseDefences.DotXZ(ACR_BaseLiner.FacingOf(heading, 1), run.m_vOut) < 0) side = -1;
+  // Up against what it starts from.
+  bool placed;
+  if (run.m_vBefore != vector.Zero)
+  {
+   vector back = ACR_BaseDefences.FlatDir(start, run.m_vBefore);
+   array<float> backs = {5, 3, 1.5};
+   foreach (float step : backs)
+   {
+    vector tried = start + back * step;
+    vector triedWay = ACR_BaseDefences.FlatDir(tried, liner.m_vTarget);
+    if (liner.Fit(tried, triedWay, LONG_STEP, side, false, true) != ACR_BaseLiner.FIT_OK) continue;
+    start = tried;
+    heading = triedWay;
+    placed = true;
+    break;
+   }
+  }
+  if (!placed && liner.Fit(start, heading, LONG_STEP, side, false, true) != ACR_BaseLiner.FIT_OK)
+  {
+   vector beyond, beyondWay;
+   if (!liner.PastIt(start, side, beyond, beyondWay, ACR_BaseLiner.RING_PAST_ROAD))
+   {
+    // Off to the side: behind wire, or clear of the road.
+    vector aside = start - run.m_vOut * ACR_BaseRing.WIRE_BACK;
+    if (liner.Fit(aside, heading, LONG_STEP, side, false, true) != ACR_BaseLiner.FIT_OK && !liner.PastIt(aside, side, beyond, beyondWay))
+    {
+     PrintFormat("[ACR] BASEWORKS %1: ring line can't start at %2 (%3)", work.m_Base.m_sName, start, ACR_BaseLiner.FitWord(liner.Fit(start, heading, LONG_STEP, side, false, true)));
+     return 0;
+    }
+    if (liner.Fit(aside, heading, LONG_STEP, side, false, true) == ACR_BaseLiner.FIT_OK)
+    {
+     beyond = aside;
+     beyondWay = heading;
+    }
+   }
+   start = beyond;
+   heading = beyondWay;
+  }
+  ACR_BaseLine line = new ACR_BaseLine();
+  line.m_iSector = ACR_BaseSurvey.Sector(bearing);
+  line.m_vFacing = run.m_vOut;
+  line.m_bGap = true;
+  line.m_bRing = true;
+  line.m_sEndA = run.m_sStart;
+  survey.m_iWalks++;
+  int walk = Math.Min(run.m_fLength / LONG_STEP + 8, most);
+  line.m_sEndB = liner.Walk(start, heading, side, walk, line.m_aRight, line.m_aLanes, line.m_aLaneOut, kit);
+  // What it was heading for may not be where it stopped: an end says what it really stands on, or it's open.
+  if (!line.m_aRight.IsEmpty())
+  {
+   if (StandsOn(line.m_sEndA) && survey.AnchorNear(line.m_aRight[0].m_vFrom, RING_STANDS).IsEmpty()) line.m_sEndA = "";
+   if (StandsOn(line.m_sEndB) && survey.AnchorNear(line.m_aRight[line.m_aRight.Count() - 1].m_vTo, RING_STANDS).IsEmpty()) line.m_sEndB = "";
+  }
+  if (side < 0)
+  {
+   // The chain reads from its right end: the walk went the other way.
+   foreach (ACR_LinePiece walked : line.m_aRight) line.m_aLeft.Insert(walked);
+   line.m_aRight.Clear();
+   string word = line.m_sEndA;
+   line.m_sEndA = line.m_sEndB;
+   line.m_sEndB = word;
+  }
+  Measure(line, survey);
+  PrintFormat("[ACR] BASEWORKS %1: ring line walked %2 pieces, stopped %3, ends '%4' '%5'", work.m_Base.m_sName, line.Count(), ACR_BaseLiner.FitWord(liner.m_iStop), line.m_sEndA, line.m_sEndB);
+  if (line.Count() < 1) return 0;
+  work.m_aLines.Insert(line);
+  int count = Realize(work, line, survey, kit, most);
+  if (count == 0)
+  {
+   work.m_aLines.RemoveItem(line);
+   return 0;
+  }
+  line.m_iTier = tier;
+  foreach (ACR_LinePiece piece : line.m_aPieces) survey.AddLight(ACR_BaseSurvey.Sector(ACR_BaseDefences.Bearing(piece.m_vFacing)), 0.03);
+  return count;
+ }
+
+ // A blind stretch or a short end cut off a ring line can leave an end short of what it stood on.
+ protected static string EndAfterCuts(string word, vector tip, ACR_BaseSurvey survey)
+ {
+  if (StandsOn(word))
+  {
+   string real = survey.AnchorNear(tip, RING_STANDS + 1);
+   if (real.IsEmpty()) return "cut";
+   return real;
+  }
+  if (word == "road" && ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, tip) > 5.5) return "cut";
+  return word;
+ }
+
+ protected static bool StandsOn(string word)
+ {
+  return word == "building" || word == "wall";
+ }
+
+ // A funnel's arms round the most threatened way in, before the ring: it ties into them. The pieces used.
+ static int RingFunnel(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, ACR_BaseRing ring, int most)
+ {
+  ACR_BaseGate way;
+  float worst = -1;
+  foreach (ACR_BaseGate gate : survey.m_aGates)
+  {
+   float threat = survey.m_aThreat[gate.m_iSector];
+   if (threat <= worst) continue;
+   worst = threat;
+   way = gate;
+  }
+  if (!way) return 0;
+  array<ref ACR_BaseLine> pool = {};
+  RandomGenerator rng = ACR_Variety.For("base ring funnel " + work.m_Base.m_sName);
+  if (!FunnelLine(work, survey, kit, way, rng, pool)) return 0;
+  ACR_BaseLine line = pool[0];
+  work.m_aLines.Insert(line);
+  int count = Realize(work, line, survey, kit, most);
+  if (count == 0)
+  {
+   work.m_aLines.RemoveItem(line);
+   return 0;
+  }
+  line.m_iTier = 1;
+  ring.MarkLine(line);
+  return count;
  }
 
  // Gaps in walls and fences on the threatened side: free wall ends facing each other across open
@@ -1615,7 +1864,11 @@ class ACR_BaseLines
  // The pieces it has, 0 if it comes to nothing that reads as a line.
  protected static int Realize(ACR_BaseWork work, ACR_BaseLine line, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, int most)
  {
-  ACR_BaseLiner liner = new ACR_BaseLiner(survey, work, ACR_BaseDefences.Bearing(line.m_vFacing));
+  float lookWay = ACR_BaseDefences.Bearing(line.m_vFacing);
+  if (line.m_bRing) lookWay = ACR_BaseDefences.Bearing(line.m_vMiddle - survey.m_vCenter);
+  ACR_BaseLiner liner = new ACR_BaseLiner(survey, work, lookWay);
+  liner.m_bRing = line.m_bRing;
+  if (line.m_bRing) liner.AllRoads();
   if (ACR_BaseLiner.PlacementOn() && work.m_Style.m_iKind == ACR_BaseStyle.POINTS)
   {
    RandomGenerator sides = ACR_Variety.For(string.Format("base redoubt %1 %2", work.m_Base.m_sName, work.m_aLines.Count()));
@@ -1671,7 +1924,10 @@ class ACR_BaseLines
   }
   if (line.m_sEndB.IsEmpty() && liner.CurveBack(line.m_aRight, 1, kit, seedRight, headingRight)) line.m_sEndB = "curve";
   if (line.m_sEndA.IsEmpty() && liner.CurveBack(line.m_aLeft, -1, kit, seedLeft, headingLeft)) line.m_sEndA = "curve";
-  // An end with nothing to stand on and no room to curve isn't a line we build.
+  // An end with nothing to stand on and no room to curve isn't a line we build. (A stretch of the ring still closes
+  // what it closes.)
+  if (line.m_bRing && line.m_sEndA.IsEmpty()) line.m_sEndA = "cut";
+  if (line.m_bRing && line.m_sEndB.IsEmpty()) line.m_sEndB = "cut";
   if (line.m_sEndA.IsEmpty() || line.m_sEndB.IsEmpty()) return 0;
   // Left reversed, then right: the seed in the middle.
   line.m_aPieces.Clear();
@@ -1699,7 +1955,8 @@ class ACR_BaseLines
   foreach (ACR_LinePiece counted : line.m_aPieces) length += vector.DistanceXZ(counted.m_vFrom, counted.m_vTo);
   line.m_fLength = length;
   // Short of a line, unless it closes a gap between two things.
-  if ((length < MIN_LINE && !line.Closes()) || length < MIN_GAP)
+  bool shortRing = line.m_bRing && line.Anchors() >= 1 && length >= RING_SHORT;
+  if ((length < MIN_LINE && !line.Closes() && !shortRing) || length < MIN_GAP)
   {
    line.m_aPieces.Clear();
    return 0;
@@ -1708,6 +1965,14 @@ class ACR_BaseLines
   line.m_vMiddle = mid.m_vPos;
   line.m_vFacing = mid.m_vFacing;
   line.m_iSector = ACR_BaseSurvey.Sector(ACR_BaseDefences.Bearing(mid.m_vFacing));
+  if (line.m_bRing)
+  {
+   // What's near it goes by where it stands: in a bend of the outline that isn't the way it faces.
+   line.m_iSector = ACR_BaseSurvey.Sector(ACR_BaseDefences.Bearing(mid.m_vPos - survey.m_vCenter));
+   line.m_sEndA = EndAfterCuts(line.m_sEndA, line.m_aPieces[0].m_vFrom, survey);
+   line.m_sEndB = EndAfterCuts(line.m_sEndB, line.m_aPieces[line.m_aPieces.Count() - 1].m_vTo, survey);
+   line.m_bPlug = length < RING_PLUG && line.Closes();
+  }
   // The lanes it kept.
   for (int l = line.m_aLanes.Count() - 1; l >= 0; l--)
   {

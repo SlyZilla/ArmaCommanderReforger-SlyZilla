@@ -89,6 +89,8 @@ class ACR_BaseSurvey : Managed
  ref array<vector> m_aWorkSpots = {};     // the map's works and ours
  ref array<vector> m_aRocks = {};         // big rocks: a line can end on one
  ref array<vector> m_aWallEnds = {};      // two per wall piece (tests draw them)
+ ref array<string> m_aWallNames = {};      // ... the prefab of each pair
+ ref array<float> m_aWallTall = {};       // ... and how tall
  int m_iTown;                             // buildings within the search radius
  int m_iWallPieces;
  int m_iMapWorks;                         // the map's sandbags, bunkers and towers seen
@@ -410,8 +412,10 @@ class ACR_BaseSurvey : Managed
   m_fRadius = ACR_BaseDefences.SearchRadius(base);
   ACR_BaseDefences.Threats(base, owner, m_aDirs, m_aWeights);
   // Past the search radius: a line can run out there, and must see what stands there.
-  ACR_BaseDefences.Roads(m_vCenter, m_fRadius + 70, m_aSegs);
-  ACR_BaseDefences.Buildings(m_vCenter, m_fRadius + 80, m_aBuildings);
+  float past = 70;
+  if (ACR_BaseRing.On()) past = ACR_BaseRing.BEYOND + 10;
+  ACR_BaseDefences.Roads(m_vCenter, m_fRadius + past, m_aSegs);
+  ACR_BaseDefences.Buildings(m_vCenter, m_fRadius + past + 10, m_aBuildings);
   Sectors();
   LookAtBuildings();
   LookOut();
@@ -566,6 +570,8 @@ class ACR_BaseSurvey : Managed
    m_iWallPieces++;
    m_aWallEnds.Insert(a);
    m_aWallEnds.Insert(b);
+   m_aWallNames.Insert(FullName(wall));
+   m_aWallTall.Insert(size[1]);
    MarkBins(ACR_BaseDefences.Bearing(a - m_vCenter), ACR_BaseDefences.Bearing(b - m_vCenter));
   }
   // Each sector's share of closed bins, and short open runs between closed ones.

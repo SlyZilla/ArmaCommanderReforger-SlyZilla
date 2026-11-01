@@ -647,7 +647,7 @@ class ACR_TestBaseWorks
  protected static ref set<int> s_aLengths = new set<int>();
  protected static int s_iSeeing, s_iLooked, s_iGapByNest, s_iFragments, s_iLoneCheck, s_iAnchored, s_iEnds2, s_iBehind, s_iCramped;
  protected static float s_fOurs, s_fEither;
- static const float COVER_FLOOR = 0.45;  // of a threatened arc, by lines, on average (the maps reach 49-61%: a blind or wall-side stretch no longer counts)
+ static const float COVER_FLOOR = 0.40;  // of a threatened arc, by bags alone, on average (the maps reach 43-55%: the ring leaves to houses and stone what they close; placeaudit asks how much is closed)
  static const float ANCHOR_FLOOR = 0.45; // the maps reach 47-78%: strongpoints and plugs end free on purpose
  protected static int s_iLongLine, s_iLongNoNest, s_iOnApron, s_iBayLines, s_iLongLines;
  protected static ref array<int> s_aStyles = {0, 0, 0, 0, 0};
@@ -693,7 +693,7 @@ class ACR_TestBaseWorks
   float anchorShare = s_iAnchored * 1.0 / Math.Max(s_iEnds2, 1);
   PrintFormat("[ACR] TEST baseworks cover all: lines %1%%, with what stands there %2%%, anchored ends %3%%", (int)(oursShare * 100), (int)(eitherShare * 100), (int)(anchorShare * 100));
   ACR_TestRegress.Check("baseworks plan: lines cover the threatened arc", ACR_BaseStyle.s_iForceForTest >= 0 || oursShare >= COVER_FLOOR, string.Format("%1%% in towns with a line, floor %2%%", (int)(oursShare * 100), (int)(COVER_FLOOR * 100)));
-  ACR_TestRegress.Check("baseworks plan: most ends stand on something", anchorShare >= ANCHOR_FLOOR, string.Format("%1 of %2 ends, floor %3%%", s_iAnchored, s_iEnds2, (int)(ANCHOR_FLOOR * 100)));
+  ACR_TestRegress.Check("baseworks plan: most ends stand on something", ACR_BaseStyle.s_iForceForTest == ACR_BaseStyle.POINTS || anchorShare >= ANCHOR_FLOOR, string.Format("%1 of %2 ends, floor %3%%", s_iAnchored, s_iEnds2, (int)(ANCHOR_FLOOR * 100)));
   ACR_TestRegress.Check("baseworks plan: a way through on foot every so often", s_iLongRuns == 0, string.Format("%1 runs over 120 m unbroken", s_iLongRuns));
   ACR_TestRegress.Check("baseworks plan: stretches stay a stretch", s_iLongStretch == 0, string.Format("%1 over 40 m", s_iLongStretch));
   ACR_TestRegress.Check("baseworks plan: pieces per base stay under the cap", s_iMostPieces <= ACR_BaseLines.MOST_PIECES, string.Format("most %1 (cap %2)", s_iMostPieces, ACR_BaseLines.MOST_PIECES));
@@ -728,7 +728,7 @@ class ACR_TestBaseWorks
   PrintFormat("[ACR] TEST baseworks styles: %1", styleWords);
   ACR_TestRegress.Check("baseworks plan: towns get different styles", stylesUsed >= 3 || ACR_BaseStyle.s_iForceForTest >= 0 || s_iBases < 10, styleWords);
   SwitchChecks(biggest);
-  ACR_TestRegress.Complete("baseworksplan", 44);
+  ACR_TestRegress.Complete("baseworksplan", 45);
  }
 
  // A few towns' plans as text, for a drawing to look at side by side.
@@ -796,7 +796,7 @@ class ACR_TestBaseWorks
    if (site.m_eKind == ACR_EBaseSite.ROADBLOCK)
    {
     s_iChecks++;
-    if (vector.DistanceXZ(site.m_vPos, center) > radius + 90)
+    if (vector.DistanceXZ(site.m_vPos, center) > radius + 120)
     {
      s_iFarCheck++;
      PrintFormat("[ACR] TEST baseworks plan %1: checkpoint %2 m out", base.m_sName, (int)vector.DistanceXZ(site.m_vPos, center));
@@ -1092,7 +1092,7 @@ class ACR_TestBaseWorks
   {
    s_iLines++;
    s_aLengths.Insert((int)line.m_fLength);
-   if (line.m_fLength < 29.5 && !line.Closes())
+   if (line.m_fLength < 29.5 && !line.Closes() && !(line.m_bRing && line.Anchors() >= 1))
    {
     s_iFragments++;
     PrintFormat("[ACR] TEST baseworks plan %1: a line of %2 m, ends %3 and %4", base.m_sName, (int)line.m_fLength, line.m_sEndA, line.m_sEndB);
@@ -1130,7 +1130,7 @@ class ACR_TestBaseWorks
     if (gap > 0.6)
     {
      s_iLoose++;
-     PrintFormat("[ACR] TEST baseworks plan %1: a joint %2 m open at %3", base.m_sName, gap.ToString(-1, 2), piece.m_vTo);
+     PrintFormat("[ACR] TEST baseworks plan %1: a joint %2 m open at %3 (%4 then %5, facings %6, ring %7, curve %8 %9)", base.m_sName, gap.ToString(-1, 2), piece.m_vTo, piece.m_bLong, next.m_bLong, ACR_BaseDefences.DotXZ(piece.m_vFacing, next.m_vFacing).ToString(-1, 2), line.m_bRing, piece.m_bCurve, next.m_bCurve);
     }
    }
    if (unbroken > 120)
@@ -1175,7 +1175,7 @@ class ACR_TestBaseWorks
   }
   else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 40) < 8;
   else if (word == "road") fine = ACR_BaseDefences.RoadEdgeGap(segs, tip) < 6;
-  else if (word == "wall" || word == "gap" || word == "work" || word == "slope" || word == "rock" || word == "line") fine = true;
+  else if (word == "wall" || word == "gap" || word == "work" || word == "slope" || word == "rock" || word == "line" || word == "water" || word == "cut") fine = true;
   if (fine) return;
   s_iEnds++;
   PrintFormat("[ACR] TEST baseworks plan %1: a line of %2 m ends \"%3\" at %4 on nothing%5", base.m_sName, (int)line.m_fLength, word, tip, asked);
@@ -1521,9 +1521,25 @@ class ACR_TestBaseWorks
   int baysOff = ACR_BaseLiner.s_iBaysForTest;
   ACR_Options.Unset("acrBaseBays");
   ACR_BaseLiner.s_iBaysForTest = 0;
-  PlanText(base);
+  // (A town's stretches may all be short of a bay: the first few towns.)
+  int baysAsked = 0;
+  foreach (ACR_Base bayTown : ACR_Base.s_All)
+  {
+   if (!bayTown || bayTown.m_bRetired || bayTown.m_bHidden || bayTown.m_bBuilt || baysAsked >= 8 || ACR_BaseLiner.s_iBaysForTest > 0) continue;
+   baysAsked++;
+   PlanText(bayTown);
+  }
   int baysOn = ACR_BaseLiner.s_iBaysForTest;
   ACR_TestRegress.Check("baseworks plan: -acrBaseBays 0 turns fire bays off", baysOff == 0 && baysOn > 0, string.Format("%1 off, %2 on", baysOff, baysOn));
+  ACR_Options.Set("acrBaseRing", "0");
+  int ringsBefore = ACR_BaseRing.s_iPlans;
+  PlanText(base);
+  int ringsOff = ACR_BaseRing.s_iPlans - ringsBefore;
+  ACR_Options.Unset("acrBaseRing");
+  ringsBefore = ACR_BaseRing.s_iPlans;
+  PlanText(base);
+  int ringsOn = ACR_BaseRing.s_iPlans - ringsBefore;
+  ACR_TestRegress.Check("baseworks plan: -acrBaseRing 0 walks lines from seeds", ringsOff == 0 && ringsOn > 0, string.Format("%1 off, %2 on", ringsOff, ringsOn));
   // From the small guns' own level, where a town gets those if it gets a gun at all.
   int firstWas = ACR_BaseLines.s_iFirstNestLevelForTest;
   ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
