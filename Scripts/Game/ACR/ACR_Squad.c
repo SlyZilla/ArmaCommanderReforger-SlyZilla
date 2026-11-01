@@ -2565,6 +2565,13 @@ class ACR_Squad : Managed
    landRoute = BBB_Terrain.LandRoute(anchor.GetOrigin(), destination, legs);
    ACR_Perf.Lap("route.land", landStarted);
   }
+  // AI foot squads outside friendly ground keep off the roads (FieldLegs).
+  if (!landRoute && anchor && !driven && !IsMounted() && !HasPlayer() && FieldLegs(anchor.GetOrigin(), destination, legs))
+  {
+   PrintFormat("[ACR] ROUTE %1: keeping off the roads outside friendly ground, %2 legs", m_Name, legs.Count());
+   StartRoute(legs, prefab, radius, order, kind);
+   return true;
+  }
   if (!landRoute)
   {
    if (prefab == WP_GARRISON) { Garrison(destination); return true; }
@@ -2578,6 +2585,78 @@ class ACR_Squad : Managed
   PrintFormat("[ACR] ROUTE %1: straight line crosses water, going round in %2 legs", m_Name, legs.Count());
   StartRoute(legs, prefab, radius, order, kind);
   return true;
+ }
+
+ // Off the roads (1 Nov 2026, Jacob): infantry may use roads on friendly ground but must get off
+ // them elsewhere; two squads meeting on a road lie on the open strip and grind each other down.
+ // A foot squad's one waypoint lets the game's path run along any road near the line. Every
+ // FIELD_STEP along the line, a point on ground that isn't friendly (nearest held base is not
+ // ours or a friend's) and within FIELD_CLEAR of a road is pushed sideways, keeping to one side,
+ // until it is that clear; those points become the legs. Friendly ground and the last
+ // FIELD_APPROACH before the destination (a base often sits on a road) are left alone. False:
+ // nothing needed moving, walk direct. -acrFieldRoutes 0: off.
+ static const float FIELD_STEP = 120;
+ static const float FIELD_CLEAR = 30;     // metres from a road's edge a leg must keep
+ static const float FIELD_SHIFT = 15;     // sideways search step
+ static const float FIELD_SHIFT_MAX = 90; // ...up to this far from the line
+ static const float FIELD_APPROACH = 150;
+
+ protected bool FieldLegs(vector from, vector to, notnull array<vector> legs)
+ {
+  legs.Clear();
+  if (ACR_LogisticsRules.Choice("acrFieldRoutes", "1") == "0" || !GetFaction()) return false;
+  float length = vector.DistanceXZ(from, to);
+  if (length < FIELD_STEP * 2 + FIELD_APPROACH) return false;
+  int started = System.GetTickCount();
+  string side = GetFaction().GetFactionKey();
+  vector dir = to - from;
+  dir[1] = 0;
+  dir.Normalize();
+  vector across = Vector(-dir[2], 0, dir[0]);
+  float lean = 0; // the side the last moved leg went to (0: none yet)
+  bool moved;
+  for (float along = FIELD_STEP; along < length - FIELD_APPROACH; along += FIELD_STEP)
+  {
+   vector point = from + dir * along;
+   if (FriendlyGround(point, side) || ACR_Minefields.RoadClearance(point) >= FIELD_CLEAR) continue;
+   vector found;
+   bool ok;
+   for (float shift = FIELD_SHIFT; shift <= FIELD_SHIFT_MAX && !ok; shift += FIELD_SHIFT)
+   {
+    for (int pass = 0; pass < 2 && !ok; pass++)
+    {
+     float sense = 1;
+     if (lean < 0) sense = -1;
+     if (pass == 1) sense = -sense;
+     vector candidate = ACR_Manager.Ground(point + across * (shift * sense));
+     if (BBB_Terrain.IsWaterAt(candidate) || ACR_Minefields.RoadClearance(candidate) < FIELD_CLEAR) continue;
+     found = candidate;
+     lean = sense;
+     ok = true;
+    }
+   }
+   if (!ok) continue;
+   legs.Insert(found);
+   moved = true;
+  }
+  ACR_Perf.Lap("route.field", started);
+  if (!moved || BBB_Terrain.WaterAlong(from, to) > 0) { legs.Clear(); return false; }
+  legs.Insert(to);
+  return true;
+ }
+
+ // Nearest held base is ours or a friend's.
+ protected static bool FriendlyGround(vector point, string side)
+ {
+  ACR_Base nearest;
+  float best = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_sOwner.IsEmpty()) continue;
+   float d = vector.DistanceXZ(base.GetOrigin(), point);
+   if (d < best) { best = d; nearest = base; }
+  }
+  return nearest && ACR_Insurgency.Friendly(nearest.m_sOwner, side);
  }
 
  protected void StartRoute(array<vector> legs, ResourceName prefab, float radius, string order, int kind)

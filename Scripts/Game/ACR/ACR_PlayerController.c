@@ -1486,9 +1486,18 @@ modded class SCR_PlayerController
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
  }
 
+ bool ACR_IsCommanderForHints() { return m_ACR_IsCommander; }
+ ACR_CommandPanel ACR_CommandPanelForTest() { return m_ACR_Panel; }
+
+ void ACR_RefreshKeyHintsButton()
+ {
+  if (m_ACR_Panel) m_ACR_Panel.RefreshKeyHints();
+ }
+
  protected void ACR_UpdatePanel()
  {
   if (!m_ACR_Panel) return;
+  m_ACR_Panel.TickDrag();
   string reinforceFeedback = "";
   if (GetGame().GetWorld().GetWorldTime() - m_ACR_ReinforceFeedbackAt < 12000) reinforceFeedback = m_ACR_ReinforceFeedback;
   m_ACR_Panel.SetReinforceFeedback(reinforceFeedback);
@@ -1534,7 +1543,7 @@ modded class SCR_PlayerController
    int baseIndex = m_ACR_Data.m_BaseNames.Find(m_ACR_SelectedBase);
    if (baseIndex >= 0)
    {
-    m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], m_ACR_Data.m_BaseDetails[baseIndex]);
+    m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], ACR_CommandPanel.FobDetail(m_ACR_Data.m_BaseDetails[baseIndex]));
     int stride = 3 + ACR_FobSlots.UPGRADE_COUNT;
     int supplyOffset = baseIndex * stride;
     if (m_ACR_Data.m_BaseSupply.Count() >= supplyOffset + stride)
@@ -1705,6 +1714,19 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.MINES_MIXED: ACR_ToggleCursor(ACR_ECursorMode.MINES_MIXED); return;
    case ACR_EPanelAction.DISARM_MINES: ACR_ToggleCursor(ACR_ECursorMode.DISARM_MINES); return;
    case ACR_EPanelAction.FORTIFY: ACR_ToggleCursor(ACR_ECursorMode.FORTIFY); return;
+   case ACR_EPanelAction.BUILD_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleBuildFold();
+    return;
+   case ACR_EPanelAction.UPGRADES_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleUpgradesFold();
+    return;
+   case ACR_EPanelAction.MORE_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleMoreFold();
+    return;
+   case ACR_EPanelAction.KEY_HINTS:
+    ACR_KeyHints.Toggle();
+    ACR_RefreshKeyHintsButton();
+    return;
    case ACR_EPanelAction.HALT: ACR_RequestSelected(ACR_ERequest.ORDER_HALT); return;
    case ACR_EPanelAction.FIRE_AT_WILL: ACR_RequestSelected(ACR_ERequest.ORDER_FIRE_AT_WILL); return;
    case ACR_EPanelAction.PATROL: ACR_RequestSelected(ACR_ERequest.ORDER_PATROL); return;
