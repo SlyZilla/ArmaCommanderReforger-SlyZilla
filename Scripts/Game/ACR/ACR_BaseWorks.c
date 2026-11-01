@@ -984,10 +984,13 @@ class ACR_BaseWorks
   vector threat;
   if (!ThreatAt(post, threat)) return;
   ACR_BaseLine line = post.m_Work.m_aLines[post.m_iMannedLine];
-  if (ACR_BaseDefences.DotXZ(line.m_vFacing, ACR_BaseDefences.FlatDir(line.m_vMiddle, threat)) > -FACES_ENOUGH) return;
+  bool holding = ACR_BagHold.On();
+  // Bags he can come at from the side are no use: with the hold, a line has to face him as it did when it was chosen.
+  float enough = -FACES_ENOUGH;
+  if (holding) enough = FACES_ENOUGH;
+  if (ACR_BaseDefences.DotXZ(line.m_vFacing, ACR_BaseDefences.FlatDir(line.m_vMiddle, threat)) > enough) return;
   // Close and being fought is no time to run. Close with nobody fighting him is: holding bags while he walks past
   // them into the town is how a town falls without a shot (srv:worksfight, 1 Nov).
-  bool holding = ACR_BagHold.On();
   if (vector.DistanceXZ(line.m_vMiddle, threat) < STAY_CLOSE && (!holding || InContact(post.m_Group))) return;
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
