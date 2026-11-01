@@ -1362,6 +1362,10 @@ class ACR_Manager : Managed
   if (!pc || !pc.GetControlledEntity())
   {
    ACR_RTSCameraManager.Close();
+   // Dead or on the deploy screen: the HUD pings and the hold hint are drawn only with a body,
+   // so the last frame's stayed frozen on screen until the next spawn.
+   if (pc && pc.ACR_GetData()) ACR_PingDisplay.UpdateHud(pc.ACR_GetData(), null, false);
+   ACR_PingDisplay.ShowHoldHint(-1);
    return;
   }
   InputManager input = GetGame().GetInputManager();

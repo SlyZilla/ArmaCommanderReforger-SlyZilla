@@ -187,7 +187,10 @@ modded class SCR_PlayerController
  void ACR_Request(int command, RplId targetId = RplId.Invalid(), vector point = vector.Zero, vector aim = vector.Zero)
  {
   if (!ACR_Manager.GetInstance()) return;
-  if (command == ACR_ERequest.POSSESS || command == ACR_ERequest.RETURN) ACR_MapHandoff.Release(this, GetControlledEntity(), false);
+  // F8 (or the COMMAND UNIT marker) while already in the command unit is refused by the server:
+  // don't pull the map out of his hand for it.
+  bool returning = command == ACR_ERequest.RETURN && GetControlledEntity() != GetMainEntity();
+  if (command == ACR_ERequest.POSSESS || returning) ACR_MapHandoff.Release(this, GetControlledEntity(), false);
   Rpc(ACR_CommandServer, command, targetId, point, aim);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
@@ -1124,7 +1127,7 @@ modded class SCR_PlayerController
    marker.m_UnitId = m_ACR_Data.m_LeaderIds[i];
    marker.m_Label = ACR_GroupLabel(i, m_ACR_Data.m_GroupNames[i]);
    marker.m_GroupId = m_ACR_Data.m_GroupIds[i];
-   marker.m_bCommandUnit = (m_ACR_GroupSymbols[i * 4 + 3] & 32) != 0;
+   marker.m_bCommandUnit = (m_ACR_GroupSymbols[i * 4 + 3] & 2048) != 0;
    marker.m_Selected = ACR_IsSelected(marker.m_GroupId);
    marker.m_State = m_ACR_LeaderStates[i];
    if (marker.m_State == 1) marker.m_Label += " [PLAYER LEADER]";

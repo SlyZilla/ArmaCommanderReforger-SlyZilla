@@ -119,8 +119,14 @@ class ACR_MapFeed
   foreach (int id : players)
   {
    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
-   if (!pc || !pc.GetControlledEntity()) continue;
+   if (!pc) continue;
    Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
+   if (!pc.GetControlledEntity())
+   {
+    // No body: the empty label hides a capture bar left from where he died (sent once, deduplicated).
+    if (faction) PublishCapture(pc, faction.GetFactionKey());
+    continue;
+   }
    if (!faction) continue;
    string key = faction.GetFactionKey();
    ACR_FeedFrame frame;
@@ -407,7 +413,7 @@ class ACR_MapFeed
    if (ACR_Fortify.CanFortify(squad)) mode |= 256; // + flag: can fortify
    if (squad && squad.m_bAICommanded) mode |= 1024; // + flag: handed to the AI (ACR_SquadAI)
    if (squad && squad.m_bPatrol) mode |= 512; // + flag: patrolling
-   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB, +64 roadblock, +128 minefields, +256 fortify, +512 patrolling, +1024 handed to the AI)
+   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB, +64 roadblock, +128 minefields, +256 fortify, +512 patrolling, +1024 handed to the AI, 2048 = a commander's command unit)
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    frame.m_LeaderStates.Insert(state);
@@ -461,7 +467,7 @@ class ACR_MapFeed
     {
      frame.m_LeaderPos[existing] = anchor.GetOrigin();
      frame.m_GroupNames[existing] = label;
-     frame.m_Symbols[existing * 4 + 3] = 32;
+     frame.m_Symbols[existing * 4 + 3] = 2048;
      frame.m_Commandable[existing] = 0;
      continue;
     }
@@ -471,7 +477,7 @@ class ACR_MapFeed
     frame.m_Symbols.Insert(EMilitarySymbolIcon.INFANTRY);
     frame.m_Symbols.Insert(EMilitarySymbolDimension.LAND);
     frame.m_Symbols.Insert(EMilitarySymbolAmplifier.SQUAD);
-    frame.m_Symbols.Insert(32); // persistent commander marker; excluded from F7 possession
+    frame.m_Symbols.Insert(2048); // persistent commander marker; excluded from F7 possession (its own bit: 32 is "can establish FOB")
     int commandState;
     if (ACR_Squad.FindController(unit) > 0) commandState = 1;
     frame.m_LeaderStates.Insert(commandState);
