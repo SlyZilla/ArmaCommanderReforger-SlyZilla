@@ -52,7 +52,7 @@ class ACR_TestWorksFight
    s_bDone = true;
    s_Sampler.StopListening();
    PrintFormat("[ACR] WORKSFIGHT MEN %1", s_Sampler.Words());
-   PrintFormat("[ACR] WORKSFIGHT held: into cover %1 times, sent back %2 times, holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost);
+   PrintFormat("[ACR] WORKSFIGHT held: into cover %1 times, sent back %2 times (%5 failed), holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost, ACR_BagHold.s_iMoveFails);
    PrintFormat("[ACR] WORKSFIGHT RESULT %1: attackers lost %2 of %3, defenders lost %4 of %5, walls lost %6 of %7, %8 s, line men %9", s_Base.m_sName, s_iAttackers - Attackers(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, s_iWalls - Walls(), s_iWalls, fought, !ACR_BaseWorks.s_bNoLineMenForTest);
    ACR_TestRegress.Check("worksfight: reached the end", true, "");
    ACR_TestRegress.Complete("worksfight", 1);

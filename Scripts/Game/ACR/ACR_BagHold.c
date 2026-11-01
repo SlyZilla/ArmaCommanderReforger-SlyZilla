@@ -18,12 +18,15 @@ class ACR_BagPlace : Managed
  int m_iFails;        // spells of going there that got him no nearer
  float m_fCheckedAt;
  float m_fCheckedGap;
+ float m_fSentUntil;  // his last try at getting there, if it was the last thing he did
 }
 
 class ACR_BagHold
 {
  static const float ARRIVE = 1.6;        // m from his place: he's on it
- static const float FRONT = 0;           // of his facing towards the enemy: less, and the bags are no use to him
+ static const float FRONT = -0.3;        // of his facing towards the enemy: less, and the bags are no use to him
+ static const float SIDE_ON = 0.25;      // less than this, the enemy is along the bags: he fights low, as over low bags
+ static const float SIDE_ON_HEIGHT = 0.7;
  static const float NO_RUN_GAP = 8;      // m from his place he doesn't run for it ...
  static const float NO_RUN_ENEMY = 15;   // ... with an enemy this close
  static const float HAND_TO_HAND = 6;    // m: an enemy this close is fought from wherever he stands
@@ -40,7 +43,7 @@ class ACR_BagHold
  static const float DOWN_MIN_S = 3;      // how long he stays down
  static const float DOWN_MAX_S = 6;
  protected static ref map<SCR_AIGroup, ref array<ref ACR_BagPlace>> s_Places = new map<SCR_AIGroup, ref array<ref ACR_BagPlace>>();
- static int s_iEntered, s_iSentBack, s_iHolds, s_iLost; // tests
+ static int s_iEntered, s_iSentBack, s_iHolds, s_iLost, s_iMoveFails; // tests
 
  static bool On()
  {
@@ -230,7 +233,9 @@ class ACR_BagHold
   if (!group || BBB.HasPlayer(group) || BBB_Morale.IsWithdrawing(group) || utility.m_BBBFireJob) return false;
   vector toward = target - place.m_vPos;
   toward[1] = 0;
-  if (toward.Length() > 0.1 && vector.Dot(toward.Normalized(), place.m_vFacing) < FRONT)
+  float faces = 1;
+  if (toward.Length() > 0.1) faces = vector.Dot(toward.Normalized(), place.m_vFacing);
+  if (faces < FRONT)
   {
    // Past the bags: they're no cover from there.
    SCR_AICoverLock held = state.GetAssignedCover();
@@ -241,7 +246,11 @@ class ACR_BagHold
   if (gap <= ARRIVE)
   {
    EnterCover(utility, state, place, here);
-   KeepShowing(utility, state, place);
+   float height = place.m_fHeight;
+   if (faces < SIDE_ON) height = Math.Min(height, SIDE_ON_HEIGHT);
+   SCR_AICoverLock lock = state.GetAssignedCover();
+   if (lock && lock.m_bACRBag) lock.m_vCoverTallestPos[1] = lock.m_vCoverPos[1] + height;
+   KeepShowing(utility, state, height);
    if (distance >= WATCH_NEAR && (sinceSeen < 0 || sinceSeen >= SEEN_S)) LowWatch(state);
    else state.m_fACRDownUntil = 0;
    s_iHolds++;
@@ -291,19 +300,20 @@ class ACR_BagHold
 
  // The game thinks he's showing, but something else (his post, a stance order while he was elsewhere) has him lower:
  // it only sets a stance when that flag changes, so he'd stay blind.
- protected static void KeepShowing(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, ACR_BagPlace place)
+ protected static void KeepShowing(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, float height)
  {
   if (!state.m_bExposedInCover || state.IsExecutingRequest()) return;
   ChimeraCharacter body = ChimeraCharacter.Cast(utility.m_OwnerEntity);
   if (!body || !body.GetCharacterController()) return;
-  if (body.GetCharacterController().GetStance() > ShowStance(place.m_fHeight)) state.ApplyRequestChangeStanceInCover(true);
+  if (body.GetCharacterController().GetStance() != ShowStance(height)) state.ApplyRequestChangeStanceInCover(true);
  }
 
  protected static void SendBack(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, ACR_BagPlace place, vector target, float gap)
  {
   // Not getting any nearer (bags, a house, a fence in the way): another place, or none.
   float now = GetGame().GetWorld().GetWorldTime();
-  if (place.m_fCheckedAt == 0)
+  // Headway counts only while he keeps at it: not from before the game had him somewhere else.
+  if (place.m_fCheckedAt == 0 || now > place.m_fSentUntil)
   {
    place.m_fCheckedAt = now;
    place.m_fCheckedGap = gap;
@@ -338,10 +348,17 @@ class ACR_BagHold
    speed = SCR_AICombatMoveUtils.CHARACTER_SPEED_STAND_SPRINT;
   }
   rq.m_fMoveDuration_s = gap / speed + 2;
+  place.m_fSentUntil = now + (rq.m_fMoveDuration_s + 2) * 1000;
+  rq.GetOnFailed().Insert(MoveFailed);
   rq.m_bAimAtTarget = SCR_AICombatMoveUtils.IsAimingAndMovementPossible(rq.m_eStanceMoving, rq.m_eMovementType);
   rq.m_bAimAtTargetEnd = true;
   state.ApplyNewRequest(rq);
   s_iSentBack++;
+ }
+
+ protected static void MoveFailed(SCR_AIUtilityComponent utility, SCR_AICombatMoveRequestBase request, SCR_EAICombatMoveRequestFailReason reason)
+ {
+  s_iMoveFails++;
  }
 
  // Shot at with nothing to shoot back at: pinned, hide-and-peek as SuppressedInCoverLogic does it (the game's own

@@ -582,7 +582,7 @@ class ACR_TestBagHold
   int fought = 0;
   if (s_iContact >= 0) fought = second - s_iContact;
   PrintFormat("[ACR] BAGHOLD RESULT attackers lost %1 of %2, defenders lost %3 of %4, %5 s, %6", s_iAttackers - AttackersAlive(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, fought, s_Sampler.Words());
-  PrintFormat("[ACR] BAGHOLD held: into cover %1 times, sent back %2 times, holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost);
+  PrintFormat("[ACR] BAGHOLD held: into cover %1 times, sent back %2 times (%5 failed), holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost, ACR_BagHold.s_iMoveFails);
   ACR_TestRegress.Check("baghold: a fight happened", s_iContact >= 0, "");
   if (System.IsCLIParam("acrBagHoldOffTest"))
   {
