@@ -3,10 +3,12 @@
 // PANELSHOTS DO" lines). First on the screen the game started on, through the real panel code: a squad,
 // then a FOB: the squad's button goes, the built upgrades' words go, the upgrades fold by a real click and
 // the file remembers it. Radio lines stand clear of the panels on a map opened a second time and with a
-// hint up. The wheel scrolls the panel and doesn't zoom the map, a real click reaches the lowest button
-// scrolled down, a drag on the panel's face moves it. Then, with the test alone setting what the panel
-// shows (held), every state in both UI sizes in each window size of SCREENS: the panel stands wholly on the
-// screen, and each button is wholly in view at some point of the scroll. Prefs go through a test file.
+// hint up. The wheel scrolls the panel and doesn't zoom the map, a drag on the panel's face moves it. Then,
+// with the test alone setting what the panel shows (held), every state in both UI sizes in each window size
+// of Screen: the panel stands wholly on the screen, and each button is wholly in view at some point of the
+// scroll. A FOB with everything open, in each of them, and a squad's in one: from the top the wheel alone
+// reaches the end of a long scroll, past the buttons under the cursor; the last button was out of view and
+// now shows, and a real click presses it. Prefs go through a test file.
 // -acrPanelFitClassicTest 1 (~3 min): the same on the classic map, in the first window and size only.
 class ACR_TestPanelFit
 {
@@ -25,16 +27,19 @@ class ACR_TestPanelFit
  protected static const int SUPPORTS = 8;
  protected static const int REPORT = 9;
  protected static const int ALL_OPEN = 10;
- protected static const int STATES = 11;
+ protected static const int FOB_ALL = 11;
+ protected static const int STATES = 12;
 
  protected static const int REAL_AT = 34;
  protected static const int CHAT_AT = REAL_AT + 15;
  protected static const int MOUSE_AT = CHAT_AT + 20;
- protected static const int SWEEP_AT = MOUSE_AT + 30;
+ protected static const int SWEEP_AT = MOUSE_AT + 22;
 
  protected static int s_iState;
  protected static float s_fZoom;
  protected static int s_iWantAction;
+ protected static bool s_bLastHidden;
+ protected static int s_iNotches;
  protected static vector s_Before;
 
  // The sweep.
@@ -52,7 +57,7 @@ class ACR_TestPanelFit
 
  protected static string StateName(int state)
  {
-  array<string> names = {"nothing", "squad", "squad_build", "squads", "base", "fob", "fob_open", "requisition", "supports", "report", "all_open"};
+  array<string> names = {"nothing", "squad", "squad_build", "squads", "base", "fob", "fob_open", "requisition", "supports", "report", "all_open", "fob_all"};
   return names[state];
  }
 
@@ -118,7 +123,7 @@ class ACR_TestPanelFit
   if (s_bFakeFob) pc.ACR_FitPokeFob();
   RunReal(pc, panel, tick - REAL_AT);
   RunChat(h, pc, mapEntity, tick - CHAT_AT);
-  RunMouse(pc, panel, mapEntity, tick - MOUSE_AT);
+  RunMouse(panel, mapEntity, tick - MOUSE_AT);
   if (tick >= SWEEP_AT) RunSweep(pc, panel);
  }
 
@@ -203,9 +208,9 @@ class ACR_TestPanelFit
  }
 
  // ---------------------------------------------------------------- real mouse
- protected static void RunMouse(SCR_PlayerController pc, ACR_CommandPanel panel, SCR_MapEntity mapEntity, int at)
+ protected static void RunMouse(ACR_CommandPanel panel, SCR_MapEntity mapEntity, int at)
  {
-  if (at < 0 || at > 27 || !panel) return;
+  if (at < 0 || at > 20 || !panel) return;
   WorkspaceWidget ws = GetGame().GetWorkspace();
   if (at == 0)
   {
@@ -224,36 +229,21 @@ class ACR_TestPanelFit
    ACR_TestRegress.Check("panelfit: and doesn't zoom the map", mapEntity && Math.AbsFloat(mapEntity.GetCurrentZoom() - s_fZoom) < 0.0001, string.Format("%1 -> %2", s_fZoom, mapEntity.GetCurrentZoom()));
    ACR_TestRegress.Check("panelfit: and the panel stays open", !panel.DeclCollapsed(), "");
    Shot("mouse_wheeled");
-   panel.FitScrollTo(1);
-  }
-  if (at == 10)
-  {
-   Shot("mouse_scrolled_down");
-   int action;
-   vector lowest = panel.FitLowestButton(action);
-   s_iWantAction = action;
-   s_iLastAction = -1;
-   Ask("click", lowest, 0, 0);
-  }
-  if (at == 15)
-  {
-   ACR_TestRegress.Check("panelfit: a real click reaches the lowest button, scrolled down", s_iLastAction == s_iWantAction && s_iWantAction >= 0, string.Format("%1, wanted %2", s_iLastAction, s_iWantAction));
-   pc.ACR_FitClearCursor();
    panel.FitScrollTo(0);
    s_iState = NOTHING;
   }
-  if (at == 18)
+  if (at == 11)
   {
    s_Before = ACR_PanelMover.TopLeftForTest(ACR_UiPrefs.PANEL);
    Ask("drag", panel.FitBodyText(), ws.DPIScale(-140), ws.DPIScale(90));
   }
-  if (at == 23)
+  if (at == 16)
   {
    vector moved = ACR_PanelMover.TopLeftForTest(ACR_UiPrefs.PANEL);
    ACR_TestRegress.Check("panelfit: a drag on the panel's face moves it", ACR_UiPrefs.Moved(ACR_UiPrefs.PANEL) && Math.AbsFloat(moved[0] - s_Before[0] + 140) < 30, string.Format("%1 -> %2", s_Before, moved));
    Ask("double", panel.FitBodyText(), 0, 0);
   }
-  if (at == 27) ACR_TestRegress.Check("panelfit: a double click on its face sends it home", !ACR_UiPrefs.Moved(ACR_UiPrefs.PANEL), "");
+  if (at == 20) ACR_TestRegress.Check("panelfit: a double click on its face sends it home", !ACR_UiPrefs.Moved(ACR_UiPrefs.PANEL), "");
  }
 
  // ---------------------------------------------------------------- every state, size and window
@@ -298,7 +288,7 @@ class ACR_TestPanelFit
     s_iScroll++;
     if (s_iScroll > 4)
     {
-     if (s_iSweepState == ALL_OPEN || s_iSweepState == FOB_OPEN) Shot(ShotName("_end"));
+     if (s_iSweepState == ALL_OPEN) Shot(ShotName("_end"));
      s_iStep = 5;
      return;
     }
@@ -307,9 +297,69 @@ class ACR_TestPanelFit
    case 5:
     string missing = panel.FitUnseen();
     ACR_TestRegress.Check(string.Format("panelfit: every button can be reached: %1", ShotName("")), missing.IsEmpty(), missing);
+    if (Deep())
+    {
+     panel.FitScrollTo(0);
+     s_iStep = 6;
+     s_iWait = 1;
+     return;
+    }
+    Advance(pc);
+    return;
+   case 6: // back at the top: the last button, then the wheel alone
+    panel.FitLastButton(s_iWantAction);
+    s_bLastHidden = !panel.FitActionInView(s_iWantAction);
+    s_iNotches = 0;
+    s_iStep = 7;
+    return;
+   case 7:
+    if (panel.FitAtEnd() || s_iNotches >= 240)
+    {
+     s_iStep = 8;
+     s_iWait = 1;
+     return;
+    }
+    Ask("wheel", panel.FitBodyMiddle(), -6, 0);
+    s_iNotches += 6;
+    s_iWait = 1;
+    return;
+   case 8:
+    string deepName = ShotName("");
+    ACR_TestRegress.Check("panelfit: the wheel alone reaches the end of a long scroll: " + deepName, panel.FitAtEnd() && panel.FitOverflow() > 300, string.Format("%1 notches, %2 reference px", s_iNotches, panel.FitOverflow()));
+    ACR_TestRegress.Check("panelfit: the last button was out of view, and now shows: " + deepName, s_bLastHidden && s_iWantAction == LastAction() && panel.FitActionInView(s_iWantAction), string.Format("action %1, hidden %2", s_iWantAction, s_bLastHidden));
+    Shot(ShotName("_wheeled_end"));
+    s_iLastAction = -1;
+    Ask("click", panel.FitActionMiddle(s_iWantAction), 0, 0);
+    s_iStep = 9;
+    s_iWait = 4;
+    return;
+   case 9:
+    ACR_TestRegress.Check("panelfit: a real click presses it: " + ShotName(""), s_iLastAction == s_iWantAction && s_iWantAction >= 0, string.Format("%1, wanted %2", s_iLastAction, s_iWantAction));
+    pc.ACR_FitClearCursor();
+    panel.FitScrollTo(0);
     Advance(pc);
     return;
   }
+ }
+
+ // Where the real wheel and click are tried: a FOB in every window and size, a squad in the smallest
+ // window that keeps the reference height of 1080.
+ protected static bool Deep()
+ {
+  return s_iSweepState == FOB_ALL || (s_iSweepState == ALL_OPEN && s_iScreen == 2);
+ }
+
+ protected static int DeepCount()
+ {
+  int deep = ScreenCount() * SizeCount();
+  if (ScreenCount() > 2) deep += SizeCount();
+  return deep;
+ }
+
+ protected static int LastAction()
+ {
+  if (s_iSweepState == FOB_ALL) return ACR_EPanelAction.FOB_UPGRADE + ACR_FobSlots.SLOT_DEFENCES;
+  return ACR_EPanelAction.FORTIFY;
  }
 
  protected static void Advance(SCR_PlayerController pc)
@@ -329,7 +379,7 @@ class ACR_TestPanelFit
   s_bHeld = false;
   FileIO.DeleteFile(ACR_UiPrefs.TEST_PREFS);
   ACR_Options.Unset(ACR_MapDeclutter.OPTION);
-  ACR_TestRegress.Complete("panelfit", 14 + ScreenCount() * SizeCount() * STATES * 2);
+  ACR_TestRegress.Complete("panelfit", 13 + ScreenCount() * SizeCount() * STATES * 2 + DeepCount() * 3);
  }
 
  protected static string ShotName(string end)
@@ -347,7 +397,7 @@ class ACR_TestPanelFit
   string why;
   ACR_TestRegress.Check("panelfit: all of it on the screen: " + name, panel.FitOnScreen(why), why);
   // The 4K shots are large: only the FOB's there.
-  if (GetGame().GetWorkspace().GetWidth() < 2000 || s_iSweepState == FOB || s_iSweepState == FOB_OPEN) Shot(name);
+  if (GetGame().GetWorkspace().GetWidth() < 2000 || s_iSweepState == FOB || s_iSweepState == FOB_OPEN || s_iSweepState == FOB_ALL) Shot(name);
  }
 
  protected static void Log(ACR_CommandPanel panel, string name)
@@ -361,9 +411,10 @@ class ACR_TestPanelFit
  protected static void Show(ACR_CommandPanel panel, int state)
  {
   bool all = state == ALL_OPEN;
+  bool fobAll = state == FOB_ALL;
   ACR_UiPrefs.s_bBuildOpen = state == SQUAD_BUILD || all;
-  ACR_UiPrefs.s_bUpgradesOpen = state == FOB_OPEN;
-  ACR_UiPrefs.s_bMoreOpen = state == REPORT || state == FOB_OPEN || all;
+  ACR_UiPrefs.s_bUpgradesOpen = state == FOB_OPEN || fobAll;
+  ACR_UiPrefs.s_bMoreOpen = state == REPORT || state == FOB_OPEN || all || fobAll;
   panel.SetCommand("Command: you", true, false);
   panel.SetEconomy("RP 480   +12 in 34s");
   panel.SetRoster("");
@@ -376,7 +427,7 @@ class ACR_TestPanelFit
    costs.Insert(20);
    left.Insert(6);
   }
-  panel.SetRequisitions(true, state == REQUISITION || all, names, costs, left, 480, -1);
+  panel.SetRequisitions(true, state == REQUISITION || all || fobAll, names, costs, left, 480, -1);
   array<string> supports = {"Mortar Barrage", "Smoke Barrage", "Artillery", "Gunship Strafe", "Air Lift", "Supply Drop", "Reveal Enemy", "UAV"};
   array<int> supportCosts = {};
   array<int> cooldowns = {};
@@ -388,7 +439,7 @@ class ACR_TestPanelFit
   panel.SetSupports(true, state == SUPPORTS, supports, supportCosts, cooldowns, 480, -1);
   string report = "After-action report";
   for (int r = 1; r <= 30; r++) report += string.Format("\n%1:%2  a line of the report, long enough to run on to a second line of the panel", 10 + r, r);
-  panel.SetReport(state == REPORT || all, report);
+  panel.SetReport(state == REPORT || all || fobAll, report);
   bool squad = state == SQUAD || state == SQUAD_BUILD || state == REQUISITION || state == SUPPORTS || state == REPORT || all;
   if (squad)
   {
@@ -422,10 +473,18 @@ class ACR_TestPanelFit
    panel.SetFob(false, false, false);
    return;
   }
-  if (state == FOB || state == FOB_OPEN)
+  if (state == FOB || state == FOB_OPEN || fobAll)
   {
-   panel.SetBase("FOB 1", ACR_CommandPanel.FobDetail(FobWords()));
-   panel.SetFob(true, true, true, FobSlots(), 400, true, "US");
+   string words = FobWords();
+   array<int> slots = FobSlots();
+   // Nothing being built, or every upgrade button is greyed out and takes no click.
+   if (fobAll)
+   {
+    words.Replace("\n  Ammo Storage (40%)", "");
+    slots[2] = 0;
+   }
+   panel.SetBase("FOB 1", ACR_CommandPanel.FobDetail(words));
+   panel.SetFob(true, true, true, slots, 400, true, "US");
    panel.SetFobAI(true, false);
    return;
   }
@@ -637,17 +696,17 @@ modded class ACR_CommandPanel
   return missing;
  }
 
- // The middle of the lowest button in view (screen pixels), and its action.
- vector FitLowestButton(out int action)
+ // The middle of the panel's lowest button, in view or not (screen pixels), and its action.
+ vector FitLastButton(out int action)
  {
   action = -1;
-  float lowest = -1;
+  float lowest = -1000000;
   vector middle = vector.Zero;
   foreach (SCR_ButtonBaseComponent button, int candidate : m_Actions)
   {
    if (candidate >= ACR_EPanelAction.REQUISITION_ENTRY && candidate < ACR_EPanelAction.FOB_UPGRADE) continue;
    Widget widget = button.GetRootWidget();
-   if (!widget || !widget.IsVisibleInHierarchy() || !FitOurs(widget) || !FitInView(widget)) continue;
+   if (!widget || !widget.IsVisibleInHierarchy() || !FitOurs(widget)) continue;
    float x, y, w, h;
    widget.GetScreenPos(x, y);
    widget.GetScreenSize(w, h);
@@ -657,6 +716,51 @@ modded class ACR_CommandPanel
    middle = Vector(x + w * 0.5, y + h * 0.5, 0);
   }
   return middle;
+ }
+
+ protected Widget FitActionWidget(int action)
+ {
+  foreach (SCR_ButtonBaseComponent button, int candidate : m_Actions)
+  {
+   if (candidate == action) return button.GetRootWidget();
+  }
+  return null;
+ }
+
+ bool FitActionInView(int action)
+ {
+  Widget widget = FitActionWidget(action);
+  return widget && widget.IsVisibleInHierarchy() && FitInView(widget);
+ }
+
+ vector FitActionMiddle(int action)
+ {
+  Widget widget = FitActionWidget(action);
+  if (!widget) return vector.Zero;
+  float x, y, w, h;
+  widget.GetScreenPos(x, y);
+  widget.GetScreenSize(w, h);
+  return Vector(x + w * 0.5, y + h * 0.5, 0);
+ }
+
+ // The foot of the rows has come up to the foot of the body.
+ bool FitAtEnd()
+ {
+  float x, y, w, h, boxX, boxY, boxW, boxH;
+  m_Content.GetScreenPos(x, y);
+  m_Content.GetScreenSize(w, h);
+  m_BodyBox.GetScreenPos(boxX, boxY);
+  m_BodyBox.GetScreenSize(boxW, boxH);
+  return y + h <= boxY + boxH + 1;
+ }
+
+ // How far the rows run past the body, in reference pixels.
+ float FitOverflow()
+ {
+  float w, h, contentW, contentH;
+  m_BodyBox.GetScreenSize(w, h);
+  m_Content.GetScreenSize(contentW, contentH);
+  return GetGame().GetWorkspace().DPIUnscale(contentH - h);
  }
 
  // A line of text on the panel's face: its command line, or below the head where the body's rows start.

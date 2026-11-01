@@ -85,7 +85,7 @@ class ACR_CommandPanel : Managed
  protected static const float REQUISITION_HEIGHT = 340;
  protected static const float SUPPORT_HEIGHT = 300;
  protected static const float LIST_MIN_HEIGHT = 160; // an open list gives way to here before the panel scrolls
- protected static const float SCREEN_GAP = 8;        // what the panel keeps from the screen's top and bottom
+ protected static const float SCREEN_GAP = 4;        // what the panel keeps from the screen's top and bottom
 
  Widget m_Root;
  protected Widget m_FeedRoot;
