@@ -235,11 +235,52 @@ class ACR_TestStructures
   ACR_TestRegress.Check("FOB: full store refuses delivery without charge", manager.m_Bases.GetRP("US") == beforeFull && fob.m_iSupplyDelivery == 0, "");
   SCR_ResourceConsumer loader = ACR_Logistics.SupplyContainer(s_Construction).GetComponent().GetConsumer(EResourceGeneratorID.VEHICLE_LOAD, EResourceType.SUPPLIES);
   ACR_TestRegress.Check("FOB: paid store forbids native truck loading", loader && !store.IsAllowed(loader), "");
+  CheckArsenal(fob, store);
   // An emptied truck inside the FOB must stay empty across real logistics ticks.
   manager.m_Logistics.Use(s_Construction, manager.m_Logistics.StockOf(s_Construction));
   s_Construction.SetOrigin(fob.GetOrigin() + Vector(0, 0, 18));
   s_EmptyTruckStock = manager.m_Logistics.StockOf(s_Construction);
   if (built) SCR_EntityHelper.DeleteEntityAndChildren(built);
+ }
+
+ // #156: a built ammo dump's arsenal takes gear on the FOB's store; one outside the FOB's ring
+ // doesn't reach it.
+ static void CheckArsenal(ACR_Base fob, SCR_ResourceContainer store)
+ {
+  IEntity inside = Place(AMMO, fob.GetOrigin() + Vector(-14, 0, 14));
+  IEntity outside = Place(AMMO, fob.GetOrigin() + Vector(fob.m_fRadius + 40, 0, 0));
+  SCR_ResourceConsumer arsenal = ArsenalConsumer(inside);
+  SCR_ResourceConsumer far = ArsenalConsumer(outside);
+  ACR_TestRegress.Check("FOB: ammo dump arsenal may draw on the store", arsenal && store.IsAllowed(arsenal), string.Format("arsenal %1", arsenal != null));
+  ACR_TestRegress.Check("FOB: arsenal outside the FOB can't draw on the store", far && !store.IsAllowed(far), string.Format("arsenal %1", far != null));
+  store.SetResourceValue(1000);
+  SCR_ResourceConsumtionResponse response;
+  if (arsenal) response = arsenal.RequestConsumtion(100);
+  float left = store.GetResourceValue();
+  ACR_TestRegress.Check("FOB: taking gear at the ammo dump spends the store", response && response.GetReason() == EResourceReason.SUFFICIENT && left < 1000, string.Format("store %1", left));
+  if (inside) SCR_EntityHelper.DeleteEntityAndChildren(inside);
+  if (outside) SCR_EntityHelper.DeleteEntityAndChildren(outside);
+  store.SetResourceValue(1000);
+ }
+
+ static SCR_ResourceConsumer ArsenalConsumer(IEntity entity)
+ {
+  if (!entity) return null;
+  if (entity.FindComponent(SCR_ArsenalComponent))
+  {
+   SCR_ResourceComponent resource = SCR_ResourceComponent.Cast(entity.FindComponent(SCR_ResourceComponent));
+   if (resource)
+   {
+    SCR_ResourceConsumer consumer = resource.GetConsumer(EResourceGeneratorID.DEFAULT, EResourceType.SUPPLIES);
+    if (consumer) return consumer;
+   }
+  }
+  for (IEntity child = entity.GetChildren(); child; child = child.GetSibling())
+  {
+   SCR_ResourceConsumer found = ArsenalConsumer(child);
+   if (found) return found;
+  }
+  return null;
  }
 
  static IEntity Place(ResourceName prefab, vector at)
