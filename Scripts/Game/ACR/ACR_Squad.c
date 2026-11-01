@@ -1613,7 +1613,19 @@ class ACR_Squad : Managed
 
  void TickRoadblockDefence(float now)
  {
-  if (!m_ActiveRoadblock || m_Commander != 0 || HasPlayer()) return;
+  if (!m_ActiveRoadblock) return;
+  // Dismantled (a shovel, Game Master) or pruned: the ref is strong, so it outlived the list and
+  // the squad held an empty road all match, counted as a holder and sending tripwire alerts.
+  IEntity built = m_ActiveRoadblock.m_Entity;
+  if (!built || built.IsDeleted() || !ACR_Roadblocks.s_aRoadblocks.Contains(m_ActiveRoadblock))
+  {
+   m_ActiveRoadblock = null;
+   m_RoadblockTurret = null;
+   if (m_Order == "Holding roadblock") SetOrder("Holding position", ACR_EOrderState.DEFEND);
+   PrintFormat("[ACR] SQUAD %1: its roadblock is gone", m_Name);
+   return;
+  }
+  if (m_Commander != 0 || HasPlayer()) return;
   if (m_RoadblockTurret && !ACR_Roadblocks.IsTurretOccupied(m_RoadblockTurret))
   {
    ManRoadblockTurret();
@@ -3569,7 +3581,7 @@ class ACR_Squad : Managed
   if (!wantsToMove || vehicle != m_StallVehicle || (speed > 1.0 && vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5))
   {
    if (vehicle != m_StallVehicle || !wantsToMove) { m_iUnsticks = 0; m_iReroutes = 0; }
-   else if (m_iUnsticks > 0 && vector.DistanceXZ(vehicle.GetOrigin(), m_vUnstickFrom) > UNSTICK_CLEAR) m_iUnsticks = 0; // got past it
+   else if (m_iUnsticks > 0 && vector.DistanceXZ(vehicle.GetOrigin(), m_vUnstickFrom) > UNSTICK_CLEAR) { m_iUnsticks = 0; m_iReroutes = 0; } // got past it: the next stuck spot may re-route too
    m_StallVehicle = vehicle;
    if (vehicle) m_StallPos = vehicle.GetOrigin();
    m_fStallSince = now;

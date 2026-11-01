@@ -210,6 +210,7 @@ class ACR_Mortars : Managed
    if (gone)
    {
     Tell(team, team.m_sName + " was wiped out", true);
+    EndMission(team, "team wiped out"); // a paid mission that fired nothing is refunded
     m_Teams.Remove(i);
     continue;
    }
@@ -252,6 +253,7 @@ class ACR_Mortars : Managed
   if ((team.m_eState == ACR_EMortarState.DEPLOYED || team.m_eState == ACR_EMortarState.PACKING) && TubeDestroyed(team.m_Tube))
   {
    team.m_bLost = true;
+   EndMission(team, "mortar destroyed"); // a paid mission that fired nothing is refunded
    team.m_bFiring = false;
    team.m_Tube = null;
    team.m_eState = ACR_EMortarState.PACKED;

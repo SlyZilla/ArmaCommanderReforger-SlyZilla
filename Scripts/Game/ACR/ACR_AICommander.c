@@ -46,6 +46,7 @@ class ACR_SapperDemo : Managed
  static float s_fFuseMs = 45000.0;            // the defenders' window (tests shorten it)
  static const float SAFE_DISTANCE = 35.0;     // his squad is this far from the charge when he fires (the HQ cooks off)
  static const float SAFE_WAIT_MS = 15000.0;   // ... waiting at most this long past the window
+ protected float m_fApproachAt = -100000;      // last walk-up order to the HQ
 
  // Kept for old callers/tests: the charge prefabs (full prefabs with fuzes).
  static const ResourceName CHARGE_WEST = "{33CBDE73AB48172A}Prefabs/Weapons/Explosives/DemoBlock_M112/DemoBlock_M112.et";
@@ -499,7 +500,13 @@ class ACR_SapperDemo : Managed
    float planterDist = vector.DistanceXZ(planter.GetOrigin(), hqPos);
    if (planterDist > PLANT_RADIUS)
    {
-    if (vector.DistanceXZ(PositionOf(m_SapperSquad), hqPos) <= CLEAR_RADIUS) m_SapperSquad.MoveTo(hqPos);
+    // At most every 20 s: re-issued every second it reset the squad's waypoint recovery, so an HQ
+    // it can't reach never gave up.
+    if (vector.DistanceXZ(PositionOf(m_SapperSquad), hqPos) <= CLEAR_RADIUS && now - m_fApproachAt > 20000)
+    {
+     m_fApproachAt = now;
+     m_SapperSquad.MoveTo(hqPos);
+    }
     return;
    }
    m_State = ACR_ESapperDemoState.PLANTING;
@@ -799,6 +806,7 @@ class ACR_AIAttack
  vector m_Staging;                   // main approach, for smoke
  vector m_vApproach;                 // main approach direction, from the target towards the attackers
  bool m_bAssaulting;
+ bool m_bGivenAway;                  // its last squad went to a player (Forget): ends without a "failed" report
  float m_fStageDeadline;
  ACR_Squad m_Suppressor;             // support-by-fire squad
  float m_fFireBaseMoveSince;         // world time the base of fire started moving up to a firing spot
@@ -3548,9 +3556,11 @@ class ACR_AICommander : Managed
     string why = "it failed";
     if (broken) why = "too many losses";
     else if (stalled) why = "it stalled";
+    // Its squads went to a player's request (2IC Support me / Hold this): not a failure.
+    bool givenAway = attack.m_bGivenAway && attack.m_Squads.IsEmpty() && !won;
     if (target && won) TwoICReport(string.Format("Took %1", target.m_sName));
-    else if (target && attack.m_bGrab) TwoICReport(string.Format("Couldn't take %1: %2", target.m_sName, why));
-    else if (target) TwoICReport(string.Format("Called off the attack on %1: %2", target.m_sName, why));
+    else if (target && !givenAway && attack.m_bGrab) TwoICReport(string.Format("Couldn't take %1: %2", target.m_sName, why));
+    else if (target && !givenAway) TwoICReport(string.Format("Called off the attack on %1: %2", target.m_sName, why));
     foreach (ACR_Squad squad : attack.m_Squads)
     {
      if (broken) FallBack(squad, "attack called off");
@@ -3725,6 +3735,7 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad taxi : m_Manager.m_Squads)
   {
    if (!m_Manager.m_Rides.IsFreeTransport(taxi, m_sFaction)) continue;
+   if (m_bHandedOnly && !taxi.m_bAICommanded) continue; // a player commands the side: his trucks stay where he parked them
    if (taxi.OrderState() == ACR_EOrderState.RETURN) continue;
    IEntity vehicle = ACR_Transport.CrewedVehicle(taxi);
    if (!vehicle) continue;
@@ -5114,6 +5125,8 @@ class ACR_AICommander : Managed
   if (m_FobBuilder)
   {
    if (m_FobBuilder.CountAlive() > 0 && m_FobBuilder.OrderState() == ACR_EOrderState.BUILD_FOB) return true;
+   // A regroup on the way (up to a minute) goes back to the build: not given up.
+   if (m_FobBuilder.CountAlive() > 0 && m_FobBuilder.OrderState() == ACR_EOrderState.REGROUP && m_FobBuilder.m_iAITask == ACR_EAITask.BUILD_FOB) return true;
    // Given up (3 min without progress) or wiped out short of completion: avoid that site for a while.
    bool finished = false;
    foreach (ACR_Base built : ACR_Base.s_All)
@@ -7059,7 +7072,9 @@ class ACR_AICommander : Managed
   foreach (ACR_AIAttack attack : m_Attacks)
   {
    int index = attack.m_Squads.Find(squad);
-   if (index >= 0) attack.Remove(index);
+   if (index < 0) continue;
+   attack.Remove(index);
+   if (attack.m_Squads.IsEmpty()) attack.m_bGivenAway = true;
   }
   m_RetreatingUntil.Remove(squad);
   m_ReinforceRetryAt.Remove(squad);

@@ -136,7 +136,20 @@ class ACR_SquadAI
  {
   if (!squad || !TakesBack(command)) return false;
   if (TwoIC()) squad.m_bClaimed = true; // ordered by a player: the 2IC leaves it alone
-  if (!squad.m_bAICommanded) return false;
+  if (!squad.m_bAICommanded)
+  {
+   // Put in an attack or a defence while the AI ran the side (with the 2IC on, taking command
+   // back releases nothing): out of those plans too, or they kept overriding the player's orders.
+   if (TwoIC() && squad.GetFaction())
+   {
+    ACR_Manager manager = ACR_Manager.GetInstance();
+    ACR_AICommander ai;
+    if (manager) ai = manager.FobAICommanderFor(squad.GetFaction().GetFactionKey());
+    if (ai) ai.Forget(squad);
+    squad.m_iAITask = ACR_EAITask.FREE;
+   }
+   return false;
+  }
   return Release(squad, false);
  }
 
