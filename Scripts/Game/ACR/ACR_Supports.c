@@ -1502,6 +1502,12 @@ class ACR_Supports : Managed
  static const int BATTERY_FALL_SECONDS = 3;
  static int s_iBatteryImpacts;                  // tests
  static ref array<vector> s_aBatteryImpacts = {};
+ // Per match (ACR_Manager.Stop): the impact log grew for as long as the server ran.
+ static void Reset()
+ {
+  s_iBatteryImpacts = 0;
+  s_aBatteryImpacts.Clear();
+ }
  protected ref array<IEntity> m_BatteryShells = {};
  protected ref array<vector> m_BatteryLast = {};
  protected ref array<vector> m_BatteryAim = {};
