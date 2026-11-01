@@ -196,11 +196,19 @@ class ACR_TestBagHold
 
  static bool Late() { return System.IsCLIParam("acrBagHoldLateTest"); }
 
+ // srv:bagholdlow: the same with the low pieces.
+ static ResourceName Prefab()
+ {
+  if (System.IsCLIParam("acrBagHoldLowTest")) return ACR_BaseDefences.LONG_LOW_PLASTIC;
+  return ACR_BaseDefences.LONG_PLASTIC;
+ }
+
  static void Run(int second)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All) settings.m_bAICommander = false;
+  if (second == 1 && System.IsCLIParam("acrBagHoldOffTest")) ACR_Options.Set("acrBagHold", "0");
   if (second == 6) Site();
   if (second == 8) Line();
   // Late: the attackers are off before the men are told, and the men start far behind the line.
@@ -298,7 +306,7 @@ class ACR_TestBagHold
   {
    vector at = s_vAt + side * ((i + 0.5 - PIECES * 0.5) * ACR_BaseDefences.LONG_LEN);
    at[1] = ACR_BaseLiner.Ground(at);
-   IEntity piece = ACR_BaseDefences.SpawnOnGround(ACR_BaseDefences.LONG_PLASTIC, at, yaw);
+   IEntity piece = ACR_BaseDefences.SpawnOnGround(Prefab(), at, yaw);
    if (!piece) continue;
    s_aBags.Insert(piece);
    ACR_Navmesh.RebuildAfterSpawn(piece);
@@ -345,11 +353,7 @@ class ACR_TestBagHold
    if (n % 2 == 0) index += n / 2;
    else index -= (n + 1) / 2;
    IEntity piece = s_aBags[Math.ClampInt(index, 0, s_aBags.Count() - 1)];
-   ACR_GarrisonSpot spot = new ACR_GarrisonSpot();
-   spot.m_Pos = piece.GetOrigin() - s_vFacing * ACR_BaseWorks.MAN_BEHIND;
-   spot.m_Pos[1] = ACR_BaseLiner.Ground(spot.m_Pos);
-   spot.m_Look = s_vFacing;
-   spot.m_bStand = true;
+   ACR_GarrisonSpot spot = ACR_BagHold.SpotBehind(piece.GetOrigin(), s_vFacing, Prefab(), piece);
    spots.Insert(spot);
    s_aPlaces.Insert(spot.m_Pos);
   }
@@ -475,6 +479,7 @@ class ACR_TestBagHold
   int fought = 0;
   if (s_iContact >= 0) fought = second - s_iContact;
   PrintFormat("[ACR] BAGHOLD RESULT attackers lost %1 of %2, defenders lost %3 of %4, %5 s, %6", s_iAttackers - AttackersAlive(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, fought, s_Sampler.Words());
+  PrintFormat("[ACR] BAGHOLD held: into cover %1 times, sent back %2 times, holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost);
   ACR_TestRegress.Check("baghold: a fight happened", s_iContact >= 0, "");
   ACR_TestRegress.Complete("baghold", 1);
  }

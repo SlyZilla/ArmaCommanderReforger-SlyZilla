@@ -62,7 +62,7 @@ class ACR_Wings
   foreach (ACR_WingPlan plan : fort.m_aWingPlans)
   {
    foreach (ACR_LinePiece piece : plan.m_aPieces)
-    if (piece.m_bLong && PieceStands(fort, piece.m_vPos)) pieces.Insert(piece);
+    if (piece.m_bLong && PieceAt(fort, piece.m_vPos)) pieces.Insert(piece);
   }
   if (pieces.Count() < MEN_LEAST) return false;
   array<ref ACR_GarrisonSpot> spots = {};
@@ -73,12 +73,7 @@ class ACR_Wings
     if (vector.DistanceXZ(candidate.m_vPos, fort.m_vPos) < vector.DistanceXZ(pieces[nearest].m_vPos, fort.m_vPos)) nearest = p;
    ACR_LinePiece piece = pieces[nearest];
    pieces.Remove(nearest);
-   ACR_GarrisonSpot spot = new ACR_GarrisonSpot();
-   spot.m_Pos = piece.m_vPos - piece.m_vFacing * ACR_BaseWorks.MAN_BEHIND;
-   spot.m_Pos[1] = ACR_BaseLiner.Ground(spot.m_Pos);
-   spot.m_Look = piece.m_vFacing;
-   spot.m_bStand = true;
-   spots.Insert(spot);
+   spots.Insert(ACR_BagHold.SpotBehind(piece.m_vPos, piece.m_vFacing, piece.m_sPrefab, PieceAt(fort, piece.m_vPos)));
   }
   float radius;
   if (ACR_Garrison.PostsAt(post.m_Group, spots, fort.m_vPos, radius) <= 0) return false;
@@ -89,11 +84,11 @@ class ACR_Wings
   return true;
  }
 
- protected static bool PieceStands(ACR_Fortification fort, vector at)
+ protected static IEntity PieceAt(ACR_Fortification fort, vector at)
  {
   foreach (IEntity wing : fort.m_aWings)
-   if (wing && vector.DistanceXZ(wing.GetOrigin(), at) < 0.5) return true;
-  return false;
+   if (wing && vector.DistanceXZ(wing.GetOrigin(), at) < 0.5) return wing;
+  return null;
  }
 
  static string ShapeWord(int shape)

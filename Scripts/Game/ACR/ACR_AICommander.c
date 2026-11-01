@@ -2984,7 +2984,13 @@ class ACR_AICommander : Managed
   // spilling into its neighbours); vehicle crews, and bases without buildings, defend.
   bool garrison;
   vector building;
-  if (defend && !ACR_Transport.CrewedVehicle(squad) && ACR_Garrison.AnchorNear(destination, 80, building))
+  // A base with works standing: behind the bags on the enemy's side, which ACR_Garrison takes for what's meant.
+  if (defend && !ACR_Transport.CrewedVehicle(squad) && ACR_BaseWorks.LinePoint(destination, m_sFaction, building))
+  {
+   garrison = true;
+   destination = building;
+  }
+  else if (defend && !ACR_Transport.CrewedVehicle(squad) && ACR_Garrison.AnchorNear(destination, 80, building))
   {
    garrison = true;
    destination = building;

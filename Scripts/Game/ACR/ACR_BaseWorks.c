@@ -728,9 +728,18 @@ class ACR_BaseWorks
  static const float FACES_ENOUGH = 0.2;     // of a line's facing towards the enemy, to man it
  static const float STAY_CLOSE = 200;       // m from the line: they stay where they are
  static const float THREAT_RANGE = 900;     // m: a man further off doesn't turn the defence round
+ static const float SPILL_WAY = 0.5;        // of two lines' facings: a squad on one spills onto the other
+ static const float SPILL_NEAR = 80;        // m from the order's point, that other line's middle
+ static const float LINE_POINT_REACH = 150; // m from a base's middle, an AI defend order takes its works
+ static const int ROOM_LEAST = 3;           // free places on a line for an AI squad to be sent to it
 
  // The nearest enemy man's side of the base: false with none in range.
  protected static bool ThreatAt(ACR_DefenderPost post, out vector at)
+ {
+  return ThreatNear(post.m_sFaction, post.m_vPos, at);
+ }
+
+ protected static bool ThreatNear(string faction, vector pos, out vector at)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return false;
@@ -738,10 +747,10 @@ class ACR_BaseWorks
   bool found = false;
   foreach (ACR_Squad squad : manager.m_Squads)
   {
-   if (!squad.GetFaction() || ACR_Insurgency.Friendly(squad.GetFaction().GetFactionKey(), post.m_sFaction)) continue;
+   if (!squad.GetFaction() || ACR_Insurgency.Friendly(squad.GetFaction().GetFactionKey(), faction)) continue;
    IEntity anchor = squad.GetAnchor();
    if (!anchor) continue;
-   float d = vector.DistanceXZ(anchor.GetOrigin(), post.m_vPos);
+   float d = vector.DistanceXZ(anchor.GetOrigin(), pos);
    if (d >= best) continue;
    best = d;
    at = anchor.GetOrigin();
@@ -765,6 +774,18 @@ class ACR_BaseWorks
    }
   }
   return result.Count();
+ }
+
+ // What stands at a long piece's place in a line.
+ protected static IEntity BagsAt(ACR_BaseWork work, vector at)
+ {
+  foreach (ACR_BaseSite site : work.m_aSites)
+  {
+   if (!site.m_bBuilt) continue;
+   foreach (IEntity wall : site.m_aWalls)
+    if (wall && vector.DistanceXZ(wall.GetOrigin(), at) < 0.6) return wall;
+  }
+  return null;
  }
 
  // The built lines a man could go to for an enemy at 'threat', the best first: those that face him, near
@@ -818,30 +839,7 @@ class ACR_BaseWorks
   LinesFor(work, threat, hasThreat, lines);
   if (lines.IsEmpty()) return false;
   array<ref ACR_GarrisonSpot> spots = {};
-  array<ACR_LinePiece> pieces = {};
-  foreach (int index : lines)
-  {
-   MannablePieces(work, work.m_aLines[index], pieces);
-   vector aim = work.m_aLines[index].m_vMiddle;
-   if (hasThreat) aim = threat;
-   while (spots.Count() < men && !pieces.IsEmpty())
-   {
-    int nearest = 0;
-    foreach (int p, ACR_LinePiece candidate : pieces)
-     if (vector.DistanceXZ(candidate.m_vPos, aim) < vector.DistanceXZ(pieces[nearest].m_vPos, aim)) nearest = p;
-    ACR_LinePiece piece = pieces[nearest];
-    pieces.Remove(nearest);
-    ACR_GarrisonSpot spot = new ACR_GarrisonSpot();
-    spot.m_Pos = piece.m_vPos - piece.m_vFacing * MAN_BEHIND;
-    // A net hangs down behind the bags: he stands clear of it.
-    if (ACR_BaseDefences.HalfSize(piece.m_sPrefab)[2] > 1) spot.m_Pos = spot.m_Pos - piece.m_vFacing * 0.5;
-    spot.m_Pos[1] = ACR_BaseLiner.Ground(spot.m_Pos);
-    spot.m_Look = piece.m_vFacing;
-    spot.m_bStand = true;
-    spots.Insert(spot);
-   }
-   if (spots.Count() >= men) break;
-  }
+  LineSpots(work, lines, threat, hasThreat, men, post.m_Group, spots);
   if (spots.IsEmpty()) return false;
   vector center = spots[0].m_Pos;
   float radius;
@@ -851,6 +849,124 @@ class ACR_BaseWorks
   post.m_fMannedAt = GetGame().GetWorld().GetWorldTime();
   PrintFormat("[ACR] BASEWORKS %1 %2: %3 men to line %4 and on (%5 places)", work.m_sFaction, work.m_Base.m_sName, men, lines[0], spots.Count());
   return true;
+ }
+
+ // A place behind the bags for each of 'men', line by line: those nearest the enemy first, none where
+ // another group's man already stands.
+ protected static void LineSpots(ACR_BaseWork work, notnull array<int> lines, vector threat, bool hasThreat, int men, SCR_AIGroup group, notnull array<ref ACR_GarrisonSpot> spots)
+ {
+  array<ACR_LinePiece> pieces = {};
+  foreach (int index : lines)
+  {
+   MannablePieces(work, work.m_aLines[index], pieces);
+   vector aim = work.m_aLines[index].m_vMiddle;
+   if (hasThreat) aim = threat;
+   TakeNearest(work, pieces, aim, men, group, spots);
+   if (spots.Count() >= men) break;
+  }
+ }
+
+ protected static void TakeNearest(ACR_BaseWork work, notnull array<ACR_LinePiece> pieces, vector aim, int men, SCR_AIGroup group, notnull array<ref ACR_GarrisonSpot> spots)
+ {
+  while (spots.Count() < men && !pieces.IsEmpty())
+  {
+   int nearest = 0;
+   foreach (int p, ACR_LinePiece candidate : pieces)
+    if (vector.DistanceXZ(candidate.m_vPos, aim) < vector.DistanceXZ(pieces[nearest].m_vPos, aim)) nearest = p;
+   ACR_LinePiece piece = pieces[nearest];
+   pieces.Remove(nearest);
+   ACR_GarrisonSpot spot = ACR_BagHold.SpotBehind(piece.m_vPos, piece.m_vFacing, piece.m_sPrefab, BagsAt(work, piece.m_vPos));
+   if (!ACR_Garrison.PostNear(spot.m_Pos, 1.5, group)) spots.Insert(spot);
+  }
+ }
+
+ // A squad holding this base: behind the lines that face the enemy. False: nothing to man, it does what it did.
+ static bool ManSquad(ACR_BaseWork work, SCR_AIGroup group, int men, out vector center, out float radius)
+ {
+  if (!work || !work.m_Base || !group || men <= 0 || !ACR_BagHold.On()) return false;
+  vector threat;
+  bool hasThreat = ThreatNear(work.m_sFaction, work.m_Base.GetOrigin(), threat);
+  array<int> lines = {};
+  LinesFor(work, threat, hasThreat, lines);
+  if (lines.IsEmpty()) return false;
+  array<ref ACR_GarrisonSpot> spots = {};
+  LineSpots(work, lines, threat, hasThreat, men, group, spots);
+  if (spots.IsEmpty()) return false;
+  center = spots[0].m_Pos;
+  if (ACR_Garrison.PostsAt(group, spots, center, radius) <= 0) return false;
+  PrintFormat("[ACR] BASEWORKS %1 %2: squad of %3 to line %4 and on (%5 places)", work.m_sFaction, work.m_Base.m_sName, men, lines[0], spots.Count());
+  return true;
+ }
+
+ // An order at 'point' with bags of the group's side within 'within' of it: behind them, that line and those facing
+ // the same way close by, nearest the point first. How many places (0: no such bags; it goes elsewhere).
+ static int AssignBags(SCR_AIGroup group, vector point, int wanted, float within, out vector center, out float radius)
+ {
+  if (!group || wanted <= 0 || s_aWorks.IsEmpty() || !ACR_BagHold.On()) return 0;
+  AIAgent leader = group.GetLeaderAgent();
+  if (!leader) return 0;
+  string faction = ACR_Intel.FactionKeyOf(leader.GetControlledEntity());
+  array<ref ACR_GarrisonSpot> spots = {};
+  array<ACR_LinePiece> pieces = {};
+  foreach (ACR_BaseWork work : s_aWorks)
+  {
+   if (!work.m_Base || work.m_sFaction != faction) continue;
+   ACR_BaseLine closest;
+   float best = within;
+   foreach (ACR_BaseLine line : work.m_aLines)
+   {
+    MannablePieces(work, line, pieces);
+    foreach (ACR_LinePiece piece : pieces)
+    {
+     float d = vector.DistanceXZ(piece.m_vPos, point);
+     if (d >= best) continue;
+     best = d;
+     closest = line;
+    }
+   }
+   if (!closest) continue;
+   array<ACR_LinePiece> usable = {};
+   foreach (ACR_BaseLine same : work.m_aLines)
+   {
+    if (same != closest && (ACR_BaseDefences.DotXZ(same.m_vFacing, closest.m_vFacing) < SPILL_WAY || vector.DistanceXZ(same.m_vMiddle, point) > SPILL_NEAR)) continue;
+    MannablePieces(work, same, pieces);
+    usable.InsertAll(pieces);
+   }
+   TakeNearest(work, usable, point, wanted, group, spots);
+   if (!spots.IsEmpty()) break;
+  }
+  if (spots.IsEmpty()) return 0;
+  center = spots[0].m_Pos;
+  int placed = ACR_Garrison.PostsAt(group, spots, center, radius);
+  PrintFormat("[ACR] BASEWORKS %1: %2 men behind the bags at %3 (%4 places)", group.GetCustomName(), wanted, point, placed);
+  return placed;
+ }
+
+ // Where a squad sent to defend 'destination' goes to hold its works: just behind a line that faces the enemy, with
+ // room on it. False: no works of the side's there, or no room.
+ static bool LinePoint(vector destination, string faction, out vector at)
+ {
+  if (!ACR_BagHold.On()) return false;
+  array<ACR_LinePiece> pieces = {};
+  foreach (ACR_BaseWork work : s_aWorks)
+  {
+   if (!work.m_Base || work.m_sFaction != faction || vector.DistanceXZ(work.m_Base.GetOrigin(), destination) > LINE_POINT_REACH) continue;
+   vector threat;
+   bool hasThreat = ThreatNear(faction, work.m_Base.GetOrigin(), threat);
+   array<int> lines = {};
+   LinesFor(work, threat, hasThreat, lines);
+   foreach (int index : lines)
+   {
+    MannablePieces(work, work.m_aLines[index], pieces);
+    vector middle = work.m_aLines[index].m_vMiddle;
+    array<ref ACR_GarrisonSpot> spots = {};
+    TakeNearest(work, pieces, middle, ROOM_LEAST, null, spots);
+    if (spots.Count() < ROOM_LEAST) continue;
+    at = ACR_Manager.Ground(spots[0].m_Pos - spots[0].m_Look);
+    return true;
+   }
+  }
+  return false;
  }
 
  // While they're out: the enemy has gone round to a side the line in use doesn't face. Not with him close:

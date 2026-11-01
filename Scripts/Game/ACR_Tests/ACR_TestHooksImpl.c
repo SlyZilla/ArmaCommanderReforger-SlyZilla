@@ -55,7 +55,7 @@ modded class ACR_TestHooks
   // -acrWorksFightTest / -acrWorksFightOldTest: what a fortified town costs an attacker (ACR_TestWorksFight).
   if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest")) ACR_TestWorksFight.Run(seconds);
   // -acrBagHoldTest / -acrBagHoldLateTest: men behind bags in a fight (ACR_TestBagHold).
-  if (System.IsCLIParam("acrBagHoldTest") || System.IsCLIParam("acrBagHoldLateTest")) ACR_TestBagHold.Run(seconds);
+  if (System.IsCLIParam("acrBagHoldTest") || System.IsCLIParam("acrBagHoldLateTest") || System.IsCLIParam("acrBagHoldOffTest") || System.IsCLIParam("acrBagHoldLowTest")) ACR_TestBagHold.Run(seconds);
   // -acrWorksAISoakTest: does the AI fortify (ACR_TestWorksSoak).
   if (System.IsCLIParam("acrWorksAISoakTest")) ACR_TestWorksSoak.Run(seconds);
   // -acrQuickStartFIATest: FIA's cells on a Quick start (ACR_TestQuickStartFIA).

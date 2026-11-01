@@ -935,6 +935,15 @@ class ACR_Squad : Managed
   NewOrder();
   ClearPlans();
   m_bRegrouping = false;
+  // Right at bags of ours: behind them.
+  vector behind;
+  float behindRadius;
+  if (m_Group && !ACR_Transport.CrewedVehicle(this) && ACR_BaseWorks.AssignBags(m_Group, position, Math.Max(1, CountAlive()), ACR_Garrison.BAGS_DEFEND, behind, behindRadius) > 0 && IssueWaypoint(WP_GARRISON, behind, behindRadius))
+  {
+   SetOrder("Defending", ACR_EOrderState.DEFEND);
+   m_OrderKind = ACR_EOrderKind.DEFEND;
+   return true;
+  }
   if (!IssueWaypoint(WP_DEFEND, position, 15)) return false;
   SetOrder("Defending", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
@@ -2048,6 +2057,7 @@ class ACR_Squad : Managed
   m_OrderKind = ACR_EOrderKind.DEFEND;
   vector at;
   float radius;
+  if (work && !ACR_Transport.CrewedVehicle(this) && ACR_BaseWorks.ManSquad(work, m_Group, Math.Max(1, CountAlive()), at, radius) && IssueWaypoint(WP_GARRISON, at, radius)) return;
   if (work && ACR_BaseWorks.HoldSpot(work, at, radius)) IssueWaypoint(WP_DEFEND, at, radius);
   else if (work && work.m_Base) IssueWaypoint(WP_DEFEND, work.m_Base.GetOrigin(), 60);
  }
