@@ -8,8 +8,12 @@
 //  - Bases: a dot in the owner's colour (blue ours, red enemy, yellow free), size pips after the name
 //    instead of "[CP II]", a red ring while contested. Zoomed out only our bases, the front, the enemy
 //    HQ and bases under attack keep their names; the rest are plain dots.
-//  - Squads at a base sit under its marker as one icon with "×N"; a corner mark says moving,
-//    fighting or holding (legend bottom right). Zoomed out, order lines only for the selected squads.
+//  - A squad's marker stands where the squad is, or isn't on the map (JT's playtest: markers stacked
+//    round a town's dot read as real positions, and zoomed in they were somewhere else). Zoomed out
+//    until a base's ring is too small to tell who stands where in it, or with an icon that would
+//    touch the dot, the unit condenses into the base: a count beside the dot ("×4 units · ×2 enemy"),
+//    and a click on it or the base lists them. A corner mark says moving, fighting or holding (legend
+//    bottom right). Zoomed out, order lines only for the selected squads.
 enum ACR_ESquadMark
 {
  HOLDING,
@@ -33,6 +37,11 @@ class ACR_MapDeclutter
  static const float MERGE_SECONDS = 120;    // feed lines this close together may merge
  static const float FAR_ZOOM = 1.25;        // zoomed out: at most this times the map's widest zoom
  static const float CLUSTER_MIN_RADIUS = 100; // m: a squad this close to a base (or in its ring) is "at" it
+ static const float SMALL_RING = 44;        // reference px: a ring smaller than this on screen can't show who stands where in it
+ static const float ICON_W = 30;            // reference px: a squad's icon, for what it would touch
+ static const float ICON_H = 22;
+ static const float DOT_REACH = 10;         // reference px: a base's dot and its white edge
+ static const float PILE_REACH = 12;        // reference px: icons this close stand as one, with "×N"
  static const float ARRIVED = 40;           // m from its order's target: holding, not moving
  static const float FIGHT_RANGE = 200;      // m: a fresh contact this close: fighting
  static const int FIGHT_AGE = 30;           // s: contacts older than this don't count
@@ -255,51 +264,132 @@ class ACR_MapDeclutter
  }
 
  // ---------------------------------------------------------------- squads
- // Squads at a base become one icon: baseOf[g] the base (-1 none), count[g] the squads at it
- // (on the icon shown), rep[g] whether g is the one shown (the selected one if any, else the first).
- static void Clusters(array<vector> groupPos, array<bool> clusterable, array<bool> selected, array<vector> basePos, array<float> baseRadii, notnull array<int> baseOf, notnull array<int> count, notnull array<bool> rep)
+ // A base's ring as far as "at it" goes (m).
+ static float RingOf(int b, array<float> baseRadii)
  {
-  baseOf.Clear();
+  if (b < 0 || b >= baseRadii.Count()) return CLUSTER_MIN_RADIUS;
+  return Math.Max(CLUSTER_MIN_RADIUS, baseRadii[b]);
+ }
+
+ // The base a squad is at on the ground (in its ring, the nearest), or -1.
+ static int BaseAt(vector pos, array<vector> basePos, array<float> baseRadii)
+ {
+  int at = -1;
+  float atDistance;
+  foreach (int b, vector base : basePos)
+  {
+   float d = vector.DistanceXZ(pos, base);
+   if (d > RingOf(b, baseRadii) || (at >= 0 && d >= atDistance)) continue;
+   at = b;
+   atDistance = d;
+  }
+  return at;
+ }
+
+ // The base whose count a marker goes into at this zoom (the nearest), or -1: it stands where it is.
+ // x, y: where it really is on screen; ox, oy: its icon's centre from there (a map symbol is drawn
+ // above its point); w x h its icon; dots: x, y per base; rings: each base's ring on screen (px). It
+ // goes in when its icon would touch the dot, or it is in a ring smaller than smallRing. Nothing else
+ // moves it, so a marker on the map is always where its unit is.
+ static int CondensesInto(float x, float y, float ox, float oy, float w, float h, array<float> dots, float dotReach, array<float> rings, float smallRing)
+ {
+  float cx = x + ox;
+  float cy = y + oy;
+  int into = -1;
+  float bestDistance;
+  for (int b = 0; b * 2 + 1 < dots.Count(); b++)
+  {
+   float dx = dots[b * 2] - x;
+   float dy = dots[b * 2 + 1] - y;
+   float d = Math.Sqrt(dx * dx + dy * dy);
+   bool touches = Overlaps(cx - w * 0.5, cy - h * 0.5, cx + w * 0.5, cy + h * 0.5, dots[b * 2] - dotReach, dots[b * 2 + 1] - dotReach, dots[b * 2] + dotReach, dots[b * 2 + 1] + dotReach);
+   bool inSmallRing = b < rings.Count() && rings[b] < smallRing && d <= rings[b];
+   if ((!touches && !inSmallRing) || (into >= 0 && d >= bestDistance)) continue;
+   into = b;
+   bestDistance = d;
+  }
+  return into;
+ }
+
+ // Squads standing on top of each other (within reach px of the first) are one icon with "×N", at
+ // the place of the one shown (the selected one if any, else the first). centres: x, y per group;
+ // pileOf[g] the group shown for it (-1: g isn't standing); count[g] the squads in its pile; rep[g]
+ // whether g's icon shows.
+ static void Piles(array<float> centres, array<bool> standing, array<bool> selected, float reach, notnull array<int> pileOf, notnull array<int> count, notnull array<bool> rep)
+ {
+  pileOf.Clear();
   count.Clear();
   rep.Clear();
-  foreach (int g, vector pos : groupPos)
+  int groups = centres.Count() / 2;
+  for (int i = 0; i < groups; i++)
   {
-   int at = -1;
-   float atDistance;
-   if (g < clusterable.Count() && clusterable[g])
-   {
-    foreach (int b, vector base : basePos)
-    {
-     float radius = CLUSTER_MIN_RADIUS;
-     if (b < baseRadii.Count()) radius = Math.Max(radius, baseRadii[b]);
-     float d = vector.DistanceXZ(pos, base);
-     if (d > radius || (at >= 0 && d >= atDistance)) continue;
-     at = b;
-     atDistance = d;
-    }
-   }
-   baseOf.Insert(at);
+   pileOf.Insert(-1);
    count.Insert(1);
    rep.Insert(true);
   }
-  foreach (int b, vector unusedBase : basePos)
+  for (int g = 0; g < groups; g++)
   {
-   array<int> members = {};
-   int shown = -1;
-   foreach (int g, int at : baseOf)
+   if (pileOf[g] >= 0 || g >= standing.Count() || !standing[g]) continue;
+   array<int> members = {g};
+   for (int k = g + 1; k < groups; k++)
    {
-    if (at != b) continue;
-    members.Insert(g);
-    if (shown < 0 && g < selected.Count() && selected[g]) shown = g;
+    if (pileOf[k] >= 0 || k >= standing.Count() || !standing[k]) continue;
+    float dx = centres[k * 2] - centres[g * 2];
+    float dy = centres[k * 2 + 1] - centres[g * 2 + 1];
+    if (dx * dx + dy * dy <= reach * reach) members.Insert(k);
    }
-   if (members.IsEmpty()) continue;
-   if (shown < 0) shown = members[0];
+   int shown = -1;
+   foreach (int m : members)
+   {
+    if (shown < 0 && m < selected.Count() && selected[m]) shown = m;
+   }
+   if (shown < 0) shown = g;
    foreach (int member : members)
    {
+    pileOf[member] = shown;
     count[member] = members.Count();
     rep[member] = member == shown;
    }
   }
+ }
+
+ // A base's count: "×4 units", "×1 unit", "×2 enemy", "×4 units · ×2 enemy" ("" for none). The enemy
+ // part in enemyColor when given.
+ static string ChipText(int own, int enemy, Color enemyColor = null)
+ {
+  string text = "";
+  if (own == 1) text = "×1 unit";
+  else if (own > 1) text = string.Format("×%1 units", own);
+  if (enemy <= 0) return text;
+  string foes = string.Format("×%1 enemy", enemy);
+  if (enemyColor) foes = ACR_TwoICStyle.Colored(foes, enemyColor);
+  if (text.IsEmpty()) return foes;
+  return text + " · " + foes;
+ }
+
+ // The list's title: "4 UNITS AT PUSTA", "1 UNIT + 2 ENEMY AT PUSTA", "2 ENEMY AT PUSTA".
+ static string ListTitle(int own, int enemy, string place)
+ {
+  string text = "";
+  if (own == 1) text = "1 UNIT";
+  else if (own > 1) text = string.Format("%1 UNITS", own);
+  if (enemy > 0)
+  {
+   if (!text.IsEmpty()) text += " + ";
+   text += string.Format("%1 ENEMY", enemy);
+  }
+  // ToUpper changes the string itself and returns its length.
+  place.ToUpper();
+  return text + " AT " + place;
+ }
+
+ // A unit counted at a base from outside its ring (zoomed out, it stands too close to the dot to
+ // draw): how far out, to the nearest 10 m ("420 m out"); "" in the ring.
+ static string OutOfRing(float distance, float ring)
+ {
+  if (distance <= ring) return "";
+  int rounded = (distance + 5) / 10;
+  return string.Format("%1 m out", rounded * 10);
  }
 
  // The corner mark: fighting (a fresh contact close by), moving (an order not reached yet) or
@@ -480,11 +570,12 @@ class ACR_MapDeclutter
   return -1;
  }
 
- // Base names keep their spot unless they would cover another base's name or dot: then the name
- // goes above its dot, to its right, to its left, or further down, whichever is clear first (the
- // most important bases, first in order, choose first). dots: x, y per base; captions: each base's
- // caption rectangle relative to its dot (x1 <= x0: no caption); shift: dx, dy per base.
- static void PlaceNames(array<float> dots, array<float> captions, array<int> order, float dotRadius, float gap, notnull array<float> shift)
+ // Base names keep their spot unless they would cover another base's name or dot, or what must stay
+ // where it is (extra: rectangles, a squad's icon, a base's count): then the name goes above its
+ // dot, to its right, to its left, or further down, whichever is clear first (the most important
+ // bases, first in order, choose first). dots: x, y per base; captions: each base's caption rectangle
+ // relative to its dot (x1 <= x0: no caption); shift: dx, dy per base.
+ static void PlaceNames(array<float> dots, array<float> captions, array<int> order, float dotRadius, float gap, notnull array<float> shift, array<float> extra = null)
  {
   shift.Clear();
   int count = dots.Count() / 2;
@@ -502,6 +593,7 @@ class ACR_MapDeclutter
    taken.Insert(dots[d * 2] + dotRadius);
    taken.Insert(dots[d * 2 + 1] + dotRadius);
   }
+  if (extra) foreach (float edge : extra) taken.Insert(edge);
   foreach (int b : order)
   {
    if (b < 0 || b >= count || b * 4 + 3 >= captions.Count()) continue;
@@ -542,35 +634,63 @@ class ACR_MapDeclutter
   }
  }
 
- // A squad icon (w x h, centred at x, y) clear of the names and dots: below what it hits, else to
- // its right, its left or above it, a few times over. The new centre.
- static vector Avoid(float x, float y, float w, float h, array<float> obstacles, float gap)
+ // Where a base's count goes (w x h, centred on the answer): touching its dot at x, y, to the right,
+ // else to the left, above, at a corner or below (where its base's name is), whichever hits no dot,
+ // none of others (the icons and counts: rectangles, they can't move) and not its base's name; failing
+ // that it may cover the name, which then moves; failing that, an icon; to the right if every spot
+ // is on a dot.
+ static vector PlaceChip(float x, float y, float w, float h, float dotReach, float gap, array<float> dots, array<float> others, array<float> name)
  {
-  float ox = x;
-  float oy = y;
-  for (int pass = 0; pass < 6; pass++)
+  float rx = dotReach + gap + w * 0.5;
+  float ry = dotReach + gap + h * 0.5;
+  array<float> spots = {x + rx, y, x - rx, y, x, y - ry, x + rx, y - ry, x - rx, y - ry, x + rx, y + ry, x - rx, y + ry, x, y + ry};
+  for (int pass = 0; pass < 3; pass++)
   {
-   int hit = FirstHit(ox - w * 0.5, oy - h * 0.5, ox + w * 0.5, oy + h * 0.5, obstacles);
-   if (hit < 0) break;
-   float r0 = obstacles[hit * 4];
-   float r1 = obstacles[hit * 4 + 1];
-   float r2 = obstacles[hit * 4 + 2];
-   float r3 = obstacles[hit * 4 + 3];
-   array<float> tries = {ox, r3 + gap + h * 0.5, r2 + gap + w * 0.5, oy, r0 - gap - w * 0.5, oy, ox, r1 - gap - h * 0.5};
-   bool moved;
-   for (int t = 0; t + 1 < tries.Count(); t += 2)
+   for (int s = 0; s + 1 < spots.Count(); s += 2)
    {
-    if (FirstHit(tries[t] - w * 0.5, tries[t + 1] - h * 0.5, tries[t] + w * 0.5, tries[t + 1] + h * 0.5, obstacles) >= 0) continue;
-    ox = tries[t];
-    oy = tries[t + 1];
-    moved = true;
-    break;
+    float x0 = spots[s] - w * 0.5;
+    float y0 = spots[s + 1] - h * 0.5;
+    float x1 = spots[s] + w * 0.5;
+    float y1 = spots[s + 1] + h * 0.5;
+    if (FirstHit(x0, y0, x1, y1, dots) >= 0) continue;
+    if (pass < 2 && FirstHit(x0, y0, x1, y1, others) >= 0) continue;
+    if (pass < 1 && FirstHit(x0, y0, x1, y1, name) >= 0) continue;
+    return Vector(spots[s], spots[s + 1], 0);
    }
-   if (moved) break;
-   // Boxed in: go below this one and look again.
-   oy = r3 + gap + h * 0.5;
   }
-  return Vector(ox, oy, 0);
+  return Vector(spots[0], spots[1], 0);
+ }
+
+ // Where a box goes (w x h, its top left corner the answer): beside what it belongs to (from x0 to
+ // x1, at y), to the right and lifted a little, else to its left; on screen, and clear of the
+ // rectangles (the panels), going beside or above or below one when it has to. In unscaled px, as the
+ // widgets are placed.
+ static vector PlaceBox(float x0, float x1, float y, float w, float h, float side, float lift, float screenW, float screenH, float margin, array<float> keepClear)
+ {
+  float x = x1;
+  float maxX = Math.Max(margin, screenW - w - margin);
+  float maxY = Math.Max(margin, screenH - h - margin);
+  float top = Math.Clamp(y - lift, margin, maxY);
+  array<float> tries = {x1 + side, top, x0 - side - w, top};
+  for (int r = 0; r + 3 < keepClear.Count(); r += 4)
+  {
+   tries.Insert(keepClear[r] - margin - w);
+   tries.Insert(top);
+   tries.Insert(keepClear[r + 2] + margin);
+   tries.Insert(top);
+   tries.Insert(Math.Clamp(x + side, margin, maxX));
+   tries.Insert(keepClear[r + 3] + margin);
+   tries.Insert(Math.Clamp(x + side, margin, maxX));
+   tries.Insert(keepClear[r + 1] - margin - h);
+  }
+  for (int t = 0; t + 1 < tries.Count(); t += 2)
+  {
+   float px = tries[t];
+   float py = tries[t + 1];
+   if (px < margin || px > maxX || py < margin || py > maxY) continue;
+   if (FirstHit(px, py, px + w, py + h, keepClear) < 0) return Vector(px, py, 0);
+  }
+  return Vector(Math.Clamp(x + side, margin, maxX), top, 0);
  }
 
  // A round marker (radius r px, centred at x, y) touching a base's name or dot.

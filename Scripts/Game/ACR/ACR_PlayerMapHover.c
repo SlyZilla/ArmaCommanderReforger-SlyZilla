@@ -5,7 +5,7 @@
 // - Warnings: the health and ammo bars under a squad's icon show only near, and only for a squad
 //   with its own icon. A squad that is hurt (HP under WARN_HP) or short of ammo (under WARN_AMMO)
 //   now also gets a dot at its icon's top right, zoomed out too, and an icon that stands for several
-//   squads ("×N") gets the worst of theirs: orange, red under WARN_BAD.
+//   squads ("×N") or a base's count gets the worst of theirs: orange, red under WARN_BAD.
 // (Named to load after ACR_PlayerMapGroups.c and ACR_PlayerMapDeclutter.c, whose methods it uses.)
 modded class SCR_PlayerController
 {
@@ -16,6 +16,11 @@ modded class SCR_PlayerController
  {
   if (on) m_ACR_HoverMarker = marker;
   else if (m_ACR_HoverMarker == marker) m_ACR_HoverMarker = null;
+ }
+
+ override protected void ACR_HoverBase(ACR_UnitMarker marker, bool on)
+ {
+  ACR_HoverMarker(marker, on);
  }
 
  override protected void ACR_UpdatePicker()
@@ -119,6 +124,10 @@ modded class SCR_PlayerController
  protected void ACR_BaseCard(ACR_UnitMarker marker, out string title, notnull array<string> lines)
  {
   title = ACR_MapDeclutter.ShortName(marker.m_Label);
+  // What its count stands for, first: the details below may run out of lines.
+  int b = marker.m_BaseIndex;
+  if (b >= 0 && b < m_ACR_Data.m_DeclChipOwn.Count() && m_ACR_Data.m_bDeclOn && m_ACR_Data.m_DeclChipOwn[b] + m_ACR_Data.m_DeclChipEnemy[b] > 0)
+   lines.Insert(ACR_MapDeclutter.ChipText(m_ACR_Data.m_DeclChipOwn[b], m_ACR_Data.m_DeclChipEnemy[b]) + " here  ·  click for the list");
   array<string> parts = {};
   marker.m_BaseHover.Split("\n", parts, true);
   foreach (int i, string part : parts)
@@ -186,8 +195,9 @@ modded class ACR_OrderDisplay
  protected void DrawWarnings(SCR_MapEntity mapEntity, ACR_MapData data)
  {
   // The worst level per icon shown (the "×N" icon's group index), near only for clusters (lone
-  // squads' bars show near).
+  // squads' bars show near); and per base's count, drawn on the count.
   map<int, int> worst = new map<int, int>();
+  map<int, int> worstChip = new map<int, int>();
   foreach (int i, RplId groupId : data.m_StatusGroups)
   {
    if (i * 6 + 1 >= data.m_Status.Count()) break;
@@ -195,6 +205,12 @@ modded class ACR_OrderDisplay
    if (level == 0) continue;
    int g = data.m_GroupIds.Find(groupId);
    if (g < 0 || data.DeclHidden(g)) continue;
+   if (g < data.m_DeclBaseOf.Count() && data.m_DeclBaseOf[g] >= 0 && data.ShownByOther(g))
+   {
+    int chipHad;
+    if (!worstChip.Find(data.m_DeclBaseOf[g], chipHad) || chipHad < level) worstChip.Set(data.m_DeclBaseOf[g], level);
+    continue;
+   }
    int shown = g;
    if (data.ShownByOther(g)) shown = ACR_ShownBy(data, g);
    if (shown < 0) continue;
@@ -210,7 +226,7 @@ modded class ACR_OrderDisplay
   foreach (int s, int lvl : worst)
   {
    if (s >= data.m_LeaderPositions.Count()) continue;
-   vector pos = data.ShownPos(s);
+   vector pos = data.LeaderPos(s);
    int sx, sy;
    mapEntity.WorldToScreen(pos[0], pos[2], sx, sy, true);
    float x = sx + Px(13);
@@ -221,17 +237,26 @@ modded class ACR_OrderDisplay
    Dot(x, y, Px(4.5), fill);
    s_iWarnDots++;
   }
+  // On a base's count: its top corner away from the dot.
+  foreach (int b, int chipLevel : worstChip)
+  {
+   if (b * 4 + 3 >= data.m_DeclChipRect.Count() || b * 2 >= data.m_DeclDots.Count()) continue;
+   float x0 = data.m_DeclChipRect[b * 4];
+   float x1 = data.m_DeclChipRect[b * 4 + 2];
+   float corner = x1;
+   if ((x0 + x1) * 0.5 < data.m_DeclDots[b * 2]) corner = x0;
+   int chipFill = orange;
+   if (chipLevel >= 2) chipFill = red;
+   Dot(corner, data.m_DeclChipRect[b * 4 + 1], Px(6), edge);
+   Dot(corner, data.m_DeclChipRect[b * 4 + 1], Px(4.5), chipFill);
+   s_iWarnDots++;
+  }
  }
 
- // The group whose icon stands for squad g at its base (the one shown there), -1 none.
+ // The group whose icon stands for squad g in its pile, -1 none.
  protected int ACR_ShownBy(ACR_MapData data, int g)
  {
-  if (g >= data.m_DeclBaseOf.Count()) return -1;
-  int base = data.m_DeclBaseOf[g];
-  foreach (int k, int at : data.m_DeclBaseOf)
-  {
-   if (at == base && k < data.m_DeclRep.Count() && data.m_DeclRep[k]) return k;
-  }
-  return -1;
+  if (g >= data.m_DeclPile.Count()) return -1;
+  return data.m_DeclPile[g];
  }
 }
