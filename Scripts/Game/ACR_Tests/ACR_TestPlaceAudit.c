@@ -13,11 +13,11 @@ class ACR_TestPlaceAudit
  static const float HUG = 3;            // m from a wall, running along it: pointless beside something as good
  static const float ALMOST = 14;        // m between two lines' ends that nearly meet: a hole, not a gap on purpose
  // What the planner has to reach, in percent (of long pieces, or of ways in).
- static const float FLOOR_SEEING = 60;
- static const float FLOOR_BOXED = 15;
+ static const float FLOOR_SEEING = 75;
+ static const float FLOOR_BOXED = 10;
  static const float FLOOR_AWAY = 15;
- static const float FLOOR_GATES = 50;
- static const float FLOOR_GUN_GATES = 30;
+ static const float FLOOR_GATES = 85;
+ static const float FLOOR_GUN_GATES = 50;
 
  protected static int s_iNext;
  protected static int s_iTowns;
