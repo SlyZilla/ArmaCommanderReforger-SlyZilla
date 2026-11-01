@@ -61,6 +61,7 @@
 - Gunships, door gunners, rocket runs and ambushes leave FIA alone when FIA is allied to (or friendly with) their side.
 - A FOB whose HQ was destroyed during an upgrade goes away once nothing of it is standing; before, the paused upgrade kept the empty FOB on the map and no new FOB could be built within 120 m.
 - A supply delivery on its way when a FOB's HQ is destroyed is refunded (it was lost without a word), and buying at a FOB with no HQ says so instead of asking for a radio relay.
+- AI and Quick Start minefields keep their 60 m from the side's own dug-in positions and roadblocks where the road is: the spot was checked before the field was moved onto the road through it, which could bring it a few metres inside.
 
 ### Command and setup
 

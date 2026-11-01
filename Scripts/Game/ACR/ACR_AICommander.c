@@ -6104,6 +6104,15 @@ class ACR_AICommander : Managed
   string refusal = "";
   foreach (ACR_MineSite site : sites)
   {
+   // The plan snaps the field onto a road through the spot, which can bring it inside the
+   // standoff the spot passed: judge where it would really lie (Plan charges nothing).
+   ACR_MinePlan probe = ACR_Minefields.Plan(candidate, site.m_eKind, site.m_vPos, refusal);
+   if (probe && !ClearOfOwnDefences(probe.m_vSite))
+   {
+    refused++;
+    refusal = "the road through it is too near our own defences";
+    continue;
+   }
    if (!ACR_Minefields.Order(candidate, site.m_eKind, site.m_vPos, refusal))
    {
     refused++;

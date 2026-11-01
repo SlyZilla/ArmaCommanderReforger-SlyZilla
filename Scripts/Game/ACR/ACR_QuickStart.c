@@ -528,6 +528,13 @@ class ACR_QuickStart
      why = refusal;
      continue;
     }
+    // The plan snaps a field onto a road through the spot, which can bring it inside the standoff
+    // the candidate passed (57-59 m from a position or roadblock in srv:quickstart).
+    if (!ai.ClearOfOwnDefences(plan.m_vSite))
+    {
+     why = "the road through the spot is too near our own defences";
+     continue;
+    }
     ACR_Minefields.Lay(plan, 1, null);
     ACR_Minefields.Finish(plan);
     if (!plan.m_Field || plan.m_Field.m_aMines.IsEmpty()) continue;
