@@ -28,6 +28,7 @@ class ACR_DefenderPost : Managed
  int m_iMannedLine = -1;
  float m_fMannedAt;
  ref ACR_GuerrillaCell m_Cell;    // an FIA guerrilla cell (ACR_Guerrillas): its own spring and pull-back
+ ref ACR_ZombieNest m_Nest;       // a zombie nest (ACR_Outbreak): out while anyone is near them, grows back
 }
 
 class ACR_Defenders
@@ -80,6 +81,7 @@ class ACR_Defenders
     ACR_Squad.KeepSimulated(post.m_Group);
     bool stay;
     if (post.m_Cell) stay = ACR_Guerrillas.StayOut(manager, post);
+    else if (post.m_Nest) stay = ACR_Outbreak.StayOut(manager, post);
     else stay = EnemyWithin(manager, post.m_sFaction, post.m_vPos, post.m_fSpawnRange + DESPAWN_RANGE - SPAWN_RANGE);
     if (manager.m_Bases.GuardsAlive(post.m_Group) > 0 && stay)
     {
@@ -88,11 +90,14 @@ class ACR_Defenders
      if (post.m_Work) SeatLineMen(post);
      continue;
     }
+    vector where = vector.Zero;
+    if (post.m_Nest) where = ACR_Outbreak.Centre(manager, post.m_Group);
     int back = manager.m_Bases.PackUpGuards(post.m_Group);
     post.m_Group = null;
     if (!post.m_bGone) post.m_iReserve += back;
     PrintFormat("[ACR] DEFENDERS %1 packed up: %2 came back, %3 in reserve", post.m_sName, back, post.m_iReserve);
     if (post.m_Cell && !post.m_bGone) ACR_Guerrillas.PackedUp(post);
+    if (post.m_Nest && !post.m_bGone) ACR_Outbreak.PackedUp(manager, post, where);
    }
    if (post.m_bGone)
    {
@@ -100,14 +105,30 @@ class ACR_Defenders
     continue;
    }
    float range = post.m_fSpawnRange;
+   bool comeOut;
+   if (post.m_Nest)
+   {
+    comeOut = ACR_Outbreak.TickPost(manager, post);
+    if (post.m_bGone) continue; // joined another nest: removed next tick
+    range = ACR_Outbreak.Range();
+   }
    if (post.m_Cell)
    {
     if (!ACR_Guerrillas.Ready(post)) continue;
     range = ACR_Guerrillas.Range(post);
    }
-   if (post.m_iReserve <= 0 || !EnemyWithin(manager, post.m_sFaction, post.m_vPos, range, post.m_Cell != null)) continue;
-   post.m_Group = manager.m_Bases.SpawnGuards(post.m_sFaction, post.m_vPos, post.m_iReserve, post.m_sName + " defenders", post.m_fRadius);
+   if (post.m_iReserve <= 0 || (!comeOut && !EnemyWithin(manager, post.m_sFaction, post.m_vPos, range, post.m_Cell != null))) continue;
+   float spread = 8;
+   array<ResourceName> picks = null;
+   if (post.m_Nest)
+   {
+    spread = ACR_Outbreak.SPREAD;
+    picks = new array<ResourceName>();
+    ACR_Outbreak.Picks(post.m_iReserve, picks);
+   }
+   post.m_Group = manager.m_Bases.SpawnGuards(post.m_sFaction, post.m_vPos, post.m_iReserve, post.m_sName + " defenders", post.m_fRadius, spread, picks);
    if (!post.m_Group) continue;
+   if (post.m_Nest) ACR_Outbreak.NoOrders(post.m_Group);
    PrintFormat("[ACR] DEFENDERS %1 deployed: %2 soldiers", post.m_sName, post.m_iReserve);
    post.m_bOnWings = false;
    post.m_iMannedLine = -1;

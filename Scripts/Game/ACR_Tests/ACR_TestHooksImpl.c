@@ -94,6 +94,10 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrFIALeaningTest")) ACR_TestFIALeaning.Run(seconds);
   // -acrHideoutsTest: FIA hideouts (ACR_TestHideouts, #89).
   if (System.IsCLIParam("acrHideoutsTest")) ACR_TestHideouts.Run(seconds);
+  // -acrZombiesTest: zombie nests with Project Outbreak, or nothing without it (ACR_TestOutbreak, #107).
+  if (System.IsCLIParam("acrZombiesTest")) ACR_TestOutbreak.Run(seconds);
+  // -acrTvZTest: one side against the zombies (ACR_TestTvZ, #107).
+  if (System.IsCLIParam("acrTvZTest")) ACR_TestTvZ.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
   if (System.IsCLIParam("acrGenerateMapTest")) ACR_TestGenerate.RunAnyMap(seconds);
@@ -126,6 +130,19 @@ modded class ACR_TestHooks
  {
   if (System.IsCLIParam("acrQuickStartFIATest") || System.IsCLIParam("acrWorksAISoakTest")) return "many";
   if (System.IsCLIParam("acrGuerrillasTest") || System.IsCLIParam("acrInsurgencyTest") || System.IsCLIParam("acrFIALeaningTest") || System.IsCLIParam("acrHideoutsTest") || System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrForecastSoakTest") || System.IsCLIParam("acrAllocSoakTest") || System.IsCLIParam("acrAllocControlSoakTest") || System.IsCLIParam("acrLongSoakTest") || System.IsCLIParam("acrAllocControlLongSoakTest")) return "few";
+  return "";
+ }
+
+ // Only the zombie test asks for zombies (and only Outbreak worlds have any).
+ override string Zombies()
+ {
+  if (System.IsCLIParam("acrZombiesTest")) return "many";
+  return "";
+ }
+
+ override string ZombieMode()
+ {
+  if (System.IsCLIParam("acrTvZTest")) return "tvz";
   return "";
  }
 

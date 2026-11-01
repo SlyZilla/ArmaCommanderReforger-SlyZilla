@@ -25,6 +25,10 @@ class ACR_TestHooks
  string QuickStart() { return ""; }
  // FIA guerrillas a test asks for (few / many / off), "" = the host option (ACR_Guerrillas).
  string Guerrillas() { return ""; }
+ // Zombies a test asks for (few / many / off), "" = the host option (ACR_Outbreak).
+ string Zombies() { return ""; }
+ // Zombie mode a test asks for (tvtvz / tvz), "" = the host option (ACR_TvZ).
+ string ZombieMode() { return ""; }
  // AI doctrine a test asks for (ACR_AIDoctrine key), "" = the host option or random.
  string AIDoctrine(string factionKey) { return ""; }
  // Side a test's player deploys on without the deploy screen ("west" / "east"), "" = the menu.

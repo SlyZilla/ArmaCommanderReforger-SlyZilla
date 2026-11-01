@@ -187,7 +187,8 @@ class ACR_FactionSelection
    SCR_Faction faction = SCR_Faction.Cast(baseFaction);
    if (!faction) continue;
    string key = faction.GetFactionKey();
-   if (key == "CIV" || key.IsEmpty()) continue;
+   // Zombies (Project Outbreak) are a world presence, never a side (ACR_Outbreak).
+   if (key == "CIV" || key.IsEmpty() || ACR_Outbreak.IsZombies(key)) continue;
    if (!HasEntries(faction, EEntityCatalogType.CHARACTER) || !HasEntries(faction, EEntityCatalogType.GROUP)) continue;
    keys.Insert(key);
   }
@@ -286,7 +287,11 @@ class ACR_FactionSelection
  static void SyncClients()
  {
   if (!s_bApplied) return;
-  string signature = s_sWest + "," + s_sEast;
+  string west = s_sWest;
+  string east = s_sEast;
+  // TvZ: only the living side is offered (ACR_TvZ).
+  if (ACR_TvZ.On()) { west = ACR_TvZ.Living(); east = west; }
+  string signature = west + "," + east;
   array<int> ids = {};
   GetGame().GetPlayerManager().GetPlayers(ids);
   array<int> gone = {};
@@ -299,7 +304,7 @@ class ACR_FactionSelection
    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
    if (!pc) continue;
    s_PlayableSent.Set(id, signature);
-   pc.ACR_SendPlayableSides(s_sWest, s_sEast);
+   pc.ACR_SendPlayableSides(west, east);
   }
  }
 

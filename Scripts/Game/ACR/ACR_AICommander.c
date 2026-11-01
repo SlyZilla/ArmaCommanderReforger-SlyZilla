@@ -7258,7 +7258,7 @@ class ACR_AICommander : Managed
   if (now - m_fDangerSaidAt > 60000)
   {
    m_fDangerSaidAt = now;
-   Say(string.Format("[ACR] AI %1: %2 waits, FIA ambushed the road at %3", m_sFaction, crew.GetName(), ACR_Manager.Grid(road.m_vPos)));
+   Say(string.Format("[ACR] AI %1: %2 waits, %3 on the way at %4", m_sFaction, crew.GetName(), ACR_Insurgency.Label(road), ACR_Manager.Grid(road.m_vPos)));
   }
   return true;
  }
@@ -7272,6 +7272,9 @@ class ACR_AICommander : Managed
   if (ACR_Insurgency.s_aRoads.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
   array<ACR_DangerRoad> cleared = {};
+  // One zombie area cleared at a time: the dead mustn't pull the army off the war.
+  bool zombieSweep;
+  foreach (ACR_DangerRoad sweeping : ACR_Insurgency.s_aRoads) if (sweeping.m_bZombies && sweeping.m_sSide == m_sFaction && sweeping.m_Sweeper) zombieSweep = true;
   foreach (ACR_DangerRoad road : ACR_Insurgency.s_aRoads)
   {
    if (road.m_sSide != m_sFaction) continue;
@@ -7288,8 +7291,11 @@ class ACR_AICommander : Managed
     int most = 2;
     if (road.m_Hideout) most = 3;
     if (road.m_iSweeps >= most) continue;
+    // Nobody goes into a zombie town at night: the area stays marked (supply waits) until day.
+    if (road.m_bZombies && (ACR_Outbreak.Night() || zombieSweep)) continue;
     sweeper = FindSweeper(road.m_vPos);
     if (!sweeper) continue;
+    if (road.m_bZombies) zombieSweep = true;
     road.m_Sweeper = sweeper;
     road.m_fSweepSince = now;
     road.m_iSweeps++;
@@ -7298,6 +7304,7 @@ class ACR_AICommander : Managed
     Travel(sweeper, road.m_vPos, false, 0);
     string what = "the road at %1 (FIA ambush)";
     if (road.m_Hideout) what = "the FIA hideout at %1";
+    if (road.m_bZombies) what = "the zombie area at %1";
     Say(string.Format("[ACR] AI %1: %2 to clear %3", m_sFaction, sweeper.GetName(), string.Format(what, ACR_Manager.Grid(road.m_vPos))));
     continue;
    }

@@ -260,6 +260,7 @@ class ACR_BaseSystem : Managed
  {
   vector center = base.GetOrigin();
   map<string, int> inside = new map<string, int>();
+  int zombies; // inside: they block the base, never hold, take or find it (ACR_Outbreak)
   bool enemyNear, enemyInRange, enemyApproaching;
   float spawnRange = SPAWN_RANGE;
   float despawnRange = DESPAWN_RANGE;
@@ -276,6 +277,8 @@ class ACR_BaseSystem : Managed
    // FIA's ally neither fights nor takes its pockets (ACR_Insurgency).
    bool friendOfOwner = base.m_bPocket && key != base.m_sOwner && ACR_Insurgency.Friendly(key, base.m_sOwner);
    bool inWar = m_BodyInWar[i] || key == base.m_sOwner;
+   bool zombie = ACR_Outbreak.IsZombies(key);
+   if (zombie && distance <= base.m_fRadius) zombies++;
    // Survivors leaving a base they lost don't contest it (FallBack); at another base they count.
    if (distance <= base.m_fRadius && !friendOfOwner && inWar && m_BodyFled[i] != base)
    {
@@ -309,7 +312,7 @@ class ACR_BaseSystem : Managed
     if (distance <= despawnRange) enemyInRange = true;
    }
   }
-  UpdateCapture(manager, base, inside);
+  UpdateCapture(manager, base, inside, zombies);
   if (enemyApproaching && !base.m_GarrisonGroup && base.m_iGarrisonLeft > 0) ACR_Garrison.Prepare(center, GarrisonArea(base));
   UpdateGarrison(manager, base, enemyNear, enemyInRange);
   UpdatePatrol(base);
@@ -335,7 +338,9 @@ class ACR_BaseSystem : Managed
   return winner;
  }
 
- protected void UpdateCapture(ACR_Manager manager, ACR_Base base, map<string, int> inside)
+ // Zombies inside ('zombies', ACR_Outbreak) block a base: a held one is under attack and can't
+ // secure itself, an open one's capture stops; they never take it.
+ protected void UpdateCapture(ACR_Manager manager, ACR_Base base, map<string, int> inside, int zombies)
  {
   int attackers;
   if (!base.m_sOwner.IsEmpty())
@@ -344,13 +349,15 @@ class ACR_BaseSystem : Managed
    inside.Find(base.m_sOwner, defenders);
    string attacker = Strongest(inside, base.m_sOwner, attackers);
    bool wasContested = base.m_bContested;
-   base.m_bContested = attackers > 0;
+   base.m_bContested = attackers > 0 || zombies > 0;
    if (base.m_bContested && !wasContested)
     manager.NotifyFaction(base.m_sOwner, string.Format("%1 is under attack", base.m_sName));
    float change = 1; // secure again over time when no attackers are inside
    if (attackers > 0) change = Math.Clamp((defenders - attackers) * CAPTURE_RATE, -CAPTURE_MAX_STEP, CAPTURE_MAX_STEP);
+   else if (zombies > 0) change = 0;
    base.m_fScore = Math.Clamp(base.m_fScore + change, -100, 100);
    if (base.m_fScore <= -100) Capture(manager, base, attacker);
+   else if (ACR_TvZ.Overrun(base, zombies, defenders + attackers)) Overrun(manager, base, zombies);
    return;
   }
   // Neutral base: whoever holds it longest takes it.
@@ -363,9 +370,10 @@ class ACR_BaseSystem : Managed
    holders = attackers;
    Strongest(inside, challenger, attackers);
   }
-  base.m_bContested = holders > 0 && attackers > 0;
+  base.m_bContested = holders > 0 && (attackers > 0 || zombies > 0);
   float step = -1;
   if (holders > 0 || attackers > 0) step = Math.Clamp((holders - attackers) * CAPTURE_RATE, -CAPTURE_MAX_STEP, CAPTURE_MAX_STEP);
+  if (zombies > 0 && step > 0) step = 0;
   base.m_fScore = Math.Clamp(base.m_fScore + step, 0, 100);
   if (base.m_fScore <= 0) base.m_sCapturer = "";
   if (base.m_fScore >= 100 && !base.m_sCapturer.IsEmpty()) Capture(manager, base, base.m_sCapturer);
@@ -400,6 +408,25 @@ class ACR_BaseSystem : Managed
   ACR_DoctrineIntel.OnCapture(manager, factionKey, previous);
   manager.NotifyFaction(factionKey, string.Format("%1 captured", base.m_sName));
   if (!previous.IsEmpty()) manager.NotifyFaction(previous, string.Format("%1 lost", base.m_sName));
+ }
+
+ // TvZ (ACR_TvZ): zombies alone inside a held base long enough take it back. It goes open (no
+ // garrison left: they were killed), and the zombies that took it settle in as a nest.
+ protected void Overrun(ACR_Manager manager, ACR_Base base, int zombies)
+ {
+  string previous = base.m_sOwner;
+  DespawnGarrison(base, false);
+  DespawnPatrol(base, false);
+  base.m_sOwner = "";
+  base.m_sCapturer = "";
+  base.m_fScore = 0;
+  base.m_bContested = false;
+  base.m_iGarrisonLeft = 0;
+  if (manager.m_Structures) manager.m_Structures.UpdateHousing(base);
+  PrintFormat("[ACR] Base overrun: %1 by zombies (was %2)", base.m_sName, previous);
+  ACR_Report.OnCapture(base.m_sName, "", previous);
+  manager.NotifyFaction(previous, string.Format("%1 overrun by zombies", base.m_sName));
+  ACR_TvZ.Fallen(base, zombies);
  }
 
  // ================================================================ garrisons
@@ -953,8 +980,9 @@ class ACR_BaseSystem : Managed
  // ================================================================ defenders (ACR_Defenders)
 
  // Defenders of a built position outside any base: count soldiers from the faction's garrison
- // pool round center, defending it within radius. Like a garrison, never a squad.
- SCR_AIGroup SpawnGuards(string faction, vector center, int count, string name, float radius)
+ // pool round center (within spread), defending it within radius. Like a garrison, never a squad.
+ // 'picks': who exactly, by index (zombie nests, ACR_Outbreak.Picks); otherwise random from the pool.
+ SCR_AIGroup SpawnGuards(string faction, vector center, int count, string name, float radius, float spread = 8, array<ResourceName> picks = null)
  {
   ACR_FactionData data = GetFaction(faction);
   if (!data || data.m_aGarrison.IsEmpty() || count <= 0) return null;
@@ -970,8 +998,10 @@ class ACR_BaseSystem : Managed
   IEntity navAgent = ACR_Garrison.AnyAgent();
   for (int i = 0; i < count; i++)
   {
-   vector spot = SoldierSpot(center, 8, navAgent);
-   IEntity soldier = ACR_Manager.SpawnPrefab(PickGarrisonSoldier(faction, data.m_aGarrison), spot);
+   vector spot = SoldierSpot(center, spread, navAgent);
+   ResourceName prefab = PickGarrisonSoldier(faction, data.m_aGarrison);
+   if (picks && i < picks.Count()) prefab = picks[i];
+   IEntity soldier = ACR_Manager.SpawnPrefab(prefab, spot);
    if (!soldier) continue;
    if (!group.AddAIEntityToGroup(soldier))
    {

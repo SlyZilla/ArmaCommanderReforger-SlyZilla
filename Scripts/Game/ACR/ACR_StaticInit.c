@@ -49,7 +49,9 @@ class ACR_StaticInit
   ACR_MapLayers.ACR_InitStatics();
   ACR_Minefields.ACR_InitStatics();
   ACR_Mortars.ACR_InitStatics();
+  ACR_NestDressing.ACR_InitStatics();
   ACR_Options.ACR_InitStatics();
+  ACR_Outbreak.ACR_InitStatics();
   ACR_OrganEasterEgg.ACR_InitStatics();
   ACR_PanelMover.ACR_InitStatics();
   ACR_Perf.ACR_InitStatics();
