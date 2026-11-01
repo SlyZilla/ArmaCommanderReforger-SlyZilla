@@ -42,6 +42,8 @@ enum ACR_EPanelAction
  QRF,
  KEY_HINTS,
  BUILD_FOLD,
+ UPGRADES_FOLD,
+ MORE_FOLD,
  DEBUG_TOGGLE = 50,
  DEBUG_THINK,             // the AC:A Think card (ACR_Think)
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
@@ -80,6 +82,10 @@ class ACR_CommandPanel : Managed
  protected static const ResourceName LAYOUT_TEXT = "{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout";
  protected static const ResourceName LAYOUT_HEADING = "{0D7FF083FDE39877}UI/layouts/WidgetLibrary/TextWidgets/Text_Heading4.layout";
  protected static const float WIDTH = 340;
+ protected static const float REQUISITION_HEIGHT = 340;
+ protected static const float SUPPORT_HEIGHT = 300;
+ protected static const float LIST_MIN_HEIGHT = 160; // an open list gives way to here before the panel scrolls
+ protected static const float SCREEN_GAP = 8;        // what the panel keeps from the screen's top and bottom
 
  Widget m_Root;
  protected Widget m_FeedRoot;
@@ -87,6 +93,11 @@ class ACR_CommandPanel : Managed
  protected ref array<TextWidget> m_FeedLines = {};
  protected string m_sFeedShown = "-";
  protected Widget m_Content;
+ protected SizeLayoutWidget m_BodyBox;
+ protected ScrollLayoutWidget m_BodyScroll;
+ protected SizeLayoutWidget m_BodyMark;
+ protected SCR_ButtonTextComponent m_MoreButton;
+ protected Widget m_MoreSection;
  protected TextWidget m_Status;
  protected TextWidget m_ReinforceFeedback;
  protected TextWidget m_Economy;
@@ -113,12 +124,14 @@ class ACR_CommandPanel : Managed
  protected Widget m_SquadAIWidget;
  protected SCR_ButtonTextComponent m_FobBuildButton;
  protected Widget m_FobUpgradesLayout;
+ protected SCR_ButtonTextComponent m_FobUpgradesFold;
+ protected Widget m_FobUpgradesBox;
  protected ref array<SCR_ButtonTextComponent> m_aFobUpgradeButtons = {};
  protected ref array<Widget> m_aFobUpgradeWidgets = {};
  protected SCR_ButtonTextComponent m_RequisitionButton;
  protected Widget m_RequisitionWidget;
  protected Widget m_RequisitionSection;
- protected Widget m_RequisitionBox;
+ protected SizeLayoutWidget m_RequisitionBox;
  protected ref array<SCR_ButtonTextComponent> m_EntryButtons = {};
  protected SCR_ButtonTextComponent m_SupportButton;
  protected SCR_ButtonTextComponent m_ReportButton;
@@ -126,7 +139,7 @@ class ACR_CommandPanel : Managed
  protected TextWidget m_ReportText;
  protected Widget m_SupportWidget;
  protected Widget m_SupportSection;
- protected Widget m_SupportBox;
+ protected SizeLayoutWidget m_SupportBox;
  protected ref array<SCR_ButtonTextComponent> m_SupportButtons = {};
  protected SCR_ButtonTextComponent m_GetInButton;
  protected SCR_ButtonTextComponent m_LZButton;
@@ -178,22 +191,25 @@ class ACR_CommandPanel : Managed
   size.EnableWidthOverride(true);
   size.SetWidthOverride(PanelWidth());
   AlignableSlot.SetPadding(size, 14, 12, 14, 16);
-  m_Content = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
+  Widget frame = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
+  AlignableSlot.SetHorizontalAlign(frame, LayoutHorizontalAlign.Stretch);
 
-  AddHeading(m_Content, "AC: ACTUAL");
-  m_Economy = AddText(m_Content, LAYOUT_TEXT, "");
-  m_Status = AddText(m_Content, LAYOUT_TEXT, "");
-  m_ReinforceFeedback = AddText(m_Content, LAYOUT_TEXT, "");
+  // The head stays put; everything under it goes in the body, which scrolls if it can't fit (FitBody).
+  AddHeading(frame, "AC: ACTUAL");
+  m_Economy = AddText(frame, LAYOUT_TEXT, "");
+  m_Status = AddText(frame, LAYOUT_TEXT, "");
+  m_ReinforceFeedback = AddText(frame, LAYOUT_TEXT, "");
   if (m_ReinforceFeedback) m_ReinforceFeedback.SetVisible(false);
-  m_Roster = AddText(m_Content, LAYOUT_TEXT, "");
+  m_Roster = AddText(frame, LAYOUT_TEXT, "");
   if (m_Roster) m_Roster.SetVisible(false);
+  CreateBody(frame);
   m_CommandButton = AddButton(m_Content, "Take command", ACR_EPanelAction.TOGGLE_COMMAND);
   m_RequisitionButton = AddButton(m_Content, "Requisition", ACR_EPanelAction.TOGGLE_REQUISITION);
   m_RequisitionWidget = m_LastButtonWidget;
   // Long buy lists scroll inside a fixed-height box.
   SizeLayoutWidget listBox = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content));
   listBox.EnableHeightOverride(true);
-  listBox.SetHeightOverride(340);
+  listBox.SetHeightOverride(REQUISITION_HEIGHT);
   AlignableSlot.SetPadding(listBox, 0, 6, 0, 0);
   m_RequisitionBox = listBox;
   // Clip, or the buttons of a long list draw over the whole panel.
@@ -204,20 +220,24 @@ class ACR_CommandPanel : Managed
   m_SupportWidget = m_LastButtonWidget;
   SizeLayoutWidget supportBox = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content));
   supportBox.EnableHeightOverride(true);
-  supportBox.SetHeightOverride(300);
+  supportBox.SetHeightOverride(SUPPORT_HEIGHT);
   AlignableSlot.SetPadding(supportBox, 0, 6, 0, 0);
   m_SupportBox = supportBox;
   Widget supportScroll = ws.CreateWidget(WidgetType.ScrollLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.CLIPCHILDREN, Color.FromInt(Color.WHITE), 0, supportBox);
   m_SupportSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, supportScroll);
 
+  // What isn't needed to run the fight folds away under one button.
+  m_MoreButton = AddButton(m_Content, "", ACR_EPanelAction.MORE_FOLD);
+  m_MoreSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   // After-action report (ACR_Report): everyone on the side can open it.
-  m_ReportButton = AddButton(m_Content, "Report", ACR_EPanelAction.TOGGLE_REPORT);
-  m_ReportText = AddText(m_Content, LAYOUT_TEXT, "");
+  m_ReportButton = AddButton(m_MoreSection, "Report", ACR_EPanelAction.TOGGLE_REPORT);
+  m_ReportText = AddText(m_MoreSection, LAYOUT_TEXT, "");
   if (m_ReportText) { m_ReportText.SetVisible(false); AlignableSlot.SetPadding(m_ReportText, 0, 4, 0, 4); }
-  m_RTSCameraButton = AddButton(m_Content, "3D Camera  [F10]", ACR_EPanelAction.TOGGLE_RTS_CAMERA);
-  m_KeyHintsButton = AddButton(m_Content, "", ACR_EPanelAction.KEY_HINTS);
+  m_RTSCameraButton = AddButton(m_MoreSection, "3D Camera  [F10]", ACR_EPanelAction.TOGGLE_RTS_CAMERA);
+  m_KeyHintsButton = AddButton(m_MoreSection, "", ACR_EPanelAction.KEY_HINTS);
   RefreshKeyHints();
-  AddExtraRows(m_Content);
+  AddExtraRows(m_MoreSection);
+  RefreshMore();
 
   m_GroupSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
@@ -228,11 +248,15 @@ class ACR_CommandPanel : Managed
   m_FobBuildButton = AddButton(m_FobSection, "Build at FOB (stand inside its circle)", ACR_EPanelAction.FOB_BUILD);
   m_FobAIButton = AddButton(m_FobSection, "AI manages this FOB: off", ACR_EPanelAction.FOB_AI);
   m_FobUpgradesLayout = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_FobSection);
-  AddText(m_FobUpgradesLayout, LAYOUT_TEXT, "FOB Upgrades");
+  // The eight upgrades fold away (all open the panel ran off the screen, a playtester's report). The
+  // defences are one button that says what it is, so they stay out.
+  m_FobUpgradesFold = AddButton(m_FobUpgradesLayout, "FOB Upgrades", ACR_EPanelAction.UPGRADES_FOLD);
+  m_FobUpgradesBox = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_FobUpgradesLayout);
   for (int s = 0; s < ACR_FobSlots.UPGRADE_COUNT; s++)
   {
-   if (s == ACR_FobSlots.SLOT_DEFENCES) AddText(m_FobUpgradesLayout, LAYOUT_TEXT, "FOB Defences");
-   SCR_ButtonTextComponent upgradeBtn = AddButton(m_FobUpgradesLayout, ACR_FobSlots.SlotName(s), ACR_EPanelAction.FOB_UPGRADE + s);
+   Widget slotParent = m_FobUpgradesBox;
+   if (s == ACR_FobSlots.SLOT_DEFENCES) slotParent = m_FobUpgradesLayout;
+   SCR_ButtonTextComponent upgradeBtn = AddButton(slotParent, ACR_FobSlots.SlotName(s), ACR_EPanelAction.FOB_UPGRADE + s);
    m_aFobUpgradeButtons.Insert(upgradeBtn);
    m_aFobUpgradeWidgets.Insert(m_LastButtonWidget);
   }
@@ -302,6 +326,99 @@ class ACR_CommandPanel : Managed
   CreateDebug(parent);
   CreateNote(parent);
   RegisterPanels();
+ }
+
+ // The panel's rows below its head (m_Content): in a box as tall as they are, as far as the screen lets
+ // it. A mark on the panel's edge shows how far down it is when it scrolls.
+ protected void CreateBody(Widget parent)
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  m_BodyBox = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, parent));
+  m_BodyBox.EnableHeightOverride(true);
+  m_BodyBox.SetHeightOverride(400);
+  AlignableSlot.SetHorizontalAlign(m_BodyBox, LayoutHorizontalAlign.Stretch);
+  m_BodyScroll = ScrollLayoutWidget.Cast(ws.CreateWidget(WidgetType.ScrollLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.CLIPCHILDREN, Color.FromInt(Color.WHITE), 0, m_BodyBox));
+  AlignableSlot.SetHorizontalAlign(m_BodyScroll, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(m_BodyScroll, LayoutVerticalAlign.Stretch);
+  // A scroll layout gives its child any width, and centres a short one.
+  SizeLayoutWidget width = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_BodyScroll));
+  width.EnableWidthOverride(true);
+  width.SetWidthOverride(PanelWidth());
+  AlignableSlot.SetVerticalAlign(width, LayoutVerticalAlign.Top);
+  m_Content = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, width);
+  AlignableSlot.SetHorizontalAlign(m_Content, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(m_Content, LayoutVerticalAlign.Top);
+
+  m_BodyMark = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 6, m_Root));
+  m_BodyMark.EnableWidthOverride(true);
+  m_BodyMark.SetWidthOverride(4);
+  m_BodyMark.EnableHeightOverride(true);
+  AlignableSlot.SetHorizontalAlign(m_BodyMark, LayoutHorizontalAlign.Right);
+  AlignableSlot.SetVerticalAlign(m_BodyMark, LayoutVerticalAlign.Top);
+  Widget mark = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(1, 1, 1, 0.5), 0, m_BodyMark);
+  AlignableSlot.SetHorizontalAlign(mark, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(mark, LayoutVerticalAlign.Stretch);
+ }
+
+ // Every frame: the panel is never taller than the screen. A list that's open gives way first, as it
+ // scrolls by itself; then the body scrolls.
+ protected void FitBody()
+ {
+  if (!m_BodyBox || !m_Root || !m_Root.IsVisible()) return;
+  RefreshMore();
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float width, rootHeight, boxHeight, content;
+  m_Root.GetScreenSize(width, rootHeight);
+  m_BodyBox.GetScreenSize(width, boxHeight);
+  m_Content.GetScreenSize(width, content);
+  // Not laid out yet.
+  if (content <= 0) return;
+  rootHeight = ws.DPIUnscale(rootHeight);
+  boxHeight = ws.DPIUnscale(boxHeight);
+  content = ws.DPIUnscale(content);
+  float room = Math.Max(ws.DPIUnscale(ws.GetHeight()) - 2 * SCREEN_GAP - (rootHeight - boxHeight), LIST_MIN_HEIGHT);
+  content = FitList(m_RequisitionBox, REQUISITION_HEIGHT, content, room);
+  content = FitList(m_SupportBox, SUPPORT_HEIGHT, content, room);
+  float height = Math.Min(content, room);
+  if (Math.AbsFloat(height - boxHeight) >= 1) m_BodyBox.SetHeightOverride(height);
+  PlaceBodyMark(height, content);
+ }
+
+ // How tall the rows are with this list's box at its height for this much room.
+ protected float FitList(SizeLayoutWidget box, float full, float content, float room)
+ {
+  if (!box || !box.IsVisibleInHierarchy()) return content;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float width, now;
+  box.GetScreenSize(width, now);
+  now = ws.DPIUnscale(now);
+  float wanted = Math.Clamp(room - (content - now), LIST_MIN_HEIGHT, full);
+  if (Math.AbsFloat(wanted - now) >= 1) box.SetHeightOverride(wanted);
+  return content - now + wanted;
+ }
+
+ protected void PlaceBodyMark(float height, float content)
+ {
+  if (!m_BodyMark || !m_BodyScroll) return;
+  bool scrolls = content > height + 1;
+  m_BodyMark.SetVisible(scrolls);
+  if (!scrolls) return;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float rootX, rootY, boxX, boxY, sliderX, sliderY;
+  m_Root.GetScreenPos(rootX, rootY);
+  m_BodyBox.GetScreenPos(boxX, boxY);
+  m_BodyScroll.GetSliderPos(sliderX, sliderY);
+  float markHeight = Math.Max(height * height / content, 24);
+  m_BodyMark.SetHeightOverride(markHeight);
+  AlignableSlot.SetPadding(m_BodyMark, 0, ws.DPIUnscale(boxY - rootY) + sliderY * (height - markHeight), 5, 0);
+ }
+
+ protected void RefreshMore()
+ {
+  if (m_MoreSection) m_MoreSection.SetVisible(ACR_UiPrefs.s_bMoreOpen);
+  if (!m_MoreButton) return;
+  if (ACR_UiPrefs.s_bMoreOpen) m_MoreButton.SetText("More  [hide]");
+  else m_MoreButton.SetText("More");
  }
 
  // What an armed order does, in a box of its own beside the panel. At the panel's foot it ran off the
@@ -622,6 +739,18 @@ class ACR_CommandPanel : Managed
   ACR_UiPrefs.Save();
  }
 
+ void ToggleUpgradesFold()
+ {
+  ACR_UiPrefs.s_bUpgradesOpen = !ACR_UiPrefs.s_bUpgradesOpen;
+  ACR_UiPrefs.Save();
+ }
+
+ void ToggleMoreFold()
+ {
+  ACR_UiPrefs.s_bMoreOpen = !ACR_UiPrefs.s_bMoreOpen;
+  ACR_UiPrefs.Save();
+ }
+
  // Open while one of its orders is armed (its button shows that, and its second click cancels). The
  // fold button only shows when the squad can build something.
  protected void RefreshBuildFold(int cursorMode)
@@ -721,6 +850,7 @@ class ACR_CommandPanel : Managed
  {
   ACR_PanelMover.FitTitleBar(ACR_UiPrefs.PANEL, m_Economy);
   ACR_PanelMover.FitTitleBar(ACR_UiPrefs.FEED, FirstFeedLine());
+  FitBody();
   ACR_PanelMover.Tick();
   PlaceNote();
  }
@@ -1016,13 +1146,40 @@ class ACR_CommandPanel : Managed
   m_GroupDetail.SetText(detail);
   if (m_SwitchWidget) m_SwitchWidget.SetVisible(false);
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
+  if (m_SquadAIWidget) m_SquadAIWidget.SetVisible(false);
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
   if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(false);
   if (m_MinesWidget) m_MinesWidget.SetVisible(false);
   if (m_FortifyWidget) m_FortifyWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
   SetNote("");
-  if (m_Hint) m_Hint.SetText("");
+  if (m_Hint) m_Hint.SetVisible(false);
+ }
+
+ // A FOB's words without its built upgrades: their buttons say so (ACR_FobSlots.Describe). What is
+ // being built and what is blocked, and why, are only said here.
+ static string FobDetail(string detail)
+ {
+  if (!detail.Contains("\nUpgrades:")) return detail;
+  array<string> lines = {};
+  detail.Split("\n", lines, false);
+  string kept = "";
+  string heading = "";
+  bool upgrades = false;
+  foreach (string line : lines)
+  {
+   if (line == "Upgrades:")
+   {
+    upgrades = true;
+    heading = line + "\n";
+    continue;
+   }
+   if (upgrades && line.Contains(" (built)")) continue;
+   if (!kept.IsEmpty()) kept += "\n";
+   kept += heading + line;
+   heading = "";
+  }
+  return kept;
  }
 
  // "AI manages this FOB" (ACR_FobAI): on or off; only the commander can change it.
@@ -1061,6 +1218,9 @@ class ACR_CommandPanel : Managed
    }
   }
 
+  int slots = 0;
+  int builtSlots = 0;
+  int buildingPct = -1;
   for (int i = 0; i < m_aFobUpgradeButtons.Count(); i++)
   {
    SCR_ButtonTextComponent btn = m_aFobUpgradeButtons[i];
@@ -1071,6 +1231,12 @@ class ACR_CommandPanel : Managed
     continue;
    }
    int state = slotStates[i];
+   if (i < ACR_FobSlots.SLOT_DEFENCES)
+   {
+    slots++;
+    if (ACR_FobSlots.FeedBuilt(state, tier, nextBlocked)) builtSlots++;
+    else if (ACR_FobSlots.FeedBuilding(state, tier, pct)) buildingPct = pct;
+   }
    string label;
    bool enabled = false;
    if (ACR_FobSlots.FeedBuilt(state, tier, nextBlocked))
@@ -1107,6 +1273,12 @@ class ACR_CommandPanel : Managed
    btn.SetText(label);
    btn.SetEnabled(enabled, false);
   }
+  if (m_FobUpgradesBox) m_FobUpgradesBox.SetVisible(ACR_UiPrefs.s_bUpgradesOpen);
+  if (!m_FobUpgradesFold) return;
+  string fold = string.Format("FOB Upgrades  %1/%2", builtSlots, slots);
+  if (buildingPct >= 0) fold += string.Format("  (%1%%)", buildingPct);
+  if (ACR_UiPrefs.s_bUpgradesOpen) fold += "  [hide]";
+  m_FobUpgradesFold.SetText(fold);
  }
 
  void SetEstablishFob(bool visible)

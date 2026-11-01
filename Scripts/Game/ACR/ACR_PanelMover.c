@@ -295,16 +295,26 @@ class ACR_PanelMover
  }
 
  // ---------------------------------------------------------------- the drag
- // A button, a text box or a scrolling list under the cursor.
+ // A button, a text box or a list with more than fits under the cursor (the ACA panel's body is a
+ // scroll layout that seldom needs to scroll: its face still holds the panel).
  static bool OverControl()
  {
   Widget widget = WidgetManager.GetWidgetUnderCursor();
   while (widget)
   {
-   if (ButtonWidget.Cast(widget) || EditBoxWidget.Cast(widget) || ScrollLayoutWidget.Cast(widget)) return true;
+   if (ButtonWidget.Cast(widget) || EditBoxWidget.Cast(widget) || Scrolls(widget)) return true;
    widget = widget.GetParent();
   }
   return false;
+ }
+
+ protected static bool Scrolls(Widget widget)
+ {
+  if (!ScrollLayoutWidget.Cast(widget) || !widget.GetChildren()) return false;
+  float width, height, contentHeight;
+  widget.GetScreenSize(width, height);
+  widget.GetChildren().GetScreenSize(width, contentHeight);
+  return contentHeight > height + 1;
  }
 
  static bool DragStart(string id)

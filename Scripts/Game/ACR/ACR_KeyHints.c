@@ -26,6 +26,8 @@ class ACR_UiPrefs
  protected static string s_sFile = PREFS;
  static bool s_bKeyHints = true;
  static bool s_bBuildOpen;              // the ACA panel's build orders are unfolded
+ static bool s_bUpgradesOpen;           // its FOB upgrades
+ static bool s_bMoreOpen;               // its report, 3D camera, key reminders and UI size
  protected static bool s_bRead;
 
  static bool Moved(string id) { return s_Spots.Contains(id); }
@@ -61,6 +63,8 @@ class ACR_UiPrefs
    if (line == "keys=0") s_bKeyHints = false;
    if (line == "keys=1") s_bKeyHints = true;
    if (line == "build=1") s_bBuildOpen = true;
+   if (line == "upgrades=1") s_bUpgradesOpen = true;
+   if (line == "more=1") s_bMoreOpen = true;
    if (line.StartsWith("panelx=")) oldPanelX = line.Substring(7, line.Length() - 7).ToFloat();
    if (line.StartsWith("panely=")) oldPanelY = line.Substring(7, line.Length() - 7).ToFloat();
    if (line.StartsWith("feedx=")) oldFeedX = line.Substring(6, line.Length() - 6).ToFloat();
@@ -91,6 +95,8 @@ class ACR_UiPrefs
   if (s_bKeyHints) file.WriteLine("keys=1");
   else file.WriteLine("keys=0");
   if (s_bBuildOpen) file.WriteLine("build=1");
+  if (s_bUpgradesOpen) file.WriteLine("upgrades=1");
+  if (s_bMoreOpen) file.WriteLine("more=1");
   foreach (string id, vector spot : s_Spots)
   {
    float x = spot[0];
@@ -173,6 +179,8 @@ class ACR_UiPrefs
   s_Spots.Clear();
   s_bKeyHints = true;
   s_bBuildOpen = false;
+  s_bUpgradesOpen = false;
+  s_bMoreOpen = false;
   s_bRead = false;
  }
 
