@@ -656,7 +656,7 @@ class ACR_Guerrillas
    {
     vector candidate = ACR_Manager.Ground(road + side * (s * (width * 0.5 + o)));
     if (BBB_Terrain.IsWaterAt(candidate) || ACR_Minefields.RoadClearance(candidate) < HIDE_CLEAR) continue;
-    if (!ACR_Ambush.SeesKillZone(candidate, road)) continue;
+    if (ACR_BaseSystem.Covered(candidate) || !ACR_Ambush.SeesKillZone(candidate, road)) continue;
     float score = ACR_Ambush.Cover(candidate) + ACR_Ambush.Height(candidate, road) - Math.AbsFloat(o - 20) * 0.05;
     if (score <= bestScore) continue;
     bestScore = score;
@@ -712,11 +712,12 @@ class ACR_Guerrillas
    IEntity man = agent.GetControlledEntity();
    if (!man) continue;
    float along = (i - (agents.Count() - 1) * 0.5) * ACR_Ambush.SPACING;
-   // Out from the road until clear of it (a bend can bring another stretch close).
+   // Out from the road until clear of it (a bend can bring another stretch close) and of what stands
+   // on the ground (playtest pn20: men lay inside a bunker's mound). None clear: he stays where he spawned.
    for (int step = 0; step < 4; step++)
    {
     vector spot = ACR_Manager.Ground(cell.m_vKillZone + cell.m_vRoadDir * along + across * (off + step * 6));
-    if (BBB_Terrain.IsWaterAt(spot) || ACR_Minefields.RoadClearance(spot) < HIDE_CLEAR - 4) continue;
+    if (BBB_Terrain.IsWaterAt(spot) || ACR_Minefields.RoadClearance(spot) < HIDE_CLEAR - 4 || ACR_BaseSystem.Covered(spot)) continue;
     man.SetOrigin(spot);
     break;
    }
@@ -893,6 +894,11 @@ class ACR_Guerrillas
   if (utility && utility.GetCombatModeExternal() != mode) utility.SetCombatMode(mode);
  }
 
+ protected static void DeleteWaypointLater(AIWaypoint waypoint)
+ {
+  if (waypoint) SCR_EntityHelper.DeleteEntityAndChildren(waypoint);
+ }
+
  // The group's waypoints replaced by one.
  static void Order(SCR_AIGroup group, ResourceName prefab, vector at, float radius, bool fastInit)
  {
@@ -901,7 +907,9 @@ class ACR_Guerrillas
   foreach (AIWaypoint waypoint : old)
   {
    group.RemoveWaypoint(waypoint);
-   SCR_EntityHelper.DeleteEntityAndChildren(waypoint);
+   // A moment later, as ACR_Squad.DeleteWaypointSoon: a running Defend still reads it this frame
+   // ("Defend Waypoint not provided to the node!").
+   GetGame().GetCallqueue().CallLater(DeleteWaypointLater, ACR_Squad.WAYPOINT_DELETE_DELAY_MS, false, waypoint);
   }
   EntitySpawnParams params = new EntitySpawnParams();
   params.TransformMode = ETransformMode.WORLD;

@@ -75,6 +75,31 @@ function Find-SteamApp([string]$folder, [string]$exe) {
   return $null
 }
 
+# Where downloaded mods (faction mods, ACE, the expansion packs' and map add-ons' Workshop
+# dependencies) live: $env:ACR_MODS_DIR if set, the game's own Workshop folder
+# (Documents\My Games\ArmaReforger\addons) and E:\ArmaReforgerMods\addons (the maintainer's).
+# Every one that holds mods is appended: a Workshop folder with only 'saves' in it used to end
+# the search, so a PC with its mods on E: launched without them.
+function Add-ModAddons([string]$addonsDir) {
+  $candidates = @()
+  if ($env:ACR_MODS_DIR) { $candidates += $env:ACR_MODS_DIR }
+  $docs = [Environment]::GetFolderPath('MyDocuments')
+  if ($docs) { $candidates += (Join-Path $docs 'My Games\ArmaReforger\addons') }
+  $candidates += 'E:\ArmaReforgerMods\addons'
+  $found = $false
+  foreach ($dir in $candidates) {
+    if (!(Test-Path -LiteralPath $dir)) { continue }
+    $mod = Get-ChildItem -LiteralPath $dir -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match '_[0-9A-Fa-f]{16}$' -or (Test-Path -LiteralPath (Join-Path $_.FullName 'addon.gproj')) } | Select-Object -First 1
+    if (!$mod) { continue }
+    $found = $true
+    if (($addonsDir.Split(',') | ForEach-Object { $_.TrimEnd('\') }) -contains $dir.TrimEnd('\')) { continue }
+    $addonsDir += ',' + $dir
+  }
+  if (!$found) { Write-Host 'Mods folder not found (set ACR_MODS_DIR to it); starting without it.' -ForegroundColor Yellow }
+  return $addonsDir
+}
+
 # All-in-One Command Menu (separate mod, 629405AEFC950C12): when its Workshop copy is
 # downloaded on this PC, play/host/join load it too, no option needed. Only its own folder goes
 # FIRST in -addonsDir, so its Workshop copy wins without exposing Workshop ACA/BBB copies

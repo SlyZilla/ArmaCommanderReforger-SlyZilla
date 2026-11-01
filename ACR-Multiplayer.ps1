@@ -46,7 +46,7 @@ try {
     $started = Get-Date
     $setup = Show-HostSetup
     $addonsDir = $addonsPath
-    if ($setup.Factions -ne 'vanilla' -or $setup.ACE -eq 'yes') { $addonsDir += ',E:\ArmaReforgerMods\addons' } # faction mods and ACE both live there
+    if ($setup.NeedsMods) { $addonsDir = Add-ModAddons $addonsDir } # faction mods, ACE, expansion packs, map add-ons
     $withAio = Add-AIOCommandMenu $addonsDir $setup.Addons
     $mod = '-addonsDir "' + $withAio[0] + '" -addons ' + $withAio[1]
     $zt = Connect-ZeroTier
@@ -102,10 +102,10 @@ try {
   else {
     $joinSetup = Show-JoinModSetup
     $addonsDir = $addonsPath
-    if ($joinSetup.Factions -ne 'vanilla' -or $joinSetup.ACE -eq 'yes') { $addonsDir += ',E:\ArmaReforgerMods\addons' } # faction mods and ACE both live there
+    if ($joinSetup.NeedsMods) { $addonsDir = Add-ModAddons $addonsDir } # faction mods, ACE, expansion packs, map add-ons
     $withAio = Add-AIOCommandMenu $addonsDir $joinSetup.Addons
     $mod = '-addonsDir "' + $withAio[0] + '" -addons ' + $withAio[1]
-    Write-Host ('Selected ' + $joinSetup.Factions + ' and ACE=' + $joinSetup.ACE + '. Match both selections to the host or the server will reject the connection.') -ForegroundColor Yellow
+    Write-Host ('Selected ' + $joinSetup.Factions + ', ACE=' + $joinSetup.ACE + ', expansion=' + $joinSetup.Pack + '. Match these to the host or the server will reject the connection.') -ForegroundColor Yellow
     $zt = Connect-ZeroTier
     # Ask until we get something that looks like an address (an IP like 26.12.34.56,
     # or a name with a dot), remembering the last one used.

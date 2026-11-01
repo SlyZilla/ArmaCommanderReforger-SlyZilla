@@ -1413,8 +1413,12 @@ class ACR_RTSCameraManager : Managed
 					if (mine && data.m_BaseOwners[bIdx] == mine.GetFactionKey()) owner = "Ours";
 				}
 				int sup = 0;
-				if (bIdx < data.m_BaseSupply.Count()) sup = data.m_BaseSupply[bIdx];
-				detail = string.Format("%1  ·  supplies %2", owner, sup);
+				// m_BaseSupply holds 3 + UPGRADE_COUNT numbers per base (ACR_MapFeed); stock first, -1 = no FOB.
+				int supplyOffset = bIdx * (3 + ACR_FobSlots.UPGRADE_COUNT);
+				if (supplyOffset < data.m_BaseSupply.Count()) sup = data.m_BaseSupply[supplyOffset];
+				string supplies = sup.ToString();
+				if (sup < 0) supplies = "none";
+				detail = string.Format("%1  ·  supplies %2", owner, supplies);
 			}
 			m_SquadText.SetText(bName);
 			m_SquadDetailText.SetText(detail);

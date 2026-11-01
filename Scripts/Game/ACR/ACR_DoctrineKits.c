@@ -560,6 +560,13 @@ class ACR_DoctrineKits
   s_Given.Remove(faction);
  }
 
+ // Per match (ACR_Manager.Stop): a kit still waiting for its side's starting squads stops waiting.
+ static void Reset()
+ {
+  if (GetGame()) GetGame().GetCallqueue().Remove(WaitTick);
+  ResetForTest();
+ }
+
  static void ResetForTest()
  {
   s_Sides.Clear();

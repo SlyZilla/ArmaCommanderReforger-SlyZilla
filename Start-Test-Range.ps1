@@ -35,7 +35,7 @@ try {
  $addonList = 'AC230926A0010001'
  if ($setup) {
   $addonList = $setup.Addons
-  if ($setup.Factions -ne 'vanilla' -or $setup.ACE -eq 'yes') { $addonsDir += ',E:\ArmaReforgerMods\addons' } # faction mods and ACE both live there
+  if ($setup.NeedsMods) { $addonsDir = Add-ModAddons $addonsDir } # faction mods, ACE, expansion packs, map add-ons
  }
  if (!$TestProfile) {
   . (Join-Path $PSScriptRoot 'ACR-Find.ps1')

@@ -90,7 +90,8 @@ class ACR_Report
   IEntity killer;
   if (instigator) killer = instigator.GetInstigatorEntity();
   string by = ACR_Intel.FactionKeyOf(killer);
-  if (!by.IsEmpty() && by != side) { ACR_SideStats won = Of(by); if (won) won.m_iVehicleKills++; }
+  // An empty vehicle has no side: a wreck, a civilian car or one's own abandoned truck isn't a kill.
+  if (!by.IsEmpty() && !side.IsEmpty() && by != side) { ACR_SideStats won = Of(by); if (won) won.m_iVehicleKills++; }
   string name = "vehicle";
   if (vehicle && vehicle.GetPrefabData()) name = FilePath.StripExtension(FilePath.StripPath(vehicle.GetPrefabData().GetPrefabName()));
   if (!side.IsEmpty()) Event(side, "lost a " + name);

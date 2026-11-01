@@ -552,7 +552,7 @@ class ACR_Setup
   if (key == "fiaallegiance" && value == "hostile") return "nobody: hostile to both";
   if (key == "fiaallegiance" && value == "west") return "the Blue side";
   if (key == "fiaallegiance" && value == "east") return "the Red side";
-  if (key == "fialeaning" && value == "1") return "on: FIA treats each side by how it treats FIA";
+  if (key == "fialeaning" && value == "1") return "on: FIA treats sides by their conduct";
   if (key == "fialeaning" && value == "0") return "off: as FIA sides with";
   if (key == "deployment" && value == "military") return "military bases / HQs / FOBs";
   if (key == "deployment" && value == "hq") return "HQs / FOBs only";
@@ -834,6 +834,12 @@ class ACR_SetupClient
   DropCamera();
   s_bActive = false;
   s_bAllowed = false;
+  // World-time stamps: the next mission's clock starts near 0 again.
+  s_fHintAt = -100000;
+  s_fDiagAt = 0;
+  s_sRows = "";
+  s_sInfo = "";
+  s_bChanged = false;
   if (s_Dialog) s_Dialog.Close();
   s_Dialog = null;
  }

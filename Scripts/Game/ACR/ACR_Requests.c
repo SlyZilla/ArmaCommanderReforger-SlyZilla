@@ -223,7 +223,8 @@ class ACR_Requests : Managed
  {
   if (s_vAim == vector.Zero) return vector.Zero;
   float d = vector.DistanceXZ(s_vAim, point);
-  if (d < AIM_MIN || d > AIM_MAX) return vector.Zero;
+  // Written so a NaN from a client fails too (both plain comparisons are false for NaN).
+  if (!(d >= AIM_MIN && d <= AIM_MAX)) return vector.Zero;
   return s_vAim;
  }
 
@@ -566,6 +567,10 @@ class ACR_Requests : Managed
  {
   IEntity vehicle = ACR_Transport.VehicleOf(body);
   if (!vehicle) return "You are not in a vehicle";
+  // A rider in the back can't throw the side's squads out (mid-air that kills them, and it halts
+  // their orders): the driver or pilot, or the commander.
+  ECompartmentType seat = ACR_Transport.SeatOf(body);
+  if (seat != ECompartmentType.PILOT && !m_Manager.IsCommander(pc.GetPlayerId())) return "Only the driver or the commander can unload passengers";
   array<ACR_Squad> passengers = {};
   ACR_Transport.PassengerSquads(m_Manager, vehicle, passengers);
   Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());

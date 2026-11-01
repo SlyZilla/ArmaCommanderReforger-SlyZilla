@@ -48,6 +48,7 @@ class ACR_Options
  static void Set(string name, string value) { s_Set.Set(name, value); }
  static void Unset(string name) { s_Set.Remove(name); }
  static void ClearSet() { s_Set.Clear(); }
+ static void ForgetHeader() { s_Header = null; }
 
  protected static map<string, string> Header()
  {
@@ -68,7 +69,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrQuickStart", "acrGuerrillas", "acrFIAAllegiance", "acrFIALeaning", "acrFIAHidden", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrCompanyWest", "acrCompanyEast", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrCapScale", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrBaseWorks", "acrHoldGuns", "acrMapDeclutter", "acrSquadTactics", "acrRoadFlow", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrQuickStart", "acrGuerrillas", "acrFIAAllegiance", "acrFIALeaning", "acrFIAHidden", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrCompanyWest", "acrCompanyEast", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrCapScale", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrBaseWorks", "acrHoldGuns", "acrMapDeclutter", "acrSquadTactics", "acrRoadFlow", "acrFieldRoutes", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
   foreach (string name : names)
   {
    string value;

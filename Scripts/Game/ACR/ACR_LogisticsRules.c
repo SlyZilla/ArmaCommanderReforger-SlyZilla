@@ -15,7 +15,11 @@ class ACR_LogisticsRules
  {
   string value;
   if (!ACR_Options.Get(option, value) || value.IsEmpty()) return fallback;
+  value.TrimInPlace();
   value.ToLower();
+  // On/off options test "0": "off", "false" or "no" left them on.
+  if (value == "off" || value == "false" || value == "no") return "0";
+  if (value == "on" || value == "true" || value == "yes") return "1";
   return value;
  }
 

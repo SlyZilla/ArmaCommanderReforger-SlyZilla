@@ -518,7 +518,8 @@ class ACR_Ambush
  {
   if (!entity || !ACR_Respawn.IsAlive(entity) || !squad.GetFaction()) return false;
   string key = ACR_Intel.FactionKeyOf(entity);
-  return !key.IsEmpty() && key != squad.GetFaction().GetFactionKey();
+  // Friendly, not equal: allied FIA walking through doesn't spring it.
+  return !key.IsEmpty() && !ACR_Insurgency.Friendly(key, squad.GetFaction().GetFactionKey());
  }
 
  // ---------------------------------------------------------------- each man's spot

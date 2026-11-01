@@ -31,6 +31,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   // Always update: units move into view without the map being panned.
   m_bTestVisibleFrame = false;
   m_sStyled = "-";
+  m_wPip = null; // it went with the old root
   super.OnCreateMarker(true);
   if (!m_wRoot) return;
   m_Click = new ACR_MarkerClick();
@@ -74,7 +75,8 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (m_fAlpha < 1) color = new Color(color.R(), color.G(), color.B(), color.A() * m_fAlpha);
   m_MarkerWidgetComp.SetColor(color);
   if (m_GroupSymbol) m_MarkerWidgetComp.UpdateMilitarySymbol(m_GroupSymbol);
-  if (m_bContact && m_wRoot && !m_wPip)
+  // A spotted enemy's reticle; not our empty vehicles (state 4), which use m_bContact for click-through
+  if (m_bContact && m_State != 4 && m_wRoot && !m_wPip)
   {
    WorkspaceWidget ws = GetGame().GetWorkspace();
    if (ws)
@@ -185,7 +187,10 @@ modded class SCR_PlayerController
  void ACR_Request(int command, RplId targetId = RplId.Invalid(), vector point = vector.Zero, vector aim = vector.Zero)
  {
   if (!ACR_Manager.GetInstance()) return;
-  if (command == ACR_ERequest.POSSESS || command == ACR_ERequest.RETURN) ACR_MapHandoff.Release(this, GetControlledEntity(), false);
+  // F8 (or the COMMAND UNIT marker) while already in the command unit is refused by the server:
+  // don't pull the map out of his hand for it.
+  bool returning = command == ACR_ERequest.RETURN && GetControlledEntity() != GetMainEntity();
+  if (command == ACR_ERequest.POSSESS || returning) ACR_MapHandoff.Release(this, GetControlledEntity(), false);
   Rpc(ACR_CommandServer, command, targetId, point, aim);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
@@ -193,7 +198,9 @@ modded class SCR_PlayerController
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
-  // Flood guard: up to 24 orders a second (one click can order a dozen squads).
+  // Flood guard: up to 96 orders a second. One click sends one per selected squad and a box
+  // selection has no cap: at 24, ordering 30 squads silently left 6 behind (audit 31 Oct). A
+  // dropped order is said, once a window.
   float now = GetGame().GetWorld().GetWorldTime();
   if (now - m_ACR_CommandWindow > 1000)
   {
@@ -201,7 +208,11 @@ modded class SCR_PlayerController
    m_ACR_CommandsInWindow = 0;
   }
   m_ACR_CommandsInWindow++;
-  if (m_ACR_CommandsInWindow > 24) return;
+  if (m_ACR_CommandsInWindow > 96)
+  {
+   if (m_ACR_CommandsInWindow == 97) manager.Notify(GetPlayerId(), "Too many orders at once: some were not given, order again");
+   return;
+  }
   if (m_ACR_SameClick.Drop(command, targetId, now))
   {
    PrintFormat("[ACR] ORDER dropped: a move right after an order that takes a facing for the same squad (the same click), player %1", GetPlayerId());
@@ -298,7 +309,7 @@ modded class SCR_PlayerController
   m_bDeathTransitionActive = false;
   if (m_DeathBlackoutRoot)
   {
-   m_DeathBlackoutRoot.RemoveFromHierarchy();
+   ACR_Hud.Remove(m_DeathBlackoutRoot); // created through ACR_Hud.CreateLayer: untrack it too
    m_DeathBlackoutRoot = null;
    m_DeathBlackoutImage = null;
    m_DeathBlackoutText = null;
@@ -309,7 +320,7 @@ modded class SCR_PlayerController
  protected void ACR_EnsureDeathOverlay()
  {
   if (m_DeathBlackoutRoot && m_DeathBlackoutImage && m_DeathBlackoutText) return;
-  if (m_DeathBlackoutRoot) m_DeathBlackoutRoot.RemoveFromHierarchy();
+  if (m_DeathBlackoutRoot) ACR_Hud.Remove(m_DeathBlackoutRoot);
   m_DeathBlackoutRoot = null;
   m_DeathBlackoutImage = null;
   m_DeathBlackoutText = null;
@@ -485,10 +496,12 @@ modded class SCR_PlayerController
  }
  void ACR_RequestDebug(int action)
  {
-  Rpc(ACR_DebugServer, action, m_ACR_SelectedBase);
+  Rpc(ACR_DebugServer, action, m_ACR_SelectedBase, m_ACR_SelectedGroup);
  }
+ // group: the squad selected on the caller's map. The server's copy of the controller never has
+ // the selection, so a remote admin's Heal/Kill Squad hit the wrong squad or none (audit 31 Oct).
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
- protected void ACR_DebugServer(int action, string baseName)
+ protected void ACR_DebugServer(int action, string baseName, RplId group)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
@@ -509,7 +522,7 @@ modded class SCR_PlayerController
   if (action == ACR_EDebug.HEAL_SQUAD)
   {
    ACR_Squad target = null;
-   if (m_ACR_SelectedGroup.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(m_ACR_SelectedGroup)));
+   if (group.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(group)));
    if (!target) manager.m_LastSquad.Find(GetPlayerId(), target);
    if (target)
    {
@@ -530,7 +543,7 @@ modded class SCR_PlayerController
   if (action == ACR_EDebug.KILL_SQUAD)
   {
    ACR_Squad target = null;
-   if (m_ACR_SelectedGroup.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(m_ACR_SelectedGroup)));
+   if (group.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(group)));
    if (target)
    {
     ACR_DebugCommand.KillSquad(target);
@@ -563,6 +576,18 @@ modded class SCR_PlayerController
  {
   string result = ACR_DebugCommand.Execute(this, cmd, baseName, groupId, cursorPos);
   Rpc(ACR_DebugCommandOwner, result);
+ }
+
+ bool m_ACR_AdminUnbound; // server: this admin's RTS camera has no leash (/acr unbound)
+ void ACR_SendUnbound(bool unbound)
+ {
+  if (GetPlayerId() == SCR_PlayerController.GetLocalPlayerId()) ACR_RTSCameraManager.s_bAdminUnbound = unbound;
+  else Rpc(ACR_UnboundOwner, unbound);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_UnboundOwner(bool unbound)
+ {
+  ACR_RTSCameraManager.s_bAdminUnbound = unbound;
  }
 
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
@@ -1102,7 +1127,7 @@ modded class SCR_PlayerController
    marker.m_UnitId = m_ACR_Data.m_LeaderIds[i];
    marker.m_Label = ACR_GroupLabel(i, m_ACR_Data.m_GroupNames[i]);
    marker.m_GroupId = m_ACR_Data.m_GroupIds[i];
-   marker.m_bCommandUnit = (m_ACR_GroupSymbols[i * 4 + 3] & 32) != 0;
+   marker.m_bCommandUnit = (m_ACR_GroupSymbols[i * 4 + 3] & 2048) != 0;
    marker.m_Selected = ACR_IsSelected(marker.m_GroupId);
    marker.m_State = m_ACR_LeaderStates[i];
    if (marker.m_State == 1) marker.m_Label += " [PLAYER LEADER]";
@@ -1414,6 +1439,7 @@ modded class SCR_PlayerController
  protected void ACR_ClosePanel()
  {
   SCR_MapEntity.GetOnSelection().Remove(ACR_OnMapClick);
+  m_ACR_AimHeld = false; // closed with the button held: the release listener is gone with the map
   if (m_ACR_Panel) m_ACR_Panel.Destroy();
   m_ACR_Panel = null;
   if (m_ACR_Display.GetCanvas()) m_ACR_Display.GetCanvas().RemoveFromHierarchy();
@@ -1460,9 +1486,18 @@ modded class SCR_PlayerController
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
  }
 
+ bool ACR_IsCommanderForHints() { return m_ACR_IsCommander; }
+ ACR_CommandPanel ACR_CommandPanelForTest() { return m_ACR_Panel; }
+
+ void ACR_RefreshKeyHintsButton()
+ {
+  if (m_ACR_Panel) m_ACR_Panel.RefreshKeyHints();
+ }
+
  protected void ACR_UpdatePanel()
  {
   if (!m_ACR_Panel) return;
+  m_ACR_Panel.TickDrag();
   string reinforceFeedback = "";
   if (GetGame().GetWorld().GetWorldTime() - m_ACR_ReinforceFeedbackAt < 12000) reinforceFeedback = m_ACR_ReinforceFeedback;
   m_ACR_Panel.SetReinforceFeedback(reinforceFeedback);
@@ -1508,7 +1543,7 @@ modded class SCR_PlayerController
    int baseIndex = m_ACR_Data.m_BaseNames.Find(m_ACR_SelectedBase);
    if (baseIndex >= 0)
    {
-    m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], m_ACR_Data.m_BaseDetails[baseIndex]);
+    m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], ACR_CommandPanel.FobDetail(m_ACR_Data.m_BaseDetails[baseIndex]));
     int stride = 3 + ACR_FobSlots.UPGRADE_COUNT;
     int supplyOffset = baseIndex * stride;
     if (m_ACR_Data.m_BaseSupply.Count() >= supplyOffset + stride)
@@ -1679,6 +1714,19 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.MINES_MIXED: ACR_ToggleCursor(ACR_ECursorMode.MINES_MIXED); return;
    case ACR_EPanelAction.DISARM_MINES: ACR_ToggleCursor(ACR_ECursorMode.DISARM_MINES); return;
    case ACR_EPanelAction.FORTIFY: ACR_ToggleCursor(ACR_ECursorMode.FORTIFY); return;
+   case ACR_EPanelAction.BUILD_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleBuildFold();
+    return;
+   case ACR_EPanelAction.UPGRADES_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleUpgradesFold();
+    return;
+   case ACR_EPanelAction.MORE_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleMoreFold();
+    return;
+   case ACR_EPanelAction.KEY_HINTS:
+    ACR_KeyHints.Toggle();
+    ACR_RefreshKeyHintsButton();
+    return;
    case ACR_EPanelAction.HALT: ACR_RequestSelected(ACR_ERequest.ORDER_HALT); return;
    case ACR_EPanelAction.FIRE_AT_WILL: ACR_RequestSelected(ACR_ERequest.ORDER_FIRE_AT_WILL); return;
    case ACR_EPanelAction.PATROL: ACR_RequestSelected(ACR_ERequest.ORDER_PATROL); return;
@@ -2155,6 +2203,7 @@ modded class SCR_PlayerController
    {
     ACR_UnitMarker marker = new ACR_UnitMarker();
     marker.m_bContact = true; // clicks go through: right-click next to it for Get in
+    marker.m_State = 4; // before it is inserted: creating its widget styles it (no contact pip)
     marker.SetType(SCR_EMapMarkerType.SIMPLE);
     marker.SetMarkerConfigID(1);
     marker.SetCanBeRemovedByOwner(false);
