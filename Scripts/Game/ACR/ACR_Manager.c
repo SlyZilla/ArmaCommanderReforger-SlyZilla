@@ -264,6 +264,19 @@ class ACR_Manager : Managed
   s_Instance = null;
  }
 
+ // The world is going away (mission end, restart, rotation): each squad is a slave of its hidden
+ // command group (LinkSquad), so vanilla's groups manager listens for members leaving it, and the
+ // teardown's removals each sent an RPC through the already-unregistered manager (one RPL error per
+ // soldier in the log). Nobody needs those removals broadcast now.
+ static void UnhookGroups()
+ {
+  if (!s_Instance) return;
+  SCR_GroupsManagerComponent groups = SCR_GroupsManagerComponent.GetInstance();
+  if (!groups) return;
+  foreach (ACR_Squad squad : s_Instance.m_Squads)
+   if (squad && squad.m_Group) squad.m_Group.GetOnAgentRemoved().Remove(groups.OnAIMemberRemoved);
+ }
+
  static vector Ground(vector point)
  {
   point[1] = GetGame().GetWorld().GetSurfaceY(point[0], point[2]) + 0.15;
@@ -1479,5 +1492,14 @@ class ACR_Manager : Managed
    else GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   }
   if (input.GetActionTriggered("ACR_RTSCamera")) pc.ACR_ToggleRTSCamera();
+ }
+}
+
+modded class ArmaReforgerScripted
+{
+ protected override void OnBeforeWorldCleanup()
+ {
+  ACR_Manager.UnhookGroups();
+  super.OnBeforeWorldCleanup();
  }
 }
