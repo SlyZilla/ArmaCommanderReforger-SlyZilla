@@ -239,6 +239,7 @@ class ACR_Manager : Managed
   ACR_FobSiting.Reset();
   ACR_RoadblockSiting.Reset();
   ACR_MapFeed.Reset();
+  ACR_Supports.Reset();
   // Setup screen choices are per match (Jacob, 31 Oct), and a rotation reads its own header.
   ACR_Options.ClearSet();
   ACR_Options.ForgetHeader();
