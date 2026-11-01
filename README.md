@@ -132,7 +132,7 @@ Open with M or F9:
 | F7 | Possess the soldier under your crosshair, or the marker under the map cursor |
 | F8 | Return to your command unit |
 | F9 | Open/close the command map (no map item needed) |
-| F6 (in a vehicle) | Drop every passenger squad now (a second press within 3 s overrides the "too high/fast" warning) |
+| F6 (driving, or as commander, in a vehicle) | Drop every passenger squad now (a second press within 3 s overrides the "too high/fast" warning) |
 | F5 | Move selected squad to cursor (map) or 35 m ahead |
 | W/A/S/D in a turret | Gunner drive with an AI driver (a map order hands control back) |
 | Command menu key (default: backtick) | Native squad orders, only while possessing a squad leader |

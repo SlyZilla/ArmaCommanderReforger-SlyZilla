@@ -1287,6 +1287,9 @@ class ACR_Manager : Managed
    PrintFormat("[ACR] GUNNER DRIVE start: %1 (player %2)", squad.GetName(), playerId);
   }
   drive.m_PlayerId = playerId;
+  // NaN from a client fails both comparisons: no input.
+  if (!(throttle == throttle)) throttle = 0;
+  if (!(steer == steer)) steer = 0;
   drive.m_Throttle = Math.Clamp(throttle, -1, 1);
   drive.m_Steer = Math.Clamp(steer, -1, 1);
   drive.m_LastInput = GetGame().GetWorld().GetWorldTime();

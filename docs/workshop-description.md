@@ -44,7 +44,7 @@ https://github.com/propst-design/ArmaCommanderReforger/blob/main/MISSION-MAKING.
 - M / F9: command map. Left-click a squad, right-click a destination.
 - F7: possess a friendly soldier under the crosshair or map cursor.
 - F8: return to your command unit.
-- F6 in a vehicle: dismount passengers; repeat within three seconds to override warnings.
+- F6 in a vehicle (driver, pilot or commander): dismount passengers; repeat within three seconds to override warnings.
 - W/A/S/D in a turret with an AI driver: gunner drive.
 - Backtick while possessing a squad leader: native squad orders.
 
