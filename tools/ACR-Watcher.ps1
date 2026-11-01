@@ -230,6 +230,14 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
         if (Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) { Write-Result $id @('status=refused', 'reason=another Reforger server kept running (port 2001)'); return }
         if ($waited -gt 0) { Write-Host "[$time] Waited $waited s for another server to close" -ForegroundColor Yellow }
         $profileDir = $TestServerProfile
+        # Unpacked mods resolve their own prefabs only through resourceDatabase.rdb (gitignored,
+        # written when Workbench opens the project). A fresh worktree has none: the server logs
+        # 'Wrong GUID/name for resource' and tests fail or pass on half-loaded prefabs (1 Nov).
+        foreach ($modDir in @($ProjectRoot, (Join-Path $AddonsDir 'BetterBattleBuddies'))) {
+            if ((Test-Path -LiteralPath (Join-Path $modDir 'addon.gproj')) -and !(Test-Path -LiteralPath (Join-Path $modDir 'resourceDatabase.rdb'))) {
+                Write-Result $id @('status=refused', "reason=no resourceDatabase.rdb in $modDir (open its addon.gproj in Workbench once)"); return
+            }
+        }
         $serverAddons = $AddonsDir
         $template = '-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend -acrAdminPassword 1'
     }
