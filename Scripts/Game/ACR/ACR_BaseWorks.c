@@ -732,6 +732,7 @@ class ACR_BaseWorks
  static const float SPILL_WAY = 0.5;        // of two lines' facings: a squad on one spills onto the other
  static const float SPILL_NEAR = 80;        // m from the order's point, that other line's middle
  static const float LINE_POINT_REACH = 150; // m from a base's middle, an AI defend order takes its works
+ static const float ORDER_REACH = 500;      // m from a base's middle: no line of its can be close to an order past this
  static const int ROOM_LEAST = 3;           // free places on a line for an AI squad to be sent to it
 
  // The nearest enemy man's side of the base: false with none in range.
@@ -912,7 +913,7 @@ class ACR_BaseWorks
   array<ACR_LinePiece> pieces = {};
   foreach (ACR_BaseWork work : s_aWorks)
   {
-   if (!work.m_Base || work.m_sFaction != faction) continue;
+   if (!work.m_Base || work.m_sFaction != faction || vector.DistanceXZ(work.m_Base.GetOrigin(), point) > ORDER_REACH) continue;
    ACR_BaseLine closest;
    float best = within;
    foreach (ACR_BaseLine line : work.m_aLines)

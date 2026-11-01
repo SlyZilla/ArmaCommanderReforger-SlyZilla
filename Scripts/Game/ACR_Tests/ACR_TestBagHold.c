@@ -280,6 +280,9 @@ class ACR_TestBagHold
  static const float LANE = 150;
  static const float LATE_BEHIND = 60;
  static const int LENGTH = 240;
+ static const int ON_PLACES_LEAST = 80;
+ static const int BEHIND_LEAST = 60;
+ static const int INTO_BAGS_MOST = 15;
  protected static vector s_vAt, s_vFacing;
  protected static ref array<IEntity> s_aBags = {};
  protected static ref array<vector> s_aPlaces = {};
@@ -581,6 +584,15 @@ class ACR_TestBagHold
   PrintFormat("[ACR] BAGHOLD RESULT attackers lost %1 of %2, defenders lost %3 of %4, %5 s, %6", s_iAttackers - AttackersAlive(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, fought, s_Sampler.Words());
   PrintFormat("[ACR] BAGHOLD held: into cover %1 times, sent back %2 times, holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost);
   ACR_TestRegress.Check("baghold: a fight happened", s_iContact >= 0, "");
-  ACR_TestRegress.Complete("baghold", 1);
+  if (System.IsCLIParam("acrBagHoldOffTest"))
+  {
+   ACR_TestRegress.Complete("baghold", 1);
+   return;
+  }
+  // Floors well under what it does (on places 97-100%, behind the bags 86-100%, into the bags 2-5%): fights differ.
+  ACR_TestRegress.Check("baghold: men stay on their places", s_Sampler.m_iOnPost * 100 >= s_Sampler.m_iSamples * ON_PLACES_LEAST, s_Sampler.Words());
+  ACR_TestRegress.Check("baghold: men keep the bags between them and the enemy", s_Sampler.m_iBehind * 100 >= s_Sampler.m_iSamples * BEHIND_LEAST, "");
+  ACR_TestRegress.Check("baghold: shots go over the bags, not into them", s_Sampler.m_iShotsBags * 100 <= s_Sampler.m_iShots * INTO_BAGS_MOST, string.Format("%1 of %2", s_Sampler.m_iShotsBags, s_Sampler.m_iShots));
+  ACR_TestRegress.Complete("baghold", 4);
  }
 }
