@@ -926,8 +926,21 @@ class ACR_HeliRun : ACR_SupportRun
    m_fNextAltLog = now + 5000;
    PrintFormat("[ACR] SUPPORT %1 coming in: %2 m from its landing spot, %3 m up, %4 m/s", LogName(), (int)d, (int)(m_Pos[1] - ground), (int)m_fSpeed);
   }
-  return d < 1 && m_Pos[1] <= pad[1] + 0.35;
+  if (d < 1 && m_Pos[1] <= pad[1] + 0.35) return true;
+  // Over the pad, the last metres blocked (a truck parked beside the pad in the rotor sweep): it
+  // hovered there for good and the support never came back (srv:helipad, 1 Nov). Centred on its
+  // own pad the body clears what the sweep touches: after 10 s it sets down.
+  bool lowOverPad = d < 1 && m_Pos[1] <= pad[1] + 3;
+  if (!lowOverPad || now >= m_fGuardRetryAt) m_fLandBlockedSince = -1;
+  else if (m_fLandBlockedSince < 0) m_fLandBlockedSince = now;
+  if (lowOverPad && m_fLandBlockedSince >= 0 && now - m_fLandBlockedSince > 10000)
+  {
+   PrintFormat("[ACR] SUPPORT %1 sets down on its pad past an obstacle in the rotor sweep", LogName());
+   return true;
+  }
+  return false;
  }
+ protected float m_fLandBlockedSince = -1;
 
  // On the pad: physics back on, engine off, servicing starts.
  void Touchdown(ACR_Supports supports)

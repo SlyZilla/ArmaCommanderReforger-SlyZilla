@@ -62,6 +62,7 @@
 - A FOB whose HQ was destroyed during an upgrade goes away once nothing of it is standing; before, the paused upgrade kept the empty FOB on the map and no new FOB could be built within 120 m.
 - A supply delivery on its way when a FOB's HQ is destroyed is refunded (it was lost without a word), and buying at a FOB with no HQ says so instead of asking for a radio relay.
 - AI and Quick Start minefields keep their 60 m from the side's own dug-in positions and roadblocks where the road is: the spot was checked before the field was moved onto the road through it, which could bring it a few metres inside.
+- A support helicopter coming home to a pad with a vehicle parked beside it sets down after 10 seconds instead of hovering a metre above the pad for the rest of the match (the vehicle in the rotor sweep kept stopping the last metre).
 
 ### Command and setup
 
