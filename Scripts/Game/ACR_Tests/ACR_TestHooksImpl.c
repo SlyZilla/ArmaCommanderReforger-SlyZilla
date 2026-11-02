@@ -47,9 +47,9 @@ modded class ACR_TestHooks
   // -acrWorksShotsTest: Fortify a whole base, photographed (ACR_TestWorksShots).
   if (System.IsCLIParam("acrWorksShotsTest")) ACR_TestWorksShots.Run(seconds);
   // -acrBaseWorksTest: Fortify on a base (ACR_TestBaseWorks, #105).
-  if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
+  if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksCompactTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
   // -acrWorksFightTest / -acrWorksFightOldTest: what a fortified town costs an attacker (ACR_TestWorksFight).
-  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest")) ACR_TestWorksFight.Run(seconds);
+  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest")) ACR_TestWorksFight.Run(seconds);
   // -acrWorksAISoakTest: does the AI fortify (ACR_TestWorksSoak).
   if (System.IsCLIParam("acrWorksAISoakTest")) ACR_TestWorksSoak.Run(seconds);
   // -acrKeyHintsTest: the key reminders and UI prefs (ACR_TestKeyHints).

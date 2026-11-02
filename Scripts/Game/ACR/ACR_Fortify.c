@@ -254,6 +254,22 @@ class ACR_Fortify
   return "the covered post";
  }
 
+ // The small gun position, for one long piece's place in a line (ACR_BaseLines). FIA's has no small one.
+ static ResourceName CompactGun(string faction)
+ {
+  if (faction == "FIA") return "";
+  if (faction == "USSR" || faction == "RHS_AFRF") return HMG_USSR;
+  return HMG_US;
+ }
+
+ // Its muzzle in its own frame: across, up, forward (measured on the built ones: the tripod stands behind the
+ // middle, the height is the gun's top less 0.1 m, as LineOfFire takes it).
+ static vector CompactMuzzle(string faction)
+ {
+  if (faction == "USSR" || faction == "RHS_AFRF") return Vector(0.016, 1.249, -0.677);
+  return Vector(-0.106, 1.036, -0.592);
+ }
+
  static ResourceName PrefabFor(int spot, string faction, int tier)
  {
   bool east = faction == "USSR" || faction.Contains("AFRF") || faction.Contains("RU") || faction.Contains("SLA");
@@ -609,9 +625,9 @@ class ACR_Fortify
  }
 
  // The same check before the piece exists (an order's dry run, UpgradeBlocker): a gun facing
- // compass 'facing' at 'place', its muzzle MUZZLE_UP above the ground; 'replaced' is the piece it
+ // compass 'facing' at 'place', its muzzle 'up' above the ground; 'replaced' is the piece it
  // takes the place of (the middle post), which doesn't count.
- static bool LineOfFireAt(vector place, float facing, IEntity replaced, out string detail)
+ static bool LineOfFireAt(vector place, float facing, IEntity replaced, out string detail, float up = MUZZLE_UP)
  {
   detail = "";
   if (s_bBlockFireForTest)
@@ -620,7 +636,7 @@ class ACR_Fortify
    return false;
   }
   vector muzzle = place;
-  muzzle[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]) + MUZZLE_UP;
+  muzzle[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]) + up;
   return FireClear(muzzle, facing, replaced, detail);
  }
 

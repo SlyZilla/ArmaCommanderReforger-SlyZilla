@@ -38,6 +38,7 @@ class ACR_BaseSite : Managed
  ACR_Roadblock m_Roadblock;
  bool m_bBuilt;
  bool m_bDamaged;                   // PLANNED: it stands with pieces gone: open again, for those alone
+ bool m_bCompact;                   // NEST: the small gun position (ACR_BaseLines.NEST_COMPACT)
  bool m_bNoFit;                     // nothing could be placed: not tried again
  bool m_bSkipped;                   // a squad gave up on it (a truck parked there, no way in): the next order tries again
  int m_iSpot;                       // NEST, BUNKER: its spot in ACR_FobDefences.PrefabFor
@@ -1079,6 +1080,12 @@ class ACR_BaseWorks
   {
    // Nests and bunkers still to build are the new owner's kind.
    if (!site.m_sPrefab.IsEmpty()) site.m_sPrefab = ACR_FobDefences.PrefabFor(site.m_iSpot, owner, site.m_iTier - 1);
+   // FIA has no small one: its big nest wouldn't fit the place, so it stays out.
+   if (site.m_bCompact)
+   {
+    site.m_sPrefab = ACR_Fortify.CompactGun(owner);
+    if (site.m_sPrefab.IsEmpty() && !site.m_bBuilt) site.m_bNoFit = true;
+   }
    if (site.m_Roadblock)
    {
     site.m_Roadblock.m_sFaction = owner;
