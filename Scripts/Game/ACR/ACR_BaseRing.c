@@ -1187,7 +1187,7 @@ class ACR_BaseRing : Managed
   if (s_bMeasureForTest) ring.MeasureClosed(work, path);
   s_iPlans++;
   s_iLastMs = System.GetTickCount() - started;
-  PrintFormat("[ACR] BASEWORKS %1: ring %2 lines, %3 pieces of %4, %5 parts of the ring, %6 ms", town, work.m_aLines.Count(), used, total, runs.Count(), s_iLastMs);
+  PrintFormat("[ACR] BASEWORKS %1: ring %2 lines, %3 pieces of %4, %5 parts of the ring (%6 places looked at), %7 ms", town, work.m_aLines.Count(), used, total, s_iLastRuns, runs.Count(), s_iLastMs);
   return !work.m_aLines.IsEmpty();
  }
 
