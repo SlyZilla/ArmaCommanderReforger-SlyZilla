@@ -47,6 +47,7 @@ class ACR_TestWorksFight
  protected static void Setup(ACR_Manager manager)
  {
   ACR_BaseWorks.s_bNoLineMenForTest = System.IsCLIParam("acrWorksFightOldTest");
+  if (System.IsCLIParam("acrWorksFightCompactTest")) ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
   string side = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
   int most = -1;
