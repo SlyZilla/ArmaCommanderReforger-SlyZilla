@@ -767,6 +767,11 @@ class ACR_Squad : Managed
   // keeps WP_DEFEND as its kind (m_sOrderPrefab) and its "Defending" label.
   ResourceName spawned = prefab;
   if (prefab == WP_DEFEND && !s_bGameDefend && !m_ActiveRoadblock && ACR_Transport.CrewedVehicle(this)) spawned = WP_MOVE;
+  // Holding a fortified position: every man on its guns or a post behind its bags (#155). The order
+  // stays a Defend for its bookkeeping (snapshots, regroups, held guns).
+  bool fortHold = spawned == WP_DEFEND && ACR_Fortify.IsHold(m_Fortification, prefab, position);
+  if (fortHold && Resource.Load(ACR_Fortify.WP_HOLD).IsValid()) spawned = ACR_Fortify.WP_HOLD;
+  else fortHold = false;
   Resource resource = Resource.Load(spawned);
   if (!resource.IsValid()) return null;
   EntitySpawnParams params = new EntitySpawnParams();
@@ -790,7 +795,9 @@ class ACR_Squad : Managed
     return null;
    }
   }
-  return AdoptWaypoint(waypoint, prefab, position, completionRadius, forced);
+  AIWaypoint adopted = AdoptWaypoint(waypoint, prefab, position, completionRadius, forced);
+  if (adopted && fortHold) ACR_Fortify.PostMen(m_Fortification, m_Group, CountAlive());
+  return adopted;
  }
 
  // Replace every queued order with a waypoint the caller spawned (and configured) itself.
@@ -2100,8 +2107,12 @@ class ACR_Squad : Managed
   NewOrder();
   ClearPlans();
   m_bRegrouping = false;
-  if (!IssueWaypoint(WP_DEFEND, ACR_Fortify.HoldCentre(fort), ACR_Fortify.HOLDER_RADIUS)) return false;
-  m_Fortification = fort;
+  m_Fortification = fort; // first: its hold's waypoint posts the men behind its bags (IssueWaypoint)
+  if (!IssueWaypoint(WP_DEFEND, ACR_Fortify.HoldCentre(fort), ACR_Fortify.HOLDER_RADIUS))
+  {
+   m_Fortification = null;
+   return false;
+  }
   // Its reserve's gun crew, if any, steps back (ACR_Defenders).
   if (fort.m_Defenders) ACR_Defenders.StandDownCrew(fort.m_Defenders);
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
@@ -2621,6 +2632,15 @@ class ACR_Squad : Managed
  // land route instead (see BBB_Terrain), so squads go round a bay, not across it.
  protected ref array<vector> m_aRoute = {};
  protected ref ACR_OrderSnapshot m_Route; // the order at the end of the route (target unused)
+
+ // Where the current order ends up: the last leg of a route, the order carried on after a
+ // dismount, else the order's own point (ACR_AICommander's trips).
+ vector Heading()
+ {
+  if (!m_aRoute.IsEmpty()) return m_aRoute[m_aRoute.Count() - 1];
+  if (m_bResumeOnFoot && m_Resume) return m_Resume.m_Target;
+  return m_MoveTarget;
+ }
 
  // #86 (29 Oct): one waypoint per vehicle trip is the default, as vanilla's own scenarios drive
  // (each road hop was a waypoint end and a fresh engine path: brake, plan again); -acrNoRoadHops 0

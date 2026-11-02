@@ -151,6 +151,7 @@ ridelavgetout|-acrRideLavGetOutTest 1|400
 lavgetout|-acrLavGetOutTest 1|240
 lavgetoutold|-acrLavGetOutOldTest 1|240
 ridecarry|-acrRideCarryTest 1|420
+ridecommit|-acrRideCommitTest 1|480
 ridetruck|-acrRideTruckTest 1|400
 patrol|-acrPatrolTest 1|600
 holdreturn|-acrHoldReturnTest 1|90
@@ -225,4 +226,5 @@ worksshots|-acrWorksShotsTest 1|600|Worlds/ACR_Kolguyev.ent
 contentpack|-acrContentPackTest 1|120
 contentpackwinter|-acrContentPackWinterTest 1|120
 quickstartfia|-acrQuickStartFIATest 1|90|Worlds/ACR_Everon.ent
+helidown|-acrHeliDownTest 1|160
 basedefenceskolguyev|-acrBaseDefencesTest 1|120|Worlds/ACR_Kolguyev.ent
