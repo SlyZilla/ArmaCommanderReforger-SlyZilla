@@ -4252,6 +4252,12 @@ class ACR_AICommander : Managed
  // Crews that ended up on foot next to their own intact, empty vehicle get
  // back in (the game's AI sometimes bails out and leaves a BTR standing).
  protected ref map<ACR_Squad, float> m_NextRecrew = new map<ACR_Squad, float>();
+ // Tries since it was last aboard. A crew that can't get in isn't told again every 90 s for good:
+ // each try is a new order, which ends what it was doing (Everon long match 31 Oct: a Humvee's crew,
+ // 14 times in 20 min, a base grab cut short on the way). It stays on foot for a while instead.
+ protected ref map<ACR_Squad, int> m_RecrewTries = new map<ACR_Squad, int>();
+ static const int RECREW_TRIES = 3;
+ static const float RECREW_REST_MS = 600000;
  protected void Recrew()
  {
   float now = GetGame().GetWorld().GetWorldTime();
@@ -4264,7 +4270,11 @@ class ACR_AICommander : Managed
    // Or its driver bailed and only part of the crew is back aboard: nobody drives, so every
    // move fails where it stands (ACR_Squad.m_bDriverBailed).
    bool driverless = squad.m_bDriverBailed && squad.IsMounted() && !ACR_Squad.DriverOf(vehicle);
-   if (squad.IsMounted() && !driverless) continue;
+   if (squad.IsMounted() && !driverless)
+   {
+    m_RecrewTries.Remove(squad);
+    continue;
+   }
    if (ACR_Logistics.Health(vehicle) < 0.25 || (!driverless && !ACR_Vehicles.IsEmpty(vehicle))) continue;
    // Run dry (the game's AI gets out of a car with no fuel): wait for the fuel truck, not in and
    // out again (Jacob's 27 Oct game: a Humvee crew left, got back in and left again three times).
@@ -4283,12 +4293,29 @@ class ACR_AICommander : Managed
     if (squad.ReseatDriver(vehicle)) Say(string.Format("[ACR] AI %1: %2's driver gets back into its vehicle", m_sFaction, squad.GetName()));
     continue;
    }
+   int tries;
+   m_RecrewTries.Find(squad, tries);
+   if (tries >= RECREW_TRIES)
+   {
+    m_RecrewTries.Remove(squad);
+    m_NextRecrew.Set(squad, now + RECREW_REST_MS);
+    Say(string.Format("[ACR] AI %1: %2 can't get back into its vehicle (%3 tries), on foot for %4 min", m_sFaction, squad.GetName(), tries, (int)(RECREW_REST_MS / 60000)));
+    continue;
+   }
+   m_RecrewTries.Set(squad, tries + 1);
    m_NextRecrew.Set(squad, now + 90000);
    if (squad.GetIn(vehicle.GetOrigin())) Say(string.Format("[ACR] AI %1: %2 gets back into its vehicle", m_sFaction, squad.GetName()));
   }
  }
 
  void RecrewForTest() { Recrew(); }
+ void RecrewSoonForTest(ACR_Squad squad) { m_NextRecrew.Remove(squad); }
+ float RecrewNextForTest(ACR_Squad squad)
+ {
+  float next;
+  m_NextRecrew.Find(squad, next);
+  return next;
+ }
 
  protected int PostedAt(ACR_Base base)
  {
