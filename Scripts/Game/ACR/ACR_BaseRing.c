@@ -81,13 +81,13 @@ class ACR_BaseRing : Managed
  static const float POINT_GAP_THIN = 8; // ... in a town they left thin
  static const float POINT_ENOUGH = 0.6; // of tier I's budget: thin below this
  static const float HOLE_VIEW = 12;    // m a part must see to fill a hole between two parts being built
- static const float WORTH_LEAST = 1;   // what a part must do to him to be built
+ static const float WORTH_LEAST = 0.4; // what a part must do to him to be built
  static const float WORTH_SHARE = 0.1; // ... against the first that went in: past that it's bags on ground he hardly walks
- static const float WORTH_SHARE_FIRST = 0.03; // ... while tier I isn't full: a town gets its first line of defence, but not where nobody comes
+ static const float WORTH_SHARE_FIRST = 0.05; // ... while tier I isn't full: a town gets its first line of defence, but not where nobody comes
  static const float NEXT_TO = 1.3;     // a part beside one going in: a line, not loose pieces
  static const float WALK_AGAIN = 0.34; // of the bags, between looks at where he'd walk now
  static const int MOST_WALKS = 2;
- static const int BUILD_ROUNDS = 2;    // goes at choosing and laying, while bags are left
+ static const int BUILD_ROUNDS = 3;    // goes at choosing and laying, while bags are left
  static const int LEFT_TO_GO_ON = 8;   // pieces left that are worth another go
  static const float TIER_OVER = 1.12;  // a tier takes this much over its budget to keep a line together
  static const float TIER_ONE_SHARE = 0.93; // of tier I's budget that's planned on
@@ -96,12 +96,16 @@ class ACR_BaseRing : Managed
  static const int OUT_PARENT = 1000;   // its stretches are numbered apart from the edge's
  static const int WAY_PARENT = 2000;   // ... and those laid out for his ways
  static const int WAY_LINES_WAYS = 8;  // of his ways, the heaviest
- static const int WAY_LINES_MOST = 45; // places proposed
+ static const int WAY_LINES_MOST = 60; // places proposed
  static const float WAY_STEP_ALONG = 45; // m along a way between places
  static const float WAY_OUT = 80;      // m past the search radius a way is looked at from
  static const float WAY_IN = 40;       // m from the middle it's looked at up to
  static const float WAY_AHEAD = 40;    // m ahead of him the line across his way stands
  static const float WAY_SIDE = 45;     // m to his side a line firing across him stands
+ static const float WAY_SIDE_NEAR = 22; // ... or this, if that's a house
+ static const float STREET_OFF = 7;    // m from the middle of a road a street block's line starts
+ static const float STREET_HALF = 11;  // half such a line
+ static const float STREET_RIM_IN = -70; // m inside the outline those may stand: the streets are where he is
  static const float WAY_HALF = 15;     // half such a line
  static const float WAY_ANCHOR = 8;    // m from its end to something it can end on
  static const float ANCHORED = 1.15;   // ... each such end: nothing to walk round
@@ -1473,20 +1477,43 @@ class ACR_BaseRing : Managed
     int further = Math.Min(k + 4, cells.Count() - 1);
     his = ACR_BaseDefences.FlatDir(at, kill.Middle(cells[further]));
     side = Vector(his[2], 0, -his[0]);
-    added += TryWayLine(at + his * WAY_AHEAD, his * -1, runs, seen);
-    vector across = at + his * 15 + side * WAY_SIDE;
-    added += TryWayLine(across, ACR_BaseDefences.FlatDir(across, at), runs, seen);
-    across = at + his * 15 - side * WAY_SIDE;
-    added += TryWayLine(across, ACR_BaseDefences.FlatDir(across, at), runs, seen);
+    vector ahead = at + his * WAY_AHEAD;
+    int aheadCell = At(ahead[0], ahead[2]);
+    // Down a road: it stays open for vehicles, so a line either side of it, turned in towards him. A street block.
+    if (aheadCell >= 0 && (m_aCell[aheadCell] & ROAD) != 0)
+    {
+     added += TryStreetBlock(ahead, at, side, runs, seen);
+     added += TryStreetBlock(ahead, at, side * -1, runs, seen);
+    }
+    else added += TryWayLine(ahead, his * -1, runs, seen);
+    added += TryFlank(at, his, side, runs, seen);
+    added += TryFlank(at, his, side * -1, runs, seen);
    }
   }
  }
 
- protected int TryWayLine(vector mid, vector facing, notnull array<ref ACR_RingRun> runs, notnull array<int> seen)
+ protected int TryStreetBlock(vector ahead, vector at, vector side, notnull array<ref ACR_RingRun> runs, notnull array<int> seen)
+ {
+  float half = STREET_HALF * (0.75 + 0.5 * m_Luck.RandFloat01());
+  vector mid = ahead + side * (STREET_OFF + half);
+  return TryWayLine(mid, ACR_BaseDefences.FlatDir(mid, at), runs, seen, half, STREET_RIM_IN);
+ }
+
+ // Off to his side firing across him: well out if there's room, or from the gardens beside the street.
+ protected int TryFlank(vector at, vector his, vector side, notnull array<ref ACR_RingRun> runs, notnull array<int> seen)
+ {
+  vector across = at + his * 15 + side * WAY_SIDE;
+  int got = TryWayLine(across, ACR_BaseDefences.FlatDir(across, at), runs, seen);
+  if (got > 0) return got;
+  across = at + his * 15 + side * WAY_SIDE_NEAR;
+  return TryWayLine(across, ACR_BaseDefences.FlatDir(across, at), runs, seen, WAY_HALF * 0.75, STREET_RIM_IN);
+ }
+
+ protected int TryWayLine(vector mid, vector facing, notnull array<ref ACR_RingRun> runs, notnull array<int> seen, float halfLine = 0, float rimIn = WAY_RIM_IN)
  {
   int cell = At(mid[0], mid[2]);
   if (cell < 0 || (m_aCell[cell] & (HOUSE | WATER | CLIFF | ROAD)) != 0) return 0;
-  if (m_aRim[cell] > WAY_RIM_OUT || m_aRim[cell] < WAY_RIM_IN) return 0;
+  if (m_aRim[cell] > WAY_RIM_OUT || m_aRim[cell] < rimIn) return 0;
   // One to a place and a way of facing.
   int key = cell / 9 * 4 + (int)(ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(facing)) / 90);
   if (seen.Contains(key)) return 0;
@@ -1494,7 +1521,8 @@ class ACR_BaseRing : Managed
   mid[1] = GetGame().GetWorld().GetSurfaceY(mid[0], mid[2]);
   vector across = Vector(facing[2], 0, -facing[0]);
   // No two towns' lines cut to one length.
-  float half = WAY_HALF * (0.75 + 0.5 * m_Luck.RandFloat01());
+  float half = halfLine;
+  if (half <= 0) half = WAY_HALF * (0.75 + 0.5 * m_Luck.RandFloat01());
   ACR_RingRun run = new ACR_RingRun();
   run.m_bForWay = true;
   run.m_vMiddle = mid;
