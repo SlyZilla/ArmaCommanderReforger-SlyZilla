@@ -188,6 +188,8 @@ class ACR_BaseLiner : Managed
 
  protected static ref array<vector> s_aNoCuts = {};
  static const float OTHER_BAGS = 3;     // m from another line's bags
+ static const float TIES_IN = 7;        // ... except where it goes on from one
+ vector m_vTiesIn;
 
  void ACR_BaseLiner(ACR_BaseSurvey survey, ACR_BaseWork work, float seedBearing)
  {
@@ -227,7 +229,7 @@ class ACR_BaseLiner : Managed
   if (m_Survey.DoorGap(mid) < ACR_BaseSurvey.WALL_DOOR) return FIT_DOOR;
   if (!ACR_BaseDefences.WorldClear(mid, ACR_BaseDefences.Bearing(facing), Vector(length * 0.5 + 0.05, 0, 0.61), null, false, true)) return FIT_SOLID;
   // Not across or along a line already laid.
-  if (m_bRing && m_Work && ACR_BaseLines.PieceWithin(m_Work, mid, OTHER_BAGS, s_aNoCuts)) return FIT_SOLID;
+  if (m_bRing && m_Work && vector.DistanceXZ(mid, m_vTiesIn) > TIES_IN && ACR_BaseLines.PieceWithin(m_Work, mid, OTHER_BAGS, s_aNoCuts)) return FIT_SOLID;
   if (loose) return FIT_OK;
   if (!RoomBehind(mid, facing)) return FIT_BEHIND;
   if (noView) return FIT_OK;
@@ -973,7 +975,7 @@ class ACR_BaseLines
  static const float BEND_DOT = 0.94;      // two pieces' facings closer than this aren't a bend (about 20 degrees)
  static const float BEND_WORTH = 0.25;    // a gun at a bend sees along both runs
  static const float GUN_OPEN_GATE = 1.5;  // a gun on a way in that has none
- static const int MOST_GUN_LOOKS = 50;       // places looked at for a gun, about
+ static const int MOST_GUN_LOOKS = 30;       // places looked at for a gun, about
  static ref array<float> WIRE_OUTS = {32, 24, 16, 7}; // m in front of the bags wire stands, the furthest that works
  static const float GUN_WORTH_LEAST = 2;      // what a gun must do to him to be placed
  static const float LONE_GUN_WORTH = 10;      // ... a gun on its own, with no line about it
@@ -1278,6 +1280,8 @@ class ACR_BaseLines
   vector start = run.m_aWay[0];
   start[1] = ACR_BaseLiner.Ground(start);
   vector heading = ACR_BaseDefences.FlatDir(start, liner.m_vTarget);
+  if (run.m_sStart == "line") liner.m_vTiesIn = start;
+  else if (run.m_sEnd == "line") liner.m_vTiesIn = run.m_aWay[run.m_aWay.Count() - 1];
   int side = 1;
   if (ACR_BaseDefences.DotXZ(ACR_BaseLiner.FacingOf(heading, 1), run.m_vOut) < 0) side = -1;
   // Up against what it starts from.
@@ -1347,7 +1351,8 @@ class ACR_BaseLines
   if (line.Count() < 1) return 0;
   work.m_aLines.Insert(line);
   int count = Realize(work, line, survey, kit, most);
-  if (count == 0)
+  count -= DropOnRoad(line, survey);
+  if (count <= 0)
   {
    work.m_aLines.RemoveItem(line);
    return 0;
@@ -1355,6 +1360,21 @@ class ACR_BaseLines
   line.m_iTier = tier;
   foreach (ACR_LinePiece piece : line.m_aPieces) survey.AddLight(ACR_BaseSurvey.Sector(ACR_BaseDefences.Bearing(piece.m_vFacing)), 0.03);
   return count;
+ }
+
+ // An end or a curve laid close beside a road can stand on it: it comes out, a way through. How many came out.
+ protected static int DropOnRoad(ACR_BaseLine line, ACR_BaseSurvey survey)
+ {
+  int dropped;
+  array<ref ACR_LinePiece> pieces = line.m_aPieces;
+  for (int i = pieces.Count() - 1; i >= 0; i--)
+  {
+   if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, pieces[i].m_vPos) >= 0) continue;
+   if (i > 0) pieces[i - 1].m_iBreak = BREAK_ROAD;
+   pieces.RemoveOrdered(i);
+   dropped++;
+  }
+  return dropped;
  }
 
  // A blind stretch or a short end cut off a ring line can leave an end short of what it stood on.
