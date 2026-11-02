@@ -282,7 +282,7 @@ class ACR_BaseSurvey : Managed
   foreach (vector rock : m_aRocks) TryAnchor(tip, heading, rock, "rock", best, at, word, found);
   foreach (ACR_BaseLine line : work.m_aLines)
   {
-   if (line.m_aPieces.IsEmpty()) continue;
+   if (line.m_aPieces.IsEmpty() || work.m_Style.m_bApart) continue;
    TryAnchor(tip, heading, line.m_aPieces[0].m_vFrom, "line", best, at, word, found);
    TryAnchor(tip, heading, line.m_aPieces[line.m_aPieces.Count() - 1].m_vTo, "line", best, at, word, found);
   }

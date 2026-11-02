@@ -6,6 +6,7 @@
 class ACR_TestWorksShots
 {
  static const float STEP_S = 4; // for the world to stream in round the camera
+ static const int STYLE_LINES = 2;
  static const string TOWNS = "Bovemont Base,Ugoldar Base,Ugoldar Harbor 2,Saint-Philippe,Airport Base";
  protected static ref array<ACR_Base> s_aBases = {};
  protected static ref array<vector> s_aEyes = {};
@@ -73,6 +74,9 @@ class ACR_TestWorksShots
   tag.Replace(" ", "");
   vector center = town.GetOrigin();
   ACR_BaseWork work = ACR_BaseWorks.WorkFor(town, side);
+  // One town in every style: each run's shots under its own name.
+  bool styled = ACR_TestBaseWorks.StyleTest("acrStyleShots");
+  if (styled) tag = ACR_BaseStyle.Word(work.m_Style.m_iKind) + "_" + tag;
   // Low and wide: from out in front of the worst line, looking in at the town over it.
   vector look = Vector(0, 0, 1);
   if (!work.m_aLines.IsEmpty()) look = work.m_aLines[0].m_vFacing;
@@ -81,6 +85,12 @@ class ACR_TestWorksShots
   // High and oblique, from the threatened side: can the whole base's coverage be judged?
   float high = ACR_BaseDefences.SearchRadius(town) * 0.9;
   AddShot(center + look * high + Vector(0, Math.Clamp(high, 90, 120), 0), Vector(towards, -45, 0), string.Format("works_%1_high", tag), "the whole town, high");
+  // A style at a glance: the town from high above, and its first lines closer to.
+  if (styled)
+  {
+   foreach (int s, ACR_BaseLine shown : work.m_aLines) if (s < STYLE_LINES) LineShots(shown, tag, s);
+   return;
+  }
   foreach (int l, ACR_BaseLine line : work.m_aLines) LineShots(line, tag, l);
   foreach (int i, ACR_BaseSite site : work.m_aSites)
   {
