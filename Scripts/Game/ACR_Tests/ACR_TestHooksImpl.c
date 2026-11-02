@@ -46,9 +46,10 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
   // -acrWingsTest / -acrWingsOffTest / -acrWingShotsTest: sandbag wings on positions and checkpoints (ACR_TestWings).
   if (System.IsCLIParam("acrWingsTest") || System.IsCLIParam("acrWingsOffTest") || System.IsCLIParam("acrWingShotsTest")) ACR_TestWings.Run(seconds);
-  // -acrWorksShotsTest: Fortify a whole base, photographed (ACR_TestWorksShots).
-  if (System.IsCLIParam("acrWorksShotsTest")) ACR_TestWorksShots.Run(seconds);
+  // -acrWorksShotsTest: Fortify a whole base, photographed (ACR_TestWorksShots). -acrStyleShots<Style>Test: a style's shots.
+  if (System.IsCLIParam("acrWorksShotsTest") || ACR_TestBaseWorks.StyleTest("acrStyleShots")) ACR_TestWorksShots.Run(seconds);
   // -acrBaseWorksTest: Fortify on a base (ACR_TestBaseWorks, #105).
+  if (ACR_TestBaseWorks.StyleTest("acrStylePlan")) ACR_TestBaseWorks.Run(seconds);
   if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksCompactTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
   // -acrWorksFightTest / -acrWorksFightOldTest: what a fortified town costs an attacker (ACR_TestWorksFight).
   if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest")) ACR_TestWorksFight.Run(seconds);

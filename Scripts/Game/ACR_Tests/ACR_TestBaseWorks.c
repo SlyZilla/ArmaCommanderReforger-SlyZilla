@@ -29,11 +29,25 @@ class ACR_TestBaseWorks
  protected static int s_iMen;
  protected static string s_sSide;
 
+ // -acrStylePlanDepthTest 1: the plan test with every town in one style. -acrStyleShotsDepthTest 1: photographs of
+ // those from above (ACR_TestWorksShots).
+ static bool StyleTest(string prefix)
+ {
+  array<string> names = {"Wall", "Points", "Depth", "Funnel", "Ring"};
+  foreach (int kind, string name : names)
+  {
+   if (!System.IsCLIParam(prefix + name + "Test")) continue;
+   ACR_BaseStyle.s_iForceForTest = kind;
+   return true;
+  }
+  return false;
+ }
+
  static void Run(int second)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
-  if (System.IsCLIParam("acrBaseWorksPlanTest"))
+  if (System.IsCLIParam("acrBaseWorksPlanTest") || StyleTest("acrStylePlan"))
   {
    foreach (ACR_FactionSettings aside : ACR_FactionSettings.s_All) aside.m_bAICommander = false;
    RunPlan(manager, second);
@@ -626,6 +640,7 @@ class ACR_TestBaseWorks
  static const float COVER_FLOOR = 0.5;   // of a threatened arc, by lines, on average (the maps reach 55-68%)
  static const float ANCHOR_FLOOR = 0.5;  // the maps reach 55-78%
  protected static int s_iLongLine, s_iLongNoNest, s_iOnApron, s_iBayLines, s_iLongLines;
+ protected static ref array<int> s_aStyles = {0, 0, 0, 0, 0};
  protected static int s_iFire, s_iClose, s_iFacing, s_iPlannedFacing, s_iBuilding, s_iDoor, s_iRoad, s_iDressRoad, s_iApart, s_iDoubled, s_iFarCheck, s_iWorstMs, s_iNestTowns;
  protected static string s_sWorst;
  protected static ref array<IEntity> s_aFound = {};
@@ -667,13 +682,13 @@ class ACR_TestBaseWorks
   float eitherShare = s_fEither / Math.Max(s_iBases, 1);
   float anchorShare = s_iAnchored * 1.0 / Math.Max(s_iEnds2, 1);
   PrintFormat("[ACR] TEST baseworks cover all: lines %1%%, with what stands there %2%%, anchored ends %3%%", (int)(oursShare * 100), (int)(eitherShare * 100), (int)(anchorShare * 100));
-  ACR_TestRegress.Check("baseworks plan: lines cover the threatened arc", oursShare >= COVER_FLOOR, string.Format("%1%% in towns with a line, floor %2%%", (int)(oursShare * 100), (int)(COVER_FLOOR * 100)));
+  ACR_TestRegress.Check("baseworks plan: lines cover the threatened arc", ACR_BaseStyle.s_iForceForTest >= 0 || oursShare >= COVER_FLOOR, string.Format("%1%% in towns with a line, floor %2%%", (int)(oursShare * 100), (int)(COVER_FLOOR * 100)));
   ACR_TestRegress.Check("baseworks plan: most ends stand on something", anchorShare >= ANCHOR_FLOOR, string.Format("%1 of %2 ends, floor %3%%", s_iAnchored, s_iEnds2, (int)(ANCHOR_FLOOR * 100)));
   ACR_TestRegress.Check("baseworks plan: a way through on foot every so often", s_iLongRuns == 0, string.Format("%1 runs over 120 m unbroken", s_iLongRuns));
   ACR_TestRegress.Check("baseworks plan: stretches stay a stretch", s_iLongStretch == 0, string.Format("%1 over 40 m", s_iLongStretch));
   ACR_TestRegress.Check("baseworks plan: pieces per base stay under the cap", s_iMostPieces <= ACR_BaseLines.MOST_PIECES, string.Format("most %1 (cap %2)", s_iMostPieces, ACR_BaseLines.MOST_PIECES));
   ACR_TestRegress.Check("baseworks plan: tier I stays a reasonable job", s_iWorstTier <= 330, string.Format("worst %1 s of work", s_iWorstTier));
-  ACR_TestRegress.Check("baseworks plan: towns don't get one template", s_aLengths.Count() * 4 >= s_iLines, string.Format("%1 different line lengths in %2 lines", s_aLengths.Count(), s_iLines));
+  ACR_TestRegress.Check("baseworks plan: towns don't get one template", ACR_BaseStyle.s_iForceForTest >= 0 || s_aLengths.Count() * 4 >= s_iLines, string.Format("%1 different line lengths in %2 lines", s_aLengths.Count(), s_iLines));
   ACR_TestRegress.Check("baseworks plan: every gun has a clear line of fire (the game's own check)", s_iFire == 0, string.Format("%1 of %2 blocked", s_iFire, s_iNests + s_iBunkers));
   ACR_TestRegress.Check("baseworks plan: no gun faces a wall, fence or building close in front", s_iClose == 0, string.Format("%1 of %2", s_iClose, s_iNests + s_iBunkers));
   ACR_TestRegress.Check("baseworks plan: a gun sees 40 m along its middle", s_iFacing == 0, string.Format("%1 of %2", s_iFacing, s_iNests + s_iBunkers));
@@ -693,8 +708,17 @@ class ACR_TestBaseWorks
   Draw(biggest);
   Replay();
   ACR_TestRegress.Check("baseworks plan: most long lines have fire bays", s_iBayLines * 2 >= s_iLongLines, string.Format("%1 of %2 lines of 60 m or more", s_iBayLines, s_iLongLines));
+  string styleWords;
+  int stylesUsed;
+  foreach (int kind, int styleCount : s_aStyles)
+  {
+   styleWords += string.Format("%1 %2, ", ACR_BaseStyle.Word(kind), styleCount);
+   if (styleCount > 0) stylesUsed++;
+  }
+  PrintFormat("[ACR] TEST baseworks styles: %1", styleWords);
+  ACR_TestRegress.Check("baseworks plan: towns get different styles", stylesUsed >= 3 || ACR_BaseStyle.s_iForceForTest >= 0 || s_iBases < 10, styleWords);
   SwitchChecks(biggest);
-  ACR_TestRegress.Complete("baseworksplan", 42);
+  ACR_TestRegress.Complete("baseworksplan", 44);
  }
 
  protected static void PlanChecks(ACR_Base base)
@@ -886,6 +910,8 @@ class ACR_TestBaseWorks
   s_iEnds2 += ends;
   if (pieces > 0) s_fOurs += ours * 1.0 / arc;
   s_fEither += either * 1.0 / arc;
+  s_aStyles[work.m_Style.m_iKind] = s_aStyles[work.m_Style.m_iKind] + 1;
+  PrintFormat("[ACR] TEST baseworks style %1: %2", base.m_sName, ACR_BaseStyle.Word(work.m_Style.m_iKind));
   PrintFormat("[ACR] TEST baseworks cover %1 | lines %2 | pieces %3 | lines cover %4%% | with what stands %5%% | anchored %6 of %7", base.m_sName, work.m_aLines.Count(), pieces, ours * 100 / arc, either * 100 / arc, anchored, ends);
  }
 
@@ -1090,7 +1116,7 @@ class ACR_TestBaseWorks
     fine = ACR_BaseDefences.DotXZ(endWay, lineWay) < 0.87 && ACR_BaseDefences.DotXZ(endWay, pieces[back].m_vFacing) < 0;
    }
   }
-  else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 8) < 8;
+  else if (word == "building") fine = ACR_BaseDefences.BuildingGap(buildings, tip, 40) < 8;
   else if (word == "road") fine = ACR_BaseDefences.RoadEdgeGap(segs, tip) < 6;
   else if (word == "wall" || word == "gap" || word == "work" || word == "slope" || word == "rock" || word == "line") fine = true;
   if (fine) return;
@@ -1458,7 +1484,23 @@ class ACR_TestBaseWorks
   ACR_Options.Unset("acrBaseSmallGuns");
   int gunsOn = CompactSites(base);
   ACR_BaseLines.s_iFirstNestLevelForTest = firstWas;
-  ACR_TestRegress.Check("baseworks plan: -acrBaseSmallGuns 0 turns small guns off", gunsOff == 0 && gunsOn > 0, string.Format("%1 off, %2 on", gunsOff, gunsOn));
+  // (With every town forced into one style this one town may have no place for a small gun: the off switch is
+  // what's being asked about, and the plain run asks it.)
+  bool forced = ACR_BaseStyle.s_iForceForTest >= 0;
+  ACR_TestRegress.Check("baseworks plan: -acrBaseSmallGuns 0 turns small guns off", gunsOff == 0 && (gunsOn > 0 || forced), string.Format("%1 off, %2 on", gunsOff, gunsOn));
+  // Every town a wall with styles off, whatever its seed would draw.
+  bool walls = true;
+  ACR_Options.Set("acrBaseStyles", "0");
+  foreach (ACR_Base other : ACR_Base.s_All)
+  {
+   if (!other || other.m_bRetired || other.m_bHidden || other.m_bBuilt) continue;
+   string owner = other.m_sOwner;
+   if (owner.IsEmpty()) owner = s_sSide;
+   PlanText(other);
+   if (ACR_BaseWorks.WorkFor(other, owner).m_Style.m_iKind != ACR_BaseStyle.WALL) walls = false;
+  }
+  ACR_Options.Unset("acrBaseStyles");
+  ACR_TestRegress.Check("baseworks plan: -acrBaseStyles 0 makes every town a wall", walls || forced, "");
  }
 
  protected static int CompactSites(ACR_Base base)
