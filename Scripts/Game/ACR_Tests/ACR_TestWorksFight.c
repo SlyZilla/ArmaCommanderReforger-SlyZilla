@@ -16,6 +16,9 @@ class ACR_TestWorksFight
  protected static int s_iStart;
  protected static bool s_bDone;
  protected static int s_iDefendersLeft;
+ protected static ref ACR_BagSampler s_Sampler = new ACR_BagSampler();
+ protected static bool s_bShots;
+ protected static bool s_bListening;
 
  static void Run(int second)
  {
@@ -33,11 +36,23 @@ class ACR_TestWorksFight
    return;
   }
   int fought = second - s_iStart;
+  Sample(manager);
   if (fought % 15 == 0) Report(manager, fought);
+  if (fought % 30 == 0 && s_Work.m_Defenders && s_Work.m_Defenders.m_Group)
+  {
+   array<IEntity> posts = {};
+   ACR_Garrison.PostEntities(s_Work.m_Defenders.m_Group, posts);
+   array<vector> places = {};
+   foreach (IEntity post : posts) if (post) places.Insert(post.GetOrigin());
+   ACR_BagSampler.Dump(string.Format("t=%1", fought), s_Work.m_Defenders.m_Group, places);
+  }
   if (fought >= LENGTH || (fought > 20 && (Attackers(manager) == 0 || Defenders(manager) == 0)))
   {
    Report(manager, fought);
    s_bDone = true;
+   s_Sampler.StopListening();
+   PrintFormat("[ACR] WORKSFIGHT MEN %1", s_Sampler.Words());
+   PrintFormat("[ACR] WORKSFIGHT held: into cover %1 times, sent back %2 times (%5 failed), holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost, ACR_BagHold.s_iMoveFails);
    PrintFormat("[ACR] WORKSFIGHT RESULT %1: attackers lost %2 of %3, defenders lost %4 of %5, walls lost %6 of %7, %8 s, line men %9", s_Base.m_sName, s_iAttackers - Attackers(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, s_iWalls - Walls(), s_iWalls, fought, !ACR_BaseWorks.s_bNoLineMenForTest);
    ACR_TestRegress.Check("worksfight: reached the end", true, "");
    ACR_TestRegress.Complete("worksfight", 1);
@@ -48,6 +63,7 @@ class ACR_TestWorksFight
  {
   ACR_BaseWorks.s_bNoLineMenForTest = System.IsCLIParam("acrWorksFightOldTest");
   if (System.IsCLIParam("acrWorksFightValueOffTest")) ACR_Options.Set("acrKillGround", "0");
+  if (System.IsCLIParam("acrWorksFightOffTest")) ACR_Options.Set("acrBagHold", "0");
   if (System.IsCLIParam("acrWorksFightCompactTest")) ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
   string side = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
@@ -141,6 +157,50 @@ class ACR_TestWorksFight
   foreach (ACR_BaseSite site : s_Work.m_aSites)
    foreach (IEntity wall : site.m_aWalls) if (wall) alive++;
   return alive;
+ }
+
+ // What the men out do by the second, from their first shot on: where they stand, their stance, their fire.
+ protected static void Sample(ACR_Manager manager)
+ {
+  SCR_AIGroup group;
+  if (s_Work.m_Defenders) group = s_Work.m_Defenders.m_Group;
+  if (!group) return;
+  array<IEntity> enemies = {};
+  array<string> names = {ONE, TWO};
+  foreach (string name : names)
+  {
+   ACR_Squad squad = Find(manager, name);
+   if (squad) ACR_BagSampler.Alive(squad.m_Group, enemies);
+  }
+  array<IEntity> posts = {};
+  ACR_Garrison.PostEntities(group, posts);
+  array<vector> places = {};
+  foreach (IEntity post : posts) if (post) places.Insert(post.GetOrigin());
+  array<IEntity> men = {};
+  ACR_BagSampler.Alive(group, men);
+  if (!s_bListening)
+  {
+   s_bListening = true;
+   s_Sampler.ListenForShots();
+  }
+  foreach (IEntity man : men)
+  {
+   if (!s_Sampler.m_aMen.Contains(man)) s_Sampler.m_aMen.Insert(man);
+   if (!s_bShots)
+   {
+    if (s_Sampler.Fired(man) > 0) s_bShots = true;
+    continue;
+   }
+   IEntity enemy = ACR_BagSampler.Nearest(enemies, man.GetOrigin());
+   vector facing = vector.Zero;
+   foreach (ACR_BaseLine line : s_Work.m_aLines)
+   {
+    facing = line.m_vFacing;
+    break;
+   }
+   s_Sampler.Sample(man, enemy, places, facing);
+  }
+  s_Sampler.Deaths(GetGame().GetWorld().GetWorldTime() / 1000);
  }
 
  // How far the men stand from the nearest bags, on average, and how many are on a line.

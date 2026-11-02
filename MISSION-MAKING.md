@@ -755,6 +755,7 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrBasePlacement` | `-acrBasePlacement 1` (default) or `0`; a fortified town's lines keep out of yards and off squares, and its guns look for the ways in |
 | `m_iAcrEmplacements` | `-acrEmplacements 1` (default) or `0`; guns stand in emplacements built from parts as well as the game's ready-made nests |
 | `m_iAcrWingMen` | `-acrWingMen 1` (default) or `0`; a Fortify position's reserve goes behind its wings when an enemy comes |
+| `m_iAcrBagHold` | `-acrBagHold 1` (default) or `0`; men with a place behind bags hold it in a fight and shoot over them, and squads defending at bags take places there |
 | `m_iAcrBaseDress` | `-acrBaseDress 1` (default) or `0`; lines have stretches of low or netted bags and dirt in front, not only plain high bags |
 | `m_iAcrBaseObstacles` | `-acrBaseObstacles 1` (default) or `0`; hedgehogs or log barricades out in front of a line either side of its road |
 | `m_iAcrBaseRing` | `-acrBaseRing 1` (default) or `0`; where a town's lines go. On: one shortest path right round the town, bags on open ground and houses, stone walls, water and cliffs for free, so the bags close the town from house to house outside its yards. Off: lines walked out from seeds along each approach, as before. |
@@ -891,6 +892,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrBasePlacement 0` | The older placement of a fortified town's lines and guns (on by default: bags that would watch only a fence from a yard, or stand on a square, go elsewhere, and guns favour places that cover a way into town and see far) |
 | `-acrEmplacements 0` | Only the game's ready-made MG nests (on by default: guns also stand in emplacements built from parts, shaped to the spot) |
 | `-acrWingMen 0` | A Fortify position's reserve stays round the position (on by default: each man goes behind the bags of its wings) |
+| `-acrBagHold 0` | Men behind bags move and take stances as the game's combat movement has them, and squads defend or garrison as they would with no bags there (on by default: each man stands to fire over the bags and crouches to hide, and comes back to his place if something moves him) |
 | `-acrBaseDress 0` | Every base-works line plain high bags (on by default: low stretches on a town's first lines, netted ones later, FIA low whenever, dirt in front here and there) |
 | `-acrBaseObstacles 0` | Only wire out in front of base-works lines (on by default: Czech hedgehogs, or log barricades for FIA, either side of a line's road) |
 | `-acrBaseRing 0` | A town's lines walked out from seeds along each approach instead of closing the town (on by default). |
