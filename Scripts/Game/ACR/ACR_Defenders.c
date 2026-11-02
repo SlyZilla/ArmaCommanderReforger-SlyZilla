@@ -35,7 +35,9 @@ class ACR_Defenders
  static ref array<ref ACR_DefenderPost> s_Posts = {};
  static const float SPAWN_RANGE = 400;   // as ACR_BaseSystem's garrisons
  static const float DESPAWN_RANGE = 450;
- static const float REMAN_REACH = 40;    // m from an empty gun of a base's works a man of its reserve leaves the bags for it (as BBB_HeldGuns)
+ static const float REMAN_REACH = 8;     // m from an empty gun of a base's works a man of its reserve leaves the bags for it: the nest's own wing
+ static const float REMAN_WAIT_MS = 45000; // ... and how long the gun then stays empty before the next man is asked
+ protected static ref map<IEntity, float> s_mReseatAt = new map<IEntity, float>();
 
  static ACR_DefenderPost Add(string faction, vector pos, string name, float radius)
  {
@@ -129,15 +131,16 @@ class ACR_Defenders
   if (post) post.m_bCrewWanted = false;
  }
 
- // The guns a gun crew holds, or a base's works reserve out on its bags (ACR_BBBHooks.GetHeldGuns: BBB keeps
- // them manned and mans an empty one again). The reserve's men took the bags beside the nest and left its gun
- // empty once its gunner was shot (srv:worksfightbase, 2 Nov: the one nest stood empty from 90 s on).
+ // The guns a gun crew holds (ACR_BBBHooks.GetHeldGuns: BBB keeps them manned). Not a base's works reserve out
+ // on its bags: listed here too, BBB's remount (every 8 s, from 40 m) pulled every man off the bags onto guns
+ // the attackers were shooting at (srv:worksfightbase, 2 Nov: on post 8%, 7 of 8 lost). SeatLineMen does it
+ // for the reserve, from beside the gun and seldom.
  static bool CrewGunsOf(SCR_AIGroup group, notnull array<IEntity> guns)
  {
   if (!group) return false;
   foreach (ACR_DefenderPost post : s_Posts)
   {
-   if (!post || (post.m_GunCrew != group && !(post.m_Work && post.m_Group == group))) continue;
+   if (!post || post.m_GunCrew != group) continue;
    foreach (IEntity gun : post.m_aCrewGuns) if (gun) guns.Insert(gun);
    return true;
   }
@@ -182,17 +185,22 @@ class ACR_Defenders
  }
 
  // A base's works reserve out on its bags: a gun of the works standing empty (its gunner shot, or never crewed)
- // is manned from the bags beside it, by the nearest man on foot within REMAN_REACH. BBB keeps him on it and
- // mans it again itself after 8 s (BBB_HeldGuns, through CrewGunsOf); this is for when it can't.
+ // is manned by the man on the bags beside it (within REMAN_REACH), at most once per REMAN_WAIT_MS per gun. The
+ // gunner is who the attackers shoot first: from further off, or oftener, this emptied the bags into the guns
+ // (srv:worksfightbase, 2 Nov: 10 re-mans, 7 of 8 lost; the men on the bags were doing the killing).
  protected static void SeatLineMen(ACR_DefenderPost post)
  {
   if (!post.m_Group || post.m_aCrewGuns.IsEmpty()) return;
   array<AIAgent> agents = {};
   post.m_Group.GetAgents(agents);
+  float now = GetGame().GetWorld().GetWorldTime();
   foreach (IEntity gun : post.m_aCrewGuns)
   {
    BaseCompartmentSlot slot = FreeTurret(gun);
    if (!slot) continue;
+   float again;
+   if (s_mReseatAt.Find(gun, again) && now < again) continue;
+   s_mReseatAt.Set(gun, now + REMAN_WAIT_MS);
    ChimeraCharacter best;
    float nearest = REMAN_REACH;
    foreach (AIAgent agent : agents)
@@ -287,6 +295,7 @@ class ACR_Defenders
 
  static void Reset()
  {
+  s_mReseatAt.Clear();
   s_Posts.Clear();
  }
 }
