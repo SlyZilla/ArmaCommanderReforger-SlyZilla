@@ -108,6 +108,7 @@ class ACR_BaseRing : Managed
  static const float STREET_HALF = 11;  // half such a line
  static const float STREET_RIM_IN = -70; // m inside the outline those may stand: the streets are where he is
  static const float WAY_HALF = 15;     // half such a line
+ static const float WAY_SHORTEST = 9;  // m: shorter, once its ends are off houses, walls, roads and paving, isn't a line
  static const float WAY_ANCHOR = 8;    // m from its end to something it can end on
  static const float ANCHORED = 1.15;   // ... each such end: nothing to walk round
  static const float LOOK_MARGIN = 0.85; // what can't come this near the best isn't looked at
@@ -1516,7 +1517,7 @@ class ACR_BaseRing : Managed
  protected int TryWayLine(vector mid, vector facing, notnull array<ref ACR_RingRun> runs, notnull array<int> seen, float halfLine = 0, float rimIn = WAY_RIM_IN)
  {
   int cell = At(mid[0], mid[2]);
-  if (cell < 0 || (m_aCell[cell] & (HOUSE | WATER | CLIFF | ROAD)) != 0) return 0;
+  if (cell < 0 || !Layable(cell)) return 0;
   if (m_aRim[cell] > WAY_RIM_OUT || m_aRim[cell] < rimIn) return 0;
   // One to a place and a way of facing.
   int key = cell / 9 * 4 + (int)(ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(facing)) / 90);
@@ -1527,15 +1528,21 @@ class ACR_BaseRing : Managed
   // No two towns' lines cut to one length.
   float half = halfLine;
   if (half <= 0) half = WAY_HALF * (0.75 + 0.5 * m_Luck.RandFloat01());
+  // Only ground bags can stand on: each end comes in short of a house, a wall, a road or paving, so the walk can start.
+  float toA = FreeReach(mid, across * -1, half);
+  float toB = FreeReach(mid, across, half);
+  if (toA + toB < WAY_SHORTEST) return 0;
+  vector a = mid - across * toA;
+  vector b = mid + across * toB;
+  mid = (a + b) * 0.5;
+  mid[1] = GetGame().GetWorld().GetSurfaceY(mid[0], mid[2]);
   ACR_RingRun run = new ACR_RingRun();
   run.m_bForWay = true;
   run.m_vMiddle = mid;
   run.m_vOut = facing;
-  run.m_fLength = half * 2;
+  run.m_fLength = toA + toB;
   run.m_fThreat = ThreatAt(cell);
   run.m_fView = ViewAt(cell);
-  vector a = mid - across * half;
-  vector b = mid + across * half;
   run.m_aWay.Insert(a);
   run.m_aWay.Insert(mid);
   run.m_aWay.Insert(b);
@@ -1548,6 +1555,28 @@ class ACR_BaseRing : Managed
   run.m_iOrder = (WAY_PARENT + runs.Count()) * 100;
   runs.Insert(run);
   return 1;
+ }
+
+ // Ground bags can stand on.
+ protected bool Layable(int cell)
+ {
+  if ((m_aCell[cell] & (HOUSE | STONE | WATER | CLIFF | ROAD)) != 0) return false;
+  return !IsHard(cell);
+ }
+
+ // How far from 'from' along 'dir', up to 'most', every step is ground bags can stand on.
+ protected float FreeReach(vector from, vector dir, float most)
+ {
+  float step = CELL * 0.5;
+  float free = 0;
+  for (float d = step; d <= most; d += step)
+  {
+   vector at = from + dir * d;
+   int cell = At(at[0], at[2]);
+   if (cell < 0 || !Layable(cell)) return Math.Max(free - 1, 0);
+   free = d;
+  }
+  return most;
  }
 
  // The parts of a line further out that can see, added to 'runs'.
