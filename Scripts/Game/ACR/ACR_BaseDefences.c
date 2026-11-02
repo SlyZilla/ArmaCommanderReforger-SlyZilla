@@ -621,12 +621,14 @@ class ACR_BaseDefences : Managed
 		return gap;
 	}
 
+	static const float BUILDING_REACH = 70; // m from its origin a building's walls can be (srv:basedefenceskolguyev: 61)
+
 	static float BuildingGap(array<IEntity> buildings, vector p, float within, IEntity ignore = null)
 	{
 		float gap = float.MAX;
 		foreach (IEntity b : buildings)
 		{
-			if (!b || b == ignore || vector.DistanceXZ(b.GetOrigin(), p) > within + 40) continue;
+			if (!b || b == ignore || vector.DistanceXZ(b.GetOrigin(), p) > within + BUILDING_REACH) continue;
 			float d = ACR_Garrison.DistanceToBox(b, p);
 			if (d < gap) gap = d;
 		}
