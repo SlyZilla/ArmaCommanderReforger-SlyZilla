@@ -1004,9 +1004,9 @@ class ACR_BaseLines
  static const float GATE_GUN_HALF = 3;    // m it reaches round its middle
  static const float GATE_GUN_REACH = 30;  // m its fan must be clear
  static const int GATE_GUN_LOOKS = 32;    // ways of standing tried for one way in: each is several traces
- static const float CORNER_GUN_OUT = 4.5; // m outside a compound wall's corner a gun in a ring of its own stands
+ static const float CORNER_GUN_OUT = 5;   // m outside a compound wall's corner a gun in a ring of its own stands, or 3 or 6 more
  static const float CORNER_MEET = 0.8;    // m apart two wall pieces' ends can be and meet
- static const float CORNER_TALL = 1.4;    // m a wall piece must stand to be a wall, not a fence
+ static const float CORNER_TALL = 3;      // m a wall piece must stand to be a compound's wall: a garden wall or a fence gets no gun
  static const float CORNER_COS_LEAST = 0.64; // two pieces meeting at under 50 degrees run on: no corner
  static const float CORNER_COS_MOST = -0.64; // ... over 130: a kink
  static const float CORNER_CONVEX = 0.3;  // how squarely the corner's outside faces away from the town's middle
@@ -2773,6 +2773,7 @@ class ACR_BaseLines
   array<vector> corners = {};
   array<vector> outwards = {};
   int pieces = survey.m_aWallEnds.Count() / 2;
+  int metAll, squareAll, convexAll;
   for (int i = 0; i < pieces; i++)
   {
    if (survey.m_aWallTall[i] < CORNER_TALL) continue;
@@ -2781,13 +2782,16 @@ class ACR_BaseLines
     if (survey.m_aWallTall[j] < CORNER_TALL) continue;
     vector shared, d1, d2;
     if (!SharedEnd(survey, i, j, shared, d1, d2)) continue;
+    metAll++;
     float dot = ACR_BaseDefences.DotXZ(d1, d2);
     if (dot > CORNER_COS_LEAST || dot < CORNER_COS_MOST) continue;
+    squareAll++;
     vector outward = (d1 + d2) * -1;
     outward[1] = 0;
     if (outward.LengthSq() < 0.01) continue;
     outward.Normalize();
     if (ACR_BaseDefences.DotXZ(outward, ACR_BaseDefences.FlatDir(center, shared)) < CORNER_CONVEX) continue;
+    convexAll++;
     if (ACR_BaseDefences.ThreatDot(survey.m_aDirs, survey.m_aWeights, outward) < CORNER_THREAT) continue;
     bool known = false;
     foreach (vector have : corners) if (vector.DistanceXZ(have, shared) < 3) known = true;
@@ -2796,42 +2800,54 @@ class ACR_BaseLines
     outwards.Insert(outward);
    }
   }
-  if (corners.IsEmpty()) return;
+  if (corners.IsEmpty())
+  {
+   PrintFormat("[ACR] BASEWORKS %1: %2 wall pieces, no corner towards him (met %3, square %4, convex %5)", work.m_Base.m_sName, pieces, metAll, squareAll, convexAll);
+   return;
+  }
   // Where each gun would stand, and what it does to him there.
   array<vector> places = {};
   array<float> yaws = {};
   array<float> scores = {};
   array<ref ACR_KillSite> kills = {};
+  int noRoad, noHouse, noHard, noPiece, noWorld, noFan, noWorth;
   foreach (int c, vector corner : corners)
   {
-   vector at = corner + outwards[c] * CORNER_GUN_OUT;
-   at[1] = ACR_BaseLiner.Ground(at);
-   if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, at) < COMPACT_ROAD) continue;
-   if (ACR_BaseDefences.BuildingGap(survey.m_aBuildings, at, COMPACT_HOUSE) < COMPACT_HOUSE) continue;
-   if (survey.DoorGap(at) < ACR_BaseSurvey.DOOR_CLEAR || ACR_Fortify.HardSurface(at)) continue;
-   if (PieceWithin(work, at, GATE_GUN_HALF + 1, {})) continue;
-   if (!ACR_BaseDefences.WorldClear(at, 0, Vector(GATE_GUN_HALF, 0, GATE_GUN_HALF), null, true)) continue;
-   float yaw = ACR_BaseDefences.Bearing(outwards[c]);
-   if (survey.m_Kill)
+   // Just outside the corner, or a little further if the wall's own footing is in the way.
+   array<float> outs = {CORNER_GUN_OUT, CORNER_GUN_OUT + 3, CORNER_GUN_OUT + 6};
+   foreach (float outBy : outs)
    {
-    array<float> turns = {15, -15, 25, -25};
-    float best = survey.m_Kill.BestFacing(at, yaw, turns, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, ACR_KillGround.GUN_POWER * 0.7, ACR_BaseSurvey.UP_NEST);
-    if (best != yaw && ACR_BaseSurvey.NestFan(at, best, GATE_GUN_REACH)) yaw = best;
+    vector at = corner + outwards[c] * outBy;
+    at[1] = ACR_BaseLiner.Ground(at);
+    if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, at) < COMPACT_ROAD) { noRoad++; continue; }
+    if (ACR_BaseDefences.BuildingGap(survey.m_aBuildings, at, COMPACT_HOUSE) < COMPACT_HOUSE) { noHouse++; continue; }
+    if (survey.DoorGap(at) < ACR_BaseSurvey.DOOR_CLEAR || ACR_Fortify.HardSurface(at)) { noHard++; continue; }
+    if (PieceWithin(work, at, GATE_GUN_HALF + 1, {})) { noPiece++; continue; }
+    if (!ACR_BaseDefences.WorldClear(at, 0, Vector(GATE_GUN_HALF, 0, GATE_GUN_HALF), null, true)) { noWorld++; continue; }
+    float yaw = ACR_BaseDefences.Bearing(outwards[c]);
+    if (survey.m_Kill)
+    {
+     array<float> turns = {15, -15, 25, -25};
+     float best = survey.m_Kill.BestFacing(at, yaw, turns, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, ACR_KillGround.GUN_POWER * 0.7, ACR_BaseSurvey.UP_NEST);
+     if (best != yaw && ACR_BaseSurvey.NestFan(at, best, GATE_GUN_REACH)) yaw = best;
+    }
+    if (ACR_BaseWorks.GunsNear(work, at, yaw) || !ACR_BaseSurvey.NestFan(at, yaw, GATE_GUN_REACH) || BagsAhead(work, at, yaw, null)) { noFan++; continue; }
+    ACR_KillSite killSite;
+    float score = 1;
+    if (survey.m_Kill)
+    {
+     killSite = survey.m_Kill.Site(at, yaw, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, ACR_KillGround.GUN_POWER * 0.7, ACR_BaseSurvey.UP_NEST);
+     score = survey.m_Kill.Value(killSite);
+     if (score < LONE_GUN_WORTH) { noWorth++; continue; }
+    }
+    places.Insert(at);
+    yaws.Insert(yaw);
+    scores.Insert(score);
+    kills.Insert(killSite);
+    break;
    }
-   if (ACR_BaseWorks.GunsNear(work, at, yaw) || !ACR_BaseSurvey.NestFan(at, yaw, GATE_GUN_REACH) || BagsAhead(work, at, yaw, null)) continue;
-   ACR_KillSite killSite;
-   float score = 1;
-   if (survey.m_Kill)
-   {
-    killSite = survey.m_Kill.Site(at, yaw, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, ACR_KillGround.GUN_POWER * 0.7, ACR_BaseSurvey.UP_NEST);
-    score = survey.m_Kill.Value(killSite);
-    if (score < LONE_GUN_WORTH) continue;
-   }
-   places.Insert(at);
-   yaws.Insert(yaw);
-   scores.Insert(score);
-   kills.Insert(killSite);
   }
+  PrintFormat("[ACR] BASEWORKS %1: %2 wall corners towards him, %3 stand: road %4, house/hard %5, piece/world %6, fan %7, worth %8", work.m_Base.m_sName, corners.Count(), places.Count(), noRoad, noHouse + noHard, noPiece + noWorld, noFan, noWorth);
   int made = 0;
   while (made < most && !places.IsEmpty())
   {

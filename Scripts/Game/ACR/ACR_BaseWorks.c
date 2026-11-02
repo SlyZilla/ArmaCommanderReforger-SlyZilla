@@ -71,7 +71,7 @@ class ACR_BaseWorks
  static const float CLICK_RADIUS = 60;  // m from a base's centre: Fortify there means the whole base
  static const int MAX_NESTS = 3;
  static const int MAX_GATE_GUNS = 2;
- static const int MAX_CORNER_GUNS = 2;  // guns outside a compound wall's threatened corners
+ static const int MAX_CORNER_GUNS = 0;  // guns outside a compound wall's threatened corners: held at 0, no stand passes the checks yet (2 Nov)
  static const int MAX_BUNKERS = 3;
  static const int MAX_ROADBLOCKS = 2;
  static const float SITE_RADIUS = 30;   // squad members this close to a site work
