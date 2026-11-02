@@ -868,7 +868,8 @@ class ACR_BaseWorks
  // The reserve out: each man to his own place behind the bags of the lines that face the enemy, nearest him
  // first, standing to fire over them. Before, they stood in the town's middle or in its buildings and
  // the works did nothing for them (pn23 playtest). False: no line for it, the caller does what it did.
- static bool ManLine(ACR_DefenderPost post, int men)
+ // 'chosen' (may be null): the lines to use, best first, when the caller has already picked them.
+ static bool ManLine(ACR_DefenderPost post, int men, array<int> chosen = null)
  {
   ACR_BaseWork work = post.m_Work;
   if (!work || !post.m_Group || s_bNoLineMenForTest || men <= 0) return false;
@@ -876,7 +877,8 @@ class ACR_BaseWorks
   vector threat;
   bool hasThreat = ThreatAt(post, threat);
   array<int> lines = {};
-  LinesFor(work, threat, hasThreat, lines);
+  if (chosen) lines.Copy(chosen);
+  else LinesFor(work, threat, hasThreat, lines);
   if (lines.IsEmpty()) return false;
   array<ref ACR_GarrisonSpot> spots = {};
   LineSpots(work, lines, threat, hasThreat, men, post.m_Group, spots);
@@ -1038,7 +1040,8 @@ class ACR_BaseWorks
      array<int> better = {};
      LinesFor(post.m_Work, threat, true, better);
      ACR_Manager keeper = ACR_Manager.GetInstance();
-     if (keeper && !better.IsEmpty() && better[0] != post.m_iMannedLine && ManLine(post, keeper.m_Bases.GuardsAlive(post.m_Group))) return;
+     // (The lines just picked are the ones they go to: picking again in ManLine could send them back onto this one.)
+     if (keeper && !better.IsEmpty() && better[0] != post.m_iMannedLine && ManLine(post, keeper.m_Bases.GuardsAlive(post.m_Group), better)) return;
     }
    }
   }
