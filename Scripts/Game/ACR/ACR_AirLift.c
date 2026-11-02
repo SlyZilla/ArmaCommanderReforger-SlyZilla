@@ -207,8 +207,7 @@ class ACR_LiftHeli : ACR_HeliRun
   if (IsDestroyed() || MovementDamage() >= CRIPPLED_MOVEMENT_DAMAGE)
   {
    m_bDestroyed = true;
-   Physics wreck = m_Vehicle.GetPhysics();
-   if (wreck) wreck.EnableGravity(true);
+   LetFall();
    PrintFormat("[ACR] AIRLIFT helicopter going down (destroyed=%1 movement damage=%2)", IsDestroyed(), MovementDamage());
    return false;
   }

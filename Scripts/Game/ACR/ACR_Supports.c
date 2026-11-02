@@ -1045,6 +1045,21 @@ class ACR_HeliRun : ACR_SupportRun
  // a rotor shot off it kept flying (live 1 Oct, Mi-8). The damage manager's movement
  // damage combines engine, gearbox and every rotor (a lost tail rotor counts too).
  static const float CRIPPLED_MOVEMENT_DAMAGE = 0.75;
+
+ // Going down: gravity back and the engine off. With the engine left running, the game's own flight
+ // model kept it in the air: crippled at 83 m it climbed to 232 m in 40 s (srv:helidown), and one
+ // from a pad flew 1.8 km off until its wreck timer removed it in mid-air (srv:helipad, 31 Oct).
+ protected void LetFall()
+ {
+  Physics wreck = m_Vehicle.GetPhysics();
+  if (wreck) wreck.EnableGravity(true);
+  VehicleHelicopterSimulation rotors = VehicleHelicopterSimulation.Cast(m_Vehicle.FindComponent(VehicleHelicopterSimulation));
+  if (rotors)
+  {
+   rotors.SetThrottle(0);
+   rotors.EngineStop();
+  }
+ }
  float MovementDamage()
  {
   DamageManagerComponent damage = DamageManagerComponent.Cast(m_Vehicle.FindComponent(DamageManagerComponent));
@@ -1172,8 +1187,7 @@ class ACR_HeliRun : ACR_SupportRun
   if (IsDestroyed() || movementDamage >= CRIPPLED_MOVEMENT_DAMAGE)
   {
    m_bDestroyed = true;
-   Physics wreck = m_Vehicle.GetPhysics();
-   if (wreck) wreck.EnableGravity(true);
+   LetFall();
    supports.m_Manager.NotifyFaction(m_sFaction, "Support helicopter is going down!");
    PrintFormat("[ACR] SUPPORT helicopter going down (destroyed=%1 movement damage=%2)", IsDestroyed(), movementDamage);
    if (m_Home) supports.Station().Lost(m_Home);
