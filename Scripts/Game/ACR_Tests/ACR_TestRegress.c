@@ -8,6 +8,7 @@ class ACR_TestRegress
 {
  static ref ACR_Squad s_Heli;
  static int s_iReportLost;
+ static int s_iReportVehiclesLost;
  static int s_iPassed, s_iFailed, s_iSkipped;
  static bool s_bCompleted;
  // GitHub #39: every base a side can deploy at has an open spawn point named after it, the HQ
@@ -1195,6 +1196,18 @@ class ACR_TestRegress
   {
    ACR_SideStats ussr = ACR_Report.Of("USSR");
    s_iReportLost = ussr.m_iLost;
+   // A vehicle of ours, far from everyone, its crew gone (the game clears the faction of a vehicle
+   // when its last occupant leaves), destroyed: still our loss.
+   s_iReportVehiclesLost = ACR_Report.Of("US").m_iVehiclesLost;
+   IEntity wreck = ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", ACR_Manager.Ground("1135 0 3532"));
+   if (wreck)
+   {
+    ACR_Vehicles.SetOwner(wreck, "US");
+    SCR_VehicleFactionAffiliationComponent emptied = SCR_VehicleFactionAffiliationComponent.Cast(wreck.FindComponent(SCR_VehicleFactionAffiliationComponent));
+    if (emptied) emptied.ClearAffiliatedFaction();
+    SCR_DamageManagerComponent wreckDamage = SCR_DamageManagerComponent.Cast(wreck.FindComponent(SCR_DamageManagerComponent));
+    if (wreckDamage) wreckDamage.Kill(Instigator.CreateInstigator(null));
+   }
    IEntity victim;
    foreach (ACR_Squad squad : manager.m_Squads)
    {
@@ -1213,6 +1226,7 @@ class ACR_TestRegress
    string text = ACR_Report.Text("US");
    Check("report: bases won and lost tallied", us.m_iBasesWon >= 1 && ussr2.m_iBasesLost >= 1, string.Format("US won %1, USSR lost %2", us.m_iBasesWon, ussr2.m_iBasesLost));
    Check("report: a dead soldier counts as lost", ussr2.m_iLost > s_iReportLost, string.Format("%1 -> %2", s_iReportLost, ussr2.m_iLost));
+   Check("report: a vehicle destroyed after its crew left counts as lost by its side", us.m_iVehiclesLost > s_iReportVehiclesLost, string.Format("%1 -> %2", s_iReportVehiclesLost, us.m_iVehiclesLost));
    Check("report: RP spent tallied and panel text built", us.m_iRPSpent > 0 && text.Contains("Bases won"), string.Format("spent %1 | %2", us.m_iRPSpent, text.Length()));
    ACR_Report.LogAll();
   }
