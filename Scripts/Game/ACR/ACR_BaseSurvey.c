@@ -411,6 +411,34 @@ class ACR_BaseSurvey : Managed
   // Past the search radius: a line can run out there, and must see what stands there.
   ACR_BaseDefences.Roads(m_vCenter, m_fRadius + 70, m_aSegs);
   ACR_BaseDefences.Buildings(m_vCenter, m_fRadius + 80, m_aBuildings);
+  Sectors();
+  LookAtBuildings();
+  LookOut();
+  LookAtWalls();
+  LookAtRoads();
+  LookAtWorks();
+ }
+
+ // Round a small work out in the open (ACR_Wings): what a walk needs, no town or threats. With no edge
+ // every wall counts, not only those at the town's rim.
+ static ACR_BaseSurvey TakeAround(vector center, float radius)
+ {
+  ACR_BaseSurvey survey = new ACR_BaseSurvey();
+  int started = System.GetTickCount();
+  survey.m_vCenter = center;
+  survey.m_fRadius = radius;
+  ACR_BaseDefences.Roads(center, radius + 20, survey.m_aSegs);
+  ACR_BaseDefences.Buildings(center, radius + 20, survey.m_aBuildings);
+  survey.Sectors();
+  foreach (IEntity house : survey.m_aBuildings) if (house) survey.LookAtDoors(house);
+  survey.LookAtWalls();
+  survey.LookAtWorks();
+  survey.m_iMs = System.GetTickCount() - started;
+  return survey;
+ }
+
+ protected void Sectors()
+ {
   for (int s = 0; s < SECTORS; s++)
   {
    m_aEdge.Insert(0);
@@ -423,11 +451,17 @@ class ACR_BaseSurvey : Managed
    m_aLight.Insert(0);
   }
   for (int bin = 0; bin < BINS; bin++) m_aBins.Insert(0);
-  LookAtBuildings();
-  LookOut();
-  LookAtWalls();
-  LookAtRoads();
-  LookAtWorks();
+ }
+
+ protected void LookAtDoors(IEntity b)
+ {
+  IEntity child = b.GetChildren();
+  while (child)
+  {
+   string part = FullName(child);
+   if (part.Contains("/Doors/") && !part.Contains("_INT")) m_aDoors.Insert(child.GetOrigin());
+   child = child.GetSibling();
+  }
  }
 
  // The town's edge per sector, and the buildings' doors.
@@ -447,13 +481,7 @@ class ACR_BaseSurvey : Managed
     int s = Sector(ACR_BaseDefences.Bearing(corner - m_vCenter));
     if (reach > m_aEdge[s]) m_aEdge[s] = reach;
    }
-   IEntity child = b.GetChildren();
-   while (child)
-   {
-    string part = FullName(child);
-    if (part.Contains("/Doors/") && !part.Contains("_INT")) m_aDoors.Insert(child.GetOrigin());
-    child = child.GetSibling();
-   }
+   LookAtDoors(b);
   }
   // A sector with no buildings: as its neighbours, or a fair way out from the middle.
   array<float> edges = {};

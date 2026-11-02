@@ -22,6 +22,8 @@ class ACR_Fortification : Managed
  int m_iTier;                        // 1-3
  ref array<IEntity> m_aPieces = {};  // one per spot (null: none)
  ref array<IEntity> m_aWire = {};    // the wire line's segments (tier I)
+ ref array<IEntity> m_aWings = {};   // the bags running out from its end posts (ACR_Wings)
+ ref array<ref ACR_WingPlan> m_aWingPlans = {};
  ref array<IEntity> m_aTurrets = {}; // the guns among its pieces (ACR_Fortify.RefreshTurrets)
  ACR_DefenderPost m_Defenders;       // its defenders (tier II and III, ACR_Defenders)
  float m_fUpgradeHeldUntil;          // world ms: an upgrade here was refused, the AI leaves it till then
@@ -507,6 +509,8 @@ class ACR_Fortify
   if (target)
   {
    foreach (IEntity piece : target.m_aPieces) if (piece) ignore.Insert(piece);
+   // Its wings make way for what goes in (ACR_Wings.Cut).
+   foreach (IEntity wingPiece : target.m_aWings) if (wingPiece) ignore.Insert(wingPiece);
   }
   array<float> across = {0, 2, -2, 4, -4};
   array<float> along = {0, -2, 2};
@@ -1032,8 +1036,15 @@ class ACR_Fortify
    foreach (vector place : tries)
    {
     ACR_FobBuild.FellTrees(place, SpotRadius(s));
-    piece = SpawnPiece(PrefabFor(s, fort.m_sFaction, plan.m_iTier), place, fort.m_fYaw + TurnAt(fort.m_vPos, fort.m_fYaw, s, place), fort.m_sFaction);
-    if (!piece) continue;
+    float placeYaw = fort.m_fYaw + TurnAt(fort.m_vPos, fort.m_fYaw, s, place);
+    array<ref ACR_WingCut> cuts = {};
+    if (s >= 2) ACR_Wings.Cut(fort.m_aWings, place, placeYaw, IsGun(s), cuts);
+    piece = SpawnPiece(PrefabFor(s, fort.m_sFaction, plan.m_iTier), place, placeYaw, fort.m_sFaction);
+    if (!piece)
+    {
+     ACR_Wings.PutBack(fort.m_aWings, cuts);
+     continue;
+    }
     string fireWhy;
     if (LineOfFire(piece, fireWhy))
     {
@@ -1041,6 +1052,7 @@ class ACR_Fortify
      break;
     }
     PrintFormat("[ACR] FORTIFY spot %1 at %2: %3, trying another place", s, place, fireWhy);
+    ACR_Wings.PutBack(fort.m_aWings, cuts);
     DeletePiece(piece);
     piece = null;
     reason = fireWhy;
@@ -1069,6 +1081,8 @@ class ACR_Fortify
    if (reason.IsEmpty()) reason = "no piece could be placed";
    return null;
   }
+  // Wings first: they'd take the wire for a fence to tie into, and the wire stays off their bags.
+  if (created) ACR_Wings.ForPosition(fort);
   if (plan.m_iTier == 1) LayWire(fort);
   RefreshTurrets(fort);
   int wasTier = fort.m_iTier;
@@ -1242,6 +1256,7 @@ class ACR_Fortify
    // Its wire goes with it.
    foreach (IEntity segment : fort.m_aWire) DeletePiece(segment);
    fort.m_aWire.Clear();
+   ACR_Wings.Remove(fort.m_aWings);
    ACR_Defenders.Remove(fort.m_Defenders);
    s_Positions.RemoveOrdered(f);
   }
