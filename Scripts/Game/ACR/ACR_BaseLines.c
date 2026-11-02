@@ -2557,12 +2557,14 @@ class ACR_BaseLines
   vector half = Vector(NEST_HALF, 0, NEST_DEPTH);
   float roadKeep = ACR_BaseSurvey.NEST_ROAD;
   float houseKeep = ACR_BaseSurvey.NEST_BUILDING;
+  string smallFor = "";
   if (compact)
   {
    width = 1;
    half = Vector(COMPACT_HALF, 0, COMPACT_DEPTH);
    roadKeep = COMPACT_ROAD;
    houseKeep = COMPACT_HOUSE;
+   smallFor = work.m_sFaction;
   }
   int noRun, noRoad, noHouse, noDoor, noRoom, noFire;
   foreach (ACR_BaseLine line : work.m_aLines)
@@ -2594,7 +2596,7 @@ class ACR_BaseLines
      noRoad++;
      continue;
     }
-    if (ACR_BaseDefences.BuildingGap(survey.m_aBuildings, place, houseKeep) < houseKeep || (compact && ACR_BaseDefences.BuildingGap(survey.m_aBuildings, place + facing * 1.1, houseKeep) < houseKeep))
+    if (ACR_BaseDefences.BuildingGap(survey.m_aBuildings, place, houseKeep) < houseKeep)
     {
      noHouse++;
      continue;
@@ -2626,6 +2628,11 @@ class ACR_BaseLines
       noFire++;
       continue;
      }
+    }
+    if (compact && ACR_BaseDefences.BuildingGap(survey.m_aBuildings, ACR_BaseSurvey.SmallGunMuzzle(place, yaw, smallFor), houseKeep) < houseKeep)
+    {
+     noHouse++;
+     continue;
     }
     if (WalkGapNear(line, place))
     {

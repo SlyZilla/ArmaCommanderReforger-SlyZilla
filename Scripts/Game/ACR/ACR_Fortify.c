@@ -264,6 +264,14 @@ class ACR_Fortify
   return HMG_US;
  }
 
+ // Its muzzle in its own frame: across, up, forward (measured on the built ones: the tripod stands behind the
+ // middle, the height is the gun's top less 0.1 m, as LineOfFire takes it).
+ static vector CompactMuzzle(string faction)
+ {
+  if (faction == "USSR" || faction == "RHS_AFRF") return Vector(0.016, 1.249, -0.677);
+  return Vector(-0.106, 1.036, -0.592);
+ }
+
  static ResourceName PrefabFor(int spot, string faction, int tier)
  {
   bool east = faction == "USSR" || faction.Contains("AFRF") || faction.Contains("RU") || faction.Contains("SLA");

@@ -1041,7 +1041,7 @@ class ACR_BaseRing : Managed
   return used;
  }
 
- protected static RandomGenerator rng0(string town)
+ protected static RandomGenerator LuckFor(string town)
  {
   return ACR_Variety.For("base ring lengths " + town);
  }
@@ -1053,9 +1053,8 @@ class ACR_BaseRing : Managed
   ACR_BaseStyle style = work.m_Style;
   string town = work.m_Base.m_sName;
   ACR_BaseRing ring = new ACR_BaseRing();
-  ring.m_Luck = rng0(town);
+  ring.m_Luck = LuckFor(town);
   ring.Build(survey);
-  int t1 = System.GetTickCount();
   float core = CORE;
   float off = OFF;
   float minThreat = MIN_THREAT;
@@ -1074,9 +1073,7 @@ class ACR_BaseRing : Managed
   }
   if (style.m_iKind == ACR_BaseStyle.DEPTH) off = 4;
   ring.Outline(core);
-  int t2 = System.GetTickCount();
   if (ACR_KillGround.On()) survey.m_Kill = ACR_KillGround.ForTown(survey, !threatMatters, town);
-  int t3 = System.GetTickCount();
   int used;
   // A funnel's arms go in first: the ring ties into them.
   if (style.m_iKind == ACR_BaseStyle.FUNNEL) used += ACR_BaseLines.RingFunnel(work, survey, kit, ring, total);
@@ -1111,11 +1108,9 @@ class ACR_BaseRing : Managed
   }
   // Strongpoints: only the best of it, apart, with gaps on purpose.
   int spent = used;
-  int t4 = System.GetTickCount();
   // (Walking a part can lay a little more than it was asked for: tier I stays the job it says it is.)
   if (kill) budgetOne = (int)(budgetOne * TIER_ONE_SHARE);
   if (kill) spent = ring.ChooseRuns(kill, style, runs, sorted, used, budgetOne, budgetTwo, total, 0, "base ring parts " + town);
-  int t5 = System.GetTickCount();
   array<ACR_RingRun> points = {};
   for (int pass = 0; pass < 2 && !kill; pass++)
   {
@@ -1187,7 +1182,6 @@ class ACR_BaseRing : Managed
   if (!kill && left >= GATE_LEFT) used += ring.GateLines(work, survey, kit, sorted, left);
   if (s_bMeasureForTest) ring.MeasureClosed(work, path);
   s_iPlans++;
-  PrintFormat("[ACR] RINGMS %1 build %2 outline %3 killbuild %4 paths %5 choose %6 lay %7 total %8", town, t1 - started, t2 - t1, t3 - t2, t4 - t3, t5 - t4, System.GetTickCount() - t5, System.GetTickCount() - started);
   s_iLastMs = System.GetTickCount() - started;
   PrintFormat("[ACR] BASEWORKS %1: ring %2 lines, %3 pieces of %4, %5 parts of the ring, %6 ms", town, work.m_aLines.Count(), used, total, runs.Count(), s_iLastMs);
   return !work.m_aLines.IsEmpty();
