@@ -622,8 +622,9 @@ class ACR_KillGround : Managed
  {
   m_iSolves++;
   m_iLook++;
-  ForgetFire();
-  foreach (ACR_KillSite round : m_aPlaced) PutRound(round);
+  // All that fires, on the cells of his old ways as well as round them. (Before, only the ground round them was put
+  // back before the walk: his old ways showed no fire at all, and he walked them again as if nothing stood there.)
+  Refire();
   Flow(m_iHeart, false, m_aNext);
   Flow(m_iRoadHeart, true, m_aNextRoad);
   m_aWays.Clear();
@@ -653,13 +654,19 @@ class ACR_KillGround : Managed
   }
   // What's placed fires on his new ways as well.
   foreach (ACR_KillSite placed : m_aPlaced) Aim(placed);
+  Refire();
+  Shares();
+ }
+
+ // The fire of all that's placed, from nothing: on the cells of his ways as each was last aimed, and round about.
+ protected void Refire()
+ {
   ForgetFire();
-  foreach (int siteIndex, ACR_KillSite firing : m_aPlaced)
+  foreach (ACR_KillSite firing : m_aPlaced)
   {
    foreach (int k, int c : firing.m_aSees) PutFire(c, firing.m_aDX[k], firing.m_aDZ[k], firing.m_aHit[k]);
    PutRound(firing);
   }
-  Shares();
  }
 
  protected void ForgetFire()
