@@ -3,11 +3,12 @@
 // its post and hangs together. Upgrades still go in and a gun's bags make way. The wings go when the position
 // does, the off switch works and the same seed gives the same wing. Checkpoints on the roads between bases:
 // wings stay out of the lane and off the road, and go when it's dismantled.
+// A position's reserve goes behind them, unless told not to.
 // -acrWingsOffTest 1: the same with wings off, for the upgrade figures.
 // -acrWingShotsTest 1 (a game client): photographs of some of them, each shape. Shots: $profile:acr-shots/wing_*.
 class ACR_TestWings
 {
- static const int CHECKS = 18;
+ static const int CHECKS = 20;
  static const int MOST_SITES = 40;
  static const int UPGRADES = 14;
  static const float STEP_S = 4;
@@ -43,7 +44,37 @@ class ACR_TestWings
   if (second == 12) Upgrades();
   if (second == 13) LookAtBlocks();
   if (second == 14) StartGone();
+  if (second == 15 && !System.IsCLIParam("acrWingsOffTest")) WingMen();
   if (second == 26) Finish();
+ }
+
+ // A reserve sent out for a position with the longest wings.
+ protected static void WingMen()
+ {
+  ACR_Fortification best;
+  int most = 0;
+  foreach (ACR_Fortification fort : s_aForts)
+  {
+   if (!fort || fort.m_aWings.Count() <= most) continue;
+   most = fort.m_aWings.Count();
+   best = fort;
+  }
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  bool manned = false;
+  bool off = false;
+  if (best)
+  {
+   ACR_DefenderPost post = ACR_Defenders.Add(best.m_sFaction, best.m_vPos, "wings test", 30);
+   post.m_Fort = best;
+   post.m_Group = manager.m_Bases.SpawnGuards(best.m_sFaction, best.m_vPos, 4, "wings test", 20);
+   manned = ACR_Wings.ManWings(post, 4);
+   ACR_Options.Set("acrWingMen", "0");
+   off = ACR_Wings.ManWings(post, 4);
+   ACR_Options.Unset("acrWingMen");
+   ACR_Defenders.Remove(post);
+  }
+  ACR_TestRegress.Check("wings: a position's reserve goes behind them", manned, string.Format("%1 pieces", most));
+  ACR_TestRegress.Check("wings: -acrWingMen 0 leaves them round the position", !off, "");
  }
 
  protected static void Dig()
@@ -154,7 +185,7 @@ class ACR_TestWings
 
  protected static void Look()
  {
-  int withWing, whole, ties, refused, runs, pieces, onRoad, inHouse, loose, farStart;
+  int withWing, whole, ties, refused, runs, pieces, onRoad, inHouse, loose, farStart, worstMs;
   array<int> lengths = {};
   foreach (ACR_Fortification fort : s_aForts)
   {

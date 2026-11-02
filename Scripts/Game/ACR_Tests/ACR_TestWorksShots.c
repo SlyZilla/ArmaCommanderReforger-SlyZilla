@@ -39,6 +39,7 @@ class ACR_TestWorksShots
 
  protected static void Build()
  {
+  if (System.IsCLIParam("acrWorksShotsCompactTest")) ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
   ChimeraWorld world = ChimeraWorld.CastFrom(GetGame().GetWorld());
   TimeAndWeatherManagerEntity time;
   if (world) time = world.GetTimeAndWeatherManager();

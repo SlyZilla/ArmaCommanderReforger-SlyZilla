@@ -23,6 +23,8 @@ class ACR_DefenderPost : Managed
  float m_fSpawnRange = 400;       // an enemy this close deploys them (ACR_Defenders.SPAWN_RANGE)
  float m_fGarrisonArea;           // > 0: they go into the buildings this close (ACR_Garrison)
  ACR_BaseWork m_Work;             // a whole base's works: its men go behind their bags (ACR_BaseWorks.ManLine)
+ ACR_Fortification m_Fort;        // a Fortify position's: its men go behind its wings if it has them (ACR_Wings.ManWings)
+ bool m_bOnWings;
  int m_iMannedLine = -1;
  float m_fMannedAt;
  ref ACR_GuerrillaCell m_Cell;    // an FIA guerrilla cell (ACR_Guerrillas): its own spring and pull-back
@@ -33,6 +35,9 @@ class ACR_Defenders
  static ref array<ref ACR_DefenderPost> s_Posts = {};
  static const float SPAWN_RANGE = 400;   // as ACR_BaseSystem's garrisons
  static const float DESPAWN_RANGE = 450;
+ static const float REMAN_REACH = 8;     // m from an empty gun of a base's works a man of its reserve leaves the bags for it: the nest's own wing
+ static const float REMAN_WAIT_MS = 45000; // ... and how long the gun then stays empty before the next man is asked
+ protected static ref map<IEntity, float> s_mReseatAt = new map<IEntity, float>();
 
  static ACR_DefenderPost Add(string faction, vector pos, string name, float radius)
  {
@@ -73,6 +78,8 @@ class ACR_Defenders
     if (manager.m_Bases.GuardsAlive(post.m_Group) > 0 && stay)
     {
      ACR_BaseWorks.KeepManned(post);
+     if (post.m_bOnWings) ACR_Squad.FightLikeSquad(post.m_Group);
+     if (post.m_Work) SeatLineMen(post);
      continue;
     }
     int back = manager.m_Bases.PackUpGuards(post.m_Group);
@@ -96,7 +103,10 @@ class ACR_Defenders
    post.m_Group = manager.m_Bases.SpawnGuards(post.m_sFaction, post.m_vPos, post.m_iReserve, post.m_sName + " defenders", post.m_fRadius);
    if (!post.m_Group) continue;
    PrintFormat("[ACR] DEFENDERS %1 deployed: %2 soldiers", post.m_sName, post.m_iReserve);
+   post.m_bOnWings = false;
+   post.m_iMannedLine = -1;
    if (ACR_BaseWorks.ManLine(post, post.m_iReserve)) {}
+   else if (ACR_Wings.ManWings(post, post.m_iReserve)) {}
    else if (ACR_Fortify.ManReserve(post, post.m_iReserve)) {}
    else if (post.m_fGarrisonArea > 0 && ACR_Garrison.AssignArea(post.m_Group, post.m_Group.GetLeaderAgent(), post.m_vPos, post.m_fGarrisonArea, post.m_iReserve) > 0) ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_GARRISON, post.m_vPos, post.m_fGarrisonArea, true);
    post.m_iReserve = 0;
@@ -121,7 +131,10 @@ class ACR_Defenders
   if (post) post.m_bCrewWanted = false;
  }
 
- // The guns a gun crew holds (ACR_BBBHooks.GetHeldGuns: BBB keeps them manned).
+ // The guns a gun crew holds (ACR_BBBHooks.GetHeldGuns: BBB keeps them manned). Not a base's works reserve out
+ // on its bags: listed here too, BBB's remount (every 8 s, from 40 m) pulled every man off the bags onto guns
+ // the attackers were shooting at (srv:worksfightbase, 2 Nov: on post 8%, 7 of 8 lost). SeatLineMen does it
+ // for the reserve, from beside the gun and seldom.
  static bool CrewGunsOf(SCR_AIGroup group, notnull array<IEntity> guns)
  {
   if (!group) return false;
@@ -170,6 +183,42 @@ class ACR_Defenders
   post.m_iReserve -= count;
   int seated = SeatCrew(post);
   PrintFormat("[ACR] DEFENDERS %1: %2 from the reserve man its guns while its squad is away (%3 seated, %4 left in reserve)", post.m_sName, count, seated, post.m_iReserve);
+ }
+
+ // A base's works reserve out on its bags: a gun of the works standing empty (its gunner shot, or never crewed)
+ // is manned by the man on the bags beside it (within REMAN_REACH), at most once per REMAN_WAIT_MS per gun. The
+ // gunner is who the attackers shoot first: from further off, or oftener, this emptied the bags into the guns
+ // (srv:worksfightbase, 2 Nov: 10 re-mans, 7 of 8 lost; the men on the bags were doing the killing).
+ protected static void SeatLineMen(ACR_DefenderPost post)
+ {
+  if (!post.m_Group || post.m_aCrewGuns.IsEmpty()) return;
+  array<AIAgent> agents = {};
+  post.m_Group.GetAgents(agents);
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (IEntity gun : post.m_aCrewGuns)
+  {
+   BaseCompartmentSlot slot = FreeTurret(gun);
+   if (!slot) continue;
+   float again;
+   if (s_mReseatAt.Find(gun, again) && now < again) continue;
+   s_mReseatAt.Set(gun, now + REMAN_WAIT_MS);
+   ChimeraCharacter best;
+   float nearest = REMAN_REACH;
+   foreach (AIAgent agent : agents)
+   {
+    ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+    if (!body || !ACR_Respawn.IsAlive(body) || body.IsInVehicle()) continue;
+    CompartmentAccessComponent access = body.GetCompartmentAccessComponent();
+    if (!access || access.IsGettingIn() || access.IsGettingOut()) continue;
+    float d = vector.DistanceXZ(body.GetOrigin(), gun.GetOrigin());
+    if (d >= nearest) continue;
+    nearest = d;
+    best = body;
+   }
+   if (!best) continue;
+   if (best.GetCompartmentAccessComponent().GetInVehicle(gun, slot, true, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
+    PrintFormat("[ACR] DEFENDERS %1: a man from the bags %2 m off mans the works' gun again", post.m_sName, (int)nearest);
+  }
  }
 
  // A gun's empty gunner seat (null: none, the gun is gone, or it is out of ammo: BBB gets a
@@ -249,6 +298,7 @@ class ACR_Defenders
 
  static void Reset()
  {
+  s_mReseatAt.Clear();
   s_Posts.Clear();
  }
 }

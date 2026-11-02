@@ -44,15 +44,19 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrSlopesTest")) ACR_TestSlopes.Run(seconds);
   // -acrPathProbeTest: can foot squads reach Gallows Base's centre (ACR_TestPathProbe).
   if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
-  // -acrWingsTest / -acrWingsOffTest / -acrWingShotsTest: sandbag wings on positions and checkpoints (ACR_TestWings).
+  // -acrWorksShotsTest: Fortify a whole base, photographed (ACR_TestWorksShots).
+  if (System.IsCLIParam("acrPlaceAuditTest") || System.IsCLIParam("acrPlaceAuditOldTest")) ACR_TestPlaceAudit.Run(seconds);
+  if (System.IsCLIParam("acrPartsTest")) ACR_TestParts.Run(seconds);
   if (System.IsCLIParam("acrWingsTest") || System.IsCLIParam("acrWingsOffTest") || System.IsCLIParam("acrWingShotsTest")) ACR_TestWings.Run(seconds);
-  // -acrWorksShotsTest: Fortify a whole base, photographed (ACR_TestWorksShots). -acrStyleShots<Style>Test: a style's shots.
-  if (System.IsCLIParam("acrWorksShotsTest") || ACR_TestBaseWorks.StyleTest("acrStyleShots")) ACR_TestWorksShots.Run(seconds);
+  if (System.IsCLIParam("acrWorksShotsTest") || System.IsCLIParam("acrWorksShotsCompactTest") || ACR_TestBaseWorks.StyleTest("acrStyleShots")) ACR_TestWorksShots.Run(seconds);
   // -acrBaseWorksTest: Fortify on a base (ACR_TestBaseWorks, #105).
   if (ACR_TestBaseWorks.StyleTest("acrStylePlan")) ACR_TestBaseWorks.Run(seconds);
   if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksCompactTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
   // -acrWorksFightTest / -acrWorksFightOldTest: what a fortified town costs an attacker (ACR_TestWorksFight).
-  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest")) ACR_TestWorksFight.Run(seconds);
+  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightValueOffTest") || System.IsCLIParam("acrWorksFightVillageTest") || System.IsCLIParam("acrWorksFightVillageOffTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest") || System.IsCLIParam("acrWorksFightOffTest") || System.IsCLIParam("acrWorksFightBaseTest")) ACR_TestWorksFight.Run(seconds);
+  // -acrBagHoldTest / -acrBagHoldLateTest: men behind bags in a fight (ACR_TestBagHold).
+  if (System.IsCLIParam("acrBagHoldTest") || System.IsCLIParam("acrBagHoldLateTest") || System.IsCLIParam("acrBagHoldOffTest") || System.IsCLIParam("acrBagHoldLowTest")) ACR_TestBagHold.Run(seconds);
+  if (System.IsCLIParam("acrBagHoldSquadsTest")) ACR_TestBagHoldSquads.Run(seconds);
   // -acrWorksAISoakTest: does the AI fortify (ACR_TestWorksSoak).
   if (System.IsCLIParam("acrWorksAISoakTest")) ACR_TestWorksSoak.Run(seconds);
   // -acrKeyHintsTest: the key reminders and UI prefs (ACR_TestKeyHints).

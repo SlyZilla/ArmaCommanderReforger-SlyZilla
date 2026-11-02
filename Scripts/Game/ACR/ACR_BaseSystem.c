@@ -14,6 +14,8 @@ class ACR_BaseSystem : Managed
  static const float CAPTURE_MAX_STEP = 6;   // cap per second (original mod: 2; raised so more troops cap faster)
  static const float SPAWN_RANGE = 400;      // enemies this close deploy the garrison
  static const float DESPAWN_RANGE = 450;    // no enemies this close: garrison packs up
+ static const float WORKS_SPAWN_RANGE = 600; // ... a base with works standing: the AI stages its attack about 320 m out, so its
+                                            // garrison is behind the bags before the assault steps off (the user, 2 Nov, Chotain Base)
  static const int POINTS_CAP = 1000;
 
  int m_iIncomeInterval = 60;                // seconds
@@ -203,6 +205,13 @@ class ACR_BaseSystem : Managed
   vector center = base.GetOrigin();
   map<string, int> inside = new map<string, int>();
   bool enemyNear, enemyInRange, enemyApproaching;
+  float spawnRange = SPAWN_RANGE;
+  float despawnRange = DESPAWN_RANGE;
+  if (ACR_BaseWorks.LinesStand(base))
+  {
+   spawnRange = WORKS_SPAWN_RANGE;
+   despawnRange = WORKS_SPAWN_RANGE + DESPAWN_RANGE - SPAWN_RANGE;
+  }
   foreach (int i, IEntity body : m_Bodies)
   {
    if (!body) continue; // deleted this tick (e.g. a garrison packed up after a capture)
@@ -237,9 +246,9 @@ class ACR_BaseSystem : Managed
      manager.NotifyFaction(key, string.Format("FIA resistance at %1", base.m_sName));
      PrintFormat("[ACR] POCKETS %1 found by %2", base.m_sName, key);
     }
-    if (distance <= SPAWN_RANGE) enemyNear = true;
-    if (distance <= SPAWN_RANGE + 300) enemyApproaching = true;
-    if (distance <= DESPAWN_RANGE) enemyInRange = true;
+    if (distance <= spawnRange) enemyNear = true;
+    if (distance <= spawnRange + 300) enemyApproaching = true;
+    if (distance <= despawnRange) enemyInRange = true;
    }
   }
   UpdateCapture(manager, base, inside);
@@ -559,6 +568,17 @@ class ACR_BaseSystem : Managed
    AddGarrisonSoldier(base, group, pool);
   ACR_Squad.KeepSimulated(group);
   base.m_GarrisonGroup = group;
+  // A base with works standing: the garrison mans the lines that face the enemy before it takes to the houses
+  // (the user, 2 Nov, Chotain Base: the attack came, nobody was on the bags, the garrison sat in the offices).
+  ACR_BaseWork work = ACR_BaseWorks.Find(base);
+  vector lineCenter;
+  float lineRadius;
+  if (work && work.m_sFaction == base.m_sOwner && ACR_BaseWorks.ManSquad(work, group, base.m_iGarrisonLeft, lineCenter, lineRadius))
+  {
+   ACR_Guerrillas.Order(group, ACR_Squad.WP_GARRISON, lineCenter, lineRadius, true);
+   PrintFormat("[ACR] Garrison deployed at %1: %2 soldiers, %3 in group, behind its bags", base.m_sName, base.m_iGarrisonLeft, group.GetAgentsCount());
+   return;
+  }
   // The base's buildings get posts at their windows; the soldiers start on them (the
   // game's fast init) and the rest hold the base round its centre as before.
   IEntity navAgent = ACR_Garrison.AnyAgent();

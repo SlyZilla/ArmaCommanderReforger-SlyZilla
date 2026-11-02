@@ -1,6 +1,7 @@
 // Wings: sandbags running out from the ends of a small work, the same pieces and the same walker as a base's
 // lines (ACR_BaseLiner), so each piece fits the ground, keeps off roads, doors and buildings and sees out. A
-// Fortify position or a checkpoint on its own is a blob to walk round; a wing makes it part of the ground.
+// Fortify position or a checkpoint on its own is a blob to walk round; a wing makes it part of the ground. The
+// owner's idea of 31 Oct 2026: works built from parts, fitted to where they stand.
 //   TIE     to the nearest building, wall, rock or work within REACH, closing that side.
 //   REFUSE  bends well back and ends in a tail, covering the flank.
 //   RUN_ON  on along the line, only a little back, then a tail.
@@ -38,6 +39,7 @@ class ACR_Wings
  static const int FEW = 2;              // a free wing with fewer isn't worth building
  static const int GAP_FROM = 7;         // a tied wing this long leaves a gap for men on foot ...
  static const float GAP_AT = 0.6;       // ... this far along
+ static const int MEN_LEAST = 3;        // long pieces standing before a reserve goes behind them
  static const float GUN_ROOM = 2.6;     // m round a gun or post its bags make way
  static const float GUN_FIRE_HALF = 1.6; // m either side of a gun's line of fire, out to ACR_Fortify.FIRE_CLEAR
  static int s_iWorstMs;                 // tests: the most a work's wings have cost to plan
@@ -47,6 +49,46 @@ class ACR_Wings
  static bool On()
  {
   return ACR_LogisticsRules.Choice("acrWings", "1") != "0";
+ }
+
+ // A position's reserve out and wings standing: each man to his own place behind the bags, from the position
+ // outwards, so the wings are held and not only there to look at. False: too little wing, they do what they did.
+ // -acrWingMen 0 leaves them round the position.
+ static bool ManWings(ACR_DefenderPost post, int men)
+ {
+  ACR_Fortification fort = post.m_Fort;
+  if (!fort || !post.m_Group || men <= 0 || ACR_LogisticsRules.Choice("acrWingMen", "1") == "0") return false;
+  array<ACR_LinePiece> pieces = {};
+  foreach (ACR_WingPlan plan : fort.m_aWingPlans)
+  {
+   foreach (ACR_LinePiece piece : plan.m_aPieces)
+    if (piece.m_bLong && PieceAt(fort, piece.m_vPos)) pieces.Insert(piece);
+  }
+  if (pieces.Count() < MEN_LEAST) return false;
+  array<ref ACR_GarrisonSpot> spots = {};
+  while (spots.Count() < men && !pieces.IsEmpty())
+  {
+   int nearest = 0;
+   foreach (int p, ACR_LinePiece candidate : pieces)
+    if (vector.DistanceXZ(candidate.m_vPos, fort.m_vPos) < vector.DistanceXZ(pieces[nearest].m_vPos, fort.m_vPos)) nearest = p;
+   ACR_LinePiece piece = pieces[nearest];
+   pieces.Remove(nearest);
+   spots.Insert(ACR_BagHold.SpotBehind(piece.m_vPos, piece.m_vFacing, piece.m_sPrefab, PieceAt(fort, piece.m_vPos)));
+  }
+  float radius;
+  if (ACR_Garrison.PostsAt(post.m_Group, spots, fort.m_vPos, radius) <= 0) return false;
+  ACR_Squad.FightLikeSquad(post.m_Group);
+  ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_GARRISON, fort.m_vPos, radius, true);
+  post.m_bOnWings = true;
+  PrintFormat("[ACR] WINGS %1: %2 men behind the bags (%3 places)", post.m_sName, men, spots.Count());
+  return true;
+ }
+
+ protected static IEntity PieceAt(ACR_Fortification fort, vector at)
+ {
+  foreach (IEntity wing : fort.m_aWings)
+   if (wing && vector.DistanceXZ(wing.GetOrigin(), at) < 0.5) return wing;
+  return null;
  }
 
  static string ShapeWord(int shape)
