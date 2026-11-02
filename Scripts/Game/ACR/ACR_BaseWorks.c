@@ -499,7 +499,7 @@ class ACR_BaseWorks
   work.m_Defenders.m_iReserve += more;
  }
 
- // The reserve on the nests' guns, and based at the command post once there is one.
+ // The reserve on the nests' and bunkers' guns, and based at the command post once there is one.
  protected static void ManWorks(ACR_BaseWork work)
  {
   ACR_DefenderPost post = work.m_Defenders;
@@ -515,7 +515,7 @@ class ACR_BaseWorks
   {
    if (!site.m_bBuilt) continue;
    if (work.m_iTier >= 3 && site.m_Plan && site.m_Plan.m_eKind == ACR_EBaseDefenceKind.POST) post.m_vPos = site.m_vPos;
-   if (site.m_eKind != ACR_EBaseSite.NEST) continue;
+   if (site.m_eKind != ACR_EBaseSite.NEST && site.m_eKind != ACR_EBaseSite.BUNKER) continue;
    foreach (IEntity piece : site.m_aWalls)
    {
     IEntity gun = ACR_Roadblocks.FindTurretInHierarchy(piece);

@@ -231,6 +231,9 @@ class ACR_BagHold
  static bool Holds(SCR_AIUtilityComponent utility, SCR_AICombatMoveState state, vector target, float distance, float sinceSeen = 0)
  {
   if (s_Places.IsEmpty() || !utility || !state || !utility.m_OwnerEntity) return false;
+  // On a gun (the works' nest, from the bags beside it): the game runs the gun, his place waits.
+  ChimeraCharacter rider = ChimeraCharacter.Cast(utility.m_OwnerEntity);
+  if (rider && rider.IsInVehicle()) return false;
   vector here = utility.m_OwnerEntity.GetOrigin();
   ACR_BagPlace place = PlaceFor(utility, here);
   if (!place) return false;

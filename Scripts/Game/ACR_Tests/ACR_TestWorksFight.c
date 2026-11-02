@@ -278,6 +278,17 @@ class ACR_TestWorksFight
    if (squad && squad.GetAnchor()) nearest = Math.Min(nearest, vector.DistanceXZ(squad.GetAnchor().GetOrigin(), s_Base.GetOrigin()));
   }
   PrintFormat("[ACR] WORKSFIGHT t=%1: attackers %2 (nearest %3 m from the middle), defenders %4, on the bags %5, average %6 m from them, walls %7 of %8, owner %9", fought, Attackers(manager), (int)nearest, Defenders(manager), onBags, average.ToString(-1, 1), Walls(), s_iWalls, s_Base.m_sOwner);
+  int manned, guns;
+  if (s_Work.m_Defenders)
+  {
+   foreach (IEntity gun : s_Work.m_Defenders.m_aCrewGuns)
+   {
+    if (!gun || ACR_Logistics.Health(gun) <= 0) continue;
+    guns++;
+    if (!ACR_Defenders.FreeTurret(gun)) manned++;
+   }
+  }
+  PrintFormat("[ACR] WORKSFIGHT t=%1: works guns manned %2 of %3", fought, manned, guns);
  }
 }
 
