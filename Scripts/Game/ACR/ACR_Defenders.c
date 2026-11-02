@@ -185,10 +185,12 @@ class ACR_Defenders
   return null;
  }
 
- // The crew's men on foot into its guns' empty seats; how many sit in one.
+ // The crew's men on foot into its guns' empty seats, each to a gun of his own (a seat only shows
+ // as taken once he sits in it, so they all went for the first free gun); how many sit in one.
  protected static int SeatCrew(ACR_DefenderPost post)
  {
   int seated;
+  array<IEntity> taken = {};
   array<AIAgent> agents = {};
   post.m_GunCrew.GetAgents(agents);
   foreach (AIAgent agent : agents)
@@ -205,7 +207,8 @@ class ACR_Defenders
    foreach (IEntity gun : post.m_aCrewGuns)
    {
     BaseCompartmentSlot slot = FreeTurret(gun);
-    if (!slot) continue;
+    if (!slot || taken.Contains(gun)) continue;
+    taken.Insert(gun);
     if (access.GetInVehicle(gun, slot, true, -1, ECloseDoorAfterActions.LEAVE_OPEN, false)) seated++;
     break;
    }
