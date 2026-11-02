@@ -1669,7 +1669,7 @@ class ACR_AICommander : Managed
   if (m_bHandedOnly) return false;
   if (!SupportReady(type)) return false;
   if (ACR_Mortars.IsMortarType(type) && !m_Manager.Mortars().CanFire(m_sFaction, type, point)) return false;
-  if (ACR_HeliStation.IsHeliType(type) && ACR_HeliStation.UsesPads(m_sFaction) && (!m_Manager.m_Supports || !m_Manager.m_Supports.Station().ReadyFor(m_sFaction, ACR_HeliStation.NeedsGunship(type), point))) return false;
+  if (ACR_HeliStation.IsHeliType(type) && ACR_HeliStation.UsesPads(m_sFaction) && (!m_Manager.m_Supports || !m_Manager.m_Supports.Station().ReadyFor(m_sFaction, ACR_HeliStation.NeedsGunship(type), point, ACR_HeliStation.IsAttack(type)))) return false;
   if (FriendliesNear(point, ACR_Supports.ZoneRadius(type) + 40)) return false;
   string result = m_Manager.m_Supports.Call(m_sFaction, SupportIndex(type), point, true);
   Say(string.Format("[ACR] AI %1 support (%2): %3", m_sFaction, why, result));
@@ -1975,6 +1975,7 @@ class ACR_AICommander : Managed
    if (!attacker) continue;
    int airThreat = Lowered(m_Doctrine.m_iDefensiveAirThreat, fireFactor);
    if (ThreatTo(held) >= airThreat && CallSupport(ACR_ESupportType.HELI_GUN_RUN, seenAt, "gun run at " + held.m_sName)) break;
+   if (ThreatTo(held) >= airThreat && CallSupport(ACR_ESupportType.ATTACK_HELI, seenAt, "attack helicopter at " + held.m_sName)) break;
    if (ThreatTo(held) >= airThreat && CallSupport(ACR_ESupportType.ROCKET_STRIKE, seenAt, "rocket strike at " + held.m_sName)) break;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_LARGE, seenAt, "defensive fire at " + held.m_sName)) break;
    if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, seenAt, "defensive fire at " + held.m_sName)) break;
@@ -2153,7 +2154,7 @@ class ACR_AICommander : Managed
    return REACH_WALK;
   }
   float fetch;
-  ACR_Squad taxi = m_Manager.m_Rides.FindTransport(m_sFaction, PositionOf(squad), dist, squad.CountAlive(), fetch, true, taxis);
+  ACR_Squad taxi = m_Manager.m_Rides.FindTransport(m_sFaction, PositionOf(squad), dist, squad.CountAlive(), fetch, true, taxis, false, m_bHandedOnly);
   if (taxi)
   {
    taxis.Insert(taxi);
@@ -3066,7 +3067,8 @@ class ACR_AICommander : Managed
  protected string TripOver(ACR_Squad squad, ACR_AITrip trip, float now)
  {
   if (now > trip.m_fUntil) return "out of time";
-  if (trip.m_Base && trip.m_Base.m_sOwner != m_sFaction) return "base lost";
+  // (A retired FOB keeps its owner: its HQ is gone, so it is lost all the same.)
+  if (trip.m_Base && (trip.m_Base.m_bRetired || trip.m_Base.m_sOwner != m_sFaction)) return "base lost";
   if (vector.DistanceXZ(PositionOf(squad), trip.m_vTo) <= TRIP_ARRIVED) return "arrived";
   if (squad.HasPlayer()) return "a player leads it";
   if (squad.KnownEnemies(300) > 0) return "contact";
@@ -3135,7 +3137,7 @@ class ACR_AICommander : Managed
   if (!pick || PlanBudgetSpent()) return;
   ACR_AITrip go = m_Trips.Get(pick);
   string why;
-  if (!m_Manager.m_Rides.Request(pick, go.m_vTo, go.m_fDropShort, go.m_sPrefab, go.m_fRadius, go.m_sOrder, go.m_iKind, why, true))
+  if (!m_Manager.m_Rides.Request(pick, go.m_vTo, go.m_fDropShort, go.m_sPrefab, go.m_fRadius, go.m_sOrder, go.m_iKind, why, true, false, m_bHandedOnly))
   {
    go.m_iRideAsks++;
    go.m_fNextRide = now + Math.Min(RIDE_RETRY_MAX_MS, RIDE_RETRY_MS * Math.Pow(2, go.m_iRideAsks - 1));
@@ -3145,6 +3147,14 @@ class ACR_AICommander : Managed
  }
 
  int CountTripsForTest() { return m_Trips.Count(); }
+ string TripOverForTest(ACR_Squad squad, ACR_Base base)
+ {
+  ACR_AITrip trip = new ACR_AITrip();
+  trip.m_Base = base;
+  trip.m_vTo = base.GetOrigin();
+  trip.m_fUntil = GetGame().GetWorld().GetWorldTime() + 600000;
+  return TripOver(squad, trip, GetGame().GetWorld().GetWorldTime());
+ }
  void CatchRidesForTest()
  {
   foreach (ACR_Squad squad, ACR_AITrip trip : m_Trips) trip.m_fNextRide = 0;
@@ -3193,7 +3203,7 @@ class ACR_AICommander : Managed
    if (m_Manager.m_Rides && distance > m_Doctrine.m_fRideDistance)
    {
     string why;
-    if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why, true)) return;
+    if (m_Manager.m_Rides.Request(squad, destination, dropShort, prefab, radius, order, kind, why, true, false, m_bHandedOnly)) return;
     // (CatchRides keeps looking for one on the way.)
     Say(string.Format("[ACR] AI %1: %2 sets off on foot for %3 m to %4: %5", m_sFaction, squad.GetName(), (int)distance, ACR_Manager.Grid(destination), why));
    }
@@ -3798,8 +3808,10 @@ class ACR_AICommander : Managed
     CallSupport(ACR_ESupportType.MORTAR_SMOKE, screen, "smoke screen for " + target.m_sName);
     // Reserve gunship support for an assault, not only the rare counterattack.
     // CallSupport still checks cooldown, range/pad readiness and friendly distance.
-    if (!CallSupport(ACR_ESupportType.HELI_LOITER, target.GetOrigin(), "gunship for the assault on " + target.m_sName))
-     CallSupport(ACR_ESupportType.HELI_DOOR_GUNS, target.GetOrigin(), "door-gunner heli for the assault on " + target.m_sName);
+    // A content pack's attack helicopter (ACR_ContentSocket) goes first when the side has one.
+    if (!CallSupport(ACR_ESupportType.ATTACK_HELI, target.GetOrigin(), "attack helicopter for the assault on " + target.m_sName))
+     if (!CallSupport(ACR_ESupportType.HELI_LOITER, target.GetOrigin(), "gunship for the assault on " + target.m_sName))
+      CallSupport(ACR_ESupportType.HELI_DOOR_GUNS, target.GetOrigin(), "door-gunner heli for the assault on " + target.m_sName);
     foreach (ACR_Squad squad : attack.m_Squads)
     {
      squad.SetMode(ACR_EMoveMode.COMBAT);
@@ -4312,24 +4324,29 @@ class ACR_AICommander : Managed
   return false;
  }
 
- // One support gunship on a helipad (worlds with pads), bought again when lost.
+ // One support gunship on a helipad (worlds with pads), bought again when lost. With a content
+ // pack's attack helicopter on the buy list, that one instead (still one helicopter).
  protected bool BuyHelicopter(ACR_FactionData data)
  {
   if (!ACR_HeliStation.UsesPads(m_sFaction) || !m_Manager.m_Supports) return false;
   ACR_HeliStation station = m_Manager.m_Supports.Station();
-  if (station.CountOf(m_sFaction, true) > 0) return false;
+  if (station.CountOf(m_sFaction, true) > 0 || station.CountOf(m_sFaction, true, true) > 0) return false;
   ACR_Helipad pad = station.FreePad(m_sFaction, null);
   if (!pad) return false;
   ACR_Base base = pad.Base();
   if (!ACR_LogisticsRules.CanDeploy(base) || base.m_bContested) return false;
+  int pick = -1;
   foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
   {
-   if (entry.m_iSupportHeli != 1 || entry.m_iRemaining <= 0) continue;
-   if (data.m_iRP < entry.m_iCost + SUPPORT_RESERVE) return false;
-   Say(string.Format("[ACR] AI %1 requisition (support gunship): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, i, base)));
-   return true;
+   if (entry.m_iRemaining <= 0) continue;
+   if (entry.m_iSupportHeli == 3) { pick = i; break; }
+   if (entry.m_iSupportHeli == 1 && pick < 0) pick = i;
   }
-  return false;
+  if (pick < 0 || data.m_iRP < data.m_aRequisitions[pick].m_iCost + SUPPORT_RESERVE) return false;
+  string kind = "support gunship";
+  if (data.m_aRequisitions[pick].m_iSupportHeli == 3) kind = "attack helicopter";
+  Say(string.Format("[ACR] AI %1 requisition (%2): %3", m_sFaction, kind, m_Manager.PurchaseAt(m_sFaction, pick, base)));
+  return true;
  }
 
  // What a mortar is there to cover: a base it knows the enemy (or a pocket) holds, or one this
@@ -6081,7 +6098,7 @@ class ACR_AICommander : Managed
   float distance = vector.DistanceXZ(PositionOf(squad), site);
   if (distance <= m_Doctrine.m_fRideDistance) return false;
   string why;
-  if (!m_Manager.m_Rides.Request(squad, site, 0, ACR_Squad.WP_MOVE, -1, "Riding out to build", 0, why, true))
+  if (!m_Manager.m_Rides.Request(squad, site, 0, ACR_Squad.WP_MOVE, -1, "Riding out to build", 0, why, true, false, m_bHandedOnly))
   {
    NoteBuild("ride " + squad.GetName(), string.Format("[ACR] AI %1: no ride for %2 to build at %3, %4 m out (%5): it walks", m_sFaction, squad.GetName(), base.m_sName, (int)distance, why));
    return false;
