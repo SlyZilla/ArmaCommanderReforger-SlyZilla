@@ -973,15 +973,17 @@ class ACR_BaseRing : Managed
   return false;
  }
 
- protected static bool WantedAt(notnull array<ref ACR_RingRun> sorted, int parent, int order)
+ protected static bool WantedAt(notnull array<ref ACR_RingRun> all, int parent, int order)
  {
-  foreach (ACR_RingRun run : sorted)
+  foreach (ACR_RingRun run : all)
    if (run.m_bWanted && run.m_iParent == parent && run.m_iOrder == order) return true;
   return false;
  }
 
- // The parts of one stretch that got the same tier, walked as one line, best first. The pieces used.
- protected static int BuildWanted(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, notnull array<ref ACR_RingRun> sorted, int most)
+ // The parts of one stretch that got the same tier, walked as one line, best first. The pieces used. 'all': every
+ // part there is, this round's and the earlier rounds' (a neighbour built in an earlier round is still a line to
+ // tie into, not an open end).
+ protected static int BuildWanted(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit, notnull array<ref ACR_RingRun> sorted, notnull array<ref ACR_RingRun> all, int most)
  {
   int used;
   array<ref ACR_RingRun> done = {};
@@ -1016,8 +1018,8 @@ class ACR_BaseRing : Managed
    whole.m_vBefore = parts[lo].m_vBefore;
    whole.m_sEnd = parts[hi].m_sEnd;
    // A part nobody's building next to it: that end is open, it ties in or curves back.
-   if (whole.m_sStart == "line" && !WantedAt(sorted, first.m_iParent, parts[lo].m_iOrder - 1)) whole.m_sStart = "";
-   if (whole.m_sEnd == "line" && !WantedAt(sorted, first.m_iParent, parts[hi].m_iOrder + 1)) whole.m_sEnd = "";
+   if (whole.m_sStart == "line" && !WantedAt(all, first.m_iParent, parts[lo].m_iOrder - 1)) whole.m_sStart = "";
+   if (whole.m_sEnd == "line" && !WantedAt(all, first.m_iParent, parts[hi].m_iOrder + 1)) whole.m_sEnd = "";
    whole.m_vOut = first.m_vOut;
    whole.m_vMiddle = first.m_vMiddle;
    array<ACR_RingRun> walked = {};
@@ -1160,7 +1162,7 @@ class ACR_BaseRing : Managed
     sorted.Insert(filling);
    }
   }
-  used += BuildWanted(work, survey, kit, sorted, total - used);
+  used += BuildWanted(work, survey, kit, sorted, runs, total - used);
   // What couldn't be laid doesn't fire, and its bags are still there to use: he walks again, and they go elsewhere.
   // (A big town's laying is the dearest part of its plan: one round fewer there.)
   int rounds = BUILD_ROUNDS;
@@ -1172,7 +1174,7 @@ class ACR_BaseRing : Managed
    array<ref ACR_RingRun> more = {};
    ring.ChooseRuns(kill, style, runs, more, used, budgetOne, budgetTwo, total, 0, string.Format("base ring parts %1 %2", town, round));
    if (more.IsEmpty()) break;
-   used += BuildWanted(work, survey, kit, more, total - used);
+   used += BuildWanted(work, survey, kit, more, runs, total - used);
    foreach (ACR_RingRun extra : more) sorted.Insert(extra);
   }
   // Bags to spare: out in front if there's ground to watch and no wall to fight from behind.
@@ -1628,7 +1630,7 @@ class ACR_BaseRing : Managed
     if (out_part.m_fView >= FORWARD_VIEW * 0.6 && !BagsNear(work, out_part.m_vMiddle, FORWARD_CLEAR + out_part.m_fLength * 0.5)) fit.Insert(out_part);
    }
    ChooseRuns(kill, work.m_Style, fit, sorted, 0, 0, 0, most, tier, key);
-   return BuildWanted(work, survey, kit, sorted, most);
+   return BuildWanted(work, survey, kit, sorted, fit, most);
   }
   foreach (ACR_RingRun all : runs)
   {
@@ -1646,7 +1648,7 @@ class ACR_BaseRing : Managed
    run.m_bWanted = true;
    run.m_iTier = tier;
   }
-  return BuildWanted(work, survey, kit, sorted, most);
+  return BuildWanted(work, survey, kit, sorted, runs, most);
  }
 
  // Behind the ways through (a road across the ring, a short plug between two things) that are threatened: a short
