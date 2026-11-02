@@ -88,6 +88,7 @@ class ACR_BaseRing : Managed
  static const float WALK_AGAIN = 0.34; // of the bags, between looks at where he'd walk now
  static const int MOST_WALKS = 2;
  static const int BUILD_ROUNDS = 3;    // goes at choosing and laying, while bags are left
+ static const int BIG_TOWN = 120;      // pieces a town's budget is over to get one fewer
  static const int LEFT_TO_GO_ON = 8;   // pieces left that are worth another go
  static const float TIER_OVER = 1.12;  // a tier takes this much over its budget to keep a line together
  static const float TIER_ONE_SHARE = 0.93; // of tier I's budget that's planned on
@@ -1161,7 +1162,10 @@ class ACR_BaseRing : Managed
   }
   used += BuildWanted(work, survey, kit, sorted, total - used);
   // What couldn't be laid doesn't fire, and its bags are still there to use: he walks again, and they go elsewhere.
-  for (int round = 1; kill && round < BUILD_ROUNDS && total - used >= LEFT_TO_GO_ON; round++)
+  // (A big town's laying is the dearest part of its plan: one round fewer there.)
+  int rounds = BUILD_ROUNDS;
+  if (total > BIG_TOWN) rounds--;
+  for (int round = 1; kill && round < rounds && total - used >= LEFT_TO_GO_ON; round++)
   {
    ring.m_iLaidFronts = work.m_aLines.Count();
    kill.Solve();
