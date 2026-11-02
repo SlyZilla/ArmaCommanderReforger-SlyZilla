@@ -63,6 +63,7 @@ class ACR_BaseWork : Managed
  ACR_DefenderPost m_Defenders;
  int m_iMannedTier;                 // the tier the reserve has been raised for (under this owner)
  int m_iPicks;                      // sites handed out, for the weighted pick's key
+ ref ACR_KillGround m_Kill;         // the ground as planned on: which line sees the way he's walking
 }
 
 class ACR_BaseWorks
@@ -734,6 +735,8 @@ class ACR_BaseWorks
  static const float LINE_POINT_REACH = 150; // m from a base's middle, an AI defend order takes its works
  static const float ORDER_REACH = 500;      // m from a base's middle: no line of its can be close to an order past this
  static const int ROOM_LEAST = 3;           // free places on a line for an AI squad to be sent to it
+ static const float ON_WAY_FIRST = 3;       // a line firing on his way scores from here: above any that only face him
+ static const float ON_WAY_METRES = 40;     // ... and one more for each of these it fires on
 
  // The nearest enemy man's side of the base: false with none in range.
  protected static bool ThreatAt(ACR_DefenderPost post, out vector at)
@@ -798,15 +801,22 @@ class ACR_BaseWorks
   array<float> scores = {};
   array<int> lines = {};
   array<ACR_LinePiece> pieces = {};
+  array<int> way = {};
+  if (hasThreat && work.m_Kill) work.m_Kill.WayFrom(threat, way);
   foreach (int l, ACR_BaseLine line : work.m_aLines)
   {
    if (MannablePieces(work, line, pieces) < 2) continue;
    float score = 1 - l * 0.05; // the worst approach first
    if (hasThreat)
    {
+    // Bags that fire on the way he's walking, before any that only face where he is: a line can face him from
+    // behind a row of houses and never see him (srv:worksfight, 2 Nov: the town fell and the reserve fired no round).
+    float onWay = 0;
+    if (!way.IsEmpty()) onWay = work.m_Kill.OnWay(line.m_vMiddle, ACR_BaseDefences.Bearing(line.m_vFacing), way);
     float faces = ACR_BaseDefences.DotXZ(line.m_vFacing, ACR_BaseDefences.FlatDir(line.m_vMiddle, threat));
-    if (faces < FACES_ENOUGH) continue;
+    if (onWay <= 0 && faces < FACES_ENOUGH) continue;
     score = faces * 2 - vector.DistanceXZ(line.m_vMiddle, threat) / 400;
+    if (onWay > 0) score = ON_WAY_FIRST + onWay / ON_WAY_METRES;
    }
    scores.Insert(score);
    lines.Insert(l);
@@ -985,6 +995,23 @@ class ACR_BaseWorks
   if (!ThreatAt(post, threat)) return;
   ACR_BaseLine line = post.m_Work.m_aLines[post.m_iMannedLine];
   bool holding = ACR_BagHold.On();
+  // On bags that can fire on the way he's walking: good. On bags that can't, with nobody in a fight: to some that can.
+  if (post.m_Work.m_Kill)
+  {
+   array<int> way = {};
+   post.m_Work.m_Kill.WayFrom(threat, way);
+   if (!way.IsEmpty())
+   {
+    if (post.m_Work.m_Kill.OnWay(line.m_vMiddle, ACR_BaseDefences.Bearing(line.m_vFacing), way) > 0) return;
+    if (!InContact(post.m_Group))
+    {
+     array<int> better = {};
+     LinesFor(post.m_Work, threat, true, better);
+     ACR_Manager keeper = ACR_Manager.GetInstance();
+     if (keeper && !better.IsEmpty() && better[0] != post.m_iMannedLine && ManLine(post, keeper.m_Bases.GuardsAlive(post.m_Group))) return;
+    }
+   }
+  }
   // Bags he can come at from the side are no use: with the hold, a line has to face him as it did when it was chosen.
   float enough = -FACES_ENOUGH;
   if (holding) enough = FACES_ENOUGH;
@@ -1118,6 +1145,7 @@ class ACR_BaseWorks
   PrintFormat("[ACR] BASEWORKS %1: covers %2%% of the threatened arc with lines, %3%% with those and what stands there (%4%% that alone); anchored ends %5 of %6", base.m_sName, (int)(ours * 100), (int)(either * 100), (int)(existing * 100), anchored, ends);
   PrintFormat("[ACR] BASEWORKS %1: %2 sandbag pieces, about %3 entities in all; tier I is %4 s of work, walking aside", base.m_sName, pieces, entities, (int)seconds);
   if (survey.m_Kill) survey.m_Kill.Done(base.m_sName);
+  work.m_Kill = survey.m_Kill;
   if (s_iMaxSitesForTest > 0) Trim(work);
  }
 

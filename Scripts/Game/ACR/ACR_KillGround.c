@@ -114,6 +114,7 @@ class ACR_KillGround : Managed
  protected ref array<float> m_aRoadWeights = {};
  protected ref array<int> m_aNext = {};
  protected ref array<int> m_aNextRoad = {};
+ protected ref array<int> m_aNextPlain = {};
  protected int m_iHeart = -1;
  protected int m_iRoadHeart = -1;
  protected int m_iLook;
@@ -446,8 +447,10 @@ class ACR_KillGround : Managed
  }
 
  // The cheapest walk from everywhere to 'heart', into 'next'. On roads only, if asked.
- protected void Flow(int heart, bool roadsOnly, notnull array<int> next)
+ protected void Flow(int heart, bool roadsOnly, notnull array<int> next, bool plain = false)
  {
+  float fireCost = FIRE_COST;
+  if (plain) fireCost = 0;
   int n = m_iN;
   int count = n * n;
   array<float> dist = {};
@@ -476,7 +479,7 @@ class ACR_KillGround : Managed
     int other = nz * n + nx;
     float walk = m_aWalk[other];
     if (walk < 0 || (roadsOnly && !m_aRoad[other])) continue;
-    float through = d + walk * (1 + FIRE_COST * m_aFire[other]) * m_aStep[k] * m_fCell;
+    float through = d + walk * (1 + fireCost * m_aFire[other]) * m_aStep[k] * m_fCell;
     float was = dist[other];
     if (was >= 0 && was <= through) continue;
     dist[other] = through;
@@ -848,6 +851,71 @@ class ACR_KillGround : Managed
    best = facing + turn;
   }
   return best;
+ }
+
+ // ---------------------------------------------------------------- where he is now
+
+ // The way he'd walk to the middle from 'from', the plain shortest, as a squad given the order does. Cells from where
+ // he is or, from further off, from the edge on that side.
+ void WayFrom(vector from, notnull array<int> cells)
+ {
+  cells.Clear();
+  if (m_aNextPlain.IsEmpty())
+  {
+   int count = m_iN * m_iN;
+   for (int i = 0; i < count; i++) m_aNextPlain.Insert(-1);
+   Flow(m_iHeart, false, m_aNextPlain, true);
+  }
+  int cell = At(from[0], from[2]);
+  if (cell < 0 || m_aWalk[cell] < 0 || m_aNextPlain[cell] < 0)
+  {
+   vector way = ACR_BaseDefences.FlatDir(m_vCenter, from);
+   float back = Math.Min(m_fHalf - m_fCell, vector.DistanceXZ(m_vCenter, from));
+   cell = -1;
+   while (back > m_fCell)
+   {
+    vector p = m_vCenter + way * back;
+    int here = At(p[0], p[2]);
+    if (here >= 0 && m_aWalk[here] >= 0 && m_aNextPlain[here] >= 0)
+    {
+     cell = here;
+     break;
+    }
+    back -= m_fCell;
+   }
+  }
+  int guard = m_iN * m_iN;
+  while (cell >= 0 && guard > 0)
+  {
+   cells.Insert(cell);
+   if (cell == m_iHeart) break;
+   cell = m_aNextPlain[cell];
+   guard--;
+  }
+ }
+
+ // What bags at 'at' facing 'facing' fire on of 'cells': metres, the nearer the more.
+ float OnWay(vector at, float facing, notnull array<int> cells)
+ {
+  vector eye = at;
+  eye[1] = GetGame().GetWorld().GetSurfaceY(at[0], at[2]) + ACR_BaseSurvey.UP_BAGS;
+  vector ahead = ACR_BaseSurvey.Dir(facing);
+  float cosArc = Math.Cos(BAG_ARC * Math.DEG2RAD);
+  float sum = 0;
+  foreach (int c : cells)
+  {
+   vector m = Middle(c);
+   float dx = m[0] - eye[0];
+   float dz = m[2] - eye[2];
+   float d = Math.Sqrt(dx * dx + dz * dz);
+   if (d < NEAREST || d > BAG_RANGE) continue;
+   if ((dx * ahead[0] + dz * ahead[2]) / d < cosArc) continue;
+   if (!ACR_BaseSurvey.SeesFrom(eye, m, MAN_HEIGHT)) continue;
+   float reach = 1;
+   if (d > NEAR_FULL) reach = 1 - (1 - FAR_HIT) * (d - NEAR_FULL) / Math.Max(BAG_RANGE - NEAR_FULL, 1);
+   sum += reach * m_fCell;
+  }
+  return sum;
  }
 
  // ---------------------------------------------------------------- how it comes out
