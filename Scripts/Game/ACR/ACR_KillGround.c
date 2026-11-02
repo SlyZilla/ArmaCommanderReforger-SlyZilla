@@ -55,7 +55,9 @@ class ACR_KillGround : Managed
  static const float WAY_FLOOR = 0.03;   // ... the side away from every threat still counts a little
  static const float ROAD_WAY = 1.8;     // a road in, against the fields beside it: vehicles have no other way
  static const float NOISE = 0.15;       // the match's luck on the ground
- static const float ROAD_WALK = 0.8;    // what a metre costs him on a road, against open ground
+ static const float ROAD_WALK = 0.8;    // what a metre costs him on a road, against open ground, near the base
+ static const float ROADS_NEAR_BASE = 150; // m from the middle he may use them (ACR_Squad.FIELD_APPROACH)
+ static const float OFF_ROADS = 1.6;    // ... further out he keeps away from them
  static const float STONE_WALK = 7;     // a wall to get round (he finds the gate, or a hole)
  static const float BOARD_WALK = 5;
  static const float WIRE_WALK = 2.5;
@@ -287,6 +289,7 @@ class ACR_KillGround : Managed
   int gridN = m_iN / coarse + 2;
   array<float> luck = {};
   for (int g = 0; g < gridN * gridN; g++) luck.Insert(1 - NOISE + 2 * NOISE * rng.RandFloat01());
+  bool fieldRoutes = ACR_LogisticsRules.Choice("acrFieldRoutes", "1") != "0";
   for (int gz = 0; gz < m_iN; gz++)
   {
    for (int gx = 0; gx < m_iN; gx++)
@@ -294,7 +297,16 @@ class ACR_KillGround : Managed
     int i = gz * m_iN + gx;
     float c = m_aWalk[i];
     if (c < 0) continue;
-    if (m_aRoad[i]) c = Math.Min(c, ROAD_WALK);
+    // Men on foot keep off the roads outside friendly ground, up to the last stretch before a base (ACR_Squad.FieldLegs,
+    // #160). A road's for vehicles there: they have the ways on the roads.
+    if (fieldRoutes)
+    {
+     vector here = Middle(i);
+     bool close = vector.DistanceXZ(here, center) <= ROADS_NEAR_BASE;
+     if (m_aRoad[i] && close) c = Math.Min(c, ROAD_WALK);
+     else if (!close && NearRoad(gx, gz)) c *= OFF_ROADS;
+    }
+    else if (m_aRoad[i]) c = Math.Min(c, ROAD_WALK);
     if (gx > 0 && gz > 0 && gx < m_iN - 1 && gz < m_iN - 1)
     {
      float sx = (m_aY[i + 1] - m_aY[i - 1]) / (2 * m_fCell);
@@ -321,6 +333,22 @@ class ACR_KillGround : Managed
   // Where he's going: the free cell nearest the middle.
   m_iHeart = NearestFree(center, false);
   m_iRoadHeart = NearestFree(center, true);
+ }
+
+ // A road on this cell or the next (within about a man's keeping-off distance on this grid).
+ protected bool NearRoad(int ix, int iz)
+ {
+  for (int dz = -2; dz <= 2; dz++)
+  {
+   for (int dx = -2; dx <= 2; dx++)
+   {
+    int x = ix + dx;
+    int z = iz + dz;
+    if (x < 0 || z < 0 || x >= m_iN || z >= m_iN) continue;
+    if (m_aRoad[z * m_iN + x]) return true;
+   }
+  }
+  return false;
  }
 
  protected int NearestFree(vector p, bool road)
