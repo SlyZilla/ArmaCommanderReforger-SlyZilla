@@ -1518,8 +1518,10 @@ class ACR_BaseRing : Managed
   int cell = At(mid[0], mid[2]);
   if (cell < 0 || !Layable(cell)) return 0;
   if (m_aRim[cell] > WAY_RIM_OUT || m_aRim[cell] < rimIn) return 0;
-  // One to a place and a way of facing.
-  int key = cell / 9 * 4 + (int)(ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(facing)) / 90);
+  // One to a place (a block three cells a side) and a way of facing. (cell / 9 took nine cells along a row, 54 m
+  // of it, for one place, and the next row for another.)
+  int row = cell / m_iN;
+  int key = ((row / 3) * (m_iN / 3 + 1) + (cell - row * m_iN) / 3) * 4 + (int)(ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(facing)) / 90);
   if (seen.Contains(key)) return 0;
   seen.Insert(key);
   mid[1] = GetGame().GetWorld().GetSurfaceY(mid[0], mid[2]);
