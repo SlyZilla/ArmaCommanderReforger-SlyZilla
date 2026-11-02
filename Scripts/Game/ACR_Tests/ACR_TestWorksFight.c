@@ -69,9 +69,28 @@ class ACR_TestWorksFight
   if (System.IsCLIParam("acrWorksFightCompactTest")) ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
   string side = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
+  // -acrWorksFightBaseTest: the user's match of 2 Nov. Chotain Base, a walled military site, held against an attack
+  // from Firing Range's side; the attackers stage as the AI commander does (ACR_AICommander.STAGING_DISTANCE out, on
+  // its approach lines) instead of 450 m straight out.
+  if (Fortress())
+  {
+   foreach (ACR_Base site : ACR_Base.s_All)
+   {
+    if (!site || site.m_bRetired) continue;
+    if (site.m_sName == "Chotain Base") s_Base = site;
+    else if (site.m_sName == "Firing Range" || site.m_sName == "Gravette Base") site.m_sOwner = east;
+    else if (site.m_sOwner == east) site.m_sOwner = side;
+   }
+   if (!s_Base)
+   {
+    ACR_TestRegress.Abort("worksfight", "no Chotain Base here");
+    return;
+   }
+  }
   int most = -1;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
+   if (s_Base) break;
    if (!base || base.m_bRetired || base.m_bHidden || base.m_bBuilt || base.m_sOwner == east) continue;
    float nearest = 99999;
    foreach (ACR_Base other : ACR_Base.s_All)
@@ -110,13 +129,26 @@ class ACR_TestWorksFight
   else if (!s_Work.m_aLines.IsEmpty()) outward = s_Work.m_aLines[0].m_vFacing;
   // Just out of the reserve's range, wherever its post stands.
   vector from = ACR_Manager.Ground(s_Work.m_Defenders.m_vPos + outward * 450);
+  vector beside = ACR_Manager.Ground(from + Vector(15, 0, 15));
+  if (Fortress())
+  {
+   // As the AI commander stages: one squad on his main line, one on the 60-degree line nearer his second threat.
+   vector center = s_Base.GetOrigin();
+   float ring = s_Base.m_fRadius + ACR_AICommander.STAGING_DISTANCE;
+   if (!BBB_Terrain.DryApproach(center, outward, ring, from)) from = ACR_Manager.Ground(center + outward * ring);
+   vector flank = ACR_AICommander.Turned(outward, -60);
+   vector other = ACR_AICommander.Turned(outward, 60);
+   if (dirs.Count() > 1 && ACR_BaseDefences.DotXZ(other, dirs[1]) > ACR_BaseDefences.DotXZ(flank, dirs[1])) flank = other;
+   if (!BBB_Terrain.DryApproach(center, flank, ring, beside)) beside = ACR_Manager.Ground(center + flank * ring);
+  }
   manager.m_sSpawningFaction = ACR_FactionSelection.East();
   manager.SpawnUnit(ONE, ENEMY, "", false, "", from, from);
-  vector beside = ACR_Manager.Ground(from + Vector(15, 0, 15));
   manager.SpawnUnit(TWO, ENEMY, "", false, "", beside, beside);
   manager.m_sSpawningFaction = "";
-  PrintFormat("[ACR] WORKSFIGHT attack from %1", from);
+  PrintFormat("[ACR] WORKSFIGHT attack from %1 and %2", from, beside);
  }
+
+ static bool Fortress() { return System.IsCLIParam("acrWorksFightBaseTest"); }
 
  protected static void Orders(ACR_Manager manager)
  {
