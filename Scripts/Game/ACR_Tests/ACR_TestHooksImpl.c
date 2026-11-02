@@ -59,6 +59,8 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrBagHoldSquadsTest")) ACR_TestBagHoldSquads.Run(seconds);
   // -acrWorksAISoakTest: does the AI fortify (ACR_TestWorksSoak).
   if (System.IsCLIParam("acrWorksAISoakTest")) ACR_TestWorksSoak.Run(seconds);
+  // -acrKeyHintsTest: the key reminders and UI prefs (ACR_TestKeyHints).
+  if (System.IsCLIParam("acrKeyHintsTest")) ACR_TestKeyHints.Run(seconds);
   // -acrQuickStartFIATest: FIA's cells on a Quick start (ACR_TestQuickStartFIA).
   if (System.IsCLIParam("acrQuickStartFIATest")) ACR_TestQuickStartFIA.Run(seconds);
   // -acrGuerrillasTest: FIA guerrilla cells (ACR_TestGuerrillas, #89).

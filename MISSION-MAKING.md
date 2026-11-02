@@ -267,7 +267,7 @@ One per world. Place it anywhere.
 |---|---|---|
 | `m_bHostGameMaster` | on | The host and server admins also get Game Master |
 | `m_bSharedCommand` | on | Every player of a side may command all its squads. Off: one commander per side |
-| `m_iAISkill` | 70 (Veteran) | Skill of all AI soldiers in the mode |
+| `m_iAISkill` | 70 (Veteran) | Skill of AI soldiers in AC: Actual's squads and base garrisons, unless a side or unit sets its own |
 | `m_fAIPerception` | 1.6 | How fast AI spot and identify targets (game default 1) |
 | `m_iRespawnSeconds` | 15 | Delay before a player whose command unit was killed can redeploy |
 
@@ -280,11 +280,15 @@ AI commander is turned off.
 | Setting | Default | What it does |
 |---|---|---|
 | `m_sFaction` | `US` | Which side these settings are for. It must match a side in the faction manager, such as `US` or `USSR` |
-| `m_iStartingRP` | 100 | Requisition points at the start |
+| `m_iStartingRP` | 100 | Requisition points at the start. Income stops at 1000 RP; a side that starts above that keeps its RP but earns nothing until it spends below 1000 |
 | `m_bAICommander` | on | An AI commander leads this side whenever no player is in command |
 | `m_iAIUnitCap` | 8 | Maximum number of squads the AI commander keeps in the field |
 | `m_iAIAttacks` | 1 | How many base attacks the AI commander can run at once |
 | `m_eAIDoctrine` | `RANDOM` | How the AI commander fights when no company is picked for its side: `RANDOM` (leaves it to the company: Balanced for a Rifle Company), `BALANCED`, `BLITZ`, `FIREPOWER`, `FORTRESS` or `RAIDER` (see AI commander doctrines). A company picked on the setup screen, the setup screen's doctrine row or `-acrDoctrineWest`/`-acrDoctrineEast` override it |
+| `m_iAISkill` | `NONE` | AI skill of this side's soldiers. `NONE` uses the mode's skill (see AI skill per side and unit) |
+| `m_fAIReactionScale` | 1 | Multiplies the mode's reaction speed for this side: 0.8 spots 20% slower, 1.2 20% faster |
+| `m_iAIStrongerShare` | 0 | Percent of this side's soldiers one skill level higher, rolled once per soldier |
+| `m_aAISkillProfiles` | empty | Skill and reaction for particular groups or soldiers, such as an elite unit on the same side |
 | `m_ePricing` | `STEPPED` | How the buy list limits purchases: `STEPPED` or `FIXED_STOCK` (see Prices below) |
 | `m_bAutoFill` | on | Add the faction's eligible Game Master catalog units to the buy list at automatic prices |
 | `m_aRequisitions` | empty | Units you add to the buy list yourself. An entry replaces the matching automatic item |
@@ -301,6 +305,38 @@ AI commander is turned off.
 AC: Actual uses faction keys to tell sides apart. For default support assets, `RHS_AFRF` and keys
 starting with `USSR` count as eastern; otherwise keys containing `US`, or exactly `NATO` or
 `BLUFOR`, count as western. Other keys use eastern defaults unless prefab mappings replace them.
+
+#### AI skill per side and unit
+
+AC: Actual sets every soldier in its squads to the mode's skill (`m_iAISkill`, `-acrSkill`) and
+reaction speed (`m_fAIPerception`, `-acrReaction`) every second, so a value a script sets once at
+spawn doesn't last. Base garrison soldiers get the same values once, when they spawn. Set skill per
+side and per unit here instead. A soldier gets, first to last:
+
+1. values a mission script pinned on him with `ACR_AISkill.Pin(soldier, EAISkill.EXPERT, 1.2)`
+   (kept until `ACR_AISkill.Unpin(soldier)`; this also works on base garrison soldiers);
+2. the first `m_aAISkillProfiles` row whose prefab he is (or inherits from), else the first whose
+   prefab his group is;
+3. his side's `m_iAISkill`, `m_fAIReactionScale` and `m_iAIStrongerShare`;
+4. the mode's skill and reaction.
+
+A profile row (`ACR_AISkillProfile`) has `m_sName` (for your own reference), `m_aPrefabs` (group or
+soldier prefabs), `m_iSkill` (`NONE` = the side's), `m_fReactionScale` (0 = the side's) and
+`m_iStrongerShare` (-1 = the side's). Reaction is always a multiple of the mode's reaction speed
+(1.6 by default, not the game's 1), so 1 means "as fast as everyone else".
+
+Skill only takes the game's named levels: Novice 10, Rookie 20, Regular 50, Veteran 70, Expert 80
+and Perfect 100. In vanilla it sets how far a soldier's aim strays (each level about halves it;
+Perfect never misses). Other values snap down to a named level. A stronger soldier goes up one
+level, up to Expert (only a side or profile set to Perfect fields Perfect soldiers). Reaction sets
+how quickly a soldier spots and identifies targets, not how far he can see. A side without its own
+`ACR_FactionSettings` (a faction mod) copies the side's skill, reaction and stronger share from the
+authored side it replaces, but not its profiles, which name that side's prefabs.
+
+Example: militia side Rookie, reaction 0.8, 15% stronger; Rangers side Veteran, reaction 1; a
+profile for the Delta group prefabs on the Rangers' side with Expert and reaction 1.2. Health and
+damage aren't touched, and none of this changes orders or soldier takeover. Squads a player is
+leading keep whatever values they have until he hands them back.
 
 #### AI commander doctrines
 
@@ -869,6 +905,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrStartRP N` | Positive starting RP for every side (overrides `m_iStartingRP`; 0 does not override) |
 | `-acrIncome X` | Income multiplier (default 1) |
 | `-acrSkill N` | AI skill (overrides `m_iAISkill`) |
+| `-acrGroundTilt 0` | Built pieces that lie on the ground (sandbag positions, wire, barricades) spawn dead level instead of following a slope; default 1 tilts them up to 12 degrees |
 | `-acrReaction X` | AI spotting speed (overrides `m_fAIPerception`) |
 | `-acrSoldierCap N` | Soft living-AI threshold per side before purchases/reinforcements stop (default 100 before threat scaling). A purchase begun below it can take the side over. The active-AI limit is raised to at least 2 x the resolved cap + 64 to avoid the vanilla 128-agent ceiling |
 | `-acrCapScale 1` | Bigger maps get bigger armies: every side's AI squad cap and the soldier cap are multiplied by the map's bases / 12 or the spread of its bases / 5 km, whichever is more, between x1 and x2 (the soldier cap stops at 250; a higher one set by the host stays). Applied once the match starts, after the threat level; the active-AI limit follows, and the log line `[ACR] CAP SCALE` shows the result. Off by default; the setup screen's **Squad caps scale with map** row turns it on |
@@ -880,6 +917,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrMapDeclutter 0` | The classic command map. By default the map is calm: dark panels, merged INTEL lines, base dots with size pips, squads at a base gathered into one icon with ×N, names and order lines thinned out when zoomed out. Setup row **Calm command map** |
 | `-acrSquadTactics 1` | AI squads use squad tactics inside an objective (off by default): an AI squad assaulting a base uses Better Battle Buddies' squad tactics (assault, flank, hold, search) and fire and manoeuvre once it is inside the base's ring, never leaving it, and squads defending a base on a Defend order may bound to cover or push back an enemy inside the base, never chasing out of it. Garrisons in buildings, squads staging or riding, and squads under a player's command are never affected |
 | `-acrRoadFlow 0` | AI vehicles stop at every road waypoint, as before 0.5.9. By default a crewed vehicle on a long road trip skips the waypoints on straight stretches (up to 600 m ahead, keeping those at bends and junctions) and gets its next waypoint earlier the faster it goes, so it doesn't brake and re-plan every 160 m |
+| `-acrFieldRoutes 0` | AI foot squads walk the game's own path, roads included, everywhere. By default an AI squad on foot crossing ground that isn't friendly (the nearest held base belongs to someone else) keeps at least 30 m off the roads, except on the last 150 m to its destination; on friendly ground it may use them. Player-led squads and player orders are never changed |
 | `-acrNoRoadHops 0` | AI vehicles drive longer trips along the roads in short hops, as before #102. By default a trip is one waypoint, and a failed drive falls back to hops once |
 | `-acrMinesRealistic 1` | Mines go off for everyone. By default the owning side's AI never sets off its own mines; its players do |
 | `-acrFortify 0` | Turn off the commander's Fortify order (on by default; see [Fortify position](#fortify-position)) |

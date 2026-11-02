@@ -59,6 +59,15 @@ class ACR_PlayerSide
  // Place one at that side's own base farthest from the other side's spawn points.
  static const ResourceName SPAWN_POINT = "{5A2220DD0C16958B}Prefabs/MP/Spawning/SpawnPoint_US.et";
  static bool s_bSpawnChecked; // (regress test resets it)
+
+ // Per match (ACR_Manager.Stop): the last mission's spawn point went with its world, and a
+ // rotation may read another -acrPlayers.
+ static void Reset()
+ {
+  s_bRead = false;
+  s_sKey = "";
+  s_bSpawnChecked = false;
+ }
  static void EnsureSpawnPoint()
  {
   if (s_bSpawnChecked) return;

@@ -101,8 +101,13 @@ class ACR_TestWorksFight
  // From out in front of the worst approach, as an attack would come.
  protected static void Attack(ACR_Manager manager)
  {
+  // Where the enemy really is: a plan's first line needn't face him (it can fire across him).
   vector outward = Vector(0, 0, 1);
-  if (!s_Work.m_aLines.IsEmpty()) outward = s_Work.m_aLines[0].m_vFacing;
+  array<vector> dirs = {};
+  array<float> weights = {};
+  ACR_BaseDefences.Threats(s_Base, s_Base.m_sOwner, dirs, weights);
+  if (!dirs.IsEmpty()) outward = dirs[0];
+  else if (!s_Work.m_aLines.IsEmpty()) outward = s_Work.m_aLines[0].m_vFacing;
   // Just out of the reserve's range, wherever its post stands.
   vector from = ACR_Manager.Ground(s_Work.m_Defenders.m_vPos + outward * 450);
   manager.m_sSpawningFaction = ACR_FactionSelection.East();

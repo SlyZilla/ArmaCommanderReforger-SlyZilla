@@ -834,6 +834,12 @@ class ACR_SetupClient
   DropCamera();
   s_bActive = false;
   s_bAllowed = false;
+  // World-time stamps: the next mission's clock starts near 0 again.
+  s_fHintAt = -100000;
+  s_fDiagAt = 0;
+  s_sRows = "";
+  s_sInfo = "";
+  s_bChanged = false;
   if (s_Dialog) s_Dialog.Close();
   s_Dialog = null;
  }

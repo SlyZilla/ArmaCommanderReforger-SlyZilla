@@ -89,8 +89,16 @@ class ACR_Mode : GenericEntity
   {
    string factionKey = "";
    float nearest = 1000000;
+   // Moved to its side's new HQ by a layout (ACR_Skirmish, ACR_QuickStart.SideOf reads it so):
+   // where it stood, the nearest owned base can be the enemy's new HQ.
+   if (unit.m_MovedTo && !unit.m_MovedTo.m_sOwner.IsEmpty())
+   {
+    factionKey = unit.m_MovedTo.m_sOwner;
+    nearest = -1;
+   }
    foreach (ACR_Base base : ACR_Base.s_All)
    {
+    if (nearest < 0) break;
     if (base.m_sOwner.IsEmpty()) continue;
     float distance = vector.Distance(unit.GetOrigin(), base.GetOrigin());
     if (distance < nearest) { nearest = distance; factionKey = base.m_sOwner; }

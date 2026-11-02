@@ -70,6 +70,19 @@ class ACR_Garrison
   }
  }
 
+ // Another group's post this close (a Fortify position's squad and its reserve, ACR_Fortify.PostSpots).
+ static bool PostNear(vector at, float spacing, SCR_AIGroup except)
+ {
+  foreach (SCR_AIGroup group, array<IEntity> posts : s_Posts)
+  {
+   if (group == except) continue;
+   array<vector> taken = {};
+   foreach (IEntity post : posts) if (post) taken.Insert(post.GetOrigin());
+   if (TooClose(at, taken, spacing)) return true;
+  }
+  return false;
+ }
+
  static void PostEntities(SCR_AIGroup group, notnull array<IEntity> result)
  {
   result.Clear();
@@ -234,18 +247,6 @@ class ACR_Garrison
   return posts.Count();
  }
 
- // Another group's post this close (bags can't take two men at one place).
- static bool PostNear(vector at, float within, SCR_AIGroup except)
- {
-  foreach (SCR_AIGroup group, array<IEntity> posts : s_Posts)
-  {
-   if (group == except) continue;
-   foreach (IEntity post : posts)
-    if (post && vector.DistanceXZ(post.GetOrigin(), at) < within) return true;
-  }
-  return false;
- }
-
  // The best free spots, the first building first, then neighbours within SPILL_RADIUS of
  // it. false = a building's navmesh is still loading (waitForMesh).
  protected static bool PickSpots(array<IEntity> buildings, IEntity navAgent, int wanted, bool waitForMesh, float spill, notnull array<ref ACR_GarrisonSpot> chosen)
@@ -289,6 +290,20 @@ class ACR_Garrison
  protected static ref map<SCR_AIGroup, int> s_Replans = new map<SCR_AIGroup, int>();
  protected static ref map<SCR_AIGroup, float> s_Tight = new map<SCR_AIGroup, float>();
  protected static ref array<vector> s_aBad = {};
+
+ // Per match (ACR_Manager.Stop): a restart on the same map inherited the blacklisted post spots.
+ static void Reset()
+ {
+  s_Posts.Clear();
+  s_Survey.Clear();
+  s_Stuck.Clear();
+  s_LastPos.Clear();
+  s_Replans.Clear();
+  s_Tight.Clear();
+  s_aBad.Clear();
+  s_StragglerAt.Clear();
+  s_StragglerFor.Clear();
+ }
  static int s_iDropped; // tests
 
  protected static bool IsBad(vector at)

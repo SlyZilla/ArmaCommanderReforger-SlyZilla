@@ -735,8 +735,10 @@ class ACR_BaseWorks
  static const float LINE_POINT_REACH = 150; // m from a base's middle, an AI defend order takes its works
  static const float ORDER_REACH = 500;      // m from a base's middle: no line of its can be close to an order past this
  static const int ROOM_LEAST = 3;           // free places on a line for an AI squad to be sent to it
- static const float ON_WAY_FIRST = 3;       // a line firing on his way scores from here: above any that only face him
- static const float ON_WAY_METRES = 40;     // ... and one more for each of these it fires on
+ static const float ON_WAY_FIRST = 1.5;     // a line firing on his way scores this over one that only faces him
+ static const float ON_WAY_METRES = 60;     // ... and one more for each of these it fires on
+ static const float PAST_MIDDLE = 30;       // m further from him than the middle a line may be and still count for that
+ static const float FROM_MIDDLE = 150;      // m from the middle that cost a line one point
 
  // The nearest enemy man's side of the base: false with none in range.
  protected static bool ThreatAt(ACR_DefenderPost post, out vector at)
@@ -811,12 +813,16 @@ class ACR_BaseWorks
    {
     // Bags that fire on the way he's walking, before any that only face where he is: a line can face him from
     // behind a row of houses and never see him (srv:worksfight, 2 Nov: the town fell and the reserve fired no round).
+    // Only in front of the middle: past it they'd fire on his back while he takes the town, and few men count there.
     float onWay = 0;
-    if (!way.IsEmpty()) onWay = work.m_Kill.OnWay(line.m_vMiddle, ACR_BaseDefences.Bearing(line.m_vFacing), way);
+    float fromHim = vector.DistanceXZ(line.m_vMiddle, threat);
+    if (!way.IsEmpty() && fromHim <= vector.DistanceXZ(work.m_Base.GetOrigin(), threat) + PAST_MIDDLE) onWay = work.m_Kill.OnWay(line.m_vMiddle, ACR_BaseDefences.Bearing(line.m_vFacing), way);
     float faces = ACR_BaseDefences.DotXZ(line.m_vFacing, ACR_BaseDefences.FlatDir(line.m_vMiddle, threat));
     if (onWay <= 0 && faces < FACES_ENOUGH) continue;
-    score = faces * 2 - vector.DistanceXZ(line.m_vMiddle, threat) / 400;
-    if (onWay > 0) score = ON_WAY_FIRST + onWay / ON_WAY_METRES;
+    score = faces * 2 - fromHim / 400;
+    if (onWay > 0) score += ON_WAY_FIRST + onWay / ON_WAY_METRES;
+    // With few men, near enough the middle to count there when he comes (ACR_BaseSystem: men near it slow the taking).
+    score -= vector.DistanceXZ(line.m_vMiddle, work.m_Base.GetOrigin()) / FROM_MIDDLE;
    }
    scores.Insert(score);
    lines.Insert(l);

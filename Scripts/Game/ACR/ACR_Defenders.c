@@ -103,6 +103,7 @@ class ACR_Defenders
    post.m_iMannedLine = -1;
    if (ACR_BaseWorks.ManLine(post, post.m_iReserve)) {}
    else if (ACR_Wings.ManWings(post, post.m_iReserve)) {}
+   else if (ACR_Fortify.ManReserve(post, post.m_iReserve)) {}
    else if (post.m_fGarrisonArea > 0 && ACR_Garrison.AssignArea(post.m_Group, post.m_Group.GetLeaderAgent(), post.m_vPos, post.m_fGarrisonArea, post.m_iReserve) > 0) ACR_Guerrillas.Order(post.m_Group, ACR_Squad.WP_GARRISON, post.m_vPos, post.m_fGarrisonArea, true);
    post.m_iReserve = 0;
    if (post.m_Cell) ACR_Guerrillas.Deployed(manager, post);

@@ -99,7 +99,7 @@ US vs Ukraine. RHS and Ukraine Armed Forces RHS are optional; the launcher adds 
 IDs when selected; it does not download those mods. ZIP launcher users may need to adjust addon
 search paths to match their installation. Ukraine Armed Forces RHS replaces
 the vanilla US faction for that session, so choose a pair containing **UA** to play it. ACE All in
-One is a separate optional toggle. Play/Host/Join also automatically load All-in-One Command Menu if
+One is a separate optional toggle. When an expansion pack (the Cold War or Modern content pack) or an ACA map add-on sits beside ACA in the addons folder, the menu offers it too (row **Expansion pack**; map add-ons join the **Map** row, and joiners pick the same pack and the host's map add-on in the join menu); its Workshop dependencies must already be downloaded. Play/Host/Join also automatically load All-in-One Command Menu if
 its Workshop copy is found locally; it is a separate optional mod and joiners need it when the host
 loads it. Joiners should select the same faction pair and ACE setting as the host; a mod mismatch
 can prevent joining, and a different faction choice can produce the wrong setup. The join menu
@@ -132,10 +132,12 @@ Open with M or F9:
 | F7 | Possess the soldier under your crosshair, or the marker under the map cursor |
 | F8 | Return to your command unit |
 | F9 | Open/close the command map (no map item needed) |
-| F6 (in a vehicle) | Drop every passenger squad now (a second press within 3 s overrides the "too high/fast" warning) |
+| F6 (driving, or as commander, in a vehicle) | Drop every passenger squad now (a second press within 3 s overrides the "too high/fast" warning) |
 | F5 | Move selected squad to cursor (map) or 35 m ahead |
 | W/A/S/D in a turret | Gunner drive with an AI driver (a map order hands control back) |
 | Command menu key (default: backtick) | Native squad orders, only while possessing a squad leader |
+
+The ACA panel and INTEL's header can be dragged anywhere on the map (double click: back home). Off the map the keys show along the top of the screen; **Key reminders** on the ACA panel (under **More**) hides them. The panel never runs off the screen: Build orders, FOB Upgrades and More fold, the fold is remembered, and if it still can't all fit the wheel scrolls it.
 
 F7 only takes over living soldiers in your side's commandable squads, never another player's soldier
 or command unit. Keys can be rebound under **Settings > Controls > AC: Actual**. PC keyboard/mouse

@@ -35,6 +35,7 @@ class ACR_DangerRoad : Managed
  ACR_Squad m_Sweeper;   // sent to clear it (ACR_AICommander.ManageDangerRoads)
  float m_fQuietSince;   // the sweeper there with no contact since (0: not yet)
  int m_iSweeps;         // sweepers sent
+ float m_fSweepSince;   // when the current sweeper was sent (ACR_AICommander.SWEEP_MAX_MS)
  ACR_DefenderPost m_Hideout; // a found FIA hideout to clear, not a road (no time limit)
 }
 
@@ -194,6 +195,19 @@ class ACR_Insurgency
  protected static int s_iSeconds;
 
  static bool Leaning() { return s_bLeaning; }
+
+ // Per match (ACR_Manager.Stop): the next mission's setup asked the last one's alliances, and its
+ // Apply un-friended the last ally on the new world's faction manager. No Unfriend here: those
+ // factions went with the old world.
+ static void Reset()
+ {
+  s_aRoads.Clear();
+  s_aSides.Clear();
+  s_aFriends.Clear();
+  s_sAlly = "";
+  s_bLeaning = false;
+  s_iSeconds = 0;
+ }
 
  protected static bool LeaningOption()
  {

@@ -82,6 +82,7 @@ class ACR_KillGround : Managed
  static const float SUPPORT = 110;      // m: a place with no friend this close stands alone
  static const float LONE = 0.8;
  static const float MAN_HEIGHT = 1;     // m over the ground he's aimed at
+ static const float AT_THE_MIDDLE = 40; // m from the middle: too late to be counted as stopping him
  // What things are.
  static const float BAG_ARC = 70;
  static const float BAG_RANGE = 150;
@@ -933,6 +934,8 @@ class ACR_KillGround : Managed
   foreach (int c : cells)
   {
    vector m = Middle(c);
+   // He's there already, as good as: what counts is the ground before it.
+   if (vector.DistanceXZ(m, m_vCenter) < AT_THE_MIDDLE) continue;
    float dx = m[0] - eye[0];
    float dz = m[2] - eye[2];
    float d = Math.Sqrt(dx * dx + dz * dz);

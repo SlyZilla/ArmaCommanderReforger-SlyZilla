@@ -60,7 +60,8 @@ class ACR_Skirmish : GenericEntity
  // Helicopter supports of a side fly from its helipads, unless a layout left it without one.
  static bool SideHasPads(string factionKey)
  {
-  if (!s_Active && !ACR_Generator.Built()) return true;
+  // (A generated layout that failed plays the world as placed: its pads as placed too.)
+  if (!s_Active && (!ACR_Generator.Built() || ACR_Generator.s_Sites.IsEmpty())) return true;
   return s_PadSides.Contains(factionKey);
  }
 

@@ -18,13 +18,53 @@ function Get-PairLabel([string]$pair) {
   }
 }
 
-function Get-ACRAddonList([string]$pair, [string]$ace) {
+# Expansion packs: separate add-ons beside ACA that plug into ACR_ContentSocket. Only those
+# whose folder is present are offered. (Civil Population needs ACA's civilians branch: not here.)
+$script:ACRPacks = @(
+  @{ Key = 'coldwar'; Folder = 'ACAColdWar'; Id = 'AC230926CC000002'; Label = 'Cold War (era vehicles and kit)' },
+  @{ Key = 'modern'; Folder = 'ACAModern'; Id = 'AC230926DD000003'; Label = 'Modern (RHS sides: pick RHS Russia vs RHS US)' }
+)
+
+function Get-AvailablePacks {
+  $root = Split-Path $PSScriptRoot -Parent
+  return @($script:ACRPacks | Where-Object { Test-Path -LiteralPath (Join-Path (Join-Path $root $_.Folder) 'addon.gproj') })
+}
+
+function Get-PackLabel([string]$pack) {
+  foreach ($p in $script:ACRPacks) { if ($p.Key -eq $pack) { return $p.Label } }
+  return 'none'
+}
+
+# ACA map add-ons beside ACA (ACAMap*): world path -> add-on GUID, for the map row.
+function Get-MapAddons {
+  $maps = [ordered]@{}
+  $root = Split-Path $PSScriptRoot -Parent
+  foreach ($dir in Get-ChildItem -LiteralPath $root -Directory -Filter 'ACAMap*' -ErrorAction SilentlyContinue) {
+    $project = Join-Path $dir.FullName 'addon.gproj'
+    if (!(Test-Path -LiteralPath $project)) { continue }
+    $m = [regex]::Match((Get-Content -LiteralPath $project -Raw), 'GUID\s+"([0-9A-Fa-f]{16})"')
+    if (!$m.Success) { continue }
+    foreach ($world in Get-ChildItem -LiteralPath (Join-Path $dir.FullName 'Worlds') -Filter 'ACR_*.ent' -ErrorAction SilentlyContinue) {
+      $maps['Worlds/' + $world.Name] = $m.Groups[1].Value
+    }
+  }
+  return $maps
+}
+
+# A pack or a map add-on brings Workshop mods of its own, as faction mods and ACE do.
+function Test-NeedsModAddons([string]$pair, [string]$ace, [string]$pack, [string]$mapId) {
+  return ($pair -ne 'vanilla' -or $ace -eq 'yes' -or ($pack -and $pack -ne 'none') -or [bool]$mapId)
+}
+
+function Get-ACRAddonList([string]$pair, [string]$ace, [string]$pack = 'none', [string]$mapId = '') {
   $ids = @('AC230926A0010001')
   if ($pair -ne 'vanilla') {
     $ids += @('595F2BF2F44836FB', '1337C0DE5DABBEEF', 'BADC0DEDABBEDA5E')
     if ($pair -eq 'ru_ua' -or $pair -eq 'us_ua') { $ids += '65F92D51845AC237' }
   }
   if ($ace -eq 'yes') { $ids += '60C4E0B49618CC62' }
+  foreach ($p in $script:ACRPacks) { if ($p.Key -eq $pack) { $ids += $p.Id } }
+  if ($mapId) { $ids += $mapId }
   return ($ids -join ',')
 }
 
@@ -175,7 +215,7 @@ function Show-HostSetup([switch]$Solo) {
   if ($Solo) { $name = 'play-settings.txt' }
   $file = Join-Path $PSScriptRoot $name
   # Only pre-load choices belong here. Ignore old saved match settings.
-  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no' }
+  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; Pack = 'none' }
   $bbb = @{}
   foreach ($o in $script:BBBOptions) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o }
   # Settings files from before the full BBB list used these names (yes/no).
@@ -193,7 +233,11 @@ function Show-HostSetup([switch]$Solo) {
   $worlds = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Worlds') -Filter 'ACR_*.ent' -ErrorAction SilentlyContinue |
               Where-Object { $_.Name -notlike '*TestRange*' } | ForEach-Object { 'Worlds/' + $_.Name })
   if ($worlds.Count -eq 0) { $worlds = @('Worlds/ACR_Arland.ent') }
+  $mapAddons = Get-MapAddons
+  foreach ($w in $mapAddons.Keys) { if ($worlds -notcontains $w) { $worlds += $w } }
   if ($worlds -notcontains $s.World) { $s.World = $worlds[0] }
+  $packs = @('none') + @(Get-AvailablePacks | ForEach-Object { $_.Key })
+  if ($packs -notcontains $s.Pack) { $s.Pack = 'none' }
   if (@('vanilla', 'ru_us', 'ru_ua', 'us_ua') -notcontains $s.Factions) { $s.Factions = 'vanilla' }
   if (@('yes', 'no') -notcontains $s.ACE) { $s.ACE = 'no' }
   foreach ($o in $script:BBBOptions) {
@@ -207,10 +251,13 @@ function Show-HostSetup([switch]$Solo) {
     $title = '=== HOST: MAP AND MODS ==='
     if ($Solo) { $title = '=== PLAY: MAP AND MODS ===' }
     Write-Host ($title + '  (type a number to change, Enter to launch)') -ForegroundColor Cyan
-    Write-Host (' 1  Map                     ' + $mapName)
+    $mapNote = ''
+    if ($mapAddons.Contains($s.World)) { $mapNote = '   (map add-on)' }
+    Write-Host (' 1  Map                     ' + $mapName + $mapNote)
     Write-Host (' 2  Faction mods            ' + (Get-PairLabel $s.Factions))
     Write-Host (' 3  ACE All in One          ' + $s.ACE)
     Write-Host (' 4  BBB options             ' + (Get-BBBSummary $bbb))
+    if ($packs.Count -gt 1) { Write-Host (' 5  Expansion pack          ' + (Get-PackLabel $s.Pack)) }
     Write-Host 'Choose the playable sides, battlefield and match settings in game, then press Start.' -ForegroundColor DarkGray
     Write-Host 'Faction mods must be loaded now; UA replaces vanilla US while loaded.' -ForegroundColor DarkGray
     if (!$Solo) { Write-Host 'Connect before friends: the first connection controls setup; access does not transfer after disconnect.' -ForegroundColor Yellow }
@@ -221,7 +268,8 @@ function Show-HostSetup([switch]$Solo) {
       '2' { $pairs = @('vanilla', 'ru_us', 'ru_ua', 'us_ua'); $i = [array]::IndexOf($pairs, $s.Factions); $s.Factions = $pairs[($i + 1) % $pairs.Count] }
       '3' { if ($s.ACE -eq 'yes') { $s.ACE = 'no' } else { $s.ACE = 'yes' } }
       '4' { Show-BBBOptions $bbb }
-      default { Write-Host 'Type a number from 1 to 4, or press Enter to launch.' -ForegroundColor Yellow }
+      '5' { if ($packs.Count -gt 1) { $i = [array]::IndexOf($packs, $s.Pack); $s.Pack = $packs[($i + 1) % $packs.Count] } else { Write-Host 'No expansion pack is installed beside ACA.' -ForegroundColor Yellow } }
+      default { Write-Host 'Type a number from 1 to 5, or press Enter to launch.' -ForegroundColor Yellow }
     }
   }
   # Only options changed from the launcher default are saved, so a new default reaches old files.
@@ -237,30 +285,50 @@ function Show-HostSetup([switch]$Solo) {
   if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git')) { $extra += ' -acrAdminPassword 1' }
   # BBB options changed from their defaults (the AI runs where these args go).
   $extra += Get-BBBArgs $bbb
-  return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE); Factions = $s.Factions; ACE = $s.ACE }
+  $mapId = ''
+  if ($mapAddons.Contains($s.World)) { $mapId = $mapAddons[$s.World] }
+  return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE $s.Pack $mapId); Factions = $s.Factions; ACE = $s.ACE; Pack = $s.Pack; NeedsMods = (Test-NeedsModAddons $s.Factions $s.ACE $s.Pack $mapId) }
 }
 
 function Show-JoinModSetup {
   $file = Join-Path $PSScriptRoot 'join-settings.txt'
-  $pair = 'vanilla'; $ace = 'no'
+  $pair = 'vanilla'; $ace = 'no'; $pack = 'none'; $map = 'none'
   if (Test-Path -LiteralPath $file) {
     foreach ($line in Get-Content -LiteralPath $file) {
       $kv = $line.Split('=', 2)
       if ($kv.Count -eq 2 -and $kv[0] -eq 'Factions') { $pair = $kv[1] }
       if ($kv.Count -eq 2 -and $kv[0] -eq 'ACE') { $ace = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'Pack') { $pack = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'Map') { $map = $kv[1] }
     }
   }
+  $packs = @('none') + @(Get-AvailablePacks | ForEach-Object { $_.Key })
+  if ($packs -notcontains $pack) { $pack = 'none' }
+  # A host on a map add-on's world: the joiner loads that add-on too.
+  $mapAddons = Get-MapAddons
+  $maps = @('none') + @($mapAddons.Keys)
+  if ($maps -notcontains $map) { $map = 'none' }
   while ($true) {
     Write-Host ''
     Write-Host '=== JOIN MODS ===' -ForegroundColor Cyan
     Write-Host (' 1  Factions    ' + (Get-PairLabel $pair) + '   (must match the host)')
     Write-Host (' 2  ACE         ' + $ace + '   (must match the host)')
+    if ($packs.Count -gt 1) { Write-Host (' 3  Expansion   ' + (Get-PackLabel $pack) + '   (must match the host)') }
+    if ($maps.Count -gt 1) {
+      $mapLabel = 'none (a map built into ACA)'
+      if ($map -ne 'none') { $mapLabel = [IO.Path]::GetFileNameWithoutExtension($map) -replace '^ACR_', '' }
+      Write-Host (' 4  Map add-on  ' + $mapLabel + '   (the host''s map, if it is a map add-on)')
+    }
     $choice = (Read-Host 'Choice (Enter to continue)').Trim()
     if ($choice -eq '1') {
       $pairs = @('vanilla', 'ru_us', 'ru_ua', 'us_ua'); $i = [array]::IndexOf($pairs, $pair); $pair = $pairs[($i + 1) % $pairs.Count]
     } elseif ($choice -eq '2') { if ($ace -eq 'yes') { $ace = 'no' } else { $ace = 'yes' } }
+    elseif ($choice -eq '3' -and $packs.Count -gt 1) { $i = [array]::IndexOf($packs, $pack); $pack = $packs[($i + 1) % $packs.Count] }
+    elseif ($choice -eq '4' -and $maps.Count -gt 1) { $i = [array]::IndexOf($maps, $map); $map = $maps[($i + 1) % $maps.Count] }
     else { break }
   }
-  @('Factions=' + $pair, 'ACE=' + $ace) | Set-Content -LiteralPath $file
-  return @{ Addons = (Get-ACRAddonList $pair $ace); Factions = $pair; ACE = $ace }
+  @('Factions=' + $pair, 'ACE=' + $ace, 'Pack=' + $pack, 'Map=' + $map) | Set-Content -LiteralPath $file
+  $mapId = ''
+  if ($map -ne 'none') { $mapId = $mapAddons[$map] }
+  return @{ Addons = (Get-ACRAddonList $pair $ace $pack $mapId); Factions = $pair; ACE = $ace; Pack = $pack; NeedsMods = (Test-NeedsModAddons $pair $ace $pack $mapId) }
 }
