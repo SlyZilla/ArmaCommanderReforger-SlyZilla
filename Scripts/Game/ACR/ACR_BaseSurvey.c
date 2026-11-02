@@ -733,14 +733,33 @@ class ACR_BaseSurvey : Managed
   return true;
  }
 
+ // A small gun position's muzzle, its middle on the ground at 'place', facing 'bearing'. It doesn't follow a
+ // slope, and a trunk or a bench's slats let one spot through and not the next: this is where the built gun's
+ // check (ACR_Fortify.LineOfFire) looks from.
+ static vector SmallGunMuzzle(vector place, float bearing, string faction)
+ {
+  vector local = ACR_Fortify.CompactMuzzle(faction);
+  vector forward = Dir(bearing);
+  vector at = place + Vector(forward[2], 0, -forward[0]) * local[0] + forward * local[2];
+  at[1] = place[1] + local[1];
+  return at;
+ }
+
  // A nest's and a bunker's line of fire must also pass the check a Fortify position's guns do.
- static bool NestFan(vector place, float bearing, float reach = 45)
+ // 'smallFor': a small gun position of that side's.
+ static bool NestFan(vector place, float bearing, float reach = 45, string smallFor = "")
  {
   string why;
   // The gun stands 1.1 m forward of the nest's middle (measured): the same trace the built gun gets.
   vector gun = place + Dir(bearing) * 1.1;
+  float up = UP_NEST;
+  if (!smallFor.IsEmpty())
+  {
+   gun = SmallGunMuzzle(place, bearing, smallFor);
+   up = gun[1] - ACR_BaseLiner.Ground(gun);
+  }
   float middle = Math.Max(reach * 2 / 3, 22);
-  return FanClear(gun, UP_NEST, bearing, reach, middle, 22) && ACR_Fortify.LineOfFireAt(gun, bearing, null, why);
+  return FanClear(gun, up, bearing, reach, middle, 22) && ACR_Fortify.LineOfFireAt(gun, bearing, null, why, up);
  }
 
  // A bunker's firing slit is 4 m forward of its origin (measured).

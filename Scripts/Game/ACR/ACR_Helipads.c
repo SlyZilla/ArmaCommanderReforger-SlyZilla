@@ -144,6 +144,7 @@ class ACR_StationedHeli : Managed
  bool m_bAttack;       // a content pack's attack helicopter (m_bGunship too)
  IEntity m_Vehicle;
  ACR_Helipad m_Pad;
+ vector m_vParked;     // where it was last set down
  ACR_EHeliState m_eState;
  float m_fReadyAt;
  int m_iSorties;
@@ -322,6 +323,7 @@ class ACR_HeliStation : Managed
   heli.m_bAttack = attack;
   heli.m_Vehicle = vehicle;
   heli.m_Pad = pad;
+  heli.m_vParked = pad.Spot();
   heli.m_eState = ACR_EHeliState.READY;
   m_Helis.Insert(heli);
   PrintFormat("[ACR] HELIPAD %1 %2 (%3) stationed on the pad at %4 (%5)", factionKey, name, prefab, pad.Spot(), base.m_sName);
@@ -418,6 +420,7 @@ class ACR_HeliStation : Managed
  // Back on its pad: rearm, repair, new crew for the dead, then ready after SERVICE_SECONDS.
  void Landed(ACR_StationedHeli heli)
  {
+  heli.m_vParked = heli.m_Vehicle.GetOrigin();
   heli.m_eState = ACR_EHeliState.SERVICING;
   heli.m_fReadyAt = GetGame().GetWorld().GetWorldTime() + SERVICE_SECONDS * 1000;
   Service(heli);
