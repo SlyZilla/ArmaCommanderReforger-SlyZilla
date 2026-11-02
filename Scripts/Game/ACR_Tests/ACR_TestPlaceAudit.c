@@ -20,9 +20,12 @@ class ACR_TestPlaceAudit
  static const float FLOOR_GATES = 75;
  static const float FLOOR_GUN_GATES = 50;
  static const float FLOOR_RING_CLOSED = 45;
- static const float FLOOR_SOFTEST = 50;  // m under fire on his softest way in, on average over the towns
- static const float FLOOR_MEAN_WAY = 100; // ... and on his average way
- static const float MOST_OPEN_TOWNS = 40; // % of towns where his softest way has under 30 m of fire
+ // These three fell on 3 Nov (50 / 100 / 40 before): the yardstick's walk (ACR_KillGround.Solve) put no fire on the
+ // cells of his previous ways, only round them, so it steered him into the bags' fire and overstated every plan by
+ // about 30 m on the softest way. With the honest walk the same plans read 22 m / 92-95 m / 66-70% (two runs).
+ static const float FLOOR_SOFTEST = 20;  // m under fire on his softest way in, on average over the towns
+ static const float FLOOR_MEAN_WAY = 90;  // ... and on his average way
+ static const float MOST_OPEN_TOWNS = 70; // % of towns where his softest way has under 30 m of fire
 
  protected static int s_iNext;
  protected static int s_iTowns;
