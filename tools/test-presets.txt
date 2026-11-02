@@ -245,3 +245,4 @@ contentpack|-acrContentPackTest 1|120
 contentpackwinter|-acrContentPackWinterTest 1|120
 quickstartfia|-acrQuickStartFIATest 1|90|Worlds/ACR_Everon.ent
 helidown|-acrHeliDownTest 1|160
+basedefenceskolguyev|-acrBaseDefencesTest 1|120|Worlds/ACR_Kolguyev.ent
