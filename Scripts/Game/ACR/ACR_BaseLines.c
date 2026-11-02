@@ -976,6 +976,7 @@ class ACR_BaseLines
  static const float BEND_WORTH = 0.25;    // a gun at a bend sees along both runs
  static const float GUN_OPEN_GATE = 1.5;  // a gun on a way in that has none
  static const int MOST_GUN_LOOKS = 30;       // places looked at for a gun, about
+ static const float STRETCH_MOST = 34;       // m a stretch gets to, whatever's left of the line
  static ref array<float> WIRE_OUTS = {32, 24, 16, 7}; // m in front of the bags wire stands, the furthest that works
  static const float GUN_WORTH_LEAST = 2;      // what a gun must do to him to be placed
  static const float LONE_GUN_WORTH = 10;      // ... a gun on its own, with no line about it
@@ -2228,6 +2229,7 @@ class ACR_BaseLines
     bool cut = piece.m_iBreak != 0 || i == line.m_aPieces.Count() - 1;
     // A short tail goes on the stretch before it.
     if (length >= target && left >= 8) cut = true;
+    if (length >= STRETCH_MOST) cut = true;
     if (!cut) continue;
     AddStretch(work, line, l, pieces, survey, kit, order);
     order++;

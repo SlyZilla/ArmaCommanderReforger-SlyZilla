@@ -90,6 +90,7 @@ class ACR_BaseRing : Managed
  static const int BUILD_ROUNDS = 2;    // goes at choosing and laying, while bags are left
  static const int LEFT_TO_GO_ON = 8;   // pieces left that are worth another go
  static const float TIER_OVER = 1.12;  // a tier takes this much over its budget to keep a line together
+ static const float TIER_ONE_SHARE = 0.93; // of tier I's budget that's planned on
  static const float OUT_FRONT = 0.85;  // against the line at the town's edge, for what it does: it ties into less
  static const float OUT_FRONT_DEPTH = 1.25; // ... in a town defended in depth
  static const int OUT_PARENT = 1000;   // its stretches are numbered apart from the edge's
@@ -1105,6 +1106,8 @@ class ACR_BaseRing : Managed
   // Strongpoints: only the best of it, apart, with gaps on purpose.
   int spent = used;
   int t4 = System.GetTickCount();
+  // (Walking a part can lay a little more than it was asked for: tier I stays the job it says it is.)
+  if (kill) budgetOne = (int)(budgetOne * TIER_ONE_SHARE);
   if (kill) spent = ring.ChooseRuns(kill, style, runs, sorted, used, budgetOne, budgetTwo, total, 0, "base ring parts " + town);
   int t5 = System.GetTickCount();
   array<ACR_RingRun> points = {};
