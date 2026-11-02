@@ -1958,16 +1958,29 @@ class ACR_BaseLines
   // (The way there may have crossed a road and left a stub.)
   if (LoneTail(line.m_aRight)) line.m_sEndB = "";
   if (LoneTail(line.m_aLeft)) line.m_sEndA = "";
+  // The seed and the way out from it each side, for a curve from there once a side's pieces have all come off. A side
+  // with no pieces (a gap's, a ring's, a walk that didn't go) takes them from the other: with neither set, the curve
+  // was tried at the world's origin.
   vector seedRight, seedLeft, headingRight, headingLeft;
   if (!line.m_aLeft.IsEmpty())
   {
    seedRight = line.m_aLeft[0].m_vFrom;
    headingRight = ACR_BaseDefences.FlatDir(line.m_aLeft[0].m_vTo, line.m_aLeft[0].m_vFrom);
   }
+  else if (!line.m_aRight.IsEmpty())
+  {
+   seedRight = line.m_aRight[0].m_vFrom;
+   headingRight = ACR_BaseDefences.FlatDir(line.m_aRight[0].m_vFrom, line.m_aRight[0].m_vTo);
+  }
   if (!line.m_aRight.IsEmpty())
   {
    seedLeft = line.m_aRight[0].m_vFrom;
    headingLeft = ACR_BaseDefences.FlatDir(line.m_aRight[0].m_vTo, line.m_aRight[0].m_vFrom);
+  }
+  else if (!line.m_aLeft.IsEmpty())
+  {
+   seedLeft = line.m_aLeft[0].m_vFrom;
+   headingLeft = ACR_BaseDefences.FlatDir(line.m_aLeft[0].m_vFrom, line.m_aLeft[0].m_vTo);
   }
   if (line.m_sEndB.IsEmpty() && liner.CurveBack(line.m_aRight, 1, kit, seedRight, headingRight)) line.m_sEndB = "curve";
   if (line.m_sEndA.IsEmpty() && liner.CurveBack(line.m_aLeft, -1, kit, seedLeft, headingLeft)) line.m_sEndA = "curve";
