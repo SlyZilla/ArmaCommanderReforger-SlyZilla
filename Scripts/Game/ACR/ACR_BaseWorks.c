@@ -71,6 +71,7 @@ class ACR_BaseWorks
  static const float CLICK_RADIUS = 60;  // m from a base's centre: Fortify there means the whole base
  static const int MAX_NESTS = 3;
  static const int MAX_GATE_GUNS = 2;
+ static const int MAX_CORNER_GUNS = 2;  // guns outside a compound wall's threatened corners
  static const int MAX_BUNKERS = 3;
  static const int MAX_ROADBLOCKS = 2;
  static const float SITE_RADIUS = 30;   // squad members this close to a site work
@@ -1113,6 +1114,7 @@ class ACR_BaseWorks
   // Nests first: gaps for men on foot keep clear of them, and stretches are cut after the gaps.
   ACR_BaseLines.Nests(work, survey, MAX_NESTS);
   ACR_BaseLines.GateGuns(work, survey, MAX_GATE_GUNS);
+  ACR_BaseLines.CornerGuns(work, survey, MAX_CORNER_GUNS);
   ACR_BaseLines.DressLines(work);
   ACR_BaseLines.Stretches(work, survey);
   ACR_BaseLines.Wire(work, survey);
