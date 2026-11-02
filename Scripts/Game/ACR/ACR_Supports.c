@@ -741,6 +741,8 @@ class ACR_HeliRun : ACR_SupportRun
   return true;
  }
 
+ static const float PARK_DRIFT = 5; // m from where it was set down before a helicopter is put back to lift
+
  // Takes off from its helipad (the helicopter and crew are already there).
  bool StartFromPad(ACR_Supports supports, ACR_StationedHeli home, float now)
  {
@@ -748,6 +750,16 @@ class ACR_HeliRun : ACR_SupportRun
   m_Home = home;
   m_Vehicle = home.m_Vehicle;
   m_Pos = m_Vehicle.GetOrigin();
+  // Pushed since it was set down (Everon long match 31 Oct: 33 m, under a light tower, and the lift
+  // held there for good, the side's gunship "out on a mission" with nothing flying): the lift is
+  // only known to be clear from where it was set down, so it goes back there first. (That spot, not
+  // its pad: a helicopter re-homed to another pad flies from where it stands.)
+  if (home.m_vParked != vector.Zero && vector.DistanceXZ(m_Pos, home.m_vParked) > PARK_DRIFT)
+  {
+   PrintFormat("[ACR] SUPPORT %1 was %2 m from where it was set down, back there before it lifts", home.m_sName, (int)vector.DistanceXZ(m_Pos, home.m_vParked));
+   m_Pos = home.m_vParked;
+   m_Vehicle.SetOrigin(m_Pos);
+  }
   m_Start = m_Pos;
   vector toward = m_Target - m_Pos;
   toward[1] = 0;
