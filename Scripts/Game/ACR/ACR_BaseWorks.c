@@ -791,12 +791,13 @@ class ACR_BaseWorks
  protected static int MannablePieces(ACR_BaseWork work, ACR_BaseLine line, notnull array<ACR_LinePiece> result)
  {
   result.Clear();
+  int index = work.m_aLines.Find(line);
   foreach (ACR_LinePiece piece : line.m_aPieces)
   {
    if (!piece.m_bLong || CutForNest(work, piece.m_vPos)) continue;
    foreach (ACR_BaseSite site : work.m_aSites)
    {
-    if (site.m_iLine != work.m_aLines.Find(line) || !site.m_bBuilt || !StandsAt(site, piece.m_vPos)) continue;
+    if (site.m_iLine != index || !site.m_bBuilt || !StandsAt(site, piece.m_vPos)) continue;
     result.Insert(piece);
     break;
    }
