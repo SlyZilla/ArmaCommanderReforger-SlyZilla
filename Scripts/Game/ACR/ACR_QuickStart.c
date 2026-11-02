@@ -388,7 +388,10 @@ class ACR_QuickStart
      PrintFormat("[ACR] QUICKSTART no roadblock at %1: %2", base.m_sName, none);
      continue;
     }
-    if (ACR_Roadblocks.SpawnRoadblock(key, site.m_vPos, site.m_fYaw)) built++;
+    ACR_Roadblock block = ACR_Roadblocks.SpawnRoadblock(key, site.m_vPos, site.m_fYaw);
+    if (!block) continue;
+    ACR_Wings.ForRoadblock(block);
+    built++;
    }
    PrintFormat("[ACR] QUICKSTART %1: %2 roadblocks at the front", key, built);
   }
