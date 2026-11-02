@@ -62,7 +62,9 @@ class ACR_TestWorksFight
  protected static void Setup(ACR_Manager manager)
  {
   ACR_BaseWorks.s_bNoLineMenForTest = System.IsCLIParam("acrWorksFightOldTest");
-  if (System.IsCLIParam("acrWorksFightValueOffTest")) ACR_Options.Set("acrKillGround", "0");
+  if (System.IsCLIParam("acrWorksFightValueOffTest") || System.IsCLIParam("acrWorksFightVillageOffTest")) ACR_Options.Set("acrKillGround", "0");
+  // Not always the biggest town: a village, a plan with little to hide behind.
+  bool village = System.IsCLIParam("acrWorksFightVillageTest") || System.IsCLIParam("acrWorksFightVillageOffTest");
   if (System.IsCLIParam("acrWorksFightOffTest")) ACR_Options.Set("acrBagHold", "0");
   if (System.IsCLIParam("acrWorksFightCompactTest")) ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
   string side = ACR_FactionSelection.West();
@@ -77,6 +79,7 @@ class ACR_TestWorksFight
    if (nearest < 900) continue;
    array<IEntity> buildings = {};
    ACR_BaseDefences.Buildings(base.GetOrigin(), ACR_BaseDefences.SearchRadius(base), buildings);
+   if (village && (buildings.Count() < 12 || buildings.Count() > 30)) continue;
    if (buildings.Count() <= most) continue;
    most = buildings.Count();
    s_Base = base;

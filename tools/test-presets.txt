@@ -231,6 +231,8 @@ bagholdlow|-acrBagHoldLowTest 1|420|Worlds/ACR_Everon.ent
 bagholdsquads|-acrBagHoldSquadsTest 1|240|Worlds/ACR_Everon.ent
 worksfightold|-acrWorksFightOldTest 1|480|Worlds/ACR_Everon.ent
 worksfightvalueoff|-acrWorksFightValueOffTest 1|480|Worlds/ACR_Everon.ent
+worksfightvillage|-acrWorksFightVillageTest 1|480|Worlds/ACR_Everon.ent
+worksfightvillageoff|-acrWorksFightVillageOffTest 1|480|Worlds/ACR_Everon.ent
 worksfightoff|-acrWorksFightOffTest 1|480|Worlds/ACR_Everon.ent
 worksfightcompact|-acrWorksFightCompactTest 1|480|Worlds/ACR_Everon.ent
 baseworkscompact|-acrBaseWorksCompactTest 1|900|Worlds/ACR_Everon.ent
