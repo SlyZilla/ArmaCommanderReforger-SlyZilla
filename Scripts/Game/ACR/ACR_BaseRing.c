@@ -1418,7 +1418,8 @@ class ACR_BaseRing : Managed
     run.m_sEnd = "line";
    }
    SiteFor(kill, run);
-   run.m_fBound = kill.Potential(run.m_Site) * ANCHORED * NEXT_TO / Math.Sqrt(Math.Max(PiecesFor(growBy), 1));
+   // As Bounds: Scaled counts both ends (the one it grows from is 'line'), and it's beside the line it grows.
+   run.m_fBound = kill.Potential(run.m_Site) * ANCHORED * ANCHORED * NEXT_TO / Math.Sqrt(Math.Max(PiecesFor(growBy), 1));
    runs.Insert(run);
   }
  }
