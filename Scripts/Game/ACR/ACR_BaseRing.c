@@ -33,6 +33,11 @@ class ACR_RingRun : Managed
  string m_sStart;                // what each end stands on: as ACR_BaseLine's ends, "" open
  string m_sEnd;
  bool m_bWanted;
+ ref ACR_KillSite m_Site;        // what it does to him (ACR_KillGround)
+ bool m_bOutFront;               // on the line further out
+ bool m_bForWay;                 // laid out for one of his ways, not along the town
+ float m_fBound;                 // the most it could score now
+ bool m_bLooked;                 // the walker has tried it
 }
 
 class ACR_BaseRing : Managed
@@ -76,6 +81,35 @@ class ACR_BaseRing : Managed
  static const float POINT_GAP_THIN = 8; // ... in a town they left thin
  static const float POINT_ENOUGH = 0.6; // of tier I's budget: thin below this
  static const float HOLE_VIEW = 12;    // m a part must see to fill a hole between two parts being built
+ static const float WORTH_LEAST = 1;   // what a part must do to him to be built
+ static const float WORTH_SHARE = 0.1; // ... against the first that went in: past that it's bags on ground he hardly walks
+ static const float WORTH_SHARE_FIRST = 0.03; // ... while tier I isn't full: a town gets its first line of defence, but not where nobody comes
+ static const float NEXT_TO = 1.3;     // a part beside one going in: a line, not loose pieces
+ static const float WALK_AGAIN = 0.34; // of the bags, between looks at where he'd walk now
+ static const int MOST_WALKS = 2;
+ static const int BUILD_ROUNDS = 3;    // goes at choosing and laying, while bags are left
+ static const int LEFT_TO_GO_ON = 8;   // pieces left that are worth another go
+ static const float OUT_FRONT = 0.85;  // against the line at the town's edge, for what it does: it ties into less
+ static const float OUT_FRONT_DEPTH = 1.25; // ... in a town defended in depth
+ static const int OUT_PARENT = 1000;   // its stretches are numbered apart from the edge's
+ static const int WAY_PARENT = 2000;   // ... and those laid out for his ways
+ static const int WAY_LINES_WAYS = 10; // of his ways, the heaviest
+ static const int WAY_LINES_MOST = 70; // places proposed
+ static const float WAY_STEP_ALONG = 45; // m along a way between places
+ static const float WAY_OUT = 80;      // m past the search radius a way is looked at from
+ static const float WAY_IN = 40;       // m from the middle it's looked at up to
+ static const float WAY_AHEAD = 40;    // m ahead of him the line across his way stands
+ static const float WAY_SIDE = 45;     // m to his side a line firing across him stands
+ static const float WAY_HALF = 15;     // half such a line
+ static const float WAY_ANCHOR = 8;    // m from its end to something it can end on
+ static const float ANCHORED = 1.15;   // ... each such end: nothing to walk round
+ static const float LOOK_MARGIN = 0.85; // what can't come this near the best isn't looked at
+ static const float BOUND_MARGIN = 1.1; // what it scored, as a bound on what it scores next: mostly it only falls
+ static const float FRONT_EACH = 0.88; // a new line costs this much per line already going in, against growing one
+ static const float GROW_LENGTH = 24;  // m a line grows by
+ static const float GROW_TURN = 22;    // degrees it may turn doing it
+ static const float WAY_RIM_OUT = 52;  // m past the town's outline a line laid out for him may stand: past this nobody supports it
+ static const float WAY_RIM_IN = -30;  // ... and inside it
 
  static const int HOUSE = 1;
  static const int STONE = 2;
@@ -100,6 +134,9 @@ class ACR_BaseRing : Managed
  static bool On() { return ACR_LogisticsRules.Choice("acrBaseRing", "1") != "0"; }
 
  ACR_BaseSurvey m_Survey;
+ protected ref RandomGenerator m_Luck;
+ protected int m_iLaidFronts;     // lines already laid when choosing more
+ protected float m_fFirstValue;   // what the first part that went in did to him
  int m_iN;
  float m_fX;
  float m_fZ;
@@ -971,19 +1008,34 @@ class ACR_BaseRing : Managed
    if (whole.m_sEnd == "line" && !WantedAt(sorted, first.m_iParent, parts[hi].m_iOrder + 1)) whole.m_sEnd = "";
    whole.m_vOut = first.m_vOut;
    whole.m_vMiddle = first.m_vMiddle;
+   array<ACR_RingRun> walked = {};
    for (int p = lo; p <= hi; p++)
    {
     ACR_RingRun part = parts[p];
+    if (part.m_bLooked) continue;
     foreach (vector point : part.m_aWay) whole.m_aWay.Insert(point);
     whole.m_fLength = whole.m_fLength + part.m_fLength;
     done.Insert(part);
+    walked.Insert(part);
    }
-   if (used >= most) continue;
+   if (used >= most || walked.IsEmpty()) continue;
    int gotLine = ACR_BaseLines.RingLine(work, survey, kit, whole, whole.m_iTier, most - used);
+   // What's really there is what fires.
+   float share = Math.Clamp(gotLine * 1.0 / Math.Max(PiecesFor(whole.m_fLength), 1), 0, 1);
+   foreach (ACR_RingRun tried : walked)
+   {
+    tried.m_bLooked = true;
+    if (tried.m_Site) tried.m_Site.m_fPower = tried.m_Site.m_fPower * share;
+   }
    PrintFormat("[ACR] BASEWORKS %1: ring line tier %2, %3 m in %4 points, from '%5' to '%6': %7 pieces", work.m_Base.m_sName, whole.m_iTier, (int)whole.m_fLength, whole.m_aWay.Count(), whole.m_sStart, whole.m_sEnd, gotLine);
    used += gotLine;
   }
   return used;
+ }
+
+ protected static RandomGenerator rng0(string town)
+ {
+  return ACR_Variety.For("base ring lengths " + town);
  }
 
  // A town's lines. False: nothing came of it, the caller walks lines from seeds.
@@ -993,7 +1045,9 @@ class ACR_BaseRing : Managed
   ACR_BaseStyle style = work.m_Style;
   string town = work.m_Base.m_sName;
   ACR_BaseRing ring = new ACR_BaseRing();
+  ring.m_Luck = rng0(town);
   ring.Build(survey);
+  int t1 = System.GetTickCount();
   float core = CORE;
   float off = OFF;
   float minThreat = MIN_THREAT;
@@ -1012,11 +1066,14 @@ class ACR_BaseRing : Managed
   }
   if (style.m_iKind == ACR_BaseStyle.DEPTH) off = 4;
   ring.Outline(core);
+  int t2 = System.GetTickCount();
+  if (ACR_KillGround.On()) survey.m_Kill = ACR_KillGround.ForTown(survey, !threatMatters, town);
+  int t3 = System.GetTickCount();
   int used;
   // A funnel's arms go in first: the ring ties into them.
   if (style.m_iKind == ACR_BaseStyle.FUNNEL) used += ACR_BaseLines.RingFunnel(work, survey, kit, ring, total);
   // Depth: a thin line well out first, the real one close in.
-  if (style.m_iKind == ACR_BaseStyle.DEPTH) used += ring.Forward(work, survey, kit, 1, budgetOne * style.m_fFirstShare, "base ring forward first " + town);
+  if (style.m_iKind == ACR_BaseStyle.DEPTH && !survey.m_Kill) used += ring.Forward(work, survey, kit, 1, budgetOne * style.m_fFirstShare, "base ring forward first " + town);
   array<int> path = {};
   if (!ring.Solve(off, BAND_IN, BAND_OUT, NOISE, threatMatters, "base ring path " + town, path))
   {
@@ -1031,13 +1088,26 @@ class ACR_BaseRing : Managed
   s_aLastPath.Clear();
   foreach (int pathCell : path) s_aLastPath.Insert(ring.Middle(pathCell));
   array<ref ACR_RingRun> sorted = {};
-  foreach (ACR_RingRun all : runs)
-   if (all.m_fThreat >= minThreat && (all.m_fView >= MIN_VIEW || all.m_iRoads > 0)) sorted.Insert(all);
-  Sort(sorted);
+  ACR_KillGround kill = survey.m_Kill;
+  // A line further out is as good a place as the edge if it's where he can be killed: it's a choice from the start.
+  if (kill)
+  {
+   ring.AddOutFront(runs, threatMatters, "base ring out " + town);
+   ring.AddWayLines(kill, runs);
+  }
+  if (!kill)
+  {
+   foreach (ACR_RingRun all : runs)
+    if (all.m_fThreat >= minThreat && (all.m_fView >= MIN_VIEW || all.m_iRoads > 0)) sorted.Insert(all);
+   Sort(sorted);
+  }
   // Strongpoints: only the best of it, apart, with gaps on purpose.
   int spent = used;
+  int t4 = System.GetTickCount();
+  if (kill) spent = ring.ChooseRuns(kill, style, runs, sorted, used, budgetOne, budgetTwo, total, 0, "base ring parts " + town);
+  int t5 = System.GetTickCount();
   array<ACR_RingRun> points = {};
-  for (int pass = 0; pass < 2; pass++)
+  for (int pass = 0; pass < 2 && !kill; pass++)
   {
    float pointGap = POINT_GAP;
    if (pass > 0)
@@ -1066,12 +1136,14 @@ class ACR_BaseRing : Managed
   }
   if (style.m_iKind != ACR_BaseStyle.POINTS)
   {
+   SortAlong(runs);
    for (int hole = 1; hole + 1 < runs.Count(); hole++)
    {
     ACR_RingRun filling = runs[hole];
     ACR_RingRun last = runs[hole - 1];
     ACR_RingRun next = runs[hole + 1];
     if (filling.m_bWanted || !last.m_bWanted || !next.m_bWanted || last.m_iParent != filling.m_iParent || next.m_iParent != filling.m_iParent) continue;
+    if (last.m_iOrder != filling.m_iOrder - 1 || next.m_iOrder != filling.m_iOrder + 1) continue;
     if (filling.m_fView < HOLE_VIEW || spent + PiecesFor(filling.m_fLength) > total) continue;
     spent += PiecesFor(filling.m_fLength);
     filling.m_bWanted = true;
@@ -1080,20 +1152,367 @@ class ACR_BaseRing : Managed
    }
   }
   used += BuildWanted(work, survey, kit, sorted, total - used);
+  // What couldn't be laid doesn't fire, and its bags are still there to use: he walks again, and they go elsewhere.
+  for (int round = 1; kill && round < BUILD_ROUNDS && total - used >= LEFT_TO_GO_ON; round++)
+  {
+   ring.m_iLaidFronts = work.m_aLines.Count();
+   kill.Solve();
+   array<ref ACR_RingRun> more = {};
+   ring.ChooseRuns(kill, style, runs, more, used, budgetOne, budgetTwo, total, 0, string.Format("base ring parts %1 %2", town, round));
+   if (more.IsEmpty()) break;
+   used += BuildWanted(work, survey, kit, more, total - used);
+   foreach (ACR_RingRun extra : more) sorted.Insert(extra);
+  }
   // Bags to spare: out in front if there's ground to watch and no wall to fight from behind.
   int left = total - used;
-  if (style.m_iKind != ACR_BaseStyle.POINTS && style.m_iKind != ACR_BaseStyle.DEPTH && left >= FORWARD_LEFT && ring.WalledShare(path) <= WALLED)
+  if (!kill && style.m_iKind != ACR_BaseStyle.POINTS && style.m_iKind != ACR_BaseStyle.DEPTH && left >= FORWARD_LEFT && ring.WalledShare(path) <= WALLED)
   {
    int forward = ring.Forward(work, survey, kit, 2, left, "base ring forward " + town);
    used += forward;
    left -= forward;
   }
-  if (left >= GATE_LEFT) used += ring.GateLines(work, survey, kit, sorted, left);
+  if (!kill && left >= GATE_LEFT) used += ring.GateLines(work, survey, kit, sorted, left);
   if (s_bMeasureForTest) ring.MeasureClosed(work, path);
   s_iPlans++;
+  PrintFormat("[ACR] RINGMS %1 build %2 outline %3 killbuild %4 paths %5 choose %6 lay %7 total %8", town, t1 - started, t2 - t1, t3 - t2, t4 - t3, t5 - t4, System.GetTickCount() - t5, System.GetTickCount() - started);
   s_iLastMs = System.GetTickCount() - started;
   PrintFormat("[ACR] BASEWORKS %1: ring %2 lines, %3 pieces of %4, %5 parts of the ring, %6 ms", town, work.m_aLines.Count(), used, total, runs.Count(), s_iLastMs);
   return !work.m_aLines.IsEmpty();
+ }
+
+ // Which of 'runs' get bags: over and over, the part that does most to him where he walks now (ACR_KillGround), and
+ // every so often he walks again, round what's going in. A line that's going in can grow from its ends until it ties
+ // into something, and a new line costs against growing one: a front, not scattered bits. Into 'chosen', best first.
+ // How many pieces are spent now. 'tier' 0: by the budgets.
+ protected int ChooseRuns(ACR_KillGround kill, ACR_BaseStyle style, notnull array<ref ACR_RingRun> runs, notnull array<ref ACR_RingRun> chosen, int spent, int budgetOne, int budgetTwo, int total, int tier, string key)
+ {
+  foreach (ACR_RingRun run : runs) if (!run.m_Site) SiteFor(kill, run);
+  bool points = style.m_iKind == ACR_BaseStyle.POINTS;
+  float pointGap = POINT_GAP;
+  array<ACR_RingRun> placed = {};
+  array<int> fronts = {};
+  int walks;
+  int walkAt = spent + total * WALK_AGAIN;
+  Bounds(kill, runs);
+  for (int made = 0; made < 300; made++)
+  {
+   // The likeliest first: once what's left can't come near the best, it isn't looked at.
+   SortByBound(runs);
+   array<float> scores = {};
+   array<ACR_RingRun> open = {};
+   float bestNow = 0;
+   float frontCost = 1;
+   if (!points) frontCost = Math.Pow(FRONT_EACH, fronts.Count() + m_iLaidFronts);
+   foreach (ACR_RingRun candidate : runs)
+   {
+    if (candidate.m_bWanted) continue;
+    if (candidate.m_fBound < bestNow * LOOK_MARGIN) break;
+    int need = PiecesFor(candidate.m_fLength);
+    if (spent + need > total) continue;
+    if (points)
+    {
+     bool near;
+     foreach (ACR_RingRun point : placed) if (vector.DistanceXZ(point.m_vMiddle, candidate.m_vMiddle) < pointGap + (point.m_fLength + candidate.m_fLength) * 0.5) near = true;
+     if (near) continue;
+    }
+    bool crowded;
+    foreach (ACR_RingRun other : placed)
+    {
+     // The next along the same line, or another way of going on from the same end.
+     if (other.m_iParent == candidate.m_iParent)
+     {
+      if (other.m_iOrder == candidate.m_iOrder) crowded = true;
+      continue;
+     }
+     if (other.m_bOutFront == candidate.m_bOutFront && !other.m_bForWay && !candidate.m_bForWay) continue;
+     if (vector.DistanceXZ(other.m_vMiddle, candidate.m_vMiddle) < FORWARD_CLEAR + (other.m_fLength + candidate.m_fLength) * 0.5) crowded = true;
+    }
+    if (crowded) continue;
+    float value = kill.Value(candidate.m_Site);
+    // Tier I always gets its bags, if anywhere's any use: past that, only where it counts.
+    float enough = Math.Max(WORTH_LEAST, m_fFirstValue * WORTH_SHARE_FIRST);
+    if (spent >= budgetOne) enough = Math.Max(WORTH_LEAST, m_fFirstValue * WORTH_SHARE);
+    if (value < enough)
+    {
+     candidate.m_fBound = 0;
+     continue;
+    }
+    value = Scaled(value, candidate, style, points);
+    bool beside = WantedBeside(runs, candidate);
+    if (beside && !points) value *= NEXT_TO;
+    else if (!fronts.Contains(candidate.m_iParent)) value *= frontCost;
+    float score = value / Math.Sqrt(Math.Max(need, 1));
+    candidate.m_fBound = score * BOUND_MARGIN;
+    if (score > bestNow) bestNow = score;
+    scores.Insert(score);
+    open.Insert(candidate);
+   }
+   if (open.IsEmpty())
+   {
+    // A town they left thin: strongpoints closer together.
+    if (points && pointGap > POINT_GAP_THIN && budgetOne * POINT_ENOUGH > spent)
+    {
+     pointGap = POINT_GAP_THIN;
+     continue;
+    }
+    break;
+   }
+   ACR_RingRun picked = open[ACR_Variety.Pick(scores, string.Format("%1 %2", key, made))];
+   if (m_fFirstValue <= 0) m_fFirstValue = kill.Value(picked.m_Site);
+   spent += PiecesFor(picked.m_fLength);
+   picked.m_bWanted = true;
+   picked.m_iTier = tier;
+   if (tier == 0)
+   {
+    picked.m_iTier = 3;
+    if (spent <= budgetOne) picked.m_iTier = 1;
+    else if (spent <= budgetOne + budgetTwo) picked.m_iTier = 2;
+   }
+   chosen.Insert(picked);
+   placed.Insert(picked);
+   if (!fronts.Contains(picked.m_iParent)) fronts.Insert(picked.m_iParent);
+   kill.Add(picked.m_Site);
+   for (int w = 1; w < picked.m_aWay.Count(); w++) kill.AddBags(picked.m_aWay[w - 1], picked.m_aWay[w]);
+   if (picked.m_bForWay && !points) Grow(kill, picked, runs);
+   if (spent >= walkAt && walks < MOST_WALKS)
+   {
+    kill.Solve();
+    walks++;
+    walkAt = spent + total * WALK_AGAIN;
+    Bounds(kill, runs);
+   }
+  }
+  return spent;
+ }
+
+ protected static void SiteFor(ACR_KillGround kill, ACR_RingRun run)
+ {
+  float power = Math.Clamp(run.m_fLength / PART, 0.5, 1.3);
+  run.m_Site = kill.Site(run.m_vMiddle, ACR_BaseDefences.Bearing(run.m_vOut), ACR_KillGround.BAG_ARC, ACR_KillGround.BAG_RANGE, power, ACR_BaseSurvey.UP_BAGS);
+ }
+
+ protected static float Scaled(float value, ACR_RingRun run, ACR_BaseStyle style, bool points)
+ {
+  if (run.m_bOutFront)
+  {
+   if (style.m_iKind == ACR_BaseStyle.DEPTH) value *= OUT_FRONT_DEPTH;
+   else value *= OUT_FRONT;
+  }
+  if (run.m_bForWay)
+  {
+   if (!run.m_sStart.IsEmpty()) value *= ANCHORED;
+   if (!run.m_sEnd.IsEmpty()) value *= ANCHORED;
+  }
+  return value;
+ }
+
+ // The most each could do, with nothing in its way: no sights asked.
+ protected static void Bounds(ACR_KillGround kill, notnull array<ref ACR_RingRun> runs)
+ {
+  foreach (ACR_RingRun run : runs)
+  {
+   if (run.m_bWanted) continue;
+   float most = kill.Potential(run.m_Site) * ANCHORED * ANCHORED * NEXT_TO;
+   run.m_fBound = most / Math.Sqrt(Math.Max(PiecesFor(run.m_fLength), 1));
+  }
+ }
+
+ protected static void SortAlong(notnull array<ref ACR_RingRun> runs)
+ {
+  for (int i = 1; i < runs.Count(); i++)
+  {
+   ACR_RingRun held = runs[i];
+   int k = i - 1;
+   while (k >= 0 && runs[k].m_iOrder > held.m_iOrder)
+   {
+    runs[k + 1] = runs[k];
+    k--;
+   }
+   runs[k + 1] = held;
+  }
+ }
+
+ protected static void SortByBound(notnull array<ref ACR_RingRun> runs)
+ {
+  for (int i = 1; i < runs.Count(); i++)
+  {
+   ACR_RingRun held = runs[i];
+   float bound = held.m_fBound;
+   int k = i - 1;
+   while (k >= 0 && runs[k].m_fBound < bound)
+   {
+    runs[k + 1] = runs[k];
+    k--;
+   }
+   runs[k + 1] = held;
+  }
+ }
+
+ // Ways of going on from a line's ends, unless it already ends on something.
+ protected void Grow(ACR_KillGround kill, ACR_RingRun from, notnull array<ref ACR_RingRun> runs)
+ {
+  int count = from.m_aWay.Count();
+  if (count < 2) return;
+  if (from.m_sEnd.IsEmpty()) GrowEnd(kill, from, from.m_aWay[count - 2], from.m_aWay[count - 1], 1, runs);
+  if (from.m_sStart.IsEmpty()) GrowEnd(kill, from, from.m_aWay[1], from.m_aWay[0], -1, runs);
+ }
+
+ protected void GrowEnd(ACR_KillGround kill, ACR_RingRun from, vector back, vector tip, int dir, notnull array<ref ACR_RingRun> runs)
+ {
+  vector along = ACR_BaseDefences.FlatDir(back, tip);
+  array<float> turns = {0, GROW_TURN, -GROW_TURN};
+  float growBy = GROW_LENGTH * (0.75 + 0.5 * m_Luck.RandFloat01());
+  foreach (float turn : turns)
+  {
+   float rad = turn * Math.DEG2RAD;
+   vector way = along * Math.Cos(rad) + Vector(along[2], 0, -along[0]) * Math.Sin(rad);
+   vector to = tip + way * growBy;
+   int cell = At(to[0], to[2]);
+   if (cell < 0 || (m_aCell[cell] & (WATER | CLIFF)) != 0) continue;
+   if (m_aRim[cell] > WAY_RIM_OUT || m_aRim[cell] < WAY_RIM_IN) continue;
+   int midCell = At((tip[0] + to[0]) * 0.5, (tip[2] + to[2]) * 0.5);
+   if (midCell < 0 || (m_aCell[midCell] & (HOUSE | ROAD)) != 0) continue;
+   vector facing = Vector(way[2], 0, -way[0]);
+   if (ACR_BaseDefences.DotXZ(facing, from.m_vOut) < 0) facing = facing * -1;
+   ACR_RingRun run = new ACR_RingRun();
+   run.m_bForWay = true;
+   run.m_vMiddle = (tip + to) * 0.5;
+   run.m_vOut = facing;
+   run.m_fLength = growBy;
+   run.m_fThreat = from.m_fThreat;
+   run.m_fView = from.m_fView;
+   run.m_iParent = from.m_iParent;
+   run.m_iOrder = from.m_iOrder + dir;
+   string word = m_Survey.AnchorNear(to, WAY_ANCHOR);
+   if (word == "road") word = "";
+   if (dir > 0)
+   {
+    run.m_aWay.Insert(tip);
+    run.m_aWay.Insert(to);
+    run.m_sEnd = word;
+    run.m_sStart = "line";
+   }
+   else
+   {
+    run.m_aWay.Insert(to);
+    run.m_aWay.Insert(tip);
+    run.m_sStart = word;
+    run.m_sEnd = "line";
+   }
+   SiteFor(kill, run);
+   run.m_fBound = kill.Potential(run.m_Site) * ANCHORED * NEXT_TO / Math.Sqrt(Math.Max(PiecesFor(growBy), 1));
+   runs.Insert(run);
+  }
+ }
+
+ protected static bool WantedBeside(notnull array<ref ACR_RingRun> runs, ACR_RingRun run)
+ {
+  foreach (ACR_RingRun other : runs)
+  {
+   if (other.m_bWanted && other.m_iParent == run.m_iParent && Math.AbsInt(other.m_iOrder - run.m_iOrder) == 1) return true;
+  }
+  return false;
+ }
+
+ // Short lines laid out for the ways he walks: one across his way ahead of him, one off to either side firing across
+ // him. Each a choice like any part of the ring: built if it does more to him than the rest.
+ protected void AddWayLines(ACR_KillGround kill, notnull array<ref ACR_RingRun> runs)
+ {
+  array<ACR_KillWay> ways = {};
+  foreach (ACR_KillWay way : kill.m_aWays) ways.Insert(way);
+  for (int a = 1; a < ways.Count(); a++)
+  {
+   ACR_KillWay held = ways[a];
+   int b = a - 1;
+   while (b >= 0 && ways[b].m_fShare < held.m_fShare)
+   {
+    ways[b + 1] = ways[b];
+    b--;
+   }
+   ways[b + 1] = held;
+  }
+  vector center = m_Survey.m_vCenter;
+  float outer = m_Survey.m_fRadius + WAY_OUT;
+  array<int> seen = {};
+  int added;
+  for (int w = 0; w < ways.Count() && w < WAY_LINES_WAYS; w++)
+  {
+   array<int> cells = ways[w].m_aCells;
+   float since = WAY_STEP_ALONG;
+   for (int k = 0; k + 1 < cells.Count() && added < WAY_LINES_MOST; k++)
+   {
+    vector at = kill.Middle(cells[k]);
+    vector next = kill.Middle(cells[k + 1]);
+    since += vector.DistanceXZ(at, next);
+    float apart = vector.DistanceXZ(at, center);
+    if (apart > outer || apart < WAY_IN || since < WAY_STEP_ALONG) continue;
+    since = 0;
+    vector his = ACR_BaseDefences.FlatDir(at, next);
+    vector side = Vector(his[2], 0, -his[0]);
+    // Averaged over a few cells: a walk on a grid turns at every step.
+    int further = Math.Min(k + 4, cells.Count() - 1);
+    his = ACR_BaseDefences.FlatDir(at, kill.Middle(cells[further]));
+    side = Vector(his[2], 0, -his[0]);
+    added += TryWayLine(at + his * WAY_AHEAD, his * -1, runs, seen);
+    vector across = at + his * 15 + side * WAY_SIDE;
+    added += TryWayLine(across, ACR_BaseDefences.FlatDir(across, at), runs, seen);
+    across = at + his * 15 - side * WAY_SIDE;
+    added += TryWayLine(across, ACR_BaseDefences.FlatDir(across, at), runs, seen);
+   }
+  }
+ }
+
+ protected int TryWayLine(vector mid, vector facing, notnull array<ref ACR_RingRun> runs, notnull array<int> seen)
+ {
+  int cell = At(mid[0], mid[2]);
+  if (cell < 0 || (m_aCell[cell] & (HOUSE | WATER | CLIFF | ROAD)) != 0) return 0;
+  if (m_aRim[cell] > WAY_RIM_OUT || m_aRim[cell] < WAY_RIM_IN) return 0;
+  // One to a place and a way of facing.
+  int key = cell / 9 * 4 + (int)(ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(facing)) / 90);
+  if (seen.Contains(key)) return 0;
+  seen.Insert(key);
+  mid[1] = GetGame().GetWorld().GetSurfaceY(mid[0], mid[2]);
+  vector across = Vector(facing[2], 0, -facing[0]);
+  // No two towns' lines cut to one length.
+  float half = WAY_HALF * (0.75 + 0.5 * m_Luck.RandFloat01());
+  ACR_RingRun run = new ACR_RingRun();
+  run.m_bForWay = true;
+  run.m_vMiddle = mid;
+  run.m_vOut = facing;
+  run.m_fLength = half * 2;
+  run.m_fThreat = ThreatAt(cell);
+  run.m_fView = ViewAt(cell);
+  vector a = mid - across * half;
+  vector b = mid + across * half;
+  run.m_aWay.Insert(a);
+  run.m_aWay.Insert(mid);
+  run.m_aWay.Insert(b);
+  run.m_sStart = m_Survey.AnchorNear(a, WAY_ANCHOR);
+  run.m_sEnd = m_Survey.AnchorNear(b, WAY_ANCHOR);
+  if (run.m_sStart == "road") run.m_sStart = "";
+  if (run.m_sEnd == "road") run.m_sEnd = "";
+  // (Room between the numbers: it can grow either way.)
+  run.m_iParent = WAY_PARENT + runs.Count();
+  run.m_iOrder = (WAY_PARENT + runs.Count()) * 100;
+  runs.Insert(run);
+  return 1;
+ }
+
+ // The parts of a line further out that can see, added to 'runs'.
+ protected void AddOutFront(notnull array<ref ACR_RingRun> runs, bool threatMatters, string key)
+ {
+  array<int> path = {};
+  if (!Solve(FORWARD_OFF, FORWARD_IN, FORWARD_OUT, NOISE, threatMatters, key, path)) return;
+  array<ref ACR_RingRun> further = {};
+  Runs(path, further);
+  foreach (ACR_RingRun run : further)
+  {
+   if (run.m_fView < FORWARD_VIEW * 0.6) continue;
+   run.m_bOutFront = true;
+   run.m_iParent = run.m_iParent + OUT_PARENT;
+   run.m_iOrder = run.m_iOrder + OUT_PARENT;
+   runs.Insert(run);
+  }
  }
 
  // Tests: of the threatened part of the way round, how much is closed: by what stands there, or bags within reach.
@@ -1117,6 +1536,18 @@ class ACR_BaseRing : Managed
   array<ref ACR_RingRun> runs = {};
   Runs(path, runs);
   array<ref ACR_RingRun> sorted = {};
+  ACR_KillGround kill = survey.m_Kill;
+  if (kill)
+  {
+   // Anywhere out in front that does something to him and isn't on top of other bags.
+   array<ref ACR_RingRun> fit = {};
+   foreach (ACR_RingRun out_part : runs)
+   {
+    if (out_part.m_fView >= FORWARD_VIEW * 0.6 && !BagsNear(work, out_part.m_vMiddle, FORWARD_CLEAR + out_part.m_fLength * 0.5)) fit.Insert(out_part);
+   }
+   ChooseRuns(kill, work.m_Style, fit, sorted, 0, 0, 0, most, tier, key);
+   return BuildWanted(work, survey, kit, sorted, most);
+  }
   foreach (ACR_RingRun all : runs)
   {
    if (all.m_fThreat < FORWARD_THREAT || all.m_fView < FORWARD_VIEW || all.m_iRoads == 0) continue;
@@ -1158,8 +1589,15 @@ class ACR_BaseRing : Managed
    line.m_aWay.Insert(mid - across * GATE_HALF);
    line.m_aWay.Insert(mid);
    line.m_aWay.Insert(mid + across * GATE_HALF);
+   ACR_KillSite site;
+   if (survey.m_Kill)
+   {
+    site = survey.m_Kill.Site(mid, ACR_BaseDefences.Bearing(run.m_vOut), ACR_KillGround.BAG_ARC, ACR_KillGround.BAG_RANGE, 0.7, ACR_BaseSurvey.UP_BAGS);
+    if (survey.m_Kill.Value(site) < WORTH_LEAST) continue;
+   }
    int got = ACR_BaseLines.RingLine(work, survey, kit, line, 3, most - used);
    if (got <= 0) continue;
+   if (site) survey.m_Kill.Add(site);
    used += got;
    made++;
   }

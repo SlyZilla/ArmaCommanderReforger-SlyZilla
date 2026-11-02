@@ -788,6 +788,12 @@ class ACR_Fortify
    }
    plan.m_vSite = point;
    plan.m_fYaw = FacingYaw(squad, point, faction, faceTowards);
+   // Nobody said which way: the way he'd come, not just the line to him.
+   if (faceTowards == vector.Zero)
+   {
+    vector threat = ACR_Intel.ThreatPoint(faction, point);
+    if (threat != vector.Zero) plan.m_fYaw = ACR_PositionSiting.BestFacingAt(point, plan.m_fYaw, threat, faction);
+   }
    plan.m_iTier = 1;
   }
   plan.m_iCost = Cost(plan.m_iTier);

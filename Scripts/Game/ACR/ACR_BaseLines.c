@@ -186,6 +186,9 @@ class ACR_BaseLiner : Managed
   return "length";
  }
 
+ protected static ref array<vector> s_aNoCuts = {};
+ static const float OTHER_BAGS = 3;     // m from another line's bags
+
  void ACR_BaseLiner(ACR_BaseSurvey survey, ACR_BaseWork work, float seedBearing)
  {
   m_Survey = survey;
@@ -223,6 +226,8 @@ class ACR_BaseLiner : Managed
   if (ACR_BaseDefences.BuildingGap(m_aHouses, mid, clear + 1) < clear || ACR_BaseDefences.BuildingGap(m_aHouses, to, clear + 1) < clear) return FIT_BUILDING;
   if (m_Survey.DoorGap(mid) < ACR_BaseSurvey.WALL_DOOR) return FIT_DOOR;
   if (!ACR_BaseDefences.WorldClear(mid, ACR_BaseDefences.Bearing(facing), Vector(length * 0.5 + 0.05, 0, 0.61), null, false, true)) return FIT_SOLID;
+  // Not across or along a line already laid.
+  if (m_bRing && m_Work && ACR_BaseLines.PieceWithin(m_Work, mid, OTHER_BAGS, s_aNoCuts)) return FIT_SOLID;
   if (loose) return FIT_OK;
   if (!RoomBehind(mid, facing)) return FIT_BEHIND;
   if (noView) return FIT_OK;
@@ -968,6 +973,10 @@ class ACR_BaseLines
  static const float BEND_DOT = 0.94;      // two pieces' facings closer than this aren't a bend (about 20 degrees)
  static const float BEND_WORTH = 0.25;    // a gun at a bend sees along both runs
  static const float GUN_OPEN_GATE = 1.5;  // a gun on a way in that has none
+ static const int MOST_GUN_LOOKS = 50;       // places looked at for a gun, about
+ static ref array<float> WIRE_OUTS = {32, 24, 16, 7}; // m in front of the bags wire stands, the furthest that works
+ static const float GUN_WORTH_LEAST = 2;      // what a gun must do to him to be placed
+ static const float LONE_GUN_WORTH = 10;      // ... a gun on its own, with no line about it
  static const float GATE_TURN = 20;       // degrees a gun on a straight run turns for one
  static const float GUN_TURN_MOST = 25;   // degrees off its bags' front a gun built from parts can stand
  static const float DRESS_CHANCE = 0.65;  // a line has stretches of low or netted bags
@@ -2504,6 +2513,10 @@ class ACR_BaseLines
   array<int> firsts = {};
   array<int> widths = {};
   array<bool> bends = {};
+  array<ref ACR_KillSite> kills = {};
+  ACR_KillGround kill = survey.m_Kill;
+  float gunPower = ACR_KillGround.GUN_POWER;
+  if (compact) gunPower = ACR_KillGround.GUN_POWER * 0.7;
   int width = NestPieces(work.m_sFaction);
   vector half = Vector(NEST_HALF, 0, NEST_DEPTH);
   float roadKeep = ACR_BaseSurvey.NEST_ROAD;
@@ -2604,6 +2617,7 @@ class ACR_BaseLines
     firsts.Insert(i);
     widths.Insert(width);
     bends.Insert(onlyParts);
+    kills.Insert(null);
    }
    // A bend: only an emplacement built from parts will stand there.
    if (ACR_Emplacement.On())
@@ -2630,6 +2644,7 @@ class ACR_BaseLines
      firsts.Insert(j);
      widths.Insert(2);
      bends.Insert(true);
+     kills.Insert(null);
     }
    }
   }
@@ -2638,18 +2653,43 @@ class ACR_BaseLines
    array<float> scores = {};
    array<int> open = {};
    ACR_BaseGate uncovered = NextOpenGate(work, survey);
+   // (Places a few metres apart along a line do much the same: with many, every so often is enough.)
+   int stride = places.Count() / MOST_GUN_LOOKS + 1;
    foreach (int c, vector at : places)
    {
     if (ACR_BaseWorks.GunsNear(work, at, yaws[c])) continue;
+    float nestScore;
+    if (kill)
+    {
+     if (c % stride != 0) continue;
+     if (!kills[c]) kills[c] = kill.Site(at, yaws[c], ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, gunPower, ACR_BaseSurvey.UP_NEST);
+     nestScore = kill.Value(kills[c]);
+     if (nestScore < GUN_WORTH_LEAST) continue;
+     if (work.m_Style.m_bGunsOnLanes && LaneNear(onLines[c], at)) nestScore *= 1.15;
+    }
+    else
+    {
+     nestScore = survey.Weak(ACR_BaseSurvey.Sector(yaws[c])) + worths[c];
+     if (work.m_Style.m_bGunsOnLanes && LaneNear(onLines[c], at)) nestScore += 0.5;
+     // A way in with no gun on it counts for more than an approach with few.
+     if (uncovered && GunCoversGate(at, yaws[c], uncovered, false)) nestScore += GUN_OPEN_GATE;
+    }
     open.Insert(c);
-    float nestScore = survey.Weak(ACR_BaseSurvey.Sector(yaws[c])) + worths[c];
-    if (work.m_Style.m_bGunsOnLanes && LaneNear(onLines[c], at)) nestScore += 0.5;
-    // A way in with no gun on it counts for more than an approach with few.
-    if (uncovered && GunCoversGate(at, yaws[c], uncovered, false)) nestScore += GUN_OPEN_GATE;
     scores.Insert(nestScore);
    }
    if (open.IsEmpty()) break;
    int picked = open[ACR_Variety.Pick(scores, string.Format("base nest %1 %2", work.m_Base.m_sName, made))];
+   // Turned to where it does most, if its fan is clear there.
+   if (kill)
+   {
+    array<float> gunTurns = {15, -15, 25, -25};
+    float best = kill.BestFacing(places[picked], yaws[picked], gunTurns, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, gunPower, ACR_BaseSurvey.UP_NEST);
+    if (best != yaws[picked] && !ACR_BaseWorks.GunsNear(work, places[picked], best) && ACR_BaseSurvey.NestFan(places[picked], best, reach) && !BagsAhead(work, places[picked], best, onLines[picked]))
+    {
+     yaws[picked] = best;
+     kills[picked] = kill.Site(places[picked], best, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, gunPower, ACR_BaseSurvey.UP_NEST);
+    }
+   }
    ACR_BaseSite site = new ACR_BaseSite();
    site.m_eKind = ACR_EBaseSite.NEST;
    site.m_iTier = 2;
@@ -2676,11 +2716,13 @@ class ACR_BaseLines
     firsts.Remove(picked);
     widths.Remove(picked);
     bends.Remove(picked);
+    kills.Remove(picked);
     made--;
     continue;
    }
    work.m_aSites.Insert(site);
    survey.AddCover(site.m_iSector, ACR_BaseWorks.COVER_NEST);
+   if (kill && kills[picked]) kill.Add(kills[picked]);
   }
   if (made < most) PrintFormat("[ACR] BASEWORKS %1: %2 of %3 MG nests: %4 places on its lines, none or too close for more (short or not straight %5, road %6, building %7, door %8, no room %9", work.m_Base.m_sName, made, most, places.Count(), noRun, noRoad, noHouse, noDoor, noRoom);
   if (made < most) PrintFormat("[ACR] BASEWORKS %1: nest places with no line of fire: %2 (level %3)", work.m_Base.m_sName, noFire, level);
@@ -2731,6 +2773,12 @@ class ACR_BaseLines
        looks++;
        if (!GunCoversGate(at, yaw, gate, true) || ACR_BaseWorks.GunsNear(work, at, yaw)) continue;
        if (!ACR_BaseSurvey.NestFan(at, yaw, GATE_GUN_REACH) || BagsAhead(work, at, yaw, null)) continue;
+       ACR_KillSite killSite;
+       if (survey.m_Kill)
+       {
+        killSite = survey.m_Kill.Site(at, yaw, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, ACR_KillGround.GUN_POWER * 0.7, ACR_BaseSurvey.UP_NEST);
+        if (survey.m_Kill.Value(killSite) < LONE_GUN_WORTH) continue;
+       }
        ACR_BaseSite site = new ACR_BaseSite();
        site.m_eKind = ACR_EBaseSite.NEST;
        site.m_iTier = 2;
@@ -2745,6 +2793,7 @@ class ACR_BaseLines
        site.m_Emplacement = ACR_Emplacement.Ring(work.m_sFaction, at, look);
        work.m_aSites.Insert(site);
        survey.AddCover(site.m_iSector, ACR_BaseWorks.COVER_NEST);
+       if (killSite) survey.m_Kill.Add(killSite);
        PrintFormat("[ACR] BASEWORKS %1: a gun on its own at the way in at %2", work.m_Base.m_sName, gate.m_vPos);
        placed = true;
        break;
@@ -2787,7 +2836,14 @@ class ACR_BaseLines
     // A tower looks the same way as the nest in front of it, on purpose.
     if (ACR_BaseWorks.GunWithin(work, spot.m_vPos, 30)) continue;
     open.Insert(spot);
-    scores.Insert(survey.Weak(spot.m_iSector) + 0.2 * spot.m_fReach / ACR_BaseSurvey.OPEN_RANGE);
+    if (survey.m_Kill)
+    {
+     float up = ACR_BaseSurvey.UP_BUNKER;
+     if (!spot.m_bBunker) up = ACR_BaseSurvey.UP_TOWER;
+     if (!spot.m_Kill) spot.m_Kill = survey.m_Kill.Site(spot.m_vPos, spot.m_fFacing, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, ACR_KillGround.POST_POWER, up);
+     scores.Insert(survey.m_Kill.Value(spot.m_Kill));
+    }
+    else scores.Insert(survey.Weak(spot.m_iSector) + 0.2 * spot.m_fReach / ACR_BaseSurvey.OPEN_RANGE);
    }
    if (open.IsEmpty()) break;
    ACR_BaseSpot chosen = open[ACR_Variety.Pick(scores, string.Format("base post %1 %2", work.m_Base.m_sName, made))];
@@ -2810,6 +2866,7 @@ class ACR_BaseLines
    site.m_sPrefab = ACR_FobDefences.PrefabFor(site.m_iSpot, work.m_sFaction, 2);
    work.m_aSites.Insert(site);
    survey.AddCover(site.m_iSector, ACR_BaseWorks.COVER_BUNKER);
+   if (survey.m_Kill && chosen.m_Kill) survey.m_Kill.Add(chosen.m_Kill);
   }
   if (made < most) PrintFormat("[ACR] BASEWORKS %1: %2 of %3 bunkers and towers (%4 places by its lines)", work.m_Base.m_sName, made, most, spots.Count());
  }
@@ -3108,15 +3165,28 @@ class ACR_BaseLines
     if (i < 0 || i >= count) continue;
     ACR_LinePiece piece = line.m_aPieces[i];
     if (!piece.m_bLong) continue;
-    vector at = piece.m_vPos + piece.m_vFacing * 7;
-    at[1] = ACR_BaseLiner.Ground(at);
     vector along = ACR_BaseDefences.FlatDir(piece.m_vFrom, piece.m_vTo);
     float yaw = ACR_BaseDefences.Bearing(along);
     if (ACR_Fortify.WireAlongX()) yaw -= 90;
-    if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, at) < 1.5 || ACR_BaseDefences.BuildingGap(survey.m_aBuildings, at, 4) < 3 || BBB_Terrain.IsWaterAt(at)) continue;
-    bool lane;
-    foreach (vector gate : line.m_aLanes) if (vector.DistanceXZ(gate, at) < 14) lane = true;
-    if (lane || !ACR_BaseDefences.WorldClear(at, ACR_BaseDefences.Bearing(piece.m_vFacing), Vector(length * 0.5, 0, 0.5))) continue;
+    // As far out as the bags can still fire on it: wire holds him out of grenade range and under their fire. With
+    // ground in the way, nearer.
+    vector at;
+    bool found = false;
+    foreach (float out_m : WIRE_OUTS)
+    {
+     at = piece.m_vPos + piece.m_vFacing * out_m;
+     at[1] = ACR_BaseLiner.Ground(at);
+     if (ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, at) < 1.5 || ACR_BaseDefences.BuildingGap(survey.m_aBuildings, at, 4) < 3 || BBB_Terrain.IsWaterAt(at)) continue;
+     bool lane = false;
+     foreach (vector gate : line.m_aLanes) if (vector.DistanceXZ(gate, at) < 14) lane = true;
+     if (lane || !ACR_BaseDefences.WorldClear(at, ACR_BaseDefences.Bearing(piece.m_vFacing), Vector(length * 0.5, 0, 0.5))) continue;
+     vector eye = piece.m_vPos;
+     eye[1] = ACR_BaseLiner.Ground(eye) + ACR_BaseSurvey.UP_BAGS;
+     if (!ACR_BaseSurvey.SeesFrom(eye, at, 0.5)) continue;
+     found = true;
+     break;
+    }
+    if (!found) continue;
     pos.m_aPiecePos.Insert(at);
     pos.m_aPieceYaw.Insert(yaw);
     pos.m_aPiecePrefab.Insert(ACR_Fortify.WIRE);

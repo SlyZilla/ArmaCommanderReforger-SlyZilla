@@ -970,6 +970,7 @@ class ACR_BaseWorks
   survey.Coverage(work, ours, existing, either);
   PrintFormat("[ACR] BASEWORKS %1: covers %2%% of the threatened arc with lines, %3%% with those and what stands there (%4%% that alone); anchored ends %5 of %6", base.m_sName, (int)(ours * 100), (int)(either * 100), (int)(existing * 100), anchored, ends);
   PrintFormat("[ACR] BASEWORKS %1: %2 sandbag pieces, about %3 entities in all; tier I is %4 s of work, walking aside", base.m_sName, pieces, entities, (int)seconds);
+  if (survey.m_Kill) survey.m_Kill.Done(base.m_sName);
   if (s_iMaxSitesForTest > 0) Trim(work);
  }
 

@@ -25,6 +25,10 @@
 //   check only sees the arc) costs BUILDING_COST;
 // - its upgrades fit (tiers II and III go in later), as before;
 // - it overlooks a roadblock or minefield of ours (covers it).
+// - what it does to him (ACR_KillGround, 2 Nov): he's walked in to the base over the real ground from the enemy,
+//   round what we already have there; a spot is worth what it fires on of his ways, from the side best, and loses
+//   for ways that come close to it unseen. It faces whichever way does most, up to AIM_TURN off the straight line
+//   to the enemy. This counts for more than how far it sees: a long view over ground nobody crosses is no use.
 // Better siting never means fewer positions: the score only orders the candidates, every one
 // clear of our fields is still tried, the old line spots included.
 class ACR_PositionSite : Managed
@@ -47,6 +51,16 @@ class ACR_PositionSite : Managed
  string m_sBuilding;
  bool m_bFits;       // its upgrades would fit
  string m_sOverlooks;  // "roadblock", "minefield" or "" (what of ours it sees within OVERLOOK m)
+ float m_fKill;        // what it does to him (ACR_KillGround.Value)
+ float m_fKillScore = -1; // ... against the best of these, -1 not asked
+ float m_fAim = -1;    // the bearing it does that facing, -1 straight at the enemy
+
+ // What to face, for ACR_Fortify.Plan.
+ vector AimAt(vector enemy)
+ {
+  if (m_fAim < 0) return enemy;
+  return m_vPos + ACR_BaseSurvey.Dir(m_fAim) * 300;
+ }
 }
 
 class ACR_PositionSiting
@@ -74,6 +88,11 @@ class ACR_PositionSiting
  static const float BUILDING_MAX = 80;        // m: but not a forest block or a whole terrain piece
  static const float BUILDING_COST = 5;
  static const float ROADBLOCK_TOP = 2.5;      // m: a roadblock is seen when a point this high over it is (its own logs or sandbags hide its ground)
+ static const float FRONT_HALF = 330;         // m round the base he's walked in over
+ static const float AIM_TURN = 50;            // degrees off the line to the enemy a position may face
+ static const float KILL_MOST = 9;            // the score of the spot that does most to him
+ static const float ARC = 60;                 // what a position fires on
+ static const float RANGE = 200;
 
  // Candidates round our front base at 'basePos' facing 'enemyPos' for 'squad' (its upgrades' fit
  // depends on how it would face), best first; 'nearFields' counts those within DEFENCE_STANDOFF of
@@ -86,6 +105,8 @@ class ACR_PositionSiting
   toEnemy[1] = 0;
   toEnemy.Normalize();
   vector side = Vector(toEnemy[2], 0, -toEnemy[0]);
+  ACR_KillGround kill;
+  if (ACR_KillGround.On()) kill = FrontGround(faction, basePos, enemyPos);
   array<vector> points = {};
   array<string> sources = {};
   array<vector> fan = {};
@@ -116,13 +137,14 @@ class ACR_PositionSiting
     nearFields++;
     continue;
    }
-   sites.Insert(Describe(faction, point, sources[k], toEnemy));
+   sites.Insert(Describe(faction, point, sources[k], toEnemy, kill));
   }
+  if (kill) KillScores(sites);
   // Then whether its upgrades fit, for the best FIT_CHECKED only.
   Sort(sites);
   for (int c = 0; c < sites.Count() && c < FIT_CHECKED; c++)
   {
-   if (squad) sites[c].m_bFits = ACR_Fortify.UpgradesFit(sites[c].m_vPos, ACR_Fortify.FacingYaw(squad, sites[c].m_vPos, faction, enemyPos));
+   if (squad) sites[c].m_bFits = ACR_Fortify.UpgradesFit(sites[c].m_vPos, ACR_Fortify.FacingYaw(squad, sites[c].m_vPos, faction, sites[c].AimAt(enemyPos)));
    sites[c].m_fScore = Score(sites[c]);
   }
   Sort(sites);
@@ -136,6 +158,40 @@ class ACR_PositionSiting
    ACR_PositionSite picked = sites[first];
    sites.RemoveOrdered(first);
    sites.InsertAt(picked, 0);
+  }
+ }
+
+ // The ground round a base, him walked in from the enemy, round what we have there.
+ protected static ACR_KillGround FrontGround(string faction, vector basePos, vector enemyPos)
+ {
+  ACR_KillGround ground = ACR_KillGround.ForFront(basePos, enemyPos, FRONT_HALF, string.Format("%1 %2 %3 %4", faction, (int)basePos[0], (int)basePos[2], ACR_Fortify.s_Positions.Count()));
+  bool any;
+  foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
+  {
+   if (!fort || fort.m_sFaction != faction || vector.DistanceXZ(fort.m_vPos, basePos) > FRONT_HALF + RANGE) continue;
+   ground.Add(ground.Site(fort.m_vPos, fort.m_fYaw, ARC, RANGE, 0.8 + 0.4 * fort.m_iTier, EYE));
+   any = true;
+  }
+  foreach (ACR_Roadblock rb : ACR_Roadblocks.s_aRoadblocks)
+  {
+   if (!rb || rb.m_sFaction != faction || vector.DistanceXZ(rb.m_vPos, basePos) > FRONT_HALF + RANGE) continue;
+   // It looks both ways down its road.
+   ground.Add(ground.Site(rb.m_vPos, 0, 180, RANGE * 0.7, 0.8, ROADBLOCK_TOP));
+   any = true;
+  }
+  if (any) ground.Solve();
+  return ground;
+ }
+
+ // Each against the best of them, a hollow's worth off for one that loses more than it does.
+ protected static void KillScores(notnull array<ref ACR_PositionSite> sites)
+ {
+  float most = 1;
+  foreach (ACR_PositionSite site : sites) most = Math.Max(most, site.m_fKill);
+  foreach (ACR_PositionSite scored : sites)
+  {
+   scored.m_fKillScore = Math.Max(KILL_MOST * scored.m_fKill / most, -2);
+   scored.m_fScore = Score(scored);
   }
  }
 
@@ -165,7 +221,7 @@ class ACR_PositionSiting
  }
 
  // A candidate scored on the ground round it (its upgrades' fit is added later, for the best).
- static ACR_PositionSite Describe(string faction, vector pos, string source, vector toEnemy)
+ static ACR_PositionSite Describe(string faction, vector pos, string source, vector toEnemy, ACR_KillGround kill = null)
  {
   ACR_PositionSite site = new ACR_PositionSite();
   site.m_vPos = pos;
@@ -191,8 +247,29 @@ class ACR_PositionSiting
   if (site.m_fWall >= 0) site.m_fSight = Math.Min(site.m_fSight, site.m_fWall);
   FenceOrBuilding(pos, bearing, site);
   site.m_sOverlooks = Overlooks(faction, eye);
+  if (kill)
+  {
+   array<float> turns = {AIM_TURN * 0.5, -AIM_TURN * 0.5, AIM_TURN, -AIM_TURN};
+   float aim = kill.BestFacing(pos, bearing, turns, ARC, RANGE, 1, EYE);
+   site.m_fKill = kill.Value(kill.Site(pos, aim, ARC, RANGE, 1, EYE));
+   if (aim != bearing) site.m_fAim = ACR_BaseSurvey.Normal(aim);
+  }
   site.m_fScore = Score(site);
   return site;
+ }
+
+ // A place the player chose: as near the threat's way as does most to him and has a clear line of fire. Any facing
+ // of AIM_TURN off it, the one that fires on most of the ways he'd come by.
+ static float BestFacingAt(vector point, float yaw, vector threat, string faction)
+ {
+  if (!ACR_KillGround.On()) return yaw;
+  ACR_KillGround ground = ACR_KillGround.ForFront(point, threat, FRONT_HALF, string.Format("order %1 %2 %3", faction, (int)point[0], (int)point[2]));
+  array<float> turns = {AIM_TURN * 0.5, -AIM_TURN * 0.5, AIM_TURN, -AIM_TURN};
+  float best = ground.BestFacing(point, yaw, turns, ARC, RANGE, 1, EYE);
+  if (best == yaw) return yaw;
+  string why;
+  if (ACR_Fortify.CheckTier(point, best, 1, null, why)) return best;
+  return yaw;
  }
 
  // What of ours the eye sees within OVERLOOK m: "roadblock", "minefield" or "".
@@ -338,6 +415,8 @@ class ACR_PositionSiting
  static float Score(ACR_PositionSite site)
  {
   float score = Math.Min(site.m_fSight / 50, 6) + Math.Min(site.m_fSides / 100, 3);
+  // What it does to him says more than how far it sees.
+  if (site.m_fKillScore != -1) score = 0.4 * score + site.m_fKillScore;
   score += Math.Clamp(site.m_fRise / 3, -2, 2);
   score -= site.m_iDeadFront * 0.75;
   score -= site.m_iPaved * PAVED_COST;
@@ -357,6 +436,7 @@ class ACR_PositionSiting
   string why = string.Format("sees %1 m, %2 m to the sides", (int)site.m_fSight, (int)site.m_fSides);
   if (site.m_fRise >= 0.5) why += string.Format(", %1 m up", (int)Math.Round(site.m_fRise));
   else if (site.m_fRise <= -0.5) why += string.Format(", in a hollow %1 m down", (int)Math.Round(-site.m_fRise));
+  if (site.m_fKillScore != -1) why += string.Format(", does %1 of 9 to him on his way in", site.m_fKillScore.ToString(-1, 1));
   if (site.m_iDeadFront == 0) why += ", no dead ground in front";
   else why += string.Format(", dead ground at %1 of 4 spots in front", site.m_iDeadFront);
   if (site.m_bCoverBehind) why += ", cover behind";

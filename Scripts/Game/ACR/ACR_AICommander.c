@@ -6409,7 +6409,7 @@ class ACR_AICommander : Managed
   string refusal = "";
   foreach (ACR_PositionSite site : sites)
   {
-   if (!ACR_Fortify.Order(candidate, site.m_vPos, refusal, enemyPos))
+   if (!ACR_Fortify.Order(candidate, site.m_vPos, refusal, site.AimAt(enemyPos)))
    {
     refused++;
     continue;

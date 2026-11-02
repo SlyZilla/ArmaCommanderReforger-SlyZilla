@@ -26,6 +26,8 @@ class ACR_TestPlaceAudit
  protected static int s_iGates, s_iGatesHeld, s_iGatesGun, s_iNests, s_iNestsOnGate, s_iAlmost;
  protected static float s_fLookSum;
  protected static int s_iRingAsked, s_iRingClosed;
+ protected static float s_fSoftSum, s_fMeanSum;
+ protected static int s_iSoftTowns, s_iSoftOpen;
  protected static ref array<ACR_Base> s_aBases = {};
  protected static string s_sSide;
 
@@ -34,6 +36,7 @@ class ACR_TestPlaceAudit
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
   foreach (ACR_FactionSettings aside : ACR_FactionSettings.s_All) aside.m_bAICommander = false;
+  if (System.IsCLIParam("acrPlaceAuditOldTest")) ACR_Options.Set("acrKillGround", "0");
   if (second < 5) return;
   if (s_aBases.IsEmpty() && s_iNext == 0)
   {
@@ -182,6 +185,17 @@ class ACR_TestPlaceAudit
   array<float> weights = {};
   ACR_BaseDefences.Threats(base, faction, dirs, weights);
   Dump(base, work, survey, dirs, weights);
+  ACR_KillGround yardstick = ACR_KillGround.Measure(work, survey);
+  float softest;
+  int ways;
+  yardstick.Softest(softest, ways);
+  float meanFire = yardstick.MeanFire();
+  yardstick.DumpWays(base.m_sName);
+  s_fSoftSum += softest;
+  s_fMeanSum += meanFire;
+  s_iSoftTowns++;
+  if (softest < 30) s_iSoftOpen++;
+  PrintFormat("AUDIT KILL %1 (%2): the softest way in %3 m under fire, on average %4 m, %5 ms to plan", base.m_sName, ACR_BaseStyle.Word(work.m_Style.m_iKind), (int)softest, (int)meanFire, ACR_KillGround.s_iLastMs);
   int pieces, seeing, shortView, boxed, away, hard, hug, pieceIndex, deadAsked, deadGround;
   float lookSum;
   foreach (ACR_BaseLine line : work.m_aLines)
@@ -336,6 +350,7 @@ class ACR_TestPlaceAudit
   ACR_TestRegress.Check("placeaudit: few pieces face away from the threat", Percent(s_iAway, s_iPieces) <= FLOOR_AWAY, string.Format("%1%%", Percent(s_iAway, s_iPieces)));
   ACR_TestRegress.Check("placeaudit: the ways in are held", Percent(s_iGatesHeld, s_iGates) >= FLOOR_GATES, string.Format("%1%%", Percent(s_iGatesHeld, s_iGates))); // int-math ok
   ACR_TestRegress.Check("placeaudit: guns on the ways in", Percent(s_iGatesGun, s_iGates) >= FLOOR_GUN_GATES, string.Format("%1%%", Percent(s_iGatesGun, s_iGates))); // int-math ok
+  if (s_iSoftTowns > 0) PrintFormat("AUDIT TOTAL his softest way in is on average %1 m under fire, his average way %2 m; %3 of %4 towns under 30 m", (int)(s_fSoftSum / s_iSoftTowns), (int)(s_fMeanSum / s_iSoftTowns), s_iSoftOpen, s_iSoftTowns);
   PrintFormat("AUDIT TOTAL threatened way round closed %1%% (%2 of %3 cells)", Percent(s_iRingClosed, s_iRingAsked), s_iRingClosed, s_iRingAsked);
   ACR_TestRegress.Check("placeaudit: the threatened way round is closed", Percent(s_iRingClosed, s_iRingAsked) >= FLOOR_RING_CLOSED, string.Format("%1%%", Percent(s_iRingClosed, s_iRingAsked))); // int-math ok
   ACR_TestRegress.Complete("placeaudit", 6);

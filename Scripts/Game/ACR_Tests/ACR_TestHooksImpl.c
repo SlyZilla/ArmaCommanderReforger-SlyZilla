@@ -45,7 +45,7 @@ modded class ACR_TestHooks
   // -acrPathProbeTest: can foot squads reach Gallows Base's centre (ACR_TestPathProbe).
   if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
   // -acrWorksShotsTest: Fortify a whole base, photographed (ACR_TestWorksShots).
-  if (System.IsCLIParam("acrPlaceAuditTest")) ACR_TestPlaceAudit.Run(seconds);
+  if (System.IsCLIParam("acrPlaceAuditTest") || System.IsCLIParam("acrPlaceAuditOldTest")) ACR_TestPlaceAudit.Run(seconds);
   if (System.IsCLIParam("acrPartsTest")) ACR_TestParts.Run(seconds);
   if (System.IsCLIParam("acrWingsTest") || System.IsCLIParam("acrWingsOffTest") || System.IsCLIParam("acrWingShotsTest")) ACR_TestWings.Run(seconds);
   if (System.IsCLIParam("acrWorksShotsTest") || System.IsCLIParam("acrWorksShotsCompactTest") || ACR_TestBaseWorks.StyleTest("acrStyleShots")) ACR_TestWorksShots.Run(seconds);
@@ -53,7 +53,7 @@ modded class ACR_TestHooks
   if (ACR_TestBaseWorks.StyleTest("acrStylePlan")) ACR_TestBaseWorks.Run(seconds);
   if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksCompactTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
   // -acrWorksFightTest / -acrWorksFightOldTest: what a fortified town costs an attacker (ACR_TestWorksFight).
-  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest")) ACR_TestWorksFight.Run(seconds);
+  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightValueOffTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest")) ACR_TestWorksFight.Run(seconds);
   // -acrWorksAISoakTest: does the AI fortify (ACR_TestWorksSoak).
   if (System.IsCLIParam("acrWorksAISoakTest")) ACR_TestWorksSoak.Run(seconds);
   // -acrQuickStartFIATest: FIA's cells on a Quick start (ACR_TestQuickStartFIA).

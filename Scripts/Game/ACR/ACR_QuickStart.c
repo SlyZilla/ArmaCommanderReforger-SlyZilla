@@ -497,7 +497,7 @@ class ACR_QuickStart
    foreach (ACR_PositionSite site : sites)
    {
     string refusal;
-    ACR_FortifyPlan plan = ACR_Fortify.Plan(squad, site.m_vPos, refusal, enemy.GetOrigin());
+    ACR_FortifyPlan plan = ACR_Fortify.Plan(squad, site.m_vPos, refusal, site.AimAt(enemy.GetOrigin()));
     if (!plan || plan.m_Target) continue;
     ACR_Fortification fort = ACR_Fortify.Build(plan, refusal);
     if (!fort)

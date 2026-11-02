@@ -32,6 +32,7 @@ class ACR_BaseSpot : Managed
  bool m_bTower;      // a tower's platform has (it sees over what stops the others)
  bool m_bGate;       // looks down a road in
  ref array<vector> m_aCuts = {}; // line pieces that make way for it
+ ref ACR_KillSite m_Kill;        // what it does to him
 }
 
 class ACR_BaseSurvey : Managed
@@ -91,6 +92,7 @@ class ACR_BaseSurvey : Managed
  ref array<vector> m_aWallEnds = {};      // two per wall piece (tests draw them)
  ref array<string> m_aWallNames = {};      // ... the prefab of each pair
  ref array<float> m_aWallTall = {};       // ... and how tall
+ ref ACR_KillGround m_Kill;               // where he walks and what fires on it (ACR_BaseRing.Plan)
  int m_iTown;                             // buildings within the search radius
  int m_iWallPieces;
  int m_iMapWorks;                         // the map's sandbags, bunkers and towers seen
@@ -710,6 +712,23 @@ class ACR_BaseSurvey : Managed
   }
   if (e.GetPrefabData() && e.GetPrefabData().GetPrefabName().Contains("Barbed")) return false;
   return true;
+ }
+
+ // An eye at 'eye' can fire on a man 'height' m over the ground at 'ground'.
+ static bool SeesFrom(vector eye, vector ground, float height)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  vector aim = ground;
+  aim[1] = world.GetSurfaceY(ground[0], ground[2]) + height;
+  vector dir = aim - eye;
+  float length = dir.Length();
+  if (length < 2) return true;
+  TraceParam trace = new TraceParam();
+  trace.Start = eye + dir * (1.2 / length);
+  trace.End = aim;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  s_iTraces++;
+  return world.TraceMove(trace, FireFilter) >= 1;
  }
 
  // The terrain, or a road's embankment.
