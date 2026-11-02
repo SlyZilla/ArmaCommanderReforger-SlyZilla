@@ -2348,6 +2348,8 @@ class ACR_BaseLines
  // no nest at all: 16 runs too short, 9 places with no fan). 6.8 m of bags and the nest's own wings still
  // read as a wall. Last, where the big nest has no room at all: the game's small gun position (3.2 m
  // wide, as Fortify's), in the place of one long piece.
+ // The last level, the small gun position: one piece each side. A compound's walls leave short, bent lines, and
+ // with two Chotain Base got 1 nest of 3 (2 Nov: 23 of its 27 windows 'short or not straight').
  static int NestWings(int level)
  {
   switch (level)
@@ -2355,6 +2357,7 @@ class ACR_BaseLines
    case 0: return NEST_WINGS;
    case 1: return 3;
   }
+  if (level >= NEST_COMPACT) return 1;
   return 2;
  }
 
