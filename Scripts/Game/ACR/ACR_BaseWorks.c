@@ -501,6 +501,9 @@ class ACR_BaseWorks
   work.m_iMannedTier = work.m_iTier;
   if (!work.m_Defenders) work.m_Defenders = ACR_Defenders.Add(work.m_sFaction, work.m_Base.GetOrigin(), work.m_Base.m_sName + " works", ACR_BaseDefences.SearchRadius(work.m_Base));
   work.m_Defenders.m_Work = work;
+  // Out as early as the base's own garrison (ACR_BaseSystem.WORKS_SPAWN_RANGE): the AI stages its attack about 320 m
+  // out, and at 400 m the reserve was still running to the bags as it stepped off.
+  work.m_Defenders.m_fSpawnRange = ACR_BaseSystem.WORKS_SPAWN_RANGE;
   work.m_Defenders.m_iReserve += more;
  }
 
