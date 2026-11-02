@@ -53,6 +53,9 @@ class ACR_KillGround : Managed
  static const float PAST_TOWN = 120;    // m past a town's search radius he's walked from
  static const int ENTRIES = 24;         // ways he can come from, round the ground
  static const float WAY_FLOOR = 0.03;   // ... the side away from every threat still counts a little
+ static const float STAGE_SIDE = 0.75;  // a squad on a line turned 60 degrees off his main approach, against one on it
+ static const float STAGE_WIDE = 0.5;   // ... 115 degrees: the mounted ones, swinging wide
+ static const float STAGE_HIDE_LEAST = 150; // m past the base's ring a staging point moved out of its sight stays (ACR_AICommander.HiddenStaging)
  static const float ROAD_WAY = 1.8;     // a road in, against the fields beside it: vehicles have no other way
  static const float NOISE = 0.15;       // the match's luck on the ground
  static const float ROAD_WALK = 0.8;    // what a metre costs him on a road, against open ground, near the base
@@ -120,6 +123,7 @@ class ACR_KillGround : Managed
  protected ref array<int> m_aNextPlain = {};
  protected int m_iHeart = -1;
  protected int m_iRoadHeart = -1;
+ protected float m_fBaseRadius;               // > 0: a base's own ring, which his attack stages outside
  protected int m_iLook;
  ref array<ref ACR_KillWay> m_aWays = {};
  ref array<ref ACR_KillSite> m_aPlaced = {};
@@ -370,7 +374,13 @@ class ACR_KillGround : Managed
   return best;
  }
 
- // Where he comes from: round the edge by the threats, and where the roads come in.
+ // Where he comes from. Against a base, the AI commander stages its attack ACR_AICommander.STAGING_DISTANCE past
+ // the base's ring, on up to five lines turned 0, 60 and 115 degrees either way off the way from his side to it,
+ // each moved to where the base's ground can't see it, and walks in from there (LaunchAttack, PickApproach,
+ // HiddenStaging; the user, 2 Nov, Chotain Base: the attack came down the road and out of the woods his way,
+ // not round the compass). So his ways start where those lines meet this ground, weighted as he uses them; the
+ // whole way round still counts a little (WAY_FLOOR), and the roads come in where they do. A front with no base
+ // (ForFront) keeps the threats round the edge.
  protected void Entries(array<vector> dirs, array<float> weights, bool even)
  {
   m_aEntries.Clear();
@@ -378,23 +388,17 @@ class ACR_KillGround : Managed
   m_aRoadEntries.Clear();
   m_aRoadWeights.Clear();
   float reach = m_fHalf - m_fCell;
+  bool staged = !even && m_fBaseRadius > 0;
   for (int e = 0; e < ENTRIES; e++)
   {
    vector way = ACR_BaseSurvey.Dir(e * 360.0 / ENTRIES);
-   float back = reach;
-   int cell = -1;
-   while (back > m_fHalf * 0.5)
-   {
-    vector p = m_vCenter + way * back;
-    cell = At(p[0], p[2]);
-    if (cell >= 0 && m_aWalk[cell] >= 0) break;
-    cell = -1;
-    back -= m_fCell;
-   }
+   int cell = EdgeCell(way, reach);
    if (cell < 0) continue;
    m_aEntries.Insert(cell);
-   m_aEntryWeights.Insert(WeightFor(dirs, weights, way, even));
+   if (staged) m_aEntryWeights.Insert(WAY_FLOOR);
+   else m_aEntryWeights.Insert(WeightFor(dirs, weights, way, even));
   }
+  if (staged) Staging(dirs, weights, reach);
   // A road coming in: cells on a road at the edge, one per way in.
   int count = m_iN * m_iN;
   array<float> seen = {};
@@ -412,6 +416,81 @@ class ACR_KillGround : Managed
    m_aRoadEntries.Insert(i);
    m_aRoadWeights.Insert(WeightFor(dirs, weights, ACR_BaseSurvey.Dir(bearing), even) * ROAD_WAY);
   }
+ }
+
+ // The first cell he can walk, in from the edge along 'way'.
+ protected int EdgeCell(vector way, float reach)
+ {
+  float back = reach;
+  while (back > m_fHalf * 0.5)
+  {
+   vector p = m_vCenter + way * back;
+   int cell = At(p[0], p[2]);
+   if (cell >= 0 && m_aWalk[cell] >= 0) return cell;
+   back -= m_fCell;
+  }
+  return -1;
+ }
+
+ // His staging points against this base, as ACR_AICommander picks them, and an entry where the way in from each
+ // meets the ground. A threat's weight is the way from his side; the line's share is how he uses it (foot squads
+ // take the direct lines, mounted ones swing wide).
+ protected void Staging(array<vector> dirs, array<float> weights, float reach)
+ {
+  float ring = m_fBaseRadius + ACR_AICommander.STAGING_DISTANCE;
+  array<vector> eyes = {};
+  ACR_AICommander.ObjectiveEyes(m_vCenter, m_fBaseRadius, eyes);
+  foreach (int d, vector dir : dirs)
+  {
+   foreach (float turn : ACR_AICommander.s_aApproachTurns)
+   {
+    float share = 1;
+    if (Math.AbsFloat(turn) > 90) share = STAGE_WIDE;
+    else if (turn != 0) share = STAGE_SIDE;
+    vector point;
+    if (!BBB_Terrain.DryApproach(m_vCenter, ACR_AICommander.Turned(dir, turn), ring, point)) continue;
+    point = Hidden(point, eyes);
+    int cell = EdgeCell(ACR_BaseDefences.FlatDir(m_vCenter, point), reach);
+    if (cell < 0) continue;
+    float weight = weights[d] * share;
+    // One entry to a cell: the heavier use of it.
+    int have = m_aEntries.Find(cell);
+    if (have >= 0)
+    {
+     if (m_aEntryWeights[have] < weight) m_aEntryWeights[have] = weight;
+     continue;
+    }
+    m_aEntries.Insert(cell);
+    m_aEntryWeights.Insert(weight);
+   }
+  }
+ }
+
+ // A staging point the base's ground can't see, as ACR_AICommander.HiddenStaging moves it: a little further round
+ // or further out, never closer than STAGE_HIDE_LEAST past the ring. The point itself when nowhere hides.
+ protected vector Hidden(vector point, notnull array<vector> eyes)
+ {
+  if (!ACR_AICommander.GroundSeen(eyes, point)) return point;
+  vector dir = point - m_vCenter;
+  dir[1] = 0;
+  float ring = dir.Length();
+  if (ring < 1) return point;
+  dir.Normalize();
+  array<float> turns = {0, -10, 10, -20, 20};
+  array<float> outs = {0, 60, -40, 120};
+  foreach (float outward : outs)
+  {
+   float r = ring + outward;
+   if (r < m_fBaseRadius + STAGE_HIDE_LEAST) continue;
+   foreach (float turn : turns)
+   {
+    if (outward == 0 && turn == 0) continue;
+    vector candidate = ACR_Manager.Ground(m_vCenter + ACR_AICommander.Turned(dir, turn) * r);
+    if (BBB_Terrain.IsWaterAt(candidate)) continue;
+    if (!ACR_AICommander.GroundSeen(eyes, candidate)) return candidate;
+   }
+  }
+  return point;
  }
 
  protected static float WeightFor(array<vector> dirs, array<float> weights, vector way, bool even)
@@ -1038,6 +1117,8 @@ class ACR_KillGround : Managed
  {
   ACR_KillGround ground = new ACR_KillGround();
   ground.Build(survey.m_vCenter, survey.m_fRadius + PAST_TOWN, survey.m_aSegs, survey.m_aBuildings, survey, "kill ground " + town);
+  ground.m_fBaseRadius = survey.m_fRadius;
+  if (survey.m_Base) ground.m_fBaseRadius = survey.m_Base.m_fRadius;
   ground.Entries(survey.m_aDirs, survey.m_aWeights, even);
   ground.Solve();
   return ground;

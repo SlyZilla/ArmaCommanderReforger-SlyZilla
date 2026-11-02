@@ -937,6 +937,8 @@ class ACR_BaseLines
  static const float DEAD_COST = 0.15;     // ... per spot of dead ground close in front
  static const float GATE_HELD = 30;       // m from a way in that a line holds it (the audit's GATE_NEAR)
  static const float GATE_OUT = 50;        // m on along the road where a lane still holds it: a line further out
+ static const float CLUTTER_SHARE = 0.1;  // stretches with something left behind the bags (the user, 2 Nov: one behind every one looked like junk)
+ static const float LIGHT_SHARE = 0.25;   // ... offered a lamp at their foot (Light takes 60% of those)
  static const float GATE_CHECKPOINT = 0.5; // a checkpoint where it's the only thing that would hold a way in
  static const int GATE_CHECKPOINT_ASKS = 2; // ways in looked at for one each time: asking the road is dear
  static const int PLUG_ARM = 3;           // long pieces each way across a way in, and up to 2 more
@@ -2290,13 +2292,15 @@ class ACR_BaseLines
    pos.m_aPieceWall.Insert(true);
   }
   DirtOn(pos, pieces, survey);
-  // A few things behind the bags, so people seem to live here.
+  // Now and then something left behind the bags, so people seem to live here: one stretch in ten, not every one.
   ACR_BaseDefences.Seed(mid.m_vPos);
   vector first = pieces[0].m_vPos;
   vector along = ACR_BaseDefences.FlatDir(first, pieces[pieces.Count() - 1].m_vPos);
   float span = vector.DistanceXZ(first, pieces[pieces.Count() - 1].m_vPos);
-  ACR_BaseDefences.Dress(pos, kit, first, mid.m_vFacing, along, span, 1.5, 1.2, 1 + ACR_BaseDefences.RandIndex(2), survey.m_aSegs, survey.m_aBuildings, true);
-  ACR_BaseDefences.Light(pos, kit, mid.m_vPos - mid.m_vFacing * 0.9, survey.m_aBuildings);
+  int things = 0;
+  if (ACR_BaseDefences.Rand() < CLUTTER_SHARE) things = 1;
+  if (things > 0) ACR_BaseDefences.Dress(pos, kit, first, mid.m_vFacing, along, span, 1.5, 1.2, things, survey.m_aSegs, survey.m_aBuildings, true);
+  if (ACR_BaseDefences.Rand() < LIGHT_SHARE) ACR_BaseDefences.Light(pos, kit, mid.m_vPos - mid.m_vFacing * 0.9, survey.m_aBuildings);
   for (int d = pos.m_aPiecePos.Count() - 1; d >= 0; d--)
    if (!pos.m_aPieceWall[d] && ACR_BaseDefences.RoadEdgeGap(survey.m_aSegs, pos.m_aPiecePos[d]) < 0.3) pos.RemovePiece(d);
   ACR_BaseSite site = new ACR_BaseSite();
@@ -3308,20 +3312,22 @@ class ACR_BaseLines
     }
    }
    // A way in no line crosses: where it can have one, nothing else will hold it.
+   string gateWhy;
    if (ACR_BaseLiner.PlacementOn())
    {
     int asked = 0;
     foreach (ACR_BaseGate open : survey.m_aGates)
     {
      if (asked >= GATE_CHECKPOINT_ASKS) break;
-     if (survey.m_aThreat[open.m_iSector] < work.m_Style.m_fMinThreat || GateHeld(work, open)) continue;
-     if (ACR_BaseDefences.DotXZ(open.m_vOut, toEnemy) < -0.1) continue;
+     if (survey.m_aThreat[open.m_iSector] < work.m_Style.m_fMinThreat) { gateWhy += " quiet"; continue; }
+     if (GateHeld(work, open)) { gateWhy += " held"; continue; }
+     if (ACR_BaseDefences.DotXZ(open.m_vOut, toEnemy) < -0.1) { gateWhy += " away"; continue; }
      asked++;
      vector gatePos;
      float gateYaw;
      string gateRefusal;
-     if (!ACR_Roadblocks.ValidateSite(open.m_vPos, gatePos, gateYaw, gateRefusal, work.m_sFaction, enemy.GetOrigin(), work.m_Base)) continue;
-     if (ACR_BaseWorks.CheckpointNear(work, gatePos, 60)) continue;
+     if (!ACR_Roadblocks.ValidateSite(open.m_vPos, gatePos, gateYaw, gateRefusal, work.m_sFaction, enemy.GetOrigin(), work.m_Base)) { gateWhy += " site(" + gateRefusal + ")"; continue; }
+     if (ACR_BaseWorks.CheckpointNear(work, gatePos, 60)) { gateWhy += " taken"; continue; }
      spots.Insert(gatePos);
      yaws.Insert(gateYaw);
      sectors.Insert(open.m_iSector);
@@ -3331,7 +3337,7 @@ class ACR_BaseLines
    }
    if (spots.IsEmpty())
    {
-    PrintFormat("[ACR] BASEWORKS %1: no checkpoint for the road from %2: no line crosses a road that way", work.m_Base.m_sName, enemy.m_sName);
+    PrintFormat("[ACR] BASEWORKS %1: no checkpoint for the road from %2: no line crosses a road that way; %3 gates:%4", work.m_Base.m_sName, enemy.m_sName, survey.m_aGates.Count(), gateWhy);
     continue;
    }
    int picked = ACR_Variety.Pick(scores, string.Format("base works road %1 %2", work.m_Base.m_sName, round));

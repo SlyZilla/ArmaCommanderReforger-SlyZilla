@@ -555,6 +555,17 @@ class ACR_BaseSystem : Managed
    AddGarrisonSoldier(base, group, pool);
   ACR_Squad.KeepSimulated(group);
   base.m_GarrisonGroup = group;
+  // A base with works standing: the garrison mans the lines that face the enemy before it takes to the houses
+  // (the user, 2 Nov, Chotain Base: the attack came, nobody was on the bags, the garrison sat in the offices).
+  ACR_BaseWork work = ACR_BaseWorks.Find(base);
+  vector lineCenter;
+  float lineRadius;
+  if (work && work.m_sFaction == base.m_sOwner && ACR_BaseWorks.ManSquad(work, group, base.m_iGarrisonLeft, lineCenter, lineRadius))
+  {
+   ACR_Guerrillas.Order(group, ACR_Squad.WP_GARRISON, lineCenter, lineRadius, true);
+   PrintFormat("[ACR] Garrison deployed at %1: %2 soldiers, %3 in group, behind its bags", base.m_sName, base.m_iGarrisonLeft, group.GetAgentsCount());
+   return;
+  }
   // The base's buildings get posts at their windows; the soldiers start on them (the
   // game's fast init) and the rest hold the base round its centre as before.
   IEntity navAgent = ACR_Garrison.AnyAgent();
