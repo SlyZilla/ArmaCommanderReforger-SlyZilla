@@ -195,7 +195,7 @@ class ACR_Defenders
  // is manned by the man on the bags beside it (within REMAN_REACH), at most once per REMAN_WAIT_MS per gun. The
  // gunner is who the attackers shoot first: from further off, or oftener, this emptied the bags into the guns
  // (srv:worksfightbase, 2 Nov: 10 re-mans, 7 of 8 lost; the men on the bags were doing the killing).
- protected static void SeatLineMen(ACR_DefenderPost post)
+ static void SeatLineMen(ACR_DefenderPost post)
  {
   if (!post.m_Group || post.m_aCrewGuns.IsEmpty()) return;
   array<AIAgent> agents = {};

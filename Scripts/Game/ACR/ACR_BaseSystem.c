@@ -573,9 +573,12 @@ class ACR_BaseSystem : Managed
   ACR_BaseWork work = ACR_BaseWorks.Find(base);
   vector lineCenter;
   float lineRadius;
-  if (work && work.m_sFaction == base.m_sOwner && ACR_BaseWorks.ManSquad(work, group, base.m_iGarrisonLeft, lineCenter, lineRadius))
+  int line;
+  if (work && work.m_sFaction == base.m_sOwner && ACR_BaseWorks.ManSquad(work, group, base.m_iGarrisonLeft, lineCenter, lineRadius, line))
   {
    ACR_Guerrillas.Order(group, ACR_Squad.WP_GARRISON, lineCenter, lineRadius, true);
+   // ... and kept there as the works' reserve is: the line it faces looked at again, a gun beside it re-manned.
+   ACR_BaseWorks.WatchGarrison(work, group, line);
    PrintFormat("[ACR] Garrison deployed at %1: %2 soldiers, %3 in group, behind its bags", base.m_sName, base.m_iGarrisonLeft, group.GetAgentsCount());
    return;
   }

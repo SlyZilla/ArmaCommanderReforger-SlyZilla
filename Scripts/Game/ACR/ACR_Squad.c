@@ -2108,7 +2108,8 @@ class ACR_Squad : Managed
   m_OrderKind = ACR_EOrderKind.DEFEND;
   vector at;
   float radius;
-  if (work && !ACR_Transport.CrewedVehicle(this) && ACR_BaseWorks.ManSquad(work, m_Group, Math.Max(1, CountAlive()), at, radius) && IssueWaypoint(WP_GARRISON, at, radius)) return;
+  int line;
+  if (work && !ACR_Transport.CrewedVehicle(this) && ACR_BaseWorks.ManSquad(work, m_Group, Math.Max(1, CountAlive()), at, radius, line) && IssueWaypoint(WP_GARRISON, at, radius)) return;
   if (work && ACR_BaseWorks.HoldSpot(work, at, radius)) IssueWaypoint(WP_DEFEND, at, radius);
   else if (work && work.m_Base) IssueWaypoint(WP_DEFEND, work.m_Base.GetOrigin(), 60);
  }
