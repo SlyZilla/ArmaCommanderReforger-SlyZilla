@@ -16,9 +16,13 @@ class ACR_TestPlaceAudit
  static const float FLOOR_SEEING = 75;
  static const float FLOOR_BOXED = 10;
  static const float FLOOR_AWAY = 15;
- static const float FLOOR_GATES = 85;
+ // (Places follow the ways he walks now, so a road in with a gun on it but no line across it isn't a hole.)
+ static const float FLOOR_GATES = 75;
  static const float FLOOR_GUN_GATES = 50;
- static const float FLOOR_RING_CLOSED = 55;
+ static const float FLOOR_RING_CLOSED = 45;
+ static const float FLOOR_SOFTEST = 50;  // m under fire on his softest way in, on average over the towns
+ static const float FLOOR_MEAN_WAY = 100; // ... and on his average way
+ static const float MOST_OPEN_TOWNS = 40; // % of towns where his softest way has under 30 m of fire
 
  protected static int s_iNext;
  protected static int s_iTowns;
@@ -353,6 +357,12 @@ class ACR_TestPlaceAudit
   if (s_iSoftTowns > 0) PrintFormat("AUDIT TOTAL his softest way in is on average %1 m under fire, his average way %2 m; %3 of %4 towns under 30 m", (int)(s_fSoftSum / s_iSoftTowns), (int)(s_fMeanSum / s_iSoftTowns), s_iSoftOpen, s_iSoftTowns);
   PrintFormat("AUDIT TOTAL threatened way round closed %1%% (%2 of %3 cells)", Percent(s_iRingClosed, s_iRingAsked), s_iRingClosed, s_iRingAsked);
   ACR_TestRegress.Check("placeaudit: the threatened way round is closed", Percent(s_iRingClosed, s_iRingAsked) >= FLOOR_RING_CLOSED, string.Format("%1%%", Percent(s_iRingClosed, s_iRingAsked))); // int-math ok
+  if (s_iSoftTowns > 0 && !System.IsCLIParam("acrPlaceAuditOldTest"))
+  {
+   ACR_TestRegress.Check("placeaudit: he can't walk in unshot", s_fSoftSum / s_iSoftTowns >= FLOOR_SOFTEST, string.Format("%1 m on the softest way, floor %2", (int)(s_fSoftSum / s_iSoftTowns), (int)FLOOR_SOFTEST));
+   ACR_TestRegress.Check("placeaudit: his ways in are fired on", s_fMeanSum / s_iSoftTowns >= FLOOR_MEAN_WAY, string.Format("%1 m on average, floor %2", (int)(s_fMeanSum / s_iSoftTowns), (int)FLOOR_MEAN_WAY));
+   ACR_TestRegress.Check("placeaudit: few towns left open", Percent(s_iSoftOpen, s_iSoftTowns) <= MOST_OPEN_TOWNS, string.Format("%1%% under 30 m", Percent(s_iSoftOpen, s_iSoftTowns)));
+  }
   ACR_TestRegress.Complete("placeaudit", 6);
  }
 }

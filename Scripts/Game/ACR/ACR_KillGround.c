@@ -48,8 +48,8 @@ class ACR_KillSite : Managed
 
 class ACR_KillGround : Managed
 {
- static const float MOST_SIDE = 56;     // cells a side, at most
- static const float CELL_LEAST = 10;    // m
+ static const float MOST_SIDE = 48;     // cells a side, at most
+ static const float CELL_LEAST = 12;    // m
  static const float PAST_TOWN = 120;    // m past a town's search radius he's walked from
  static const int ENTRIES = 24;         // ways he can come from, round the ground
  static const float WAY_FLOOR = 0.03;   // ... the side away from every threat still counts a little
@@ -73,7 +73,7 @@ class ACR_KillGround : Managed
  static const float NEAR_FULL = 60;     // m up to which a man hits him as well as he can
  static const float FAR_HIT = 0.25;     // ... and at the end of his range
  static const float NEAREST = 8;        // m: closer than this isn't a line of fire
- static const float FAR_LOOK = 90;      // m: past this his ways are looked at more thinly
+ static const float FAR_LOOK = 70;      // m: past this his ways are looked at more thinly
  static const float CLOSE = 45;         // m: he gets this close, unseen: he's in grenade range
  static const float CLOSE_COST = 0.45;  // what that costs, against being fired on
  static const float INSIDE = 0.3;       // ground inside the town counts for this: kill him before he's in it
@@ -82,7 +82,7 @@ class ACR_KillGround : Managed
  static const float MAN_HEIGHT = 1;     // m over the ground he's aimed at
  // What things are.
  static const float BAG_ARC = 70;
- static const float BAG_RANGE = 170;
+ static const float BAG_RANGE = 150;
  static const float GUN_ARC = 50;
  static const float GUN_RANGE = 280;
  static const float GUN_POWER = 1.7;

@@ -87,14 +87,15 @@ class ACR_BaseRing : Managed
  static const float NEXT_TO = 1.3;     // a part beside one going in: a line, not loose pieces
  static const float WALK_AGAIN = 0.34; // of the bags, between looks at where he'd walk now
  static const int MOST_WALKS = 2;
- static const int BUILD_ROUNDS = 3;    // goes at choosing and laying, while bags are left
+ static const int BUILD_ROUNDS = 2;    // goes at choosing and laying, while bags are left
  static const int LEFT_TO_GO_ON = 8;   // pieces left that are worth another go
+ static const float TIER_OVER = 1.12;  // a tier takes this much over its budget to keep a line together
  static const float OUT_FRONT = 0.85;  // against the line at the town's edge, for what it does: it ties into less
  static const float OUT_FRONT_DEPTH = 1.25; // ... in a town defended in depth
  static const int OUT_PARENT = 1000;   // its stretches are numbered apart from the edge's
  static const int WAY_PARENT = 2000;   // ... and those laid out for his ways
- static const int WAY_LINES_WAYS = 10; // of his ways, the heaviest
- static const int WAY_LINES_MOST = 70; // places proposed
+ static const int WAY_LINES_WAYS = 8;  // of his ways, the heaviest
+ static const int WAY_LINES_MOST = 45; // places proposed
  static const float WAY_STEP_ALONG = 45; // m along a way between places
  static const float WAY_OUT = 80;      // m past the search radius a way is looked at from
  static const float WAY_IN = 40;       // m from the middle it's looked at up to
@@ -1267,6 +1268,13 @@ class ACR_BaseRing : Managed
     picked.m_iTier = 3;
     if (spent <= budgetOne) picked.m_iTier = 1;
     else if (spent <= budgetOne + budgetTwo) picked.m_iTier = 2;
+    // The rest of a line it's part of, if that tier can nearly take it: one line, built in one go.
+    int beside = TierBeside(runs, picked);
+    if (beside > 0 && beside < picked.m_iTier)
+    {
+     // (Tier I stays the job it says it is.)
+     if (beside == 2 && spent <= (budgetOne + budgetTwo) * TIER_OVER) picked.m_iTier = 2;
+    }
    }
    chosen.Insert(picked);
    placed.Insert(picked);
@@ -1403,6 +1411,15 @@ class ACR_BaseRing : Managed
    run.m_fBound = kill.Potential(run.m_Site) * ANCHORED * NEXT_TO / Math.Sqrt(Math.Max(PiecesFor(growBy), 1));
    runs.Insert(run);
   }
+ }
+
+ protected static int TierBeside(notnull array<ref ACR_RingRun> runs, ACR_RingRun run)
+ {
+  foreach (ACR_RingRun other : runs)
+  {
+   if (other != run && other.m_bWanted && other.m_iParent == run.m_iParent && Math.AbsInt(other.m_iOrder - run.m_iOrder) == 1) return other.m_iTier;
+  }
+  return 0;
  }
 
  protected static bool WantedBeside(notnull array<ref ACR_RingRun> runs, ACR_RingRun run)
