@@ -1148,6 +1148,18 @@ class ACR_BaseWorks
   ACR_BaseLines.Checkpoints(work, survey, MAX_ROADBLOCKS);
   ACR_BaseLines.Posts(work, survey, MAX_BUNKERS);
   ACR_BaseLines.CommandPost(work, survey);
+  // Everything placed: he's walked in once more against it, and while tier I and II have pieces left one more part
+  // goes on his softest way (-acrBaseFinalWalk 0: not). A line it lays gets its dressing, stretches, wire and obstacles.
+  ACR_KillGround honest;
+  int linesBefore = work.m_aLines.Count();
+  if (survey.m_Kill && ACR_BaseRing.FinalWalkOn()) honest = ACR_BaseRing.FinalWalk(work, survey, ACR_BaseDefences.Kit(work.m_sFaction));
+  if (work.m_aLines.Count() > linesBefore)
+  {
+   ACR_BaseLines.DressLines(work, linesBefore);
+   ACR_BaseLines.Stretches(work, survey, linesBefore);
+   ACR_BaseLines.Wire(work, survey, linesBefore);
+   ACR_BaseLines.Obstacles(work, survey, linesBefore);
+  }
   string refused = survey.RefusedWords();
   if (!refused.IsEmpty()) PrintFormat("[ACR] BASEWORKS %1: command post pieces left out: %2", base.m_sName, refused);
   float seconds = 0;
@@ -1178,8 +1190,13 @@ class ACR_BaseWorks
   survey.Coverage(work, ours, existing, either);
   PrintFormat("[ACR] BASEWORKS %1: covers %2%% of the threatened arc with lines, %3%% with those and what stands there (%4%% that alone); anchored ends %5 of %6", base.m_sName, (int)(ours * 100), (int)(either * 100), (int)(existing * 100), anchored, ends);
   PrintFormat("[ACR] BASEWORKS %1: %2 sandbag pieces, about %3 entities in all; tier I is %4 s of work, walking aside", base.m_sName, pieces, entities, (int)seconds);
-  if (survey.m_Kill) survey.m_Kill.Done(base.m_sName);
-  work.m_Kill = survey.m_Kill;
+  // The men at runtime (LinesFor, KeepManned) read the honest ground when there is one: every piece's bags are on it.
+  work.m_Kill = honest;
+  if (!honest)
+  {
+   if (survey.m_Kill) survey.m_Kill.Done(base.m_sName);
+   work.m_Kill = survey.m_Kill;
+  }
   if (s_iMaxSitesForTest > 0) Trim(work);
  }
 

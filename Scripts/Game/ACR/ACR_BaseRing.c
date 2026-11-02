@@ -144,6 +144,9 @@ class ACR_BaseRing : Managed
  }
 
  static bool On() { return ACR_LogisticsRules.Choice("acrBaseRing", "1") != "0"; }
+ // -acrBaseFinalWalk 0: no walk against the finished plan, no last part on his softest way (FinalWalk).
+ static bool FinalWalkOn() { return ACR_LogisticsRules.Choice("acrBaseFinalWalk", "1") != "0"; }
+ static const int FINAL_LEAST = 4;      // pieces of tier I and II left: fewer, and only a small gun can go on
 
  ACR_BaseSurvey m_Survey;
  protected ref RandomGenerator m_Luck;
@@ -1079,6 +1082,7 @@ class ACR_BaseRing : Managed
   }
   if (style.m_iKind == ACR_BaseStyle.DEPTH) off = 4;
   ring.Outline(core);
+  survey.m_Ring = ring;
   if (ACR_KillGround.On()) survey.m_Kill = ACR_KillGround.ForTown(survey, !threatMatters, town);
   int used;
   // A funnel's arms go in first: the ring ties into them.
@@ -1461,41 +1465,141 @@ class ACR_BaseRing : Managed
    }
    ways[b + 1] = held;
   }
-  vector center = m_Survey.m_vCenter;
-  float outer = m_Survey.m_fRadius + WAY_OUT;
   array<int> seen = {};
   int added;
-  for (int w = 0; w < ways.Count() && w < WAY_LINES_WAYS; w++)
+  for (int w = 0; w < ways.Count() && w < WAY_LINES_WAYS; w++) added = WayLinesFor(kill, ways[w], runs, seen, added);
+ }
+
+ // The places laid out for one of his ways, into 'runs' ('seen' keeps one to a place). Those added so far, and after.
+ int WayLinesFor(ACR_KillGround kill, ACR_KillWay way, notnull array<ref ACR_RingRun> runs, notnull array<int> seen, int added)
+ {
+  vector center = m_Survey.m_vCenter;
+  float outer = m_Survey.m_fRadius + WAY_OUT;
+  array<int> cells = way.m_aCells;
+  float since = WAY_STEP_ALONG;
+  for (int k = 0; k + 1 < cells.Count() && added < WAY_LINES_MOST; k++)
   {
-   array<int> cells = ways[w].m_aCells;
-   float since = WAY_STEP_ALONG;
-   for (int k = 0; k + 1 < cells.Count() && added < WAY_LINES_MOST; k++)
+   vector at = kill.Middle(cells[k]);
+   vector next = kill.Middle(cells[k + 1]);
+   since += vector.DistanceXZ(at, next);
+   float apart = vector.DistanceXZ(at, center);
+   if (apart > outer || apart < WAY_IN || since < WAY_STEP_ALONG) continue;
+   since = 0;
+   vector his = ACR_BaseDefences.FlatDir(at, next);
+   vector side = Vector(his[2], 0, -his[0]);
+   // Averaged over a few cells: a walk on a grid turns at every step.
+   int further = Math.Min(k + 4, cells.Count() - 1);
+   his = ACR_BaseDefences.FlatDir(at, kill.Middle(cells[further]));
+   side = Vector(his[2], 0, -his[0]);
+   vector ahead = at + his * WAY_AHEAD;
+   int aheadCell = At(ahead[0], ahead[2]);
+   // Down a road: it stays open for vehicles, so a line either side of it, turned in towards him. A street block.
+   if (aheadCell >= 0 && (m_aCell[aheadCell] & ROAD) != 0)
    {
-    vector at = kill.Middle(cells[k]);
-    vector next = kill.Middle(cells[k + 1]);
-    since += vector.DistanceXZ(at, next);
-    float apart = vector.DistanceXZ(at, center);
-    if (apart > outer || apart < WAY_IN || since < WAY_STEP_ALONG) continue;
-    since = 0;
-    vector his = ACR_BaseDefences.FlatDir(at, next);
-    vector side = Vector(his[2], 0, -his[0]);
-    // Averaged over a few cells: a walk on a grid turns at every step.
-    int further = Math.Min(k + 4, cells.Count() - 1);
-    his = ACR_BaseDefences.FlatDir(at, kill.Middle(cells[further]));
-    side = Vector(his[2], 0, -his[0]);
-    vector ahead = at + his * WAY_AHEAD;
-    int aheadCell = At(ahead[0], ahead[2]);
-    // Down a road: it stays open for vehicles, so a line either side of it, turned in towards him. A street block.
-    if (aheadCell >= 0 && (m_aCell[aheadCell] & ROAD) != 0)
-    {
-     added += TryStreetBlock(ahead, at, side, runs, seen);
-     added += TryStreetBlock(ahead, at, side * -1, runs, seen);
-    }
-    else added += TryWayLine(ahead, his * -1, runs, seen);
-    added += TryFlank(at, his, side, runs, seen);
-    added += TryFlank(at, his, side * -1, runs, seen);
+    added += TryStreetBlock(ahead, at, side, runs, seen);
+    added += TryStreetBlock(ahead, at, side * -1, runs, seen);
    }
+   else added += TryWayLine(ahead, his * -1, runs, seen);
+   added += TryFlank(at, his, side, runs, seen);
+   added += TryFlank(at, his, side * -1, runs, seen);
   }
+  return added;
+ }
+
+ // Everything placed, he's walked in once more against it, honestly (ACR_KillGround.Measure: every piece's bags and gun
+ // as the tests judge them). While tier I's and tier II's budgets have pieces left, one more part goes on his softest
+ // way in: a line laid out for it, or a small gun where no line is worth it. Before this the planner's last walk came
+ // before the nests, guns and posts went in, and its own figure never saw its softest way (3 Nov, Chotain: it said
+ // 53 m where the yardstick said 0). The honest ground, for the log and the men at runtime; null with no lines.
+ static ACR_KillGround FinalWalk(ACR_BaseWork work, ACR_BaseSurvey survey, ACR_BaseDefenceKit kit)
+ {
+  if (!survey.m_Kill || !survey.m_Ring || work.m_aLines.IsEmpty()) return null;
+  int started = System.GetTickCount();
+  string town = work.m_Base.m_sName;
+  ACR_KillGround kill = ACR_KillGround.Measure(work, survey);
+  float softest;
+  int ways;
+  kill.Softest(softest, ways);
+  int usedAll;
+  int usedEarly;
+  foreach (ACR_BaseLine line : work.m_aLines)
+  {
+   usedAll += line.m_aPieces.Count();
+   if (line.m_iTier <= 2) usedEarly += line.m_aPieces.Count();
+  }
+  int budgetOne = ACR_BaseLines.Budget(1, survey.m_iTown);
+  int left = Math.Min(budgetOne + ACR_BaseLines.Budget(2, survey.m_iTown) - usedEarly, ACR_BaseLines.MOST_PIECES - usedAll);
+  string did = "nothing more fits";
+  int got;
+  ACR_KillWay way = kill.SoftestWay();
+  if (way)
+  {
+   if (left >= FINAL_LEAST)
+   {
+    array<ref ACR_RingRun> runs = {};
+    array<int> seen = {};
+    survey.m_Ring.WayLinesFor(kill, way, runs, seen, 0);
+    ACR_RingRun picked = ChooseOne(kill, work.m_Style, runs, usedEarly, budgetOne, usedEarly + left, "base ring last " + town);
+    if (picked)
+    {
+     array<ref ACR_RingRun> chosen = {};
+     chosen.Insert(picked);
+     got = BuildWanted(work, survey, kit, chosen, runs, left);
+     if (got > 0)
+     {
+      kill.Add(picked.m_Site);
+      for (int w = 1; w < picked.m_aWay.Count(); w++)
+      {
+       kill.AddBags(picked.m_aWay[w - 1], picked.m_aWay[w]);
+       survey.m_Kill.AddBags(picked.m_aWay[w - 1], picked.m_aWay[w]);
+      }
+      did = string.Format("a line of %1 pieces", got);
+     }
+    }
+   }
+   if (got == 0)
+   {
+    // The gun chooses its place by the honest ground.
+    ACR_KillGround was = survey.m_Kill;
+    survey.m_Kill = kill;
+    int guns = ACR_BaseLines.SmallGun(work, survey);
+    survey.m_Kill = was;
+    if (guns > 0) did = "a small gun";
+   }
+   kill.Solve();
+  }
+  float after;
+  kill.Softest(after, ways);
+  PrintFormat("[ACR] BASEWORKS %1: walked in against the finished plan: the softest way %2 m under fire, %3 pieces left, %4 on it, now %5 m (%6 ms)", town, (int)softest, left, did, (int)after, System.GetTickCount() - started);
+  kill.Done(town);
+  return kill;
+ }
+
+ // Of 'runs', the one that does most to him now where he walks, weighted among the near-best (ACR_Variety), marked
+ // wanted with its tier. Null when none is worth it or fits 'most'.
+ protected static ACR_RingRun ChooseOne(ACR_KillGround kill, ACR_BaseStyle style, notnull array<ref ACR_RingRun> runs, int spent, int budgetOne, int most, string key)
+ {
+  bool points = style.m_iKind == ACR_BaseStyle.POINTS;
+  array<float> scores = {};
+  array<ACR_RingRun> open = {};
+  foreach (ACR_RingRun candidate : runs)
+  {
+   if (candidate.m_bWanted) continue;
+   int need = PiecesFor(candidate.m_fLength);
+   if (spent + need > most) continue;
+   if (!candidate.m_Site) SiteFor(kill, candidate);
+   float value = kill.Value(candidate.m_Site);
+   if (value < WORTH_LEAST) continue;
+   value = Scaled(value, candidate, style, points);
+   scores.Insert(value / Math.Sqrt(Math.Max(need, 1)));
+   open.Insert(candidate);
+  }
+  if (open.IsEmpty()) return null;
+  ACR_RingRun picked = open[ACR_Variety.Pick(scores, key)];
+  picked.m_bWanted = true;
+  picked.m_iTier = 2;
+  if (spent + PiecesFor(picked.m_fLength) <= budgetOne) picked.m_iTier = 1;
+  return picked;
  }
 
  protected int TryStreetBlock(vector ahead, vector at, vector side, notnull array<ref ACR_RingRun> runs, notnull array<int> seen)

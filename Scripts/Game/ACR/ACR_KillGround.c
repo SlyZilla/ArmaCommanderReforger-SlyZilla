@@ -1054,6 +1054,17 @@ class ACR_KillGround : Managed
   if (fire == float.MAX) fire = 0;
  }
 
+ // The way he'd choose now, as Softest counts it. Null with none.
+ ACR_KillWay SoftestWay()
+ {
+  float heaviest = 0;
+  foreach (ACR_KillWay weight : m_aWays) heaviest = Math.Max(heaviest, weight.m_fWeight);
+  ACR_KillWay best;
+  foreach (ACR_KillWay way : m_aWays)
+   if (way.m_fWeight >= heaviest * 0.3 && (!best || way.m_fFire < best.m_fFire)) best = way;
+  return best;
+ }
+
  // The weighted mean of metres under fire on his ways.
  float MeanFire()
  {

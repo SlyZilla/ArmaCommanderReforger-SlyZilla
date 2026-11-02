@@ -2237,11 +2237,13 @@ class ACR_BaseLines
 
  // Sites: stretches of 24-30 m along each line, a new one at a gap or a road. Each dressed behind. Comes
  // after the nests: gaps keep clear of them.
- static void Stretches(ACR_BaseWork work, ACR_BaseSurvey survey)
+ // 'firstLine': from this line on (a line laid after the rest, ACR_BaseRing.FinalWalk).
+ static void Stretches(ACR_BaseWork work, ACR_BaseSurvey survey, int firstLine = 0)
  {
   ACR_BaseDefenceKit kit = ACR_BaseDefences.Kit(work.m_sFaction);
   foreach (int l, ACR_BaseLine line : work.m_aLines)
   {
+   if (l < firstLine) continue;
    WalkGaps(work, line, l);
    RandomGenerator rng = ACR_Variety.For(string.Format("base stretch %1 %2", work.m_Base.m_sName, l));
    float target = 24 + rng.RandFloat01() * 6;
@@ -2397,6 +2399,14 @@ class ACR_BaseLines
   int levels = NEST_LEVELS;
   if (!SmallGunsOn()) levels = NEST_COMPACT;
   for (int level = s_iFirstNestLevelForTest; level < levels && made < most; level++) made = NestsAt(work, survey, most, level, made);
+ }
+
+ // One small gun position more, where it does most to him on the ways he walks now (ACR_BaseRing.FinalWalk, with the
+ // survey's kill ground the honest one for the look). How many went in.
+ static int SmallGun(ACR_BaseWork work, ACR_BaseSurvey survey)
+ {
+  if (!SmallGunsOn()) return 0;
+  return NestsAt(work, survey, 1, NEST_COMPACT, 0);
  }
 
  // Whether this gun stands in an emplacement built from parts rather than the game's ready-made nest: weighted
@@ -3220,7 +3230,7 @@ class ACR_BaseLines
  // Stretches that aren't plain high bags: a line that goes up first is hasty, low in places; one that comes later
  // has had time for nets. FIA makes do: low ones whenever. By the piece, seeded per town and line, so no two
  // lines are alike and no piece more stands than would anyway.
- static void DressLines(ACR_BaseWork work)
+ static void DressLines(ACR_BaseWork work, int firstLine = 0)
  {
   if (!DressOn()) return;
   bool fia = work.m_sFaction == "FIA";
@@ -3234,6 +3244,7 @@ class ACR_BaseLines
   }
   foreach (int l, ACR_BaseLine line : work.m_aLines)
   {
+   if (l < firstLine) continue;
    RandomGenerator rng = ACR_Variety.For(string.Format("base dress %1 %2", work.m_Base.m_sName, l));
    ResourceName swap = low;
    if (line.m_iTier > 1 && !fia) swap = camo;
@@ -3284,13 +3295,13 @@ class ACR_BaseLines
 
  // Out in front of a line with a road through it, either side of the road: what stops a vehicle going round the
  // gate. Czech hedgehogs for regulars, log barricades for FIA. As a line's wire is, a site of its own.
- static void Obstacles(ACR_BaseWork work, ACR_BaseSurvey survey)
+ static void Obstacles(ACR_BaseWork work, ACR_BaseSurvey survey, int firstLine = 0)
  {
   if (!ObstaclesOn()) return;
   bool fia = work.m_sFaction == "FIA";
   foreach (int l, ACR_BaseLine line : work.m_aLines)
   {
-   if (line.m_iTier > 2 || line.m_aLanes.IsEmpty()) continue;
+   if (l < firstLine || line.m_iTier > 2 || line.m_aLanes.IsEmpty()) continue;
    RandomGenerator rng = ACR_Variety.For(string.Format("base obstacles %1 %2", work.m_Base.m_sName, l));
    if (rng.RandFloat01() >= OBSTACLE_CHANCE) continue;
    ACR_BaseDefencePos pos = new ACR_BaseDefencePos();
@@ -3349,12 +3360,12 @@ class ACR_BaseLines
 
  // Wire in front of the lines (tier II): one site per line's middle part, a line of segments 7 m out,
  // where they fit, off the road and off a lane.
- static void Wire(ACR_BaseWork work, ACR_BaseSurvey survey)
+ static void Wire(ACR_BaseWork work, ACR_BaseSurvey survey, int firstLine = 0)
  {
   float length = ACR_Fortify.WireLength(survey.m_vCenter);
-  foreach (ACR_BaseLine line : work.m_aLines)
+  foreach (int l, ACR_BaseLine line : work.m_aLines)
   {
-   if (line.m_iTier > 2 || line.m_fLength < 25) continue;
+   if (l < firstLine || line.m_iTier > 2 || line.m_fLength < 25) continue;
    ACR_BaseDefencePos pos = new ACR_BaseDefencePos();
    pos.m_eKind = ACR_EBaseDefenceKind.WIRE;
    pos.m_vPos = line.m_vMiddle;
