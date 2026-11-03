@@ -225,6 +225,13 @@ class ACR_BaseWorks
   return null;
  }
 
+ // Lines of bags stand at this base (its first tier is up).
+ static bool LinesStand(ACR_Base base)
+ {
+  ACR_BaseWork work = Find(base);
+  return work && work.m_iTier >= 1 && !work.m_aLines.IsEmpty();
+ }
+
  static int TierOf(ACR_Base base)
  {
   ACR_BaseWork work = Find(base);
