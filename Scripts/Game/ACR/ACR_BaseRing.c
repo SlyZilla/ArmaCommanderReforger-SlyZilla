@@ -147,6 +147,7 @@ class ACR_BaseRing : Managed
  // -acrBaseFinalWalk 0: no walk against the finished plan, no last part on his softest way (FinalWalk).
  static bool FinalWalkOn() { return ACR_LogisticsRules.Choice("acrBaseFinalWalk", "1") != "0"; }
  static const int FINAL_LEAST = 4;      // pieces of tier I and II left: fewer, and only a small gun can go on
+ static const int FINAL_TRIES = 3;      // places tried for the line when one won't walk
 
  ACR_BaseSurvey m_Survey;
  protected ref RandomGenerator m_Luck;
@@ -1531,6 +1532,8 @@ class ACR_BaseRing : Managed
   int left = Math.Min(budgetOne + ACR_BaseLines.Budget(2, survey.m_iTown) - usedEarly, ACR_BaseLines.MOST_PIECES - usedAll);
   string did = "nothing more fits";
   int got;
+  int places;
+  int guns;
   ACR_KillWay way = kill.SoftestWay();
   if (way)
   {
@@ -1539,38 +1542,34 @@ class ACR_BaseRing : Managed
     array<ref ACR_RingRun> runs = {};
     array<int> seen = {};
     survey.m_Ring.WayLinesFor(kill, way, runs, seen, 0);
-    ACR_RingRun picked = ChooseOne(kill, work.m_Style, runs, usedEarly, budgetOne, usedEarly + left, "base ring last " + town);
-    if (picked)
+    places = runs.Count();
+    // A place whose line won't walk (a fence, a yard) is marked and the next is tried.
+    for (int attempt = 0; attempt < FINAL_TRIES && got == 0; attempt++)
     {
+     ACR_RingRun picked = ChooseOne(kill, work.m_Style, runs, usedEarly, budgetOne, usedEarly + left, string.Format("base ring last %1 %2", town, attempt));
+     if (!picked) break;
      array<ref ACR_RingRun> chosen = {};
      chosen.Insert(picked);
      got = BuildWanted(work, survey, kit, chosen, runs, left);
-     if (got > 0)
-     {
-      kill.Add(picked.m_Site);
-      for (int w = 1; w < picked.m_aWay.Count(); w++)
-      {
-       kill.AddBags(picked.m_aWay[w - 1], picked.m_aWay[w]);
-       survey.m_Kill.AddBags(picked.m_aWay[w - 1], picked.m_aWay[w]);
-      }
-      did = string.Format("a line of %1 pieces", got);
-     }
     }
+    if (got > 0) did = string.Format("a line of %1 pieces", got);
    }
    if (got == 0)
    {
     // The gun chooses its place by the honest ground.
     ACR_KillGround was = survey.m_Kill;
     survey.m_Kill = kill;
-    int guns = ACR_BaseLines.SmallGun(work, survey);
+    guns = ACR_BaseLines.SmallGun(work, survey);
     survey.m_Kill = was;
     if (guns > 0) did = "a small gun";
    }
-   kill.Solve();
+   // What stands now, measured from nothing as the tests measure it: Done's line is then the yardstick's own figure. (One
+   // more Solve on the old ground gave another figure: his walk hasn't settled after Measure's two, and the tests do two.)
+   if (got > 0 || guns > 0) kill = ACR_KillGround.Measure(work, survey);
   }
   float after;
   kill.Softest(after, ways);
-  PrintFormat("[ACR] BASEWORKS %1: walked in against the finished plan: the softest way %2 m under fire, %3 pieces left, %4 on it, now %5 m (%6 ms)", town, (int)softest, left, did, (int)after, System.GetTickCount() - started);
+  PrintFormat("[ACR] BASEWORKS %1: walked in against the finished plan: the softest way %2 m under fire, %3 pieces left, %4 places on it, %5 on it, now %6 m (%7 ms)", town, (int)softest, left, places, did, (int)after, System.GetTickCount() - started);
   kill.Done(town);
   return kill;
  }
