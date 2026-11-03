@@ -4319,9 +4319,11 @@ class ACR_Squad : Managed
  }
 
  // One man still aboard out, by the sweep's step (the drop's PushOutStillAboard, and a Get out
- // order's EnsureGetOut from its fourth check). True when an exit was taken.
+ // order's EnsureGetOut from its fourth check). True when an exit was taken. Never a player's
+ // body: his action queue, seat and position stay his (#186).
  protected bool SweepOut(ChimeraCharacter character, CompartmentAccessComponent access, int step)
  {
+  if (FindController(character) != 0) return false;
   // A seat whose exits are all refused (the LAV-25's CARGO seats, #23: animated, teleport,
   // no-door and the game's own eject alike, 26 Oct): what the game says of him, then his vehicle
   // action queue cleared (a stuck action blocks every new one) and out by teleport on the fourth
@@ -4602,7 +4604,7 @@ class ACR_Squad : Managed
   foreach (AIAgent agent : agents)
   {
    ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
-   if (!character || !character.IsInVehicle() || !ACR_Respawn.IsAlive(character)) continue;
+   if (!character || !character.IsInVehicle() || !ACR_Respawn.IsAlive(character) || FindController(character) != 0) continue; // a player gets out himself (#186)
    CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
    if (!access) continue;
    stillIn++;
