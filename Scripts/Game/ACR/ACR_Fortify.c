@@ -1187,6 +1187,7 @@ class ACR_Fortify
    comp.ACR_SetCompositionSpawned(true);
   }
   ACR_Navmesh.RebuildAfterSpawn(piece);
+  ACR_FieldOfFire.ForPiece(piece); // the men behind it see out
   return piece;
  }
 

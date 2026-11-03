@@ -50,6 +50,7 @@ crew|-acrCrewTest 1|120
 skillbbb|-acrSkillBBBTest 1|120
 manners|-acrMannersTest 1|540
 mannersgetout|-acrMannersGetOutTest 1|150
+fieldsoffire|-acrFieldsOfFireTest 1|120
 crewold|-acrCrewOldTest 1|120
 bbbaim|-acrBbbAimTest 1|3000
 bbbsuppress|-acrBbbSuppressTest 1|1200
