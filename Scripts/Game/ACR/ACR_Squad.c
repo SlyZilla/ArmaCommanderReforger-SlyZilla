@@ -825,6 +825,7 @@ class ACR_Squad : Managed
  // Every new order: a fresh serial, and nobody (yet) to credit it to.
  protected void NewOrder()
  {
+  m_Evade = null; // a new order replaces an evasion and the order it would have put back
   if (m_fReservedLoads > 0 || OrderState() == ACR_EOrderState.BUILD_FOB) CancelEstablishFob();
   // By payment, not state: Halt sets its own state first.
   if (RoadblockPending() || OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) CancelRoadblock("replaced by a new order");
@@ -2474,6 +2475,7 @@ class ACR_Squad : Managed
    return;
   }
   WatchBoardingTarget();
+  EvadeTick(now);
   HuntTick(now);
   ACR_GunHold.Tick(this);
   if (m_Qrf) ACR_Qrf.Tick(this, now);
@@ -4586,6 +4588,8 @@ class ACR_Squad : Managed
   array<IEntity> vehicles = {};
   GetVehicles(vehicles);
   if (vehicles.IsEmpty()) return false;
+  if (!m_bPulledOver && PullOverFirst(vehicles[0])) return true;
+  m_bPulledOver = false;
   NewOrder();
   ClearPlans();
   m_bRegrouping = false;
@@ -4597,6 +4601,190 @@ class ACR_Squad : Managed
   GetGame().GetCallqueue().Remove(EnsureGetOut);
   if (!s_bNoGetOutFallback) GetGame().GetCallqueue().CallLater(EnsureGetOut, 4000, false);
   return true;
+ }
+
+ // Off the road before getting out (3 Nov 2026, the user: "when getting out of a vehicle they should try
+ // to move the vehicle off the road or to the side of the road instead of getting out in the middle of
+ // the road"): an AI driver of ours on a road, not under fire, first drives forward onto the verge on his
+ // right (BBB_PullOver: brakes, handbrake on), then everyone gets out. Under fire, with nowhere to pull
+ // over to, or the option off: out where it stands, as before. Off by default until it has been
+ // played: -acrPullOver 1 turns it on (it needs Better Battle Buddies' BBB_PullOver).
+ static bool s_bTestPullOver; // srv:manners runs it without the host option
+ protected bool m_bPulledOver;
+ protected int m_iPullOverSerial;
+ static bool PullOverOn()
+ {
+  if (s_bTestPullOver) return true;
+  string value;
+  return System.GetCLIParam("acrPullOver", value) && value == "1";
+ }
+
+ protected bool PullOverFirst(IEntity vehicle)
+ {
+  if (!PullOverOn() || !vehicle || !vehicle.FindComponent(CarControllerComponent)) return false;
+  if (KnownEnemies(250) > 0 || BBB_Transport.VehicleHitRecently(vehicle, 10000))
+  {
+   PrintFormat("[ACR] GET OUT %1: under fire, out where it stands", m_Name);
+   return false;
+  }
+  ChimeraCharacter driver = DriverOf(vehicle);
+  if (!driver || !BBB_Traffic.AIDriver(driver) || FindSquadOfSoldier(driver) != this)
+  {
+   PrintFormat("[ACR] GET OUT %1: no AI driver of ours, out where it stands", m_Name);
+   return false;
+  }
+  // The game's own driver takes it there (driving by hand only crept at 1.5 km/h: srv:mannersgetout).
+  vector spot;
+  if (!BBB_PullOver.VergeSpot(vehicle, 1, spot))
+  {
+   PrintFormat("[ACR] GET OUT %1: no pull-over (%2), out where it stands", m_Name, BBB_PullOver.s_sWhyNot);
+   return false;
+  }
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  if (!IssueWaypoint(WP_MOVE, spot, 3, true)) return false;
+  m_iPullOverSerial = m_iOrderSerial;
+  m_fPullOverStart = GetGame().GetWorld().GetWorldTime();
+  m_vPullOverSpot = spot;
+  SetOrder("Pulling over", ACR_EOrderState.GET_OUT);
+  m_OrderKind = ACR_EOrderKind.GET_OUT;
+  GetGame().GetCallqueue().CallLater(PullOverWatch, 1000, false, m_iOrderSerial);
+  PrintFormat("[ACR] GET OUT %1: pulling over onto the verge at %2 first", m_Name, spot);
+  return true;
+ }
+
+ // Out once it stands on the verge (or after PULL_OVER_MAX_MS), with the handbrake on.
+ static const float PULL_OVER_MAX_MS = 15000;
+ protected float m_fPullOverStart;
+ protected vector m_vPullOverSpot;
+ void PullOverWatch(int serial)
+ {
+  if (serial != m_iOrderSerial || serial != m_iPullOverSerial || !m_Group) return;
+  array<IEntity> vehicles = {};
+  GetVehicles(vehicles);
+  if (vehicles.IsEmpty()) return;
+  IEntity vehicle = vehicles[0];
+  float speed;
+  if (vehicle.GetPhysics()) speed = vehicle.GetPhysics().GetVelocity().Length();
+  bool there = vector.DistanceXZ(vehicle.GetOrigin(), m_vPullOverSpot) < 5 && speed < 1;
+  bool late = GetGame().GetWorld().GetWorldTime() - m_fPullOverStart > PULL_OVER_MAX_MS;
+  if (!there && !late)
+  {
+   GetGame().GetCallqueue().CallLater(PullOverWatch, 1000, false, serial);
+   return;
+  }
+  CarControllerComponent car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
+  if (car) car.SetPersistentHandBrake(true);
+  if (there) BBB_PullOver.s_iParked++;
+  string how = "pull-over took too long";
+  if (there) how = "on the verge";
+  PrintFormat("[ACR] GET OUT %1: %2, getting out", m_Name, how);
+  PulledOver(serial);
+ }
+
+ // The pull-over is done: out now (unless a new order came meanwhile).
+ void PulledOver(int serial)
+ {
+  if (serial != m_iOrderSerial || serial != m_iPullOverSerial || !m_Group) return;
+  m_bPulledOver = true;
+  GetOut();
+ }
+
+ protected ACR_Squad FindSquadOfSoldier(IEntity soldier)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return null;
+  return manager.FindSquadBySoldier(soldier);
+ }
+
+ // ---------------------------------------------------------------- getting away from armour
+ // 3 Nov 2026, the user: "the drivers should not swerve out of the way when it's an enemy vehicle,
+ // especially when one of them is armed, i.e. the one not armed should try to get away". BBB_Traffic asks
+ // (through BBB_Hooks.Evade) for an unarmed vehicle we drive whose crew sees an armed enemy vehicle: it
+ // drives EVADE_M away from it (the nearest road point there), a forced move, and its order is put back
+ // once nothing armed has been seen for EVADE_CLEAR_MS (at most EVADE_MAX_MS). Not while a player leads
+ // or rides with the squad, nor for a vehicle standing with no move order. Off by default until it has
+ // been played: -acrEvadeArmour 1 turns it on (BBB asks only with its own bbbEvadeArmour on too).
+ static bool s_bTestEvade; // srv:manners runs it without the host option
+ static const float EVADE_M = 300;
+ static const float EVADE_CLEAR_MS = 15000;
+ static const float EVADE_MAX_MS = 60000;
+ protected ref ACR_OrderSnapshot m_Evade;
+ protected float m_fEvadeStart;
+ protected float m_fEvadeClearAt;
+ protected vector m_vEvadeThreat;
+
+ bool Evade(IEntity vehicle, vector threat)
+ {
+  string value;
+  if (!s_bTestEvade && !(System.GetCLIParam("acrEvadeArmour", value) && value == "1")) return false;
+  if (!vehicle || !m_Group || m_Evade || HasPlayer() || m_Commander != 0) return false;
+  float speed;
+  if (vehicle.GetPhysics()) speed = vehicle.GetPhysics().GetVelocity().Length();
+  if (OrderState() != ACR_EOrderState.MOVE && speed < 2) return false;
+  vector at = vehicle.GetOrigin();
+  vector away = at - threat;
+  away[1] = 0;
+  if (away.LengthSq() < 1) return false;
+  away.Normalize();
+  vector target = at + away * EVADE_M;
+  vector road;
+  if (BBB_Terrain.RoadPointNear(target, 150, road)) target = road;
+  else if (BBB_Terrain.IsWaterAt(target)) return false;
+  ACR_OrderSnapshot snapshot = SnapshotOrder();
+  if (!IssueWaypoint(WP_MOVE, target, 25, true)) return false;
+  m_Evade = snapshot;
+  m_vEvadeThreat = threat;
+  float now = GetGame().GetWorld().GetWorldTime();
+  m_fEvadeStart = now;
+  m_fEvadeClearAt = now + EVADE_CLEAR_MS;
+  SetOrder("Getting away", ACR_EOrderState.MOVE);
+  PrintFormat("[ACR] EVADE %1: unarmed, an armed enemy vehicle %2 m away: gets away to %3", m_Name, Math.Round(vector.DistanceXZ(at, threat)), target);
+  return true;
+ }
+
+ // The threat lies near the straight way from 'from' to 'to' (within 150 m of it, between the two).
+ static bool PastThreat(vector from, vector to, vector threat)
+ {
+  vector way = to - from;
+  way[1] = 0;
+  float len2 = vector.Dot(way, way);
+  if (len2 < 1) return false;
+  vector rel = threat - from;
+  rel[1] = 0;
+  float t = vector.Dot(rel, way) / len2;
+  if (t < 0 || t > 1.2) return false;
+  vector closest = from + way * t;
+  return vector.DistanceXZ(closest, threat) < 150;
+ }
+
+ protected void EvadeTick(float now)
+ {
+  if (!m_Evade) return;
+  array<IEntity> vehicles = {};
+  GetVehicles(vehicles);
+  IEntity vehicle;
+  if (!vehicles.IsEmpty()) vehicle = vehicles[0];
+  vector threat;
+  if (vehicle && BBB_Traffic.ArmedEnemySeen(vehicle, threat))
+  {
+   m_fEvadeClearAt = now + EVADE_CLEAR_MS;
+   m_vEvadeThreat = threat;
+  }
+  if (vehicle && now < m_fEvadeClearAt && now - m_fEvadeStart < EVADE_MAX_MS) return;
+  ACR_OrderSnapshot back = m_Evade;
+  m_Evade = null;
+  // Its order leads past the armed vehicle (within 150 m of the way there): it waits instead of driving
+  // back into it; the commander or the player gives the next order.
+  if (vehicle && PastThreat(vehicle.GetOrigin(), back.m_Target, m_vEvadeThreat))
+  {
+   Halt("Waiting: armed enemy vehicle on the way");
+   PrintFormat("[ACR] EVADE %1: clear, but its order leads past the armed vehicle: waiting", m_Name);
+   return;
+  }
+  RestoreOrder(back);
+  PrintFormat("[ACR] EVADE %1: clear, back to its order (%2)", m_Name, m_Order);
  }
 
  // The game's Get out only asks each passenger to leave. Passengers in a vehicle
@@ -4866,5 +5054,17 @@ class ACR_Squad : Managed
   GetGame().GetCallqueue().Remove(EnsureBoardVehicle);
   GetGame().GetCallqueue().Remove(WakeCrew);
   GetGame().GetCallqueue().Remove(SweepOutForJob);
+ }
+}
+
+// Get out once the pull-over is done (ACR_Squad.PullOverFirst).
+class ACR_PullOverThenGetOut : BBB_PullOverListener
+{
+ ACR_Squad m_Squad;
+ int m_iSerial;
+
+ override void OnPullOverEnded(IEntity vehicle, bool parked)
+ {
+  if (m_Squad) m_Squad.PulledOver(m_iSerial);
  }
 }

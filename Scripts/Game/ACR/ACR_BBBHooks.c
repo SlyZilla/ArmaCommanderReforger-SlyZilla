@@ -191,6 +191,13 @@ class ACR_BBBHooks : BBB_Hooks
   return SquadOf(group) != null;
  }
 
+ // An unarmed vehicle of one of our squads sees an armed enemy vehicle (BBB_Traffic): it gets away.
+ override bool Evade(SCR_AIGroup group, IEntity vehicle, vector threat)
+ {
+  ACR_Squad squad = SquadOf(group);
+  return squad && squad.Evade(vehicle, threat);
+ }
+
  // Illumination is allowed for autonomous combat squads, never player command,
  // quiet travel, transport, regroup or a host-owned flanking maneuver.
  override bool AllowFlares(SCR_AIGroup group)
