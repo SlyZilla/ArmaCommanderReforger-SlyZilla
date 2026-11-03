@@ -243,7 +243,12 @@ class ACR_StartingUnit : GenericEntity
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Group riding in the vehicle (optional)", "et")]
  ResourceName m_sPassengers;
 
- static ref array<ACR_StartingUnit> s_All = {};
+ static ref array<ACR_StartingUnit> s_All;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+ }
  ACR_Base m_MovedTo; // runtime: a skirmish layout put this side's HQ at another base
 
  void ACR_StartingUnit(IEntitySource src, IEntity parent)

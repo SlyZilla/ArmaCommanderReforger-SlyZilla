@@ -12,18 +12,31 @@ class ACR_Setup
  protected static bool s_bWanted;
  protected static bool s_bStarted;
  protected static float s_fFirstPlayerAt = -1;
- protected static ref map<int, string> s_Sent = new map<int, string>();
+ protected static ref map<int, string> s_Sent;
  // Layout preview (aca-f07 editor, step 1): the bases the chosen battlefield will have, sent to
  // the host's map as base markers while the phase lasts.
  protected static string s_sPreviewSig;
- static ref array<vector> s_PreviewPos = {};
- static ref array<string> s_PreviewNames = {};
- protected static ref array<string> s_PreviewOwners = {};
- protected static ref array<string> s_PreviewDetails = {};
- protected static ref array<float> s_PreviewRadii = {};
- protected static ref array<float> s_PreviewWeights = {}; // quick start split (ACR_QuickStart.Weight)
- protected static ref array<bool> s_PreviewHidden = {};
- protected static ref map<int, string> s_PreviewSent = new map<int, string>();
+ static ref array<vector> s_PreviewPos;
+ static ref array<string> s_PreviewNames;
+ protected static ref array<string> s_PreviewOwners;
+ protected static ref array<string> s_PreviewDetails;
+ protected static ref array<float> s_PreviewRadii;
+ protected static ref array<float> s_PreviewWeights; // quick start split (ACR_QuickStart.Weight)
+ protected static ref array<bool> s_PreviewHidden;
+ protected static ref map<int, string> s_PreviewSent;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sent = new map<int, string>();
+  s_PreviewPos = {};
+  s_PreviewNames = {};
+  s_PreviewOwners = {};
+  s_PreviewDetails = {};
+  s_PreviewRadii = {};
+  s_PreviewWeights = {};
+  s_PreviewHidden = {};
+  s_PreviewSent = new map<int, string>();
+ }
 
  static bool Wanted()
  {

@@ -275,7 +275,12 @@ class ACR_FactionSelection
   }
  }
 
- protected static ref map<int, string> s_PlayableSent = new map<int, string>();
+ protected static ref map<int, string> s_PlayableSent;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_PlayableSent = new map<int, string>();
+ }
 
  // Server, every second once the pair is applied: each player's game learns the pair once.
  static void SyncClients()

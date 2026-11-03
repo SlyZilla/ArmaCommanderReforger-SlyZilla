@@ -76,7 +76,12 @@ class ACR_ContentSocket : Managed
 
  // ---------------------------------------------------------------- used by ACA
 
- protected static ref map<ResourceName, ref array<ResourceName>> s_GroupSlots = new map<ResourceName, ref array<ResourceName>>();
+ protected static ref map<ResourceName, ref array<ResourceName>> s_GroupSlots;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_GroupSlots = new map<ResourceName, ref array<ResourceName>>();
+ }
 
  // Puts Soldier()'s swaps into a formation: the listed soldiers, or the group prefab's own members
  // when the list is empty. False (list untouched) when nothing was swapped.

@@ -43,7 +43,12 @@ class ACR_Wings
  static const float GUN_ROOM = 2.6;     // m round a gun or post its bags make way
  static const float GUN_FIRE_HALF = 1.6; // m either side of a gun's line of fire, out to ACR_Fortify.FIRE_CLEAR
  static int s_iWorstMs;                 // tests: the most a work's wings have cost to plan
- protected static ref ACR_BaseWork s_NoWork = new ACR_BaseWork();
+ protected static ref ACR_BaseWork s_NoWork;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_NoWork = new ACR_BaseWork();
+ }
  protected static int s_iStop;
 
  static bool On()

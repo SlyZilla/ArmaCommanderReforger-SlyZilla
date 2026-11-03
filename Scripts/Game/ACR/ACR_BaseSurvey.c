@@ -107,9 +107,16 @@ class ACR_BaseSurvey : Managed
  protected ref array<int> m_aBins = {};
 
  static int s_iTraces;                    // line-of-fire traces (tests, the log)
- protected static ref array<IEntity> s_aWalls = {};
- protected static ref array<IEntity> s_aWorks = {};
- protected static ref array<IEntity> s_aRocks = {};
+ protected static ref array<IEntity> s_aWalls;
+ protected static ref array<IEntity> s_aWorks;
+ protected static ref array<IEntity> s_aRocks;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aWalls = {};
+  s_aWorks = {};
+  s_aRocks = {};
+ }
 
  // ---------------------------------------------------------------- sectors
 

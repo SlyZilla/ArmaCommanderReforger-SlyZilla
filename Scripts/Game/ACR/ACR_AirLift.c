@@ -26,7 +26,12 @@ class ACR_LandingZone
  // Up to count spots, nearest the centre first. Returns how many were found.
  // Searches that found nothing, remembered for a while (Jacob 18 Oct: a failed search over flat
  // forest took up to 4.7 s and the AI commander repeated it for every long move).
- static ref map<string, float> s_Failed = new map<string, float>();
+ static ref map<string, float> s_Failed;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Failed = new map<string, float>();
+ }
  static const float FAILED_MEMORY_MS = 120000;
  static void Reset() { s_Failed.Clear(); }
 
@@ -471,13 +476,20 @@ class ACR_AirLift : ACR_SupportRun
  static float UNLOAD_WAIT_MS = 25000;       // then anyone still aboard is put out
  static const float TIME_LIMIT_MS = 900000;
 
- static ref array<ACR_AirLift> s_Active = {};   // weak: a finished lift drops out by itself
+ static ref array<ACR_AirLift> s_Active;   // weak: a finished lift drops out by itself
 
  // Strategic multi-squad air assault wave (aca-airlift-wave): allow up to 3 squads to launch
  // in the same wave within 15 seconds of the wave's first squad before triggering cooldown.
  // Kept per side: one shared wave let the other side's call (often its AI) end ours mid-wave.
- static ref map<string, float> s_mWaveUntil = new map<string, float>();
- static ref map<string, int> s_mWaveCount = new map<string, int>();
+ static ref map<string, float> s_mWaveUntil;
+ static ref map<string, int> s_mWaveCount;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Active = {};
+  s_mWaveUntil = new map<string, float>();
+  s_mWaveCount = new map<string, int>();
+ }
  static const int MAX_WAVE_SQUADS = 3;
 
  static void Reset()

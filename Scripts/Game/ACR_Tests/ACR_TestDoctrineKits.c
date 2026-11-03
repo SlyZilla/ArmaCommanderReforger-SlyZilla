@@ -25,7 +25,12 @@ class ACR_TestDoctrineKits
  protected static int s_iStep = -1;
  protected static int s_iStepAt;
  protected static int s_iPositionsBefore;
- protected static ref array<int> s_Bought = {}; // each entry's purchases before the kit
+ protected static ref array<int> s_Bought; // each entry's purchases before the kit
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Bought = {};
+ }
  protected static int s_iTruck;         // the truck price given back (Blitz, when it swapped)
  protected static string s_sCarrier = "";
  protected static bool s_bHeadStart;    // Raider: its intel had the head start right after the kit

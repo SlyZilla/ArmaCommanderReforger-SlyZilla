@@ -27,12 +27,18 @@ class ACR_Skirmish : GenericEntity
  [Attribute("", UIWidgets.EditBox, "HQ per side as faction=base, separated by semicolons, e.g. US=Airbase; USSR=Power Plant")]
  string m_sHQs;
 
- static ref array<ACR_Skirmish> s_All = {};
+ static ref array<ACR_Skirmish> s_All;
 
  // Server state of the applied layout.
  protected static bool s_bApplied;
  static ACR_Skirmish s_Active;
- protected static ref array<string> s_PadSides = {};
+ protected static ref array<string> s_PadSides;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+  s_PadSides = {};
+ }
 
  void ACR_Skirmish(IEntitySource src, IEntity parent)
  {

@@ -4,9 +4,16 @@ class ACR_TestLiftBoarding
 {
  static ref ACR_AirLift s_Lift;
  static SCR_AIGroup s_Group;
- static ref array<vector> s_Spots = {};
- static ref array<ChimeraCharacter> s_Overflow = {};
- static ref array<vector> s_OverflowStart = {};
+ static ref array<vector> s_Spots;
+ static ref array<ChimeraCharacter> s_Overflow;
+ static ref array<vector> s_OverflowStart;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Spots = {};
+  s_Overflow = {};
+  s_OverflowStart = {};
+ }
  static float s_fNear;
  static float s_fForce;
  static bool s_bFinished;

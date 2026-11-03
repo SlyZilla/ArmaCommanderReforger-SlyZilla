@@ -37,9 +37,9 @@ class ACR_Garrison
  static const float BAGS_REACH = 30;  // a garrison order with no house to be had takes bags this close
  static const float BAGS_WALK = 250;  // men this far from places behind bags go there each on his own, not as a group
 
- protected static ref map<SCR_AIGroup, ref array<IEntity>> s_Posts = new map<SCR_AIGroup, ref array<IEntity>>();
- protected static ref map<IEntity, ref array<ref ACR_GarrisonSpot>> s_Survey = new map<IEntity, ref array<ref ACR_GarrisonSpot>>();
- protected static ref array<IEntity> s_aFound = {};
+ protected static ref map<SCR_AIGroup, ref array<IEntity>> s_Posts;
+ protected static ref map<IEntity, ref array<ref ACR_GarrisonSpot>> s_Survey;
+ protected static ref array<IEntity> s_aFound;
  protected static IEntity s_Building; // the building a ceiling trace must hit
  static int s_iNoHead, s_iNoRoof, s_iNoMesh, s_iNoView, s_iNoWall; // survey rejections (log)
  static bool s_bDebugViews; // tests: print what blocks views
@@ -285,11 +285,11 @@ class ACR_Garrison
  // game hands out the posts afresh.
  static int STUCK_LIMIT = 18;
  static const int MAX_REPLANS = 6;
- protected static ref map<IEntity, int> s_Stuck = new map<IEntity, int>();
- protected static ref map<IEntity, vector> s_LastPos = new map<IEntity, vector>();
- protected static ref map<SCR_AIGroup, int> s_Replans = new map<SCR_AIGroup, int>();
- protected static ref map<SCR_AIGroup, float> s_Tight = new map<SCR_AIGroup, float>();
- protected static ref array<vector> s_aBad = {};
+ protected static ref map<IEntity, int> s_Stuck;
+ protected static ref map<IEntity, vector> s_LastPos;
+ protected static ref map<SCR_AIGroup, int> s_Replans;
+ protected static ref map<SCR_AIGroup, float> s_Tight;
+ protected static ref array<vector> s_aBad;
 
  // Per match (ACR_Manager.Stop): a restart on the same map inherited the blacklisted post spots.
  static void Reset()
@@ -444,8 +444,22 @@ class ACR_Garrison
  // once a second (from the manager).
  static const int STRAGGLER_LIMIT = 8;
  static const float STRAGGLER_REACH = 60;
- protected static ref map<IEntity, vector> s_StragglerAt = new map<IEntity, vector>();
- protected static ref map<IEntity, int> s_StragglerFor = new map<IEntity, int>();
+ protected static ref map<IEntity, vector> s_StragglerAt;
+ protected static ref map<IEntity, int> s_StragglerFor;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Posts = new map<SCR_AIGroup, ref array<IEntity>>();
+  s_Survey = new map<IEntity, ref array<ref ACR_GarrisonSpot>>();
+  s_aFound = {};
+  s_Stuck = new map<IEntity, int>();
+  s_LastPos = new map<IEntity, vector>();
+  s_Replans = new map<SCR_AIGroup, int>();
+  s_Tight = new map<SCR_AIGroup, float>();
+  s_aBad = {};
+  s_StragglerAt = new map<IEntity, vector>();
+  s_StragglerFor = new map<IEntity, int>();
+ }
  static int s_iWidened; // tests
 
  protected static void TakeInStragglers(SCR_AIGroup group, SCR_DefendWaypoint waypoint)

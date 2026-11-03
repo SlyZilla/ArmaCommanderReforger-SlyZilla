@@ -4196,7 +4196,12 @@ class ACR_AICommander : Managed
  // squad of an attack gets a line turned off the main approach: the least-used line first, then
  // the one nearest the squad's own side. A line whose staging point ends up (water, other enemy
  // bases) closer than APPROACH_SEPARATION degrees to another line's point is skipped.
- static ref array<float> s_aApproachTurns = {0, 60, -60, 115, -115};
+ static ref array<float> s_aApproachTurns;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aApproachTurns = {0, 60, -60, 115, -115};
+ }
  static const float APPROACH_SEPARATION = 40;
 
  static vector Turned(vector dir, float degrees)

@@ -63,7 +63,7 @@ class ACR_Insurgency
  static const float DANGER_RADIUS = 250;
  static const float ROAD_REACH = 120;     // a loss this close to a road counts (not one inside a pocket's yard)
  static const float CLEAR_QUIET_MS = 60000; // the sweeper there this long without contact: cleared
- static ref array<ref ACR_DangerRoad> s_aRoads = {};
+ static ref array<ref ACR_DangerRoad> s_aRoads;
 
  // ---------------------------------------------------------------- allegiance
 
@@ -189,8 +189,15 @@ class ACR_Insurgency
  static const float TIP_AGAIN_MS = 300000; // about the same squad
  static const float HIDEOUT_TAKEN = 10;    // a hideout destroyed, for each side with men there
  static const float HIDEOUT_TAKEN_REACH = 600;
- static ref array<ref ACR_FIASide> s_aSides = {};
- protected static ref array<string> s_aFriends = {};
+ static ref array<ref ACR_FIASide> s_aSides;
+ protected static ref array<string> s_aFriends;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aRoads = {};
+  s_aSides = {};
+  s_aFriends = {};
+ }
  protected static bool s_bLeaning;
  protected static int s_iSeconds;
 

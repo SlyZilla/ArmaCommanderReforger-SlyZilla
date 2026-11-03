@@ -371,7 +371,12 @@ class ACR_TestSetup
  // secure non-HQ base, not the Airbase HQ. Logs the five best candidates.
  // -acrSetupGenTest 1 (server, Kolguyev, ~40 s): the layout preview during setup (aca-f07).
  static const int GEN_CHECKS = 25;
- protected static ref array<string> s_PreviewNames = {};
+ protected static ref array<string> s_PreviewNames;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_PreviewNames = {};
+ }
  static bool GenWanted() { return System.IsCLIParam("acrSetupGenTest"); }
  static void RunGen(int second)
  {

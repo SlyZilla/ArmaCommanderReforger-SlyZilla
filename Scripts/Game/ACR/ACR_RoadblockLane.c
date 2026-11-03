@@ -33,7 +33,12 @@ class ACR_RoadblockLane
  static const float STEP_CLEAR = 2.0;
  static const float STEP_ALONG = 15;
  static const float STEP_PRIORITY = 91;      // over attacking (90); danger and medical still outrank it
- static ref map<IEntity, ref SCR_AIMoveIndividuallyBehavior> s_mSteps = new map<IEntity, ref SCR_AIMoveIndividuallyBehavior>();
+ static ref map<IEntity, ref SCR_AIMoveIndividuallyBehavior> s_mSteps;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_mSteps = new map<IEntity, ref SCR_AIMoveIndividuallyBehavior>();
+ }
  static int s_iStepsForTest;                 // step-clear moves ordered
 
  // The lane's centre line across the road (local X) at local Z.

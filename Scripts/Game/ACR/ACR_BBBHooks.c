@@ -256,7 +256,12 @@ class ACR_BBBHooks : BBB_Hooks
   }
   return intent;
  }
- protected static ref map<SCR_AIGroup, string> s_mIntentSeen = new map<SCR_AIGroup, string>();
+ protected static ref map<SCR_AIGroup, string> s_mIntentSeen;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_mIntentSeen = new map<SCR_AIGroup, string>();
+ }
  static void ResetIntents() { s_mIntentSeen.Clear(); }
 
  protected BBB_EIntent IntentOf(ACR_Squad squad, out vector centre, out float radius, out string why)

@@ -8,10 +8,18 @@ class ACR_TestWorksShots
  static const float STEP_S = 4; // for the world to stream in round the camera
  static const int STYLE_LINES = 2;
  static const string TOWNS = "Bovemont Base,Ugoldar Base,Ugoldar Harbor 2,Saint-Philippe,Airport Base";
- protected static ref array<ACR_Base> s_aBases = {};
- protected static ref array<vector> s_aEyes = {};
- protected static ref array<vector> s_aAngles = {};
- protected static ref array<string> s_aNames = {};
+ protected static ref array<ACR_Base> s_aBases;
+ protected static ref array<vector> s_aEyes;
+ protected static ref array<vector> s_aAngles;
+ protected static ref array<string> s_aNames;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aBases = {};
+  s_aEyes = {};
+  s_aAngles = {};
+  s_aNames = {};
+ }
  protected static CameraBase s_Camera;
  protected static int s_iNext;
  protected static int s_iAt;

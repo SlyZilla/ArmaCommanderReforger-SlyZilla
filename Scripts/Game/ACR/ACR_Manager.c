@@ -1504,6 +1504,12 @@ class ACR_Manager : Managed
 
 modded class ArmaReforgerScripted
 {
+ // Runs in CreateGame, before any world or entity: ACA's statics exist from the first frame.
+ void ArmaReforgerScripted()
+ {
+  ACR_StaticInit.Run();
+ }
+
  protected override void OnBeforeWorldCleanup()
  {
   ACR_Manager.UnhookGroups();

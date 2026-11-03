@@ -8,7 +8,12 @@ class ACR_TestSpawnHeap
  static const ResourceName GRAVEL = "{19A3C48FC2665A3F}Prefabs/Props/Construction/GravelPile_01/GravelPile_01_large.et";
  static const ResourceName HANGAR = "{CEB1F71D46592F3C}Prefabs/Structures/Airport/Hangar_01/Hangar_01.et";
  static const ResourceName US_RIFLEMAN = "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et";
- static ref array<IEntity> s_Heaps = {};
+ static ref array<IEntity> s_Heaps;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Heaps = {};
+ }
  static SCR_AIGroup s_Group;
  static vector s_vSand;
  static vector s_vGravel;

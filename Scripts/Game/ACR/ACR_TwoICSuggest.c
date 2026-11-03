@@ -42,20 +42,33 @@ class ACR_TwoICSuggest
  static const int SITES_SHOWN = 3;
  static const float SITE_JOB_MS = 60000;     // an Establish FOB search gives up after this
  static const float FOB_HERE_MS = 250;       // a player's cursor checks, at most this often
- protected static ref array<ref ACR_TwoICSuggestion> s_Live = {};
- protected static ref map<string, float> s_NextLook = new map<string, float>();
- protected static ref map<string, float> s_Dismissed = new map<string, float>();   // faction|front -> until
- protected static ref map<string, string> s_Searching = new map<string, string>(); // faction -> front
- protected static ref array<ref ACR_TwoICSiteJob> s_Jobs = {};
- protected static ref map<int, float> s_FobHereAt = new map<int, float>();
- protected static ref array<ref ACR_TwoICSent> s_Sent = {};
+ protected static ref array<ref ACR_TwoICSuggestion> s_Live;
+ protected static ref map<string, float> s_NextLook;
+ protected static ref map<string, float> s_Dismissed;   // faction|front -> until
+ protected static ref map<string, string> s_Searching; // faction -> front
+ protected static ref array<ref ACR_TwoICSiteJob> s_Jobs;
+ protected static ref map<int, float> s_FobHereAt;
+ protected static ref array<ref ACR_TwoICSent> s_Sent;
  static const int RING_SENT = 4;             // a sent truck's site (after RING_KIND)
  static const float TRUCK_SPEED = 8;         // m/s, for "about 4 min"
  static const float TRUCK_THERE = 60;        // m: the truck is at the site, building
  static const float TRUCK_BOUGHT_MS = 30000; // a bought truck whose deploy can't be tracked: another waits this long
  static const float TRUCK_DEPLOY_MS = 60000; // a tracked one that never deploys stops blocking after this
- protected static ref map<string, float> s_TruckBoughtAt = new map<string, float>();
- protected static ref map<string, string> s_TruckBought = new map<string, string>(); // faction -> the bought unit's name
+ protected static ref map<string, float> s_TruckBoughtAt;
+ protected static ref map<string, string> s_TruckBought; // faction -> the bought unit's name
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Live = {};
+  s_NextLook = new map<string, float>();
+  s_Dismissed = new map<string, float>();
+  s_Searching = new map<string, string>();
+  s_Jobs = {};
+  s_FobHereAt = new map<int, float>();
+  s_Sent = {};
+  s_TruckBoughtAt = new map<string, float>();
+  s_TruckBought = new map<string, string>();
+ }
 
  // ---------------------------------------------------------------- suggesting
  // Each second for a side the 2IC is on for (ACR_Manager, after the requests).

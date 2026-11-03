@@ -183,24 +183,42 @@ class ACR_TestGenerate
  }
 
  // Compare actual non-landmark geography, ignoring array order and faction swaps.
- protected static ref array<string> s_Footprints = {};
- protected static ref array<string> s_Pairs = {};
- protected static ref array<ref array<string>> s_Objectives = {};
- protected static ref array<ref array<string>> s_Regions = {};
+ protected static ref array<string> s_Footprints;
+ protected static ref array<string> s_Pairs;
+ protected static ref array<ref array<string>> s_Objectives;
+ protected static ref array<ref array<string>> s_Regions;
  protected static bool s_BatchValid, s_BatchRepeat, s_BatchSafe;
  protected static float s_MinOverlap;
  protected static int s_MaxPlanMs;
  protected static ref ACR_GenAccess s_BatchAccess;
  protected static bool s_BatchReachable;
- protected static ref array<string> s_FullIncome = {}, s_FlashShapes = {}, s_FixedIncome = {}, s_TacticalShapes = {};
- protected static ref array<int> s_FlashCounts = {};
+ protected static ref array<string> s_FullIncome, s_FlashShapes, s_FixedIncome, s_TacticalShapes;
+ protected static ref array<int> s_FlashCounts;
  protected static bool s_FullValid, s_FlashValid, s_BudgetValid, s_OpeningValid;
- protected static ref array<ref ACR_GenSite> s_Fixture = {};
- protected static ref array<ACR_GenSite> s_FixtureHQs = {};
+ protected static ref array<ref ACR_GenSite> s_Fixture;
+ protected static ref array<ACR_GenSite> s_FixtureHQs;
  protected static int s_FixtureValue, s_FixtureEarners;
- protected static ref array<ref ACR_GenSite> s_Local = {};
- protected static ref array<ACR_GenSite> s_LocalHQs = {};
- protected static ref array<string> s_LocalShapes = {};
+ protected static ref array<ref ACR_GenSite> s_Local;
+ protected static ref array<ACR_GenSite> s_LocalHQs;
+ protected static ref array<string> s_LocalShapes;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Footprints = {};
+  s_Pairs = {};
+  s_Objectives = {};
+  s_Regions = {};
+  s_FullIncome = {};
+  s_FlashShapes = {};
+  s_FixedIncome = {};
+  s_TacticalShapes = {};
+  s_FlashCounts = {};
+  s_Fixture = {};
+  s_FixtureHQs = {};
+  s_Local = {};
+  s_LocalHQs = {};
+  s_LocalShapes = {};
+ }
 
  protected static void BeginBatch()
  {

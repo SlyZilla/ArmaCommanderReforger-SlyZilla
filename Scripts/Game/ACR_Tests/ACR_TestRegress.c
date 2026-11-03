@@ -1666,7 +1666,12 @@ class ACR_TestRegress
  static SCR_AIGroup s_ReinforceGroup;
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
 
- static ref array<IEntity> s_Found = {};
+ static ref array<IEntity> s_Found;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Found = {};
+ }
  static bool CollectVehicle(IEntity e)
  {
   if (Vehicle.Cast(e)) s_Found.Insert(e);

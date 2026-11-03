@@ -41,7 +41,12 @@ class ACR_Roadblock : Managed
 
 class ACR_Roadblocks : Managed
 {
-	static ref array<ref ACR_Roadblock> s_aRoadblocks = {};
+	static ref array<ref ACR_Roadblock> s_aRoadblocks;
+	// Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+	static void ACR_InitStatics()
+	{
+		s_aRoadblocks = {};
+	}
 	static const float WORKS_CLEARANCE = 25; // m from a Fortify position (and half that past a minefield's size)
 
 	// Per match (ACR_Manager.Stop): the last mission's roadblocks fed the next one's siting and AI.

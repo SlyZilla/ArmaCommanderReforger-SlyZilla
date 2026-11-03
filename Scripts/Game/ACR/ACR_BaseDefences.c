@@ -202,11 +202,11 @@ class ACR_BaseDefences : Managed
 	static int s_iBlocked;
 	static int s_iNoSight;
 
-	static ref array<IEntity> s_aPreview = {};
-	protected static ref array<IEntity> s_aFound = {};
+	static ref array<IEntity> s_aPreview;
+	protected static ref array<IEntity> s_aFound;
 	protected static int s_iSeed = 1;
-	protected static ref array<IEntity> s_aSolid = {};
-	static ref map<string, int> s_mBlockers = new map<string, int>();   // what blocked pieces (tuning)
+	protected static ref array<IEntity> s_aSolid;
+	static ref map<string, int> s_mBlockers;   // what blocked pieces (tuning)
 	protected static IEntity s_Ignore;                                   // WorldClear: the post's own building
 	static const float TABLE_HALF_X = 0.67;
 	static const float TABLE_HALF_Z = 0.4;
@@ -1162,7 +1162,16 @@ class ACR_BaseDefences : Managed
 		return Math.Max(ground, ground + 1.8 - 2.3 * f);
 	}
 
-	protected static ref array<IEntity> s_aFences = {};
+	protected static ref array<IEntity> s_aFences;
+	// Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+	static void ACR_InitStatics()
+	{
+		s_aPreview = {};
+		s_aFound = {};
+		s_aSolid = {};
+		s_mBlockers = new map<string, int>();
+		s_aFences = {};
+	}
 	protected static bool CollectFence(IEntity e)
 	{
 		if (!e || !e.GetPhysics()) return true;

@@ -16,9 +16,16 @@ class ACR_SpawnPoints
  static const int PRIORITY_FOB = 2;
  static const int PRIORITY_BASE = 1;
 
- protected static ref map<ACR_Base, SCR_SpawnPoint> s_Points = new map<ACR_Base, SCR_SpawnPoint>();
- protected static ref map<SCR_SpawnPoint, ACR_Base> s_Bases = new map<SCR_SpawnPoint, ACR_Base>(); // reverse of s_Points
- protected static ref map<string, string> s_Locks = new map<string, string>(); // player identity -> side
+ protected static ref map<ACR_Base, SCR_SpawnPoint> s_Points;
+ protected static ref map<SCR_SpawnPoint, ACR_Base> s_Bases; // reverse of s_Points
+ protected static ref map<string, string> s_Locks; // player identity -> side
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Points = new map<ACR_Base, SCR_SpawnPoint>();
+  s_Bases = new map<SCR_SpawnPoint, ACR_Base>();
+  s_Locks = new map<string, string>();
+ }
  protected static bool s_bTimerSet;
 
  // One of ours (not a world-placed home point): readers that find HQs by spawn point skip these.

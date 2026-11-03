@@ -9,7 +9,7 @@
 // with no pads (since f5b8fc8): nothing to buy, and the door gunners fly in from off the map.
 class ACR_TestPads
 {
- static ref array<IEntity> s_Found = {};
+ static ref array<IEntity> s_Found;
  static bool Collect(IEntity e)
  {
   if (!e || !e.GetPrefabData()) return true;
@@ -64,7 +64,7 @@ class ACR_TestPads
   }
   if (printed == 0) PrintFormat("[ACR] PADS %1: no open spot within %2 m", base.m_sName, reach);
  }
- static ref array<vector> s_Spots = {};
+ static ref array<vector> s_Spots;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -213,8 +213,16 @@ class ACR_TestPads
   }
  }
 
- static ref map<string, float> s_Lift = new map<string, float>();
- static ref map<string, float> s_Health = new map<string, float>();
+ static ref map<string, float> s_Lift;
+ static ref map<string, float> s_Health;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Found = {};
+  s_Spots = {};
+  s_Lift = new map<string, float>();
+  s_Health = new map<string, float>();
+ }
 
  static void CallBoth()
  {

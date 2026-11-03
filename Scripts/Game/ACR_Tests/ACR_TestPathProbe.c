@@ -20,12 +20,20 @@ class ACR_TestPathProbe
  static const int COUNT = 6;
  static const ResourceName TRUCK = "{92264FF932676C13}Prefabs/Vehicles/Wheeled/M923A1/M923A1_ammo.et";
  static const vector TRUCK_AT = "4960 28.4 11880"; // by the Airbase
- static ref array<string> s_aNames = {"Probe Drop", "Probe East", "Probe South", "Probe West", "Probe Rode", "Probe Plain"};
- static ref array<float> s_aBest = {100000, 100000, 100000, 100000, 100000, 100000};
- static ref array<bool> s_aStarted = {false, false, false, false, false, false};
+ static ref array<string> s_aNames;
+ static ref array<float> s_aBest;
+ static ref array<bool> s_aStarted;
  static IEntity s_Truck;
  static vector s_Centre;
- static ref map<string, int> s_mNear = new map<string, int>();
+ static ref map<string, int> s_mNear;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aNames = {"Probe Drop", "Probe East", "Probe South", "Probe West", "Probe Rode", "Probe Plain"};
+  s_aBest = {100000, 100000, 100000, 100000, 100000, 100000};
+  s_aStarted = {false, false, false, false, false, false};
+  s_mNear = new map<string, int>();
+ }
 
  static void Run(int second)
  {

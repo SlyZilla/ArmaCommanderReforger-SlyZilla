@@ -79,10 +79,18 @@ class ACR_DoctrineKits
  static const int KIT_WAIT_LOG_MS = 5000;
  static const float CARRIER_NEAR = 0.15; // Blitz: carriers within 15% of the cheapest's price are as good (ACR_Variety)
 
- protected static ref map<string, string> s_Sides = new map<string, string>(); // faction -> the kit due (a doctrine key, as the first prototype's)
- protected static ref map<string, ref ACR_KitTruck> s_Trucks = new map<string, ref ACR_KitTruck>(); // Blitz: the truck left out
- static ref map<string, ref ACR_KitRecord> s_Given = new map<string, ref ACR_KitRecord>();
- protected static ref map<string, int> s_Starting = new map<string, int>(); // faction -> the squads its starting units make
+ protected static ref map<string, string> s_Sides; // faction -> the kit due (a doctrine key, as the first prototype's)
+ protected static ref map<string, ref ACR_KitTruck> s_Trucks; // Blitz: the truck left out
+ static ref map<string, ref ACR_KitRecord> s_Given;
+ protected static ref map<string, int> s_Starting; // faction -> the squads its starting units make
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sides = new map<string, string>();
+  s_Trucks = new map<string, ref ACR_KitTruck>();
+  s_Given = new map<string, ref ACR_KitRecord>();
+  s_Starting = new map<string, int>();
+ }
  protected static float s_fWaitSince = -1;
  protected static float s_fWaitLogged;
 

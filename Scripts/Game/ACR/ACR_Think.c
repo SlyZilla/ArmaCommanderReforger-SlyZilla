@@ -124,7 +124,12 @@ class ACR_Think
  // 0 off; otherwise 1 + side * 2 + page.
  protected static int s_iMode;
  protected static Widget s_Root;
- protected static ref array<TextWidget> s_Texts = {};
+ protected static ref array<TextWidget> s_Texts;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Texts = {};
+ }
  protected static const int MAX_LINES = 50;
  protected static const ResourceName TEXT_LAYOUT = "{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout";
 

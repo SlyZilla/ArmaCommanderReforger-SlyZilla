@@ -12,15 +12,25 @@ class ACR_TestWings
  static const int MOST_SITES = 40;
  static const int UPGRADES = 14;
  static const float STEP_S = 4;
- protected static ref array<ACR_Fortification> s_aForts = {};
- protected static ref array<ACR_Roadblock> s_aBlocks = {};
+ protected static ref array<ACR_Fortification> s_aForts;
+ protected static ref array<ACR_Roadblock> s_aBlocks;
  protected static int s_iFailedAt;
  protected static int s_iStage;
  protected static ref ACR_Fortification s_Gone;
- protected static ref array<IEntity> s_aGoneWings = {};
- protected static ref array<vector> s_aEyes = {};
- protected static ref array<vector> s_aAngles = {};
- protected static ref array<string> s_aNames = {};
+ protected static ref array<IEntity> s_aGoneWings;
+ protected static ref array<vector> s_aEyes;
+ protected static ref array<vector> s_aAngles;
+ protected static ref array<string> s_aNames;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aForts = {};
+  s_aBlocks = {};
+  s_aGoneWings = {};
+  s_aEyes = {};
+  s_aAngles = {};
+  s_aNames = {};
+ }
  protected static CameraBase s_Camera;
  protected static int s_iNext;
  protected static int s_iAt;

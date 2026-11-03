@@ -16,7 +16,12 @@ class ACR_TestTyphoonPurchases
 {
  static int tick;
  static IEntity unowned;
- static ref array<ref ACR_TyphoonPurchaseRow> rows = {};
+ static ref array<ref ACR_TyphoonPurchaseRow> rows;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  rows = {};
+ }
 
  static void DumpDefaults(IEntity entity)
  {
