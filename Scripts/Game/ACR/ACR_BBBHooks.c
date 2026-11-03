@@ -7,6 +7,21 @@ class ACR_BBBHooks : BBB_Hooks
 
  void ACR_BBBHooks(ACR_Manager manager) { m_Manager = manager; }
 
+ // ACA's every-second skill and spotting (ACR_AISkill.Apply) goes through here and lets Better Battle
+ // Buddies' own values through: the skill and spotting speed BBB's Settings tab sets for every AI
+ // soldier (BBB_SpawnValues) stand in for the mode's (-acrSkill, -acrReaction). A mission's pin and
+ // a side's or profile's own values still come first (ACR_AISkill), and BBB's hot AI multiplies its
+ // spotting on top in its own update either way. Before, the mode's values went over BBB's every
+ // second, so BBB's Settings tab never reached our squads.
+ static void ModeSkill(SCR_AICombatComponent combat, inout int skill, inout float reaction)
+ {
+  if (!combat || combat.m_bACRSkillPinned) return;
+  int bbbSkill;
+  if (BBB_SpawnValues.Skill(bbbSkill)) skill = bbbSkill;
+  float bbbReaction;
+  if (BBB_SpawnValues.Perception(bbbReaction)) reaction = bbbReaction;
+ }
+
  protected ACR_Squad SquadOf(SCR_AIGroup group) { return m_Manager.FindSquadByGroup(group); }
 
  override void GetGroups(notnull array<SCR_AIGroup> groups)

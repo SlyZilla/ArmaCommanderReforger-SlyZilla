@@ -6,6 +6,8 @@
 //  - the first profile in his side's ACR_FactionSettings whose prefab his body is (or inherits
 //    from), then the first whose prefab his group is;
 //  - his side's own skill and reaction scale;
+//  - the skill and spotting speed Better Battle Buddies' Settings tab sets, when it sets them
+//    (ACR_BBBHooks.ModeSkill);
 //  - the mode's skill and reaction (m_iAISkill/m_fAIPerception, -acrSkill/-acrReaction).
 // A side or profile can also lift a share of its soldiers one skill level (a few hard men among
 // militia), rolled once per soldier. Vanilla reads skill only as its named levels: any other value
@@ -85,6 +87,7 @@ class ACR_AISkill
  {
   if (!combat) return;
   if (!combat.m_bACRSkillResolved) Resolve(combat, group, factionKey);
+  ACR_BBBHooks.ModeSkill(combat, skill, reaction); // BBB's Settings tab stands in for the mode's
   if (combat.m_iACRSkill > 0) skill = combat.m_iACRSkill;
   skill = Level(skill);
   if (combat.m_bACRStronger) skill = StepUp(skill);

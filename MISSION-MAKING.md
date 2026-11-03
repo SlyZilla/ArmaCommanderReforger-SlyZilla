@@ -318,7 +318,9 @@ side and per unit here instead. A soldier gets, first to last:
 2. the first `m_aAISkillProfiles` row whose prefab he is (or inherits from), else the first whose
    prefab his group is;
 3. his side's `m_iAISkill`, `m_fAIReactionScale` and `m_iAIStrongerShare`;
-4. the mode's skill and reaction.
+4. the skill and spotting speed set in Better Battle Buddies' Settings tab (or its preset or
+   launch parameters `-bbbAISkill`, `-bbbAIPerception`), when they are set there;
+5. the mode's skill and reaction.
 
 A profile row (`ACR_AISkillProfile`) has `m_sName` (for your own reference), `m_aPrefabs` (group or
 soldier prefabs), `m_iSkill` (`NONE` = the side's), `m_fReactionScale` (0 = the side's) and
