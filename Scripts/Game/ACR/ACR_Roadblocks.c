@@ -548,6 +548,9 @@ class ACR_Roadblocks : Managed
 			rb.m_Defenders.m_iReserve = defenders;
 		}
 
+		// Its gun and its holders see out: the bushes round them go (ACR_FieldOfFire).
+		if (rb.m_Turret) ACR_FieldOfFire.ForGun(rb.m_Turret);
+		ACR_FieldOfFire.Round(rb.m_vPost, ACR_FieldOfFire.POST_M, "roadblock post");
 		s_aRoadblocks.Insert(rb);
 		PrintFormat("[ACR] ROADBLOCK spawned for %1 at %2 (%3, turret=%4, lane: %5 pieces moved, post %6 m off, layout record %7 bytes)", factionKey, pos, Name(type), rb.m_Turret != null, laneMoved, vector.DistanceXZ(rb.m_vPost, pos), ACR_StructureLayout.Bytes(LayoutSize(ent)));
 		return rb;
