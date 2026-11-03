@@ -888,6 +888,7 @@ class ACR_AICommander : Managed
 {
  static const int TICK_SECONDS = 15;          // STRATEGY_TICK
  static const float DEFENSE_DISTANCE = 450;   // squads this close count as defending a base
+ static const float WORKS_FRONT = 1500;       // m: an enemy base this near a base with lines standing makes it a front base (KeepsWorksManned)
  static const float THREAT_DISTANCE = 400;    // enemies this far past the ring threaten it
  static const float STAGING_DISTANCE = 210;   // staging point outside the target ring
  static const float STAGING_CLEARANCE = 350;  // m kept between a staging point and any other enemy base ring
@@ -1855,6 +1856,48 @@ class ACR_AICommander : Managed
  void AssignDefendersForTest() { AssignDefenders(); }
 
  // The AI-led squads of ours holding a roadblock or position within 'reach' of 'pos' (added to 'into').
+ // A squad at one of our bases with lines standing and an enemy base within WORKS_FRONT: it stays behind them
+ // rather than go and defend another base, unless that one is outnumbered already; and the last squad there
+ // stays whatever the call. The user, 2 Nov: Chotain Base's holding squad was sent to Villeneuve as the QRF 25
+ // minutes before the attack on Chotain Base, and nobody manned its works when it came; 3 Nov (pn30): a threat
+ // of 5 at a sawmill, 'outnumbered' by one man, took both of Chotain Base's squads. Said once per squad and base.
+ protected bool KeepsWorksManned(ACR_Squad squad, ACR_Base calling, bool outnumbered)
+ {
+  if (!squad) return false;
+  vector at = PositionOf(squad);
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base == calling || base.m_sOwner != m_sFaction || base.m_bRetired || !ACR_BaseWorks.LinesStand(base)) continue;
+   if (vector.DistanceXZ(at, base.GetOrigin()) > DEFENSE_DISTANCE) continue;
+   ACR_Base enemy = NearestEnemyBase(base.GetOrigin());
+   if (!enemy || vector.DistanceXZ(enemy.GetOrigin(), base.GetOrigin()) > WORKS_FRONT) continue;
+   bool last = LastSquadAt(squad, base);
+   if (outnumbered && !last) continue;
+   ACR_Base said;
+   if (!m_KeptBehindLines.Find(squad, said) || said != calling)
+   {
+    m_KeptBehindLines.Set(squad, calling);
+    string why = "rather than defend";
+    if (last) why = "as its last squad, rather than defend";
+    Say(string.Format("[ACR] AI %1: %2 stays behind the lines at %3 (%4 is %5 m off) %6 %7 (threat %8, defence %9)", m_sFaction, squad.GetName(), base.m_sName, enemy.m_sName, (int)vector.DistanceXZ(enemy.GetOrigin(), base.GetOrigin()), why, calling.m_sName, ThreatTo(calling), DefenceOf(calling)));
+   }
+   return true;
+  }
+  return false;
+ }
+
+ // No other squad of ours with men alive stands within DEFENSE_DISTANCE of the base (a player's counts).
+ protected bool LastSquadAt(ACR_Squad squad, ACR_Base base)
+ {
+  foreach (ACR_Squad other : m_Manager.m_Squads)
+  {
+   if (!other || other == squad || !other.GetFaction() || other.GetFaction().GetFactionKey() != m_sFaction) continue;
+   if (other.CountAlive() <= 0 || !other.GetAnchor() || other.m_bMortar || other.Aircraft()) continue;
+   if (vector.DistanceXZ(PositionOf(other), base.GetOrigin()) <= DEFENSE_DISTANCE) return false;
+  }
+  return true;
+ }
+
  protected void HoldersNear(vector pos, float reach, notnull array<ACR_Squad> into)
  {
   foreach (ACR_Squad holder : m_Manager.m_Squads)
@@ -1919,6 +1962,7 @@ class ACR_AICommander : Managed
     ACR_Squad squad = pool[k];
     if (vector.DistanceXZ(PositionOf(squad), base.GetOrigin()) > DEFENSE_DISTANCE * 3) { k++; continue; }
     if (IsSupportTeam(squad) && free.Count() > 1) { k++; continue; }
+    if (KeepsWorksManned(squad, base, outnumbered)) { k++; continue; }
     bool holding = IsHolder(squad);
     if (holding) NoteLeftPost(squad);
     squad.SetMode(ACR_EMoveMode.FAST);
@@ -1935,7 +1979,7 @@ class ACR_AICommander : Managed
    }
    // Only a reserve still posted: one sent into an attack (or a sweep, a resupply) meanwhile kept
    // m_ReserveSquad, and was then also committed here and pulled between the two jobs.
-   if (needed > 0 && m_ReserveSquad && m_ReserveSquad.m_iAITask == ACR_EAITask.POSTED && !m_ReserveSquad.HasPlayer() && m_ReserveSquad.CountAlive() > 0 && m_ReserveSquad.KnownEnemies(250) == 0)
+   if (needed > 0 && m_ReserveSquad && m_ReserveSquad.m_iAITask == ACR_EAITask.POSTED && !m_ReserveSquad.HasPlayer() && m_ReserveSquad.CountAlive() > 0 && m_ReserveSquad.KnownEnemies(250) == 0 && !KeepsWorksManned(m_ReserveSquad, base, outnumbered))
    {
     ACR_Squad qrf = m_ReserveSquad;
     m_ReserveSquad = null;
@@ -1954,6 +1998,7 @@ class ACR_AICommander : Managed
    foreach (ACR_Squad holder : holders)
    {
     if (needed <= 0) break;
+    if (KeepsWorksManned(holder, base, outnumbered)) continue;
     NoteLeftPost(holder);
     holder.SetMode(ACR_EMoveMode.FAST);
     Travel(holder, base.GetOrigin(), true, 0);
@@ -2785,6 +2830,7 @@ class ACR_AICommander : Managed
  // squads below the doctrine's m_fRefitRatio, 0.5 standard, walk back to a quiet base to refill.)
  static const float REFIT_GIVE_UP_MS = 900000;   // a walk back to refill that hasn't arrived by then is dropped
  protected ACR_Base m_ReserveBase;
+ protected ref map<ACR_Squad, ACR_Base> m_KeptBehindLines = new map<ACR_Squad, ACR_Base>(); // KeepsWorksManned: said once per base called
  protected ACR_Squad m_ReserveSquad;
 
  bool ReserveFits(ACR_Base base)
