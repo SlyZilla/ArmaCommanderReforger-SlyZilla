@@ -48,6 +48,7 @@ getoutold|-acrGetOutOldTest 1|110
 mortar|-acrMortarTest 1|360
 crew|-acrCrewTest 1|120
 skillbbb|-acrSkillBBBTest 1|120
+fieldsoffire|-acrFieldsOfFireTest 1|120
 crewold|-acrCrewOldTest 1|120
 bbbaim|-acrBbbAimTest 1|3000
 bbbsuppress|-acrBbbSuppressTest 1|1200
