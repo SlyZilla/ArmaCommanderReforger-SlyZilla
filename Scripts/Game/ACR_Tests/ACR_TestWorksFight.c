@@ -20,16 +20,22 @@ class ACR_TestWorksFight
  static void ACR_InitStatics()
  {
   s_Sampler = new ACR_BagSampler();
+  s_aLineSamples = {};
+  s_aLineSees = {};
+  s_aLineBlindBags = {};
+  s_aLineBlindOther = {};
+  s_aLineFront = {};
+  s_aLineDist = {};
  }
  protected static bool s_bShots;
  protected static bool s_bListening;
  // Per line of bags: why a man on it can't see the enemy (the bags, or the ground and trees), and where the enemy is.
- protected static ref array<int> s_aLineSamples = {};
- protected static ref array<int> s_aLineSees = {};
- protected static ref array<int> s_aLineBlindBags = {};
- protected static ref array<int> s_aLineBlindOther = {};
- protected static ref array<int> s_aLineFront = {};
- protected static ref array<float> s_aLineDist = {};
+ protected static ref array<int> s_aLineSamples;
+ protected static ref array<int> s_aLineSees;
+ protected static ref array<int> s_aLineBlindBags;
+ protected static ref array<int> s_aLineBlindOther;
+ protected static ref array<int> s_aLineFront;
+ protected static ref array<float> s_aLineDist;
  static const float ON_LINE = 6;      // m from a piece of a line: the man is on that line
 
  static void Run(int second)
