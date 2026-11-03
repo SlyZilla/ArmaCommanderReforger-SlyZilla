@@ -3,9 +3,16 @@
 // vehicles for its map without scanning the world.
 class ACR_Vehicles
 {
- protected static ref array<IEntity> s_All = {};
- protected static ref map<IEntity, string> s_Owner = new map<IEntity, string>();
- protected static ref map<IEntity, ResourceName> s_CustomCrew = new map<IEntity, ResourceName>();
+ protected static ref array<IEntity> s_All;
+ protected static ref map<IEntity, string> s_Owner;
+ protected static ref map<IEntity, ResourceName> s_CustomCrew;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+  s_Owner = new map<IEntity, string>();
+  s_CustomCrew = new map<IEntity, ResourceName>();
+ }
 
  static void Register(IEntity vehicle)
  {

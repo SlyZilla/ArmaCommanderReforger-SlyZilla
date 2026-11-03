@@ -63,17 +63,26 @@ class ACR_Generator
 {
  protected static bool s_bBuilt;
  static int s_iSeed;
- static ref array<ref ACR_GenSite> s_Sites = {};   // the layout in play (after Build)
- protected static ref array<IEntity> s_Found = {};
+ static ref array<ref ACR_GenSite> s_Sites;   // the layout in play (after Build)
+ protected static ref array<IEntity> s_Found;
 
  protected static ref array<ref ACR_GenSite> s_Surveyed;  // the map's sites, read once
  protected static ref ACR_GenAccess s_Access;
- protected static ref array<ref ACR_GenSite> s_NamePlaces = {}; // named hills need not become CPs
+ protected static ref array<ref ACR_GenSite> s_NamePlaces; // named hills need not become CPs
 
  // Layout editor (aca-f07): bases the host moved on the setup map, by stable site ID. They belong
  // to one seed and size; another seed or size ignores them.
- static ref map<string, vector> s_Moves = new map<string, vector>();
- protected static ref array<string> s_Deleted = {};
+ static ref map<string, vector> s_Moves;
+ protected static ref array<string> s_Deleted;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sites = {};
+  s_Found = {};
+  s_NamePlaces = {};
+  s_Moves = new map<string, vector>();
+  s_Deleted = {};
+ }
  protected static int s_iMovesSeed;
  protected static int s_iMovesSize;
  static int s_iMovesVersion;

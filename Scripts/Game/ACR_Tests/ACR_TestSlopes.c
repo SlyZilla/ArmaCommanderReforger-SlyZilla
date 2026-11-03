@@ -14,9 +14,9 @@ class ACR_TestSlopes
  static const ResourceName HUMVEE = "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et";
  static const ResourceName TRUCK = "{92264FF932676C13}Prefabs/Vehicles/Wheeled/M923A1/M923A1_ammo.et";
 
- static ref array<vector> s_Bottom = {};
- static ref array<vector> s_Top = {};
- static ref array<float> s_Grade = {};
+ static ref array<vector> s_Bottom;
+ static ref array<vector> s_Top;
+ static ref array<float> s_Grade;
  static vector s_KPos, s_KAhead, s_KDest;
  static float s_fKCross;
  static bool s_bK;
@@ -30,9 +30,19 @@ class ACR_TestSlopes
  static float s_fSGrade;
  static bool s_bS;
  static int s_iShiftStart;
- static ref array<float> s_aGBest = {0, 0, 0, 0};
- static ref array<float> s_aGEnd = {0, 0, 0, 0};
- static ref array<int> s_aGShifts = {0, 0, 0, 0};
+ static ref array<float> s_aGBest;
+ static ref array<float> s_aGEnd;
+ static ref array<int> s_aGShifts;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Bottom = {};
+  s_Top = {};
+  s_Grade = {};
+  s_aGBest = {0, 0, 0, 0};
+  s_aGEnd = {0, 0, 0, 0};
+  s_aGShifts = {0, 0, 0, 0};
+ }
 
  static void Run(int second)
  {

@@ -4,7 +4,12 @@
 // widget is registered here and removed when the mode stops (ACR_Manager.Stop).
 class ACR_Hud
 {
- protected static ref array<Widget> s_Widgets = {};
+ protected static ref array<Widget> s_Widgets;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Widgets = {};
+ }
  protected static Widget s_Root;
 
  // A fullscreen frame gives positioned HUD children frame slots and keeps

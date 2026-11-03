@@ -95,7 +95,12 @@ class ACR_Mortars : Managed
 
  protected ACR_Manager m_Manager;
  ref array<ref ACR_MortarTeam> m_Teams = {};
- protected static ref map<ResourceName, float> s_MaxRange = new map<ResourceName, float>();
+ protected static ref map<ResourceName, float> s_MaxRange;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_MaxRange = new map<ResourceName, float>();
+ }
  static int s_iLastFired = -1; // rounds the last finished mission fired (tests)
 
  void ACR_Mortars(ACR_Manager manager) { m_Manager = manager; }

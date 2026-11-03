@@ -85,7 +85,12 @@ class ACR_SquadAI
  // Fast (a forced order), and a squad handed back still on Fast forced every order of the player's
  // after it (pn11, 27 Oct: a LAV's turret crewman got out at a gate on the player's move; BBB
  // keeps crews aboard only for orders below the player's priority level).
- protected static ref map<ACR_Squad, int> s_ModeBefore = new map<ACR_Squad, int>();
+ protected static ref map<ACR_Squad, int> s_ModeBefore;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_ModeBefore = new map<ACR_Squad, int>();
+ }
  static void Reset() { s_ModeBefore.Clear(); }
 
  static void Hand(ACR_Squad squad, bool keepTask = false)

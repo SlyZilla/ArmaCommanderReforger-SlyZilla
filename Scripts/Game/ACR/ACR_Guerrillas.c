@@ -62,10 +62,10 @@ class ACR_Guerrillas
  static const int MAX_HOUSE_LOOKS = 30;  // building searches at the start
  static const float AMBUSH_HQ_CLEAR = 900; // m from a starting base for an ambush (houses: as the pockets)
 
- static ref array<vector> s_aRoads = {};  // ambush sites to pick from (road points)
- static ref array<float> s_aWeights = {}; // ... and how many of the routes pass there
- static ref array<vector> s_aHouses = {}; // buildings to pick from
- static ref array<vector> s_aStarts = {}; // the starting bases (held at Apply)
+ static ref array<vector> s_aRoads;  // ambush sites to pick from (road points)
+ static ref array<float> s_aWeights; // ... and how many of the routes pass there
+ static ref array<vector> s_aHouses; // buildings to pick from
+ static ref array<vector> s_aStarts; // the starting bases (held at Apply)
  protected static float s_fHouseClear;     // m from a starting base for a house
 
  static const float HIDEOUT_CLUSTER = 60;     // m: buildings this close to one another make a group
@@ -434,8 +434,18 @@ class ACR_Guerrillas
  static const float TRAFFIC_REACH = 250;  // a stretch: the counts this close to a point
  static const float RESITE_MIN = 4;       // a stretch needs this many sightings to draw a cell
  static const float MOVING = 3;           // m/s: a vehicle this fast is travelling
- static ref map<int, float> s_mTraffic = new map<int, float>();
- static ref map<int, vector> s_mTrafficAt = new map<int, vector>();
+ static ref map<int, float> s_mTraffic;
+ static ref map<int, vector> s_mTrafficAt;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aRoads = {};
+  s_aWeights = {};
+  s_aHouses = {};
+  s_aStarts = {};
+  s_mTraffic = new map<int, float>();
+  s_mTrafficAt = new map<int, vector>();
+ }
  protected static int s_iSeconds;
 
  static void NoteTraffic(vector pos, float weight = 1)

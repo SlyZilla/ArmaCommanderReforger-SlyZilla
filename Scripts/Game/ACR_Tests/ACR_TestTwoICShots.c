@@ -19,7 +19,12 @@ class ACR_TestTwoICShots
  protected static string s_sTruck = "";
  protected static int s_iPings = -1;
  protected static int s_iSentId;
- protected static RplId s_ShowId = RplId.Invalid();
+ protected static RplId s_ShowId;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_ShowId = RplId.Invalid();
+ }
 
  static void Run(ACR_TestHarness h, int tick)
  {

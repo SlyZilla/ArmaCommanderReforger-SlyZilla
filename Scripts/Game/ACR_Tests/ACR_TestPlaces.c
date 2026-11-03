@@ -3,7 +3,12 @@
 // Lines: [ACR] PLACE <type> <x> <z> <name> | <entity name> | <prefab>
 class ACR_TestPlaces
 {
- static ref array<IEntity> s_Found = {};
+ static ref array<IEntity> s_Found;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Found = {};
+ }
 
  static bool Collect(IEntity e)
  {

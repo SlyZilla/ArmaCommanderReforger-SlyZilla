@@ -30,7 +30,12 @@ class ACR_DefenderPost : Managed
 
 class ACR_Defenders
 {
- static ref array<ref ACR_DefenderPost> s_Posts = {};
+ static ref array<ref ACR_DefenderPost> s_Posts;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Posts = {};
+ }
  static const float SPAWN_RANGE = 400;   // as ACR_BaseSystem's garrisons
  static const float DESPAWN_RANGE = 450;
 

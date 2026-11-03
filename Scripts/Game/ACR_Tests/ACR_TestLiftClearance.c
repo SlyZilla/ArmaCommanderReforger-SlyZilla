@@ -40,8 +40,14 @@ class ACR_ClearanceTestHeli : ACR_LiftHeli
 
 class ACR_TestLiftClearance
 {
- static ref array<ref ACR_ClearanceTestHeli> s_Helis = {};
- static ref array<vector> s_Starts = {};
+ static ref array<ref ACR_ClearanceTestHeli> s_Helis;
+ static ref array<vector> s_Starts;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Helis = {};
+  s_Starts = {};
+ }
  static float s_fLast;
  static float s_fMinClearance = 10000;
  static float s_fMaxDamage;

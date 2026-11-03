@@ -90,16 +90,29 @@ class ACR_TwoIC
  static const int ROW_2IC = 1;        // the 2IC runs it
  static const int ROW_LOCKED = 2;     // a player leads it: his
  static const int ROW_CAN_HAND = 4;   // it may be handed to the 2IC
- protected static ref map<string, int> s_Share = new map<string, int>();
- protected static ref array<int> s_PanelOpen = {};
- protected static ref array<int> s_PanelFresh = {};
- protected static ref map<string, ref ACR_TwoICPanelData> s_Panels = new map<string, ref ACR_TwoICPanelData>();
- protected static ref map<string, float> s_PanelAt = new map<string, float>();
- protected static ref map<string, ref array<ref ACR_TwoICLine>> s_Channel = new map<string, ref array<ref ACR_TwoICLine>>();
- protected static ref map<string, int> s_Revision = new map<string, int>();
+ protected static ref map<string, int> s_Share;
+ protected static ref array<int> s_PanelOpen;
+ protected static ref array<int> s_PanelFresh;
+ protected static ref map<string, ref ACR_TwoICPanelData> s_Panels;
+ protected static ref map<string, float> s_PanelAt;
+ protected static ref map<string, ref array<ref ACR_TwoICLine>> s_Channel;
+ protected static ref map<string, int> s_Revision;
  protected static int s_iNextId = 1;
- protected static ref map<string, ref ACR_TwoICCard> s_Cards = new map<string, ref ACR_TwoICCard>();
- protected static ref map<string, float> s_CardAt = new map<string, float>();
+ protected static ref map<string, ref ACR_TwoICCard> s_Cards;
+ protected static ref map<string, float> s_CardAt;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Share = new map<string, int>();
+  s_PanelOpen = {};
+  s_PanelFresh = {};
+  s_Panels = new map<string, ref ACR_TwoICPanelData>();
+  s_PanelAt = new map<string, float>();
+  s_Channel = new map<string, ref array<ref ACR_TwoICLine>>();
+  s_Revision = new map<string, int>();
+  s_Cards = new map<string, ref ACR_TwoICCard>();
+  s_CardAt = new map<string, float>();
+ }
 
  static bool On() { return ACR_SquadAI.TwoIC(); }
 

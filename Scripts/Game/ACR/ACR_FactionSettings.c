@@ -170,7 +170,12 @@ class ACR_FactionSettings : GenericEntity
   return null;
  }
 
- static ref array<ACR_FactionSettings> s_All = {};
+ static ref array<ACR_FactionSettings> s_All;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+ }
 
  void ACR_FactionSettings(IEntitySource src, IEntity parent)
  {
@@ -246,7 +251,7 @@ class ACR_FactionCatalog
  // prefab with the same role/name suffix, which covers RHS group variants.
  // Results are cached (Jacob 18 Oct, Kolguyev with RHS: the mortar range ring resolved its shell
  // through a full catalog scan about four times a second, logging a fallback line each time).
- static ref map<string, ResourceName> s_Resolved = new map<string, ResourceName>();
+ static ref map<string, ResourceName> s_Resolved;
  static void ForgetResolved() { s_Resolved.Clear(); s_Crewmen.Clear(); }
 
  static ResourceName ResolvePrefab(string factionKey, ResourceName source, EEntityCatalogType type)
@@ -409,7 +414,13 @@ class ACR_FactionCatalog
   return ACR_ContentSocket.Get().AllowsCatalogEntry(factionKey, type, prefab);
  }
 
- protected static ref map<string, ResourceName> s_Crewmen = new map<string, ResourceName>();
+ protected static ref map<string, ResourceName> s_Crewmen;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Resolved = new map<string, ResourceName>();
+  s_Crewmen = new map<string, ResourceName>();
+ }
 
  // The standard subunit's crewman (helicopter pilot for helicopters), "" when the faction
  // has no standard subunit or no such soldier.

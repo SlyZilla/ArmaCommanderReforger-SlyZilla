@@ -62,8 +62,14 @@ class ACR_TwoICRequests
  static const float TAKE_RADIUS = 150;  // m round a base's circle: "Take this base" means that base
  static const float RETRY_MS = 20000;
  static const float DROP_MS = 120000;   // a "can't yet" nobody keeps queued is dropped
- protected static ref array<ref ACR_TwoICRequest> s_Live = {};
- protected static ref map<int, float> s_mLastAsk = new map<int, float>();
+ protected static ref array<ref ACR_TwoICRequest> s_Live;
+ protected static ref map<int, float> s_mLastAsk;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Live = {};
+  s_mLastAsk = new map<int, float>();
+ }
 
  // ---------------------------------------------------------------- asking
  // A player's request (server).

@@ -8,7 +8,12 @@
 // Readers ask with the flag name ("acrThreat") and get the flag's text ("high").
 class ACR_Options
 {
- protected static ref map<string, string> s_Set = new map<string, string>();
+ protected static ref map<string, string> s_Set;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Set = new map<string, string>();
+ }
  protected static ref map<string, string> s_Header;
 
  // The option's text, or false when no source sets it.

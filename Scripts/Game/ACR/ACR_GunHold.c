@@ -23,7 +23,12 @@ class ACR_GunHold
 {
  static const float HOLD_REACH = 25;   // a gun this far past the order's radius still counts
  static const int RESERVE_BOXES = 6;   // M2: 4 boxes stock (400 rounds), 10 held (1000)
- protected static ref map<IEntity, ref ACR_GunStock> s_mStock = new map<IEntity, ref ACR_GunStock>();
+ protected static ref map<IEntity, ref ACR_GunStock> s_mStock;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_mStock = new map<IEntity, ref ACR_GunStock>();
+ }
  static int s_iRestocked; // boxes added (tests)
 
  static bool Enabled() { return ACR_LogisticsRules.Choice("acrHoldGuns", "1") != "0"; }

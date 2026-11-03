@@ -61,10 +61,17 @@ class ACR_Transport
  // ---------------------------------------------------------------- vehicle horn governor
  static const float MAX_HONK_MS = 800.0;        // max continuous AI honk duration (ms)
  static const float HONK_COOLDOWN_MS = 5000.0;   // silence cooldown after an AI honk (ms)
- protected static ref map<IEntity, float> s_mHonkStart = new map<IEntity, float>();
- protected static ref map<IEntity, float> s_mHonkCooldown = new map<IEntity, float>();
+ protected static ref map<IEntity, float> s_mHonkStart;
+ protected static ref map<IEntity, float> s_mHonkCooldown;
  static void ResetHorns() { s_mHonkStart.Clear(); s_mHonkCooldown.Clear(); }
- protected static ref array<IEntity> s_aHornScanVehicles = new array<IEntity>();
+ protected static ref array<IEntity> s_aHornScanVehicles;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_mHonkStart = new map<IEntity, float>();
+  s_mHonkCooldown = new map<IEntity, float>();
+  s_aHornScanVehicles = new array<IEntity>();
+ }
 
  // Mutes the vehicle horn input context and resets the vehicle's replicated HornState audio signal.
  static void MuteVehicleHorn(IEntity vehicle, ChimeraCharacter driver = null)

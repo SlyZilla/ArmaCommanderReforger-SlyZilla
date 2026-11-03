@@ -25,7 +25,12 @@ class ACR_Base : GenericEntity
  [Attribute("50", UIWidgets.EditBox, "Capture radius in metres")]
  float m_fRadius;
 
- static ref array<ACR_Base> s_All = {};
+ static ref array<ACR_Base> s_All;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+ }
 
  // ---- server runtime state
  float m_fScore = 100;              // owned: 100 = secure, -100 = lost. Neutral: 0..100 progress for m_sCapturer

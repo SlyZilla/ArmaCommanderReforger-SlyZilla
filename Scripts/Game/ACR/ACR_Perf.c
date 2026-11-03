@@ -8,10 +8,18 @@ class ACR_Perf
  static bool s_bOn;
  static bool s_bChecks;          // test runs: invariant checks every tick
  static int s_iInvariantErrors;
- static ref map<string, int> s_Current = new map<string, int>();
- static ref map<string, int> s_Total = new map<string, int>();
- static ref map<string, int> s_Max = new map<string, int>();
- static ref array<string> s_Order = {};
+ static ref map<string, int> s_Current;
+ static ref map<string, int> s_Total;
+ static ref map<string, int> s_Max;
+ static ref array<string> s_Order;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Current = new map<string, int>();
+  s_Total = new map<string, int>();
+  s_Max = new map<string, int>();
+  s_Order = {};
+ }
  static int s_iTicks;
  static int s_iStatusTotal, s_iStatusMax;
  static int s_iFeedBytes;    // estimated map feed payload, summed since the last report

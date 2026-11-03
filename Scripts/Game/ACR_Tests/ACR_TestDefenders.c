@@ -10,7 +10,12 @@ class ACR_TestDefenders
 {
  static const int CHECKS = 9;
  static const int CREW_GUNS = 4;
- static ref array<IEntity> s_aGuns = {};
+ static ref array<IEntity> s_aGuns;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aGuns = {};
+ }
  static ref ACR_DefenderPost s_CrewPost;
  static int s_iStep;
  static int s_iStepAt;

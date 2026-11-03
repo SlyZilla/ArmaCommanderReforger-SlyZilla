@@ -22,7 +22,12 @@ class ACR_UiPrefs
  static const float FEED_HOME_Y = 96;
  static const float GRAB = 40;          // this much of a panel stays on the screen, to grab it by
  static const float STEP_GAP = 8;       // what a panel keeps clear of a hint, and a note of its panel
- protected static ref map<string, vector> s_Spots = new map<string, vector>();
+ protected static ref map<string, vector> s_Spots;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Spots = new map<string, vector>();
+ }
  protected static string s_sFile = PREFS;
  static bool s_bKeyHints = true;
  static bool s_bBuildOpen;              // the ACA panel's build orders are unfolded

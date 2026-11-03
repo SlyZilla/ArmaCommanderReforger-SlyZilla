@@ -29,7 +29,12 @@ class ACR_TestRoadblocks
  static int s_iIncomeLeft; // seconds to the next income tick when Bravo paid
  static ACR_Roadblock s_GunPost;
  static vector s_vLeaderAt;
- static ref array<vector> s_aSquadAt = {};
+ static ref array<vector> s_aSquadAt;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aSquadAt = {};
+ }
  static int s_iGunRounds, s_iGunCycles, s_iGunMoved;
 
  protected static string Healing(bool healing, bool moving)

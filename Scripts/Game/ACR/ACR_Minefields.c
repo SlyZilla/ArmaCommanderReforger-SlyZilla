@@ -57,8 +57,8 @@ class ACR_MinePlan : Managed
 
 class ACR_Minefields
 {
- static ref array<ref ACR_Minefield> s_Fields = {};
- protected static ref map<IEntity, string> s_Owner = new map<IEntity, string>(); // live mine -> faction that laid it
+ static ref array<ref ACR_Minefield> s_Fields;
+ protected static ref map<IEntity, string> s_Owner; // live mine -> faction that laid it
  protected static int s_iNextId;
  protected static int s_iTicks;
 
@@ -605,7 +605,14 @@ class ACR_Minefields
  }
 
  // Armed mines lying round a point (anyone's, Game Master's too), the one nearest 'from'.
- protected static ref array<IEntity> s_Found = {};
+ protected static ref array<IEntity> s_Found;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Fields = {};
+  s_Owner = new map<IEntity, string>();
+  s_Found = {};
+ }
  static IEntity NearestMine(vector center, float radius, vector from)
  {
   s_Found.Clear();

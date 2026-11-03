@@ -14,8 +14,14 @@ class ACR_TestAirLift
  static int s_iAliveAtCall;
  static bool s_bDropped;          // Alpha lost its squad status during the flight
  static int s_iEndTick = -1;
- static ref array<IEntity> s_Helis = {};
- static ref array<IEntity> s_Crew = {};
+ static ref array<IEntity> s_Helis;
+ static ref array<IEntity> s_Crew;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Helis = {};
+  s_Crew = {};
+ }
 
  static void Run(ACR_TestHarness h, int tick)
  {

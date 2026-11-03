@@ -634,16 +634,23 @@ class ACR_TestBaseWorks
  // drawing (WORKSGEO lines). On Kolguyev also the spot of the 30 Oct playtest's Bovemont Base.
  protected static int s_iBases, s_iNests, s_iBunkers, s_iWalls, s_iChecks, s_iPosts, s_iLineTowns, s_iLongTowns, s_iLines, s_iPieces, s_iMostPieces;
  protected static int s_iLoose, s_iShortRuns, s_iGunAlone, s_iEnds, s_iLongRuns, s_iLongStretch, s_iLongTier, s_iNestOff, s_iNoCheckLane, s_iWorstTier;
- protected static ref set<int> s_aLengths = new set<int>();
+ protected static ref set<int> s_aLengths;
  protected static int s_iSeeing, s_iLooked, s_iGapByNest, s_iFragments, s_iLoneCheck, s_iAnchored, s_iEnds2, s_iBehind, s_iCramped;
  protected static float s_fOurs, s_fEither;
  static const float COVER_FLOOR = 0.5;   // of a threatened arc, by lines, on average (the maps reach 55-68%)
  static const float ANCHOR_FLOOR = 0.5;  // the maps reach 55-78%
  protected static int s_iLongLine, s_iLongNoNest, s_iOnApron, s_iBayLines, s_iLongLines;
- protected static ref array<int> s_aStyles = {0, 0, 0, 0, 0};
+ protected static ref array<int> s_aStyles;
  protected static int s_iFire, s_iClose, s_iFacing, s_iPlannedFacing, s_iBuilding, s_iDoor, s_iRoad, s_iDressRoad, s_iApart, s_iDoubled, s_iFarCheck, s_iWorstMs, s_iNestTowns;
  protected static string s_sWorst;
- protected static ref array<IEntity> s_aFound = {};
+ protected static ref array<IEntity> s_aFound;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aLengths = new set<int>();
+  s_aStyles = {0, 0, 0, 0, 0};
+  s_aFound = {};
+ }
 
  protected static void RunPlan(ACR_Manager manager, int second)
  {

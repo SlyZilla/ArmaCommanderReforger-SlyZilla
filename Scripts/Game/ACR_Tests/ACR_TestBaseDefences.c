@@ -7,7 +7,7 @@
 class ACR_TestBaseDefences
 {
  static const int EXPECTED = 16;
- static ref array<IEntity> s_aSpawned = {};
+ static ref array<IEntity> s_aSpawned;
 
  // Neutral bases are planned for the US (the preview does the same with the player's side).
  static string Owner(ACR_Base base)
@@ -239,7 +239,13 @@ class ACR_TestBaseDefences
   }
  }
 
- protected static ref array<IEntity> s_aTypes = {};
+ protected static ref array<IEntity> s_aTypes;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aSpawned = {};
+  s_aTypes = {};
+ }
  protected static bool CollectType(IEntity e)
  {
   if (!e || e.GetParent()) return true;

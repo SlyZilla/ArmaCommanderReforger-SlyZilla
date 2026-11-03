@@ -16,7 +16,12 @@ class ACR_TestMinefields
  static vector s_vRoad;
  static int s_iPlanned;
  static ACR_Minefield s_Field;
- static ref array<IEntity> s_Signs = {};
+ static ref array<IEntity> s_Signs;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Signs = {};
+ }
  static IEntity s_EnemyMine, s_FriendMine, s_Enemy, s_Friend;
  static ref ACR_OrderSnapshot s_Regroup;
  static string s_sRegroup;

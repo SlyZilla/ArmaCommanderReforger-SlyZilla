@@ -13,7 +13,12 @@ class ACR_TestRideCommit
  static const int CHECKS = 6;
  static const ResourceName HUMVEE = "{4A71F755A4513227}Prefabs/Vehicles/Wheeled/M998/M1025.et";
  static ref ACR_AICommander s_AI;
- static ref array<ACR_Squad> s_aJeeps = {};
+ static ref array<ACR_Squad> s_aJeeps;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aJeeps = {};
+ }
  static vector s_Far;
  static vector s_Near;
  static int s_iStep;

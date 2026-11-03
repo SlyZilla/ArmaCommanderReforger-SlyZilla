@@ -14,7 +14,12 @@
 // Where the game's hint box is while it shows.
 modded class SCR_HintUIComponent
 {
- protected static ref array<SCR_HintUIComponent> s_aACR_Hints = {};
+ protected static ref array<SCR_HintUIComponent> s_aACR_Hints;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aACR_Hints = {};
+ }
 
  override void HandlerAttached(Widget w)
  {
@@ -116,7 +121,12 @@ class ACR_PanelSlot : Managed
 
 class ACR_PanelMover
 {
- protected static ref array<ref ACR_PanelSlot> s_aSlots = {};
+ protected static ref array<ref ACR_PanelSlot> s_aSlots;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aSlots = {};
+ }
  protected static ACR_PanelSlot s_Drag;
  protected static bool s_bDragMoved;
  protected static int s_iDragFromX;

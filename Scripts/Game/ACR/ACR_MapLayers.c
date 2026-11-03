@@ -15,7 +15,12 @@ class ACR_MapLayers
  static const int ZONES = 4;
  static const int COUNT = 5;
 
- protected static ref array<bool> s_aOff = {false, false, false, false, false};
+ protected static ref array<bool> s_aOff;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aOff = {false, false, false, false, false};
+ }
 
  static string Name(int layer)
  {

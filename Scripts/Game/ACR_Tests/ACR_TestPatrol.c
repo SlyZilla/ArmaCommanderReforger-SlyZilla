@@ -10,7 +10,12 @@ class ACR_TestPatrol
  static const int CHECKS = 8;
  static int s_iStep;
  static int s_iStepAt;
- static ref array<vector> s_aPoints = {};
+ static ref array<vector> s_aPoints;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aPoints = {};
+ }
  static int s_iNext;
  static vector s_vStart;
  static vector s_vLeg;

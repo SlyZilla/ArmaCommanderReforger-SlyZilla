@@ -24,7 +24,12 @@ class ACR_Helipad : GenericEntity
 
  static const ResourceName MODEL_WEST = "{CF1FFB7BAA1A0769}Prefabs/Structures/Military/Camps/HelipadImprovised_01/HelipadImprovised_US_01.et";
  static const ResourceName MODEL_EAST = "{8CDB9C117669AF4A}Prefabs/Structures/Military/Camps/HelipadImprovised_01/HelipadImprovised_USSR_01.et";
- static ref array<ACR_Helipad> s_All = {};
+ static ref array<ACR_Helipad> s_All;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+ }
  protected IEntity m_Model;
 
  void ACR_Helipad(IEntitySource src, IEntity parent)

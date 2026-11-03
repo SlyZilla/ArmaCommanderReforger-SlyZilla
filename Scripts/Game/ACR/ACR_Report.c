@@ -25,7 +25,12 @@ class ACR_SideStats : Managed
 class ACR_Report
 {
  static const int TIMELINE = 12;
- protected static ref map<string, ref ACR_SideStats> s_Sides = new map<string, ref ACR_SideStats>();
+ protected static ref map<string, ref ACR_SideStats> s_Sides;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sides = new map<string, ref ACR_SideStats>();
+ }
 
  static void Reset() { s_Sides.Clear(); }
 

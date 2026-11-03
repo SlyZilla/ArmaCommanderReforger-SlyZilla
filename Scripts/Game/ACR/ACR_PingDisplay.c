@@ -6,11 +6,19 @@
 class ACR_PingDisplay
 {
  static const float HEAR_RANGE = 1000;
- protected static ref array<ref ACR_UnitMarker> s_Markers = {};
- protected static ref array<int> s_Heard = {};
+ protected static ref array<ref ACR_UnitMarker> s_Markers;
+ protected static ref array<int> s_Heard;
  protected static CanvasWidget s_HudCanvas;
- protected static ref array<ref CanvasWidgetCommand> s_HudCommands = {};
- protected static ref array<TextWidget> s_HudLabels = {};
+ protected static ref array<ref CanvasWidgetCommand> s_HudCommands;
+ protected static ref array<TextWidget> s_HudLabels;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Markers = {};
+  s_Heard = {};
+  s_HudCommands = {};
+  s_HudLabels = {};
+ }
  protected static ref ACR_OrderDisplay s_HudPainter;
 
  static string KindName(int kind)

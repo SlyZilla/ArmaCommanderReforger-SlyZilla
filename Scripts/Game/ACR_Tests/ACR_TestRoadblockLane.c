@@ -29,11 +29,20 @@ class ACR_TestRoadblockLane
  static int s_iOnLane;    // tick samples with one of the holders on foot in the lane
  static int s_iSamples;
  static float s_fNearest = float.MAX; // the truck's closest pass to a holder on foot
- static ref array<IEntity> s_aHolders = {};
- static ref array<float> s_aHealthAt = {}; // each holder's health when the truck set off
- static ref array<float> s_aClosest = {};  // and the truck's closest pass to him
- static ref array<vector> s_aPieces = {};  // where the checkpoint's pieces stood
- static ref array<float> s_aGap = {};      // each holder's closest to the truck's hull
+ static ref array<IEntity> s_aHolders;
+ static ref array<float> s_aHealthAt; // each holder's health when the truck set off
+ static ref array<float> s_aClosest;  // and the truck's closest pass to him
+ static ref array<vector> s_aPieces;  // where the checkpoint's pieces stood
+ static ref array<float> s_aGap;      // each holder's closest to the truck's hull
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aHolders = {};
+  s_aHealthAt = {};
+  s_aClosest = {};
+  s_aPieces = {};
+  s_aGap = {};
+ }
  static IEntity s_Planted;                 // the holder put in the lane in front of it
  static float s_fPlantedClear = float.MAX; // his clearance of the lane with the truck abeam of him
  static int s_iStepsAt;
