@@ -31,7 +31,12 @@ class ACR_TestFortify
  static vector s_vSite;
  static ACR_Fortification s_Fort;
  static ref ACR_OrderSnapshot s_Regroup;
- static ref array<IEntity> s_aWire = {};
+ static ref array<IEntity> s_aWire;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aWire = {};
+ }
  static ref ACR_Fortification s_Held;
  static IEntity s_Wall;
  static vector s_vNestFirst;

@@ -78,7 +78,12 @@ class ACR_BaseWorks
  static const float POST_AREA = 40;     // m round the command post its defenders garrison
  static const int REACH_GRACE_MS = 90000; // ms past a 1 m/s walk to a site before the squad gives up on it
  static const int AI_RP_RESERVE = 30;   // an AI commander keeps this much back (as ManageBaseWorks)
- static ref array<ref ACR_BaseWork> s_aWorks = {};
+ static ref array<ref ACR_BaseWork> s_aWorks;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aWorks = {};
+ }
  static int s_iMaxSitesForTest;         // at most this many sites of each kind (0: no limit)
  static int s_iLastPlanMs;              // the last plan's cost (tests, log)
  static ref ACR_BaseSurvey s_LastSurvey; // the last plan's survey (tests)

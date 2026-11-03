@@ -147,7 +147,12 @@ class ACR_Structure : Managed
 
 class ACR_Structures : Managed
 {
- static ref array<SCR_CampaignBuildingCompositionComponent> s_Registered = {};
+ static ref array<SCR_CampaignBuildingCompositionComponent> s_Registered;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Registered = {};
+ }
  static const float FOB_RADIUS = 40;
  static const int TICK_MS = 2000;
  protected static int s_iFobs;

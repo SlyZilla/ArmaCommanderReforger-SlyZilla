@@ -29,4 +29,6 @@ class ACR_TestHooks
  string AIDoctrine(string factionKey) { return ""; }
  // Side a test's player deploys on without the deploy screen ("west" / "east"), "" = the menu.
  string AutoDeploySide() { return ""; }
+ // Build the test classes' statics (ACR_StaticInit, at game creation).
+ void InitStatics() {}
 }

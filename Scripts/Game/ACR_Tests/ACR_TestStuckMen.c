@@ -6,7 +6,12 @@ class ACR_TestStuckMen
 {
  static const ResourceName SQUAD = "{DDF3799FA1387848}Prefabs/Groups/BLUFOR/Group_US_RifleSquad.et";
  static const string NAME = "Stuck Men Squad";
- protected static ref array<IEntity> s_aFrozen = {};
+ protected static ref array<IEntity> s_aFrozen;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aFrozen = {};
+ }
  protected static bool s_bSawRegroup;
  protected static bool s_bEnded;
  protected static int s_iEnded;

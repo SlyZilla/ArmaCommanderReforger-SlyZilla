@@ -93,8 +93,14 @@ class ACR_FeedFrame : Managed
 class ACR_MapFeed
 {
  static const float FULL_EVERY_MS = 10000;
- protected static ref map<int, ref map<string, string>> s_Sent = new map<int, ref map<string, string>>();
- protected static ref map<int, float> s_LastFull = new map<int, float>();
+ protected static ref map<int, ref map<string, string>> s_Sent;
+ protected static ref map<int, float> s_LastFull;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sent = new map<int, ref map<string, string>>();
+  s_LastFull = new map<int, float>();
+ }
 
  // Per mission (ACR_Manager.Stop): player ids start again and the world clock restarts near 0,
  // so the old signatures held back unchanged-looking sections (an empty buy list for the host)

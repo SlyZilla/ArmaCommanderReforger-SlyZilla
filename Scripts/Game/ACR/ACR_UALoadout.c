@@ -35,16 +35,22 @@ class ACR_UALoadout
  static float s_fWestShare = 0.25;
  static int s_iEquipped;
  static int s_iFailed;
- protected static ref set<EntityID> s_Done = new set<EntityID>();
+ protected static ref set<EntityID> s_Done;
  protected static ref map<string, ref array<ResourceName>> s_Pools;
- protected static ref map<IEntity, ref array<IEntity>> s_Pending = new map<IEntity, ref array<IEntity>>();
+ protected static ref map<IEntity, ref array<IEntity>> s_Pending;
  static int s_iKitFailed;
 
  // Field kit every UA soldier carries (Jacob, 11 Oct: no maps, compasses, watches, meds, grenades
  // or shovels). The vanilla US base kit spawns into the pants, and the UA mod's pants prefab is
  // missing, so it never spawned. "path part|prefab|count": a soldier holding any item whose prefab
  // path contains the part counts toward it (old kit that moved over is kept, nothing doubles).
- static ref array<string> KIT = {
+ static ref array<string> KIT;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Done = new set<EntityID>();
+  s_Pending = new map<IEntity, ref array<IEntity>>();
+  KIT = {
   "/Maps/|{13772C903CB5E4F7}Prefabs/Items/Equipment/Maps/Map_Paper_01/PaperMap_01_folded.et|1",
   "/Compass/|{7CEF68E2BC68CE71}Prefabs/Items/Equipment/Compass/Compass_Adrianov.et|1",
   "/Watches/|{6FD6C96121905202}Prefabs/Items/Equipment/Watches/Watch_Vostok.et|1",
@@ -57,6 +63,7 @@ class ACR_UALoadout
   "/Grenades/Grenade_|{645C73791ECA1698}Prefabs/Weapons/Grenades/Grenade_RGD5.et|2",
   "/Grenades/Smoke_|{77EAE5E07DC4678A}Prefabs/Weapons/Grenades/Smoke_RDG2.et|1"
  };
+ }
 
  // Items the soldier has whose prefab path contains part (worn gadgets and weapon slots too).
  static int CountKind(IEntity soldier, SCR_InventoryStorageManagerComponent inventory, string part)

@@ -61,7 +61,12 @@ class ACR_FobSiting
  static const float ROAD_NEAR = 40;
  static const float ROAD_FAR = 120;
  static const float ENEMY_CLEAR = 600;  // m from an enemy or neutral base, as before
- protected static ref map<string, ref ACR_FobSiteCache> s_mCache = new map<string, ref ACR_FobSiteCache>();
+ protected static ref map<string, ref ACR_FobSiteCache> s_mCache;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_mCache = new map<string, ref ACR_FobSiteCache>();
+ }
 
  // The search for a FOB behind 'front' ('back': the way to our nearest deploy base; 'enemy': the
  // nearest enemy base, vector.Zero for none). Validates at most 'most' more offsets (-1: all that

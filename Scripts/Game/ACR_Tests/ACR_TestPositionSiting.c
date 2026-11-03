@@ -152,7 +152,12 @@ class ACR_TestPositionSiting
  // the Airfield and at the Barracks, each facing the nearest enemy-held base, is off it.
  // What is at a point (for the runway): the trace's surface from above with the world only and with
  // entities, the road network's distance, and the entities within 12 m.
- protected static ref array<string> s_aNear = {};
+ protected static ref array<string> s_aNear;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aNear = {};
+ }
  protected static void Probe(string label, vector pos)
  {
   string world = Surface(pos, TraceFlags.WORLD);

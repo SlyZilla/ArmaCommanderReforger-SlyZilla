@@ -47,9 +47,16 @@ class ACR_OrganEasterEgg
  static const float APPROACH_MS = 60000;
  static const string TOCCATA = "SOUND_PLAY_A_TACATTA"; // vanilla event spelling
  static const ResourceName SOUND = "{2202336E751CF577}Sounds/Structures/BuildingParts/Cultural/OrganChurch/Structures_Props_Organ.acp";
- protected static ref array<ref ACR_OrganState> s_Organs = {};
- protected static ref array<ref ACR_OrganSound> s_Sounds = {};
- protected static ref array<IEntity> s_Candidates = {};
+ protected static ref array<ref ACR_OrganState> s_Organs;
+ protected static ref array<ref ACR_OrganSound> s_Sounds;
+ protected static ref array<IEntity> s_Candidates;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Organs = {};
+  s_Sounds = {};
+  s_Candidates = {};
+ }
 
  static float Now() { return GetGame().GetWorld().GetWorldTime(); }
 

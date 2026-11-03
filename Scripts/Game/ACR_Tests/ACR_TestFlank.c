@@ -10,7 +10,12 @@ class ACR_TestFlank
  static float s_fLateral;
  static SCR_AIGroup s_Enemy;
  static int s_iAmmo, s_iStarted, s_iShots;
- static ref map<BaseWeaponComponent, int> s_Ammo = new map<BaseWeaponComponent, int>();
+ static ref map<BaseWeaponComponent, int> s_Ammo;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Ammo = new map<BaseWeaponComponent, int>();
+ }
  static bool s_bFresh, s_bAutomatic, s_bBBB;
  static void Run(ACR_TestHarness h, int tick)
  {

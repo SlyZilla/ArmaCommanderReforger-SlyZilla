@@ -1,6 +1,11 @@
 // Connects the tests to the game code (see ACR/ACR_TestHooks.c). Not in the player package.
 modded class ACR_TestHooks
 {
+ override void InitStatics()
+ {
+  ACR_TestStaticInit.Run();
+ }
+
  protected ref ACR_TestHarness m_Harness;
 
  override void RangeStarted(ACR_TestRange range)

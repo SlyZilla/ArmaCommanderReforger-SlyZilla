@@ -125,7 +125,12 @@ class ACR_SupportRun : Managed
 // its own engine sound (a loop that starts within 4 km of the listener, heard to 1.5 km).
 class ACR_LocalFlyover : Managed
 {
-	protected static ref array<ref ACR_LocalFlyover> s_All = {};
+	protected static ref array<ref ACR_LocalFlyover> s_All;
+	// Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+	static void ACR_InitStatics()
+	{
+		s_All = {};
+	}
 	static int s_iStarted; // tests
 	IEntity m_Plane;
 	vector m_vStart;
@@ -1572,7 +1577,7 @@ class ACR_Supports : Managed
  static const float BATTERY_DROP_HEIGHT = 700;  // the shell falls from here (~3 s): its travel sound is the incoming whistle
  static const int BATTERY_FALL_SECONDS = 3;
  static int s_iBatteryImpacts;                  // tests
- static ref array<vector> s_aBatteryImpacts = {};
+ static ref array<vector> s_aBatteryImpacts;
  // Per match (ACR_Manager.Stop): the impact log grew for as long as the server ran.
  static void Reset()
  {
@@ -2358,7 +2363,13 @@ class ACR_Supports : Managed
  static float BLAST_COVER = 0.25;
  static bool s_bBlastOff;
  static const float BLAST_DAMAGE = 120; // per hit zone at the kill radius (tuned with srv:blast)
- static ref array<IEntity> s_BlastFound = {};
+ static ref array<IEntity> s_BlastFound;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aBatteryImpacts = {};
+  s_BlastFound = {};
+ }
 
  static bool CollectBlast(IEntity e)
  {

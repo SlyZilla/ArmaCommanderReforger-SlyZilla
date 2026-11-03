@@ -436,7 +436,7 @@ class ACR_FobBuild
 	}
 
 	protected static array<IEntity> s_Ignore;
-	protected static ref array<IEntity> s_Obstacles = {};
+	protected static ref array<IEntity> s_Obstacles;
 	protected static bool CollectObstacle(IEntity e)
 	{
 		if (!e || e.GetParent()) return true;
@@ -446,7 +446,13 @@ class ACR_FobBuild
 		return true;
 	}
 
-	protected static ref array<IEntity> s_Trees = {};
+	protected static ref array<IEntity> s_Trees;
+	// Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+	static void ACR_InitStatics()
+	{
+		s_Obstacles = {};
+		s_Trees = {};
+	}
 	// Bushes and saplings under 4 m are left alone (the compositions simply cover them).
 	static const float TREE_MIN_HEIGHT = 4.0;
 	protected static bool CollectTree(IEntity e)

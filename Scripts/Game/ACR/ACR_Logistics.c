@@ -47,7 +47,12 @@ class ACR_Logistics : Managed
  protected ref map<IEntity, float> m_Stock = new map<IEntity, float>();
  protected ref map<IEntity, float> m_SoldierServedAt = new map<IEntity, float>();
  protected ref map<IEntity, float> m_GameSupplies = new map<IEntity, float>(); // container value after our last write
- protected static ref map<ResourceName, int> s_ServiceCache = new map<ResourceName, int>();
+ protected static ref map<ResourceName, int> s_ServiceCache;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_ServiceCache = new map<ResourceName, int>();
+ }
 
  // Service points: built structures (ACR_Structures: field hospital, vehicle maintenance, ammo
  // and fuel storage). Supplied from the FOB by default; soldiers are served after POINT_DWELL_MS in

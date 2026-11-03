@@ -22,8 +22,8 @@ class ACR_QuickStart
  static const string EXTRA_NAME = "Holding Squad";
  static const float POCKET_CLEARANCE = 700; // m an FIA pocket keeps from a handed-out base
 
- static ref array<ACR_Base> s_Assigned = {}; // open bases a side was given
- static ref array<ACR_Base> s_Front = {};    // of those, the front ones
+ static ref array<ACR_Base> s_Assigned; // open bases a side was given
+ static ref array<ACR_Base> s_Front;    // of those, the front ones
  static string s_sFront;                     // the front's description (log, tests)
  protected static bool s_bFortified;
 
@@ -442,7 +442,7 @@ class ACR_QuickStart
 
  // The side's biggest towns at the front start with their first tier of works (ACR_BaseWorks, #105):
  // picked among the near-best, so it isn't always the same town.
- static ref map<string, int> s_mTowns = new map<string, int>(); // tests: towns fortified per side
+ static ref map<string, int> s_mTowns; // tests: towns fortified per side
  protected static void FortifyTown(string side, int wanted)
  {
   array<ACR_Base> towns = {};
@@ -474,8 +474,17 @@ class ACR_QuickStart
  // (ACR_PositionSiting, ACR_MineSiting) facing the nearest enemy base.
  static const int POSITIONS = 2;           // tier I positions a side
  static const float POSITION_APART = 300;  // m: a front base with a position of ours this close has one
- static ref map<string, int> s_mPositions = new map<string, int>(); // tests: built per side
- static ref map<string, int> s_mFields = new map<string, int>();
+ static ref map<string, int> s_mPositions; // tests: built per side
+ static ref map<string, int> s_mFields;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Assigned = {};
+  s_Front = {};
+  s_mTowns = new map<string, int>();
+  s_mPositions = new map<string, int>();
+  s_mFields = new map<string, int>();
+ }
 
  // Up to 'wanted' tier I positions, one per front base of 'key' that has none near.
  protected static int DigIn(string key, int wanted)

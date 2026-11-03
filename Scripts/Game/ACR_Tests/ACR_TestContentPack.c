@@ -8,11 +8,18 @@
 // on station, and a Hind stationed on a USSR helipad is its own kind with Soviet pilots.
 class ACR_TestContentPack
 {
- static ref array<ref ACR_PendingPurchase> s_Bought = {};
+ static ref array<ref ACR_PendingPurchase> s_Bought;
  static ref ACR_HeliRun s_Attack;
  static ref ACR_StationedHeli s_AttackPad;
- static ref array<string> s_Sides = {};
- static ref array<ref ACR_PendingPurchase> s_Squads = {};
+ static ref array<string> s_Sides;
+ static ref array<ref ACR_PendingPurchase> s_Squads;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Bought = {};
+  s_Sides = {};
+  s_Squads = {};
+ }
  static int s_iExpected;
 
  static void Run(ACR_TestHarness h, int tick)

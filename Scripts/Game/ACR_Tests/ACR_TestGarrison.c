@@ -3,8 +3,14 @@
 // (window or doorway) inside it. Then a move order releases and removes the posts.
 class ACR_TestGarrison
 {
- static ref array<IEntity> s_aBuildings = {};
- static ref array<IEntity> s_aHouses = {};
+ static ref array<IEntity> s_aBuildings;
+ static ref array<IEntity> s_aHouses;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aBuildings = {};
+  s_aHouses = {};
+ }
  static IEntity s_Building;
  static int s_iWanted;
  static int s_iBestOnPost;

@@ -74,12 +74,20 @@ class ACR_MarksmanSwap : Managed
 
 class ACR_SquadMarksmen
 {
-	static ref map<SCR_AIGroup, IEntity> s_Assigned = new map<SCR_AIGroup, IEntity>();
-	static ref map<SCR_AIGroup, ref ACR_MarksmanSwap> s_Pending = new map<SCR_AIGroup, ref ACR_MarksmanSwap>();
-	protected static ref map<SCR_AIGroup, float> s_Retry = new map<SCR_AIGroup, float>();
+	static ref map<SCR_AIGroup, IEntity> s_Assigned;
+	static ref map<SCR_AIGroup, ref ACR_MarksmanSwap> s_Pending;
+	protected static ref map<SCR_AIGroup, float> s_Retry;
 	static bool s_bOn = true;
 	protected static bool s_bRead;
-	protected static ref set<SCR_AIGroup> s_Diagnosed = new set<SCR_AIGroup>();
+	protected static ref set<SCR_AIGroup> s_Diagnosed;
+	// Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+	static void ACR_InitStatics()
+	{
+		s_Assigned = new map<SCR_AIGroup, IEntity>();
+		s_Pending = new map<SCR_AIGroup, ref ACR_MarksmanSwap>();
+		s_Retry = new map<SCR_AIGroup, float>();
+		s_Diagnosed = new set<SCR_AIGroup>();
+	}
 
 	static bool Loose(IEntity item)
 	{

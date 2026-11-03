@@ -16,8 +16,8 @@ class ACR_TestMapDeclutterShots
  protected static int s_iListRows;
  protected static int s_iSearchRows;
  protected static string s_sSearchLabel;
- protected static RplId s_SearchId = RplId.Invalid();
- protected static RplId s_FirstId = RplId.Invalid();
+ protected static RplId s_SearchId;
+ protected static RplId s_FirstId;
  protected static bool s_bFirstHidden;
  protected static bool s_bHovered;
  protected static int s_iDots;
@@ -28,7 +28,7 @@ class ACR_TestMapDeclutterShots
  protected static vector s_Base;
  protected static bool s_bPicker;
  protected static bool s_bHover;
- protected static RplId s_Picked = RplId.Invalid();
+ protected static RplId s_Picked;
  protected static int s_iFrames;
  protected static int s_iSweepWrong;
  protected static string s_sSweep;
@@ -39,7 +39,15 @@ class ACR_TestMapDeclutterShots
  protected static int s_iEnemyCounted;
  protected static int s_iClicksReal;
  protected static int s_iClicksHooked;
- protected static RplId s_RowId = RplId.Invalid();
+ protected static RplId s_RowId;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_SearchId = RplId.Invalid();
+  s_FirstId = RplId.Invalid();
+  s_Picked = RplId.Invalid();
+  s_RowId = RplId.Invalid();
+ }
  protected static int s_iChipBase = -1;
  protected static float s_fZoomBefore;
  protected static float s_fWheeled;

@@ -1,0 +1,42 @@
+// Test-class statics, built by ACR_StaticInit through ACR_TestHooks.InitStatics (see there).
+class ACR_TestStaticInit
+{
+ static void Run()
+ {
+  ACR_TestAirLift.ACR_InitStatics();
+  ACR_TestBaseDefences.ACR_InitStatics();
+  ACR_TestBaseWorks.ACR_InitStatics();
+  ACR_TestBlast.ACR_InitStatics();
+  ACR_TestContentPack.ACR_InitStatics();
+  ACR_TestDefenders.ACR_InitStatics();
+  ACR_TestDoctrineKits.ACR_InitStatics();
+  ACR_TestFactionPairs.ACR_InitStatics();
+  ACR_TestFlank.ACR_InitStatics();
+  ACR_TestFortify.ACR_InitStatics();
+  ACR_TestGarrison.ACR_InitStatics();
+  ACR_TestGenerate.ACR_InitStatics();
+  ACR_TestInfantry.ACR_InitStatics();
+  ACR_TestLiftBoarding.ACR_InitStatics();
+  ACR_TestLiftClearance.ACR_InitStatics();
+  ACR_TestMapDeclutterShots.ACR_InitStatics();
+  ACR_TestMinefields.ACR_InitStatics();
+  ACR_TestPads.ACR_InitStatics();
+  ACR_TestPathProbe.ACR_InitStatics();
+  ACR_TestPatrol.ACR_InitStatics();
+  ACR_TestPlaces.ACR_InitStatics();
+  ACR_TestPositionSiting.ACR_InitStatics();
+  ACR_TestRegress.ACR_InitStatics();
+  ACR_TestRideCommit.ACR_InitStatics();
+  ACR_TestRoadblockLane.ACR_InitStatics();
+  ACR_TestRoadblocks.ACR_InitStatics();
+  ACR_TestSetup.ACR_InitStatics();
+  ACR_TestSlopes.ACR_InitStatics();
+  ACR_TestSpawnHeap.ACR_InitStatics();
+  ACR_TestStuckMen.ACR_InitStatics();
+  ACR_TestSurvey.ACR_InitStatics();
+  ACR_TestTwoICShots.ACR_InitStatics();
+  ACR_TestTyphoonPurchases.ACR_InitStatics();
+  ACR_TestWings.ACR_InitStatics();
+  ACR_TestWorksShots.ACR_InitStatics();
+ }
+}

@@ -58,7 +58,12 @@ class ACR_FortifyPlan : Managed
 
 class ACR_Fortify
 {
- static ref array<ref ACR_Fortification> s_Positions = {};
+ static ref array<ref ACR_Fortification> s_Positions;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Positions = {};
+ }
  protected static int s_iNextId;
  protected static int s_iTicks;
 
