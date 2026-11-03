@@ -32,6 +32,7 @@ class ACR_BaseSpot : Managed
  bool m_bTower;      // a tower's platform has (it sees over what stops the others)
  bool m_bGate;       // looks down a road in
  ref array<vector> m_aCuts = {}; // line pieces that make way for it
+ ref ACR_KillSite m_Kill;        // what it does to him
 }
 
 class ACR_BaseSurvey : Managed
@@ -89,6 +90,9 @@ class ACR_BaseSurvey : Managed
  ref array<vector> m_aWorkSpots = {};     // the map's works and ours
  ref array<vector> m_aRocks = {};         // big rocks: a line can end on one
  ref array<vector> m_aWallEnds = {};      // two per wall piece (tests draw them)
+ ref array<string> m_aWallNames = {};      // ... the prefab of each pair
+ ref array<float> m_aWallTall = {};       // ... and how tall
+ ref ACR_KillGround m_Kill;               // where he walks and what fires on it (ACR_BaseRing.Plan)
  int m_iTown;                             // buildings within the search radius
  int m_iWallPieces;
  int m_iMapWorks;                         // the map's sandbags, bunkers and towers seen
@@ -96,6 +100,7 @@ class ACR_BaseSurvey : Managed
  int m_iLineMs;                           // what its lines cost to plan
  int m_iWalks;                            // lines walked to get them
  int m_iPass;                             // 1: the approaches are being walked a second time
+ bool m_bLoose;                           // no line came of the strict placement: a town gets one anyway
  protected ref map<int, ref array<ref ACR_BaseDefenceSeg>> m_mRoads = new map<int, ref array<ref ACR_BaseDefenceSeg>>();
  protected ref map<int, ref array<IEntity>> m_mHouses = new map<int, ref array<IEntity>>();
  ref map<string, int> m_mRefused = new map<string, int>(); // command post pieces left out, and why
@@ -416,8 +421,10 @@ class ACR_BaseSurvey : Managed
   m_fRadius = ACR_BaseDefences.SearchRadius(base);
   ACR_BaseDefences.Threats(base, owner, m_aDirs, m_aWeights);
   // Past the search radius: a line can run out there, and must see what stands there.
-  ACR_BaseDefences.Roads(m_vCenter, m_fRadius + 70, m_aSegs);
-  ACR_BaseDefences.Buildings(m_vCenter, m_fRadius + 80, m_aBuildings);
+  float past = 70;
+  if (ACR_BaseRing.On()) past = ACR_BaseRing.BEYOND + 10;
+  ACR_BaseDefences.Roads(m_vCenter, m_fRadius + past, m_aSegs);
+  ACR_BaseDefences.Buildings(m_vCenter, m_fRadius + past + 10, m_aBuildings);
   Sectors();
   LookAtBuildings();
   LookOut();
@@ -572,6 +579,8 @@ class ACR_BaseSurvey : Managed
    m_iWallPieces++;
    m_aWallEnds.Insert(a);
    m_aWallEnds.Insert(b);
+   m_aWallNames.Insert(FullName(wall));
+   m_aWallTall.Insert(size[1]);
    MarkBins(ACR_BaseDefences.Bearing(a - m_vCenter), ACR_BaseDefences.Bearing(b - m_vCenter));
   }
   // Each sector's share of closed bins, and short open runs between closed ones.
@@ -710,6 +719,23 @@ class ACR_BaseSurvey : Managed
   }
   if (e.GetPrefabData() && e.GetPrefabData().GetPrefabName().Contains("Barbed")) return false;
   return true;
+ }
+
+ // An eye at 'eye' can fire on a man 'height' m over the ground at 'ground'.
+ static bool SeesFrom(vector eye, vector ground, float height)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  vector aim = ground;
+  aim[1] = world.GetSurfaceY(ground[0], ground[2]) + height;
+  vector dir = aim - eye;
+  float length = dir.Length();
+  if (length < 2) return true;
+  TraceParam trace = new TraceParam();
+  trace.Start = eye + dir * (1.2 / length);
+  trace.End = aim;
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  s_iTraces++;
+  return world.TraceMove(trace, FireFilter) >= 1;
  }
 
  // The terrain, or a road's embankment.

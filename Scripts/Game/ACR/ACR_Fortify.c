@@ -884,6 +884,12 @@ class ACR_Fortify
    }
    plan.m_vSite = point;
    plan.m_fYaw = FacingYaw(squad, point, faction, faceTowards);
+   // Nobody said which way: the way he'd come, not just the line to him.
+   if (faceTowards == vector.Zero)
+   {
+    vector threat = ACR_Intel.ThreatPoint(faction, point);
+    if (threat != vector.Zero) plan.m_fYaw = ACR_PositionSiting.BestFacingAt(point, plan.m_fYaw, threat, faction);
+   }
    plan.m_iTier = 1;
   }
   plan.m_iCost = Cost(plan.m_iTier);
@@ -1226,6 +1232,7 @@ class ACR_Fortify
   int more = Defenders(fort.m_iTier) - Defenders(wasTier);
   if (more <= 0) return;
   if (!fort.m_Defenders) fort.m_Defenders = ACR_Defenders.Add(fort.m_sFaction, fort.m_vPos, string.Format("%1 position %2", fort.m_sFaction, fort.m_iId), HOLD_RADIUS);
+  fort.m_Defenders.m_Fort = fort;
   fort.m_Defenders.m_iReserve += more;
   PrintFormat("[ACR] FORTIFY %1 %2 at %3: %4 defenders in reserve", fort.m_sFaction, TierName(fort.m_iTier), fort.m_vPos, fort.m_Defenders.m_iReserve);
  }

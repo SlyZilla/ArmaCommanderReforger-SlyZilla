@@ -60,8 +60,14 @@ class ACR_BBBHooks : BBB_Hooks
   return null;
  }
 
+ override bool AllowBuildings(SCR_AIGroup group)
+ {
+  return !ACR_BagHold.HasPlaces(group); // men behind bags stay there (BBB would take them indoors on contact)
+ }
+
  override bool AllowFireManeuver(SCR_AIGroup group)
  {
+  if (ACR_BagHold.HasPlaces(group)) return false;
   ACR_Squad squad = SquadOf(group);
   if (!squad || ACR_AirLift.Busy(squad) || squad.m_Mode != ACR_EMoveMode.COMBAT || squad.m_Commander != 0 || squad.m_CombatFlank.Active()) return false;
   ACR_EOrderState state = squad.OrderState();
@@ -326,6 +332,7 @@ class ACR_BBBHooks : BBB_Hooks
  // attackers inside the objective (#31).
  override bool AllowSquadTactic(SCR_AIGroup group)
  {
+  if (ACR_BagHold.HasPlaces(group)) return false;
   if (!SquadOf(group)) return true;
   if (BBB_HostIntent.s_bOn) return SquadTacticsOn();
   if (AllowContactRelay(group)) return true;

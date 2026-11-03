@@ -16,6 +16,7 @@ class ACR_GarrisonSpot : Managed
  vector m_Look;   // horizontal unit vector out of the window
  bool m_bStand;   // the view is only clear standing (high sill)
  bool m_bInterior; // no window: a place inside for soldiers the windows can't take
+ IEntity m_Bags;   // a place behind these bags: he holds it in a fight (ACR_BagHold)
  float m_fScore;
 }
 
@@ -31,6 +32,10 @@ class ACR_Garrison
  static const float GRID = 1.25;      // survey step
  static const float OPENING = 1.6;    // a post is this close to the outside
  static const float VIEW = 8;         // clear view out through the opening
+ static const float BAGS_CLOSE = 6;   // a garrison order this close to bags of ours means them, whatever house stands near
+ static const float BAGS_DEFEND = 15; // a defend order this close means them too
+ static const float BAGS_REACH = 30;  // a garrison order with no house to be had takes bags this close
+ static const float BAGS_WALK = 250;  // men this far from places behind bags go there each on his own, not as a group
 
  protected static ref map<SCR_AIGroup, ref array<IEntity>> s_Posts;
  protected static ref map<IEntity, ref array<ref ACR_GarrisonSpot>> s_Survey;
@@ -91,6 +96,7 @@ class ACR_Garrison
  static void Release(SCR_AIGroup group)
  {
   if (!group) return;
+  ACR_BagHold.Forget(group);
   array<IEntity> posts = s_Posts.Get(group);
   if (!posts) return;
   s_Posts.Remove(group);
@@ -116,6 +122,7 @@ class ACR_Garrison
  // Posts of groups that are gone (every second from the manager).
  static void Sweep()
  {
+  ACR_BagHold.Sweep();
   for (int i = s_Posts.Count() - 1; i >= 0; i--)
   {
    SCR_AIGroup group = s_Posts.GetKey(i);
@@ -125,6 +132,7 @@ class ACR_Garrison
     continue;
    }
    array<IEntity> posts = s_Posts.GetElement(i);
+   ACR_BagHold.Forget(group);
    s_Posts.RemoveElement(i);
    if (!posts) continue;
    foreach (IEntity post : posts) DeletePost(post);
@@ -147,12 +155,14 @@ class ACR_Garrison
  static int Assign(SCR_AIGroup group, IEntity navAgent, vector point, int wanted, out vector center, out float radius, bool waitForMesh = true)
  {
   if (!group) return 0;
+  int behindBags = ACR_BaseWorks.AssignBags(group, point, wanted, BAGS_CLOSE, center, radius);
+  if (behindBags > 0) return behindBags;
   Release(group);
   s_Replans.Remove(group);
   point[1] = GetGame().GetWorld().GetSurfaceY(point[0], point[2]);
   array<IEntity> buildings = {};
   BuildingsNear(point, buildings);
-  if (buildings.IsEmpty()) return 0;
+  if (buildings.IsEmpty()) return ACR_BaseWorks.AssignBags(group, point, wanted, BAGS_REACH, center, radius);
   IEntity first = buildings[0];
   array<ref ACR_GarrisonSpot> chosen = {};
   if (!PickSpots(buildings, navAgent, wanted, waitForMesh, SPILL_RADIUS, chosen)) return -1;
@@ -206,7 +216,9 @@ class ACR_Garrison
   foreach (ACR_GarrisonSpot spot : spots)
   {
    IEntity post = SpawnPost(spot);
-   if (post) posts.Insert(post);
+   if (!post) continue;
+   posts.Insert(post);
+   ACR_BagHold.AddPlace(group, post, spot);
   }
   if (posts.IsEmpty()) return 0;
   s_Posts.Set(group, posts);
@@ -217,6 +229,21 @@ class ACR_Garrison
    tight = Math.Max(tight, vector.DistanceXZ(center, placed.GetOrigin()) + 2);
   }
   s_Tight.Set(group, tight);
+  // Behind bags: the game hands out posts once every man is inside the radius, and a group that can't path to the
+  // first of them stands where its path ends with nobody on the bags (srv:worksfight, 1 Nov: 38 m off, and the town
+  // taken without a shot). With every man inside it from the start each goes to his own place.
+  if (ACR_BagHold.HasPlaces(group))
+  {
+   array<AIAgent> agents = {};
+   group.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (!body) continue;
+    float away = vector.DistanceXZ(center, body.GetOrigin());
+    if (away < BAGS_WALK) radius = Math.Max(radius, away + 5);
+   }
+  }
   return posts.Count();
  }
 
@@ -330,6 +357,8 @@ class ACR_Garrison
    waypoint.SetCompletionRadius(tight);
    PrintFormat("[ACR] GARRISON %1: in position, holding within %2 m", group.GetCustomName(), tight);
   }
+  // Bags: a man short of his place is still behind them, and a place he truly can't reach is given up in the fight (ACR_BagHold).
+  if (ACR_BagHold.HasPlaces(group)) return;
   array<IEntity> dropped = {};
   foreach (IEntity post : posts)
   {

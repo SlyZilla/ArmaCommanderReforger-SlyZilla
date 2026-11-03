@@ -16,6 +16,13 @@ class ACR_TestWorksFight
  protected static int s_iStart;
  protected static bool s_bDone;
  protected static int s_iDefendersLeft;
+ protected static ref ACR_BagSampler s_Sampler;
+ static void ACR_InitStatics()
+ {
+  s_Sampler = new ACR_BagSampler();
+ }
+ protected static bool s_bShots;
+ protected static bool s_bListening;
 
  static void Run(int second)
  {
@@ -33,11 +40,23 @@ class ACR_TestWorksFight
    return;
   }
   int fought = second - s_iStart;
+  Sample(manager);
   if (fought % 15 == 0) Report(manager, fought);
+  if (fought % 30 == 0 && s_Work.m_Defenders && s_Work.m_Defenders.m_Group)
+  {
+   array<IEntity> posts = {};
+   ACR_Garrison.PostEntities(s_Work.m_Defenders.m_Group, posts);
+   array<vector> places = {};
+   foreach (IEntity post : posts) if (post) places.Insert(post.GetOrigin());
+   ACR_BagSampler.Dump(string.Format("t=%1", fought), s_Work.m_Defenders.m_Group, places);
+  }
   if (fought >= LENGTH || (fought > 20 && (Attackers(manager) == 0 || Defenders(manager) == 0)))
   {
    Report(manager, fought);
    s_bDone = true;
+   s_Sampler.StopListening();
+   PrintFormat("[ACR] WORKSFIGHT MEN %1", s_Sampler.Words());
+   PrintFormat("[ACR] WORKSFIGHT held: into cover %1 times, sent back %2 times (%5 failed), holds %3, places lost %4", ACR_BagHold.s_iEntered, ACR_BagHold.s_iSentBack, ACR_BagHold.s_iHolds, ACR_BagHold.s_iLost, ACR_BagHold.s_iMoveFails);
    PrintFormat("[ACR] WORKSFIGHT RESULT %1: attackers lost %2 of %3, defenders lost %4 of %5, walls lost %6 of %7, %8 s, line men %9", s_Base.m_sName, s_iAttackers - Attackers(manager), s_iAttackers, s_iDefenders - Defenders(manager), s_iDefenders, s_iWalls - Walls(), s_iWalls, fought, !ACR_BaseWorks.s_bNoLineMenForTest);
    ACR_TestRegress.Check("worksfight: reached the end", true, "");
    ACR_TestRegress.Complete("worksfight", 1);
@@ -47,12 +66,35 @@ class ACR_TestWorksFight
  protected static void Setup(ACR_Manager manager)
  {
   ACR_BaseWorks.s_bNoLineMenForTest = System.IsCLIParam("acrWorksFightOldTest");
+  if (System.IsCLIParam("acrWorksFightValueOffTest") || System.IsCLIParam("acrWorksFightVillageOffTest")) ACR_Options.Set("acrKillGround", "0");
+  // Not always the biggest town: a village, a plan with little to hide behind.
+  bool village = System.IsCLIParam("acrWorksFightVillageTest") || System.IsCLIParam("acrWorksFightVillageOffTest");
+  if (System.IsCLIParam("acrWorksFightOffTest")) ACR_Options.Set("acrBagHold", "0");
   if (System.IsCLIParam("acrWorksFightCompactTest")) ACR_BaseLines.s_iFirstNestLevelForTest = ACR_BaseLines.NEST_COMPACT;
   string side = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
+  // -acrWorksFightBaseTest: the user's match of 2 Nov. Chotain Base, a walled military site, held against an attack
+  // from Firing Range's side; the attackers stage as the AI commander does (ACR_AICommander.STAGING_DISTANCE out, on
+  // its approach lines) instead of 450 m straight out.
+  if (Fortress())
+  {
+   foreach (ACR_Base site : ACR_Base.s_All)
+   {
+    if (!site || site.m_bRetired) continue;
+    if (site.m_sName == "Chotain Base") s_Base = site;
+    else if (site.m_sName == "Firing Range" || site.m_sName == "Gravette Base") site.m_sOwner = east;
+    else if (site.m_sOwner == east) site.m_sOwner = side;
+   }
+   if (!s_Base)
+   {
+    ACR_TestRegress.Abort("worksfight", "no Chotain Base here");
+    return;
+   }
+  }
   int most = -1;
   foreach (ACR_Base base : ACR_Base.s_All)
   {
+   if (s_Base) break;
    if (!base || base.m_bRetired || base.m_bHidden || base.m_bBuilt || base.m_sOwner == east) continue;
    float nearest = 99999;
    foreach (ACR_Base other : ACR_Base.s_All)
@@ -60,6 +102,7 @@ class ACR_TestWorksFight
    if (nearest < 900) continue;
    array<IEntity> buildings = {};
    ACR_BaseDefences.Buildings(base.GetOrigin(), ACR_BaseDefences.SearchRadius(base), buildings);
+   if (village && (buildings.Count() < 12 || buildings.Count() > 30)) continue;
    if (buildings.Count() <= most) continue;
    most = buildings.Count();
    s_Base = base;
@@ -81,17 +124,35 @@ class ACR_TestWorksFight
  // From out in front of the worst approach, as an attack would come.
  protected static void Attack(ACR_Manager manager)
  {
+  // Where the enemy really is: a plan's first line needn't face him (it can fire across him).
   vector outward = Vector(0, 0, 1);
-  if (!s_Work.m_aLines.IsEmpty()) outward = s_Work.m_aLines[0].m_vFacing;
+  array<vector> dirs = {};
+  array<float> weights = {};
+  ACR_BaseDefences.Threats(s_Base, s_Base.m_sOwner, dirs, weights);
+  if (!dirs.IsEmpty()) outward = dirs[0];
+  else if (!s_Work.m_aLines.IsEmpty()) outward = s_Work.m_aLines[0].m_vFacing;
   // Just out of the reserve's range, wherever its post stands.
   vector from = ACR_Manager.Ground(s_Work.m_Defenders.m_vPos + outward * 450);
+  vector beside = ACR_Manager.Ground(from + Vector(15, 0, 15));
+  if (Fortress())
+  {
+   // As the AI commander stages: one squad on his main line, one on the 60-degree line nearer his second threat.
+   vector center = s_Base.GetOrigin();
+   float ring = s_Base.m_fRadius + ACR_AICommander.STAGING_DISTANCE;
+   if (!BBB_Terrain.DryApproach(center, outward, ring, from)) from = ACR_Manager.Ground(center + outward * ring);
+   vector flank = ACR_AICommander.Turned(outward, -60);
+   vector other = ACR_AICommander.Turned(outward, 60);
+   if (dirs.Count() > 1 && ACR_BaseDefences.DotXZ(other, dirs[1]) > ACR_BaseDefences.DotXZ(flank, dirs[1])) flank = other;
+   if (!BBB_Terrain.DryApproach(center, flank, ring, beside)) beside = ACR_Manager.Ground(center + flank * ring);
+  }
   manager.m_sSpawningFaction = ACR_FactionSelection.East();
   manager.SpawnUnit(ONE, ENEMY, "", false, "", from, from);
-  vector beside = ACR_Manager.Ground(from + Vector(15, 0, 15));
   manager.SpawnUnit(TWO, ENEMY, "", false, "", beside, beside);
   manager.m_sSpawningFaction = "";
-  PrintFormat("[ACR] WORKSFIGHT attack from %1", from);
+  PrintFormat("[ACR] WORKSFIGHT attack from %1 and %2", from, beside);
  }
+
+ static bool Fortress() { return System.IsCLIParam("acrWorksFightBaseTest"); }
 
  protected static void Orders(ACR_Manager manager)
  {
@@ -142,6 +203,50 @@ class ACR_TestWorksFight
   return alive;
  }
 
+ // What the men out do by the second, from their first shot on: where they stand, their stance, their fire.
+ protected static void Sample(ACR_Manager manager)
+ {
+  SCR_AIGroup group;
+  if (s_Work.m_Defenders) group = s_Work.m_Defenders.m_Group;
+  if (!group) return;
+  array<IEntity> enemies = {};
+  array<string> names = {ONE, TWO};
+  foreach (string name : names)
+  {
+   ACR_Squad squad = Find(manager, name);
+   if (squad) ACR_BagSampler.Alive(squad.m_Group, enemies);
+  }
+  array<IEntity> posts = {};
+  ACR_Garrison.PostEntities(group, posts);
+  array<vector> places = {};
+  foreach (IEntity post : posts) if (post) places.Insert(post.GetOrigin());
+  array<IEntity> men = {};
+  ACR_BagSampler.Alive(group, men);
+  if (!s_bListening)
+  {
+   s_bListening = true;
+   s_Sampler.ListenForShots();
+  }
+  foreach (IEntity man : men)
+  {
+   if (!s_Sampler.m_aMen.Contains(man)) s_Sampler.m_aMen.Insert(man);
+   if (!s_bShots)
+   {
+    if (s_Sampler.Fired(man) > 0) s_bShots = true;
+    continue;
+   }
+   IEntity enemy = ACR_BagSampler.Nearest(enemies, man.GetOrigin());
+   vector facing = vector.Zero;
+   foreach (ACR_BaseLine line : s_Work.m_aLines)
+   {
+    facing = line.m_vFacing;
+    break;
+   }
+   s_Sampler.Sample(man, enemy, places, facing);
+  }
+  s_Sampler.Deaths(GetGame().GetWorld().GetWorldTime() / 1000);
+ }
+
  // How far the men stand from the nearest bags, on average, and how many are on a line.
  protected static void Report(ACR_Manager manager, int fought)
  {
@@ -177,6 +282,17 @@ class ACR_TestWorksFight
    if (squad && squad.GetAnchor()) nearest = Math.Min(nearest, vector.DistanceXZ(squad.GetAnchor().GetOrigin(), s_Base.GetOrigin()));
   }
   PrintFormat("[ACR] WORKSFIGHT t=%1: attackers %2 (nearest %3 m from the middle), defenders %4, on the bags %5, average %6 m from them, walls %7 of %8, owner %9", fought, Attackers(manager), (int)nearest, Defenders(manager), onBags, average.ToString(-1, 1), Walls(), s_iWalls, s_Base.m_sOwner);
+  int manned, guns;
+  if (s_Work.m_Defenders)
+  {
+   foreach (IEntity gun : s_Work.m_Defenders.m_aCrewGuns)
+   {
+    if (!gun || ACR_Logistics.Health(gun) <= 0) continue;
+    guns++;
+    if (!ACR_Defenders.FreeTurret(gun)) manned++;
+   }
+  }
+  PrintFormat("[ACR] WORKSFIGHT t=%1: works guns manned %2 of %3", fought, manned, guns);
  }
 }
 

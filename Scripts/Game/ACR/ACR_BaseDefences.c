@@ -133,6 +133,10 @@ class ACR_BaseDefences : Managed
 {
 	static const ResourceName LONG_PLASTIC = "{31A455F7FD8DCE84}Prefabs/Props/Military/Sandbags/Sandbag_01_long_high_plastic.et";
 	static const ResourceName LONG_BURLAP = "{BE16EE8FAA315FE2}Prefabs/Props/Military/Sandbags/Sandbag_01_long_high_burlap.et";
+	static const ResourceName LONG_LOW_PLASTIC = "{4ADCE267EC510331}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_plastic.et";
+	static const ResourceName LONG_LOW_BURLAP = "{BDAA871A06DABD74}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_burlap.et";
+	static const ResourceName LONG_CAMO_US = "{2E67A6863167B995}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/E_Sandbag_Camo_long_high_US.et";
+	static const ResourceName LONG_CAMO_EAST = "{777E1B31B83D74E4}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/Fortifications/E_Sandbag_Camo_long_high_USSR.et";
 	static const ResourceName END_PLASTIC = "{35F2A674E602198F}Prefabs/Props/Military/Sandbags/Sandbag_01_end_high_plastic.et";
 	static const ResourceName END_BURLAP = "{B547CF929FCC6BB7}Prefabs/Props/Military/Sandbags/Sandbag_01_end_high_burlap.et";
 	static const ResourceName ROUND_PLASTIC = "{B6307C189CCCA0B9}Prefabs/Props/Military/Sandbags/Sandbag_01_round_high_plastic.et";
@@ -252,7 +256,8 @@ class ACR_BaseDefences : Managed
 	// Half extents (x, z) of each prop's footprint, from the model bounds srv:basedefences prints.
 	static vector HalfSize(ResourceName prefab)
 	{
-		if (prefab == LONG_PLASTIC || prefab == LONG_BURLAP) return Vector(1.72, 0, 0.61);
+		if (prefab == LONG_PLASTIC || prefab == LONG_BURLAP || prefab == LONG_LOW_PLASTIC || prefab == LONG_LOW_BURLAP) return Vector(1.72, 0, 0.61);
+		if (prefab == LONG_CAMO_US || prefab == LONG_CAMO_EAST) return Vector(1.72, 0, 1.08);
 		if (prefab == END_PLASTIC || prefab == END_BURLAP) return Vector(1.07, 0, 0.6);
 		if (prefab == SHORT_PLASTIC || prefab == SHORT_BURLAP) return Vector(0.88, 0, 0.6);
 		if (prefab == ROUND_PLASTIC || prefab == ROUND_BURLAP) return Vector(1.61, 0, 0.7);
@@ -621,7 +626,7 @@ class ACR_BaseDefences : Managed
 		return gap;
 	}
 
-	static const float BUILDING_REACH = 70; // m from its origin a building's walls can be (srv:basedefenceskolguyev: 61)
+	static const float BUILDING_REACH = 70; // m from its origin a building's walls can be
 
 	static float BuildingGap(array<IEntity> buildings, vector p, float within, IEntity ignore = null)
 	{

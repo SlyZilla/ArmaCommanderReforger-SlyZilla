@@ -15,8 +15,12 @@ class ACR_StaticInit
   ACR_AICommander.ACR_InitStatics();
   ACR_AirLift.ACR_InitStatics();
   ACR_BBBHooks.ACR_InitStatics();
+  ACR_BagHold.ACR_InitStatics();
   ACR_Base.ACR_InitStatics();
   ACR_BaseDefences.ACR_InitStatics();
+  ACR_BaseLiner.ACR_InitStatics();
+  ACR_BaseLines.ACR_InitStatics();
+  ACR_BaseRing.ACR_InitStatics();
   ACR_BaseSurvey.ACR_InitStatics();
   ACR_BaseWorks.ACR_InitStatics();
   ACR_ContentSocket.ACR_InitStatics();

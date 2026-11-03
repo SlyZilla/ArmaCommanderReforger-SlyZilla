@@ -437,7 +437,7 @@ class ACR_DoctrineKits
   string refusal = "no spot";
   foreach (ACR_PositionSite site : sites)
   {
-   ACR_FortifyPlan plan = ACR_Fortify.Plan(squad, site.m_vPos, refusal, enemyPos);
+   ACR_FortifyPlan plan = ACR_Fortify.Plan(squad, site.m_vPos, refusal, site.AimAt(enemyPos));
    if (!plan) continue;
    // A new position only: by the one just built the plan is its upgrade (srv:doctrinekits, FIA:
    // the second position upgraded the first).

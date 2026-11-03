@@ -92,7 +92,7 @@ class ACR_TestDefenders
    int alive = manager.m_Bases.GuardsAlive(s_Post.m_Group);
    bool notSquad = s_Post.m_Group && !manager.FindSquadByGroup(s_Post.m_Group) && manager.m_Bases.IsGarrison(s_Post.m_Group);
    // #155: they hold behind the line, each on a post behind a sandbag position's wall.
-   bool defending = s_Post.m_Group && s_Post.m_Group.GetCurrentWaypoint() && vector.DistanceXZ(s_Post.m_Group.GetCurrentWaypoint().GetOrigin(), ACR_Fortify.HoldCentre(s_Fort)) < 1;
+   bool defending = s_Post.m_Group && s_Post.m_Group.GetCurrentWaypoint() && (vector.DistanceXZ(s_Post.m_Group.GetCurrentWaypoint().GetOrigin(), ACR_Fortify.HoldCentre(s_Fort)) < 1 || (s_Post.m_bOnWings && vector.DistanceXZ(s_Post.m_Group.GetCurrentWaypoint().GetOrigin(), s_Fort.m_vPos) < 1));
    array<IEntity> posts = {};
    ACR_Garrison.PostEntities(s_Post.m_Group, posts);
    int behind;
