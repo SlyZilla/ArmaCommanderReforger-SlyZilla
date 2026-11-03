@@ -836,6 +836,7 @@ class ACR_Squad : Managed
   if (m_FortifyPlan) CancelFortify();
   if (m_Fortification) LeaveFortification();
   if (m_Qrf && !m_bQrfOrder) ACR_Qrf.End(this);
+  GetGame().GetCallqueue().Remove(SweepOutForJob); // the job's dismount ends with it (#187)
   m_CombatFlank.Cancel();
   m_bGarrisonPending = false;
   m_iGarrisonTries = 0;
@@ -4200,13 +4201,17 @@ class ACR_Squad : Managed
   GetEveryoneOut();
   m_bHasLZ = false;
   m_iDismountSweeps = 0;
+  m_iJobSweepSerial = m_iOrderSerial;
   GetGame().GetCallqueue().Remove(SweepOutForJob);
   GetGame().GetCallqueue().CallLater(SweepOutForJob, 3000, false);
  }
 
+ // Only for the job it got out for: a Get in given within the sweeps' 9 s had the men thrown
+ // back out of the vehicle they were just ordered into (#187).
+ protected int m_iJobSweepSerial;
  protected void SweepOutForJob()
  {
-  if (!IsMounted() || m_iDismountSweeps >= 3) return;
+  if (m_iJobSweepSerial != m_iOrderSerial || !HasJob() || !IsMounted() || m_iDismountSweeps >= 3) return;
   m_iDismountSweeps++;
   PushOutStillAboard();
   GetGame().GetCallqueue().CallLater(SweepOutForJob, 3000, false);
