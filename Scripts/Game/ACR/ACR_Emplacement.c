@@ -213,6 +213,9 @@ class ACR_Emplacement : Managed
    walls.Insert(gun);
    made++;
   }
+  // The nest sees out: the bushes round it and in front of its gun go (ACR_FieldOfFire).
+  ACR_FieldOfFire.Round(m_vPos, ACR_FieldOfFire.ROUND_M, "nest");
+  if (gun) ACR_FieldOfFire.ForGun(gun);
   return made;
  }
 
