@@ -5,44 +5,7 @@
 class ACR_TestParts
 {
  static const float STEP_S = 3;
- protected static ref array<ResourceName> s_aCatalog = {
-  "{4ADCE267EC510331}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_plastic.et",
-  "{7F118C6EA2AF1C99}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_high_plastic.et",
-  "{BDAA871A06DABD74}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_burlap.et",
-  "{A3A7C365E845B1B6}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_high_burlap.et",
-  "{3F5EE4D69DBC478C}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_short_plastic.et",
-  "{3A64925BC81FC2C0}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_short_high_plastic.et",
-  "{3C9FB6869EB635BB}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_round_plastic.et",
-  "{87588E4A1561C4D1}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_round_high_plastic.et",
-  "{74B3C3B9AFC69136}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_end_plastic.et",
-  "{7949746E8D314957}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_end_high_plastic.et",
-  "{C3F2F7B92EAB5A14}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_wall_solid_plastic.et",
-  "{D2299274C13B1169}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_wall_solid_burlap.et",
-  "{525781C399409474}PrefabsEditable/Auto/Props/Infrastructure/Roadblocks/E_RoadBlock_01.et",
-  "{B08BCB2AD5A57B72}PrefabsEditable/Auto/Structures/Military/Fortifications/E_Dragontooth_01_V1.et",
-  "{FD625252F3654B76}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_long_v1.et",
-  "{95BFB5C33EA78DE6}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtPile_01_small.et",
-  "{E6AE368A342034CB}PrefabsEditable/Auto/Props/Military/Fortification/E_CzechHedgehog_01_rusty.et",
-  "{1DB9C9CAEA70E7E5}PrefabsEditable/Auto/Props/Military/Fortification/E_BarbedTape_KnifeRest.et",
-  "{E1721BBF5A1ABD24}PrefabsEditable/Auto/Props/Military/Fortification/E_BarbedTape_Coil.et",
-  "{3BAF6AA8C20D924E}Prefabs/Compositions/Misc/SubCompositions/Fortifications/Barricade_Logs_01.et",
-  "{5B91941C0D244457}Prefabs/Compositions/Misc/SubCompositions/Fortifications/Sandbag_Wall_Ladder_US_01.et",
-  "{2E67A6863167B995}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/E_Sandbag_Camo_long_high_US.et",
-  "{B5AFD959449C1627}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/E_Sandbag_Barricade_FIA_06.et",
-  DIRT_V2,
-  DIRT_V3,
-  DIRT_SHORT,
-  "{C86856FFC84B573A}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtPile_01_large.et",
-  CAMO_BAGS_EAST,
-  LOGS_02,
-  TIRES_US,
-  TIRES_EAST,
-  TIRE_PILE,
-  NET_SMALL_US,
-  NET_SMALL_TOP_US,
-  "{E05FC6BCECA8F071}PrefabsEditable/Auto/Structures/Military/CamoNets/Soviet/E_CamoNet_Small_Soviet.et",
-  "{7E90E63803680AD9}PrefabsEditable/Auto/Structures/Military/CamoNets/FIA/E_CamoNet_Small_FIA_01_V1.et"
- };
+ protected static ref array<ResourceName> s_aCatalog;
  static const ResourceName DIRT_V1 = "{FD625252F3654B76}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_long_v1.et";
  static const ResourceName DIRT_V2 = "{913666B24FA1C458}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_long_v2.et";
  static const ResourceName DIRT_V3 = "{74AA2A4B43445333}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_long_v3.et";
@@ -59,13 +22,61 @@ class ACR_TestParts
  static const ResourceName HEDGEHOG = "{E6AE368A342034CB}PrefabsEditable/Auto/Props/Military/Fortification/E_CzechHedgehog_01_rusty.et";
  static const ResourceName LOW_LONG_US = "{4ADCE267EC510331}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_plastic.et";
  protected static vector s_vYard;
- protected static ref array<ACR_Emplacement> s_aEmplacements = {};
- protected static ref array<ref ACR_Emplacement> s_aKeep = {};
- protected static ref array<IEntity> s_aGuns = {};
- protected static ref array<vector> s_aEyes = {};
- protected static ref array<vector> s_aAngles = {};
- protected static ref array<string> s_aNames = {};
- protected static ref array<IEntity> s_aWalls = {};
+ protected static ref array<ACR_Emplacement> s_aEmplacements;
+ protected static ref array<ref ACR_Emplacement> s_aKeep;
+ protected static ref array<IEntity> s_aGuns;
+ protected static ref array<vector> s_aEyes;
+ protected static ref array<vector> s_aAngles;
+ protected static ref array<string> s_aNames;
+ protected static ref array<IEntity> s_aWalls;
+ static void ACR_InitStatics()
+ {
+  s_aCatalog = {
+   "{4ADCE267EC510331}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_plastic.et",
+   "{7F118C6EA2AF1C99}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_high_plastic.et",
+   "{BDAA871A06DABD74}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_burlap.et",
+   "{A3A7C365E845B1B6}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_high_burlap.et",
+   "{3F5EE4D69DBC478C}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_short_plastic.et",
+   "{3A64925BC81FC2C0}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_short_high_plastic.et",
+   "{3C9FB6869EB635BB}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_round_plastic.et",
+   "{87588E4A1561C4D1}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_round_high_plastic.et",
+   "{74B3C3B9AFC69136}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_end_plastic.et",
+   "{7949746E8D314957}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_end_high_plastic.et",
+   "{C3F2F7B92EAB5A14}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_wall_solid_plastic.et",
+   "{D2299274C13B1169}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_wall_solid_burlap.et",
+   "{525781C399409474}PrefabsEditable/Auto/Props/Infrastructure/Roadblocks/E_RoadBlock_01.et",
+   "{B08BCB2AD5A57B72}PrefabsEditable/Auto/Structures/Military/Fortifications/E_Dragontooth_01_V1.et",
+   "{FD625252F3654B76}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtCover_01_long_v1.et",
+   "{95BFB5C33EA78DE6}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtPile_01_small.et",
+   "{E6AE368A342034CB}PrefabsEditable/Auto/Props/Military/Fortification/E_CzechHedgehog_01_rusty.et",
+   "{1DB9C9CAEA70E7E5}PrefabsEditable/Auto/Props/Military/Fortification/E_BarbedTape_KnifeRest.et",
+   "{E1721BBF5A1ABD24}PrefabsEditable/Auto/Props/Military/Fortification/E_BarbedTape_Coil.et",
+   "{3BAF6AA8C20D924E}Prefabs/Compositions/Misc/SubCompositions/Fortifications/Barricade_Logs_01.et",
+   "{5B91941C0D244457}Prefabs/Compositions/Misc/SubCompositions/Fortifications/Sandbag_Wall_Ladder_US_01.et",
+   "{2E67A6863167B995}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/E_Sandbag_Camo_long_high_US.et",
+   "{B5AFD959449C1627}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/E_Sandbag_Barricade_FIA_06.et",
+   DIRT_V2,
+   DIRT_V3,
+   DIRT_SHORT,
+   "{C86856FFC84B573A}PrefabsEditable/Auto/Structures/Military/Fortifications/E_DirtPile_01_large.et",
+   CAMO_BAGS_EAST,
+   LOGS_02,
+   TIRES_US,
+   TIRES_EAST,
+   TIRE_PILE,
+   NET_SMALL_US,
+   NET_SMALL_TOP_US,
+   "{E05FC6BCECA8F071}PrefabsEditable/Auto/Structures/Military/CamoNets/Soviet/E_CamoNet_Small_Soviet.et",
+   "{7E90E63803680AD9}PrefabsEditable/Auto/Structures/Military/CamoNets/FIA/E_CamoNet_Small_FIA_01_V1.et"
+  };
+  s_aEmplacements = {};
+  s_aKeep = {};
+  s_aGuns = {};
+  s_aEyes = {};
+  s_aAngles = {};
+  s_aNames = {};
+  s_aWalls = {};
+ }
  protected static ACR_DefenderPost s_Post;
  protected static CameraBase s_Camera;
  protected static int s_iNext = -1;

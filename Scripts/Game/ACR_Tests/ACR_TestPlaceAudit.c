@@ -32,7 +32,11 @@ class ACR_TestPlaceAudit
  protected static int s_iRingAsked, s_iRingClosed;
  protected static float s_fSoftSum, s_fMeanSum;
  protected static int s_iSoftTowns, s_iSoftOpen;
- protected static ref array<ACR_Base> s_aBases = {};
+ protected static ref array<ACR_Base> s_aBases;
+ static void ACR_InitStatics()
+ {
+  s_aBases = {};
+ }
  protected static string s_sSide;
 
  static void Run(int second)

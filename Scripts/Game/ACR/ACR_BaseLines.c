@@ -186,7 +186,11 @@ class ACR_BaseLiner : Managed
   return "length";
  }
 
- protected static ref array<vector> s_aNoCuts = {};
+ protected static ref array<vector> s_aNoCuts;
+ static void ACR_InitStatics()
+ {
+  s_aNoCuts = {};
+ }
  static const float OTHER_BAGS = 3;     // m from another line's bags
  static const float TIES_IN = 7;        // ... except where it goes on from one
  vector m_vTiesIn;
@@ -979,7 +983,11 @@ class ACR_BaseLines
  static const float GUN_OPEN_GATE = 1.5;  // a gun on a way in that has none
  static const int MOST_GUN_LOOKS = 30;       // places looked at for a gun, about
  static const float STRETCH_MOST = 34;       // m a stretch gets to, whatever's left of the line
- static ref array<float> WIRE_OUTS = {32, 24, 16, 7}; // m in front of the bags wire stands, the furthest that works
+ static ref array<float> WIRE_OUTS; // m in front of the bags wire stands, the furthest that works
+ static void ACR_InitStatics()
+ {
+  WIRE_OUTS = {32, 24, 16, 7};
+ }
  static const float GUN_WORTH_LEAST = 2;      // what a gun must do to him to be placed
  static const float LONE_GUN_WORTH = 10;      // ... a gun on its own, with no line about it
  static const float GATE_TURN = 20;       // degrees a gun on a straight run turns for one

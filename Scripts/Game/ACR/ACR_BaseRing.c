@@ -137,7 +137,11 @@ class ACR_BaseRing : Managed
  static bool s_bMeasureForTest;
  static int s_iLastAsked, s_iLastClosed;
  static const float CLOSED_WITHIN = 9;             // m from bags that a stretch of the way round is closed
- static ref array<vector> s_aLastPath = {};        // tests draw it
+ static ref array<vector> s_aLastPath;        // tests draw it
+ static void ACR_InitStatics()
+ {
+  s_aLastPath = {};
+ }
 
  static bool On() { return ACR_LogisticsRules.Choice("acrBaseRing", "1") != "0"; }
 

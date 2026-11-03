@@ -37,12 +37,13 @@ class ACR_Defenders
  static void ACR_InitStatics()
  {
   s_Posts = {};
+  s_mReseatAt = new map<IEntity, float>();
  }
  static const float SPAWN_RANGE = 400;   // as ACR_BaseSystem's garrisons
  static const float DESPAWN_RANGE = 450;
  static const float REMAN_REACH = 8;     // m from an empty gun of a base's works a man of its reserve leaves the bags for it: the nest's own wing
  static const float REMAN_WAIT_MS = 45000; // ... and how long the gun then stays empty before the next man is asked
- protected static ref map<IEntity, float> s_mReseatAt = new map<IEntity, float>();
+ protected static ref map<IEntity, float> s_mReseatAt;
 
  static ACR_DefenderPost Add(string faction, vector pos, string name, float radius)
  {

@@ -16,7 +16,11 @@ class ACR_TestWorksFight
  protected static int s_iStart;
  protected static bool s_bDone;
  protected static int s_iDefendersLeft;
- protected static ref ACR_BagSampler s_Sampler = new ACR_BagSampler();
+ protected static ref ACR_BagSampler s_Sampler;
+ static void ACR_InitStatics()
+ {
+  s_Sampler = new ACR_BagSampler();
+ }
  protected static bool s_bShots;
  protected static bool s_bListening;
 

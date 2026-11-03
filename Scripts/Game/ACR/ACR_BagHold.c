@@ -47,7 +47,11 @@ class ACR_BagHold
  static const float LOOK_MAX_S = 4;
  static const float DOWN_MIN_S = 3;      // how long he stays down
  static const float DOWN_MAX_S = 6;
- protected static ref map<SCR_AIGroup, ref array<ref ACR_BagPlace>> s_Places = new map<SCR_AIGroup, ref array<ref ACR_BagPlace>>();
+ protected static ref map<SCR_AIGroup, ref array<ref ACR_BagPlace>> s_Places;
+ static void ACR_InitStatics()
+ {
+  s_Places = new map<SCR_AIGroup, ref array<ref ACR_BagPlace>>();
+ }
  static int s_iEntered, s_iSentBack, s_iHolds, s_iLost, s_iMoveFails; // tests
 
  static bool On()

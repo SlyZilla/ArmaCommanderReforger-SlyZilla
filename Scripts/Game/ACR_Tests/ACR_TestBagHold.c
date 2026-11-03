@@ -284,10 +284,16 @@ class ACR_TestBagHold
  static const int BEHIND_LEAST = 60;
  static const int INTO_BAGS_MOST = 15;
  protected static vector s_vAt, s_vFacing;
- protected static ref array<IEntity> s_aBags = {};
- protected static ref array<vector> s_aPlaces = {};
+ protected static ref array<IEntity> s_aBags;
+ protected static ref array<vector> s_aPlaces;
  protected static SCR_AIGroup s_Group;
- protected static ref ACR_BagSampler s_Sampler = new ACR_BagSampler();
+ protected static ref ACR_BagSampler s_Sampler;
+ static void ACR_InitStatics()
+ {
+  s_aBags = {};
+  s_aPlaces = {};
+  s_Sampler = new ACR_BagSampler();
+ }
  protected static int s_iDefenders, s_iAttackers, s_iContact = -1;
  protected static int s_iOrdered = -1;
  protected static bool s_bDone;

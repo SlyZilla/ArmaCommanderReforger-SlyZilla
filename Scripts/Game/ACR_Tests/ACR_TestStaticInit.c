@@ -4,6 +4,7 @@ class ACR_TestStaticInit
  static void Run()
  {
   ACR_TestAirLift.ACR_InitStatics();
+  ACR_TestBagHold.ACR_InitStatics();
   ACR_TestBaseDefences.ACR_InitStatics();
   ACR_TestBaseWorks.ACR_InitStatics();
   ACR_TestBlast.ACR_InitStatics();
@@ -21,8 +22,10 @@ class ACR_TestStaticInit
   ACR_TestMapDeclutterShots.ACR_InitStatics();
   ACR_TestMinefields.ACR_InitStatics();
   ACR_TestPads.ACR_InitStatics();
+  ACR_TestParts.ACR_InitStatics();
   ACR_TestPathProbe.ACR_InitStatics();
   ACR_TestPatrol.ACR_InitStatics();
+  ACR_TestPlaceAudit.ACR_InitStatics();
   ACR_TestPlaces.ACR_InitStatics();
   ACR_TestPositionSiting.ACR_InitStatics();
   ACR_TestRegress.ACR_InitStatics();
@@ -37,6 +40,7 @@ class ACR_TestStaticInit
   ACR_TestTwoICShots.ACR_InitStatics();
   ACR_TestTyphoonPurchases.ACR_InitStatics();
   ACR_TestWings.ACR_InitStatics();
+  ACR_TestWorksFight.ACR_InitStatics();
   ACR_TestWorksShots.ACR_InitStatics();
  }
 }
