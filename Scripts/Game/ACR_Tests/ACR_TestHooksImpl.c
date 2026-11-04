@@ -29,7 +29,7 @@ modded class ACR_TestHooks
   if (seconds <= 5 && (System.IsCLIParam("acrAllocPerfTest") || System.IsCLIParam("acrAllocSoakTest"))) ACR_Options.Set("acrAIAllocator", "1");
   if (seconds <= 5 && (System.IsCLIParam("acrAllocControlPerfTest") || System.IsCLIParam("acrAllocControlSoakTest") || System.IsCLIParam("acrAllocControlLongSoakTest"))) ACR_Options.Set("acrAIAllocator", "2");
   // -acrForecastSoakTest: the Everon soak with the defence forecast on (ACR_DefenceForecast).
-  if (seconds <= 5 && System.IsCLIParam("acrForecastSoakTest")) ACR_Options.Set("acrDefenceForecast", "1");
+  if (seconds <= 5 && (System.IsCLIParam("acrForecastSoakTest") || System.IsCLIParam("acrForecastSkirmishTest"))) ACR_Options.Set("acrDefenceForecast", "1");
   // -acrPadsTest: helipads on this scenario's map (ACR_TestPads).
   if (System.IsCLIParam("acrPadsTest") || System.IsCLIParam("acrPadsLevieTest") || System.IsCLIParam("acrPadsMontignacTest") || System.IsCLIParam("acrPadsPhilippeTest")) ACR_TestPads.Run(null, seconds);
   // -acrSurveyTest: object/terrain dump for placing bases and pads (ACR_TestSurvey).

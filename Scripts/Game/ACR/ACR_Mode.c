@@ -63,6 +63,8 @@ class ACR_Mode : GenericEntity
    // observing (-acrAIAllocator 1, set by the test hooks); ...Control...: with it in control (2).
    if (System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrForecastSoakTest") || System.IsCLIParam("acrAllocSoakTest") || System.IsCLIParam("acrAllocControlSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; }
    // -acrLongSoakTest: the same soak for 2 hours (long-session stability and drift).
+   // -acrForecastSkirmishTest: the soak on the Montignac flashpoint for 12 minutes (contact comes early).
+   if (System.IsCLIParam("acrForecastSkirmishTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; m_iSoakEnd = 720; }
    if (System.IsCLIParam("acrLongSoakTest") || System.IsCLIParam("acrAllocControlLongSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; m_iSoakEnd = 7200; }
    if (m_bSoak || m_bSummary) ACR_Perf.s_bChecks = true;
    GetGame().GetCallqueue().CallLater(Second, 1000, true);
