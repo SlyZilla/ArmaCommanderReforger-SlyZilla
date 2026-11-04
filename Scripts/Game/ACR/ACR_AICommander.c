@@ -828,6 +828,10 @@ class ACR_AIAttack
  float m_fBBBFightS;
  float m_fBBBCheckAt;
  float m_fBBBSupportAt;
+ // The ground picture (-acrAttackGround, ACR_AttackGround): built at launch on a held base,
+ // rebuilt when an enemy is seen where no eye was; and the build last logged.
+ ref ACR_AttackGround m_Ground;
+ int m_iGroundLogged;
 
  vector StagingOf(ACR_Squad squad)
  {
@@ -3520,6 +3524,7 @@ class ACR_AICommander : Managed
    }
   }
   attack.m_bAssaulting = empty;
+  if (!empty && ACR_AttackGround.On()) StartGround(attack);
   m_Attacks.Insert(attack);
   m_fLastOffensive = GetGame().GetWorld().GetWorldTime();
   if (pressure < 1) Say(string.Format("[ACR] AI %1: taking the initiative against %2 (accepting x%3 odds after a quiet spell)", m_sFaction, target.m_sName, pressure));
@@ -4100,6 +4105,50 @@ class ACR_AICommander : Managed
 
  // Base of fire keeps covering until the assault squads are on the objective, then lifts
  // fire and joins in.
+ // The ground picture of an attack (-acrAttackGround): read out to the farthest squad of the attack
+ // (the area the attack crosses), toward the main approach, with the enemies this side has seen
+ // there as eyes. Nothing acts on it yet: it is logged and shown in Think so the reading of the
+ // ground can be judged first (design step 1).
+ protected void StartGround(ACR_AIAttack attack)
+ {
+  ACR_Base target = attack.m_Target;
+  float extent = 0;
+  foreach (ACR_Squad squad : attack.m_Squads)
+   if (squad) extent = Math.Max(extent, vector.DistanceXZ(PositionOf(squad), target.GetOrigin()));
+  attack.m_Ground = new ACR_AttackGround(target, m_sFaction, attack.m_vApproach, extent);
+  array<vector> enemies = {};
+  SeenEnemiesNear(target.GetOrigin(), attack.m_Ground.m_fExtent, enemies);
+  attack.m_Ground.SetEyes(enemies);
+ }
+
+ protected void TickGround(ACR_AIAttack attack)
+ {
+  if (!attack.m_Ground || !attack.m_Target) return;
+  ACR_AttackGround ground = attack.m_Ground;
+  if (ground.IsDone() && ground.m_iBuilds != attack.m_iGroundLogged)
+  {
+   attack.m_iGroundLogged = ground.m_iBuilds;
+   Say(string.Format("[ACR] AI %1: %2", m_sFaction, ground.Summary(attack.m_aStaging)));
+  }
+  // An enemy seen where no eye was: read the ground again (only once the last reading is done).
+  if (!ground.IsDone()) return;
+  array<vector> enemies = {};
+  SeenEnemiesNear(attack.m_Target.GetOrigin(), ground.m_fExtent, enemies);
+  ground.SetEyes(enemies);
+ }
+
+ // Where this side last saw each enemy squad within 'radius' of 'point' (intel only).
+ protected void SeenEnemiesNear(vector point, float radius, notnull array<vector> seen)
+ {
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == m_sFaction) continue;
+   vector known;
+   if (!KnownPosition(squad, known)) continue;
+   if (vector.DistanceXZ(known, point) <= radius) seen.Insert(known);
+  }
+ }
+
  void TickFireBase(ACR_AIAttack attack)
  {
   ACR_Base target = attack.m_Target;
@@ -4496,6 +4545,7 @@ class ACR_AICommander : Managed
    string fire = "none";
    if (attack.m_Suppressor) fire = attack.m_Suppressor.GetName();
    lines.Insert(string.Format("%1 %2: %3, %4 squad(s), staging%5, base of fire %6", kind, attack.m_Target.m_sName, phase, attack.m_Squads.Count(), grids, fire));
+   if (attack.m_Ground) lines.Insert("  " + attack.m_Ground.Summary(attack.m_aStaging));
   }
   if (m_Refitting.Count() > 0)
   {
@@ -4628,10 +4678,12 @@ class ACR_AICommander : Managed
      }
     }
     if (demoBusy) continue;
+    TickGround(attack);
     PushAttackers(attack);
     TickFireBase(attack);
     continue;
    }
+   TickGround(attack);
    bool anyAirLift = false;
    bool gathered = true;
    foreach (ACR_Squad squad : attack.m_Squads)

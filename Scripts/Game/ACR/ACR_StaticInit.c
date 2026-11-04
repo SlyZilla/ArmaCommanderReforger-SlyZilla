@@ -14,6 +14,7 @@ class ACR_StaticInit
   s_bDone = true;
   ACR_AICommander.ACR_InitStatics();
   ACR_AirLift.ACR_InitStatics();
+  ACR_AttackGround.ACR_InitStatics();
   ACR_BBBHooks.ACR_InitStatics();
   ACR_BagHold.ACR_InitStatics();
   ACR_Base.ACR_InitStatics();
