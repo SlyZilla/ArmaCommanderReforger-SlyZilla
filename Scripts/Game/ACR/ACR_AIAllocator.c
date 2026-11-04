@@ -26,6 +26,7 @@ class ACR_AIJob
  float m_fBar = 1;         // team jobs: share of m_fNeed below which they are worth nothing
  float m_fPatience = 600;  // s: its value halves when it takes this long
  bool m_bRunning;          // already under way: its members are incumbents
+ ACR_AIAttack m_Attack;    // the commander's attack it stands for, when running
  // Filled by Allocate:
  ref array<int> m_aMembers = {};
  float m_fScore;           // what it came to (team: whole team; solo: sum of members)
