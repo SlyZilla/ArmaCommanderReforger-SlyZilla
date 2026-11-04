@@ -128,7 +128,8 @@ class ACR_Defenders
   post.m_bCrewWanted = true;
   post.m_aCrewGuns.Clear();
   post.m_aCrewGuns.InsertAll(guns);
-  PrintFormat("[ACR] DEFENDERS %1: its squad left for another job, %2 gun(s) to man from the reserve (%3 in reserve)", post.m_sName, guns.Count(), post.m_iReserve);
+  if (post.m_Work) PrintFormat("[ACR] DEFENDERS %1: %2 gun(s) to man from the reserve (%3 in reserve)", post.m_sName, guns.Count(), post.m_iReserve);
+  else PrintFormat("[ACR] DEFENDERS %1: its squad left for another job, %2 gun(s) to man from the reserve (%3 in reserve)", post.m_sName, guns.Count(), post.m_iReserve);
  }
 
  // A squad holds it again: the gun crew goes back into the reserve.
