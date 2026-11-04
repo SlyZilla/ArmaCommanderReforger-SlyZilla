@@ -1136,6 +1136,7 @@ class ACR_AICommander : Managed
   AssignDefenders();
   ReturnToPosts();
   t = ACR_Perf.Lap("ai.defend", t);
+  UpdateLane();
   if (AllocatorControls()) RunAllocation(true);
   else AssignAttacks();
   t = ACR_Perf.Lap("ai.plan", t);
@@ -1243,6 +1244,7 @@ class ACR_AICommander : Managed
   job.m_fPatience = 600;
   float need = 1;
   if (!base.m_sOwner.IsEmpty()) need = AttackNeed(base);
+  if (InLaneOrFlank(base)) need *= LANE_MASS; // the main effort is filled up further
   if (base == m_CounterTarget && CounterDue()) need = need * m_Doctrine.m_fCounterNeed;
   job.m_fNeed = need;
   // The planner's own bar: the doctrine's pressure after a quiet spell, lower on High threat.
@@ -1347,13 +1349,19 @@ class ACR_AICommander : Managed
    foreach (ACR_Squad attacker : attack.m_Squads) if (attacker) attackOf.Set(attacker, attack);
   }
   // New attacks: the planner's best-scored enemy bases (cheapest x nearest).
+  bool laneActive = LaneActive();
+  bool laneStarved = LaneStarved();
   array<ACR_Base> targets = {};
   array<float> scores = {};
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (!base || base.m_bRetired || base.m_sOwner == m_sFaction || !HostileOwner(base) || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
    if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
+   // The lane, as AssignAttacks weighs it: in it sooner, its flanks later, elsewhere not while it has work.
+   float laneFactor = LaneTargetFactor(base);
+   if (laneFactor < 0 && !laneStarved) continue;
    float score = Math.Max(10, DefenceOf(base) * ATTACK_RATIO * m_Doctrine.m_fAttackRatio) * (NearestFreeDistance(pool, base.GetOrigin()) / 1000 + 0.1);
+   if (laneFactor > 0) score *= laneFactor;
    int at = 0;
    while (at < scores.Count() && scores[at] <= score) at++;
    targets.InsertAt(base, at);
@@ -1366,11 +1374,17 @@ class ACR_AICommander : Managed
   }
   for (int t = 0; t < targets.Count() && t < ALLOC_ATTACK_TARGETS; t++) AllocAttack(targets[t]);
   // Grabs: the nearest empty bases in sight.
+  int rearGrabs = 0;
+  foreach (ACR_AIAttack rear : m_Attacks)
+   if (laneActive && rear.m_bGrab && !InLaneOrFlank(rear.m_Target)) rearGrabs++;
   array<ACR_Base> empties = {};
   array<float> gaps = {};
   foreach (ACR_Base open : ACR_Base.s_All)
   {
    if (!open || open.m_bRetired || !SeenOwner(open).IsEmpty() || !Visible(open) || IsAttacking(open) || CoolingDown(open)) continue;
+   // With a lane: grabs in it and on its flanks, and one at a time close behind our own (as AssignAttacks).
+   if (laneActive && !InLaneOrFlank(open) && (rearGrabs > 0 || !RearGrab(open))) continue;
+   if (laneActive && !InLaneOrFlank(open)) rearGrabs++;
    float gap = NearestFreeDistance(pool, open.GetOrigin());
    int place = 0;
    while (place < gaps.Count() && gaps[place] <= gap) place++;
@@ -1498,8 +1512,23 @@ class ACR_AICommander : Managed
   if (settings) maxTeams = settings.m_iAIAttacks;
   int extra = m_Doctrine.m_iExtraFronts;
   if (ACR_Base.s_All.Count() > 24) extra = extra * 2;
+  if (laneActive) extra = m_Doctrine.m_iLaneFronts; // a lane concentrates the force (AssignAttacks)
   maxTeams += Math.Min(extra, freeNow.Count() / Math.Max(1, m_Doctrine.m_iSquadsPerFront)); // free squads, as AssignAttacks counts
   ACR_AIAllocator.Allocate(m_aAllocJobs, m_aAllocSquads, maxTeams);
+  // In control the lane learns from the allocation: an attack in it funded (running or new) keeps
+  // it fed; only unfunded ones in it count toward a starved lane (as AssignAttacks' musters).
+  if (control && laneActive)
+  {
+   bool laneFed, laneWanted;
+   foreach (ACR_AIJob laneJob : m_aAllocJobs)
+   {
+    if (!laneJob.m_bTeam || !InLaneOrFlank(laneJob.m_Target)) continue;
+    if (laneJob.m_fScore > 0) laneFed = true;
+    else laneWanted = true;
+   }
+   if (laneFed) NoteLaneMuster(true);
+   else if (laneWanted) NoteLaneMuster(false);
+  }
 
   // Two tiers: the estimates ranked the squads; Reach checks the new attacks' picks for real
   // (taxis and the air lift claimed in order), and says how often the estimate was wrong.
@@ -2105,6 +2134,239 @@ class ACR_AICommander : Managed
   float best = float.MAX;
   foreach (float gap : nearest) best = Math.Min(best, gap);
   foreach (int i, float gap : nearest) if (gap <= best + FRONTLINE_SLACK) result.Insert(i);
+ }
+
+ // ---------------------------------------------------------------- lane (axis of advance, ACR_AILanes)
+ static const float LANE_START_SLACK = 1000; // m: own bases this much farther from the enemy than the closest can start a lane
+ static const float LANE_MASS = 1.4;         // x the force an attack in the lane is filled up to
+ protected ref ACR_AILane m_Lane;
+ protected float m_fNextLaneReview = -1;
+ protected ACR_Base m_LaneStalledAt;         // objective of a lane given up as stalled...
+ protected float m_fLaneStalledUntil;        // ...whose lanes score less until then (world ms)
+ protected bool m_bLaneStarveCounted;
+ protected bool m_bRushOver;
+ ACR_AILane Lane() { return m_Lane; }
+ void SetLaneForTest(ACR_AILane lane) { m_Lane = lane; }
+
+ protected bool LanesUsed() { return ACR_AILanes.On() && m_Doctrine && m_Doctrine.m_bLanes; }
+
+ // The lane steers the plan once the land-rush is over.
+ bool LaneActive()
+ {
+  return m_Lane && LanesUsed() && !Rushing() && m_Lane.Valid(m_sFaction);
+ }
+
+ // The opening land-rush: the first m_fRushMinutes of the match, while empty bases are in sight.
+ // Once over it stays over (it is asked many times a tick).
+ bool Rushing()
+ {
+  if (m_bRushOver) return false;
+  if (GetGame().GetWorld().GetWorldTime() < m_Doctrine.m_fRushMinutes * 60000)
+  {
+   foreach (ACR_Base base : ACR_Base.s_All)
+    if (!base.m_bRetired && Visible(base) && SeenOwner(base).IsEmpty()) return true;
+  }
+  m_bRushOver = true;
+  Say(string.Format("[ACR] AI %1: land-rush over", m_sFaction));
+  return false;
+ }
+ void SetRushOverForTest(bool over) { m_bRushOver = over; }
+
+ // Starved: it hasn't mustered for anything in the lane for STARVE_S. Other targets open meanwhile.
+ protected bool LaneStarved()
+ {
+  if (!m_Lane || m_Lane.m_fStarvedSince < 0) return false;
+  return GetGame().GetWorld().GetWorldTime() - m_Lane.m_fStarvedSince > ACR_AILanes.STARVE_S * 1000;
+ }
+
+ // An attack target's score multiplier from the lane: 1 without one, -1 for a base it leaves alone.
+ protected float LaneTargetFactor(ACR_Base base)
+ {
+  if (!LaneActive()) return 1;
+  vector at = base.GetOrigin();
+  return ACR_AILanes.TargetFactor(m_Lane.Contains(at), m_Lane.Flanks(at), base.m_bIncome, base.m_iValue);
+ }
+ float LaneTargetFactorForTest(ACR_Base base) { return LaneTargetFactor(base); }
+
+ protected bool InLaneOrFlank(ACR_Base base)
+ {
+  if (!LaneActive() || !base) return false;
+  return m_Lane.Contains(base.GetOrigin()) || m_Lane.Flanks(base.GetOrigin());
+ }
+
+ // An empty base off the lane is still grabbed when it is close behind our own bases, nearer them
+ // than any enemy base we know of.
+ protected bool RearGrab(ACR_Base base)
+ {
+  float own = NearestOwnDistance(base.GetOrigin());
+  if (own > ACR_AILanes.REAR_GRAB) return false;
+  ACR_Base enemy = NearestEnemyBase(base.GetOrigin());
+  return !enemy || vector.DistanceXZ(enemy.GetOrigin(), base.GetOrigin()) > own;
+ }
+
+ // An enemy HQ: a base with the owner's player spawn point (as IsHQ for our own).
+ protected bool EnemyHQ(ACR_Base base)
+ {
+  string owner = SeenOwner(base);
+  if (owner.IsEmpty() || owner == m_sFaction) return false;
+  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
+   if (point && !ACR_SpawnPoints.IsBasePoint(point) && point.GetFactionKey() == owner && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
+  return false;
+ }
+
+ // What a lane from 'from' to 'to' wins (income of the bases in it we don't hold, an enemy HQ at
+ // its end) against the defence we know of in it and its length. Only what this side can see.
+ protected float LaneScore(ACR_Base from, ACR_Base to)
+ {
+  vector a = from.GetOrigin();
+  vector b = to.GetOrigin();
+  float half = m_Doctrine.m_fLaneWidth;
+  float gain = 0;
+  float cost = 0;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_bRetired || base.m_sOwner == m_sFaction || !Visible(base)) continue;
+   if (!ACR_AILanes.InLane(a, b, half, base.GetOrigin())) continue;
+   gain += ACR_AILanes.Gain(base.m_bIncome, base.m_iValue);
+   if (HostileOwner(base)) cost += DefenceOf(base);
+  }
+  if (EnemyHQ(to)) gain += ACR_AILanes.HQ_GAIN;
+  float score = ACR_AILanes.Score(gain, cost, vector.DistanceXZ(a, b));
+  if (to == m_LaneStalledAt && GetGame().GetWorld().GetWorldTime() < m_fLaneStalledUntil) score *= ACR_AILanes.FAILED_FACTOR;
+  return score;
+ }
+
+ // The best lane now: from one of our front bases (within LANE_START_SLACK of the closest to the
+ // enemy) to a base we can see and don't hold, at least MIN_LENGTH away. Near-equal lanes are
+ // picked at random (ACR_Variety), so the same map doesn't always see the same push.
+ protected ACR_AILane BestLane()
+ {
+  array<ACR_Base> starts = {};
+  array<float> fronts = {};
+  float closest = float.MAX;
+  foreach (ACR_Base own : ACR_Base.s_All)
+  {
+   if (own.m_bRetired || own.m_sOwner != m_sFaction || own.m_bContested) continue;
+   float front = FrontDistance(own);
+   if (front == float.MAX) continue;
+   starts.Insert(own);
+   fronts.Insert(front);
+   closest = Math.Min(closest, front);
+  }
+  array<ACR_Base> froms = {};
+  array<ACR_Base> tos = {};
+  array<float> scores = {};
+  foreach (int i, ACR_Base from : starts)
+  {
+   if (fronts[i] > closest + LANE_START_SLACK) continue;
+   foreach (ACR_Base to : ACR_Base.s_All)
+   {
+    if (to.m_bRetired || to.m_bPocket || to.m_sOwner == m_sFaction || !Visible(to)) continue;
+    if (vector.DistanceXZ(from.GetOrigin(), to.GetOrigin()) < ACR_AILanes.MIN_LENGTH) continue;
+    froms.Insert(from);
+    tos.Insert(to);
+    scores.Insert(LaneScore(from, to));
+   }
+  }
+  if (scores.IsEmpty()) return null;
+  int pick = ACR_Variety.Pick(scores, string.Format("lane %1 %2", m_sFaction, (int)GetGame().GetWorld().GetWorldTime()));
+  if (pick < 0 || scores[pick] <= 0) return null;
+  ACR_AILane lane = new ACR_AILane();
+  lane.m_From = froms[pick];
+  lane.m_Objective = tos[pick];
+  lane.m_fScore = scores[pick];
+  lane.m_fHalfWidth = m_Doctrine.m_fLaneWidth;
+  return lane;
+ }
+
+ // Every REVIEW_S (at once when the lane breaks or stalls): keep the lane or change it, and tell
+ // the side's 2IC channel. Never the enemy: they work it out from their intel.
+ protected void UpdateLane()
+ {
+  if (!LanesUsed())
+  {
+   m_Lane = null;
+   return;
+  }
+  if (Rushing()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  bool valid = m_Lane && m_Lane.Valid(m_sFaction);
+  int setbacks = 0;
+  if (m_Lane) setbacks = m_Lane.m_iSetbacks;
+  if (valid && setbacks < ACR_AILanes.SETBACKS && now < m_fNextLaneReview) return;
+  m_fNextLaneReview = now + ACR_AILanes.REVIEW_S * 1000;
+  string why = "the best way in";
+  if (m_Lane && m_Lane.m_Objective && m_Lane.m_Objective.m_sOwner == m_sFaction) why = string.Format("took %1", m_Lane.m_Objective.m_sName);
+  else if (m_Lane && !valid && m_Lane.m_From) why = string.Format("lost %1", m_Lane.m_From.m_sName);
+  else if (valid && setbacks >= ACR_AILanes.SETBACKS)
+  {
+   why = string.Format("stalled short of %1", m_Lane.m_Objective.m_sName);
+   m_LaneStalledAt = m_Lane.m_Objective;
+   m_fLaneStalledUntil = now + ACR_AILanes.FAILED_MIN * 60000;
+  }
+  else if (valid) why = "the enemy is thinner there";
+  ACR_AILane best = BestLane();
+  float current = 0;
+  float held = 0;
+  if (valid)
+  {
+   m_Lane.m_fScore = LaneScore(m_Lane.m_From, m_Lane.m_Objective);
+   current = m_Lane.m_fScore;
+   held = (now - m_Lane.m_fSince) / 60000;
+  }
+  float bestScore = 0;
+  if (best) bestScore = best.m_fScore;
+  if (!ACR_AILanes.ShouldSwitch(valid, setbacks, held, current, bestScore)) return;
+  if (!best || (valid && best.Same(m_Lane)))
+  {
+   // Nothing better: carry on where it is (or, with no lane left, plan base by base).
+   if (valid)
+   {
+    m_Lane.m_iSetbacks = 0;
+    m_Lane.m_fStarvedSince = -1;
+    m_bLaneStarveCounted = false;
+   }
+   else if (m_Lane)
+   {
+    m_Lane = null;
+    Say(string.Format("[ACR] AI %1: no lane to push down (%2): planning base by base", m_sFaction, why));
+   }
+   return;
+  }
+  best.m_fSince = now;
+  m_Lane = best;
+  m_bLaneStarveCounted = false;
+  Say(string.Format("[ACR] AI %1: main effort from %2 toward %3, %4 m wide, score %5 (%6)", m_sFaction, best.m_From.m_sName, best.m_Objective.m_sName, (int)(best.m_fHalfWidth * 2), best.m_fScore, why));
+  TwoICReport(string.Format("Main effort: from %1 toward %2 (%3)", best.m_From.m_sName, best.m_Objective.m_sName, why));
+ }
+ void UpdateLaneForTest() { m_fNextLaneReview = -1; UpdateLane(); }
+
+ // An attack ended: one called off in the lane or on its flank is a setback, one won there takes one back.
+ protected void NoteLaneOutcome(ACR_AIAttack attack, bool won)
+ {
+  if (!attack || attack.m_bGrab || !InLaneOrFlank(attack.m_Target)) return;
+  if (won) m_Lane.m_iSetbacks = Math.Max(0, m_Lane.m_iSetbacks - 1);
+  else m_Lane.m_iSetbacks++;
+ }
+
+ // The plan found nothing in the lane it could muster for: after STARVE_S that is a setback (once),
+ // and other targets open until it launches in the lane again.
+ protected void NoteLaneMuster(bool launchedInLane)
+ {
+  if (!LaneActive()) return;
+  if (launchedInLane)
+  {
+   m_Lane.m_fStarvedSince = -1;
+   m_bLaneStarveCounted = false;
+   return;
+  }
+  if (m_Lane.m_fStarvedSince < 0) m_Lane.m_fStarvedSince = GetGame().GetWorld().GetWorldTime();
+  if (LaneStarved() && !m_bLaneStarveCounted)
+  {
+   m_bLaneStarveCounted = true;
+   m_Lane.m_iSetbacks++;
+   Say(string.Format("[ACR] AI %1: nothing in the lane toward %2 it can muster for: other targets open", m_sFaction, m_Lane.m_Objective.m_sName));
+  }
  }
 
  // ---------------------------------------------------------------- supports
@@ -2815,6 +3077,7 @@ class ACR_AICommander : Managed
    int strength;
    foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
    float need = AttackNeed(target);
+   if (InLaneOrFlank(target)) need *= LANE_MASS; // the main effort is filled up further
    if (attack.m_bAssaulting && attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > 90000) need *= 1.35;
    if (need * 1.15 <= strength) continue; // float first: an int on the left compares in ints
    SortByDistance(free, target.GetOrigin());
@@ -2934,10 +3197,14 @@ class ACR_AICommander : Managed
   // there first (vehicles count as three times faster than walking).
   int grabs = 0;
   int attacks = 0;
+  // With a lane (ACR_AILanes): grabs in it and on its flanks, and one at a time close behind our own.
+  bool laneActive = LaneActive();
+  int rearGrabs = 0;
   foreach (ACR_AIAttack running : m_Attacks)
   {
    if (running.m_bGrab) grabs++;
    else attacks++;
+   if (laneActive && running.m_bGrab && !InLaneOrFlank(running.m_Target)) rearGrabs++;
   }
   // Big maps (Everon soak 5 Oct: 3 grabs at once left each side with 7 of 56 bases after
   // 18 min): one grab per 6 empty bases in sight, 3 to 8.
@@ -2952,6 +3219,7 @@ class ACR_AICommander : Managed
    foreach (ACR_Base candidate : ACR_Base.s_All)
    {
     if (!SeenOwner(candidate).IsEmpty() || !Visible(candidate) || IsAttacking(candidate) || CoolingDown(candidate)) continue;
+    if (laneActive && !InLaneOrFlank(candidate) && (rearGrabs > 0 || !RearGrab(candidate))) continue;
     foreach (ACR_Squad squad : free)
     {
      // A medic or other support team stays out of it, as out of attacks (#34).
@@ -2968,6 +3236,7 @@ class ACR_AICommander : Managed
    StartGrab(runner, empty);
    free.RemoveItem(runner);
    grabs++;
+   if (laneActive && !InLaneOrFlank(empty)) rearGrabs++;
    Say(string.Format("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime));
    TwoICReport(string.Format("Taking %1 with %2 (about %3 s away)", empty.m_sName, runner.GetName(), (int)bestTime));
   }
@@ -2989,6 +3258,9 @@ class ACR_AICommander : Managed
   // allow up to 6 extra attacks so a dominant side doesn't sit idle.
   int maxExtraAttacks = m_Doctrine.m_iExtraFronts;
   if (ACR_Base.s_All.Count() > 24) maxExtraAttacks = maxExtraAttacks * 2;
+  // A lane concentrates the force: one main attack and the doctrine's supporting ones, the rest of
+  // the idle troops filling them up and posted forward in the lane (PostIdle).
+  if (laneActive) maxExtraAttacks = m_Doctrine.m_iLaneFronts;
   maxAttacks += Math.Min(maxExtraAttacks, free.Count() / m_Doctrine.m_iSquadsPerFront);
   // "Take this base" (a player's request to the 2IC, #14 v1): the next attack goes for it.
   ACR_Base requested = RequestedTarget();
@@ -3021,6 +3293,7 @@ class ACR_AICommander : Managed
    candidates.Insert(priority);
    scores.Insert(-1);
   }
+  bool laneStarved = LaneStarved();
   if (!priority || attacks < maxAttacks)
   {
    foreach (ACR_Base base : ACR_Base.s_All)
@@ -3031,7 +3304,11 @@ class ACR_AICommander : Managed
     float dist = NearestFreeDistance(free, base.GetOrigin());
     // FIA pockets: cleared when in the way (near our own bases), after the real enemy.
     if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
+    // The lane: in it sooner (income first), its flanks a little later, elsewhere not while it has work.
+    float laneFactor = LaneTargetFactor(base);
+    if (laneFactor < 0 && !laneStarved) continue;
     float score = cost * (dist / 1000 + 0.1);
+    if (laneFactor > 0) score *= laneFactor;
     if (base.m_bPocket) score *= m_Doctrine.m_fPocketScore;
     if (base.m_bContested || (DefenceOf(base) <= UNKNOWN_DEFENCE + 2 && dist < 1200))
      score *= 0.65 * m_Doctrine.m_fWeakTarget;
@@ -3068,6 +3345,9 @@ class ACR_AICommander : Managed
    if (!wanted) { wanted = candidate; wantedRequired = need; wantedReach = reachable; }
    if (need <= reachable) { target = candidate; required = need; break; }
   }
+  // Waiting on the lane: nothing in it it could muster for counts toward a starved lane.
+  if (laneActive && target && InLaneOrFlank(target)) NoteLaneMuster(true);
+  else if (laneActive && !target && wanted && InLaneOrFlank(wanted)) NoteLaneMuster(false);
   if (!target)
   {
    float now = GetGame().GetWorld().GetWorldTime();
@@ -3103,6 +3383,8 @@ class ACR_AICommander : Managed
   // attack would otherwise be reinforced to.
   float goal = Math.Max(required * margin, AttackNeed(target) * 1.15);
   if (target.m_sOwner.IsEmpty()) goal = required * margin;
+  // The main effort goes in heavy: an attack in the lane fills up further.
+  else if (InLaneOrFlank(target)) goal = goal * LANE_MASS;
   int remainingPool = available;
   array<ACR_Squad> taxis = {};
   bool liftTaken = false;
@@ -3399,6 +3681,8 @@ class ACR_AICommander : Managed
    float front = FrontDistance(base);
    float score = base.m_iValue * 150 + base.m_fRadius - Math.Max(0, front - RESERVE_IDEAL_FRONT) * 0.25;
    if (base == m_ReserveBase) score += 250;
+   // Behind the main effort, to feed it.
+   if (LaneActive() && m_Lane.Contains(base.GetOrigin())) score += ACR_AILanes.RESERVE_PULL;
    if (score > bestScore) { bestScore = score; best = base; }
   }
   if (!best) best = HomeBase();
@@ -4317,6 +4601,7 @@ class ACR_AICommander : Managed
     else if (stalled) why = "it stalled";
     // Its squads went to a player's request (2IC Support me / Hold this): not a failure.
     bool givenAway = attack.m_bGivenAway && attack.m_Squads.IsEmpty() && !won;
+    if (!givenAway) NoteLaneOutcome(attack, won);
     if (target && won) TwoICReport(string.Format("Took %1", target.m_sName));
     else if (target && !givenAway && attack.m_bGrab) TwoICReport(string.Format("Couldn't take %1: %2", target.m_sName, why));
     else if (target && !givenAway) TwoICReport(string.Format("Called off the attack on %1: %2", target.m_sName, why));
@@ -4480,6 +4765,8 @@ class ACR_AICommander : Managed
    {
     float d = vector.DistanceXZ(PositionOf(squad), base.GetOrigin());
     float score = d + PostedAt(base) * 400;
+    // The lane's front bases draw idle troops: they mass behind the next attack.
+    if (LaneActive() && m_Lane.Contains(base.GetOrigin())) score -= ACR_AILanes.POST_PULL;
     if (score < bestScore) { bestScore = score; best = d; nearest = base; }
    }
    if (!nearest || best < 150)
@@ -7060,7 +7347,18 @@ class ACR_AICommander : Managed
    if (busy && busy.m_FortifyPlan && busy.GetFaction() && busy.GetFaction().GetFactionKey() == m_sFaction) return;
   }
   if (PendingBuilds(ACR_EAITask.FORTIFY) > 0) return;
-  if (ManageBaseWorks(fronts)) return;
+  // Tactical points on the lane's flanks are works sites too, front or not: anti-flank strongpoints.
+  array<ACR_Base> worksSites = {};
+  worksSites.Copy(fronts);
+  if (LaneActive())
+  {
+   foreach (ACR_Base flank : ACR_Base.s_All)
+   {
+    if (flank.m_bRetired || flank.m_sOwner != m_sFaction || flank.m_bIncome || flank.m_bContested) continue;
+    if (m_Lane.Flanks(flank.GetOrigin()) && !worksSites.Contains(flank)) worksSites.Insert(flank);
+   }
+  }
+  if (ManageBaseWorks(worksSites)) return;
   string refusal;
 
   ACR_Fortification target;
@@ -7139,10 +7437,12 @@ class ACR_AICommander : Managed
    open.Insert(front);
    float score = ThreatTo(front) + 1 - DefenceOf(front) * 0.1;
    if (repair) score += 1;
+   if (FlankStrongpoint(front)) score += m_Doctrine.m_fFlankWorks;
    scores.Insert(score);
   }
   if (open.IsEmpty()) return false;
   ACR_Base base = open[ACR_Variety.Pick(scores, string.Format("base works %1 %2", m_sFaction, (int)GetGame().GetWorld().GetWorldTime()))];
+  if (FlankStrongpoint(base)) Say(string.Format("[ACR] AI %1: %2 guards the flank of the push toward %3", m_sFaction, base.m_sName, m_Lane.m_Objective.m_sName));
   ACR_Squad worker = FortifyWorkerNear(base.GetOrigin());
   if (!worker) worker = WorksWorkerFurther(base.GetOrigin());
   // Far off it rides, as to a position. No truck: it walks only if that isn't the rest of the match.
@@ -7168,6 +7468,13 @@ class ACR_AICommander : Managed
   Say(string.Format("[ACR] AI %1: %2 fortifying the town at %3", m_sFaction, worker.GetName(), base.m_sName));
   return true;
  }
+
+ // A tactical point (no income) of ours on the lane's flank: it gets works first, to hold the flank.
+ protected bool FlankStrongpoint(ACR_Base base)
+ {
+  return base && LaneActive() && !base.m_bIncome && base.m_sOwner == m_sFaction && m_Lane.Flanks(base.GetOrigin());
+ }
+ bool FlankStrongpointForTest(ACR_Base base) { return FlankStrongpoint(base); }
 
  // With no free squad near, works still get a squad (pn23 playtest: one town started in 36 minutes, the
  // log saying 'wait for a free squad' 14 times, with free squads 5 km off and 8 attacking): the nearest
@@ -7594,6 +7901,7 @@ class ACR_AICommander : Managed
  string TwoICDoing()
  {
   array<string> parts = {};
+  if (LaneActive()) parts.Insert(string.Format("main effort toward %1", m_Lane.m_Objective.m_sName));
   foreach (ACR_AIAttack attack : m_Attacks)
   {
    if (!attack.m_Target) continue;
