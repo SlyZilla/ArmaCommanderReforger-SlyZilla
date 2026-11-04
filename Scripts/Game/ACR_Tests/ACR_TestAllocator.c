@@ -3,12 +3,12 @@
 // an attack that can't reach its bar takes no one, a far member is swapped for a near free squad,
 // the job a squad has is kept unless another is clearly better, locked squads stay, an attack
 // needs a squad that can take the base, a running attack is fully ready at the strength it set
-// out with and worth nothing once broken, and the value curves. Then live on the range with
-// -acrAIAllocator 2: free Alpha 200 m from an empty base is sent to grab it by the allocator, and
-// not when it is a medic team.
+// out with, worth nothing once broken and keeps its slot under the cap, and the value curves.
+// Then live on the range with -acrAIAllocator 2: free Alpha 200 m from an empty base is sent to
+// grab it by the allocator, and not when it is a medic team.
 class ACR_TestAllocator
 {
- static const int CHECKS = 18;
+ static const int CHECKS = 19;
 
  static ACR_AIJobSquad Squad(string name, float strength, int current, array<float> etas, array<float> fits = null)
  {
@@ -215,6 +215,24 @@ class ACR_TestAllocator
   ACR_AIAllocator.Allocate(jobs, squads, 1);
   bool broken = squads[0].m_iPicked != 0 && squads[1].m_iPicked != 0;
   ACR_TestRegress.Check("allocator: an attack below its abort share is worth nothing", broken, Picks(squads, jobs));
+
+  // 9. Under the cap a running attack keeps its slot against a new one worth more.
+  jobs.Clear();
+  ACR_AIJob old = Attack("Old", 20, 6);
+  old.m_bRunning = true;
+  jobs.Insert(old);
+  jobs.Insert(Attack("New", 40, 6));
+  jobs.Insert(Hold("Post", 1));
+  array<float> etaR = E(60, 60);
+  etaR.Insert(0);
+  array<float> etaF = E(60, 60);
+  etaF.Insert(0);
+  squads.Clear();
+  squads.Insert(Squad("A", 8, 0, etaR));
+  squads.Insert(Squad("B", 8, -1, etaF));
+  ACR_AIAllocator.Allocate(jobs, squads, 1);
+  bool kept = squads[0].m_iPicked == 0 && jobs[1].m_aMembers.IsEmpty();
+  ACR_TestRegress.Check("allocator: a running attack keeps its slot under the cap against a new one worth more", kept, Picks(squads, jobs));
 
   // The live checks follow at tick 8.
  }

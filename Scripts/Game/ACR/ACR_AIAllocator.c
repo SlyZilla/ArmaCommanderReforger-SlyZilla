@@ -9,6 +9,7 @@
 //   squad that would hold the whole assault back isn't added.
 // - The job a squad already has counts INCUMBENCY more (no swapping for a small gain); locked
 //   squads (assaulting in contact, on an air lift) stay where they are.
+// - Running team jobs are weighed first: a new one never takes a running one's slot under the cap.
 // Plain data in and out: the commander builds it (ACR_AICommander, "Job allocator"), and the
 // tests feed it made-up fronts (ACR_TestAllocator).
 
@@ -118,7 +119,8 @@ class ACR_AIAllocator
   return value;
  }
 
- // Gives every squad its job (m_iPicked, -1: nothing worth doing). At most 'maxTeams' team jobs.
+ // Gives every squad its job (m_iPicked, -1: nothing worth doing). New team jobs only while fewer
+ // than 'maxTeams' team jobs are funded (running ones count, but are never cut for the cap).
  static void Allocate(notnull array<ref ACR_AIJob> jobs, notnull array<ref ACR_AIJobSquad> squads, int maxTeams)
  {
   foreach (ACR_AIJob job : jobs)
@@ -164,15 +166,19 @@ class ACR_AIAllocator
   // the prefix worth most once what they'd do elsewhere is paid for.
   array<bool> teamDone = {};
   foreach (ACR_AIJob doneJob : jobs) teamDone.Insert(!doneJob.m_bTeam);
+  // Running team jobs first and outside the cap; new ones only take the slots left (soak 4 Nov: a
+  // new attack worth a little more took the one slot, and the running one was called off 15 s
+  // after it launched). A running job still has to be worth more than its squads would be elsewhere.
   int teams;
-  while (teams < maxTeams)
+  bool runningPass = true;
+  while (runningPass || teams < maxTeams)
   {
    int bestJob = -1;
    float bestNet = 0;
    array<int> bestSet = {};
    foreach (int j, ACR_AIJob teamJob : jobs)
    {
-    if (teamDone[j]) continue;
+    if (teamDone[j] || teamJob.m_bRunning != runningPass) continue;
     array<int> team = {};
     float paid;
     foreach (int m : teamJob.m_aMembers) team.Insert(m); // locked members stay
@@ -215,7 +221,12 @@ class ACR_AIAllocator
      bestSet.Copy(keep);
     }
    }
-   if (bestJob < 0) break;
+   if (bestJob < 0)
+   {
+    if (!runningPass) break;
+    runningPass = false;
+    continue;
+   }
    ACR_AIJob won = jobs[bestJob];
    teamDone[bestJob] = true;
    teams++;
