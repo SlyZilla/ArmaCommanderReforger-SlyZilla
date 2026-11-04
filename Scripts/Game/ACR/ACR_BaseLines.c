@@ -2753,12 +2753,13 @@ class ACR_BaseLines
    }
    if (open.IsEmpty()) break;
    int picked = open[ACR_Variety.Pick(scores, string.Format("base nest %1 %2", work.m_Base.m_sName, made))];
-   // Turned to where it does most, if its fan is clear there.
+   // Turned to where it does most, if its fan is clear there: a small gun's from its own muzzle (smallFor), as its
+   // place was checked above, not a big nest's.
    if (kill)
    {
     array<float> gunTurns = {15, -15, 25, -25};
     float best = kill.BestFacing(places[picked], yaws[picked], gunTurns, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, gunPower, ACR_BaseSurvey.UP_NEST);
-    if (best != yaws[picked] && !ACR_BaseWorks.GunsNear(work, places[picked], best) && ACR_BaseSurvey.NestFan(places[picked], best, reach) && !BagsAhead(work, places[picked], best, onLines[picked]))
+    if (best != yaws[picked] && !ACR_BaseWorks.GunsNear(work, places[picked], best) && ACR_BaseSurvey.NestFan(places[picked], best, reach, smallFor) && !BagsAhead(work, places[picked], best, onLines[picked]))
     {
      yaws[picked] = best;
      kills[picked] = kill.Site(places[picked], best, ACR_KillGround.GUN_ARC, ACR_KillGround.GUN_RANGE, gunPower, ACR_BaseSurvey.UP_NEST);
