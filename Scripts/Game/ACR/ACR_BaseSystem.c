@@ -62,10 +62,12 @@ class ACR_BaseSystem : Managed
    if (settings && settings.m_aSupports && !settings.m_aSupports.IsEmpty())
    {
     bool listsAirLift = false;
+    bool listsRecon = false;
     foreach (ACR_SupportEntry configured : settings.m_aSupports)
     {
      if (configured && configured.m_eType == ACR_ESupportType.AIR_LIFT) listsAirLift = true;
      if (configured && configured.m_eType == ACR_ESupportType.ATTACK_HELI) listsAttack = true;
+     if (configured && configured.m_eType == ACR_ESupportType.RECON_FLIGHT) listsRecon = true;
      if (!configured || !configured.m_bEnabled) continue;
      data.m_aSupports.Insert(configured.Copy());
     }
@@ -80,6 +82,8 @@ class ACR_BaseSystem : Managed
      lift.Resolve();
      data.m_aSupports.Insert(lift);
     }
+    // ...and the recon flight (4 Nov), the same way.
+    if (!listsRecon) data.m_aSupports.Insert(ACR_Supports.NewEntry(ACR_ESupportType.RECON_FLIGHT));
    }
    else ACR_Supports.BuildDefaults(data.m_aSupports);
    // A content pack's attack helicopter for the side adds its support.
