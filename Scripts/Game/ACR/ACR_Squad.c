@@ -665,8 +665,16 @@ class ACR_Squad : Managed
  {
   return state == ACR_EOrderState.MOVE || state == ACR_EOrderState.ASSAULT || state == ACR_EOrderState.SUPPRESS || state == ACR_EOrderState.GET_IN || state == ACR_EOrderState.GET_OUT;
  }
+ // The one writer of m_iAITask (AI allocator phase 0, 3 Nov 2026): every job change goes
+ // through here, so later phases can track and arbitrate them in one place.
+ // tools/check_ai_task_writes.py (CI) fails on any other assignment in game code.
+ void SetAITask(int task)
+ {
+  m_iAITask = task; // ai-task-write ok
+ }
+
  // AI commander bookkeeping
- int m_iAITask;          // ACR_EAITask
+ int m_iAITask;          // ACR_EAITask: read anywhere, written only through SetAITask
  IEntity m_OwnVehicle;   // the vehicle this squad came with (crews), even when dismounted
  ACR_Base m_AITarget;
  bool m_bMortar;    // a mortar team (ACR_Mortars runs its set-up, packing and fire missions)
@@ -1158,7 +1166,7 @@ class ACR_Squad : Managed
   m_ReservedTruck = null;
   m_fFobBuildProgress = 0;
   m_FobRestore = null;
-  if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.BUILD_FOB) SetAITask(ACR_EAITask.FREE);
   if (OrderState() == ACR_EOrderState.BUILD_FOB)
   {
    ClearOrders();
@@ -1178,7 +1186,7 @@ class ACR_Squad : Managed
   {
    m_ReservedTruck = null;
    m_fReservedLoads = 0;
-   if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
+   if (m_iAITask == ACR_EAITask.BUILD_FOB) SetAITask(ACR_EAITask.FREE);
    PrintFormat("[ACR] SQUAD %1: construction truck destroyed during FOB build", m_Name);
    Halt("Halted (truck lost)");
    return;
@@ -1304,7 +1312,7 @@ class ACR_Squad : Managed
   }
   PrintFormat("[ACR] SQUAD %1: FOB established at %2 (entity=%3)", m_Name, m_vFobSite, hq != null);
   ClearOrders();
-  if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.BUILD_FOB) SetAITask(ACR_EAITask.FREE);
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   IssueWaypoint(WP_DEFEND, m_vFobSite, 20);
@@ -1446,7 +1454,7 @@ class ACR_Squad : Managed
   m_fRoadblockLoads = 0;
   m_fRoadblockProgress = 0.0;
   EquipShovels(false);
-  if (m_iAITask == ACR_EAITask.ROADBLOCK) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.ROADBLOCK) SetAITask(ACR_EAITask.FREE);
   if (working)
   {
    ClearOrders();
@@ -1742,7 +1750,7 @@ class ACR_Squad : Managed
   ACR_Minefields.Finish(plan);
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager && refund > 0) manager.m_Bases.Refund(plan.m_sFaction, refund);
-  if (m_iAITask == ACR_EAITask.MINES) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.MINES) SetAITask(ACR_EAITask.FREE);
   if (working)
   {
    EquipShovels(false);
@@ -1905,7 +1913,7 @@ class ACR_Squad : Managed
   m_FortifyPlan = null;
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
-  if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.FORTIFY) SetAITask(ACR_EAITask.FREE);
   if (working)
   {
    EquipShovels(false);
@@ -2077,7 +2085,7 @@ class ACR_Squad : Managed
   if (!fort)
   {
    if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
-   if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+   if (m_iAITask == ACR_EAITask.FORTIFY) SetAITask(ACR_EAITask.FREE);
    SetOrder("Holding position", ACR_EOrderState.HOLD);
    PrintFormat("[ACR] SQUAD %1: could not fortify (%2), refunded %3 RP", m_Name, why, plan.m_iCost);
    // Said where the player sees it (playtest 25 Oct: only the RP was seen to go).
@@ -2103,7 +2111,7 @@ class ACR_Squad : Managed
  // The base works' squad with nothing left to do there: it holds the base.
  void HoldBaseWorks(ACR_BaseWork work)
  {
-  if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.FORTIFY) SetAITask(ACR_EAITask.FREE);
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   vector at;
