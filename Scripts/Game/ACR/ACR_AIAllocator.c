@@ -129,8 +129,15 @@ class ACR_AIAllocator
    taken.Insert(locked);
    if (locked)
    {
+    ACR_AIJob held = jobs[squad.m_iCurrent];
     squad.m_iPicked = squad.m_iCurrent;
-    jobs[squad.m_iCurrent].m_aMembers.Insert(s);
+    held.m_aMembers.Insert(s);
+    if (!held.m_bTeam)
+    {
+     // It counts towards its job: no more squads sent to a defence it already covers.
+     held.m_fStrength += squad.m_fStrength;
+     if (squad.m_iCurrent < squad.m_aEta.Count()) held.m_fLatest = Math.Max(held.m_fLatest, squad.m_aEta[squad.m_iCurrent]);
+    }
    }
   }
   // What each free squad would be worth on its own: the price of taking it for a team.

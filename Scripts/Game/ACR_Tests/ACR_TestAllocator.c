@@ -7,7 +7,7 @@
 // not when it is a medic team.
 class ACR_TestAllocator
 {
- static const int CHECKS = 15;
+ static const int CHECKS = 16;
 
  static ACR_AIJobSquad Squad(string name, float strength, int current, array<float> etas, array<float> fits = null)
  {
@@ -138,6 +138,21 @@ class ACR_TestAllocator
   ACR_AIAllocator.Allocate(jobs, squads, 0);
   bool locked = squads[0].m_iPicked == 0 && jobs[0].m_aMembers.Count() == 1;
   ACR_TestRegress.Check("allocator: a locked squad stays on its job", locked, Picks(squads, jobs));
+
+  // 5b. A locked squad counts towards its job: a defence it already covers gets no one else.
+  jobs.Clear();
+  ACR_AIJob defend = Hold("Szilis", 12);
+  defend.m_iKind = ACR_EAITask.DEFEND;
+  defend.m_fNeed = 6;
+  jobs.Insert(defend);
+  squads.Clear();
+  ACR_AIJobSquad holder = Squad("Holder", 8, 0, E(0, 0));
+  holder.m_bLocked = true;
+  squads.Insert(holder);
+  squads.Insert(Squad("Spare", 6, -1, E(60, 0)));
+  ACR_AIAllocator.Allocate(jobs, squads, 0);
+  bool covered = squads[0].m_iPicked == 0 && squads[1].m_iPicked == -1;
+  ACR_TestRegress.Check("allocator: a defence its locked squad already covers gets no one else", covered, Picks(squads, jobs));
 
   // 6. An attack needs a squad that can take the base; a squad that can't do a job isn't given it.
   jobs.Clear();

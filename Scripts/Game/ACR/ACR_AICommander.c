@@ -1199,7 +1199,7 @@ class ACR_AICommander : Managed
  {
   float worth = 2 + Math.Max(0, base.m_iValue) * 2;
   if (base.m_bBuilt) worth += 2;
-  if (base == m_CounterTarget) worth *= 1.5;
+  if (base == m_CounterTarget && CounterDue()) worth *= 1.5;
   if (base == RequestedTarget()) worth *= 2;
   return worth;
  }
@@ -1225,13 +1225,30 @@ class ACR_AICommander : Managed
   job.m_fPatience = 600;
   float need = 1;
   if (!base.m_sOwner.IsEmpty()) need = AttackNeed(base);
-  if (base == m_CounterTarget) need = need * m_Doctrine.m_fCounterNeed;
+  if (base == m_CounterTarget && CounterDue()) need = need * m_Doctrine.m_fCounterNeed;
   job.m_fNeed = need;
   // The planner's own bar: the doctrine's pressure after a quiet spell, lower on High threat.
   float bar = Pressure();
   if (ACR_Manager.ThreatOption() == 2) bar = bar * 0.85;
   job.m_fBar = bar;
   return job;
+ }
+
+ // A counterattack on a base just lost is still on (AssignAttacks' counterDue).
+ protected bool CounterDue()
+ {
+  return m_CounterTarget && m_CounterTarget.m_sOwner != m_sFaction && GetGame().GetWorld().GetWorldTime() < m_fCounterUntil;
+ }
+
+ // Takes a squad out of every attack it is listed in (review 3 Nov: a squad the allocator moved to
+ // another attack or grab stayed listed in its old one, which kept ordering it back).
+ protected void LeaveAttacks(ACR_Squad squad)
+ {
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   int at = attack.m_Squads.Find(squad);
+   if (at >= 0) attack.Remove(at);
+  }
  }
 
  protected int AllocIndexOf(ACR_AIJob job)
@@ -1279,6 +1296,13 @@ class ACR_AICommander : Managed
    if (!candidate.IsCombatUnit() || IsRetreating(candidate) || IsReconTeam(candidate)) continue;
    pool.Insert(candidate);
   }
+  // Squads flown to their attack (MySquads leaves air-lifted squads out): in, and locked below, or
+  // their attack looks short of them and is called off while they are in the air.
+  foreach (ACR_AIAttack lifted : m_Attacks)
+  {
+   foreach (ACR_Squad flown : lifted.m_Squads)
+    if (flown && ACR_AirLift.Busy(flown) && !pool.Contains(flown) && flown.GetFaction() && flown.GetFaction().GetFactionKey() == m_sFaction) pool.Insert(flown);
+  }
   if (pool.IsEmpty()) return;
 
   // Jobs. Running attacks and grabs first: the jobs their squads have now.
@@ -1317,6 +1341,11 @@ class ACR_AICommander : Managed
    while (at < scores.Count() && scores[at] <= score) at++;
    targets.InsertAt(base, at);
    scores.InsertAt(score, at);
+  }
+  if (CounterDue() && targets.Contains(m_CounterTarget))
+  {
+   targets.RemoveItem(m_CounterTarget);
+   targets.InsertAt(m_CounterTarget, 0);
   }
   for (int t = 0; t < targets.Count() && t < ALLOC_ATTACK_TARGETS; t++) AllocAttack(targets[t]);
   // Grabs: the nearest empty bases in sight.
@@ -1401,6 +1430,7 @@ class ACR_AICommander : Managed
     if (job.m_bTeam) dist = Math.Max(0, dist - STAGING_DISTANCE);
     float fit = 1;
     if (job.m_iKind == ACR_EAITask.ATTACK && support) fit = 0;
+    if (job.m_iKind == ACR_EAITask.ATTACK && !job.m_bTeam && job.m_bRunning && ownAttack != job.m_Attack) fit = 0;
     // A grab on foot only within 1500 m, as AssignAttacks sends them.
     if (job.m_iKind == ACR_EAITask.ATTACK && !job.m_bTeam && !job.m_bRunning && !squad.IsMounted() && vector.DistanceXZ(pos, where.GetOrigin()) > 1500) fit = 0;
     if (job.m_iKind == ACR_EAITask.DEFEND && support) fit = 0.3;
@@ -1427,6 +1457,7 @@ class ACR_AICommander : Managed
    // control, defence stays AssignDefenders' (it runs first): the two never pull a defender to and fro.
    if (ownAttack && ownAttack.m_bAssaulting && squad.KnownEnemies(300) > 0) entry.m_bLocked = true;
    if (ownAttack && ownAttack.m_SapperDemo && ownAttack.m_SapperDemo.InProgress()) entry.m_bLocked = true;
+   if (ACR_AirLift.Busy(squad)) entry.m_bLocked = true;
    if (control && squad.m_iAITask == ACR_EAITask.DEFEND && entry.m_iCurrent >= 0) entry.m_bLocked = true;
    if (squad.m_iAITask == ACR_EAITask.POSTED && Committed(squad))
    {
@@ -1441,7 +1472,7 @@ class ACR_AICommander : Managed
   if (settings) maxTeams = settings.m_iAIAttacks;
   int extra = m_Doctrine.m_iExtraFronts;
   if (ACR_Base.s_All.Count() > 24) extra = extra * 2;
-  maxTeams += Math.Min(extra, pool.Count() / Math.Max(1, m_Doctrine.m_iSquadsPerFront));
+  maxTeams += Math.Min(extra, freeNow.Count() / Math.Max(1, m_Doctrine.m_iSquadsPerFront)); // free squads, as AssignAttacks counts
   ACR_AIAllocator.Allocate(m_aAllocJobs, m_aAllocSquads, maxTeams);
 
   // Two tiers: the estimates ranked the squads; Reach checks the new attacks' picks for real
@@ -1525,6 +1556,7 @@ class ACR_AICommander : Managed
   {
    if (!unfunded.m_bTeam || !unfunded.m_bRunning || !unfunded.m_Attack || !unfunded.m_aMembers.IsEmpty()) continue;
    ACR_AIAttack dropped = unfunded.m_Attack;
+   if (dropped.m_SapperDemo && dropped.m_SapperDemo.InProgress()) continue; // a charge is fused: UpdateAttacks sees it through
    Say(string.Format("[ACR] AI %1: attack on %2 called off (its squads are worth more elsewhere)", m_sFaction, unfunded.m_sName));
    foreach (ACR_Squad left : dropped.m_Squads)
     if (left && left.m_iAITask == ACR_EAITask.ATTACK) left.SetAITask(ACR_EAITask.FREE);
@@ -1547,6 +1579,7 @@ class ACR_AICommander : Managed
    if (job.m_iKind == ACR_EAITask.ATTACK && job.m_bRunning) continue; // a running grab keeps its runner
    if (squad == m_ReserveSquad) m_ReserveSquad = null;
    string from = AllocJobName(entry.m_iCurrent);
+   LeaveAttacks(squad);
    if (job.m_iKind == ACR_EAITask.ATTACK)
    {
     StartGrab(squad, job.m_Target);
@@ -1574,16 +1607,19 @@ class ACR_AICommander : Managed
      ACR_AIJobSquad joiner = m_aAllocSquads[joinAt];
      if (joiner.m_iCurrent == j || !joiner.m_Squad) continue;
      if (joiner.m_Squad == m_ReserveSquad) m_ReserveSquad = null;
+     LeaveAttacks(joiner.m_Squad);
      vector stage = JoinAttack(team.m_Attack, joiner.m_Squad, now);
      Say(string.Format("[ACR] AI %1: %2 joins the attack on %3 (allocator), staging at grid %4", m_sFaction, joiner.m_Squad.GetName(), team.m_sName, ACR_Manager.Grid(stage)));
     }
     continue;
    }
    // New: the allocator's squads, each checked with Reach (taxis and the air lift claimed in order).
-   ACR_AIAttack attack = NewAttack(team.m_Target, team.m_Target == m_CounterTarget && now < m_fCounterUntil);
    array<ACR_Squad> taxis = {};
    bool liftTaken = false;
    int strength;
+   bool taker = team.m_Target.m_sOwner.IsEmpty();
+   float slowest;
+   array<ACR_Squad> goers = {};
    foreach (int goAt : team.m_aMembers)
    {
     ACR_Squad goer = m_aAllocSquads[goAt].m_Squad;
@@ -1592,17 +1628,27 @@ class ACR_AICommander : Managed
     int how = Reach(goer, team.m_Target.GetOrigin(), taxis, liftTaken, travel);
     if (how == REACH_NONE) continue;
     if (how == REACH_AIR_LIFT) liftTaken = true;
-    attack.m_fTravelSeconds = Math.Max(attack.m_fTravelSeconds, travel);
-    attack.m_Squads.Insert(goer);
+    slowest = Math.Max(slowest, travel);
+    goers.Insert(goer);
     strength += goer.Strength();
+    if (CanTakeBase(goer, team.m_Target.m_bBuilt)) taker = true;
    }
    float required = team.m_fNeed * team.m_fBar;
-   if (attack.m_Squads.IsEmpty() || required > strength || (!team.m_Target.m_sOwner.IsEmpty() && TakersIn(attack) == 0))
+   if (goers.IsEmpty() || required > strength || !taker)
    {
+    // The estimate was too kind: not weighed again for a while, or the same team wins every tick.
     Say(string.Format("[ACR] AI %1: not attacking %2: of the allocator's squads only %3 strength can get there (%4 wanted)", m_sFaction, team.m_sName, strength, (int)required));
+    m_StalledUntil.Set(team.m_Target, now + ALLOC_DROP_COOLDOWN * 1000);
     continue;
    }
-   foreach (ACR_Squad launched : attack.m_Squads) if (launched == m_ReserveSquad) m_ReserveSquad = null;
+   ACR_AIAttack attack = NewAttack(team.m_Target, team.m_Target == m_CounterTarget && CounterDue());
+   attack.m_fTravelSeconds = slowest;
+   foreach (ACR_Squad launched : goers)
+   {
+    if (launched == m_ReserveSquad) m_ReserveSquad = null;
+    LeaveAttacks(launched);
+    attack.m_Squads.Insert(launched);
+   }
    Say(string.Format("[ACR] AI %1: the allocator launches an attack on %2 (worth %3, latest arrival %4 s)", m_sFaction, team.m_sName, (int)team.m_fScore, (int)team.m_fLatest));
    LaunchAttack(attack, PositionOf(attack.m_Squads[0]), strength, required, Pressure());
   }
