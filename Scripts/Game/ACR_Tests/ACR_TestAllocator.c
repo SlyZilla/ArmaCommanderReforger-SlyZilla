@@ -2,10 +2,12 @@
 // fronts, no squads in the world: an attack takes its nearest squads and leaves the far one out,
 // an attack that can't reach its bar takes no one, a far member is swapped for a near free squad,
 // the job a squad has is kept unless another is clearly better, locked squads stay, an attack
-// needs a squad that can take the base, and the value curves.
+// needs a squad that can take the base, and the value curves. Then live on the range with
+// -acrAIAllocator 2: free Alpha 200 m from an empty base is sent to grab it by the allocator, and
+// not when it is a medic team.
 class ACR_TestAllocator
 {
- static const int CHECKS = 13;
+ static const int CHECKS = 15;
 
  static ACR_AIJobSquad Squad(string name, float strength, int current, array<float> etas, array<float> fits = null)
  {
@@ -70,6 +72,7 @@ class ACR_TestAllocator
 
  static void Run(ACR_TestHarness h, int tick)
  {
+  if (tick == 8) Live(h);
   if (tick != 3) return;
 
   // Value curves.
@@ -169,6 +172,59 @@ class ACR_TestAllocator
   bool both = jobs[0].m_aMembers.Count() == 1 && jobs[1].m_aMembers.Count() == 1;
   ACR_TestRegress.Check("allocator: with two allowed, both attacks are made", both, Picks(squads, jobs));
 
+  // The live checks follow at tick 8.
+ }
+
+ static void Live(ACR_TestHarness h)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || !h.m_Range) { ACR_TestRegress.Abort("allocator", "no range"); return; }
+  foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All) settings.m_bAICommander = false;
+  ACR_Squad alpha = manager.FindSquadByGroup(h.m_Range.m_Group);
+  ACR_Base empty;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base && !base.m_bRetired && base.m_sOwner.IsEmpty() && base.IsVisibleTo("US")) { empty = base; break; }
+  }
+  if (!alpha || !alpha.GetAnchor() || !empty) { ACR_TestRegress.Abort("allocator", "no Alpha squad or no empty base the US side can see"); return; }
+  // Every other US squad busy (base works: outside the allocator); Alpha free, 200 m from the base.
+  array<ACR_Squad> others = {};
+  array<int> tasks = {};
+  foreach (ACR_Squad other : manager.m_Squads)
+  {
+   if (!other || other == alpha || !other.GetFaction() || other.GetFaction().GetFactionKey() != "US") continue;
+   others.Insert(other);
+   tasks.Insert(other.m_iAITask);
+   other.m_iAITask = ACR_EAITask.FORTIFY;
+  }
+  IEntity anchor = alpha.GetAnchor();
+  vector home = anchor.GetOrigin();
+  anchor.SetOrigin(ACR_Manager.Ground(empty.GetOrigin() + Vector(200, 0, 0)));
+  string name = alpha.m_Name;
+  ACR_Options.Set("acrAIAllocator", "2");
+
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  ACR_AICommander ai = new ACR_AICommander(manager, "US");
+  ai.RunAllocationForTest(true);
+  bool grabs = alpha.m_iAITask == ACR_EAITask.ATTACK && alpha.m_AITarget == empty && ai.IsAttackingForTest(empty);
+  ACR_TestRegress.Check("allocator live: in control, a free squad 200 m from an empty base is sent to grab it", grabs, string.Format("%1: task %2, target %3", alpha.m_Name, typename.EnumToString(ACR_EAITask, alpha.m_iAITask), alpha.m_AITarget == empty));
+
+  alpha.Halt("Holding");
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  alpha.m_AITarget = null;
+  alpha.m_Name = "Medic Team 1";
+  ACR_AICommander medicAI = new ACR_AICommander(manager, "US");
+  medicAI.RunAllocationForTest(true);
+  bool stays = alpha.m_iAITask != ACR_EAITask.ATTACK;
+  ACR_TestRegress.Check("allocator live: a medic team is never sent to grab", stays, string.Format("task %1", typename.EnumToString(ACR_EAITask, alpha.m_iAITask)));
+
+  ACR_Options.Unset("acrAIAllocator");
+  alpha.m_Name = name;
+  alpha.Halt("Holding");
+  alpha.m_iAITask = ACR_EAITask.FREE;
+  alpha.m_AITarget = null;
+  anchor.SetOrigin(home);
+  foreach (int i, ACR_Squad squad : others) if (squad) squad.m_iAITask = tasks[i];
   ACR_TestRegress.Complete("allocator", CHECKS);
  }
 }

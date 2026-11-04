@@ -6376,6 +6376,7 @@ class ACR_AICommander : Managed
  void StartTickForTest() { m_iTickStarted = System.GetTickCount(); }
  void AssignAttacksForTest() { m_iTickStarted = System.GetTickCount(); AssignAttacks(); }
  void UpdateAttacksForTest() { UpdateAttacks(); }
+ void RunAllocationForTest(bool control) { m_iTickStarted = System.GetTickCount(); RunAllocation(control); }
  ACR_Squad FobBuilder() { return m_FobBuilder; }
  ACR_Squad FobEscort() { return m_FobEscort; }
  vector FobTargetSite() { return m_vFobTargetSite; }
