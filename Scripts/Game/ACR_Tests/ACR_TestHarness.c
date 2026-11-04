@@ -113,6 +113,7 @@ class ACR_TestHarness : Managed
  static const int MODE_PANELFIT = 249;   // the ACA panel fits the screen, in a game client (screenshots)
  static const int MODE_MAPDECLUTTERSHOTS = 132; // the calm command map in a game client (screenshots)
  static const int MODE_RBLANE = 125; // 117: map-polygon-guard
+ static const int MODE_FORECASTATTACK = 250; // the defence forecast against a scripted attack (ACR_TestForecastAttack)
  static const int MODE_QRF = 57; // 52 / 53 / 55 / 56: Fortify / roadblocks / patrol / ambush
  static const int MODE_HELIDOWN = 141; // a helicopter crippled in the air comes down
  static const int MODE_FIELDROUTES = 164; // foot squads off the roads, over bridges (3 Nov)
@@ -235,6 +236,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrRideLavKillTest", flag) || System.GetCLIParam("acrRideLavGetOutTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrRoadblockLaneTest", flag)) mode = MODE_RBLANE;
   if (System.GetCLIParam("acrQrfTest", flag)) mode = MODE_QRF;
+  if (System.GetCLIParam("acrForecastAttackTest", flag)) mode = MODE_FORECASTATTACK;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -411,6 +413,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_RIDELAV) { ACR_TestRideLav.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RBLANE) { ACR_TestRoadblockLane.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_QRF) { ACR_TestQrf.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_FORECASTATTACK) { ACR_TestForecastAttack.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

@@ -88,6 +88,7 @@ class ACR_ForecastContact : Managed
  float m_fAgeS;
  float m_fStrength;
  bool m_bMounted;
+ float m_fSpeed = -1;   // m/s it was seen moving at (-1: unknown, the kind's speed is used)
 }
 
 class ACR_DefenceForecast : Managed
@@ -100,6 +101,8 @@ class ACR_DefenceForecast : Managed
  static const float HORIZON_S = 900;        // bases further than 15 min from a contact aren't forecast from it
  static const float FOOT_SPEED = 1.2;       // m/s, as ACR_AICommander.WALK_SPEED
  static const float MOUNTED_SPEED = 6;      // m/s, as ACR_AICommander.MOUNTED_SPEED
+ static const float SPEED_LEAST = 0.5;      // m/s: an observed speed is used between these
+ static const float SPEED_MOST = 25;
  static const float LANE_PRIOR = 0.6;       // a base on the enemy's likeliest lane counts this much more
  static const float MASS_GAP = 150;         // m: standing contacts this close together are one gathering
  static const float MASS_BOOST = 1.5;       // ... and a gathering counts this much more toward its nearest base
@@ -177,8 +180,11 @@ class ACR_DefenceForecast : Managed
  // how far it has moved toward it since it was seen.
  static float Eta(ACR_ForecastContact contact, float distance, float bearing)
  {
+  // The speed it was seen moving at, else its kind's (a squad on a move order runs at ~3 m/s,
+  // three times the long-route foot average: forecastattack, 4 Nov).
   float speed = FOOT_SPEED;
   if (contact.m_bMounted) speed = MOUNTED_SPEED;
+  if (contact.m_fSpeed > 0) speed = Math.Clamp(contact.m_fSpeed, SPEED_LEAST, SPEED_MOST);
   float moved = 0;
   if (contact.m_fHeading >= 0) moved = contact.m_fAgeS * speed * Math.Max(0, Math.Cos(AngleBetween(contact.m_fHeading, bearing) * Math.DEG2RAD));
   return Math.Max(0, distance - moved) / speed;
@@ -358,6 +364,7 @@ class ACR_DefenceForecast : Managed
   ACR_ForecastContact made = new ACR_ForecastContact();
   made.m_vPos = contact.m_Pos;
   made.m_fHeading = contact.m_fHeading;
+  made.m_fSpeed = contact.m_fSpeed;
   made.m_fAgeS = Math.Max(0, (now - contact.m_fSeen) / 1000);
   made.m_bMounted = contact.m_iKind == ACR_Intel.KIND_VEHICLE || contact.m_iKind == ACR_Intel.KIND_ARMED || contact.m_iKind == ACR_Intel.KIND_ARMOUR;
   // As the commander's threat count weighs a squad (its strength); a group we don't manage by the men seen.
@@ -472,7 +479,7 @@ class ACR_DefenceForecast : Managed
   if (was) return;
   m_Came.Set(base, true);
   // A man or two isn't an attack: not checked.
-  if (threat < NOTE) return;
+  if (NOTE > threat) return;
   float since;
   ACR_BaseForecast entry = Of(base); // last tick's forecast
   if (!m_NotedSince.Find(base, since) || !entry)
