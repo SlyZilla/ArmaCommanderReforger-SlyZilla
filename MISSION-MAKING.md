@@ -381,6 +381,36 @@ the old doctrine until 10 points of new intel show the change ("the enemy comman
 tactics"), then work the new one out from scratch. `-acrDoctrineAdapt 0` (setup row AI doctrines adapt)
 keeps every commander on its first doctrine.
 
+#### AI commander strategy: lanes
+
+An AI commander no longer goes for every base at once. For the first few minutes of a match it
+land-rushes the empty bases near it (6 minutes; Blitz 4, Fortress 5, Raider 8; over sooner when no empty
+base is in sight). Then it picks a **lane**: a corridor about 1.4 km wide (Blitz 1.1 km, Fortress
+1.6 km) from one of its front bases toward a base it doesn't hold at least 800 m away. Lanes are scored by
+the income of the bases in them (a tactical point counts a little, an enemy HQ at the end a lot)
+against the defence it knows of there and the lane's length, from what its side can see. Near-equal
+lanes are picked at random. While it has a lane:
+
+- Attacks go to bases in the lane, those with more income first, then to bases on its flanks. Other
+  bases wait. Counterattacks, a player's "take this base" and every defence come first, as before.
+- One main attack and one supporting attack (Firepower and Fortress: none) instead of the extra
+  fronts. An attack in the lane is filled up to 1.4x the force it would otherwise get.
+- Empty bases are grabbed in the lane and on its flanks, and one at a time close behind its own
+  bases (within 1 km, nearer its own than any enemy base).
+- Idle squads post at its front bases in the lane, and the reserve waits at a base in the lane.
+- With AI fortifying on (`-acrFortifyAI 1`), its tactical points (no income) on the lane's flanks get base works
+  first, even away from the front: anti-flank strongpoints (Fortress weighs them highest).
+
+It reviews the lane every 2 minutes. It changes lane at once when it takes the objective or loses
+the base the lane starts from, and when the lane stalls: two attacks in it called off (a win takes
+one back), or 6 minutes without a target in it it can muster for (other targets open meanwhile). A
+stalled objective's lanes score half for 15 minutes. Otherwise it keeps a lane for at least 8
+minutes and changes only to one that scores 1.3x better. Each pick is logged (`AI <faction>: main
+effort from A toward B`) and told to its own side's 2IC channel ("Main effort: from A toward B"), and
+the 2IC card leads with it. The enemy is never told: they work it out from their intel. Raider
+commanders don't use lanes. `-acrAIStrategy 0` turns lanes off (the commander plans base by base, as
+before).
+
 #### Factions and mods
 
 The external ZIP/development launcher menu offers four side pairings: the game's US vs USSR, RHS US
@@ -899,6 +929,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrDoctrineWest <doctrine>` / `-acrDoctrineEast <doctrine>` | The blue / red side AI commander's doctrine: `random`, `balanced`, `blitz`, `firepower`, `fortress` or `raider` (overrides `m_eAIDoctrine`; default random each match). The log names each side's pick (`AI commander <faction> doctrine:`) |
 | `-acrDoctrineAdapt 1` / `0` | AI commanders change doctrine when theirs isn't working (default on; see AI commander doctrines). Each review logs `AI commander <faction> doctrine review:` |
+| `-acrAIStrategy 1` / `0` | AI commanders fight down a lane after a short land-rush (default on; see AI commander strategy: lanes). `0`: they plan base by base, as before |
 | `-acrCompanyWest <company>` / `-acrCompanyEast <company>` | The blue / red side's company, its starting kit given at Start to an AI commander or a player side: `rifle` (default, no kit), `mechanized` (an APC or IFV in place of the starting truck), `weapons` (a mortar team and a forward observer team), `engineers` (two tier I Fortify positions at its front bases) or `recon` (two recon teams). A kit is bought at list price out of the side's starting RP. The setup screen's Economy tab has the same rows (Blue company / Red company). The log names each kit (`COMPANY KIT <side>:`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; finite stock in either mode: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (finite stock in either mode: rare units get quadruple base stock, other units double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |

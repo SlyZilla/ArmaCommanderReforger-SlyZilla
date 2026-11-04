@@ -761,6 +761,7 @@ class ACR_TestRegress
    CheckRoadblockSnap(harness.m_Range.GetOrigin());
    ACR_TestOptions.Run();
    ACR_TestDoctrine.Run(manager);
+   ACR_TestLanes.Run(manager);
    // Night audit 30 Oct: the abort share compared in ints (3 of 10 at 0.35 kept attacking).
    Check("attack abort share compares as a float", ACR_AICommander.AttackBroken(3, 10, 0.35) && !ACR_AICommander.AttackBroken(4, 10, 0.35) && ACR_AICommander.AttackBroken(1, 6, 0.25) && !ACR_AICommander.AttackBroken(0, 0, 0.35), "3/10 and 1/6 must break, 4/10 and an unset start must not");
    ACR_TestAccess.Run();
