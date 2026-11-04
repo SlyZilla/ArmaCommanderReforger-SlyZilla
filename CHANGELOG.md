@@ -3,6 +3,7 @@
 
 ### AI commanders
 
+- A squad the AI commander pulls back under fire now gets back. Its order to fall back was turned into an ordinary fight the moment the enemy was near, so the squad lay down where it stood and was shot in the open. Now it bounds back toward the base it was sent to in two halves, one covering while the other runs (Better Battle Buddies does the bounding), and if it still hasn't gained 10 m after 30 s under fire it is ordered to run for it.
 - The skill and spotting speed set in Better Battle Buddies' Settings tab now reach AC: Actual's squads. AC: Actual sets its soldiers' skill and spotting every second and put its own over BBB's; now BBB's values stand in for the mode's (`-acrSkill`, `-acrReaction`), while a mission's pinned soldiers and a side's or profile's own skill still come first. Needs Better Battle Buddies' update.
 - Vehicle manners, with Better Battle Buddies' new vehicle options (all off by default):
   - Get out off the road (`-acrPullOver 1`): a squad told to get out on a road first has its driver pull onto the verge on his right, then everyone gets out with the handbrake on. Under fire, or with nowhere to pull over, they get out where they stand as before.

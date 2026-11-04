@@ -3276,7 +3276,12 @@ class ACR_AICommander : Managed
   m_RetreatingUntil.Set(squad, GetGame().GetWorld().GetWorldTime() + RETREAT_COOLDOWN_MS);
   squad.SetMode(ACR_EMoveMode.FAST);
   // On foot, round any water; no waiting for a truck under fire.
-  if (refuge) squad.RouteTo(ACR_Manager.Ground(refuge.GetOrigin()), ACR_Squad.WP_DEFEND, 15, "Falling back", 1);
+  if (refuge)
+  {
+   vector refugeAt = ACR_Manager.Ground(refuge.GetOrigin());
+   squad.RouteTo(refugeAt, ACR_Squad.WP_DEFEND, 15, "Falling back", 1);
+   squad.MarkFallBack(refugeAt);
+  }
   string where = "its position";
   if (refuge) where = refuge.m_sName;
   Say(string.Format("[ACR] AI %1: %2 falls back to %3 (%4)", m_sFaction, squad.GetName(), where, why));
