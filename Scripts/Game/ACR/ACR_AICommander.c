@@ -1292,7 +1292,15 @@ class ACR_AICommander : Managed
     running = AllocJob(ACR_EAITask.ATTACK, attack.m_Target, attack.m_Target.m_sName, ALLOC_GRAB_VALUE * AllocWorth(attack.m_Target));
     running.m_fPatience = 480;
    }
-   else running = AllocAttack(attack.m_Target);
+   else
+   {
+    running = AllocAttack(attack.m_Target);
+    // Judged as its own abort rule judges it (AttackBroken): against the strength it set out with,
+    // worth nothing below the doctrine's abort share. Not against today's bar: Pressure() is back
+    // at 1 once it has launched, so one sent at x0.87 odds would count as unfunded at once.
+    running.m_fNeed = Math.Max(1, attack.m_iStartStrength);
+    running.m_fBar = m_Doctrine.m_fAbortRatio;
+   }
    running.m_bRunning = true;
    running.m_Attack = attack;
    foreach (ACR_Squad attacker : attack.m_Squads) if (attacker) attackOf.Set(attacker, attack);
