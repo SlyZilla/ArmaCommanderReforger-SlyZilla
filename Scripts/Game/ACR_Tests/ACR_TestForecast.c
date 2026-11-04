@@ -215,7 +215,7 @@ class ACR_TestForecast
   ACR_DefenceForecast forecast = new ACR_DefenceForecast("TEST");
   // Unforecast: a threat out of nothing.
   forecast.NoteThreat(a, 6, true, Beside(a, b, 300, 1), 1000);
-  bool unforecast = forecast.m_iUnforecast == 1;
+  bool unforecast = forecast.m_iUnforecast == 1 && forecast.m_iAtDoor == 1;
   forecast.NoteThreat(a, 0, false, vector.Zero, 2000);
   // Forecast from one side, then the threat comes from that side: a hit.
   vector at = Beside(a, b, 600, -1);

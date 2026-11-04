@@ -135,6 +135,7 @@ class ACR_DefenceForecast : Managed
  protected float m_fSummaryAt = -1;
  static const float SUMMARY_MS = 300000;    // a summary line this often, for reading soaks
  int m_iHits, m_iWrongWay, m_iUnforecast, m_iLapsed;
+ int m_iAtDoor; // of the unforecast: nobody had seen them before they were at the base
  ref array<string> m_aSaid = {}; // lines for the commander's log, taken by it each tick
 
  void ACR_DefenceForecast(string faction) { m_sFaction = faction; }
@@ -390,7 +391,7 @@ class ACR_DefenceForecast : Managed
    foreach (ACR_ForecastContact moving : projected) if (moving.m_fHeading >= 0) headed++;
    string top = "nothing expected";
    if (!m_aBases.IsEmpty() && m_aBases[0].m_fExpected > 0) top = m_aBases[0].Line();
-   m_aSaid.Insert(string.Format("forecast summary: %1 contacts (%2 moving), %3 bases of ours, enemy bases seen %4, doctrine believed '%5'; checks %6 hit, %7 wrong way, %8 not forecast, %9 lapsed; top: ", projected.Count(), headed, ours.Count(), enemy.Count(), doctrine, m_iHits, m_iWrongWay, m_iUnforecast, m_iLapsed) + top);
+   m_aSaid.Insert(string.Format("forecast summary: %1 contacts (%2 moving), %3 bases of ours, enemy bases seen %4, doctrine believed '%5'; checks %6 hit, %7 wrong way, %8 not forecast, %9 lapsed; top: ", projected.Count(), headed, ours.Count(), enemy.Count(), doctrine, m_iHits, m_iWrongWay, m_iUnforecast, m_iLapsed) + top + string.Format(" (%1 not forecast were first seen at the base)", m_iAtDoor));
   }
   // Remembered ways.
   foreach (ACR_BaseForecast entry : m_aBases)
@@ -470,12 +471,17 @@ class ACR_DefenceForecast : Managed
   m_ThreatBearing.Set(base, bearing);
   if (was) return;
   m_Came.Set(base, true);
+  // A man or two isn't an attack: not checked.
+  if (threat < NOTE) return;
   float since;
-  ACR_BaseForecast entry = Of(base);
+  ACR_BaseForecast entry = Of(base); // last tick's forecast
   if (!m_NotedSince.Find(base, since) || !entry)
   {
    m_iUnforecast++;
-   m_aSaid.Insert(string.Format("forecast check %1: threat %2 from %3, not forecast", base.m_sName, threat, CompassOf(bearing)));
+   string why = "first seen at the base (no sighting before it)";
+   if (entry && entry.m_fExpected > 0.05) why = string.Format("seen before, but only %1 expected (logged from %2)", entry.m_fExpected.ToString(), NOTE);
+   else m_iAtDoor++;
+   m_aSaid.Insert(string.Format("forecast check %1: threat %2 from %3, not forecast: %4", base.m_sName, threat, CompassOf(bearing), why));
    return;
   }
   ACR_ForecastWay lead = entry.LeadWay();
@@ -515,7 +521,7 @@ class ACR_DefenceForecast : Managed
 
  void Think(notnull array<string> lines)
  {
-  lines.Insert(string.Format("Defence forecast (checks: %1 hit, %2 wrong way, %3 not forecast, %4 lapsed):", m_iHits, m_iWrongWay, m_iUnforecast, m_iLapsed));
+  lines.Insert(string.Format("Defence forecast (checks: %1 hit, %2 wrong way, %3 not forecast (%4 first seen at the base), %5 lapsed):", m_iHits, m_iWrongWay, m_iUnforecast, m_iAtDoor, m_iLapsed));
   int shown;
   foreach (ACR_BaseForecast entry : m_aBases)
   {
