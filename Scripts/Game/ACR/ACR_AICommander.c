@@ -1322,8 +1322,7 @@ class ACR_AICommander : Managed
     // Judged as its own abort rule judges it (AttackBroken): against the strength it set out with,
     // worth nothing below the doctrine's abort share. Not against today's bar: Pressure() is back
     // at 1 once it has launched, so one sent at x0.87 odds would count as unfunded at once.
-    running.m_fNeed = Math.Max(1, attack.m_iStartStrength);
-    running.m_fBar = m_Doctrine.m_fAbortRatio;
+    ACR_AIAllocator.JudgeRunning(running, attack.m_iStartStrength, m_Doctrine.m_fAbortRatio);
    }
    running.m_bRunning = true;
    running.m_Attack = attack;

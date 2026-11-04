@@ -2,12 +2,13 @@
 // fronts, no squads in the world: an attack takes its nearest squads and leaves the far one out,
 // an attack that can't reach its bar takes no one, a far member is swapped for a near free squad,
 // the job a squad has is kept unless another is clearly better, locked squads stay, an attack
-// needs a squad that can take the base, and the value curves. Then live on the range with
+// needs a squad that can take the base, a running attack is fully ready at the strength it set
+// out with and worth nothing once broken, and the value curves. Then live on the range with
 // -acrAIAllocator 2: free Alpha 200 m from an empty base is sent to grab it by the allocator, and
 // not when it is a medic team.
 class ACR_TestAllocator
 {
- static const int CHECKS = 16;
+ static const int CHECKS = 18;
 
  static ACR_AIJobSquad Squad(string name, float strength, int current, array<float> etas, array<float> fits = null)
  {
@@ -186,6 +187,34 @@ class ACR_TestAllocator
   ACR_AIAllocator.Allocate(jobs, squads, 2);
   bool both = jobs[0].m_aMembers.Count() == 1 && jobs[1].m_aMembers.Count() == 1;
   ACR_TestRegress.Check("allocator: with two allowed, both attacks are made", both, Picks(squads, jobs));
+
+  // 8. The 4 Nov Quarry case: an attack just launched at full strength isn't called off for grabs
+  // worth a little more than it was at launch; once broken (below the abort share) it is.
+  jobs.Clear();
+  ACR_AIJob quarry = Attack("Quarry", 30, 0);
+  quarry.m_fPatience = 600;
+  quarry.m_bRunning = true;
+  ACR_AIAllocator.JudgeRunning(quarry, 10, 0.5);
+  jobs.Insert(quarry);
+  jobs.Insert(Hold("GrabA", 7, 1));
+  jobs.Insert(Hold("GrabB", 9, 1));
+  jobs[1].m_fPatience = 0;
+  jobs[2].m_fPatience = 0;
+  squads.Clear();
+  array<float> etaA = E(600, 0);
+  etaA.Insert(0);
+  array<float> etaB = E(600, 0);
+  etaB.Insert(0);
+  squads.Insert(Squad("A", 5, 0, etaA));
+  squads.Insert(Squad("B", 5, 0, etaB));
+  ACR_AIAllocator.Allocate(jobs, squads, 1);
+  bool committed = squads[0].m_iPicked == 0 && squads[1].m_iPicked == 0;
+  ACR_TestRegress.Check("allocator: an attack at the strength it set out with is fully ready (not called off at once)", committed, Picks(squads, jobs) + string.Format(" value %1", jobs[0].m_fScore));
+  squads[0].m_fStrength = 2;
+  squads[1].m_fStrength = 2;
+  ACR_AIAllocator.Allocate(jobs, squads, 1);
+  bool broken = squads[0].m_iPicked != 0 && squads[1].m_iPicked != 0;
+  ACR_TestRegress.Check("allocator: an attack below its abort share is worth nothing", broken, Picks(squads, jobs));
 
   // The live checks follow at tick 8.
  }

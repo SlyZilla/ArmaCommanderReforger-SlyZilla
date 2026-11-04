@@ -73,6 +73,15 @@ class ACR_AIAllocator
   return Math.Min(1, ratio / OVERSTRENGTH);
  }
 
+ // A running attack is judged by its own abort rule: fully ready at the strength it set out with,
+ // worth nothing below 'abortRatio' of it (soak 4 Nov: judged against need = start strength it was
+ // only 0.8 ready, and attacks launched on a close call were called off 15 s later).
+ static void JudgeRunning(ACR_AIJob job, float startStrength, float abortRatio)
+ {
+  job.m_fNeed = Math.Max(1, startStrength) / OVERSTRENGTH;
+  job.m_fBar = abortRatio * OVERSTRENGTH;
+ }
+
  static float SoloScore(ACR_AIJob job, int j, ACR_AIJobSquad squad)
  {
   if (j >= squad.m_aFit.Count() || j >= squad.m_aEta.Count()) return -1;
