@@ -6384,20 +6384,30 @@ class ACR_AICommander : Managed
   foreach (ACR_MineSite site : sites)
   {
    // The plan snaps the field onto a road through the spot, which can bring it inside the
-   // standoff the spot passed: judge where it would really lie (Plan charges nothing).
-   ACR_MinePlan probe = ACR_Minefields.Plan(candidate, site.m_eKind, site.m_vPos, refusal);
+   // standoff the spot passed: judge where it would really lie (Plan charges nothing). A shape (#200,
+   // ACR_MineSiting.ShapeFor) is judged by every corner too; one that doesn't fit lays the square.
+   array<vector> corners = {};
+   string shape = ACR_MineSiting.ShapeFor(site, enemyPos, corners);
+   ACR_MinePlan probe = ACR_Minefields.Plan(candidate, site.m_eKind, site.m_vPos, refusal, vector.Zero, corners);
+   if (!corners.IsEmpty() && (!probe || !ClearOfOwnDefences(probe.m_vSite) || !OutlineClear(probe)))
+   {
+    corners.Clear();
+    shape = "square";
+    probe = ACR_Minefields.Plan(candidate, site.m_eKind, site.m_vPos, refusal);
+   }
    if (probe && !ClearOfOwnDefences(probe.m_vSite))
    {
     refused++;
     refusal = "the road through it is too near our own defences";
     continue;
    }
-   if (!ACR_Minefields.Order(candidate, site.m_eKind, site.m_vPos, refusal))
+   if (!ACR_Minefields.Order(candidate, site.m_eKind, site.m_vPos, refusal, vector.Zero, corners))
    {
     refused++;
     continue;
    }
    candidate.m_iAITask = ACR_EAITask.MINES;
+   Say(string.Format("[ACR] AI %1: %2 laid as a %3", m_sFaction, ACR_Minefields.Name(site.m_eKind), shape));
    Say(string.Format("[ACR] AI %1: %2%3 laying %4 on the approach to %5 at %6: of %7 spots, %8", m_sFaction, candidate.GetName(), from, ACR_Minefields.Name(site.m_eKind), front.m_sName, site.m_vPos, sites.Count(), ACR_MineSiting.Breakdown(site)));
    return true;
   }
@@ -6412,6 +6422,17 @@ class ACR_AICommander : Managed
  // a field's centre DEFENCE_STANDOFF m from our positions and roadblocks (also those on their way)
  // and clear of our bases' edges by 40 m, a position as far from our fields.
  static const float DEFENCE_STANDOFF = 60;
+
+ // Every corner of a shaped field's outline clear of our defences as its middle must be (#200).
+ protected bool OutlineClear(ACR_MinePlan plan)
+ {
+  foreach (vector corner : plan.m_aOutline)
+  {
+   if (!ClearOfOwnDefences(corner)) return false;
+  }
+  return true;
+ }
+
  bool ClearOfOwnDefences(vector pos)
  {
   if (ACR_Fortify.NearestOwn(m_sFaction, pos, DEFENCE_STANDOFF)) return false;
