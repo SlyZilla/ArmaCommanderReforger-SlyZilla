@@ -1135,6 +1135,8 @@ class ACR_AICommander : Managed
   ReleaseRoadblockBuilders();
   Assess();
   t = ACR_Perf.Lap("ai.assess", t);
+  UpdateForecast();
+  t = ACR_Perf.Lap("ai.forecast", t);
   UpdateAttacks();
   t = ACR_Perf.Lap("ai.attacks", t);
   AssignDefenders();
@@ -2602,6 +2604,7 @@ class ACR_AICommander : Managed
    {
     // Hit back while the enemy is still thin on the ground.
     m_CounterTarget = base;
+    if (m_Forecast) m_Forecast.NoteLost(base, GetGame().GetWorld().GetWorldTime());
     m_fCounterUntil = GetGame().GetWorld().GetWorldTime() + m_Doctrine.m_fCounterMinutes * 60000;
     Say(string.Format("[ACR] AI %1: lost %2, planning a counterattack", m_sFaction, base.m_sName));
    }
@@ -2610,6 +2613,52 @@ class ACR_AICommander : Managed
  }
 
  protected int DefenceOf(ACR_Base base) { int v; m_Defence.Find(base, v); return v; }
+
+ // Where the next attack on us will come from (-acrDefenceForecast, ACR_DefenceForecast; defence
+ // design step 1): from this side's intel only, after the threat count. Nothing acts on it yet: it
+ // is logged, checked against the attacks that come, and shown in Think.
+ protected ref ACR_DefenceForecast m_Forecast;
+ ACR_DefenceForecast Forecast() { return m_Forecast; }
+
+ protected void UpdateForecast()
+ {
+  if (!ACR_DefenceForecast.On()) return;
+  ACR_Intel intel = m_Manager.IntelFor(m_sFaction);
+  if (!intel) return;
+  if (!m_Forecast) m_Forecast = new ACR_DefenceForecast(m_sFaction);
+  float now = GetGame().GetWorld().GetWorldTime();
+  array<ACR_Base> ours = {};
+  array<int> defence = {};
+  array<ACR_Base> enemy = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired) continue;
+   if (base.m_sOwner == m_sFaction)
+   {
+    ours.Insert(base);
+    defence.Insert(DefenceOf(base));
+    // The check against what came uses last tick's forecast, so it runs first.
+    vector from;
+    bool seen = ThreatFrom(base, from);
+    m_Forecast.NoteThreat(base, ThreatTo(base), seen, from, now);
+   }
+   else if (Visible(base) && HostileOwner(base)) enemy.Insert(base);
+  }
+  string believed;
+  if (intel.Doctrine()) believed = intel.Doctrine().Believed();
+  ACR_AIDoctrine theirs = ACR_AIDoctrine.Find(believed);
+  if (!theirs) theirs = ACR_AIDoctrine.Find("balanced");
+  float laneWidth = m_Doctrine.m_fLaneWidth;
+  if (theirs) laneWidth = theirs.m_fLaneWidth;
+  m_Forecast.Update(intel.m_Contacts, ours, defence, enemy, laneWidth, believed, now);
+  foreach (string line : m_Forecast.m_aSaid) Say(string.Format("[ACR] AI %1: %2", m_sFaction, line));
+  m_Forecast.m_aSaid.Clear();
+ }
+
+ void ThinkForecast(notnull array<string> lines)
+ {
+  if (m_Forecast && ACR_DefenceForecast.On()) m_Forecast.Think(lines);
+ }
  protected int ThreatTo(ACR_Base base) { int v; m_Threat.Find(base, v); return v; }
  int DefenceOfForTest(ACR_Base base) { return DefenceOf(base); }
 
