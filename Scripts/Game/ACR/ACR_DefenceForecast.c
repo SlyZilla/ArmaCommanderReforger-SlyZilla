@@ -132,6 +132,8 @@ class ACR_DefenceForecast : Managed
  // The enemy lanes' weight per base of ours, refreshed every ACR_AILanes.REVIEW_S.
  protected ref map<ACR_Base, float> m_LaneShare = new map<ACR_Base, float>();
  protected float m_fLaneAt = -1;
+ protected float m_fSummaryAt = -1;
+ static const float SUMMARY_MS = 300000;    // a summary line this often, for reading soaks
  int m_iHits, m_iWrongWay, m_iUnforecast, m_iLapsed;
  ref array<string> m_aSaid = {}; // lines for the commander's log, taken by it each tick
 
@@ -381,6 +383,15 @@ class ACR_DefenceForecast : Managed
    projected.Insert(FromContact(contact, now));
   }
   Compute(ours, defence, projected, m_LaneShare, doctrine, m_aBases);
+  if (m_fSummaryAt < 0 || now - m_fSummaryAt >= SUMMARY_MS)
+  {
+   m_fSummaryAt = now;
+   int headed;
+   foreach (ACR_ForecastContact moving : projected) if (moving.m_fHeading >= 0) headed++;
+   string top = "nothing expected";
+   if (!m_aBases.IsEmpty() && m_aBases[0].m_fExpected > 0) top = m_aBases[0].Line();
+   m_aSaid.Insert(string.Format("forecast summary: %1 contacts (%2 moving), %3 bases of ours, enemy bases seen %4, doctrine believed '%5'; checks %6 hit, %7 wrong way, %8 not forecast, %9 lapsed; top: ", projected.Count(), headed, ours.Count(), enemy.Count(), doctrine, m_iHits, m_iWrongWay, m_iUnforecast, m_iLapsed) + top);
+  }
   // Remembered ways.
   foreach (ACR_BaseForecast entry : m_aBases)
   {
