@@ -814,6 +814,7 @@ class ACR_AIAttack
  bool m_bOverwatch;
  float m_fStageLimit;                // latest the forming up may be stretched to for late joiners
  int m_iStartStrength;
+ float m_fLaunchedAt;                // world time it was launched (the allocator's grace period)
  bool m_bCounter;
  bool m_bGrab;                       // quick grab of an empty base (doesn't count against the attack limit)
  float m_fAssaultStart;              // world time the assault (or grab) began
@@ -1179,7 +1180,10 @@ class ACR_AICommander : Managed
  static const float ALLOC_GRAB_VALUE = 3;   // observe soak 3 Nov: at 6 every reserve and attacker 'should' grab
  static const float ALLOC_DEFEND_VALUE = 12;
  static const float ALLOC_HOLD_VALUE = 2;
- static const float ALLOC_RESERVE_VALUE = 20; // a reserve is the doctrine's choice: only a clearly better job takes it
+ static const float ALLOC_RESERVE_VALUE = 20; // a reserve with threatened bases in reach: only a clearly better job takes it
+ static const float ALLOC_RESERVE_QUIET = 6;  // one on a quiet front (soak 4 Nov: a flat 20 outbid three-squad attacks)
+ static const float ALLOC_RESERVE_THREAT = 12; // threat strength in reach at which a reserve is worth the full value
+ static const float ALLOC_GRACE = 120;      // s a launched attack keeps its squads before the allocator may call it off
  static const int ALLOC_ATTACK_TARGETS = 6; // enemy bases weighed as attack jobs per tick
  static const int ALLOC_GRAB_TARGETS = 8;   // empty bases weighed as grabs per tick
  static const int ALLOC_LOG_LINES = 6;      // "would move" lines per tick at most
@@ -1202,6 +1206,20 @@ class ACR_AICommander : Managed
   if (base == m_CounterTarget && CounterDue()) worth *= 1.5;
   if (base == RequestedTarget()) worth *= 2;
   return worth;
+ }
+
+ // A reserve is worth what it can answer: the threat to own bases within its reach.
+ protected float AllocReserveValue(ACR_Base reserveBase)
+ {
+  float threat;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_sOwner != m_sFaction) continue;
+   if (vector.DistanceXZ(base.GetOrigin(), reserveBase.GetOrigin()) > RESERVE_MAX_PULL) continue;
+   threat += ThreatTo(base);
+  }
+  float share = Math.Min(1, threat / ALLOC_RESERVE_THREAT);
+  return ALLOC_RESERVE_QUIET + (ALLOC_RESERVE_VALUE - ALLOC_RESERVE_QUIET) * share;
  }
 
  protected ACR_AIJob AllocJob(int kind, ACR_Base target, string label, float value)
@@ -1405,7 +1423,7 @@ class ACR_AICommander : Managed
   int reserveJob = -1;
   if (reserveBase)
   {
-   ACR_AIJob reserve = AllocJob(ACR_EAITask.POSTED, reserveBase, "reserve at " + reserveBase.m_sName, ALLOC_RESERVE_VALUE);
+   ACR_AIJob reserve = AllocJob(ACR_EAITask.POSTED, reserveBase, "reserve at " + reserveBase.m_sName, AllocReserveValue(reserveBase));
    reserve.m_fPatience = 1200;
    reserveJob = m_aAllocJobs.Count() - 1;
   }
@@ -1462,6 +1480,10 @@ class ACR_AICommander : Managed
    if (ownAttack && ownAttack.m_bAssaulting && squad.KnownEnemies(300) > 0) entry.m_bLocked = true;
    if (ownAttack && ownAttack.m_SapperDemo && ownAttack.m_SapperDemo.InProgress()) entry.m_bLocked = true;
    if (ACR_AirLift.Busy(squad)) entry.m_bLocked = true;
+   // A fresh attack keeps its squads for a grace period: it only ends by its own rules (losses,
+   // stall, won). Soak 4 Nov: a base won in the launch tick added a reserve and posts next tick,
+   // and most allocator call-offs came 15-30 s after launch.
+   if (ownAttack && !ownAttack.m_bGrab && entry.m_iCurrent >= 0 && GetGame().GetWorld().GetWorldTime() - ownAttack.m_fLaunchedAt < ALLOC_GRACE * 1000) entry.m_bLocked = true;
    if (control && squad.m_iAITask == ACR_EAITask.DEFEND && entry.m_iCurrent >= 0) entry.m_bLocked = true;
    if (squad.m_iAITask == ACR_EAITask.POSTED && Committed(squad))
    {
@@ -1564,14 +1586,17 @@ class ACR_AICommander : Managed
    // Why, for reading soaks: what its own squads made it worth against what they'd do elsewhere.
    array<int> own = {};
    float elsewhere, ownStrength, ownLatest;
+   string went;
    foreach (int o, ACR_AIJobSquad member : m_aAllocSquads)
    {
     if (member.m_iCurrent != u) continue;
     own.Insert(o);
     elsewhere += member.m_fAlt;
+    went += string.Format(" %1 -> %2 (%3);", member.m_sName, AllocJobName(member.m_iPicked), (int)(member.m_fScore * 10) / 10.0);
    }
    float ownValue = ACR_AIAllocator.TeamValue(unfunded, u, m_aAllocSquads, own, ownStrength, ownLatest);
    Say(string.Format("[ACR] AI %1: attack on %2 called off (its squads are worth more elsewhere: %3 here, strength %4/%5, latest %6 s; %7 elsewhere)", m_sFaction, unfunded.m_sName, (int)(ownValue * 10) / 10.0, (int)ownStrength, (int)(unfunded.m_fNeed * unfunded.m_fBar), (int)ownLatest, (int)(elsewhere * 10) / 10.0));
+   PrintFormat("[ACR] ALLOC %1: %2 call-off, its squads went:%3", m_sFaction, unfunded.m_sName, went);
    foreach (ACR_Squad left : dropped.m_Squads)
     if (left && left.m_iAITask == ACR_EAITask.ATTACK) left.SetAITask(ACR_EAITask.FREE);
    m_StalledUntil.Set(dropped.m_Target, now + ALLOC_DROP_COOLDOWN * 1000);
@@ -3144,6 +3169,7 @@ class ACR_AICommander : Managed
  {
   ACR_Base target = attack.m_Target;
   attack.m_iStartStrength = strength;
+  attack.m_fLaunchedAt = GetGame().GetWorld().GetWorldTime();
   // Staging: the main approach from the attackers' side; with several squads
   // they spread out and come in from different angles (pincers).
   vector dir = from - target.GetOrigin();

@@ -10,6 +10,7 @@
 // - The job a squad already has counts INCUMBENCY more (no swapping for a small gain); locked
 //   squads (assaulting in contact, on an air lift) stay where they are.
 // - Running team jobs are weighed first: a new one never takes a running one's slot under the cap.
+//   They try their own squads first, and keeping one costs STAY_MARGIN less than taking it fresh.
 // Plain data in and out: the commander builds it (ACR_AICommander, "Job allocator"), and the
 // tests feed it made-up fronts (ACR_TestAllocator).
 
@@ -56,6 +57,7 @@ class ACR_AIAllocator
  static const float INCUMBENCY = 0.3;   // a squad's current job counts 30% more
  static const float OVERSTRENGTH = 1.25; // strength past need x this adds nothing
  static const int TEAM_CANDIDATES = 12;  // nearest squads tried per team job
+ static const float STAY_MARGIN = 0.3;  // leaving a running team job: elsewhere must be worth 30% more
 
  // Value kept after 'eta' seconds: 1 now, 1/2 at 'patience'.
  static float TimeFactor(float eta, float patience)
@@ -119,6 +121,52 @@ class ACR_AIAllocator
   return value;
  }
 
+ // The best team for a team job among the squads not yet taken: its locked members, then the
+ // candidates in order (nearest first; 'ownFirst': its own squads first), keeping the prefix worth
+ // most once what they'd do elsewhere is paid for. Returns that net worth (-1: none worth it).
+ static float BestPrefix(ACR_AIJob job, int j, notnull array<ref ACR_AIJobSquad> squads, notnull array<bool> taken, bool ownFirst, notnull array<int> keep)
+ {
+  array<int> team = {};
+  foreach (int m : job.m_aMembers) team.Insert(m); // locked members stay
+  array<int> order = {};
+  array<float> ranks = {};
+  foreach (int c, ACR_AIJobSquad candidate : squads)
+  {
+   if (taken[c] || candidate.m_aFit[j] <= 0 || candidate.m_aEta[j] < 0) continue;
+   float rank = candidate.m_aEta[j];
+   if (ownFirst && candidate.m_iCurrent != j) rank += 1000000;
+   int at = 0;
+   while (at < ranks.Count() && ranks[at] <= rank) at++;
+   order.InsertAt(c, at);
+   ranks.InsertAt(rank, at);
+  }
+  float strength, latest, paid;
+  float net = -1;
+  keep.Clear();
+  if (!team.IsEmpty())
+  {
+   net = TeamValue(job, j, squads, team, strength, latest);
+   keep.Copy(team);
+  }
+  int tried;
+  foreach (int o : order)
+  {
+   if (tried >= TEAM_CANDIDATES || team.Count() >= job.m_iMaxSquads) break;
+   tried++;
+   team.Insert(o);
+   // Leaving work under way costs (the walk so far, the time): its own squads are cheaper to keep.
+   if (job.m_bRunning && squads[o].m_iCurrent == j) paid += squads[o].m_fAlt / (1 + STAY_MARGIN);
+   else paid += squads[o].m_fAlt;
+   float value = TeamValue(job, j, squads, team, strength, latest);
+   if (value > 0 && value - paid > net)
+   {
+    net = value - paid;
+    keep.Copy(team);
+   }
+  }
+  return net;
+ }
+
  // Gives every squad its job (m_iPicked, -1: nothing worth doing). New team jobs only while fewer
  // than 'maxTeams' team jobs are funded (running ones count, but are never cut for the cap).
  static void Allocate(notnull array<ref ACR_AIJob> jobs, notnull array<ref ACR_AIJobSquad> squads, int maxTeams)
@@ -179,39 +227,19 @@ class ACR_AIAllocator
    foreach (int j, ACR_AIJob teamJob : jobs)
    {
     if (teamDone[j] || teamJob.m_bRunning != runningPass) continue;
-    array<int> team = {};
-    float paid;
-    foreach (int m : teamJob.m_aMembers) team.Insert(m); // locked members stay
-    array<int> order = {};
-    array<float> etas = {};
-    foreach (int c, ACR_AIJobSquad candidate : squads)
-    {
-     if (taken[c] || candidate.m_aFit[j] <= 0 || candidate.m_aEta[j] < 0) continue;
-     int at = 0;
-     while (at < etas.Count() && etas[at] <= candidate.m_aEta[j]) at++;
-     order.InsertAt(c, at);
-     etas.InsertAt(candidate.m_aEta[j], at);
-    }
-    float strength, latest;
-    float net = -1;
+    // Nearest first; a running job also tries its own squads first and keeps the better (soak
+    // 4 Nov: a nearer outsider worth more elsewhere sat between two members, no nearest-first
+    // prefix kept both, and an attack worth more than its squads' alternatives was called off).
     array<int> keep = {};
-    if (!team.IsEmpty())
+    float net = BestPrefix(teamJob, j, squads, taken, false, keep);
+    if (teamJob.m_bRunning)
     {
-     net = TeamValue(teamJob, j, squads, team, strength, latest);
-     keep.Copy(team);
-    }
-    int tried;
-    foreach (int o : order)
-    {
-     if (tried >= TEAM_CANDIDATES || team.Count() >= teamJob.m_iMaxSquads) break;
-     tried++;
-     team.Insert(o);
-     paid += squads[o].m_fAlt;
-     float value = TeamValue(teamJob, j, squads, team, strength, latest);
-     if (value > 0 && value - paid > net)
+     array<int> ownKeep = {};
+     float ownNet = BestPrefix(teamJob, j, squads, taken, true, ownKeep);
+     if (ownNet > net)
      {
-      net = value - paid;
-      keep.Copy(team);
+      net = ownNet;
+      keep.Copy(ownKeep);
      }
     }
     if (net > bestNet && !keep.IsEmpty())

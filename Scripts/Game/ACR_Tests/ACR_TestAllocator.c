@@ -3,12 +3,13 @@
 // an attack that can't reach its bar takes no one, a far member is swapped for a near free squad,
 // the job a squad has is kept unless another is clearly better, locked squads stay, an attack
 // needs a squad that can take the base, a running attack is fully ready at the strength it set
-// out with, worth nothing once broken and keeps its slot under the cap, and the value curves.
+// out with, worth nothing once broken, keeps its slot under the cap, its own squads first and
+// them unless elsewhere is clearly better, and the value curves.
 // Then live on the range with -acrAIAllocator 2: free Alpha 200 m from an empty base is sent to
 // grab it by the allocator, and not when it is a medic team.
 class ACR_TestAllocator
 {
- static const int CHECKS = 19;
+ static const int CHECKS = 22;
 
  static ACR_AIJobSquad Squad(string name, float strength, int current, array<float> etas, array<float> fits = null)
  {
@@ -233,6 +234,46 @@ class ACR_TestAllocator
   ACR_AIAllocator.Allocate(jobs, squads, 1);
   bool kept = squads[0].m_iPicked == 0 && jobs[1].m_aMembers.IsEmpty();
   ACR_TestRegress.Check("allocator: a running attack keeps its slot under the cap against a new one worth more", kept, Picks(squads, jobs));
+
+  // 10. The 4 Nov Gorey case: a running attack (26 with incumbency) keeps its squads against posts
+  // worth a little more in all (30), and lets them go when those are clearly better (40).
+  jobs.Clear();
+  ACR_AIJob gorey = Attack("Gorey", 20, 0);
+  gorey.m_bRunning = true;
+  ACR_AIAllocator.JudgeRunning(gorey, 10, 0.5);
+  jobs.Insert(gorey);
+  jobs.Insert(Hold("PostA", 15, 1));
+  jobs.Insert(Hold("PostB", 15, 1));
+  array<float> etaG = E(0, 0);
+  etaG.Insert(0);
+  squads.Clear();
+  squads.Insert(Squad("A", 5, 0, etaG));
+  squads.Insert(Squad("B", 5, 0, etaG));
+  ACR_AIAllocator.Allocate(jobs, squads, 1);
+  bool margin = squads[0].m_iPicked == 0 && squads[1].m_iPicked == 0;
+  ACR_TestRegress.Check("allocator: a running attack isn't called off for jobs only a little better", margin, Picks(squads, jobs));
+  jobs[1].m_fValue = 20;
+  jobs[2].m_fValue = 20;
+  ACR_AIAllocator.Allocate(jobs, squads, 1);
+  bool released = squads[0].m_iPicked != 0 && squads[1].m_iPicked != 0;
+  ACR_TestRegress.Check("allocator: a running attack lets its squads go for clearly better jobs", released, Picks(squads, jobs));
+
+  // 11. A running attack tries its own squads before a nearer outsider (with room for two, the
+  // outsider used to take a member's place and the member was walked off).
+  jobs.Clear();
+  ACR_AIJob own = Attack("Own", 25, 0);
+  own.m_bRunning = true;
+  own.m_iMaxSquads = 2;
+  ACR_AIAllocator.JudgeRunning(own, 10, 0.5);
+  jobs.Insert(own);
+  jobs.Insert(Hold("Post", 15, 3));
+  squads.Clear();
+  squads.Insert(Squad("A", 5, 0, E(100, 0)));
+  squads.Insert(Squad("B", 5, 0, E(100, 0)));
+  squads.Insert(Squad("C", 5, -1, E(10, 0)));
+  ACR_AIAllocator.Allocate(jobs, squads, 1);
+  bool ownFirst = squads[0].m_iPicked == 0 && squads[1].m_iPicked == 0 && squads[2].m_iPicked == 1;
+  ACR_TestRegress.Check("allocator: a running attack keeps its own squads before a nearer outsider", ownFirst, Picks(squads, jobs));
 
   // The live checks follow at tick 8.
  }
