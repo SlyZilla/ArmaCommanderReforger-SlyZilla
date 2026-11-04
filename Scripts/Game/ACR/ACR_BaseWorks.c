@@ -1025,7 +1025,9 @@ class ACR_BaseWorks
    if (!way.IsEmpty())
    {
     if (post.m_Work.m_Kill.OnWay(line.m_vMiddle, ACR_BaseDefences.Bearing(line.m_vFacing), way) > 0) return;
-    if (!InContact(post.m_Group))
+    // ... and not with him already close: men running across the base to a better line as he opens fire
+    // (srv:worksfightbase, 2 Nov: all five off the bags at 160 m, 7 of 8 lost).
+    if (!InContact(post.m_Group) && vector.DistanceXZ(line.m_vMiddle, threat) > STAY_CLOSE)
     {
      array<int> better = {};
      LinesFor(post.m_Work, threat, true, better);
