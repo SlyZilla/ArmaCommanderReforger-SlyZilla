@@ -124,6 +124,7 @@ class ACR_KillGround : Managed
  protected int m_iHeart = -1;
  protected int m_iRoadHeart = -1;
  protected float m_fBaseRadius;               // > 0: a base's own ring, which his attack stages outside
+ ref array<vector> m_aStagePoints = {};       // where he stages against it, as planned on (ACR_BaseWorks.StagingWatch)
  protected int m_iLook;
  ref array<ref ACR_KillWay> m_aWays = {};
  ref array<ref ACR_KillSite> m_aPlaced = {};
@@ -450,6 +451,7 @@ class ACR_KillGround : Managed
     vector point;
     if (!BBB_Terrain.DryApproach(m_vCenter, ACR_AICommander.Turned(dir, turn), ring, point)) continue;
     point = Hidden(point, eyes);
+    m_aStagePoints.Insert(point);
     int cell = EdgeCell(ACR_BaseDefences.FlatDir(m_vCenter, point), reach);
     if (cell < 0) continue;
     float weight = weights[d] * share;

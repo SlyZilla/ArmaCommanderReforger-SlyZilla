@@ -83,11 +83,16 @@ class ACR_BaseWorks
  static const float POST_AREA = 40;     // m round the command post its defenders garrison
  static const int REACH_GRACE_MS = 90000; // ms past a 1 m/s walk to a site before the squad gives up on it
  static const int AI_RP_RESERVE = 30;   // an AI commander keeps this much back (as ManageBaseWorks)
+ static const float STAGE_SEEN_M = 120;  // m from a planned staging point: a contact there is him staging (StagingWatch)
+ static const float STAGE_SEEN_S = 30;   // ... seen this recently
+ static const float STAGE_SAY_MS = 300000; // and the side is told once per base in this long
+ protected static ref map<ACR_BaseWork, float> s_mStagingSaid;
  static ref array<ref ACR_BaseWork> s_aWorks;
  // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
  static void ACR_InitStatics()
  {
   s_aWorks = {};
+  s_mStagingSaid = new map<ACR_BaseWork, float>();
  }
  static int s_iMaxSitesForTest;         // at most this many sites of each kind (0: no limit)
  static int s_iLastPlanMs;              // the last plan's cost (tests, log)
@@ -1260,7 +1265,50 @@ class ACR_BaseWorks
     PrintFormat("[ACR] BASEWORKS %1 %2: %3 is gone", work.m_sFaction, work.m_Base.m_sName, ACR_FobDefences.TierName(work.m_iTier - 1));
     work.m_iTier--;
    }
+   StagingWatch(work);
   }
+ }
+
+ // The planner knows where his attack stages against this base (ACR_KillGround.m_aStagePoints). A contact of his
+ // seen lately within STAGE_SEEN_M of one, while the lines stand, is him staging: the side is told once per base
+ // every STAGE_SAY_MS, so a player can get on the bags before he steps off.
+ protected static void StagingWatch(ACR_BaseWork work)
+ {
+  if (!work.m_Kill || work.m_Kill.m_aStagePoints.IsEmpty() || !LinesStand(work.m_Base)) return;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  float again;
+  if (s_mStagingSaid.Find(work, again) && now < again) return;
+  ACR_Intel intel = manager.IntelFor(work.m_sFaction);
+  if (!intel) return;
+  foreach (ACR_Contact contact : intel.m_Contacts)
+  {
+   if (!contact || contact.m_iKind == ACR_Intel.KIND_AIR || now - contact.m_fSeen > STAGE_SEEN_S * 1000) continue;
+   vector nearest = vector.Zero;
+   float best = STAGE_SEEN_M;
+   foreach (vector point : work.m_Kill.m_aStagePoints)
+   {
+    float d = vector.DistanceXZ(point, contact.m_Pos);
+    if (d >= best) continue;
+    best = d;
+    nearest = point;
+   }
+   if (best >= STAGE_SEEN_M) continue;
+   s_mStagingSaid.Set(work, now + STAGE_SAY_MS);
+   string line = string.Format("Enemy staging %1 of %2: %3", Octant(ACR_BaseDefences.FlatDir(work.m_Base.GetOrigin(), nearest)), work.m_Base.m_sName, ACR_Intel.Describe(contact.m_iKind, contact.m_iCount));
+   manager.NotifyFaction(work.m_sFaction, line);
+   intel.AddFeed(now, line, nearest);
+   PrintFormat("[ACR] BASEWORKS %1 %2: %3 (%4 m from the staging point, seen by %5)", work.m_sFaction, work.m_Base.m_sName, line, (int)best, contact.m_sSpotter);
+   return;
+  }
+ }
+
+ static string Octant(vector dir)
+ {
+  array<string> names = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+  int i = Math.Round(ACR_BaseSurvey.Normal(ACR_BaseDefences.Bearing(dir)) / 45);
+  return names[i % 8];
  }
 
  protected static void PruneSite(ACR_BaseSite site)
@@ -1364,6 +1412,7 @@ class ACR_BaseWorks
 
  static void Reset()
  {
+  s_mStagingSaid.Clear();
   s_aWorks.Clear();
   s_iMaxSitesForTest = 0;
   s_LastSurvey = null;
