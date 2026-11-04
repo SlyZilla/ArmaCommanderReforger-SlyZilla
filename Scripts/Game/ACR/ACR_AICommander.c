@@ -1556,12 +1556,22 @@ class ACR_AICommander : Managed
  {
   float now = GetGame().GetWorld().GetWorldTime();
   // Running attacks it didn't fund: called off, their squads freed for the jobs it gave them.
-  foreach (ACR_AIJob unfunded : m_aAllocJobs)
+  foreach (int u, ACR_AIJob unfunded : m_aAllocJobs)
   {
    if (!unfunded.m_bTeam || !unfunded.m_bRunning || !unfunded.m_Attack || !unfunded.m_aMembers.IsEmpty()) continue;
    ACR_AIAttack dropped = unfunded.m_Attack;
    if (dropped.m_SapperDemo && dropped.m_SapperDemo.InProgress()) continue; // a charge is fused: UpdateAttacks sees it through
-   Say(string.Format("[ACR] AI %1: attack on %2 called off (its squads are worth more elsewhere)", m_sFaction, unfunded.m_sName));
+   // Why, for reading soaks: what its own squads made it worth against what they'd do elsewhere.
+   array<int> own = {};
+   float elsewhere, ownStrength, ownLatest;
+   foreach (int o, ACR_AIJobSquad member : m_aAllocSquads)
+   {
+    if (member.m_iCurrent != u) continue;
+    own.Insert(o);
+    elsewhere += member.m_fAlt;
+   }
+   float ownValue = ACR_AIAllocator.TeamValue(unfunded, u, m_aAllocSquads, own, ownStrength, ownLatest);
+   Say(string.Format("[ACR] AI %1: attack on %2 called off (its squads are worth more elsewhere: %3 here, strength %4/%5, latest %6 s; %7 elsewhere)", m_sFaction, unfunded.m_sName, (int)(ownValue * 10) / 10.0, (int)ownStrength, (int)(unfunded.m_fNeed * unfunded.m_fBar), (int)ownLatest, (int)(elsewhere * 10) / 10.0));
    foreach (ACR_Squad left : dropped.m_Squads)
     if (left && left.m_iAITask == ACR_EAITask.ATTACK) left.SetAITask(ACR_EAITask.FREE);
    m_StalledUntil.Set(dropped.m_Target, now + ALLOC_DROP_COOLDOWN * 1000);
