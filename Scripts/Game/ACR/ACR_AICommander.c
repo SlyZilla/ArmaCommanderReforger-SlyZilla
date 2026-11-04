@@ -1433,6 +1433,11 @@ class ACR_AICommander : Managed
     // A grab on foot only within 1500 m, as AssignAttacks sends them.
     if (job.m_iKind == ACR_EAITask.ATTACK && !job.m_bTeam && !job.m_bRunning && !squad.IsMounted() && vector.DistanceXZ(pos, where.GetOrigin()) > 1500) fit = 0;
     if (job.m_iKind == ACR_EAITask.DEFEND && support) fit = 0.3;
+    // A posted squad is only taken for real work, never walked to another post (as PostIdle leaves
+    // it). Soak 4 Nov: with a front's hold slots shuffled, squads walked 2-3 km between two posts
+    // worth 2 and back 30 s later.
+    bool holdJob = job.m_iKind == ACR_EAITask.POSTED && j != reserveJob;
+    if (holdJob && squad.m_iAITask == ACR_EAITask.POSTED && squad != m_ReserveSquad && vector.DistanceXZ(squad.m_MoveTarget, where.GetOrigin()) > where.m_fRadius + DEFENSE_DISTANCE) fit = 0;
     float eta = AllocEta(squad, dist);
     // Its own attack: the way to its staging point, or none once going in.
     if (ownAttack && job.m_bRunning && ownAttack.m_Target == where)
