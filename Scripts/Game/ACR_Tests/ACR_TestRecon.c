@@ -6,7 +6,7 @@
 // photographed base and flies its recon over a fresh intercept near its bases first.
 class ACR_TestRecon
 {
- static const int CHECKS = 11;
+ static const int CHECKS = 10;
  static const int CALL_TICK = 6;
  static const int CHECK_TICK = 50;
  static ACR_Squad s_Enemy;
@@ -26,12 +26,11 @@ class ACR_TestRecon
    if (soviets) soviets.m_bAICommander = false;
    ACR_FactionSettings us = ACR_FactionSettings.Find("US");
    if (us) us.m_bAICommander = false;
-   // Deterministic: everything under the track is seen, every transmission heard, no anti-air.
+   // Deterministic: everything under the track is seen, every transmission heard.
    ACR_ReconRun.SEE_OPEN = 1;
    ACR_ReconRun.SEE_COVERED = 1;
    ACR_ReconRun.SEE_VEHICLE = 1;
    ACR_RadioIntercept.INTERCEPT_CHANCE = 1;
-   ACR_ReconRun.AA_TURN_BACK = 0;
   }
   if (!alpha || !alpha.GetAnchor()) return;
   if (tick == 4) Pure(manager);
@@ -53,10 +52,6 @@ class ACR_TestRecon
   bool behind = ACR_ReconRun.InCorridor(Vector(1000, 0, 950), start, north, 2400, 300);
   bool beyond = ACR_ReconRun.InCorridor(Vector(1000, 0, 3500), start, north, 2400, 300);
   ACR_TestRegress.Check("recon: the corridor is the track's length and width", inside && !wide && !behind && !beyond, string.Format("inside %1 wide %2 behind %3 beyond %4", inside, wide, behind, beyond));
-
-  bool names = ACR_ReconRun.IsAntiAirName("Prefabs/Vehicles/Wheeled/BRDM2/ZSU_23_4_Shilka.et") && ACR_ReconRun.IsAntiAirName("Weapon_9K38_Igla.et") && ACR_ReconRun.IsAntiAirName("FIM92_Stinger.et");
-  bool notAA = !ACR_ReconRun.IsAntiAirName("Prefabs/Weapons/Launchers/RPG7/Launcher_RPG7.et") && !ACR_ReconRun.IsAntiAirName("Prefabs/Vehicles/Wheeled/UAZ469/UAZ469.et");
-  ACR_TestRegress.Check("recon: anti-air known by name, launchers and jeeps are not", names && notAA, string.Format("aa %1 not %2", names, notAA));
 
   ACR_Intel us = manager.IntelFor("US");
   us.m_Intercepts.Clear();

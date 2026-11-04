@@ -495,8 +495,7 @@ Each entry is one action in the commander's support menu, such as a mortar strik
 flown from the side's nearest base, about 30 s after the call. Enemy soldiers and vehicles under it go
 on the side's map as if spotted (vehicles and men in the open mostly, men under a roof or trees
 rarely), each group shown up to 50 m (vehicles 20 m) off its true spot, and kept 5 minutes; hidden
-FOBs in it are found. Anti-air near the track (ZSU, Strela, Igla, Stinger and the like, by name) can
-turn the flight back. The side flown over is told a jet went over. The AI commander calls it too.
+FOBs in it are found. Nothing can shoot it down or turn it back. The side flown over is told a jet went over. The AI commander calls it too.
 Side lists made before it existed get it added; add a `RECON_FLIGHT` row with **Enabled** off to
 leave it out. Radio intercepts need no setting: a side's contact reports and fire-mission calls may
 be picked up by the enemy as a 400 m ring on its map that holds the transmitter.

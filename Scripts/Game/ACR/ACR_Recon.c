@@ -11,8 +11,8 @@
 //  - Not everything is seen: vehicles and men in the open mostly, men under a roof or trees rarely.
 //  - Hidden FOBs in the corridor are found; enemy bases in it count as photographed, so the AI
 //    commander stops padding their defence with its blind guess (ACR_AICommander.Assess).
-// Anti-air near the track (by name: ZSU, Strela, Igla, Stinger...) may turn the flight back; where
-// it fired from is reported. The side flown over hears the jet and is told it may have been seen.
+// No anti-air can stop it (Jacob, 4 Nov: the game has no units suited to that role). The side flown
+// over hears the jet and is told it may have been seen.
 //
 // Aircraft model and sound: the flight is server-side and needs neither. Each machine with a player
 // flies its own copy of a prefab along the track (ACR_LocalFlyover, as the bomb run); the prefab
@@ -41,8 +41,6 @@ class ACR_ReconRun : ACR_SupportRun
  static float SEE_OPEN = 0.75;
  static float SEE_COVERED = 0.15;
  static float SEE_FOB = 0.85;
- static const float AA_RANGE = 2500;          // m from the track
- static float AA_TURN_BACK = 0.35;            // per anti-air unit in range
  static const string SPOTTER = "Recon flight";
  // ACA's own recon jets (the blockout models, to come): leave empty until their prefabs exist.
  static const ResourceName RECON_JET_WEST = "";
@@ -55,8 +53,6 @@ class ACR_ReconRun : ACR_SupportRun
  float m_fCorridorAt;          // world ms the plane reaches the corridor's start
  float m_fScanned;             // metres of the corridor swept so far
  float m_fNextScan;
- float m_fEndAlong = CORRIDOR_LENGTH; // shorter when anti-air turns it back
- vector m_vTurnedBackBy;       // where the anti-air that turned it back was (vector.Zero: none)
  protected ref set<IEntity> m_Checked = new set<IEntity>();
  protected ref map<AIGroup, vector> m_GroupFuzz = new map<AIGroup, vector>();
  protected ref array<string> m_Warned = {};
@@ -115,7 +111,6 @@ class ACR_ReconRun : ACR_SupportRun
   float now = GetGame().GetWorld().GetWorldTime();
   m_fCorridorAt = now + (DELAY_S - CORRIDOR_LENGTH * 0.5 / SPEED) * 1000;
   m_fNextScan = m_fCorridorAt;
-  CheckAntiAir();
   ResourceName prefab = ReconPrefab(entry, factionKey);
   if (!prefab.IsEmpty())
   {
@@ -141,15 +136,13 @@ class ACR_ReconRun : ACR_SupportRun
  {
   if (now < m_fNextScan) return true;
   m_fNextScan = now + SCAN_MS;
-  float along = Math.Min(SPEED * (now - m_fCorridorAt) / 1000, m_fEndAlong);
+  float along = Math.Min(SPEED * (now - m_fCorridorAt) / 1000, CORRIDOR_LENGTH);
   if (along > m_fScanned)
   {
    Sweep(supports, m_fScanned, along, now);
    m_fScanned = along;
   }
-  if (along < m_fEndAlong) return true;
-  if (m_vTurnedBackBy != vector.Zero) TurnedBack(supports.m_Manager, now);
-  return false;
+  return along < CORRIDOR_LENGTH;
  }
 
  // Everything between from and to metres along the corridor.
@@ -220,70 +213,6 @@ class ACR_ReconRun : ACR_SupportRun
   manager.NotifyFaction(side, "Enemy reconnaissance aircraft overhead: you may have been spotted.");
  }
 
- // Anti-air within AA_RANGE of the track may turn the flight back before it gets there. Rolled
- // once at the start, nearest first along the track.
- protected void CheckAntiAir()
- {
-  ACR_Manager manager = ACR_Manager.GetInstance();
-  if (!manager || !manager.m_Supports) return;
-  array<IEntity> near = {};
-  manager.m_Supports.FindEnemies(m_sFaction, m_Target, CORRIDOR_LENGTH * 0.5 + AA_RANGE, near);
-  vector start = CorridorStart();
-  float bestAlong = CORRIDOR_LENGTH;
-  set<IEntity> vehicles = new set<IEntity>();
-  foreach (IEntity body : near)
-  {
-   IEntity vehicle = ACR_Transport.VehicleOf(body);
-   if (vehicle && vehicles.Contains(vehicle)) continue;
-   if (vehicle) vehicles.Insert(vehicle);
-   if (!IsAntiAir(body, vehicle)) continue;
-   vector rel = body.GetOrigin() - start;
-   float along = Math.Clamp(vector.Dot(rel, m_Dir), 0, CORRIDOR_LENGTH);
-   if (vector.DistanceXZ(body.GetOrigin(), start + m_Dir * along) > AA_RANGE) continue;
-   if (Math.RandomFloat01() > AA_TURN_BACK) continue;
-   // It turns away about a kilometre short of the closest point to the launcher.
-   float turn = Math.Max(0, along - 1000);
-   if (turn >= bestAlong) continue;
-   bestAlong = turn;
-   m_vTurnedBackBy = body.GetOrigin();
-  }
-  if (m_vTurnedBackBy != vector.Zero) m_fEndAlong = bestAlong;
- }
-
- // The crew report the fire when they turn away: where it came from, roughly.
- protected void TurnedBack(ACR_Manager manager, float now)
- {
-  ACR_Intel intel = manager.IntelFor(m_sFaction);
-  if (!intel) return;
-  vector at = m_vTurnedBackBy + Fuzz(FUZZ_INFANTRY * 4);
-  intel.AddFeed(now, string.Format("%1 turned back by anti-aircraft fire %2", SPOTTER, intel.Place(at)), at);
-  manager.NotifyFaction(m_sFaction, string.Format("%1 turned back: anti-aircraft fire %2.", SPOTTER, intel.Place(at)));
-  PrintFormat("[ACR] RECON %1 flight turned back by anti-air at %2 (%3 m along)", m_sFaction, m_vTurnedBackBy, Math.Round(m_fEndAlong));
- }
-
- // A soldier with a shoulder-fired SAM, or a crewman of an anti-air vehicle (by name).
- static bool IsAntiAir(IEntity body, IEntity vehicle)
- {
-  if (vehicle && vehicle.GetPrefabData() && IsAntiAirName(vehicle.GetPrefabData().GetPrefabName())) return true;
-  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(body.FindComponent(BaseWeaponManagerComponent));
-  if (!weapons) return false;
-  array<IEntity> carried = {};
-  weapons.GetWeaponsList(carried);
-  foreach (IEntity item : carried)
-   if (item && item.GetPrefabData() && IsAntiAirName(item.GetPrefabData().GetPrefabName())) return true;
-  return false;
- }
-
- static bool IsAntiAirName(string prefab)
- {
-  string name = prefab;
-  name.ToUpper();
-  array<string> words = {"ZSU", "SHILKA", "ZU23", "ZU-23", "ZU_23", "STRELA", "9K31", "9K32", "9K34", "9K35", "9K38", "IGLA", "OSA", "TUNGUSKA", "STINGER", "FIM92", "FIM-92", "REDEYE", "FIM43", "VULCAN", "CHAPARRAL", "GEPARD", "AVENGER", "MANPAD"};
-  foreach (string word : words)
-   if (name.Contains(word)) return true;
-  return false;
- }
-
  override void Finish()
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
@@ -293,7 +222,6 @@ class ACR_ReconRun : ACR_SupportRun
   string what = string.Format("%1 seen", m_iSeen);
   if (m_iSeen == 0) what = "nothing seen";
   if (m_iFobs > 0) what += string.Format(", %1 FOB found", m_iFobs);
-  if (m_vTurnedBackBy != vector.Zero) what += ", turned back";
   intel.AddFeed(GetGame().GetWorld().GetWorldTime(), string.Format("%1 over %2: %3", SPOTTER, intel.Place(m_Target), what), m_Target);
   PrintFormat("[ACR] RECON %1 flight done over %2: %3 seen, %4 FOBs, swept %5 m", m_sFaction, m_Target, m_iSeen, m_iFobs, Math.Round(m_fScanned));
  }
