@@ -54,6 +54,10 @@ fieldbridgeswz|-acrFieldBridgesTest 1|150|Worlds/ACR_WestZagoria.ent
 manners|-acrMannersTest 1|540
 mannersgetout|-acrMannersGetOutTest 1|150
 fieldsoffire|-acrFieldsOfFireTest 1|120
+allocator|-acrAllocatorTest 1|60
+allocperf|-acrAllocPerfTest 1|260|Worlds/ACR_Arland.ent
+allocperfeveron|-acrAllocPerfTest 1|260|Worlds/ACR_Everon.ent
+allocsoak|-acrAllocSoakTest 1|1380|Worlds/ACR_Everon.ent
 crewold|-acrCrewOldTest 1|120
 bbbaim|-acrBbbAimTest 1|3000
 bbbsuppress|-acrBbbSuppressTest 1|1200

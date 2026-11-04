@@ -1161,8 +1161,315 @@ class ACR_AICommander : Managed
   t = ACR_Perf.Lap("ai.buy", t);
   ReviewDoctrine();
   LogStatus();
+  int allocStart = System.GetTickCount();
+  ObserveAllocation();
+  ACR_Perf.Lap("ai.alloc", allocStart);
   m_iBuildLastRP = m_Manager.m_Bases.GetRP(m_sFaction);
  }
+
+ // ---------------------------------------------------------------- job allocator
+ // -acrAIAllocator 1 (allocator phase 1, 3 Nov 2026): after the managers' tick the allocator
+ // (ACR_AIAllocator) works out its own assignment of the combat jobs from the same picture and logs
+ // where it differs ("ALLOC <side>: would move ..."), with a summary line and a Think section;
+ // nothing is ordered. Phase 2 lets it assign them. In it: free, posted, attacking and defending
+ // combat squads. Left out: works, refits, sweeps, FOB building, 2IC requests, the FOB escort, recon
+ // teams, squads falling back (later phases), and as always players', mortar and aircraft crews.
+ static const float ALLOC_ATTACK_VALUE = 10;
+ static const float ALLOC_GRAB_VALUE = 6;
+ static const float ALLOC_DEFEND_VALUE = 12;
+ static const float ALLOC_HOLD_VALUE = 2;
+ static const float ALLOC_RESERVE_VALUE = 4;
+ static const int ALLOC_ATTACK_TARGETS = 6; // enemy bases weighed as attack jobs per tick
+ static const int ALLOC_GRAB_TARGETS = 8;   // empty bases weighed as grabs per tick
+ static const int ALLOC_LOG_LINES = 6;      // "would move" lines per tick at most
+ static const int ALLOC_FULL_REACH = 3;     // full Reach checks per new attack (estimates rank, Reach confirms)
+ protected ref array<ref ACR_AIJob> m_aAllocJobs = {};
+ protected ref array<ref ACR_AIJobSquad> m_aAllocSquads = {};
+ protected ref array<string> m_aAllocThink = {};
+ protected int m_iAllocAgree, m_iAllocDiffer, m_iAllocTicks;
+
+ static int AllocatorMode() { return Math.ClampInt(ACR_LogisticsRules.Choice("acrAIAllocator", "0").ToInt(), 0, 1); }
+
+ // What a base is worth to take or keep, before the job's own weight.
+ protected float AllocWorth(ACR_Base base)
+ {
+  float worth = 2 + Math.Max(0, base.m_iValue) * 2;
+  if (base.m_bBuilt) worth += 2;
+  if (base == m_CounterTarget) worth *= 1.5;
+  if (base == RequestedTarget()) worth *= 2;
+  return worth;
+ }
+
+ protected ACR_AIJob AllocJob(int kind, ACR_Base target, string label, float value)
+ {
+  ACR_AIJob job = new ACR_AIJob();
+  job.m_iKind = kind;
+  job.m_Target = target;
+  job.m_sName = label;
+  job.m_fValue = value;
+  job.m_sKey = typename.EnumToString(ACR_EAITask, kind) + " " + label;
+  m_aAllocJobs.Insert(job);
+  return job;
+ }
+
+ protected ACR_AIJob AllocAttack(ACR_Base base)
+ {
+  ACR_AIJob job = AllocJob(ACR_EAITask.ATTACK, base, base.m_sName, ALLOC_ATTACK_VALUE * AllocWorth(base));
+  job.m_bTeam = true;
+  job.m_bNeedsTaker = true;
+  job.m_iMaxSquads = 8;
+  job.m_fPatience = 600;
+  float need = 1;
+  if (!base.m_sOwner.IsEmpty()) need = AttackNeed(base);
+  if (base == m_CounterTarget) need = need * m_Doctrine.m_fCounterNeed;
+  job.m_fNeed = need;
+  // The planner's own bar: the doctrine's pressure after a quiet spell, lower on High threat.
+  float bar = Pressure();
+  if (ACR_Manager.ThreatOption() == 2) bar = bar * 0.85;
+  job.m_fBar = bar;
+  return job;
+ }
+
+ protected int AllocIndexOf(ACR_AIJob job)
+ {
+  foreach (int i, ACR_AIJob each : m_aAllocJobs) if (each == job) return i;
+  return -1;
+ }
+
+ // The cheap travel estimate the allocator ranks with (design: two tiers; full Reach only for
+ // the squads a new attack actually takes). 'dist' is to the job's point.
+ protected float AllocEta(ACR_Squad squad, float dist)
+ {
+  if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad)) return dist / MOUNTED_SPEED;
+  if (dist <= WALK_REACH) return dist / WALK_SPEED;
+  if (m_Manager.m_Rides) return dist / RIDE_SPEED + 120;
+  if (SupportReady(ACR_ESupportType.AIR_LIFT)) return AIR_LIFT_SECONDS;
+  return -1;
+ }
+
+ protected string AllocJobName(int j)
+ {
+  if (j < 0 || j >= m_aAllocJobs.Count()) return "nothing";
+  ACR_AIJob job = m_aAllocJobs[j];
+  string kind = typename.EnumToString(ACR_EAITask, job.m_iKind);
+  if (job.m_iKind == ACR_EAITask.ATTACK && !job.m_bTeam) kind = "GRAB";
+  return kind + " " + job.m_sName;
+ }
+
+ protected void ObserveAllocation()
+ {
+  if (AllocatorMode() < 1 || m_bHandedOnly) return;
+  int started = System.GetTickCount();
+  m_aAllocJobs.Clear();
+  m_aAllocSquads.Clear();
+  m_aAllocThink.Clear();
+
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  array<ACR_Squad> pool = {};
+  foreach (ACR_Squad candidate : mine)
+  {
+   int task = candidate.m_iAITask;
+   if (task != ACR_EAITask.FREE && task != ACR_EAITask.POSTED && task != ACR_EAITask.ATTACK && task != ACR_EAITask.DEFEND) continue;
+   if (task == ACR_EAITask.DEFEND && (OnRequest(candidate) || candidate == m_FobEscort || !candidate.m_AITarget)) continue;
+   if (!candidate.IsCombatUnit() || IsRetreating(candidate) || IsReconTeam(candidate)) continue;
+   pool.Insert(candidate);
+  }
+  if (pool.IsEmpty()) return;
+
+  // Jobs. Running attacks and grabs first: the jobs their squads have now.
+  map<ACR_Squad, ACR_AIAttack> attackOf = new map<ACR_Squad, ACR_AIAttack>();
+  foreach (ACR_AIAttack attack : m_Attacks)
+  {
+   if (!attack.m_Target) continue;
+   ACR_AIJob running;
+   if (attack.m_bGrab)
+   {
+    running = AllocJob(ACR_EAITask.ATTACK, attack.m_Target, attack.m_Target.m_sName, ALLOC_GRAB_VALUE * AllocWorth(attack.m_Target));
+    running.m_fPatience = 480;
+   }
+   else running = AllocAttack(attack.m_Target);
+   running.m_bRunning = true;
+   foreach (ACR_Squad attacker : attack.m_Squads) if (attacker) attackOf.Set(attacker, attack);
+  }
+  // New attacks: the planner's best-scored enemy bases (cheapest x nearest).
+  array<ACR_Base> targets = {};
+  array<float> scores = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner == m_sFaction || !HostileOwner(base) || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
+   if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
+   float score = Math.Max(10, DefenceOf(base) * ATTACK_RATIO * m_Doctrine.m_fAttackRatio) * (NearestFreeDistance(pool, base.GetOrigin()) / 1000 + 0.1);
+   int at = 0;
+   while (at < scores.Count() && scores[at] <= score) at++;
+   targets.InsertAt(base, at);
+   scores.InsertAt(score, at);
+  }
+  for (int t = 0; t < targets.Count() && t < ALLOC_ATTACK_TARGETS; t++) AllocAttack(targets[t]);
+  // Grabs: the nearest empty bases in sight.
+  array<ACR_Base> empties = {};
+  array<float> gaps = {};
+  foreach (ACR_Base open : ACR_Base.s_All)
+  {
+   if (!open || open.m_bRetired || !SeenOwner(open).IsEmpty() || !Visible(open) || IsAttacking(open) || CoolingDown(open)) continue;
+   float gap = NearestFreeDistance(pool, open.GetOrigin());
+   int place = 0;
+   while (place < gaps.Count() && gaps[place] <= gap) place++;
+   empties.InsertAt(open, place);
+   gaps.InsertAt(gap, place);
+  }
+  for (int g = 0; g < empties.Count() && g < ALLOC_GRAB_TARGETS; g++)
+  {
+   ACR_AIJob grab = AllocJob(ACR_EAITask.ATTACK, empties[g], empties[g].m_sName, ALLOC_GRAB_VALUE * AllocWorth(empties[g]));
+   grab.m_fPatience = 480;
+  }
+  // Defence: our bases under threat, not given up (threat past CONCEDE_RATIO x defence).
+  foreach (ACR_Base held : ACR_Base.s_All)
+  {
+   if (!held || held.m_bRetired || held.m_sOwner != m_sFaction) continue;
+   int threat;
+   m_Threat.Find(held, threat);
+   int defence = DefenceOf(held);
+   if (threat <= 0 || (defence > 0 && threat > defence * CONCEDE_RATIO * m_Doctrine.m_fConcedeRatio)) continue;
+   ACR_AIJob defend = AllocJob(ACR_EAITask.DEFEND, held, held.m_sName, ALLOC_DEFEND_VALUE * AllocWorth(held));
+   defend.m_fNeed = threat * DEFENSE_RATIO * m_Doctrine.m_fDefenseRatio;
+   defend.m_iMaxSquads = 4;
+   defend.m_fPatience = 240;
+  }
+  // Holding: the front line, and the reserve.
+  array<ACR_Base> front = {};
+  FrontlineBases(front);
+  foreach (ACR_Base post : front)
+  {
+   ACR_AIJob hold = AllocJob(ACR_EAITask.POSTED, post, post.m_sName, ALLOC_HOLD_VALUE * AllocWorth(post));
+   hold.m_iMaxSquads = 2;
+   hold.m_fPatience = 1200;
+  }
+  ACR_Base reserveBase = ReserveBase();
+  int reserveJob = -1;
+  if (reserveBase)
+  {
+   ACR_AIJob reserve = AllocJob(ACR_EAITask.POSTED, reserveBase, "reserve at " + reserveBase.m_sName, ALLOC_RESERVE_VALUE);
+   reserve.m_fPatience = 1200;
+   reserveJob = m_aAllocJobs.Count() - 1;
+  }
+
+  // Squads: strength, what they do now, a cheap estimate and fit for every job.
+  foreach (ACR_Squad squad : pool)
+  {
+   ACR_AIJobSquad entry = new ACR_AIJobSquad();
+   entry.m_Squad = squad;
+   entry.m_sName = squad.GetName();
+   entry.m_fStrength = squad.Strength();
+   entry.m_bTaker = CanTakeBase(squad, false);
+   vector pos = PositionOf(squad);
+   ACR_AIAttack ownAttack;
+   attackOf.Find(squad, ownAttack);
+   bool support = IsSupportTeam(squad);
+   foreach (int j, ACR_AIJob job : m_aAllocJobs)
+   {
+    ACR_Base where = job.m_Target;
+    float dist = Math.Max(0, vector.DistanceXZ(pos, where.GetOrigin()) - where.m_fRadius);
+    if (job.m_bTeam) dist = Math.Max(0, dist - STAGING_DISTANCE);
+    float fit = 1;
+    if (job.m_iKind == ACR_EAITask.ATTACK && support) fit = 0;
+    if (job.m_iKind == ACR_EAITask.DEFEND && support) fit = 0.3;
+    float eta = AllocEta(squad, dist);
+    // Its own attack: the way to its staging point, or none once going in.
+    if (ownAttack && job.m_bRunning && ownAttack.m_Target == where)
+    {
+     eta = 0;
+     if (!ownAttack.m_bAssaulting && job.m_bTeam) eta = AllocEta(squad, vector.DistanceXZ(pos, ownAttack.StagingOf(squad)));
+     if (eta < 0) eta = 0;
+    }
+    entry.m_aEta.Insert(eta);
+    entry.m_aFit.Insert(fit);
+    // What it has now.
+    if (entry.m_iCurrent >= 0) continue;
+    int has = squad.m_iAITask;
+    if (has == ACR_EAITask.ATTACK && job.m_iKind == ACR_EAITask.ATTACK && job.m_bRunning && squad.m_AITarget == where) entry.m_iCurrent = j;
+    else if (has == ACR_EAITask.DEFEND && job.m_iKind == ACR_EAITask.DEFEND && squad.m_AITarget == where) entry.m_iCurrent = j;
+    else if (has == ACR_EAITask.POSTED && squad == m_ReserveSquad && j == reserveJob) entry.m_iCurrent = j;
+    else if (has == ACR_EAITask.POSTED && squad != m_ReserveSquad && job.m_iKind == ACR_EAITask.POSTED && j != reserveJob && vector.DistanceXZ(squad.m_MoveTarget, where.GetOrigin()) <= where.m_fRadius + DEFENSE_DISTANCE) entry.m_iCurrent = j;
+   }
+   // Locked: going in under fire, or on its way to a posting (see the trips note).
+   if (ownAttack && ownAttack.m_bAssaulting && squad.KnownEnemies(300) > 0) entry.m_bLocked = true;
+   if (squad.m_iAITask == ACR_EAITask.POSTED && Committed(squad)) entry.m_bLocked = true;
+   m_aAllocSquads.Insert(entry);
+  }
+
+  int maxTeams = 1;
+  ACR_FactionSettings settings = Settings();
+  if (settings) maxTeams = settings.m_iAIAttacks;
+  int extra = m_Doctrine.m_iExtraFronts;
+  if (ACR_Base.s_All.Count() > 24) extra = extra * 2;
+  maxTeams += Math.Min(extra, pool.Count() / Math.Max(1, m_Doctrine.m_iSquadsPerFront));
+  ACR_AIAllocator.Allocate(m_aAllocJobs, m_aAllocSquads, maxTeams);
+
+  // Two tiers: the estimates ranked the squads; Reach checks the new attacks' picks for real
+  // (taxis and the air lift claimed in order), and says how often the estimate was wrong.
+  int reachCalls, reachWrong;
+  foreach (int k, ACR_AIJob funded : m_aAllocJobs)
+  {
+   if (!funded.m_bTeam || funded.m_bRunning || funded.m_aMembers.IsEmpty()) continue;
+   array<ACR_Squad> taxis = {};
+   bool liftTaken = false;
+   foreach (int n, int memberIndex : funded.m_aMembers)
+   {
+    if (n >= ALLOC_FULL_REACH) break;
+    float seconds;
+    int how = Reach(m_aAllocSquads[memberIndex].m_Squad, funded.m_Target.GetOrigin(), taxis, liftTaken, seconds);
+    reachCalls++;
+    if (how == REACH_AIR_LIFT) liftTaken = true;
+    if (how == REACH_NONE) reachWrong++;
+   }
+  }
+
+  // Compare with what the managers did.
+  int agree, differ, logged;
+  foreach (ACR_AIJobSquad picked : m_aAllocSquads)
+  {
+   if (picked.m_iPicked == picked.m_iCurrent)
+   {
+    agree++;
+    continue;
+   }
+   differ++;
+   string line = string.Format("%1: %2 -> %3 (worth %4 there, %5 on its own)", picked.m_sName, AllocJobName(picked.m_iCurrent), AllocJobName(picked.m_iPicked), (int)(picked.m_fScore * 10) / 10.0, (int)(picked.m_fAlt * 10) / 10.0);
+   m_aAllocThink.Insert("  would move " + line);
+   if (logged < ALLOC_LOG_LINES)
+   {
+    logged++;
+    PrintFormat("[ACR] ALLOC %1: would move %2", m_sFaction, line);
+   }
+  }
+  m_iAllocAgree += agree;
+  m_iAllocDiffer += differ;
+  m_iAllocTicks++;
+  int teams;
+  foreach (ACR_AIJob teamJob : m_aAllocJobs)
+  {
+   if (teamJob.m_aMembers.IsEmpty()) continue;
+   if (teamJob.m_bTeam) teams++;
+   string names;
+   foreach (int member2 : teamJob.m_aMembers) names += " " + m_aAllocSquads[member2].m_sName;
+   string strength = "";
+   if (teamJob.m_fNeed > 0) strength = string.Format(" %1/%2", (int)teamJob.m_fStrength, (int)teamJob.m_fNeed);
+   m_aAllocThink.InsertAt(string.Format("  %1 worth %2%3, latest %4 s:%5", AllocJobName(AllocIndexOf(teamJob)), (int)teamJob.m_fScore, strength, (int)teamJob.m_fLatest, names), 0);
+  }
+  int ms = System.GetTickCount() - started;
+  string summary = string.Format("ALLOC %1: %2 squads, %3 jobs, agree %4, differ %5, teams %6/%7, reach %8", m_sFaction, m_aAllocSquads.Count(), m_aAllocJobs.Count(), agree, differ, teams, maxTeams, reachCalls);
+  summary += string.Format(" (%1 wrong), %2 ms | match agree %3 differ %4 over %5 ticks", reachWrong, ms, m_iAllocAgree, m_iAllocDiffer, m_iAllocTicks);
+  PrintFormat("[ACR] %1", summary);
+  m_aAllocThink.InsertAt("Allocator (observing): " + summary.Substring(6, summary.Length() - 6), 0);
+  // Once a minute the whole picture, for reading soaks afterwards.
+  if (m_iAllocTicks % 4 == 1)
+  {
+   foreach (string jobLine : m_aAllocThink) PrintFormat("[ACR] ALLOC %1 |%2", m_sFaction, jobLine);
+  }
+ }
+
+ void ThinkAllocator(notnull array<string> lines) { lines.Copy(m_aAllocThink); }
 
  // ---------------------------------------------------------------- doctrine reviews
  // Doctrines can change (Jacob, 24 Oct). Every DOCTRINE_REVIEW_MIN minutes, the first after

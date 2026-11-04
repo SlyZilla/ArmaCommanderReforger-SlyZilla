@@ -56,10 +56,12 @@ class ACR_Mode : GenericEntity
    m_bSummary = System.GetCLIParam("acrScenarioTest", flag) || System.IsCLIParam("acrSkirmishPlayTest");
    m_bSoak = System.GetCLIParam("acrSoakTest", flag);
    // -acrPerfTest: the soak battle for 3 minutes with tick timings in the log.
-   m_bPerf = System.GetCLIParam("acrPerfTest", flag) || System.IsCLIParam("acrPerfScaleTest");
+   m_bPerf = System.GetCLIParam("acrPerfTest", flag) || System.IsCLIParam("acrPerfScaleTest") || System.IsCLIParam("acrAllocPerfTest");
    if (m_bPerf) { m_bSoak = true; ACR_Perf.s_bOn = true; }
    // -acrEveronSoakTest: the 20-minute soak with tick timings (Everon at scale).
-   if (System.IsCLIParam("acrEveronSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; }
+   // -acrAllocPerfTest / -acrAllocSoakTest: the perf and Everon soaks with the AI job allocator
+   // observing (-acrAIAllocator 1, set by the test hooks).
+   if (System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrAllocSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; }
    // -acrLongSoakTest: the same soak for 2 hours (long-session stability and drift).
    if (System.IsCLIParam("acrLongSoakTest")) { m_bSoak = true; ACR_Perf.s_bOn = true; m_iSoakEnd = 7200; }
    if (m_bSoak || m_bSummary) ACR_Perf.s_bChecks = true;
