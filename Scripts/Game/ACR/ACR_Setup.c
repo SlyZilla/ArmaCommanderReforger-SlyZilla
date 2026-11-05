@@ -250,7 +250,7 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks", "strategy", "allocator", "forecast", "coveredfallback", "periodjets", "squadtactics", "pullover", "evadearmour", "fieldsoffire", "twoic"};
   foreach (string key : keys)
   {
    if (key == "seed" && !generated && Current("quickstart") == "off") continue;
@@ -341,6 +341,17 @@ class ACR_Setup
   if (key == "fortify") return "Fortify orders";
   if (key == "fortifyai") return "AI commanders fortify";
   if (key == "baseworks") return "Fortify a whole base";
+  // Experimental tab (Jacob, 5 Nov): features shipped off until they have been played.
+  if (key == "strategy") return "AI lanes (one main push)";
+  if (key == "allocator") return "AI job allocator";
+  if (key == "forecast") return "AI defence forecast";
+  if (key == "coveredfallback") return "AI covered fall-back";
+  if (key == "periodjets") return "Period jets (no RHS)";
+  if (key == "squadtactics") return "AI squad tactics in objectives";
+  if (key == "pullover") return "Pull over before getting out";
+  if (key == "evadearmour") return "Unarmed vehicles evade armour";
+  if (key == "fieldsoffire") return "Guns clear bushes round them";
+  if (key == "twoic") return "2IC runs unclaimed squads";
   return key;
  }
 
@@ -406,6 +417,8 @@ class ACR_Setup
   else if (key == "rpservice") values = {"0", "3", "5"};
   else if (key == "mines" || key == "fortify" || key == "baseworks") values = {"1", "0"};
   else if (key == "minesreal" || key == "minesai" || key == "fortifyai") values = {"0", "1"};
+  else if (key == "allocator" || key == "forecast") values = {"0", "1", "2"};
+  else if (Experimental(key)) values = {"0", "1"};
   return values;
  }
 
@@ -446,6 +459,16 @@ class ACR_Setup
   if (key == "fortify") return "acrFortify";
   if (key == "fortifyai") return "acrFortifyAI";
   if (key == "baseworks") return "acrBaseWorks";
+  if (key == "strategy") return "acrAIStrategy";
+  if (key == "allocator") return "acrAIAllocator";
+  if (key == "forecast") return "acrDefenceForecast";
+  if (key == "coveredfallback") return "acrCoveredFallBack";
+  if (key == "periodjets") return "acrPeriodJets";
+  if (key == "squadtactics") return "acrSquadTactics";
+  if (key == "pullover") return "acrPullOver";
+  if (key == "evadearmour") return "acrEvadeArmour";
+  if (key == "fieldsoffire") return "acrFieldsOfFire";
+  if (key == "twoic") return "acr2IC";
   return "";
  }
 
@@ -494,6 +517,7 @@ class ACR_Setup
    if (key == "minesreal" || key == "minesai" || key == "fortifyai") return "0";
    if (key == "aibuild") return "0";
    if (key == "capscale") return "0";
+   if (Experimental(key)) return "0";
   }
   if (key == "threat" && value == "") return "normal";
   if (key == "pricing" && value == "") return "";
@@ -581,6 +605,16 @@ class ACR_Setup
   if (key == "capscale") return "off";
   if (key == "declutter" && value == "0") return "off (the classic map)";
   if (key == "declutter") return "on";
+  if (key == "allocator" && value == "1") return "observes only (log, Think)";
+  if (key == "allocator" && value == "2") return "gives out the jobs";
+  if (key == "forecast" && value == "1") return "log only";
+  if (key == "forecast" && value == "2") return "defends on it";
+  if (key == "evadearmour" && value == "1") return "on (needs BBB's setting too)";
+  if (Experimental(key))
+  {
+   if (value == "0") return "off";
+   return "on";
+  }
   if (key == "minesreal" && value == "1") return "dangerous to all";
   if (key == "minesreal") return "safe for our AI";
   if (key == "shared" || key == "fobrelay" || key == "mines" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks")
@@ -1010,13 +1044,15 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
 
  // The tabs across the top (25 Oct redesign): the battlefield first, with its seed and map
  // preview together, then who commands, money, logistics and engineering.
- static const int TABS = 5;
+// Experimental: features shipped off by default until they have been played (Jacob, 5 Nov).
+ static const int TABS = 6;
  static string TabName(int tab)
  {
   if (tab == 1) return "Command";
   if (tab == 2) return "Economy";
   if (tab == 3) return "Logistics";
   if (tab == 4) return "Engineers";
+  if (tab == 5) return "Experimental";
   return "Battlefield";
  }
 
@@ -1029,7 +1065,14 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   if (key == "pricing" || key == "startrp" || key == "income" || key == "companywest" || key == "companyeast") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
   if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks") return 4;
+  if (Experimental(key)) return 5;
   return 0;
+ }
+
+ // The Experimental tab's rows: off by default, on/off unless Values says more.
+ static bool Experimental(string key)
+ {
+  return key == "strategy" || key == "allocator" || key == "forecast" || key == "coveredfallback" || key == "periodjets" || key == "squadtactics" || key == "pullover" || key == "evadearmour" || key == "fieldsoffire" || key == "twoic";
  }
 
  // "US vs USSR, generated, whole map, seed 123": the main choices, seen from every tab.

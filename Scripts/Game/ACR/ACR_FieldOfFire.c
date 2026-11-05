@@ -44,9 +44,8 @@ class ACR_FieldOfFire
  static bool On()
  {
   if (s_bTestOn) return true;
-  string value;
-  if (System.GetCLIParam("acrFieldsOfFire", value)) return value == "1";
-  return false;
+  // A flag, the mission header or the setup screen's Experimental tab.
+  return ACR_LogisticsRules.Choice("acrFieldsOfFire", "0") == "1";
  }
 
  // A gun: all round it, and its cone along the way it points.

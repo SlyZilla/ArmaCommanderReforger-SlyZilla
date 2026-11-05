@@ -4839,8 +4839,8 @@ class ACR_Squad : Managed
  static bool PullOverOn()
  {
   if (s_bTestPullOver) return true;
-  string value;
-  return System.GetCLIParam("acrPullOver", value) && value == "1";
+  // A flag, the mission header or the setup screen's Experimental tab.
+  return ACR_LogisticsRules.Choice("acrPullOver", "0") == "1";
  }
 
  protected bool PullOverFirst(IEntity vehicle)
@@ -4914,8 +4914,7 @@ class ACR_Squad : Managed
 
  bool Evade(IEntity vehicle, vector threat)
  {
-  string value;
-  if (!s_bTestEvade && !(System.GetCLIParam("acrEvadeArmour", value) && value == "1")) return false;
+  if (!s_bTestEvade && ACR_LogisticsRules.Choice("acrEvadeArmour", "0") != "1") return false;
   if (!vehicle || !m_Group || m_Evade || HasPlayer() || m_Commander != 0) return false;
   float speed;
   if (vehicle.GetPhysics()) speed = vehicle.GetPhysics().GetVelocity().Length();
