@@ -653,8 +653,10 @@ class ACR_Squad : Managed
   ACR_EOrderState state = OrderState();
   string label = m_Order;
   if (state == ACR_EOrderState.BUILD_FOB && label.StartsWith("Establishing FOB")) return;
-  bool oldMoving = label == "Moving" || label == "Patrolling" || label == "Air lift: to the landing zone";
-  bool oldFinished = oldMoving || label == "Assaulting" || label == "Suppressing" || label == "Getting in" || label == "Getting out";
+  // Every label set with MOVE or another arrive-and-finish state belongs here (vehicle manners
+  // added "Pulling over" and "Getting away"; the sappers' blast-radius clear is a move too).
+  bool oldMoving = label == "Moving" || label == "Patrolling" || label == "Air lift: to the landing zone" || label == "Getting away" || label == "Clearing blast radius";
+  bool oldFinished = oldMoving || label == "Assaulting" || label == "Suppressing" || label == "Getting in" || label == "Getting out" || label == "Pulling over";
   if ((state == ACR_EOrderState.MOVE) == oldMoving && FinishesOnArrival(state) == oldFinished) return;
   ACR_Perf.s_iInvariantErrors++;
   PrintFormat("[ACR] INVARIANT order state %1 doesn't match label '%2' (%3)", typename.EnumToString(ACR_EOrderState, state), label, m_Name);
@@ -665,8 +667,16 @@ class ACR_Squad : Managed
  {
   return state == ACR_EOrderState.MOVE || state == ACR_EOrderState.ASSAULT || state == ACR_EOrderState.SUPPRESS || state == ACR_EOrderState.GET_IN || state == ACR_EOrderState.GET_OUT;
  }
+ // The one writer of m_iAITask (AI allocator phase 0, 3 Nov 2026): every job change goes
+ // through here, so later phases can track and arbitrate them in one place.
+ // tools/check_ai_task_writes.py (CI) fails on any other assignment in game code.
+ void SetAITask(int task)
+ {
+  m_iAITask = task; // ai-task-write ok
+ }
+
  // AI commander bookkeeping
- int m_iAITask;          // ACR_EAITask
+ int m_iAITask;          // ACR_EAITask: read anywhere, written only through SetAITask
  IEntity m_OwnVehicle;   // the vehicle this squad came with (crews), even when dismounted
  ACR_Base m_AITarget;
  bool m_bMortar;    // a mortar team (ACR_Mortars runs its set-up, packing and fire missions)
@@ -826,6 +836,9 @@ class ACR_Squad : Managed
  protected void NewOrder()
  {
   m_Evade = null; // a new order replaces an evasion and the order it would have put back
+  // ...and a get-out's pull-over: the driver takes the new order now, not after parking.
+  if (m_PullOverVehicle) BBB_PullOver.Release(m_PullOverVehicle);
+  m_PullOverVehicle = null;
   if (m_fReservedLoads > 0 || OrderState() == ACR_EOrderState.BUILD_FOB) CancelEstablishFob();
   // By payment, not state: Halt sets its own state first.
   if (RoadblockPending() || OrderState() == ACR_EOrderState.BUILD_ROADBLOCK) CancelRoadblock("replaced by a new order");
@@ -1158,7 +1171,7 @@ class ACR_Squad : Managed
   m_ReservedTruck = null;
   m_fFobBuildProgress = 0;
   m_FobRestore = null;
-  if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.BUILD_FOB) SetAITask(ACR_EAITask.FREE);
   if (OrderState() == ACR_EOrderState.BUILD_FOB)
   {
    ClearOrders();
@@ -1178,7 +1191,7 @@ class ACR_Squad : Managed
   {
    m_ReservedTruck = null;
    m_fReservedLoads = 0;
-   if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
+   if (m_iAITask == ACR_EAITask.BUILD_FOB) SetAITask(ACR_EAITask.FREE);
    PrintFormat("[ACR] SQUAD %1: construction truck destroyed during FOB build", m_Name);
    Halt("Halted (truck lost)");
    return;
@@ -1304,7 +1317,7 @@ class ACR_Squad : Managed
   }
   PrintFormat("[ACR] SQUAD %1: FOB established at %2 (entity=%3)", m_Name, m_vFobSite, hq != null);
   ClearOrders();
-  if (m_iAITask == ACR_EAITask.BUILD_FOB) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.BUILD_FOB) SetAITask(ACR_EAITask.FREE);
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   IssueWaypoint(WP_DEFEND, m_vFobSite, 20);
@@ -1446,7 +1459,7 @@ class ACR_Squad : Managed
   m_fRoadblockLoads = 0;
   m_fRoadblockProgress = 0.0;
   EquipShovels(false);
-  if (m_iAITask == ACR_EAITask.ROADBLOCK) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.ROADBLOCK) SetAITask(ACR_EAITask.FREE);
   if (working)
   {
    ClearOrders();
@@ -1742,7 +1755,7 @@ class ACR_Squad : Managed
   ACR_Minefields.Finish(plan);
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager && refund > 0) manager.m_Bases.Refund(plan.m_sFaction, refund);
-  if (m_iAITask == ACR_EAITask.MINES) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.MINES) SetAITask(ACR_EAITask.FREE);
   if (working)
   {
    EquipShovels(false);
@@ -1905,7 +1918,7 @@ class ACR_Squad : Managed
   m_FortifyPlan = null;
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
-  if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.FORTIFY) SetAITask(ACR_EAITask.FREE);
   if (working)
   {
    EquipShovels(false);
@@ -2077,7 +2090,7 @@ class ACR_Squad : Managed
   if (!fort)
   {
    if (manager) manager.m_Bases.Refund(plan.m_sFaction, plan.m_iCost);
-   if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+   if (m_iAITask == ACR_EAITask.FORTIFY) SetAITask(ACR_EAITask.FREE);
    SetOrder("Holding position", ACR_EOrderState.HOLD);
    PrintFormat("[ACR] SQUAD %1: could not fortify (%2), refunded %3 RP", m_Name, why, plan.m_iCost);
    // Said where the player sees it (playtest 25 Oct: only the RP was seen to go).
@@ -2103,12 +2116,13 @@ class ACR_Squad : Managed
  // The base works' squad with nothing left to do there: it holds the base.
  void HoldBaseWorks(ACR_BaseWork work)
  {
-  if (m_iAITask == ACR_EAITask.FORTIFY) m_iAITask = ACR_EAITask.FREE;
+  if (m_iAITask == ACR_EAITask.FORTIFY) SetAITask(ACR_EAITask.FREE);
   SetOrder("Holding position", ACR_EOrderState.DEFEND);
   m_OrderKind = ACR_EOrderKind.DEFEND;
   vector at;
   float radius;
-  if (work && !ACR_Transport.CrewedVehicle(this) && ACR_BaseWorks.ManSquad(work, m_Group, Math.Max(1, CountAlive()), at, radius) && IssueWaypoint(WP_GARRISON, at, radius)) return;
+  int line;
+  if (work && !ACR_Transport.CrewedVehicle(this) && ACR_BaseWorks.ManSquad(work, m_Group, Math.Max(1, CountAlive()), at, radius, line) && IssueWaypoint(WP_GARRISON, at, radius)) return;
   if (work && ACR_BaseWorks.HoldSpot(work, at, radius)) IssueWaypoint(WP_DEFEND, at, radius);
   else if (work && work.m_Base) IssueWaypoint(WP_DEFEND, work.m_Base.GetOrigin(), 60);
  }
@@ -3692,6 +3706,7 @@ class ACR_Squad : Managed
  static float s_fStallSeconds = STALL_SECONDS; // test hook: srv:stall shortens it so its enemy team arrives after the soft truck has given up
  static const float STALL_SECONDS_FIGHTING = 40; // armed and in contact: the gunner may be busy, give it longer
  static const float STALL_SECONDS_HELPLESS = 3;  // under fire with no gunner
+ static const float STALL_SECONDS_EVADING = 10;  // ...but getting away from an armed vehicle (turning round)
  static const float STALL_ARRIVED = 40;          // closer than this to the target counts as there
  static const int UNSTICK_TRIES = 2;
  static const int REROUTE_TRIES = 1;
@@ -3759,12 +3774,11 @@ class ACR_Squad : Managed
   return true;
  }
 
+ // BBB's lookup: it still finds the driver while BBB drives the vehicle itself with his seat
+ // unhooked from the controller (BBB_PilotHold, Reforger 1.9).
  static ChimeraCharacter DriverOf(IEntity vehicle)
  {
-  if (!vehicle) return null;
-  CarControllerComponent car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
-  if (!car || !car.GetPilotCompartmentSlot()) return null;
-  return ChimeraCharacter.Cast(car.GetPilotCompartmentSlot().GetOccupant());
+  return BBB.DriverOf(vehicle);
  }
 
  protected bool IsMember(IEntity body)
@@ -3967,6 +3981,14 @@ class ACR_Squad : Managed
    }
   }
   else m_fQueueSince = -1;
+  // BBB is driving it itself (backing away from an armed vehicle brakes to a stop first, unstick,
+  // pull-over): not stalled, and nobody bails out mid-manoeuvre. From 1.9 that brake really stops
+  // the truck, so the 3 s unarmed-under-fire bail fired every time (pak:mannersevade 0/3).
+  if (BBB_PilotHold.Driving(vehicle))
+  {
+   m_fStallSince = now;
+   return;
+  }
   float stalled = (now - m_fStallSince) / 1000;
   bool armed = HasGunner(vehicle);
   // Fighting vehicles (anything with a turret: LAV, BTR, BRDM, gun trucks) keep
@@ -3989,7 +4011,11 @@ class ACR_Squad : Managed
    }
   }
 
-  if (underFire && !fightingVehicle && stalled >= STALL_SECONDS_HELPLESS) { Bail(vehicle, "stopped under fire, unarmed", false); return; }
+  // Getting away from an armed vehicle: BBB has just braked it and backed it off, and the driver needs a
+  // few seconds to turn it round before standing still means it is stuck (pak:mannersevade, 1.9).
+  float helpless = STALL_SECONDS_HELPLESS;
+  if (m_Evade) helpless = STALL_SECONDS_EVADING;
+  if (underFire && !fightingVehicle && stalled >= helpless) { Bail(vehicle, "stopped under fire, unarmed", false); return; }
   float limit = s_fStallSeconds;
   if (underFire || armed) limit = STALL_SECONDS_FIGHTING;
   if (stalled < limit) return;
@@ -4268,6 +4294,11 @@ class ACR_Squad : Managed
  {
   PrintFormat("[ACR] DRIVE %1: %2, crew bails out", m_Name, why);
   if (vehicle) ACR_Transport.SanitizeVehicleHorn(vehicle, true);
+  // Handbrake on: from Reforger 1.9 the automatic gearbox drops a driverless vehicle into neutral, and an
+  // abandoned truck rolled 40 m downhill into the BTR its crew had just bailed out from (pak:mannersevade).
+  CarControllerComponent bailCar;
+  if (vehicle) bailCar = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
+  if (bailCar && !BBB_PilotHold.Driving(vehicle)) bailCar.SetPersistentHandBrake(true);
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager)
   {
@@ -4741,6 +4772,7 @@ class ACR_Squad : Managed
  static bool s_bTestPullOver; // srv:manners runs it without the host option
  protected bool m_bPulledOver;
  protected int m_iPullOverSerial;
+ protected IEntity m_PullOverVehicle; // being pulled over for the current order (NewOrder releases it)
  static bool PullOverOn()
  {
   if (s_bTestPullOver) return true;
@@ -4762,55 +4794,28 @@ class ACR_Squad : Managed
    PrintFormat("[ACR] GET OUT %1: no AI driver of ours, out where it stands", m_Name);
    return false;
   }
-  // The game's own driver takes it there (driving by hand only crept at 1.5 km/h: srv:mannersgetout).
-  vector spot;
-  if (!BBB_PullOver.VergeSpot(vehicle, 1, spot))
+  // Driven onto the verge by hand (BBB_PullOver, MODE_PARK), PULL_OVER_AHEAD_M on: the game's own driver
+  // keeps to the road's middle and never leaves it for a spot beside it (srv:mannersgetout, 4 Nov: 18 m
+  // on along the middle, 3 runs of 3). BBB parks it with the handbrake on and tells us (PulledOver).
+  ACR_PullOverThenGetOut listener = new ACR_PullOverThenGetOut();
+  listener.m_Squad = this;
+  NewOrder();
+  ClearPlans();
+  m_bRegrouping = false;
+  listener.m_iSerial = m_iOrderSerial;
+  if (!BBB_PullOver.Begin(vehicle, driver, BBB_PullOver.MODE_PARK, 1, null, listener, PULL_OVER_AHEAD_M))
   {
    PrintFormat("[ACR] GET OUT %1: no pull-over (%2), out where it stands", m_Name, BBB_PullOver.s_sWhyNot);
    return false;
   }
-  NewOrder();
-  ClearPlans();
-  m_bRegrouping = false;
-  if (!IssueWaypoint(WP_MOVE, spot, 3, true)) return false;
   m_iPullOverSerial = m_iOrderSerial;
-  m_fPullOverStart = GetGame().GetWorld().GetWorldTime();
-  m_vPullOverSpot = spot;
+  m_PullOverVehicle = vehicle;
   SetOrder("Pulling over", ACR_EOrderState.GET_OUT);
   m_OrderKind = ACR_EOrderKind.GET_OUT;
-  GetGame().GetCallqueue().CallLater(PullOverWatch, 1000, false, m_iOrderSerial);
-  PrintFormat("[ACR] GET OUT %1: pulling over onto the verge at %2 first", m_Name, spot);
+  PrintFormat("[ACR] GET OUT %1: pulling over first, to the %2", m_Name, BBB_PullOver.s_sWhere);
   return true;
  }
-
- // Out once it stands on the verge (or after PULL_OVER_MAX_MS), with the handbrake on.
- static const float PULL_OVER_MAX_MS = 15000;
- protected float m_fPullOverStart;
- protected vector m_vPullOverSpot;
- void PullOverWatch(int serial)
- {
-  if (serial != m_iOrderSerial || serial != m_iPullOverSerial || !m_Group) return;
-  array<IEntity> vehicles = {};
-  GetVehicles(vehicles);
-  if (vehicles.IsEmpty()) return;
-  IEntity vehicle = vehicles[0];
-  float speed;
-  if (vehicle.GetPhysics()) speed = vehicle.GetPhysics().GetVelocity().Length();
-  bool there = vector.DistanceXZ(vehicle.GetOrigin(), m_vPullOverSpot) < 5 && speed < 1;
-  bool late = GetGame().GetWorld().GetWorldTime() - m_fPullOverStart > PULL_OVER_MAX_MS;
-  if (!there && !late)
-  {
-   GetGame().GetCallqueue().CallLater(PullOverWatch, 1000, false, serial);
-   return;
-  }
-  CarControllerComponent car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
-  if (car) car.SetPersistentHandBrake(true);
-  if (there) BBB_PullOver.s_iParked++;
-  string how = "pull-over took too long";
-  if (there) how = "on the verge";
-  PrintFormat("[ACR] GET OUT %1: %2, getting out", m_Name, how);
-  PulledOver(serial);
- }
+ static const float PULL_OVER_AHEAD_M = 16; // a gentle turn onto the verge
 
  // The pull-over is done: out now (unless a new order came meanwhile).
  void PulledOver(int serial)
