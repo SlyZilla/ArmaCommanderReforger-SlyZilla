@@ -9,15 +9,13 @@
 // The always-on second-in-command (#14, -acr2IC 1, off for now): while no AI commander is in
 // command of a side, every squad of it nobody has claimed is the AI's (Adopt). A player claims a
 // squad by leading it or giving it an order, until he hands it back with the panel's toggle.
+// While a player commands, the 2IC runs the rest of the side too (RunsAll, Jacob 5 Nov: the lazy
+// commander): purchases, logistics, FOBs, mortars, supports, fortifying.
 class ACR_SquadAI
 {
  static bool TwoIC() { return ACR_Options.Flag("acr2IC"); }
 
- // -acr2IC 2, the lazy commander's 2IC: it runs the whole side as the AI commander would (buys
- // units, logistics, FOBs, mortars, supports, fortifying) with every squad nobody has claimed,
- // while the player keeps command and whatever squads they lead or order. It leaves the side
- // TwoICKeep() RP for the player's own purchases (ACR_AICommander.Purse).
- static bool TwoICAll() { return ACR_LogisticsRules.Choice("acr2IC", "0") == "2"; }
+ // The RP the 2IC leaves the commanding player for their own purchases (ACR_AICommander.Purse).
  static int TwoICKeep() { return Math.ClampInt(ACR_LogisticsRules.Choice("acr2ICKeep", "100").ToInt(), 0, 100000); }
 
  // The 2IC runs a side a player commands, or one with no AI commander at all (its squads would
@@ -34,12 +32,13 @@ class ACR_SquadAI
   return !settings || !settings.m_bAICommander;
  }
 
- // The lazy commander's 2IC runs the whole side (TwoICAll) only while a player commands it: a
- // side the mission gave no AI commander and nobody commands keeps the plain 2IC (its squads),
- // so it never gets an AI economy just because nobody has taken command yet.
+ // The 2IC runs the whole side as the AI commander would (buys units, logistics, FOBs, mortars,
+ // supports, fortifying) with every squad nobody has claimed, but only while a player commands
+ // it: a side the mission gave no AI commander and nobody commands keeps just its squads run,
+ // so it never gets an AI economy because nobody has taken command yet.
  static bool RunsAll(ACR_Manager manager, string faction)
  {
-  if (!manager || !TwoICAll()) return false;
+  if (!manager || !TwoIC()) return false;
   if (ACR_TestHooks.Get().PlayerCommandsForTest(faction)) return true;
   Faction side = GetGame().GetFactionManager().GetFactionByKey(faction);
   if (!side) return false;

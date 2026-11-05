@@ -250,7 +250,7 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "threat", "pricing", "ai", "twoic", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks"};
   foreach (string key : keys)
   {
    if (key == "seed" && !generated && Current("quickstart") == "off") continue;
@@ -315,7 +315,6 @@ class ACR_Setup
   if (key == "threat") return "Threat";
   if (key == "pricing") return "Prices";
   if (key == "ai") return "AI commanders";
-  if (key == "twoic") return "Second-in-command (2IC)";
   if (key == "doctrinewest") return "Blue AI doctrine";
   if (key == "doctrineeast") return "Red AI doctrine";
   if (key == "doctrineadapt") return "AI doctrines adapt";
@@ -392,7 +391,6 @@ class ACR_Setup
   else if (key == "companywest" || key == "companyeast") values = {"", "mechanized", "weapons", "engineers", "recon"};
   else if (key == "unitcap") values = {"", "4", "6", "8", "12", "16", "24"};
   else if (key == "aibuild") values = {"0", "10", "15", "25"};
-  else if (key == "twoic") values = {"0", "1", "2"};
   else if (key == "capscale") values = {"0", "1"};
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
   else if (key == "income") values = {"", "0.5", "1", "1.5", "2", "3"};
@@ -422,7 +420,6 @@ class ACR_Setup
   if (key == "threat") return "acrThreat";
   if (key == "pricing") return "acrPricing";
   if (key == "ai") return "acrAI";
-  if (key == "twoic") return "acr2IC";
   if (key == "doctrinewest") return "acrDoctrineWest";
   if (key == "doctrineeast") return "acrDoctrineEast";
   if (key == "doctrineadapt") return "acrDoctrineAdapt";
@@ -496,7 +493,6 @@ class ACR_Setup
    if (key == "mines" || key == "doctrineadapt" || key == "fortify" || key == "baseworks") return "1";
    if (key == "minesreal" || key == "minesai" || key == "fortifyai") return "0";
    if (key == "aibuild") return "0";
-   if (key == "twoic") return "0";
    if (key == "capscale") return "0";
   }
   if (key == "threat" && value == "") return "normal";
@@ -577,9 +573,6 @@ class ACR_Setup
   if (key == "reinforcement" && value == "settlements") return "settlements + deployment bases";
   if (key == "reinforcement" && value == "deployment") return "deployment bases only";
   if (key == "reinforcement" && value == "all") return "all reinforcement-enabled points";
-  if (key == "twoic" && value == "1") return "runs the squads nobody leads";
-  if (key == "twoic" && value == "2") return string.Format("runs the side: buys, supplies, FOBs (keeps %1 RP for you)", ACR_SquadAI.TwoICKeep());
-  if (key == "twoic") return "off";
   if (key == "aibuild" && value == "0") return "off";
   if (key == "aibuild") return value + "% of income";
   if (key == "holdguns" && value == "0") return "off (vanilla)";
@@ -1032,7 +1025,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  {
   // A row's description line goes with its row.
   if (key.StartsWith("about")) return Tab(key.Substring(5, key.Length() - 5));
-  if (key == "shared" || key == "ai" || key == "twoic" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "holdguns" || key == "declutter" || key == "aibuild" || key == "capscale") return 1;
+  if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "holdguns" || key == "declutter" || key == "aibuild" || key == "capscale") return 1;
   if (key == "pricing" || key == "startrp" || key == "income" || key == "companywest" || key == "companyeast") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
   if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks") return 4;

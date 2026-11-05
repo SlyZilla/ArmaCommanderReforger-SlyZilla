@@ -948,7 +948,7 @@ class ACR_Manager : Managed
   foreach (ACR_FactionSettings handed : ACR_FactionSettings.s_All)
   {
    if (m_Debug.IsPaused(handed.m_sFaction) || !ACR_FobAI.AnyFor(handed.m_sFaction)) continue; // paused: as the AI commander
-   if (ACR_SquadAI.RunsAll(this, handed.m_sFaction)) continue; // the lazy commander's 2IC runs every FOB (TickHanded)
+   if (ACR_SquadAI.RunsAll(this, handed.m_sFaction)) continue; // the 2IC runs every FOB while a player commands (TickHanded)
    ACR_AICommander fobAI = FobAICommanderFor(handed.m_sFaction);
    // In command, the AI runs every FOB already.
    if (fobAI && !(handed.m_bAICommander && fobAI.m_bActive)) fobAI.ManageHandedFobs();
@@ -959,7 +959,7 @@ class ACR_Manager : Managed
   {
    if (m_Debug.IsPaused(squads.m_sFaction)) continue; // debug menu: frozen, as the AI commander
    ACR_AICommander squadAI;
-   // -acr2IC 2 with a player in command: the 2IC runs the whole side, buying included, so it
+   // The 2IC with a player in command runs the whole side, buying included, so it
    // turns even with no squad yet to command (it buys them).
    bool runsAll = ACR_SquadAI.RunsAll(this, squads.m_sFaction);
    if (ACR_SquadAI.TwoIC())

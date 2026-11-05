@@ -1668,7 +1668,7 @@ class ACR_AICommander : Managed
  {
   // Commanding squads a player handed over (2IC), it spends nothing of the side's RP: that is the
   // player's to spend (MISSION-MAKING, -acr2IC; as CanBuild).
-  if (m_bHandedOnly && !m_bTwoICAll) return false; // -acr2IC 2: the side's to run, down to the player's keep (Purse)
+  if (m_bHandedOnly && !m_bTwoICAll) return false; // the 2IC with a player in command: the side's to run, down to the player's keep (Purse)
   if (!SupportReady(type)) return false;
   if (ACR_Mortars.IsMortarType(type) && !m_Manager.Mortars().CanFire(m_sFaction, type, point)) return false;
   if (ACR_HeliStation.IsHeliType(type) && ACR_HeliStation.UsesPads(m_sFaction) && (!m_Manager.m_Supports || !m_Manager.m_Supports.Station().ReadyFor(m_sFaction, ACR_HeliStation.NeedsGunship(type), point, ACR_HeliStation.IsAttack(type)))) return false;
@@ -7080,7 +7080,7 @@ class ACR_AICommander : Managed
  // A player commands the side (or it has no AI commander): the squad logic runs for the squads
  // handed to the AI (squad panel, ACR_SquadAI) and only them: MySquads and DefendInDepth see
  // no other squad. No purchases, logistics, FOB building, mortars or crews for the side.
- // all (-acr2IC 2, the lazy commander's 2IC, while a player commands): the whole of Tick's turn
+ // all (the 2IC while a player commands: ACR_SquadAI.RunsAll): the whole of Tick's turn
  // as well (purchases, logistics, FOBs, mortars, crews, supports, fortifying), still only with
  // the squads handed to it, and spending the side's RP down to the player's keep (Purse).
  protected bool m_bHandedOnly;
@@ -7153,7 +7153,7 @@ class ACR_AICommander : Managed
  }
 
  // The RP this commander may spend: all of the side's, but while it is the lazy commander's 2IC
- // (-acr2IC 2) the player's keep stays theirs. Every purchase check reads this, not m_iRP.
+ // (ACR_SquadAI.RunsAll) the player's keep stays theirs. Every purchase check reads this, not m_iRP.
  int PurseForTest(bool all)
  {
   bool was = m_bTwoICAll;

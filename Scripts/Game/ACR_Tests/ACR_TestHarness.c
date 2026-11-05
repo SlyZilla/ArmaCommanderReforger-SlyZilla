@@ -107,7 +107,7 @@ class ACR_TestHarness : Managed
  static const int MODE_TWOICASK = 83;
  static const int MODE_TWOICSUGGEST = 84;
  static const int MODE_TWOICSHOTS = 91; // a game client run (89 variety, 90 the armour duel probe)
- static const int MODE_TWOICALL = 260; // the lazy commander's 2IC (-acr2IC 2)
+ static const int MODE_TWOICALL = 260; // the 2IC runs the side while a player commands
  static const int MODE_TWOICDECLUTTER = 131; // the 2IC declutter (117, 120, 125: own branches)
  static const int MODE_RIDELAV = 70; // 69: the playtest branches
  static const int MODE_MAPDECLUTTER = 133; // the calm command map's rules (90-97, 117, 120, 125 taken elsewhere)
