@@ -1129,6 +1129,7 @@ class ACR_AICommander : Managed
   TrickleBuildBudget();
   ReleaseRoadblockBuilders();
   Assess();
+  ManageRecon();
   t = ACR_Perf.Lap("ai.assess", t);
   UpdateAttacks();
   t = ACR_Perf.Lap("ai.attacks", t);
@@ -1671,7 +1672,7 @@ class ACR_AICommander : Managed
   if (!SupportReady(type)) return false;
   if (ACR_Mortars.IsMortarType(type) && !m_Manager.Mortars().CanFire(m_sFaction, type, point)) return false;
   if (ACR_HeliStation.IsHeliType(type) && ACR_HeliStation.UsesPads(m_sFaction) && (!m_Manager.m_Supports || !m_Manager.m_Supports.Station().ReadyFor(m_sFaction, ACR_HeliStation.NeedsGunship(type), point, ACR_HeliStation.IsAttack(type)))) return false;
-  if (FriendliesNear(point, ACR_Supports.ZoneRadius(type) + 40)) return false;
+  if (type != ACR_ESupportType.RECON_FLIGHT && FriendliesNear(point, ACR_Supports.ZoneRadius(type) + 40)) return false;
   string result = m_Manager.m_Supports.Call(m_sFaction, SupportIndex(type), point, true);
   Say(string.Format("[ACR] AI %1 support (%2): %3", m_sFaction, why, result));
   // Call refuses some missions after SupportReady passed (no bomb-run prefab, no helicopter,
@@ -1799,7 +1800,9 @@ class ACR_AICommander : Managed
    if (!base.m_sOwner.IsEmpty()) defence += base.m_iGarrisonLeft;
    if (!base.m_sOwner.IsEmpty()) defence += FortifiedCredit(base);
    if (ours) defence += ACR_BaseWorks.Credit(base);
-   if (!ours && !base.m_sOwner.IsEmpty()) defence += UNKNOWN_DEFENCE; // fog of war: expect more than we've seen
+   // Fog of war: expect more than we've seen, unless a recon flight photographed it lately
+   // (then what it saw is the count: ACR_ReconRun).
+   if (!ours && !base.m_sOwner.IsEmpty() && !Photographed(base)) defence += UNKNOWN_DEFENCE;
    m_Defence.Set(base, defence);
    m_Threat.Set(base, threat);
    string before;
@@ -1812,6 +1815,71 @@ class ACR_AICommander : Managed
    }
    m_LastOwner.Set(base, base.m_sOwner);
   }
+ }
+
+ protected bool Photographed(ACR_Base base)
+ {
+  ACR_Intel intel = m_Manager.IntelFor(m_sFaction);
+  return intel && intel.PhotographedRecently(base, GetGame().GetWorld().GetWorldTime());
+ }
+
+ // ---------------------------------------------------------------- recon flights
+ // The commander buys its own photographs (ACR_ReconRun): over a fresh radio intercept near one
+ // of its bases (something is out there, find out what), else over the enemy base nearest its
+ // own, the likeliest next fight, once its photographs of it are out of date. At most one flight
+ // per RECON_GAP_MS, sooner under a doctrine that values observers (m_fObserverWeight); the
+ // support's own cooldown and the RP reserve (SupportReady) still apply.
+ static const float RECON_GAP_MS = 240000;
+ static const float RECON_FIRST_MS = 120000;
+ static const float INTERCEPT_FRESH_MS = 90000;
+ static const float INTERCEPT_NEAR = 1500;
+ protected float m_fNextRecon;
+
+ protected void ManageRecon()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  // Not in the opening minutes: its RP goes on its first squads, and nothing has moved yet.
+  if (m_fNextRecon <= 0) m_fNextRecon = now + RECON_FIRST_MS;
+  if (now < m_fNextRecon || !SupportReady(ACR_ESupportType.RECON_FLIGHT)) return;
+  string why;
+  vector point = ReconTarget(why);
+  if (point == vector.Zero) return;
+  if (!CallSupport(ACR_ESupportType.RECON_FLIGHT, point, why)) return;
+  m_fNextRecon = now + RECON_GAP_MS / Math.Max(0.5, m_Doctrine.m_fObserverWeight);
+ }
+
+ vector ReconTarget(out string why)
+ {
+  ACR_Intel intel = m_Manager.IntelFor(m_sFaction);
+  if (!intel) return vector.Zero;
+  float now = GetGame().GetWorld().GetWorldTime();
+  ACR_Intercept freshest;
+  foreach (ACR_Intercept ring : intel.m_Intercepts)
+  {
+   if (now - ring.m_fHeard > INTERCEPT_FRESH_MS || (freshest && ring.m_fHeard <= freshest.m_fHeard)) continue;
+   ACR_Base mine = NearestOwnBase(ring.m_vCentre);
+   if (!mine || vector.DistanceXZ(mine.GetOrigin(), ring.m_vCentre) > INTERCEPT_NEAR) continue;
+   freshest = ring;
+  }
+  if (freshest)
+  {
+   why = "recon over a radio intercept " + intel.Place(freshest.m_vCentre);
+   return freshest.m_vCentre;
+  }
+  ACR_Base best;
+  float bestDistance = float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner.IsEmpty() || base.m_sOwner == m_sFaction || !base.IsVisibleTo(m_sFaction)) continue;
+   if (ACR_Insurgency.Friendly(base.m_sOwner, m_sFaction) || intel.PhotographedRecently(base, now)) continue;
+   ACR_Base own = NearestOwnBase(base.GetOrigin());
+   if (!own) continue;
+   float d = vector.DistanceXZ(own.GetOrigin(), base.GetOrigin());
+   if (d < bestDistance) { bestDistance = d; best = base; }
+  }
+  if (!best) return vector.Zero;
+  why = "recon over " + best.m_sName;
+  return best.GetOrigin();
  }
 
  protected int DefenceOf(ACR_Base base) { int v; m_Defence.Find(base, v); return v; }

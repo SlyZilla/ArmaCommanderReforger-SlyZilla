@@ -207,6 +207,7 @@ deploymenu|-acrDeployMenuTest 1|180|Worlds/ACR_Arland.ent
 mappolygon|-acrMapPolygonTest 1|60
 rtsoverlay|-acrRTSOverlayTest 1|60
 intelmarks|-acrIntelMarksTest 1|60
+recon|-acrReconTest 1|90
 restart|-acrRestartTest 1|200
 stallwait|-acrStallWaitTest 1|130
 recrew|-acrRecrewTest 1|120

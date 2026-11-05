@@ -479,6 +479,7 @@ Each entry is one action in the commander's support menu, such as a mortar strik
 | `m_iBombRunBombs` | 4 | Virtual bombs in `VIRTUAL` or `FLYOVER` mode; clamped to 1-12 |
 | `m_fBombRunSpacing` | 28 m | Distance between impact points in `FLYOVER` mode; clamped to 1-500 m |
 | `m_fBombRunScatter` | 5 m | Random lateral impact scatter in metres; clamped to 0-100 m |
+| `m_sReconPrefab` | empty | `RECON_FLIGHT` only: the aircraft prefab flown over the corridor, carrying its own engine sound; empty = AC: Actual's default for the side (RHS's FA-18 for a western side when RHS is loaded, otherwise none: the flight works unseen) |
 
 | Type | Default name | RP | Cooldown (s) |
 |---|---|---|---|
@@ -495,6 +496,16 @@ Each entry is one action in the commander's support menu, such as a mortar strik
 | `ARTILLERY_BATTERY` | Artillery: howitzer battery | 60 | 300 |
 | `AIR_LIFT` | Helicopter: air lift | 40 (AI commander 20) | 240 |
 | `ATTACK_HELI` | Helicopter: *airframe* (120 s) | 55 | 300 |
+| `RECON_FLIGHT` | Air: recon flight | 15 | 180 |
+
+`RECON_FLIGHT` sends a jet over a corridor 2.4 km long and 600 m wide, centred on the called point and
+flown from the side's nearest base, about 30 s after the call. Enemy soldiers and vehicles under it go
+on the side's map as if spotted (vehicles and men in the open mostly, men under a roof or trees
+rarely), each group shown up to 50 m (vehicles 20 m) off its true spot, and kept 5 minutes; hidden
+FOBs in it are found. Nothing can shoot it down or turn it back. The side flown over is told a jet went over. The AI commander calls it too.
+Side lists made before it existed get it added; add a `RECON_FLIGHT` row with **Enabled** off to
+leave it out. Radio intercepts need no setting: a side's contact reports and fire-mission calls may
+be picked up by the enemy as a 400 m ring on its map that holds the transmitter.
 
 `ATTACK_HELI` exists only when a content pack names an attack helicopter for the side (the Cold War
 pack: AH-1S Cobra for US, Mi-24V Hind for USSR; the Modern pack: AH-64D Apache for the RHS US side,
