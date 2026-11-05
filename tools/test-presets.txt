@@ -139,6 +139,7 @@ variety|-acrVarietyTest 1|60
 mapdeclutter|-acrMapDeclutterTest 1|60
 mapdecluttershots|-acrMapDeclutterShotsTest 1|240
 minesiting|-acrMineSitingTest 1|120
+mineshapes|-acrMineShapesTest 1|120
 possiting|-acrPositionSitingTest 1|120
 possitingarland|-acrPositionSitingArlandTest 1|240|Worlds/ACR_Arland.ent
 doctrinekits|-acrDoctrineKitsTest 1|300

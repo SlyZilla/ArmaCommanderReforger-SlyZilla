@@ -174,9 +174,16 @@ flags also work through the normal options precedence.
 ### Minefields
 
 Infantry squads can lay minefields and disarm mines on the commander's orders (map panel: **AP
-mines**, **AT mines**, **Mixed mines**, **Disarm mines**). A field is a 30 m square: AT mines go in
-both lanes of a road within 20 m of the click (across the area without one) and AP mines off the
-road; vanilla minefield signs mark the corners and the area shows on the owning side's command map.
+mines**, **AT mines**, **Mixed mines**, **Disarm mines**). A point right-clicked twice lays a 30 m
+square: AT mines go in both lanes of a road within 20 m of it (across the area without one) and AP
+mines off the road; vanilla minefield signs mark the corners and the area shows on the owning side's
+command map. The commander can shape a field instead (#200): right-click up to four points, then the
+last one again (a fourth point lays at once). Two points make a line (a 6 m band, at least 10 m long),
+three or four that area. The field keeps its mines and its price, spread over the shape, which may be
+at most 120 m corner to corner and 2,700 m² (three times the square); AT mines go on the roads inside
+it first, signs stand every 25 m along its edges (16 at most), its outline shows on the map, and a
+bigger area takes longer to lay. With `-acrMinesAI 1` the AI commanders shape their fields too: a
+belt across a road, a block along it, or a band across the enemy's approach.
 Orders cost 15 / 20 / 25 RP (AP / AT / mixed) or 3 RP to disarm and lift every armed mine within
 25 m (8 s per mine, 4 s with engineers); they are paid up front and refund the share not laid when
 called off. Work pauses while the site is contested and runs twice
