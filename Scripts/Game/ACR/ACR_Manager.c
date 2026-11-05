@@ -966,6 +966,7 @@ class ACR_Manager : Managed
     // Players' requests first (ACR_TwoICRequests), ahead of its own plans.
     ACR_TwoICRequests.Tick(squads.m_sFaction, squadAI, twoICRuns);
     ACR_TwoICSuggest.Tick(this, squads.m_sFaction, squadAI, twoICRuns);
+    ACR_TwoICForecast.Tick(this, squads.m_sFaction, squadAI, twoICRuns);
    }
    if (!ACR_SquadAI.AnyFor(squads.m_sFaction)) continue;
    squadAI = FobAICommanderFor(squads.m_sFaction);

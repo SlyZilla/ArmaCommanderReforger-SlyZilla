@@ -157,7 +157,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 142; // includes one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 148; // includes six attack-ground, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -754,6 +754,7 @@ class ACR_TestRegress
   if (tick == 6) ACR_TestSpawnHeap.Place(harness.Ground("1250 0 2760"), harness.Ground("1235 0 2780"), harness.Ground("1180 0 2720"));
   if (tick == 7) ACR_TestSpawnHeap.CheckSpots();
   if (tick == 9) ACR_TestSpawnHeap.CheckSquad();
+  if (tick == 9) ACR_TestGround.CheckBackground();
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {
@@ -762,6 +763,8 @@ class ACR_TestRegress
    ACR_TestOptions.Run();
    ACR_TestDoctrine.Run(manager);
    ACR_TestLanes.Run(manager);
+   ACR_TestGround.Run(manager);
+   ACR_TestForecast.Run(manager);
    // Night audit 30 Oct: the abort share compared in ints (3 of 10 at 0.35 kept attacking).
    Check("attack abort share compares as a float", ACR_AICommander.AttackBroken(3, 10, 0.35) && !ACR_AICommander.AttackBroken(4, 10, 0.35) && ACR_AICommander.AttackBroken(1, 6, 0.25) && !ACR_AICommander.AttackBroken(0, 0, 0.35), "3/10 and 1/6 must break, 4/10 and an unset start must not");
    ACR_TestAccess.Run();
