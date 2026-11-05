@@ -3706,6 +3706,7 @@ class ACR_Squad : Managed
  static float s_fStallSeconds = STALL_SECONDS; // test hook: srv:stall shortens it so its enemy team arrives after the soft truck has given up
  static const float STALL_SECONDS_FIGHTING = 40; // armed and in contact: the gunner may be busy, give it longer
  static const float STALL_SECONDS_HELPLESS = 3;  // under fire with no gunner
+ static const float STALL_SECONDS_EVADING = 10;  // ...but getting away from an armed vehicle (turning round)
  static const float STALL_ARRIVED = 40;          // closer than this to the target counts as there
  static const int UNSTICK_TRIES = 2;
  static const int REROUTE_TRIES = 1;
@@ -3773,12 +3774,11 @@ class ACR_Squad : Managed
   return true;
  }
 
+ // BBB's lookup: it still finds the driver while BBB drives the vehicle itself with his seat
+ // unhooked from the controller (BBB_PilotHold, Reforger 1.9).
  static ChimeraCharacter DriverOf(IEntity vehicle)
  {
-  if (!vehicle) return null;
-  CarControllerComponent car = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
-  if (!car || !car.GetPilotCompartmentSlot()) return null;
-  return ChimeraCharacter.Cast(car.GetPilotCompartmentSlot().GetOccupant());
+  return BBB.DriverOf(vehicle);
  }
 
  protected bool IsMember(IEntity body)
@@ -3981,6 +3981,14 @@ class ACR_Squad : Managed
    }
   }
   else m_fQueueSince = -1;
+  // BBB is driving it itself (backing away from an armed vehicle brakes to a stop first, unstick,
+  // pull-over): not stalled, and nobody bails out mid-manoeuvre. From 1.9 that brake really stops
+  // the truck, so the 3 s unarmed-under-fire bail fired every time (pak:mannersevade 0/3).
+  if (BBB_PilotHold.Driving(vehicle))
+  {
+   m_fStallSince = now;
+   return;
+  }
   float stalled = (now - m_fStallSince) / 1000;
   bool armed = HasGunner(vehicle);
   // Fighting vehicles (anything with a turret: LAV, BTR, BRDM, gun trucks) keep
@@ -4003,7 +4011,11 @@ class ACR_Squad : Managed
    }
   }
 
-  if (underFire && !fightingVehicle && stalled >= STALL_SECONDS_HELPLESS) { Bail(vehicle, "stopped under fire, unarmed", false); return; }
+  // Getting away from an armed vehicle: BBB has just braked it and backed it off, and the driver needs a
+  // few seconds to turn it round before standing still means it is stuck (pak:mannersevade, 1.9).
+  float helpless = STALL_SECONDS_HELPLESS;
+  if (m_Evade) helpless = STALL_SECONDS_EVADING;
+  if (underFire && !fightingVehicle && stalled >= helpless) { Bail(vehicle, "stopped under fire, unarmed", false); return; }
   float limit = s_fStallSeconds;
   if (underFire || armed) limit = STALL_SECONDS_FIGHTING;
   if (stalled < limit) return;
@@ -4282,6 +4294,11 @@ class ACR_Squad : Managed
  {
   PrintFormat("[ACR] DRIVE %1: %2, crew bails out", m_Name, why);
   if (vehicle) ACR_Transport.SanitizeVehicleHorn(vehicle, true);
+  // Handbrake on: from Reforger 1.9 the automatic gearbox drops a driverless vehicle into neutral, and an
+  // abandoned truck rolled 40 m downhill into the BTR its crew had just bailed out from (pak:mannersevade).
+  CarControllerComponent bailCar;
+  if (vehicle) bailCar = CarControllerComponent.Cast(vehicle.FindComponent(CarControllerComponent));
+  if (bailCar && !BBB_PilotHold.Driving(vehicle)) bailCar.SetPersistentHandBrake(true);
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager)
   {
