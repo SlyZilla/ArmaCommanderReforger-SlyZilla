@@ -1,0 +1,775 @@
+"""Blockout aircraft for the recon flight and the bomb run: 1989 jets as coloured silhouettes, seen from the
+ground at 300-500 m (ACR_LocalFlyover flies them). Not cockpits or detail: the right planform, the right
+paint and a red star where there should be one, so a player can tell an A-10 from a Frogfoot overhead.
+
+Run headless (Blender 4.1+):
+  blender -b -P tools/blender/build_aircraft.py -- <addon root> [<name> ...]
+Then tools/Build-AircraftAssets.ps1 imports the FBXs in Workbench (hidden).
+
+Writes, under <addon root>/Assets/Vehicles/Aircraft:
+  ACR_<name>.fbx, Data/ACR_Aircraft_Palette_BCR.png (one shared paint palette: every face is UV-mapped onto one
+  16 px swatch, so the jets need one material and no unwrapping), the Workbench job
+  (.local-workbench/profile/aircraft_job.txt) and, local only, .local-aircraft/ACR_<name>.blend and
+  .local-aircraft/previews/ACR_<name>_*.png. The FBX carries no texture link (it would hold this PC's path):
+  Workbench links the material by name.
+
+Axes: modelled in metres with the nose along Blender +X, up +Z, exported with Blender's default FBX axes (as the
+launcher mods do), which Workbench imports as nose +X, up +Y: the model axes ACR_LocalFlyover.Orient assumes for a
+prefab without the FA-18's bone. Origin near the centre of mass.
+"""
+import bpy, bmesh, math, os, sys
+from mathutils import Vector
+
+argv = sys.argv[sys.argv.index("--") + 1:]
+ROOT = os.path.abspath(argv[0])
+ONLY = set(argv[1:])
+OUT = os.path.join(ROOT, "Assets", "Vehicles", "Aircraft")
+DATA = os.path.join(OUT, "Data")
+PREV = os.path.join(ROOT, ".local-aircraft", "previews")
+for d in (OUT, DATA, PREV):
+    os.makedirs(d, exist_ok=True)
+
+# ---------- paint: sRGB colour + roughness, one swatch each on a 16 x 16 grid ----------
+# FS 595 / Soviet enamel approximations, a little lifted so they still read against a bright sky.
+PAINT = {
+    "euro_dkgreen": ((0x33, 0x40, 0x33), 0.75),   # FS 34092 European I dark green
+    "euro_green": ((0x56, 0x63, 0x42), 0.75),     # FS 34102 medium green
+    "euro_gray": ((0x45, 0x49, 0x4d), 0.75),      # FS 36081 dark gray
+    "sov_tan": ((0xb3, 0x98, 0x66), 0.7),         # 1980s Frontal Aviation upper camouflage
+    "sov_brown": ((0x6e, 0x4c, 0x30), 0.7),
+    "sov_green": ((0x63, 0x70, 0x3c), 0.7),
+    "sov_dkgreen": ((0x37, 0x47, 0x2b), 0.7),
+    "sov_blue": ((0x9c, 0xb8, 0xcc), 0.65),       # light blue undersides
+    "pod_gray": ((0xa9, 0xad, 0xa8), 0.6),        # KKR recon pod
+    "radome": ((0x8a, 0x8f, 0x89), 0.5),          # Su-17 shock cone
+    "canopy": ((0x24, 0x31, 0x3c), 0.15),
+    "nozzle": ((0x2d, 0x2b, 0x29), 0.5),
+    "intake": ((0x1c, 0x1c, 0x1c), 0.9),
+    "red": ((0xc4, 0x24, 0x1c), 0.55),            # star
+    "white": ((0xe8, 0xe8, 0xe4), 0.55),          # star border
+    "od": ((0x4b, 0x53, 0x32), 0.7),              # Mk 82 / FAB olive drab
+    "fab_gray": ((0x5c, 0x62, 0x55), 0.7),
+    "yellow": ((0xd6, 0xae, 0x2c), 0.6),          # Mk 82 nose band (filled, high explosive)
+    "fab_light": ((0xa6, 0xae, 0xae), 0.6),       # FAB-250 light grey
+    "fab_seam": ((0x86, 0x8c, 0x8a), 0.65),       # weld seams and bands on a grey bomb
+    "chute": ((0xdc, 0xd6, 0xc4), 0.9),           # brake parachute (kapron, off-white)
+    "cord": ((0xb8, 0xb0, 0x98), 0.9),            # its lines and riser
+}
+SWATCH = {name: i for i, name in enumerate(PAINT)}
+GRID, SW = 16, 16  # 16 x 16 swatches of 16 px: one texel per swatch even at the 16 px mip
+
+
+def write_palette():
+    path = os.path.join(DATA, "ACR_Aircraft_Palette_BCR.png")
+    img = bpy.data.images.new("ACR_Aircraft_Palette_BCR", GRID * SW, GRID * SW, alpha=True)
+    img.colorspace_settings.name = "sRGB"
+    px = [0.5, 0.5, 0.5, 0.7] * (GRID * SW) ** 2
+    for name, idx in SWATCH.items():
+        (r, g, b), rough = PAINT[name]
+        col, row = idx % GRID, idx // GRID  # row from the top of the image
+        for y in range(SW):
+            for x in range(SW):
+                # Blender images run bottom-up; Workbench samples top-down (DX), and the FBX import flips V
+                iy = (GRID - 1 - row) * SW + y
+                i = (iy * GRID * SW + col * SW + x) * 4
+                px[i:i + 4] = [r / 255, g / 255, b / 255, rough]
+    img.pixels = px
+    img.filepath_raw = path
+    img.file_format = "PNG"
+    img.save()
+    return img, path
+
+
+def swatch_uv(name):
+    idx = SWATCH[name]
+    col, row = idx % GRID, idx // GRID
+    return ((col + 0.5) / GRID, 1 - (row + 0.5) / GRID)
+
+
+# ---------- geometry ----------
+SHARP_DEG = 48  # smooth-shaded faces meeting at more than this keep a hard edge
+
+
+class Builder:
+    """Closed shells in one bmesh; each shell's faces carry a paint rule ("camo" or a fixed swatch)."""
+
+    def __init__(self):
+        self.bm = bmesh.new()
+        self.paint = self.bm.faces.layers.int.new("paint")  # -1 = camo, else swatch index
+        self.smooth = self.bm.faces.layers.int.new("smooth")  # 1 = smooth shaded
+        self.mirror_parts = []
+
+    def _faces(self, rings, paint, cap0=True, cap1=True, smooth=False):
+        """paint: one paint, or a list of one per gap between rings (caps take the end ones)."""
+        bm = self.bm
+        vr = [[bm.verts.new(p) for p in ring] for ring in rings]
+        paints = paint if isinstance(paint, list) else [paint] * max(1, len(vr) - 1)
+        faces = []  # (face, paint, smooth)
+        for k, (a, b) in enumerate(zip(vr, vr[1:])):
+            n = len(a)
+            if len(a) == 1 and len(b) == 1:
+                continue
+            if len(a) == 1:
+                new = [bm.faces.new((a[0], b[i], b[(i + 1) % len(b)])) for i in range(len(b))]
+            elif len(b) == 1:
+                new = [bm.faces.new((a[i], a[(i + 1) % n], b[0])) for i in range(n)]
+            else:
+                new = [bm.faces.new((a[i], a[(i + 1) % n], b[(i + 1) % n], b[i])) for i in range(n)]
+            faces += [(f, paints[k], smooth) for f in new]
+        if cap0 and len(vr[0]) > 2:
+            faces.append((bm.faces.new(vr[0]), paints[0], False))
+        if cap1 and len(vr[-1]) > 2:
+            faces.append((bm.faces.new(list(reversed(vr[-1]))), paints[-1], False))
+        for f, p, sm in faces:
+            f[self.paint] = -1 if p == "camo" else SWATCH[p]
+            f[self.smooth] = int(sm)
+        return [f for f, _, _ in faces]
+
+    def loft(self, stations, paint="camo", y=0.0, n=2.4, seg=20, mirror=False, smooth=False, inlet=None,
+             outlet=None, duct="intake"):
+        """Fuselage-like body along X. stations: (x, z centre, half width, half height); a zero half width
+        closes the body to a point. n: superellipse exponent (2 round, higher boxier). inlet / outlet: (depth,
+        mouth) opens the first / last station into a `duct`-coloured hole `depth` m deep, its mouth `mouth` of
+        that station's size inside a lip: an intake or a jet pipe that reads as an opening, not a capped pod. The
+        hole is part of the same closed skin, so the duct's faces look inward."""
+        st, paints = list(stations), [paint] * (len(stations) - 1)
+        if inlet:
+            d, k = inlet
+            x, zc, hw, hh = st[0]
+            st = [(x - d, zc, 0, 0), (x - d, zc, hw * k, hh * k), (x - 0.02, zc, hw * k, hh * k)] + st
+            paints = [duct, duct, paint] + paints
+        if outlet:
+            d, k = outlet
+            x, zc, hw, hh = st[-1]
+            st = st + [(x + 0.02, zc, hw * k, hh * k), (x + d, zc, hw * k, hh * k), (x + d, zc, 0, 0)]
+            paints = paints + [paint, duct, duct]
+        for side in ((1, -1) if mirror else (1,)):
+            rings = []
+            for x, zc, hw, hh in st:
+                if hw < 1e-4:
+                    rings.append([Vector((x, y * side, zc))])
+                    continue
+                ring = []
+                for i in range(seg):
+                    t = 2 * math.pi * i / seg
+                    c, s = math.cos(t), math.sin(t)
+                    ry = math.copysign(abs(c) ** (2 / n), c) * hw
+                    rz = math.copysign(abs(s) ** (2 / n), s) * hh
+                    ring.append(Vector((x, y * side + ry, zc + rz)))
+                rings.append(ring)
+            self._faces(rings, paints, smooth=smooth)
+
+    def surface(self, root, tip, paint="camo", vertical=False, mirror=True, spans=6):
+        """Wing/tail panel. root/tip: (x leading edge, y, z, chord, thickness as a fraction of chord). The
+        section's thickness runs along Z, or along Y for a fin (vertical). Mirrored across Y=0 by default.
+        Smooth shaded across the skin; finish() keeps the leading and trailing edges and the tips sharp."""
+        prof = [(0, 0), (0.06, 0.7), (0.25, 1), (0.55, 0.85), (0.85, 0.35), (1, 0),
+                (0.85, -0.35), (0.55, -0.85), (0.25, -1), (0.06, -0.7)]
+        for side in ((1, -1) if mirror else (1,)):
+            rings = []
+            for k in range(spans + 1):
+                f = k / spans
+                xl, y, z, ch, th = [root[i] + (tip[i] - root[i]) * f for i in range(5)]
+                ring = []
+                for u, v in prof:
+                    off = v * th * ch * 0.5
+                    if vertical:
+                        ring.append(Vector((xl - u * ch, (y + off) * side, z)))
+                    else:
+                        ring.append(Vector((xl - u * ch, y * side, z + off)))
+                rings.append(ring)
+            self._faces(rings, paint, smooth=True)
+
+    def box(self, lo, hi, paint="camo", mirror=False):
+        for side in ((1, -1) if mirror else (1,)):
+            (x0, y0, z0), (x1, y1, z1) = lo, hi
+            y0, y1 = sorted((y0 * side, y1 * side))
+            ring0 = [Vector((x1, y0, z0)), Vector((x1, y1, z0)), Vector((x1, y1, z1)), Vector((x1, y0, z1))]
+            ring1 = [Vector((x0, p.y, p.z)) for p in ring0]
+            self._faces([ring0, ring1], paint)
+
+    def star(self, centre, radius, axis, depth, mirror=False):
+        """Soviet star: a red five-point prism through a fin (axis "y") or wing (axis "z"), on a white
+        border one size up, so it shows on both faces."""
+        for side in ((1, -1) if mirror else (1,)):
+            for r, paint, d in ((radius * 1.18, "white", depth), (radius, "red", depth + 0.02)):
+                ring_a, ring_b = [], []
+                for i in range(10):
+                    t = math.pi / 2 + i * math.pi / 5
+                    rr = r if i % 2 == 0 else r * 0.40
+                    u, v = math.cos(t) * rr, math.sin(t) * rr
+                    cx, cy, cz = centre
+                    if axis == "y":  # fin: star in the XZ plane, nose (+X) to the left of an upright star
+                        p = (cx - u, cy * side, cz + v)
+                        ring_a.append(Vector((p[0], p[1] - d / 2, p[2])))
+                        ring_b.append(Vector((p[0], p[1] + d / 2, p[2])))
+                    else:  # wing: star in the XY plane, point towards the nose
+                        p = (cx + v, cy * side + u, cz)
+                        ring_a.append(Vector((p[0], p[1], p[2] - d / 2)))
+                        ring_b.append(Vector((p[0], p[1], p[2] + d / 2)))
+                self._faces([ring_a, ring_b], paint)
+
+    def fin_star(self, root, tip, height, radius):
+        """A star on a fin built by surface(root, tip, vertical=True): centred on the mid-chord at `height` (a
+        fraction of the fin's span), just proud of its skin. The leading edge is swept, so a star placed by
+        eye hung off the front of the fin (Jacob, 4 Nov)."""
+        xl, _, z, ch, th = [root[i] + (tip[i] - root[i]) * height for i in range(5)]
+        self.star((xl - 0.5 * ch, root[1], z), radius, "y", th * ch + 0.03)
+
+    def store(self, x0, x1, y, z, r, paint, mirror=True, pylon=0.0, body=True):
+        """Bomb / tank / pod: a pointed body, on a pylon of `pylon` m up to the wing. body=False: the pylon alone
+        (the bombs are models of their own, which ACR_LocalFlyover hangs there and drops)."""
+        L = x0 - x1
+        st = [(x0, z, 0, 0), (x0 - 0.12 * L, z, r * 0.75, r * 0.75), (x0 - 0.3 * L, z, r, r),
+              (x1 + 0.25 * L, z, r, r), (x1 + 0.05 * L, z, r * 0.6, r * 0.6), (x1, z, 0.0, 0)]
+        if body:
+            self.loft(st, paint, y=y, n=2, seg=12, mirror=mirror and abs(y) > 1e-3, smooth=True)
+        if pylon > 0:
+            self.box((x1 + 0.35 * L, y - 0.04, z + r * 0.8), (x0 - 0.3 * L, y + 0.04, z + r + pylon), paint,
+                     mirror=mirror and abs(y) > 1e-3)
+
+    def finish(self, name, plane):
+        bm = self.bm
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        uv = bm.loops.layers.uv.new("UVMap")
+        camo = plane["camo"]
+        vals = {}
+        for f in bm.faces:
+            if f[self.paint] == -1:
+                vals[f] = camo_value(f.calc_center_median(), plane)
+        bands = band_edges(vals, f_areas={f: f.calc_area() for f in vals}, n=len(camo["colours"]))
+        for f in bm.faces:
+            code = f[self.paint]
+            if code == -1:
+                if camo.get("under") and f.normal.z < -0.35:
+                    paint = camo["under"]
+                else:
+                    v = vals[f]
+                    k = sum(1 for e in bands if v > e)
+                    paint = camo["colours"][k]
+                u = swatch_uv(paint)
+            else:
+                u = swatch_uv(list(SWATCH)[code])
+            for loop in f.loops:
+                loop[uv].uv = u
+            f.smooth = bool(f[self.smooth])
+        # Hard edges stay hard: split the skin where smooth meets flat, and wherever two smooth faces meet at
+        # more than SHARP_DEG (wing and fin edges, intake lips, a nacelle's mouth). The FBX then carries plain
+        # per-vertex normals, which Workbench reads the same way whatever it makes of smoothing groups.
+        bm.normal_update()
+        cos_sharp = math.cos(math.radians(SHARP_DEG))
+        sharp = []
+        for e in bm.edges:
+            fs = e.link_faces
+            if len(fs) == 2 and (fs[0].smooth or fs[1].smooth):
+                if fs[0].smooth != fs[1].smooth or fs[0].normal.dot(fs[1].normal) < cos_sharp:
+                    sharp.append(e)
+        bmesh.ops.split_edges(bm, edges=sharp)
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        bm.free()
+        me.attributes.remove(me.attributes["paint"])
+        me.attributes.remove(me.attributes["smooth"])
+        ob = bpy.data.objects.new(name, me)
+        bpy.context.scene.collection.objects.link(ob)
+        return ob
+
+
+def camo_value(p, plane):
+    """Smooth pattern in plan and side view: a few crossing waves, so the bands read as the big soft-edged
+    blotches of a real scheme (Euro I wraps around the whole aircraft; Soviet schemes cover the upper side)."""
+    s = plane["camo"].get("scale", 1.0)
+    x, y, z = p.x / s, abs(p.y) / s * plane["camo"].get("sym", 1) + p.y / s * (1 - plane["camo"].get("sym", 1)), p.z / s
+    seed = plane["camo"].get("seed", 0)
+    v = 0.0
+    for i, (kx, ky, kz, ph) in enumerate(((0.55, 0.31, 0.2, 0.3), (-0.27, 0.62, 0.35, 1.7),
+                                          (0.41, -0.48, 0.5, 2.9), (0.83, 0.12, -0.6, 4.1))):
+        v += math.sin(kx * x + ky * y + kz * z + ph + seed * (i + 1)) / (1 + 0.3 * i)
+    return v
+
+
+def band_edges(vals, f_areas, n):
+    """Area-weighted quantiles: each camouflage colour covers about the same share of the skin."""
+    items = sorted(vals.items(), key=lambda kv: kv[1])
+    total = sum(f_areas[f] for f, _ in items) or 1
+    edges, acc, k = [], 0.0, 1
+    for f, v in items:
+        acc += f_areas[f]
+        while k < n and acc >= total * k / n:
+            edges.append(v)
+            k += 1
+    return edges
+
+
+# ---------- the aircraft (metres; x forward from the centre of mass, z up) ----------
+EURO = {"colours": ["euro_dkgreen", "euro_green", "euro_gray"], "scale": 1.25, "sym": 0.0, "seed": 0}
+SOVIET = {"colours": ["sov_tan", "sov_brown", "sov_green", "sov_dkgreen"], "under": "sov_blue", "scale": 1.1,
+          "sym": 0.0, "seed": 0}
+
+
+def a10(b):
+    """Fairchild A-10A Thunderbolt II (USAF bomb run): 16.26 m long, 17.53 m span, European I 'lizard'.
+    Checked against the Commons 3-view and a head-on photo (A-10 '707', 118th TFS, Iraq 2003)."""
+    b.loft([(8.15, -0.25, 0, 0), (8.1, -0.24, 0.2, 0.22), (7.85, -0.18, 0.42, 0.46), (7.35, -0.09, 0.62, 0.68),
+            (6.6, -0.02, 0.76, 0.84), (5.0, 0.05, 0.86, 0.98), (2.5, 0.0, 0.9, 1.0), (0.0, 0.0, 0.86, 0.9),
+            (-3.0, 0.15, 0.62, 0.72), (-6.0, 0.3, 0.36, 0.46), (-7.7, 0.38, 0.2, 0.3), (-8.1, 0.4, 0, 0)],
+           smooth=True)
+    b.loft([(8.75, -0.32, 0.07, 0.07), (8.0, -0.32, 0.09, 0.09)], "nozzle", seg=8)  # GAU-8 muzzle
+    # bubble canopy well forward (the windscreen about 2.3 m behind the muzzle), faired into the fuselage
+    b.loft([(6.45, 0.72, 0, 0), (6.15, 0.86, 0.3, 0.26), (5.75, 1.0, 0.42, 0.36), (5.0, 1.1, 0.46, 0.42),
+            (4.2, 1.06, 0.4, 0.36), (3.6, 0.96, 0.26, 0.22), (3.15, 0.86, 0, 0)], "canopy", smooth=True)
+    # straight wing. Front view (3-view, photo): a flat centre section out to the gear pods, then the outer
+    # panels at about 6 deg on the chord (upper skin ~4.5, lower ~6.5 as they thin), with hardly any taper
+    # (tip chord ~2 m). Was 7 deg on a 1.5 m tip over a centre section whose top sloped down: a gull kink.
+    b.surface((1.3, 0.6, -0.55, 3.0, 0.16), (1.05, 3.0, -0.5125, 2.7, 0.15), spans=3)
+    b.surface((1.05, 3.0, -0.5125, 2.7, 0.15), (0.6, 8.76, 0.045, 2.0, 0.1), spans=7)
+    # main gear pods under the wing break, hiding it as on the real aircraft, their noses well ahead of it
+    b.loft([(2.45, -0.72, 0, 0), (2.15, -0.73, 0.24, 0.26), (1.5, -0.74, 0.3, 0.3), (0.5, -0.72, 0.28, 0.28),
+            (-0.2, -0.66, 0, 0)], y=3.0, n=2.2, seg=14, mirror=True, smooth=True)
+    # TF34 nacelles high on the rear fuselage: open intake lips onto a dark fan face with its spinner, and a
+    # dark jet pipe round the exhaust plug at the back
+    nac = [(-0.85, 1.05, 0.6, 0.6), (-1.5, 1.05, 0.66, 0.66), (-3.4, 1.05, 0.6, 0.6), (-4.3, 1.05, 0.47, 0.47),
+           (-4.85, 1.05, 0.4, 0.4)]
+    b.loft(nac, y=1.4, n=2, mirror=True, smooth=True, inlet=(0.45, 0.84), outlet=(0.55, 0.8))
+    b.loft([(-1.06, 1.05, 0, 0), (-1.18, 1.05, 0.11, 0.11), (-1.3, 1.05, 0.17, 0.17)], "nozzle", y=1.4, n=2,
+           seg=12, mirror=True, smooth=True)  # fan spinner
+    b.loft([(-4.3, 1.05, 0.2, 0.2), (-4.8, 1.05, 0.15, 0.15), (-5.05, 1.05, 0, 0)], "nozzle", y=1.4, n=2,
+           seg=12, mirror=True, smooth=True)  # exhaust plug
+    b.box((-3.3, 0.85, 0.45), (-1.7, 1.05, 0.62), mirror=True)  # pylons
+    # tailplane with twin fins at its tips
+    b.surface((-5.95, 0.0, 0.42, 1.65, 0.1), (-6.15, 2.95, 0.42, 1.45, 0.1), spans=4)
+    for side in (1, -1):
+        b.surface((-5.55, 2.95 * side, -0.35, 1.95, 0.08), (-6.2, 2.95 * side, 2.55, 1.25, 0.08), vertical=True,
+                  mirror=False, spans=5)
+    for y in (2.3, 3.8):  # pylons for four Mk 82s (ACR_Mk82, hung by ACR_LocalFlyover.Hardpoints): up into the wing
+        b.store(2.0, -0.2, y, -1.05, 0.15, "camo", pylon=0.32, body=False)
+
+
+def a10_spec():
+    return {"name": "A10A", "build": a10, "camo": EURO, "role": "West bomb run"}
+
+
+def su25(b):
+    """Sukhoi Su-25 'Frogfoot' (Soviet bomb run): 15.53 m long over its probes (the body about 14.5), 14.36 m span,
+    1980s four-colour over blue. Proportions from the Commons 3-view: a short drooped nose ending in the laser
+    window, the engines' nozzles well ahead of a slim tail boom, a 4.65 m tailplane."""
+    b.loft([(6.95, -0.28, 0.1, 0.12), (6.75, -0.25, 0.24, 0.26), (6.2, -0.16, 0.44, 0.5), (5.2, -0.02, 0.62, 0.72),
+            (4.2, 0.08, 0.72, 0.84), (2.0, 0.12, 0.74, 0.86), (-1.0, 0.18, 0.68, 0.8), (-3.2, 0.3, 0.5, 0.64),
+            (-5.0, 0.42, 0.36, 0.48), (-6.8, 0.5, 0.24, 0.36), (-7.6, 0.52, 0, 0)], n=2.8, smooth=True)
+    b.loft([(6.965, -0.28, 0.085, 0.1), (6.94, -0.28, 0.085, 0.1)], "canopy", n=2.8, seg=12)  # laser window
+    b.loft([(4.95, 0.86, 0, 0), (4.6, 1.02, 0.34, 0.24), (3.9, 1.1, 0.4, 0.3), (3.0, 1.04, 0.34, 0.24),
+            (2.4, 0.95, 0.3, 0.2)], "canopy", smooth=True)
+    b.loft([(2.4, 0.95, 0.3, 0.2), (0.5, 0.95, 0.34, 0.24), (-3.5, 0.75, 0.24, 0.16), (-4.4, 0.65, 0, 0)],
+           smooth=True)  # spine
+    # R-95Sh nacelles along the fuselage sides, under the wing root: open intakes, nozzles under the wing's
+    # trailing edge
+    b.loft([(2.65, -0.1, 0.44, 0.56), (1.6, -0.1, 0.5, 0.62), (-1.2, -0.1, 0.5, 0.6), (-2.8, -0.08, 0.42, 0.48),
+            (-3.55, -0.05, 0.34, 0.36)], y=0.98, n=3.2, mirror=True, smooth=True, inlet=(0.55, 0.8),
+           outlet=(0.45, 0.78))
+    # shoulder wing, 20 deg sweep, slight anhedral; speed-brake pods on the tips
+    b.surface((1.9, 1.2, 0.48, 3.5, 0.13), (-0.3, 7.18, 0.2, 1.45, 0.1), spans=7)
+    b.loft([(0.5, 0.2, 0, 0), (0.2, 0.2, 0.15, 0.15), (-1.4, 0.2, 0.15, 0.15), (-1.75, 0.2, 0, 0)], y=7.18,
+           n=2, seg=10, mirror=True, smooth=True)
+    b.surface((-4.85, 0.3, 1.05, 1.9, 0.09), (-5.65, 2.35, 1.26, 0.95, 0.08), spans=4)
+    fin = ((-4.1, 0.0, 0.85, 3.2, 0.09), (-6.35, 0.0, 3.95, 1.3, 0.08))
+    b.surface(*fin, vertical=True, mirror=False, spans=6)
+    b.fin_star(*fin, 0.5, 0.55)
+    for y in (3.0, 4.4):  # pylons for four FAB-250s (ACR_FAB250, hung by ACR_LocalFlyover.Hardpoints)
+        b.store(1.4, -0.6, y, -0.25, 0.2, "camo", pylon=0.3, body=False)
+
+
+def su25_spec():
+    return {"name": "Su25", "build": su25, "camo": SOVIET, "role": "East bomb run"}
+
+
+def rf4c(b):
+    """McDonnell Douglas RF-4C Phantom II (USAF recon flight): 19.2 m long, 11.7 m span, European I. Checked
+    against the dimensioned 3-view on Commons (19.18 m length, 8.40 m fold line, 5.00 m stabilator)."""
+    b.loft([(9.65, 0.12, 0, 0), (9.55, 0.12, 0.1, 0.11), (9.0, 0.1, 0.33, 0.37), (7.8, 0.05, 0.56, 0.61),
+            (6.2, 0.05, 0.7, 0.78), (4.5, 0.05, 0.84, 0.84), (2.5, 0.05, 0.95, 0.85), (0.0, 0.05, 1.1, 0.8),
+            (-3.0, 0.1, 1.15, 0.75), (-5.5, 0.18, 0.92, 0.6), (-7.2, 0.32, 0.55, 0.45), (-9.5, 0.55, 0, 0)], n=2.6,
+           smooth=True)
+    b.loft([(4.1, 0.05, 0.36, 0.58), (3.0, 0.05, 0.4, 0.62), (0.2, 0.05, 0.38, 0.58), (-0.6, 0.05, 0, 0)],
+           y=0.98, n=6, mirror=True, smooth=True, inlet=(0.6, 0.8))  # intakes
+    # the long tandem canopy, from 2.2 to 7 m behind the nose tip
+    b.loft([(7.35, 0.68, 0, 0), (6.95, 0.92, 0.38, 0.3), (6.3, 1.04, 0.44, 0.37), (5.0, 1.1, 0.45, 0.38),
+            (3.6, 1.08, 0.42, 0.33), (2.8, 0.94, 0.28, 0.21), (2.3, 0.8, 0, 0)], "canopy", smooth=True)
+    b.loft([(-6.7, -0.05, 0.46, 0.46), (-7.8, -0.05, 0.44, 0.44)], "nozzle", y=0.55, n=2, mirror=True, smooth=True,
+           outlet=(0.45, 0.8))
+    # low wing: 45 deg leading edge, flat inner panel, 12 deg dihedral outer panel
+    b.surface((1.6, 0.9, -0.45, 5.4, 0.07), (-1.5, 4.0, -0.45, 2.7, 0.06), spans=5)
+    b.surface((-1.5, 4.0, -0.45, 2.7, 0.06), (-3.35, 5.85, -0.06, 1.55, 0.05), spans=3)
+    # stabilator: 23 deg anhedral, 5.0 m across; tall fin
+    b.surface((-6.4, 0.5, 0.45, 2.6, 0.07), (-7.82, 2.5, -0.41, 1.0, 0.06), spans=4)
+    b.surface((-4.2, 0.0, 0.7, 4.4, 0.07), (-7.6, 0.0, 3.6, 1.4, 0.06), vertical=True, mirror=False, spans=6)
+    b.store(2.6, -3.0, 3.4, -1.05, 0.4, "euro_gray", pylon=0.3)  # 370 gal tanks
+
+
+def rf4c_spec():
+    return {"name": "RF4C", "build": rf4c, "camo": EURO, "role": "West recon flight"}
+
+
+def su17(b):
+    """Sukhoi Su-17M4R 'Fitter-K' (Soviet recon flight): 19.0 m long, wings at 45 deg (spread 13.68 m),
+    KKR-1 recon pod on the centreline. Nose intake open round the shock cone; tailplane as the Commons 3-view."""
+    b.loft([(9.35, 0.0, 0.55, 0.55), (8.0, 0.0, 0.68, 0.74), (6.0, 0.05, 0.74, 0.82), (3.0, 0.05, 0.78, 0.86),
+            (0.0, 0.05, 0.78, 0.86), (-4.0, 0.05, 0.72, 0.76), (-7.5, 0.05, 0.62, 0.62), (-8.6, 0.05, 0.55, 0.55)],
+           n=2.2, smooth=True, inlet=(0.6, 0.86))
+    b.loft([(10.05, 0.0, 0, 0), (9.35, 0.0, 0.3, 0.3), (8.8, 0.0, 0.3, 0.3)], "radome", n=2, seg=14,
+           smooth=True)  # shock cone
+    b.loft([(-8.55, 0.05, 0.5, 0.5), (-9.0, 0.05, 0.47, 0.47)], "nozzle", n=2, smooth=True, outlet=(0.5, 0.82))
+    b.loft([(5.6, 0.75, 0.0, 0.0), (4.6, 0.85, 0.32, 0.26), (-3.0, 0.8, 0.3, 0.24), (-5.0, 0.7, 0, 0)],
+           smooth=True)  # spine
+    b.loft([(7.15, 0.6, 0, 0), (6.6, 0.9, 0.36, 0.28), (6.0, 1.0, 0.4, 0.32), (5.3, 0.98, 0.36, 0.27),
+            (4.8, 0.9, 0.24, 0.17), (4.5, 0.85, 0, 0)], "canopy", smooth=True)
+    # fixed glove and the outer panel at 45 deg
+    b.surface((3.9, 0.7, -0.05, 5.1, 0.08), (1.0, 2.1, -0.05, 2.9, 0.08), spans=3)
+    b.surface((1.0, 2.1, -0.05, 2.7, 0.08), (-1.85, 5.9, -0.05, 1.35, 0.07), spans=6)
+    b.surface((-5.6, 0.6, -0.1, 2.4, 0.07), (-7.1, 2.8, -0.24, 1.0, 0.06), spans=4)
+    fin = ((-3.3, 0.0, 0.7, 3.6, 0.08), (-6.7, 0.0, 3.6, 1.3, 0.07))
+    b.surface(*fin, vertical=True, mirror=False, spans=6)
+    b.surface((-5.5, 0.0, -0.5, 1.6, 0.06), (-6.3, 0.0, -1.0, 0.9, 0.06), vertical=True, mirror=False, spans=2)
+    b.fin_star(*fin, 0.55, 0.58)
+    b.store(4.2, -3.2, 0.0, -1.15, 0.3, "pod_gray", mirror=False, pylon=0.2)  # KKR-1
+    b.store(2.2, -2.0, 1.55, -0.95, 0.34, "camo", pylon=0.3)  # drop tanks under the glove
+
+
+def su17_spec():
+    return {"name": "Su17M4R", "build": su17, "camo": SOVIET, "role": "East recon flight"}
+
+
+def fins(b, x, root_r, span_r, root_ch, tip_ch, sweep, paint, th=0.025):
+    """Four flat tail fins in an X (45 deg off the vertical, as a bomb hangs: clear of its pylon, and all four
+    show from the side), root on the body at radius root_r, tip at span_r, the tip swept back by `sweep`."""
+    for k in range(4):
+        a = math.radians(45 + 90 * k)
+        d, n = Vector((0, math.cos(a), math.sin(a))), Vector((0, -math.sin(a), math.cos(a))) * (th / 2)
+        rings = []
+        for r, xl, ch in ((root_r, x, root_ch), (span_r, x - sweep, tip_ch)):
+            c = d * r
+            rings.append([Vector((xl, 0, 0)) + c + n, Vector((xl - ch, 0, 0)) + c + n,
+                          Vector((xl - ch, 0, 0)) + c - n, Vector((xl, 0, 0)) + c - n])
+        b._faces(rings, paint)
+
+
+SNAKEYE_OPEN = 55  # degrees the Mk 15's blades stand off the tail's axis, deployed (photos: 50-60)
+SNAKEYE_STAGES = (15, 30, 45)  # the opening, in between (ACR_FallingBomb swaps them in over ~0.25 s)
+
+
+def snakeye(b, phi_deg):
+    """Mk 82 with the Mk 15 Snakeye retarding tail (the A-10's), measured off identified photographs: the NMUSAF
+    display (Wikimedia Commons, "Mk. 81 250-lb and Mk. 82 Snakeye I 500-lb.jpg"), the Pima, Pax River and Eglin
+    displays on 447bg.org (deployed) and the gunplumbers.ca practice round (stowed). 273 mm body: a tangent-ogive
+    nose with a small fuze, the yellow band of a filled bomb where the ogive meets the cylinder, a short rear taper
+    into a cone and a slim hub tube. On it the Mk 15: four U-channel blades hinged at the hub's rear end. Stowed
+    (phi 0) they lie forward along the hub as a square sleeve narrower than the body; deployed they swing out
+    forward to SNAKEYE_OPEN degrees off the axis, broad face to the airflow, each braced by a strut to a spring
+    collar that slides aft along the hub as they open. Two suspension lugs on top. Origin at its middle, nose +X.
+    phi_deg: how far open (the in-between stages animate the opening)."""
+    X = Vector((1, 0, 0))
+    R = 0.1365
+    nose_x, ln = 1.12, 0.62
+    rho = (R * R + ln * ln) / (2 * R)  # tangent ogive
+    ogive = lambda xp: math.sqrt(max(0.0, rho * rho - (ln - xp) ** 2)) + R - rho
+    st = [(nose_x - 0.045, 0, 0.0, 0.0)]  # behind the blunt fuze
+    for xp in (0.045, 0.07, 0.1, 0.16, 0.24, 0.33, 0.43, 0.53, 0.62):
+        r = max(ogive(xp), 0.03)
+        st.append((nose_x - xp, 0, r, r))
+    for x, k in ((-0.12, 1.0), (-0.24, 0.95), (-0.36, 0.82), (-0.46, 0.66), (-0.52, 0.55), (-0.58, 0.33),
+                 (-1.08, 0.3), (-1.095, 0.5), (-1.12, 0.5)):
+        st.append((x, 0, k * R, k * R))
+    st.append((-1.12, 0, 0.0, 0.0))
+    paints = ["od"] * (len(st) - 1)
+    paints[-1] = "intake"  # the hub's open rear end
+    b._faces([[Vector((x, math.cos(2 * math.pi * i / 24) * hw, math.sin(2 * math.pi * i / 24) * hh))
+               for i in range(24)] if hw > 0 else [Vector((x, 0, 0))] for x, _, hw, hh in st], paints, smooth=True)
+    b.loft([(nose_x, 0, 0.0, 0.0), (nose_x - 0.004, 0, 0.018, 0.018), (nose_x - 0.016, 0, 0.027, 0.027),
+            (nose_x - 0.05, 0, 0.031, 0.031)], "nozzle", n=2, seg=16, smooth=True)  # blunt nose fuze
+    band = [(nose_x - xp, 0, ogive(xp) + 0.0012, ogive(xp) + 0.0012) for xp in (0.555, 0.585, 0.62)]
+    b.loft(band, "yellow", n=2, seg=24, smooth=True)
+    for x in (0.278, -0.078):  # suspension lugs, 14 in apart
+        b.box((x - 0.026, -0.006, R - 0.01), (x - 0.014, 0.006, R + 0.034), "od")
+        b.box((x + 0.014, -0.006, R - 0.01), (x + 0.026, 0.006, R + 0.034), "od")
+        b.box((x - 0.026, -0.006, R + 0.024), (x + 0.026, 0.006, R + 0.036), "od")
+    # the Mk 15
+    xh, d, blade, w0, w1, flange, th = -1.1, 0.088, 0.62, 0.13, 0.16, 0.026, 0.006
+    rc, ub, open_c = 0.045, 0.25 * blade, -0.72
+    phi, phi_open = math.radians(phi_deg), math.radians(SNAKEYE_OPEN)
+    b_open = Vector((xh + ub * math.cos(phi_open), d + ub * math.sin(phi_open)))
+    strut = (Vector((open_c, rc)) - b_open).length
+    bx, br = xh + ub * math.cos(phi), d + ub * math.sin(phi)
+    collar = bx + math.sqrt(max(0.0, strut ** 2 - (br - rc) ** 2))  # where the collar sits for this opening
+    b.loft([(collar + 0.018, 0, 0.0, 0.0), (collar + 0.018, 0, 0.052, 0.052), (collar - 0.018, 0, 0.052, 0.052),
+            (collar - 0.018, 0, 0.0, 0.0)], "nozzle", n=2, seg=16)
+    x = collar + 0.035
+    while x < -0.59:  # the spring between the collar and the cone
+        b.loft([(x + 0.006, 0, 0.046, 0.046), (x - 0.006, 0, 0.046, 0.046)], "nozzle", n=2, seg=12)
+        x += 0.03
+    b.loft([(xh + 0.03, 0, 0.0, 0.0), (xh + 0.03, 0, d + 0.008, d + 0.008), (xh - 0.01, 0, d + 0.008, d + 0.008),
+            (xh - 0.01, 0, 0.0, 0.0)], "od", n=2, seg=16)  # hinge ring
+    for k in range(4):
+        a = math.radians(45 + 90 * k)
+        radial = Vector((0, math.cos(a), math.sin(a)))
+        tang = Vector((0, -math.sin(a), math.cos(a)))
+        span = X * math.cos(phi) + radial * math.sin(phi)
+        inward = X * math.sin(phi) - radial * math.cos(phi)  # the channel's open side: to the hub when stowed
+        hinge = X * xh + radial * d
+
+        def ring(u):
+            w = w0 + (w1 - w0) * u / blade
+            o = hinge + span * u
+            sec = [(-w / 2, flange), (-w / 2, 0), (w / 2, 0), (w / 2, flange),
+                   (w / 2 - th, flange), (w / 2 - th, th), (-w / 2 + th, th), (-w / 2 + th, flange)]
+            return [o + tang * c + inward * h for c, h in sec]
+        b._faces([ring(0.0), ring(blade)], "od")
+        cord(b, X * collar + radial * rc, hinge + span * ub + inward * th, 0.011, "nozzle")
+
+
+def snakeye_spec(phi):
+    if phi == 0:
+        name, role = "Mk82", "A-10 bomb (Snakeye, stowed)"
+    elif phi == SNAKEYE_OPEN:
+        name, role = "Mk82_Open", "A-10 bomb (Snakeye, open)"
+    else:
+        name, role = "Mk82_Open%d" % phi, "A-10 bomb (Snakeye, opening %d deg)" % phi
+    return {"name": name, "build": lambda b: snakeye(b, phi), "camo": EURO, "role": role, "ortho": 2.8,
+            "rear_ortho": 0.6 + 0.7 * phi / SNAKEYE_OPEN}
+
+
+def fab250(b):
+    """FAB-250 M-62 (the Su-25's), measured off the museum photograph Jacob chose (Wikimedia Commons,
+    "FAB-250-M62.JPG", 4 Nov), as fractions of its 1.96 m length and 325 mm body: a blunt elliptical nose with a
+    small fuze tip (to 19 %), a straight cylinder (to 40 %, a seam), a long separate taper to a narrow tail cone
+    (about a third of the diameter); four fins, upright and level, from 70 %, a short swept leading edge then a long straight outer
+    edge running back into a narrow ring round the tail (92-100 %), as wide as the body; two loop lugs on top at
+    19 and 30 %. Light grey. Origin at its middle, nose +X."""
+    L, R = 1.96, 0.1625
+    X = lambda f: L / 2 - f * L  # fraction of the length from the nose -> model x
+    st = [(X(0.0), 0, 0, 0), (X(0.0), 0, 0.12 * R, 0.12 * R), (X(0.008), 0, 0.14 * R, 0.14 * R)]  # fuze tip
+    for k in range(0, 11):  # elliptical nose, 0.8 % to 19 %
+        f = 0.008 + (0.19 - 0.008) * k / 10
+        r = max(0.2, math.sqrt(max(0.0, 1 - (1 - f / 0.19) ** 2)))
+        st.append((X(f), 0, r * R, r * R))
+    for f, r in ((0.36, 1.0), (0.45, 0.86), (0.55, 0.72), (0.65, 0.58), (0.74, 0.5), (0.85, 0.42),
+                 (0.93, 0.37), (0.975, 0.33), (0.985, 0.2), (0.99, 0.0)):
+        st.append((X(f), 0, r * R, r * R))
+    b.loft(st, "fab_light", n=2, seg=24, smooth=True)
+    # fins: flat plates upright and level (in line with the lugs, as photographed; they stay inside the body's
+    # radius, clear of the pylon), outline (fraction, radius) from the photograph, outer edge inside the ring
+    th = 0.006
+    outline = [(0.70, 0.45), (0.757, 0.98), (1.0, 0.98), (1.0, 0.3)]
+    for k in range(4):
+        a = math.radians(90 * k)
+        d = Vector((0, math.cos(a), math.sin(a)))
+        n = Vector((0, -math.sin(a), math.cos(a))) * (th / 2)
+        top = [Vector((X(f), 0, 0)) + d * (r * R) + n for f, r in outline]
+        bot = [q - n * 2 for q in top]
+        b._faces([top, bot], "fab_light")
+    ring = []  # narrow band round the fin tips: outer face, back lip, inner face, front lip
+    for r, f in ((1.0, 0.92), (1.0, 1.0), (0.965, 1.0), (0.965, 0.92), (1.0, 0.92)):
+        ring.append([Vector((X(f), math.cos(2 * math.pi * i / 24) * r * R, math.sin(2 * math.pi * i / 24) * r * R))
+                     for i in range(24)])
+    b._faces(ring, "fab_light", cap0=False, cap1=False, smooth=True)
+    for f in (0.19, 0.30):  # loop lugs: two posts and a bar
+        x = X(f)
+        b.box((x - 0.028, -0.006, R - 0.01), (x - 0.016, 0.006, R + 0.035), "fab_light")
+        b.box((x + 0.016, -0.006, R - 0.01), (x + 0.028, 0.006, R + 0.035), "fab_light")
+        b.box((x - 0.028, -0.006, R + 0.025), (x + 0.028, 0.006, R + 0.037), "fab_light")
+
+
+def fab250_spec():
+    return {"name": "FAB250", "build": fab250, "camo": SOVIET, "role": "Su-25 bomb", "ortho": 3}
+
+
+OFAB_L, OFAB_R = 1.99, 0.1625
+OFAB_X = lambda f: OFAB_L / 2 - f * OFAB_L  # fraction of the length from the nose -> model x
+
+
+def cord(b, p0, p1, w, paint="cord"):
+    """A line as a thin three-sided prism from p0 to p1."""
+    d = (p1 - p0).normalized()
+    a = d.cross(Vector((0, 0, 1)) if abs(d.z) < 0.9 else Vector((0, 1, 0))).normalized()
+    c = d.cross(a)
+    tri = [a * w, (-a * 0.5 + c * 0.866) * w, (-a * 0.5 - c * 0.866) * w]
+    b._faces([[p0 + o for o in tri], [p1 + o for o in tri]], paint)
+
+
+def ofab_body(b, deployed):
+    """OFAB-250ShN, measured off the METIS side photograph (fenixinsight.com, "OFAB-250ShN") and the 16va.be
+    MiG-27K loading photo, as fractions of 1.99 m and of its 325 mm body: a short truncated-cone nose with a small
+    flat tip (to 16 %), a straight cylinder with weld seams at 16, 50 and 64 %, a gentle step down (to 82 %) into
+    the parachute housing, which flares a little at the rear and carries four raised bands; four narrow fins upright
+    and level (in line with the lugs) from 80 % to the end, each with a rail along its tip; two loop lugs at 31 and
+    44 %. Light grey with darker seams. Stowed, the housing is shut by its cover; deployed, it is open."""
+    X, R = OFAB_X, OFAB_R
+    nose = [(0.0, 0.22), (0.003, 0.25), (0.03, 0.42), (0.07, 0.62), (0.11, 0.82), (0.145, 0.96), (0.16, 1.0),
+            (0.64, 1.0), (0.70, 0.97), (0.78, 0.9), (0.82, 0.87), (0.90, 0.86), (0.93, 0.88), (0.96, 0.93),
+            (0.99, 0.95), (1.0, 0.95)]
+    b.loft([(X(f), 0, r * R, r * R) for f, r in nose], "fab_light", n=2, seg=28, smooth=True)
+    b.loft([(X(0.0) + 0.004, 0, 0.0, 0.0), (X(0.0) + 0.004, 0, 0.18 * R, 0.18 * R), (X(0.0), 0, 0.22 * R, 0.22 * R)],
+           "fab_seam", n=2, seg=16)  # fuze tip
+    for f, r in ((0.16, 1.006), (0.5, 1.006), (0.64, 1.006), (0.87, 0.875), (0.905, 0.875), (0.935, 0.9),
+                 (0.965, 0.945)):
+        b.loft([(X(f) + 0.008, 0, r * R, r * R), (X(f) - 0.008, 0, r * R, r * R)], "fab_seam", n=2, seg=28,
+               smooth=True)
+    if deployed:  # the open housing: its inside, dark
+        b.loft([(X(1.0), 0, 0.9 * R, 0.9 * R), (X(0.93), 0, 0.8 * R, 0.8 * R), (X(0.93) - 0.001, 0, 0.0, 0.0)],
+               "intake", n=2, seg=28)
+    else:  # its cover, a little recessed
+        b.loft([(X(1.0), 0, 0.88 * R, 0.88 * R), (X(1.0) + 0.012, 0, 0.84 * R, 0.84 * R),
+                (X(1.0) + 0.012, 0, 0.0, 0.0)], "fab_seam", n=2, seg=28)
+    th = 0.007
+    outline = [(0.80, 0.86), (0.83, 1.2), (0.975, 1.2), (0.985, 0.9)]
+    for k in range(4):
+        a = math.radians(90 * k)
+        d = Vector((0, math.cos(a), math.sin(a)))
+        n = Vector((0, -math.sin(a), math.cos(a))) * (th / 2)
+        top = [Vector((X(f), 0, 0)) + d * (r * R) + n for f, r in outline]
+        b._faces([top, [q - n * 2 for q in top]], "fab_light")
+        cord(b, Vector((X(0.83), 0, 0)) + d * (1.2 * R), Vector((X(0.985), 0, 0)) + d * (1.2 * R), 0.008, "fab_light")
+    for f in (0.31, 0.44):  # loop lugs
+        x = X(f)
+        b.box((x - 0.028, -0.006, R - 0.01), (x - 0.016, 0.006, R + 0.035), "fab_light")
+        b.box((x + 0.016, -0.006, R - 0.01), (x + 0.028, 0.006, R + 0.035), "fab_light")
+        b.box((x - 0.028, -0.006, R + 0.025), (x + 0.028, 0.006, R + 0.037), "fab_light")
+
+
+def ofab250shn(b):
+    ofab_body(b, False)
+
+
+def ofab250shn_open(b):
+    """Deployed: the brake chute streaming straight back on its riser, as the bomb falls nose first along its path.
+    Four short bridle lines from the housing rim to a riser 1.1 m back; the riser to 2.0 m; twelve suspension lines
+    out to the canopy's mouth 3.3 m behind the tail; the canopy a 1.4 m inflated cup, mouth towards the bomb, its
+    twelve gores bulging between the lines. Two-sided (an outer and an inner skin), so it reads from any angle."""
+    ofab_body(b, True)
+    X, R = OFAB_X, OFAB_R
+    tail = X(1.0)
+    knot, link = Vector((tail - 1.1, 0, 0)), Vector((tail - 2.0, 0, 0))
+    for k in range(4):
+        a = math.radians(45 + 90 * k)
+        cord(b, Vector((tail, math.cos(a) * 0.8 * R, math.sin(a) * 0.8 * R)), knot, 0.012)
+    cord(b, knot, link, 0.02)
+    mouth, gores = tail - 3.3, 12
+    prof = [(0.0, 0.6), (0.12, 0.7), (0.26, 0.66), (0.4, 0.5), (0.5, 0.28), (0.55, 0.05)]  # metres back, radius
+    rings = []
+
+    def ring(s, r):
+        out = []
+        for i in range(gores * 4):
+            th = 2 * math.pi * i / (gores * 4)
+            lobe = 1 + 0.06 * abs(math.sin(gores / 2 * th))  # gores bulge between the lines
+            out.append(Vector((mouth - s, math.cos(th) * r * lobe, math.sin(th) * r * lobe)))
+        return out
+    for s, r in prof:
+        rings.append(ring(s, r))
+    for s, r in reversed(prof):
+        rings.append(ring(s - 0.015, max(0.02, r - 0.015)))
+    rings.append(ring(0.0, 0.6))
+    b._faces(rings, "chute", cap0=False, cap1=False, smooth=True)
+    for i in range(gores):
+        th = 2 * math.pi * i / gores
+        cord(b, link, Vector((mouth, math.cos(th) * 0.6, math.sin(th) * 0.6)), 0.008)
+
+
+def ofab_spec():
+    return {"name": "OFAB250ShN", "build": ofab250shn, "camo": SOVIET, "role": "Su-25 bomb (stowed)", "ortho": 3}
+
+
+def ofab_open_spec():
+    return {"name": "OFAB250ShN_Open", "build": ofab250shn_open, "camo": SOVIET,
+            "role": "Su-25 bomb (brake chute out)", "ortho": 6.5, "centre": (-2.3, 0, 0)}
+
+
+PLANES = [a10_spec(), su25_spec(), rf4c_spec(), su17_spec(), snakeye_spec(0)] + [snakeye_spec(p) for p in SNAKEYE_STAGES] + [
+          snakeye_spec(SNAKEYE_OPEN), fab250_spec(),
+          ofab_spec(), ofab_open_spec()]
+
+# ---------- build, export, preview ----------
+bpy.ops.wm.read_factory_settings(use_empty=True)
+scene = bpy.context.scene
+palette_img, palette_path = write_palette()
+mat = bpy.data.materials.new("ACR_Aircraft_Palette")  # the FBX material name: Workbench links Data/<name>.emat
+mat.use_nodes = True
+tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
+tex.image = palette_img
+tex.interpolation = "Closest"
+bsdf = mat.node_tree.nodes["Principled BSDF"]
+mat.node_tree.nodes.active = tex
+
+
+def preview_texture(on):
+    """Linked only for the previews and the local .blend: an FBX would carry the image's absolute path."""
+    for link in list(mat.node_tree.links):
+        if link.from_node == tex:
+            mat.node_tree.links.remove(link)
+    if on:
+        mat.node_tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+
+
+posix = lambda q: q.replace("\\", "/")
+JOB_DIR = os.path.join(ROOT, ".local-workbench", "profile")
+os.makedirs(JOB_DIR, exist_ok=True)
+job = []
+emat = os.path.join(DATA, "ACR_Aircraft_Palette.emat")
+job.append("EMAT %s||MetalnessScale=0|EnableFarHiding=0|BCRMap=%s" % (posix(emat), posix(palette_path)))
+report = []
+for plane in PLANES:
+    if ONLY and plane["name"] not in ONLY:
+        continue
+    name = "ACR_" + plane["name"]
+    b = Builder()
+    plane["build"](b)
+    ob = b.finish(name, plane)
+    ob.data.materials.append(mat)
+    bb = [ob.matrix_world @ Vector(c) for c in ob.bound_box]
+    size = [max(p[i] for p in bb) - min(p[i] for p in bb) for i in range(3)]
+    tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    report.append("%s (%s): %.2f x %.2f x %.2f m, %d tris" % (name, plane["role"], size[0], size[1], size[2], tris))
+    for o in scene.objects:
+        o.select_set(o == ob)
+    bpy.context.view_layer.objects.active = ob
+    fbx = os.path.join(OUT, name + ".fbx")
+    preview_texture(False)
+    bpy.ops.export_scene.fbx(filepath=fbx, use_selection=True, axis_forward="-Z", axis_up="Y",
+                             apply_unit_scale=True, mesh_smooth_type="FACE", use_tspace=False,
+                             add_leaf_bones=False, bake_anim=False, path_mode="STRIP")
+    job.append("FBX %s" % posix(fbx))
+    preview_texture(True)
+
+    # previews: from below as the ground sees it, side, top, three-quarter
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.display.shading.light = "STUDIO"
+    scene.display.shading.color_type = "TEXTURE"
+    scene.render.resolution_x, scene.render.resolution_y = 900, 600
+    world = bpy.data.worlds.get("sky") or bpy.data.worlds.new("sky")
+    world.color = (0.55, 0.68, 0.85)
+    scene.world = world
+    scene.display.shading.background_type = "WORLD"
+    for o in list(scene.objects):
+        o.hide_render = o != ob
+    cam_data = bpy.data.cameras.get("cam") or bpy.data.cameras.new("cam")
+    cam_data.type = "ORTHO"
+    cam_data.ortho_scale = plane.get("ortho", 23)
+    cam = bpy.data.objects.get("cam") or bpy.data.objects.new("cam", cam_data)
+    if cam.name not in scene.collection.objects:
+        scene.collection.objects.link(cam)
+    scene.camera = cam
+    aim = 0.5 if plane.get("ortho", 23) > 10 else 0.0
+    views = [("below", (0.01, 0.0, -40)), ("side", (0, -40, aim)), ("top", (0.01, 0, 40)), ("quarter", (22, -26, -16))]
+    if plane.get("ortho", 23) <= 10:
+        views.append(("rear", (-40, 0.0, 0.01)))
+    centre = Vector(plane.get("centre", (0, 0, 0)))  # where the previews look (a trailing chute sits aft)
+    for view, loc in views:
+        cam.location = Vector(loc) + centre
+        d = Vector((0, 0, aim)) - Vector(loc)
+        cam.rotation_euler = d.to_track_quat("-Z", {"below": "X", "top": "X", "rear": "Y"}.get(view, "Z")).to_euler()
+        cam_data.ortho_scale = plane.get("rear_ortho", 0.6) if view == "rear" else plane.get("ortho", 23)
+        scene.render.filepath = os.path.join(PREV, "%s_%s.png" % (name, view))
+        bpy.ops.render.render(write_still=True)
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, ".local-aircraft", name + ".blend"), copy=True)
+
+with open(os.path.join(JOB_DIR, "aircraft_job.txt"), "w") as f:
+    f.write("\n".join(job) + "\n")
+print("\n".join(["[aircraft] " + r for r in report] + ["[aircraft] job: " + os.path.join(JOB_DIR, "aircraft_job.txt")]))

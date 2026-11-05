@@ -3,10 +3,13 @@
 // fuzzed by one offset per group; the Soviets are told a jet went over; a summary line for the US.
 // Radio intercept: a Soviet transmission gives the US a ring that holds the transmitter off its
 // centre, and the same transmitter again moves the ring. The AI commander drops its blind guess at a
-// photographed base and flies its recon over a fresh intercept near its bases first.
+// photographed base and flies its recon over a fresh intercept near its bases first. ACA's own jets
+// (Prefabs/Vehicles/Aircraft) load as models of their size; off by default (-acrPeriodJets) the defaults
+// are as before them, and with it on each side flies its own. Their bombs
+// load too, and where a player watches, a bomber's bomb hangs on its pylon, falls and lands on time.
 class ACR_TestRecon
 {
- static const int CHECKS = 10;
+ static const int CHECKS = 15;
  static const int CALL_TICK = 6;
  static const int CHECK_TICK = 50;
  static ACR_Squad s_Enemy;
@@ -14,6 +17,8 @@ class ACR_TestRecon
  static ref array<vector> s_TrueAt;
  static int s_iRP;
  static float s_fCallAt;
+ static ACR_LocalFlyover s_Bomber;
+ static string s_sDrop;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -33,13 +38,165 @@ class ACR_TestRecon
    ACR_RadioIntercept.INTERCEPT_CHANCE = 1;
   }
   if (!alpha || !alpha.GetAnchor()) return;
-  if (tick == 4) Pure(manager);
+  if (tick == 4) { Pure(manager); Aircraft(); }
+  if (tick == 4 || tick == 14 || tick == 22) Drop(tick);
   if (tick == CALL_TICK) Call(h, manager, alpha);
   // Held where they were put (a halted squad still walks back into formation), so the spots the
   // flight reports can be measured against where they really stood.
   if (tick > CALL_TICK && tick < CHECK_TICK && s_Bodies)
    foreach (int i, IEntity body : s_Bodies) if (body) body.SetOrigin(s_TrueAt[i]);
   if (tick == CHECK_TICK) Results(manager);
+ }
+
+ // ACA's blockout jets: each prefab spawns a model as long as the real aircraft (nose along the model's
+ // +X, as ACR_LocalFlyover assumes), and the defaults hand each side its own recon and bomb-run jet.
+ static void Aircraft()
+ {
+  array<ResourceName> jets = {ACR_Supports.BOMB_JET_WEST, ACR_Supports.BOMB_JET_EAST, ACR_ReconRun.RECON_JET_WEST, ACR_ReconRun.RECON_JET_EAST};
+  array<float> lengths = {16.85, 14.62, 19.15, 19.05}; // the Su-25 without its nose probes (3-view: ~14.5 m body)
+  bool client = GetGame().GetPlayerController() != null;
+  int good = 0;
+  string sizes = "";
+  foreach (int i, ResourceName jet : jets)
+  {
+   IEntity plane = ACR_Supports.SpawnLocal(jet, ACR_Manager.Ground(Vector(500 + i * 40, 0, 500)) + "0 300 0", vector.Zero);
+   vector mins, maxs;
+   if (plane) plane.GetBounds(mins, maxs);
+   float length = maxs[0] - mins[0];
+   // a dedicated server builds no sound components: the engine is checked where a player hears it
+   bool engine = plane && (plane.FindComponent(SoundComponent) || !client);
+   if (plane && plane.GetVObject() && engine && Math.AbsFloat(length - lengths[i]) < 0.5 && maxs[1] - mins[1] < 5.5) good++;
+   sizes += string.Format(" %1 %2x%3x%4 sound %5", FilePath.StripPath(jet), length, maxs[1] - mins[1], maxs[2] - mins[2], engine);
+   if (plane) SCR_EntityHelper.DeleteEntityAndChildren(plane);
+  }
+  // where a player listens, a flyover 1 km off starts the engine loop
+  bool sounding = !client;
+  vector listener;
+  if (client && ACR_LocalFlyover.Listener(listener))
+  {
+   vector from = listener + "1000 400 0";
+   ACR_LocalFlyover.Start(ACR_ReconRun.RECON_JET_EAST, from, "0 0 1", 200, from[1], 2, true);
+   ACR_LocalFlyover flight = ACR_LocalFlyover.Latest();
+   // ...and, a turbojet, its scream (heard within 1.2 km)
+   sounding = flight && flight.m_bSounding && flight.m_hEngine != AudioHandle.Invalid && flight.m_hEngineFar != AudioHandle.Invalid && flight.m_hScream != AudioHandle.Invalid;
+  }
+  ACR_TestRegress.Check("aircraft: ACA's four jets load as models of their real length, nose along +X, with the engine loops the flyover starts (near, far, a turbojet's scream)", good == 4 && sounding, sizes + string.Format(", client %1, flyover sounding %2", client, sounding));
+
+  // Off by default (-acrPeriodJets, ACR_Aircraft): the defaults as before the jets (RHS's FA-18 or
+  // nothing), and a support row naming one of them doesn't fly it.
+  bool rhs = ACR_Supports.HasPrefab(ACR_Supports.FA18_FLYOVER);
+  ACR_Options.Set("acrPeriodJets", "0");
+  array<ref ACR_SupportEntry> westOff = {};
+  array<ref ACR_SupportEntry> eastOff = {};
+  ACR_Supports.BuildDefaults(westOff, "US");
+  ACR_Supports.BuildDefaults(eastOff, "USSR");
+  ResourceName expectBomb = "";
+  if (rhs) expectBomb = ACR_Supports.FA18_FLYOVER;
+  ACR_SupportEntry named = ACR_Supports.NewEntry(ACR_ESupportType.RECON_FLIGHT);
+  named.m_sReconPrefab = ACR_ReconRun.RECON_JET_EAST;
+  ResourceName westReconOff = ACR_ReconRun.ReconPrefab(null, "US");
+  ResourceName eastReconOff = ACR_ReconRun.ReconPrefab(named, "USSR");
+  bool off = !ACR_Aircraft.PeriodJetsOn() && BombJet(westOff) == expectBomb && BombJet(eastOff) == expectBomb && westReconOff == expectBomb && eastReconOff == "";
+  ACR_TestRegress.Check("aircraft: off by default, the recon flight and bomb run as before ACA's jets", off, string.Format("bomb %1 / %2, recon %3 / %4 (named), rhs %5", FilePath.StripPath(BombJet(westOff)), FilePath.StripPath(BombJet(eastOff)), FilePath.StripPath(westReconOff), FilePath.StripPath(eastReconOff), rhs));
+
+  ACR_Options.Set("acrPeriodJets", "1");
+  array<ref ACR_SupportEntry> west = {};
+  array<ref ACR_SupportEntry> east = {};
+  ACR_Supports.BuildDefaults(west, "US");
+  ACR_Supports.BuildDefaults(east, "USSR");
+  ResourceName westBomb = BombJet(west);
+  ResourceName eastBomb = BombJet(east);
+  bool bombs = westBomb == ACR_Supports.BOMB_JET_WEST && eastBomb == ACR_Supports.BOMB_JET_EAST;
+  if (rhs) bombs = westBomb == ACR_Supports.FA18_FLYOVER && eastBomb == ACR_Supports.FA18_FLYOVER;
+  ResourceName westRecon = ACR_ReconRun.ReconPrefab(null, "US");
+  ResourceName eastRecon = ACR_ReconRun.ReconPrefab(null, "USSR");
+  bool recon = westRecon == ACR_ReconRun.RECON_JET_WEST && eastRecon == ACR_ReconRun.RECON_JET_EAST;
+  ACR_Options.Unset("acrPeriodJets");
+  ACR_TestRegress.Check("aircraft: with -acrPeriodJets 1 each side flies its own recon and bomb-run jet", bombs && recon, string.Format("bomb %1 / %2, recon %3 / %4, rhs %5", FilePath.StripPath(westBomb), FilePath.StripPath(eastBomb), FilePath.StripPath(westRecon), FilePath.StripPath(eastRecon), rhs));
+ }
+
+ // An A-10 1 km off with one Snakeye landing 16 s in (a fall of ~9 s with its petals out): hung on its pylon
+ // at first (tick 4), let go and falling below it, nose down, short of the ground (tick 14, ~10 s in), gone
+ // once it has landed (tick 22).
+ // A dedicated server draws no bombs: checked where a player watches.
+ static void Drop(int tick)
+ {
+  if (tick == 4)
+  {
+   // stowed and opened: the Mk 82 Snakeye (shut, its blades at 15, 30 and 45 degrees, open), the OFAB-250ShN (brake chute streaming 3.9 m behind),
+   // and the FAB-250 M-62
+   array<ResourceName> names = {ACR_LocalFlyover.BOMB_MK82, ACR_FallingBomb.MK82_OPEN_15, ACR_FallingBomb.MK82_OPEN_30, ACR_FallingBomb.MK82_OPEN_45, ACR_FallingBomb.MK82_OPEN, ACR_LocalFlyover.BOMB_OFAB, ACR_FallingBomb.OFAB_OPEN, ACR_LocalFlyover.BOMB_FAB250};
+   array<float> lengths = {2.24, 2.24, 2.24, 2.24, 2.24, 1.99, 5.84, 1.96};
+   int good = 0;
+   string sizes = "";
+   foreach (int i, ResourceName name : names)
+   {
+    IEntity bomb = ACR_Supports.SpawnLocal(name, ACR_Manager.Ground(Vector(700 + i * 40, 0, 500)) + "0 300 0", vector.Zero);
+    vector mins, maxs;
+    if (bomb) bomb.GetBounds(mins, maxs);
+    if (bomb && bomb.GetVObject() && Math.AbsFloat(maxs[0] - mins[0] - lengths[i]) < 0.1) good++;
+    sizes += string.Format(" %1 %2 m", FilePath.StripPath(name), maxs[0] - mins[0]);
+    if (bomb) SCR_EntityHelper.DeleteEntityAndChildren(bomb);
+   }
+   ACR_TestRegress.Check("aircraft: the bombs load as models of their real length, shut and opened", good == names.Count(), sizes);
+  }
+  vector listener;
+  if (!GetGame().GetPlayerController() || !ACR_LocalFlyover.Listener(listener))
+  {
+   if (tick == 22) ACR_TestRegress.Check("bomb run: a bomb hangs on the jet, falls and lands on time", true, "no player here: nothing drawn");
+   return;
+  }
+  if (tick == 4)
+  {
+   vector from = listener + "1000 300 -1000";
+   vector dir = "0 0 1";
+   ACR_LocalFlyover.Start(ACR_Supports.BOMB_JET_WEST, from, dir, 200, from[1], 30, true);
+   s_Bomber = ACR_LocalFlyover.Latest();
+   if (!s_Bomber) return;
+   s_Bomber.AddBomb(from + dir * 3200, 16);
+   ACR_FallingBomb hung = s_Bomber.m_aBombs[0];
+   float off = -1;
+   if (hung.m_Body) off = vector.Distance(hung.m_Body.GetOrigin(), s_Bomber.m_Plane.GetOrigin());
+   s_sDrop = string.Format("hung %1 m from the jet's origin (on its pylon), falling %2; ", off, hung.m_bFalling);
+   if (!hung.m_Body || off < 1 || off > 6 || hung.m_bFalling) s_sDrop += "BAD ";
+   return;
+  }
+  if (!s_Bomber || s_Bomber.m_aBombs.IsEmpty())
+  {
+   if (tick == 22) ACR_TestRegress.Check("bomb run: a bomb hangs on the jet, falls and lands on time", false, s_sDrop + "the bomber went");
+   return;
+  }
+  ACR_FallingBomb bomb = s_Bomber.m_aBombs[0];
+  if (tick == 14)
+  {
+   float below = -1;
+   float above = -1;
+   float pitch = 0;
+   if (bomb.m_Body && s_Bomber.m_Plane)
+   {
+    vector at = bomb.m_Body.GetOrigin();
+    vector jet = s_Bomber.m_Plane.GetOrigin();
+    below = jet[1] - at[1];
+    above = at[1] - bomb.m_vImpact[1];
+    vector m[4];
+    bomb.m_Body.GetTransform(m);
+    vector nose = m[0];
+    pitch = nose[1];
+   }
+   // and its blades all the way open: shut, 15, 30, 45 degrees, then open
+   s_sDrop += string.Format("at ~10 s falling %1, %2 m below the jet, %3 m up, nose %4, stage %5 of %6; ", bomb.m_bFalling, below, above, pitch, bomb.m_iStage, ACR_FallingBomb.StageCount(bomb.m_sPrefab));
+   if (!bomb.m_bFalling || below < 20 || above < 1 || pitch > -0.05 || bomb.m_iStage != 4) s_sDrop += "BAD ";
+   return;
+  }
+  s_sDrop += string.Format("at ~18 s landed %1", bomb.m_bDone && !bomb.m_Body);
+  ACR_TestRegress.Check("bomb run: a bomb hangs on the jet, falls and lands on time", !s_sDrop.Contains("BAD") && bomb.m_bDone && !bomb.m_Body, s_sDrop);
+ }
+
+ static ResourceName BombJet(array<ref ACR_SupportEntry> entries)
+ {
+  foreach (ACR_SupportEntry entry : entries)
+   if (entry.m_eType == ACR_ESupportType.BOMB_RUN && entry.m_eBombRunDelivery == ACR_EBombRunDelivery.FLYOVER) return entry.m_sBombRunPrefab;
+  return "";
  }
 
  // Geometry, names, intercepts and the AI's use of them: no flight needed.
