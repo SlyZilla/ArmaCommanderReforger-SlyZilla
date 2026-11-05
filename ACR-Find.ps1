@@ -130,21 +130,28 @@ function Add-AIOCommandMenu([string]$addonsDir, [string]$addonList) {
 }
 
 # Civilians: Shadow Company Civil Population plus ACA's compat add-on (ACACivilPopulation,
-# AC230926CC000001, kept beside ACA). Offered only when both are installed.
+# AC230926CC000001): a copy beside ACA (development, ZIP) or its Workshop copy. Offered only
+# when both are installed.
 $script:SCCPId = 'BCE0D49568A9E6BF'
 $script:SCCPCompatId = 'AC230926CC000001'
-function Test-CivilPopulation {
+function Find-CivilPopulationCompat {
   $project = Join-Path (Split-Path $PSScriptRoot -Parent) 'ACACivilPopulation\addon.gproj'
-  if (!(Test-Path -LiteralPath $project)) { return $false }
-  if ((Get-Content -LiteralPath $project -Raw) -notmatch ('GUID\s+"' + $script:SCCPCompatId + '"')) { return $false }
+  if ((Test-Path -LiteralPath $project) -and (Get-Content -LiteralPath $project -Raw) -match ('GUID\s+"' + $script:SCCPCompatId + '"')) { return (Split-Path $project -Parent) }
+  return (Find-WorkshopMod $script:SCCPCompatId)
+}
+
+function Test-CivilPopulation {
+  if (!(Find-CivilPopulationCompat)) { return $false }
   return (Find-WorkshopMod $script:SCCPId) -ne ''
 }
 
 function Add-CivilPopulation([string]$addonsDir, [string]$addonList) {
   if (!(Test-CivilPopulation)) { return @($addonsDir, $addonList) }
-  $parent = Split-Path (Find-WorkshopMod $script:SCCPId) -Parent
   $dirs = @($addonsDir.Split(',') | Where-Object { $_ })
-  if (($dirs | ForEach-Object { $_.TrimEnd('\') }) -notcontains $parent.TrimEnd('\')) { $dirs += $parent }
+  foreach ($modDir in @((Find-WorkshopMod $script:SCCPId), (Find-CivilPopulationCompat))) {
+    $parent = Split-Path $modDir -Parent
+    if (($dirs | ForEach-Object { $_.TrimEnd('\') }) -notcontains $parent.TrimEnd('\')) { $dirs += $parent }
+  }
   foreach ($id in @($script:SCCPId, $script:SCCPCompatId)) { if (($addonList.Split(',')) -notcontains $id) { $addonList += ',' + $id } }
   Write-Host 'Civil Population and the ACA compat add-on: loading civilians.' -ForegroundColor DarkCyan
   return @(($dirs -join ','), $addonList)
