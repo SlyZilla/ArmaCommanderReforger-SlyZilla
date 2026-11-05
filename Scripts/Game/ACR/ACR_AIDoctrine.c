@@ -61,7 +61,7 @@ class ACR_AIDoctrine : Managed
  float m_fFobFront = 1500;      // m from the nearest deploy base before a front base wants a FOB
  float m_fFireBaseSeconds = 240; // s a base of fire supports before it joins the assault
  float m_fPocketScore = 2.5;    // x attack score of FIA pockets in the way (lower = sooner)
- // Strategy: an axis of advance (ACR_AILanes, -acrAIStrategy 0 turns it off)
+ // Strategy: an axis of advance (ACR_AILanes, only with -acrAIStrategy 1)
  bool m_bLanes = true;          // fights down a lane after the land-rush (Raider keeps raiding everywhere)
  float m_fRushMinutes = 6;      // min of opening land-rush (grabs anywhere) before it picks a lane
  float m_fLaneWidth = 700;      // m either side of the lane's axis

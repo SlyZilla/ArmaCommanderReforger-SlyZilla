@@ -388,9 +388,9 @@ the old doctrine until 10 points of new intel show the change ("the enemy comman
 tactics"), then work the new one out from scratch. `-acrDoctrineAdapt 0` (setup row AI doctrines adapt)
 keeps every commander on its first doctrine.
 
-#### AI commander strategy: lanes
+#### AI commander strategy: lanes (experimental, off by default)
 
-An AI commander no longer goes for every base at once. For the first few minutes of a match it
+With `-acrAIStrategy 1` an AI commander no longer goes for every base at once. For the first few minutes of a match it
 land-rushes the empty bases near it (6 minutes; Blitz 4, Fortress 5, Raider 8; over sooner when no empty
 base is in sight). Then it picks a **lane**: a corridor about 1.4 km wide (Blitz 1.1 km, Fortress
 1.6 km) from one of its front bases toward a base it doesn't hold at least 800 m away. Lanes are scored by
@@ -415,8 +415,8 @@ stalled objective's lanes score half for 15 minutes. Otherwise it keeps a lane f
 minutes and changes only to one that scores 1.3x better. Each pick is logged (`AI <faction>: main
 effort from A toward B`) and told to its own side's 2IC channel ("Main effort: from A toward B"), and
 the 2IC card leads with it. The enemy is never told: they work it out from their intel. Raider
-commanders don't use lanes. `-acrAIStrategy 0` turns lanes off (the commander plans base by base, as
-before).
+commanders don't use lanes. Lanes are off by default for now: without `-acrAIStrategy 1` the commander
+plans base by base, as before.
 
 #### Factions and mods
 
@@ -948,7 +948,7 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrDoctrineWest <doctrine>` / `-acrDoctrineEast <doctrine>` | The blue / red side AI commander's doctrine: `random`, `balanced`, `blitz`, `firepower`, `fortress` or `raider` (overrides `m_eAIDoctrine`; default random each match). The log names each side's pick (`AI commander <faction> doctrine:`) |
 | `-acrDoctrineAdapt 1` / `0` | AI commanders change doctrine when theirs isn't working (default on; see AI commander doctrines). Each review logs `AI commander <faction> doctrine review:` |
-| `-acrAIStrategy 1` / `0` | AI commanders fight down a lane after a short land-rush (default on; see AI commander strategy: lanes). `0`: they plan base by base, as before |
+| `-acrAIStrategy 1` / `0` | Experimental (off by default). `1`: AI commanders fight down a lane after a short land-rush (see AI commander strategy: lanes). `0`: they plan base by base, as before |
 | `-acrAIAllocator 0` / `1` / `2` | Experimental (off by default). `1`: after each AI commander strategy tick (15 s), a job allocator weighs the attacks, grabs, defence and holding jobs together and logs where it would assign squads differently (`ALLOC <faction>: would move ...` and a summary line; also in AC:A Think). It only observes: no orders change. `2`: the allocator gives out those jobs itself, in place of the commander's attack, grab, reserve and posting rules (defence orders and fire support still come from the commander's own rules first): an attack is valued by when its slowest squad arrives, squads only change job for a clearly better one, and an attack whose squads are worth more elsewhere is called off. For testing |
 | `-acrCompanyWest <company>` / `-acrCompanyEast <company>` | The blue / red side's company, its starting kit given at Start to an AI commander or a player side: `rifle` (default, no kit), `mechanized` (an APC or IFV in place of the starting truck), `weapons` (a mortar team and a forward observer team), `engineers` (two tier I Fortify positions at its front bases) or `recon` (two recon teams). A kit is bought at list price out of the side's starting RP. The setup screen's Economy tab has the same rows (Blue company / Red company). The log names each kit (`COMPANY KIT <side>:`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |

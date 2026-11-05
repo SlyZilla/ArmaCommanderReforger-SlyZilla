@@ -15,7 +15,8 @@
 // called off, or nothing in it it can muster for), or once held a while, a clearly better lane
 // opens. Defence and counterattacks come first, as before. The lane is told to its own side's 2IC
 // channel and nowhere else: the enemy works it out from its intel, as a player would.
-// -acrAIStrategy 0 turns it off (the commander from before). The geometry and scores here are pure
+// Experimental and off by default for one release (Jacob, 5 Nov): -acrAIStrategy 1 turns it on;
+// off is the commander from before. The geometry and scores here are pure
 // functions of positions, so ACR_TestLanes can check them without a world.
 class ACR_AILane : Managed
 {
@@ -59,8 +60,8 @@ class ACR_AILanes
  static const float POST_PULL = 2000;     // m an idle squad counts a front base in the lane as closer
  static const float RESERVE_PULL = 600;   // reserve score of an own base in or behind the lane
 
- // On unless the host turns it off (-acrAIStrategy 0).
- static bool On() { return ACR_LogisticsRules.Choice("acrAIStrategy", "1") != "0"; }
+ // Off unless the host turns it on (-acrAIStrategy 1): experimental for one release (Jacob, 5 Nov).
+ static bool On() { return ACR_LogisticsRules.Choice("acrAIStrategy", "0") == "1"; }
 
  // Metres along the axis from 'from' toward 'to' (negative behind 'from').
  static float Along(vector from, vector to, vector point)

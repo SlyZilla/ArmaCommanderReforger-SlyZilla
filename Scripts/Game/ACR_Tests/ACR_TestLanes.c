@@ -8,7 +8,10 @@ class ACR_TestLanes
   CheckGeometry();
   CheckScores();
   CheckDoctrines();
+  // Lanes are off by default (-acrAIStrategy 1 turns them on): the commander checks need them on.
+  ACR_Options.Set("acrAIStrategy", "1");
   CheckCommander(manager);
+  ACR_Options.Unset("acrAIStrategy");
  }
 
  static void CheckGeometry()
@@ -60,11 +63,13 @@ class ACR_TestLanes
   bool rush = ACR_AIDoctrine.Find("blitz").m_fRushMinutes < ACR_AIDoctrine.Find("balanced").m_fRushMinutes;
   ACR_TestRegress.Check("lanes: doctrines fight down a lane (Raider raids everywhere), Fortress guards flanks hardest", used && raider && fronts && works && rush, "");
 
-  bool onByDefault = ACR_AILanes.On();
+  bool offByDefault = !ACR_AILanes.On();
+  ACR_Options.Set("acrAIStrategy", "1");
+  bool on = ACR_AILanes.On();
   ACR_Options.Set("acrAIStrategy", "0");
   bool off = !ACR_AILanes.On();
   ACR_Options.Unset("acrAIStrategy");
-  ACR_TestRegress.Check("lanes: on by default, -acrAIStrategy 0 turns them off", onByDefault && off && ACR_AILanes.On(), "");
+  ACR_TestRegress.Check("lanes: off by default, -acrAIStrategy 1 turns them on", offByDefault && on && off && !ACR_AILanes.On(), "");
  }
 
  // On the test range: once the rush is over, a commander picks a lane from a base it holds toward
