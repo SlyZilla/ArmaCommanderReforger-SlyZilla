@@ -519,6 +519,12 @@ class ACR_Setup
    if (ACR_Options.Get("acrSeed", value) && value != "" && value != "0") return value;
    return "";
   }
+  // The 2IC is a flag: a bare -acr2IC is on (ACR_SquadAI.TwoIC), which the empty value would show as off.
+  if (key == "twoic")
+  {
+   if (ACR_Options.Flag("acr2IC")) return "1";
+   return "0";
+  }
   if (!ACR_Options.Get(Option(key), value)) value = "";
   value.ToLower();
   if (value == "")

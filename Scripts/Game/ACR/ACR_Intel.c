@@ -199,6 +199,7 @@ class ACR_Intel : Managed
   m_DoctrineIntel.Tick();
   float now = GetGame().GetWorld().GetWorldTime();
   // 1. Our AI squads' own perception.
+  bool identified = ACR_DefenceForecast.On();
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction || !squad.m_Group) continue;
@@ -215,11 +216,17 @@ class ACR_Intel : Managed
     // Identified enemies too: a target moves from DETECTED to ENEMY once it is made out, and intel read only the
     // first list, so a squad watching an enemy walk in gave one sighting and then none (forecastdefend, 4 Nov:
     // the contact aged to 81 s while the screen had him at 300 m). As ACR_Ambush reads them.
+    // Only with the defence forecast on for now (Jacob, 5 Nov: experimental features ship off): it
+    // changes threat counts, fire missions, the feed and the map for everyone, so it waits for an A/B.
     array<BaseTarget> targets = {};
-    utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.ENEMY);
-    array<BaseTarget> detected = {};
-    utility.m_PerceptionComponent.GetTargetsList(detected, ETargetCategory.DETECTED);
-    targets.InsertAll(detected);
+    if (identified)
+    {
+     utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.ENEMY);
+     array<BaseTarget> detected = {};
+     utility.m_PerceptionComponent.GetTargetsList(detected, ETargetCategory.DETECTED);
+     targets.InsertAll(detected);
+    }
+    else utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.DETECTED);
     foreach (BaseTarget target : targets)
     {
      if (!target || !RecentDetection(target.GetTimeSinceDetected())) continue;
