@@ -5,7 +5,7 @@
 // Start applies them (threat high reaches the game, starting units spawn).
 class ACR_TestSetup
 {
- static const int CHECKS = 25;
+ static const int CHECKS = 27;
  protected static int s_iStartedAt = -1;
 
  static bool Wanted() { return System.IsCLIParam("acrSetupTest"); }
@@ -82,6 +82,30 @@ class ACR_TestSetup
    }
    ACR_TestRegress.Check("setup: every row fits its button at every value", rowsChecked > 50 && tooLong == 0, string.Format("%1 rows checked, %2 over %3 characters: %4longest '%5' (%6)", rowsChecked, tooLong, ACR_Setup.ROW_CHARS, overLong, longestRow, longestRow.Length()));
    ACR_TestRegress.Check("setup: the map preview is on the first tab with the battlefield", ACR_SetupDialog.Tab("map") == 0 && ACR_SetupDialog.Tab("seed") == 0 && ACR_SetupDialog.Tab("layout") == 0 && rows.Contains("map\t") && rows.IndexOf("map\t") < rows.IndexOf("pockets\t"), "");
+   // The Experimental tab (5 Nov): every row there, off by default, drives its host option, and says
+   // what it does in at most two lines that fit under the rows.
+   array<string> experimental = {"strategy", "allocator", "forecast", "coveredfallback", "periodjets", "squadtactics", "pullover", "evadearmour", "fieldsoffire", "twoic"};
+   int expDriven;
+   int expHelped;
+   string expWrong;
+   foreach (string expKey : experimental)
+   {
+    string expOption = ACR_Setup.Option(expKey);
+    bool offFirst = ACR_Setup.Current(expKey) == "0" && ACR_SetupDialog.Tab(expKey) == 5 && rows.Contains(expKey + "\t");
+    ACR_Setup.SetValue(expKey, "1");
+    bool drives = expOption != "" && ACR_LogisticsRules.Choice(expOption, "0") == "1" && ACR_Setup.Current(expKey) == "1";
+    ACR_Options.Unset(expOption);
+    if (offFirst && drives) expDriven++;
+    else expWrong += expKey + " ";
+    array<string> helpLines = {};
+    ACR_Setup.Help(expKey).Split("\n", helpLines, true);
+    bool fits = helpLines.Count() >= 1 && helpLines.Count() <= 2;
+    foreach (string helpLine : helpLines) if (helpLine.Length() > 68) fits = false;
+    if (fits) expHelped++;
+    else expWrong += expKey + "(help) ";
+   }
+   ACR_TestRegress.Check("setup: the Experimental tab's rows start off and drive their host options", expDriven == experimental.Count(), expWrong);
+   ACR_TestRegress.Check("setup: every Experimental row says what it does in two short lines", expHelped == experimental.Count(), expWrong);
    ACR_MissionHeader logisticsHeader = new ACR_MissionHeader();
    logisticsHeader.m_sAcrDeployment = "military";
    logisticsHeader.m_sAcrReinforcement = "deployment";

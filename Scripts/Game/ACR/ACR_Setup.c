@@ -361,6 +361,23 @@ class ACR_Setup
   return key == "strategy" || key == "allocator" || key == "forecast" || key == "coveredfallback" || key == "periodjets" || key == "squadtactics" || key == "pullover" || key == "evadearmour" || key == "fieldsoffire" || key == "twoic";
  }
 
+ // What a row does, shown under the rows when it is pointed at or focused (ACR_SetupDialog.OnRowFocus).
+ // Two short lines at most: the text under the rows doesn't wrap.
+ static string Help(string key)
+ {
+  if (key == "strategy") return "After a short land-rush each AI commander picks one corridor\nand pushes down it: a main and a supporting attack, flanks after.";
+  if (key == "allocator") return "Weighs every attack, grab, defence and reserve job together.\nObserves: only logs what it would change. Gives out: it decides.";
+  if (key == "forecast") return "Reads intel to forecast where the next attack will come from.\nDefends on it: defenders and screens go first; 2IC warns players.";
+  if (key == "coveredfallback") return "A squad the AI pulls back under fire bounds back in covered\nhalves instead of going to ground in the open.";
+  if (key == "periodjets") return "Without RHS: recon flights and bomb runs show period jets\n(RF-4C, Su-17, A-10, Su-25) with engine sound and falling bombs.";
+  if (key == "squadtactics") return "AI squads use Better Battle Buddies' squad tactics (flank, bound,\nsearch) inside a base they attack or defend, never leaving it.";
+  if (key == "pullover") return "A squad told to get out on a road first has its driver pull\nonto the verge. Under fire it gets out where it stands.";
+  if (key == "evadearmour") return "An unarmed vehicle that sees an armed enemy vehicle drives 300 m\naway, then carries on. Needs Better Battle Buddies' setting on too.";
+  if (key == "fieldsoffire") return "Built guns, checkpoint posts and Fortify pieces clear the bushes\nround them and in front of a gun, the same on every screen.";
+  if (key == "twoic") return "On a side a player commands, the AI runs every squad nobody has\nclaimed: attacks, defence, grabs, roadblocks and minefields.";
+  return "";
+ }
+
  // The values a row cycles through ("" = the scenario's default).
  static array<string> Values(string key)
  {
@@ -1021,6 +1038,8 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  protected ref map<SCR_ButtonBaseComponent, string> m_Keys = new map<SCR_ButtonBaseComponent, string>();
  protected Widget m_wTabs;
  protected Widget m_wRows;
+ protected TextWidget m_wHint; // the Experimental tab's line saying what the pointed-at row does
+ protected string m_sHintKey;  // the row it describes: a click rebuilds the rows, the line stays
  protected int m_iTab;
  protected int m_iPage;
  protected int m_iPages = 1;
@@ -1152,6 +1171,13 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   int first = m_iPage * perPage;
   for (int i = first; i < keys.Count() && i < first + perPage; i++) AddButton(m_wRows, keys[i], texts[i]);
   foreach (string about : abouts) AddText(m_wRows, about);
+  m_wHint = null;
+  if (m_iTab == 5)
+  {
+   string hint = ACR_Setup.Help(m_sHintKey);
+   if (hint.IsEmpty()) hint = HINT_IDLE;
+   m_wHint = AddText(m_wRows, hint);
+  }
   if (m_iPages > 1)
   {
    string more = string.Format("More settings (page %1 of %2)...", m_iPage + 1, m_iPages);
@@ -1174,12 +1200,28 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   return false;
  }
 
- protected void AddText(Widget parent, string text)
+ protected TextWidget AddText(Widget parent, string text)
  {
   TextWidget widget = TextWidget.Cast(GetGame().GetWorkspace().CreateWidgets(LAYOUT_TEXT, parent));
-  if (!widget) return;
+  if (!widget) return null;
   AlignableSlot.SetPadding(widget, 8, 4, 2, 0);
   widget.SetText(text);
+  return widget;
+ }
+
+ protected static const string HINT_IDLE = "These ship switched off until they have been played.\nPoint at a row to see what it does.";
+
+ // A row pointed at (a mouse over it focuses it) or reached with a pad: say what it does.
+ protected void OnRowFocus(Widget w)
+ {
+  if (!m_wHint || !w) return;
+  SCR_ButtonBaseComponent button = SCR_ButtonBaseComponent.Cast(w.FindHandler(SCR_ButtonBaseComponent));
+  string key;
+  if (!button || !m_Keys.Find(button, key)) return;
+  string help = ACR_Setup.Help(key);
+  if (help.IsEmpty()) return;
+  m_sHintKey = key;
+  m_wHint.SetText(help);
  }
 
  protected SCR_ButtonTextComponent AddButton(Widget parent, string key, string text, bool fill = false)
@@ -1198,6 +1240,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   Widget border = widget.FindAnyWidget("Border");
   if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
   button.m_OnClicked.Insert(OnRow);
+  button.m_OnFocus.Insert(OnRowFocus);
   m_Keys.Set(button, key);
   return button;
  }
