@@ -117,7 +117,7 @@ class ACR_TestHarness : Managed
  static const int MODE_MAPDECLUTTERSHOTS = 132; // the calm command map in a game client (screenshots)
  static const int MODE_RBLANE = 125; // 117: map-polygon-guard
  static const int MODE_FORECASTATTACK = 252; // the defence forecast against a scripted attack (ACR_TestForecastAttack)
- static const int MODE_FORECASTDEFEND = 251; // defence step 2 end to end: screen, forecast, defenders (ACR_TestForecastDefend)
+ static const int MODE_FORECASTDEFEND = 253; // defence step 2 end to end: screen, forecast, defenders (ACR_TestForecastDefend)
  static const int MODE_QRF = 57; // 52 / 53 / 55 / 56: Fortify / roadblocks / patrol / ambush
  static const int MODE_HELIDOWN = 141; // a helicopter crippled in the air comes down
  static const int MODE_FIELDROUTES = 164; // foot squads off the roads, over bridges (3 Nov)
