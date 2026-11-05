@@ -355,6 +355,12 @@ class ACR_Setup
   return key;
  }
 
+ // The Experimental tab's rows: off by default, on/off unless Values says more.
+ static bool Experimental(string key)
+ {
+  return key == "strategy" || key == "allocator" || key == "forecast" || key == "coveredfallback" || key == "periodjets" || key == "squadtactics" || key == "pullover" || key == "evadearmour" || key == "fieldsoffire" || key == "twoic";
+ }
+
  // The values a row cycles through ("" = the scenario's default).
  static array<string> Values(string key)
  {
@@ -1065,14 +1071,8 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   if (key == "pricing" || key == "startrp" || key == "income" || key == "companywest" || key == "companyeast") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
   if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks") return 4;
-  if (Experimental(key)) return 5;
+  if (ACR_Setup.Experimental(key)) return 5;
   return 0;
- }
-
- // The Experimental tab's rows: off by default, on/off unless Values says more.
- static bool Experimental(string key)
- {
-  return key == "strategy" || key == "allocator" || key == "forecast" || key == "coveredfallback" || key == "periodjets" || key == "squadtactics" || key == "pullover" || key == "evadearmour" || key == "fieldsoffire" || key == "twoic";
  }
 
  // "US vs USSR, generated, whole map, seed 123": the main choices, seen from every tab.
