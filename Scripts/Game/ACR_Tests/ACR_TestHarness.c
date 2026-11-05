@@ -102,6 +102,7 @@ class ACR_TestHarness : Managed
  static const int MODE_RIDECARRY = 87; // 80-86: the playtest branches, the 2IC and a LAV fix
  static const int MODE_CAPSCALE = 61; // 52-60: Fortify, roadblocks, patrol, ambush, QRF, FOB AI, defenders, budget (own branches)
  static const int MODE_DOCTRINEKITS = 80; // 73-79: the playtest branches
+ static const int MODE_CIVILIANS = 171; // the civilian socket (Civil Population compat)
  static const int MODE_GRABS = 77; // 69-76: the playtest branches
  static const int MODE_MORTARSPOT = 78; // 69-77: the playtest branches
  static const int MODE_TWOICUI = 82; // 79-81: the playtest branches
@@ -189,6 +190,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrMortarTest", flag)) mode = MODE_MORTAR;
   if (System.GetCLIParam("acrBatteryTest", flag)) mode = MODE_BATTERY;
   if (System.GetCLIParam("acrBlastTest", flag) || System.GetCLIParam("acrBlastOldTest", flag)) mode = MODE_BLAST;
+  if (System.GetCLIParam("acrCivilianTest", flag)) mode = MODE_CIVILIANS;
   if (System.GetCLIParam("acrMotorizedTest", flag)) mode = MODE_MOTORIZED;
   if (System.GetCLIParam("acrFireTest", flag)) mode = MODE_FIRE;
   if (System.GetCLIParam("acrFactionTest", flag)) mode = MODE_FACTIONS;
@@ -372,6 +374,7 @@ class ACR_TestHarness : Managed
    return;
   }
   if (m_Mode == MODE_BLAST) { ACR_TestBlast.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_CIVILIANS) { ACR_TestCivilians.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MOTORIZED) { ACR_TestMotorized.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FIRE) { ACR_TestFire.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_FACTIONS) { ACR_TestFactionPairs.Run(m_Ticks); return; }
