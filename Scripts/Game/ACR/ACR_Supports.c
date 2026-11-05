@@ -332,6 +332,9 @@ class ACR_LocalFlyover : Managed
 	float m_fStartedAt;
 	float m_fSeconds;
 	vector m_vAxes[3];
+	// AC: Actual's period jets on (the server's -acrPeriodJets, ACR_Aircraft): the engine loops, pass-bys,
+	// hung and falling bombs below. Off, the flyover is as before them: a model moved along the track.
+	bool m_bPeriodJets;
 	SoundComponent m_Sound;
 	bool m_bSounding;
 	bool m_bSoundingNear;
@@ -394,6 +397,7 @@ class ACR_LocalFlyover : Managed
 	// go when a fall from the jet's height takes it there on time.
 	void AddBomb(vector impact, float impactAt)
 	{
+		if (!m_bPeriodJets) return;
 		ACR_FallingBomb bomb = new ACR_FallingBomb();
 		bomb.m_vImpact = impact;
 		bomb.m_vImpact[1] = GetGame().GetWorld().GetSurfaceY(impact[0], impact[2]);
@@ -511,7 +515,7 @@ class ACR_LocalFlyover : Managed
 		m_aBombs.Clear();
 	}
 
-	static void Start(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds)
+	static void Start(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds, bool periodJets = false)
 	{
 		IEntity plane = ACR_Supports.SpawnLocal(prefab, start, vector.Zero);
 		if (!plane)
@@ -527,12 +531,16 @@ class ACR_LocalFlyover : Managed
 		flyover.m_fAltitude = altitude;
 		flyover.m_fSeconds = seconds;
 		flyover.m_fStartedAt = GetGame().GetWorld().GetWorldTime();
-		flyover.m_Sound = SoundComponent.Cast(plane.FindComponent(SoundComponent));
-		flyover.m_bScreams = prefab == ACR_ReconRun.RECON_JET_WEST || prefab == ACR_ReconRun.RECON_JET_EAST || prefab == ACR_Supports.BOMB_JET_EAST;
-		flyover.m_bFlybys = flyover.m_bScreams || prefab == ACR_Supports.BOMB_JET_WEST;
 		flyover.m_aHardpoints = {};
 		flyover.m_aBombs = {};
-		flyover.m_sBomb = Hardpoints(prefab, flyover.m_aHardpoints);
+		flyover.m_bPeriodJets = periodJets;
+		if (periodJets)
+		{
+			flyover.m_Sound = SoundComponent.Cast(plane.FindComponent(SoundComponent));
+			flyover.m_bScreams = prefab == ACR_ReconRun.RECON_JET_WEST || prefab == ACR_ReconRun.RECON_JET_EAST || prefab == ACR_Supports.BOMB_JET_EAST;
+			flyover.m_bFlybys = flyover.m_bScreams || prefab == ACR_Supports.BOMB_JET_WEST;
+			flyover.m_sBomb = Hardpoints(prefab, flyover.m_aHardpoints);
+		}
 		flyover.Orient();
 		s_All.Insert(flyover);
 		s_iStarted++;
@@ -663,6 +671,22 @@ class ACR_LocalFlyover : Managed
 		transform[2] = m_vAxes[2];
 		transform[3] = position;
 		m_Plane.SetTransform(transform);
+		if (!m_bPeriodJets)
+		{
+			// As before AC: Actual's period jets. The configured route ends 2.5 km beyond the target, but
+			// listeners farther downrange can still be inside RHS's 1.5 km sound range. Let the plane leave
+			// that range locally before deleting it, so entity cleanup does not cut the engine loop off mid-tail.
+			if (elapsed <= m_fSeconds) return;
+			PlayerController controller = GetGame().GetPlayerController();
+			IEntity hearer = null;
+			if (controller) hearer = controller.GetControlledEntity();
+			if (hearer && vector.DistanceXZ(hearer.GetOrigin(), position) <= 1800) return;
+			GetGame().GetCallqueue().Remove(Step);
+			SCR_EntityHelper.DeleteEntityAndChildren(m_Plane);
+			m_Plane = null;
+			s_All.RemoveItem(this);
+			return;
+		}
 		// moves its bounds in the scene too: without it the jet was culled as if still where it
 		// spawned, 5 km off, and never drawn overhead (Jacob, 4 Nov), and its sound sat astray
 		m_Plane.Update();
@@ -2262,13 +2286,15 @@ class ACR_Supports : Managed
    entry.m_iCooldown = -1;
    entry.Resolve();
    // With RHS loaded, both sides' bomb run is an audible FA-18 flyover (Jacob, 9 Oct);
-   // without it, the side's own 1989 jet flies over the blasts (A-10A / Su-25).
+   // without it, the side's own 1989 jet flies over the blasts (A-10A / Su-25), only with
+   // AC: Actual's period jets on (-acrPeriodJets 1, ACR_Aircraft): off, VIRTUAL as before them.
    if (type == ACR_ESupportType.BOMB_RUN)
    {
     ResourceName jet = BOMB_JET_EAST;
     if (IsWestern(factionKey)) jet = BOMB_JET_WEST;
+    if (!ACR_Aircraft.PeriodJetsOn()) jet = "";
     if (HasPrefab(FA18_FLYOVER)) jet = FA18_FLYOVER;
-    if (HasPrefab(jet))
+    if (!jet.IsEmpty() && HasPrefab(jet))
     {
      entry.m_eBombRunDelivery = ACR_EBombRunDelivery.FLYOVER;
      entry.m_sBombRunPrefab = jet;
@@ -2565,6 +2591,8 @@ class ACR_Supports : Managed
 
   vector start;
   float flyAltitude;
+  // AC: Actual's period jets (ACR_Aircraft): their falling bombs, and blasts timed by the bombs' fall
+  bool periodJets = ACR_Aircraft.PeriodJetsOn();
   if (entry.m_eBombRunDelivery == ACR_EBombRunDelivery.FLYOVER)
   {
    Resource resource = Resource.Load(entry.m_sBombRunPrefab);
@@ -2586,10 +2614,14 @@ class ACR_Supports : Managed
    start[1] = altitude;
    flyAltitude = altitude;
    float seconds = delay + 2500 / speed;
-   SCR_BaseGameMode mode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
-   if (mode) mode.ACR_BroadcastFlyover(entry.m_sBombRunPrefab, start, flat, speed, altitude, seconds);
-   if (GetGame().GetPlayerController()) ACR_LocalFlyover.Start(entry.m_sBombRunPrefab, start, flat, speed, altitude, seconds);
-   PrintFormat("[ACR] SUPPORT flyover %1 at %2 m (%3 m over the target), %4 m/s", FilePath.StripPath(entry.m_sBombRunPrefab), Math.Round(altitude), Math.Round(altitude - target[1]), speed);
+   if (ACR_Aircraft.MayFly(entry.m_sBombRunPrefab))
+   {
+    SCR_BaseGameMode mode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+    if (mode) mode.ACR_BroadcastFlyover(entry.m_sBombRunPrefab, start, flat, speed, altitude, seconds, periodJets);
+    if (GetGame().GetPlayerController()) ACR_LocalFlyover.Start(entry.m_sBombRunPrefab, start, flat, speed, altitude, seconds, periodJets);
+    PrintFormat("[ACR] SUPPORT flyover %1 at %2 m (%3 m over the target), %4 m/s", FilePath.StripPath(entry.m_sBombRunPrefab), Math.Round(altitude), Math.Round(altitude - target[1]), speed);
+   }
+   else PrintFormat("[ACR] SUPPORT flyover %1 not flown: AC: Actual's period jets are off (-acrPeriodJets)", FilePath.StripPath(entry.m_sBombRunPrefab));
   }
 
   int count = Math.Clamp(entry.m_iBombRunBombs, 1, 12);
@@ -2613,13 +2645,16 @@ class ACR_Supports : Managed
    if (entry.m_eBombRunDelivery == ACR_EBombRunDelivery.FLYOVER)
    {
     impactDelay = Math.Max(0, delay * 1000 + Math.Round(along / Math.Clamp(entry.m_fBombRunSpeed, 20, 400) * 1000));
-    float dropHeight = flyAltitude - ACR_FallingBomb.PYLON_DROP - GetGame().GetWorld().GetSurfaceY(impact[0], impact[2]);
-    impactDelay += Math.Round(ACR_FallingBomb.Lag(dropped, dropHeight, Math.Clamp(entry.m_fBombRunSpeed, 20, 400)) * 1000);
-    // every machine's jet carries this bomb and lets it go to land here on time (ACR_FallingBomb)
-    SCR_BaseGameMode bombMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
-    if (bombMode) bombMode.ACR_BroadcastFlyoverBomb(start, impact, impactDelay / 1000.0);
-    ACR_LocalFlyover flight = ACR_LocalFlyover.Find(start);
-    if (GetGame().GetPlayerController() && flight) flight.AddBomb(impact, impactDelay / 1000.0);
+    if (periodJets)
+    {
+     float dropHeight = flyAltitude - ACR_FallingBomb.PYLON_DROP - GetGame().GetWorld().GetSurfaceY(impact[0], impact[2]);
+     impactDelay += Math.Round(ACR_FallingBomb.Lag(dropped, dropHeight, Math.Clamp(entry.m_fBombRunSpeed, 20, 400)) * 1000);
+     // every machine's jet carries this bomb and lets it go to land here on time (ACR_FallingBomb)
+     SCR_BaseGameMode bombMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+     if (bombMode) bombMode.ACR_BroadcastFlyoverBomb(start, impact, impactDelay / 1000.0);
+     ACR_LocalFlyover flight = ACR_LocalFlyover.Find(start);
+     if (GetGame().GetPlayerController() && flight) flight.AddBomb(impact, impactDelay / 1000.0);
+    }
    }
    GetGame().GetCallqueue().CallLater(Explode, impactDelay, false, impact);
   }
@@ -3187,16 +3222,17 @@ modded class SCR_BaseGameMode
  {
   ACR_Supports.LaunchLocal(projectile, dir, parentVelocity);
  }
- void ACR_BroadcastFlyover(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds)
+ // periodJets: the server's -acrPeriodJets (ACR_Aircraft), which a client can't read itself.
+ void ACR_BroadcastFlyover(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds, bool periodJets)
  {
-  Rpc(ACR_RpcFlyover, prefab, start, dir, speed, altitude, seconds);
+  Rpc(ACR_RpcFlyover, prefab, start, dir, speed, altitude, seconds, periodJets);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
- protected void ACR_RpcFlyover(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds)
+ protected void ACR_RpcFlyover(ResourceName prefab, vector start, vector dir, float speed, float altitude, float seconds, bool periodJets)
  {
   if (Replication.IsServer()) return;
   PrintFormat("[ACR] FLYOVER RPC received prefab=%1 at=%2", prefab, start);
-  ACR_LocalFlyover.Start(prefab, start, dir, speed, altitude, seconds);
+  ACR_LocalFlyover.Start(prefab, start, dir, speed, altitude, seconds, periodJets);
  }
  void ACR_BroadcastFlyoverBomb(vector start, vector impact, float impactAt)
  {

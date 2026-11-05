@@ -124,7 +124,7 @@ class ACR_TestFlyDemo
   float altitude = GetGame().GetWorld().GetSurfaceY(centre[0], centre[2]) + 80;
   vector start = centre - right * (SPEED * 5);
   start[1] = altitude;
-  ACR_LocalFlyover.Start(ACR_Supports.BOMB_JET_WEST, start, right, SPEED, altitude, 8);
+  ACR_LocalFlyover.Start(ACR_Supports.BOMB_JET_WEST, start, right, SPEED, altitude, 8, true);
  }
 
  // A bomb run across the character's front: four bombs 28 m apart around a spot BOMB_AHEAD ahead, each with
@@ -145,7 +145,7 @@ class ACR_TestFlyDemo
   float altitude = target[1] + BOMB_HEIGHT;
   vector start = target - right * (SPEED * BOMB_LEAD_S);
   start[1] = altitude;
-  ACR_LocalFlyover.Start(jets[index], start, right, SPEED, altitude, BOMB_LEAD_S + 2500 / SPEED);
+  ACR_LocalFlyover.Start(jets[index], start, right, SPEED, altitude, BOMB_LEAD_S + 2500 / SPEED, true);
   ACR_LocalFlyover bomber = ACR_LocalFlyover.Latest();
   s_Bombers.Insert(bomber);
   int hung = 0;
@@ -210,7 +210,7 @@ class ACR_TestFlyDemo
   float altitude = GetGame().GetWorld().GetSurfaceY(over[0], over[2]) + HEIGHT;
   vector start = over - dir * (SPEED * LEAD_S);
   start[1] = altitude;
-  ACR_LocalFlyover.Start(jets[index], start, dir, SPEED, altitude, LEAD_S + 2500 / SPEED);
+  ACR_LocalFlyover.Start(jets[index], start, dir, SPEED, altitude, LEAD_S + 2500 / SPEED, true);
   s_Flights.Insert(ACR_LocalFlyover.Latest());
   s_Closest.Insert(1000000);
   PrintFormat("[ACR] FLYDEMO %1 over %2 in %3 s, heading %4", FilePath.StripPath(jets[index]), over, LEAD_S, index * 70);

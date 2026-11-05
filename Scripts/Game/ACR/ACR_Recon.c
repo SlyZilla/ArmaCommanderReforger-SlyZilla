@@ -18,8 +18,8 @@
 // flies its own copy of a prefab along the track (ACR_LocalFlyover, as the bomb run); the prefab
 // carries its own engine sound (a looping sound component, as RHS's FA-18 does). ReconPrefab picks
 // it: the support entry's m_sReconPrefab, else RECON_JET_WEST / RECON_JET_EAST (ACA's own jets: the
-// RF-4C and the Su-17M4R, blockouts with synthesised engine loops), else RHS's FA-18 for a western side. With none
-// the flight is unseen and unheard but still works.
+// RF-4C and the Su-17M4R, blockouts with synthesised engine loops; only with -acrPeriodJets 1, ACR_Aircraft),
+// else RHS's FA-18 for a western side. With none the flight is unseen and unheard but still works.
 //
 // Radio intercept: when a side's soldiers radio a contact report or an observer calls a fire
 // mission, each hostile side may (INTERCEPT_CHANCE) pick up the transmission: a pale ring of
@@ -90,11 +90,11 @@ class ACR_ReconRun : ACR_SupportRun
  // The plane model for a side's recon flight ("" = none: the flight is unseen).
  static ResourceName ReconPrefab(ACR_SupportEntry entry, string factionKey)
  {
-  if (entry && !entry.m_sReconPrefab.IsEmpty() && ACR_Supports.HasPrefab(entry.m_sReconPrefab)) return entry.m_sReconPrefab;
+  if (entry && !entry.m_sReconPrefab.IsEmpty() && ACR_Supports.HasPrefab(entry.m_sReconPrefab) && ACR_Aircraft.MayFly(entry.m_sReconPrefab)) return entry.m_sReconPrefab;
   bool west = ACR_Supports.IsWestern(factionKey);
   ResourceName own = RECON_JET_EAST;
   if (west) own = RECON_JET_WEST;
-  if (!own.IsEmpty() && ACR_Supports.HasPrefab(own)) return own;
+  if (ACR_Aircraft.PeriodJetsOn() && !own.IsEmpty() && ACR_Supports.HasPrefab(own)) return own;
   // RHS's FA-18 (the bomb run's flyover) for a western side only: no Soviet flies a Hornet.
   if (west && ACR_Supports.HasPrefab(ACR_Supports.FA18_FLYOVER)) return ACR_Supports.FA18_FLYOVER;
   return "";
@@ -125,8 +125,9 @@ class ACR_ReconRun : ACR_SupportRun
    start[1] = altitude;
    float seconds = DELAY_S + 2500 / SPEED;
    SCR_BaseGameMode mode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
-   if (mode) mode.ACR_BroadcastFlyover(prefab, start, m_Dir, SPEED, altitude, seconds);
-   if (GetGame().GetPlayerController()) ACR_LocalFlyover.Start(prefab, start, m_Dir, SPEED, altitude, seconds);
+   bool periodJets = ACR_Aircraft.PeriodJetsOn();
+   if (mode) mode.ACR_BroadcastFlyover(prefab, start, m_Dir, SPEED, altitude, seconds, periodJets);
+   if (GetGame().GetPlayerController()) ACR_LocalFlyover.Start(prefab, start, m_Dir, SPEED, altitude, seconds, periodJets);
   }
   PrintFormat("[ACR] RECON %1 flight over %2 heading %3, model %4", factionKey, target, Math.Round(ACR_Intel.Bearing(Vector(0, 0, 0), m_Dir)), FilePath.StripPath(prefab));
   return DELAY_S;
