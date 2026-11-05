@@ -244,7 +244,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrGarrisonStuckTest", flag)) { mode = MODE_GARRISON; ACR_TestGarrison.s_bOffice = true; ACR_TestGarrison.s_bStuck = true; }
   if (System.GetCLIParam("acrStructuresTest", flag)) mode = MODE_STRUCTURES;
   if (System.GetCLIParam("acrCrewTest", flag) || System.GetCLIParam("acrCrewOldTest", flag)) mode = MODE_CREW;
-  if (System.GetCLIParam("acrMannersTest", flag) || System.GetCLIParam("acrMannersGetOutTest", flag)) mode = MODE_MANNERS;
+  if (System.GetCLIParam("acrMannersTest", flag) || System.GetCLIParam("acrMannersGetOutTest", flag) || System.GetCLIParam("acrMannersEvadeTest", flag)) mode = MODE_MANNERS;
   if (System.GetCLIParam("acrFieldsOfFireTest", flag)) mode = MODE_FIELDSOFFIRE;
   if (System.GetCLIParam("acrGetOutTest", flag) || System.GetCLIParam("acrGetOutOldTest", flag)) mode = MODE_GETOUT;
   if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag) || System.GetCLIParam("acrDriveFixedTest", flag) || System.GetCLIParam("acrDriveAttachedTest", flag)) mode = MODE_DRIVE;
