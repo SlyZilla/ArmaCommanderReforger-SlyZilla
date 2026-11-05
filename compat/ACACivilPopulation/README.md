@@ -9,11 +9,13 @@ Arma Commander Actual (AC230926A0010001). Load it with both mods; each mod runs 
 - A civilian killed by a side's fire shows in that side's command feed ("Civilian killed by our
   fire near <base>"). The other side isn't told.
 
-## Trying it (experimental branch `feature/civilians`, not released)
+## Trying it (experimental)
 
-1. Check out `feature/civilians` of ArmaCommanderReforger (it has the socket this add-on plugs into).
-2. Copy this `ACACivilPopulation` folder into your Workbench addons folder, beside `ArmaCommanderReforger`.
-3. Subscribe to Civil Population on the Workshop (or have it in `E:\ArmaReforgerMods\addons`).
-4. Play-ACA / Host-ACA / Join-ACA now show a "Civilians" row; set it to yes. Everyone in an MP game needs the same.
+ACA has the socket this add-on plugs into from 0.5.9; without this add-on it does nothing.
+
+1. Copy this `ACACivilPopulation` folder into your Workbench addons folder, beside `ArmaCommanderReforger`
+   (the launchers look for it there; ACA's own release builds leave `compat/` out).
+2. Subscribe to Civil Population on the Workshop (or have it in `E:\ArmaReforgerMods\addons`).
+3. Play-ACA / Host-ACA / Join-ACA now show a "Civilians" row; set it to yes. Everyone in an MP game needs the same.
 
 Known gaps: kills by ACA bomb runs and artillery aren't reported (those blasts have no instigator).
