@@ -165,6 +165,7 @@ twoicask|-acrTwoICAskTest 1|300
 twoicsuggest|-acrTwoICSuggestTest 1|200
 twoicshots|-acrTwoICShotsTest 1|240
 twoicdeclutter|-acrTwoICDeclutterTest 1|120
+twoicall|-acrTwoICAllTest 1|260
 ridelav|-acrRideLavTest 1|400
 ridelavkill|-acrRideLavKillTest 1|400
 ridelavgetout|-acrRideLavGetOutTest 1|400

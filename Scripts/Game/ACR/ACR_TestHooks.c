@@ -29,6 +29,8 @@ class ACR_TestHooks
  string AIDoctrine(string factionKey) { return ""; }
  // Side a test's player deploys on without the deploy screen ("west" / "east"), "" = the menu.
  string AutoDeploySide() { return ""; }
+ // A side a test says a player commands (ACR_SquadAI.RunsAll): a server test has no players.
+ bool PlayerCommandsForTest(string factionKey) { return false; }
  // Build the test classes' statics (ACR_StaticInit, at game creation).
  void InitStatics() {}
 }
