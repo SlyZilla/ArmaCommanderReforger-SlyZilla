@@ -53,6 +53,7 @@ fieldbridges|-acrFieldBridgesTest 1|120|Worlds/ACR_Everon.ent
 fieldbridgeswz|-acrFieldBridgesTest 1|150|Worlds/ACR_WestZagoria.ent
 manners|-acrMannersTest 1|540
 mannersgetout|-acrMannersGetOutTest 1|150
+mannersevade|-acrMannersEvadeTest 1|200
 fieldsoffire|-acrFieldsOfFireTest 1|120
 crewold|-acrCrewOldTest 1|120
 bbbaim|-acrBbbAimTest 1|3000
