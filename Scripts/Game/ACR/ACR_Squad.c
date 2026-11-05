@@ -566,6 +566,16 @@ class ACR_Squad : Managed
  int m_iOrderedBy;
  float m_fOrderedAt;
  float m_fOrderRadius = -1;
+ // A fall-back the AI commander ordered (ACR_AICommander.FallBack): where to. It stands while the
+ // order does (any newer order ends it). Under fire BBB bounds the squad back in covered halves
+ // (ACR_BBBHooks.IntentOf: WITHDRAW); WatchFallBack forces the move if that gets nowhere.
+ vector m_vFallBackTo;
+ int m_iFallBackSerial = -1;
+ protected float m_fFallBackCheckAt;
+ protected float m_fFallBackDist;
+ protected bool m_bFallBackPushed;
+ static const float FALLBACK_CHECK_MS = 30000;
+ static const float FALLBACK_MIN_GAIN_M = 10;
  float m_fContactLogged;
  protected float m_fLastContactTime = -1;
 
@@ -2509,9 +2519,10 @@ class ACR_Squad : Managed
   Cohesion(now, contact);
   RecoverMovementWaypoint(now);
   ReportUnreachable();
+  bool runningBack = WatchFallBack(now, contact);
   bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
   // (not after a Halt: m_Waypoint is gone then, and the old order must not come back)
-  if (m_bForced && movingOrder && contact && m_Waypoint && !IsMounted() && !m_bRegrouping)
+  if (m_bForced && movingOrder && contact && m_Waypoint && !IsMounted() && !m_bRegrouping && !runningBack)
   {
    ACR_EMoveMode mode = m_Mode;
    m_Mode = ACR_EMoveMode.COMBAT;
@@ -2678,6 +2689,58 @@ class ACR_Squad : Managed
  {
   string value;
   if (System.GetCLIParam("acrNoRoadHops", value)) return value != "0";
+  return true;
+ }
+
+ // Covered fall-back is experimental and off by default (Jacob, 5 Nov): -acrCoveredFallBack 1.
+ static bool CoveredFallBackOn() { return ACR_LogisticsRules.Choice("acrCoveredFallBack", "0") == "1"; }
+
+ // The order just given is the AI commander's fall-back to this point (call after issuing it).
+ void MarkFallBack(vector to)
+ {
+  m_vFallBackTo = to;
+  m_iFallBackSerial = m_iOrderSerial;
+  m_fFallBackCheckAt = 0;
+  m_bFallBackPushed = false;
+ }
+
+ bool FallingBack(out vector to)
+ {
+  if (m_iFallBackSerial < 0 || m_iFallBackSerial != m_iOrderSerial) return false;
+  to = m_vFallBackTo;
+  return true;
+ }
+
+ // A covered fall-back that isn't getting back (BBB's bounds stalled, or never started because the
+ // squad sees nobody while the enemy still fires): every 30 s in contact, under 10 m gained toward
+ // the spot forces the order and the squad runs for it (Jacob, 4 Nov: a screen must not lie prone in
+ // the open). True while that run stands: the order is not re-issued at combat level in contact.
+ protected bool WatchFallBack(float now, bool contact)
+ {
+  vector to;
+  if (!FallingBack(to) || !BBB_Morale.OrderedOn()) return false;
+  if (m_bFallBackPushed) return true;
+  IEntity anchor = GetAnchor();
+  if (!anchor || !contact || IsMounted() || !m_Waypoint)
+  {
+   m_fFallBackCheckAt = 0;
+   return false;
+  }
+  float dist = vector.DistanceXZ(anchor.GetOrigin(), to);
+  if (m_fFallBackCheckAt <= 0 || now < m_fFallBackCheckAt - FALLBACK_CHECK_MS)
+  {
+   m_fFallBackCheckAt = now + FALLBACK_CHECK_MS;
+   m_fFallBackDist = dist;
+   return false;
+  }
+  if (now < m_fFallBackCheckAt) return false;
+  float gained = m_fFallBackDist - dist;
+  m_fFallBackCheckAt = now + FALLBACK_CHECK_MS;
+  m_fFallBackDist = dist;
+  if (gained >= FALLBACK_MIN_GAIN_M || dist <= 30) return false;
+  m_bFallBackPushed = true;
+  IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, true);
+  PrintFormat("[ACR] TACTICS %1: falling back under fire, %2 m gained in 30 s: running for it (%3 m to go)", m_Name, Math.Round(gained), Math.Round(dist));
   return true;
  }
 

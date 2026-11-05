@@ -258,6 +258,9 @@ class ACR_BBBHooks : BBB_Hooks
  // off for our squads and fire and manoeuvre keeps the old policy: PUSH for movers, attackers
  // and hunters, HOLD only for a defender at its post; waiting squads (which only ever held)
  // get neither. ACA reads back what BBB is doing in its attacks (ACR_AICommander.NoteBBBFight).
+ // How close to its order's point a falling-back squad counts as there (the waypoint's radius is 15 m).
+ static const float FALLBACK_ARRIVE_M = 20;
+
  override BBB_EIntent Intent(SCR_AIGroup group, out vector centre, out float radius)
  {
   radius = 0;
@@ -292,6 +295,17 @@ class ACR_BBBHooks : BBB_Hooks
   if (squad.HasPlayer() || squad.m_Commander != 0 || squad.m_iOrderedBy != 0) { why = "player"; return BBB_EIntent.NONE; }
   if (ACR_AirLift.Busy(squad)) { why = "airlift"; return BBB_EIntent.TRANSIT; }
   if (squad.m_bForced) { why = "forced"; return BBB_EIntent.TRANSIT; }
+  // The AI commander pulled it back (FallBack): in contact BBB bounds it toward the order's point in
+  // covered halves instead of letting it fight (and go to ground) where it stands. Before the mode
+  // rule: the fall-back is FAST, which with squad tactics off would keep it TRANSIT.
+  vector fallBackTo;
+  if (squad.FallingBack(fallBackTo) && !squad.IsMounted() && !ACR_Transport.CrewedVehicle(squad) && BBB_Morale.OrderedOn())
+  {
+   centre = squad.m_MoveTarget;
+   radius = FALLBACK_ARRIVE_M;
+   why = "falling back";
+   return BBB_EIntent.WITHDRAW;
+  }
   // A FAST march that met the enemy is re-issued at combat level (m_bForced cleared, "fighting its
   // way forward") but keeps its FAST label: that squad is fighting. Only a quiet move stays ours
   // (and, with squad tactics off, any non-combat mode, as before).

@@ -157,7 +157,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 148; // includes six attack-ground, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 149; // includes six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -442,6 +442,19 @@ class ACR_TestRegress
   fixture.m_iAITask = ACR_EAITask.FREE;
   fixture.SetOrder("Leash policy fixture", ACR_EOrderState.NONE);
   bool offWait = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT;
+  // The AI commander's fall-back: WITHDRAW to the order's point (also FAST with tactics off); forced
+  // (WatchFallBack's run) is ours again; a newer order ends it.
+  fixture.m_Mode = ACR_EMoveMode.FAST;
+  fixture.MarkFallBack(fixture.m_MoveTarget + Vector(50, 0, 0));
+  bool fallBack = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.WITHDRAW && vector.DistanceXZ(centre, fixture.m_MoveTarget) < 0.1 && radius > 0;
+  fixture.m_bForced = true;
+  bool fallBackRun = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT;
+  fixture.m_bForced = false;
+  fixture.m_iOrderSerial++;
+  bool fallBackOver = hooks.Intent(fixture.m_Group, centre, radius) != BBB_EIntent.WITHDRAW;
+  fixture.m_iOrderSerial--;
+  fixture.m_iFallBackSerial = -1;
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
   target.m_fRadius = savedRadius;
   fixture.m_iAITask = savedTask;
   fixture.m_AITarget = savedTarget;
@@ -451,6 +464,7 @@ class ACR_TestRegress
   Check("BBB intent: attackers push, leashed to the ring only inside the objective", inside && staging && outside, string.Format("inside %1 staging %2 outside %3 (anchor %4 m from %5)", inside, staging, outside, (int)gap, target.m_sName));
   Check("BBB intent: waiting squads hold at their base, forced and quiet moves are ours, a FAST march in contact fights, commanded squads are left alone", waits && forced && fastFights && quietOurs && commanded, string.Format("waits %1 forced %2 fast %3 quiet %4 commanded %5", waits, forced, fastFights, quietOurs, commanded));
   Check("BBB intent: squad tactics off by default, movers still push, waiting squads and FAST marches stay ours", offPush && offWait && offFast, string.Format("push %1 wait %2 fast %3", offPush, offWait, offFast));
+  Check("BBB intent: a squad the AI commander pulls back is WITHDRAW to its order's point until forced or re-ordered", fallBack && fallBackRun && fallBackOver, string.Format("withdraw %1 forced %2 new order %3", fallBack, fallBackRun, fallBackOver));
  }
 
  // A roadblock click by a joint of two road pieces, or on a side road by a T-crossing, stays on
