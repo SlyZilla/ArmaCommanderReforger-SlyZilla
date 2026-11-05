@@ -107,6 +107,7 @@ class ACR_TestHarness : Managed
  static const int MODE_TWOICASK = 83;
  static const int MODE_TWOICSUGGEST = 84;
  static const int MODE_TWOICSHOTS = 91; // a game client run (89 variety, 90 the armour duel probe)
+ static const int MODE_TWOICALL = 260; // the lazy commander's 2IC (-acr2IC 2)
  static const int MODE_TWOICDECLUTTER = 131; // the 2IC declutter (117, 120, 125: own branches)
  static const int MODE_RIDELAV = 70; // 69: the playtest branches
  static const int MODE_MAPDECLUTTER = 133; // the calm command map's rules (90-97, 117, 120, 125 taken elsewhere)
@@ -234,6 +235,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrTwoICSuggestTest", flag)) mode = MODE_TWOICSUGGEST;
   if (System.GetCLIParam("acrTwoICShotsTest", flag)) mode = MODE_TWOICSHOTS;
   if (System.GetCLIParam("acrTwoICDeclutterTest", flag)) mode = MODE_TWOICDECLUTTER;
+  if (System.GetCLIParam("acrTwoICAllTest", flag)) mode = MODE_TWOICALL;
   if (System.GetCLIParam("acrRideLavTest", flag) || System.GetCLIParam("acrRideTruckTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrRideLavKillTest", flag) || System.GetCLIParam("acrRideLavGetOutTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrRoadblockLaneTest", flag)) mode = MODE_RBLANE;
@@ -411,6 +413,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_TWOICSUGGEST) { ACR_TestTwoICSuggest.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_TWOICSHOTS) { ACR_TestTwoICShots.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_TWOICDECLUTTER) { ACR_TestTwoICDeclutter.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICALL) { ACR_TestTwoICAll.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDELAV) { ACR_TestRideLav.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RBLANE) { ACR_TestRoadblockLane.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_QRF) { ACR_TestQrf.Run(this, m_Ticks); return; }

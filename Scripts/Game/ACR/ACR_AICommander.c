@@ -1636,7 +1636,7 @@ class ACR_AICommander : Managed
   float now = GetGame().GetWorld().GetWorldTime();
   bool ready = now >= entry.m_fReadyAt;
   if (!ready && type == ACR_ESupportType.AIR_LIFT && ACR_AirLift.WaveSlotAvailable(m_sFaction, now)) ready = true;
-  return ready && data.m_iRP >= entry.CostFor(true) + SUPPORT_RESERVE;
+  return ready && Purse(data) >= entry.CostFor(true) + SUPPORT_RESERVE;
  }
 
  // Own soldiers (squads and players) within radius: never call fire on them.
@@ -1668,7 +1668,7 @@ class ACR_AICommander : Managed
  {
   // Commanding squads a player handed over (2IC), it spends nothing of the side's RP: that is the
   // player's to spend (MISSION-MAKING, -acr2IC; as CanBuild).
-  if (m_bHandedOnly) return false;
+  if (m_bHandedOnly && !m_bTwoICAll) return false; // -acr2IC 2: the side's to run, down to the player's keep (Purse)
   if (!SupportReady(type)) return false;
   if (ACR_Mortars.IsMortarType(type) && !m_Manager.Mortars().CanFire(m_sFaction, type, point)) return false;
   if (ACR_HeliStation.IsHeliType(type) && ACR_HeliStation.UsesPads(m_sFaction) && (!m_Manager.m_Supports || !m_Manager.m_Supports.Station().ReadyFor(m_sFaction, ACR_HeliStation.NeedsGunship(type), point, ACR_HeliStation.IsAttack(type)))) return false;
@@ -3047,7 +3047,7 @@ class ACR_AICommander : Managed
 
  bool TryAirLift(ACR_Squad squad, vector destination, ResourceName prefab, float radius, string order, int kind, float dropShort = 0)
  {
-  if (!m_Manager || !m_Manager.m_Supports || m_bHandedOnly) return false; // paid: not for handed squads (CallSupport)
+  if (!m_Manager || !m_Manager.m_Supports || (m_bHandedOnly && !m_bTwoICAll)) return false; // paid: not for handed squads (CallSupport), but the lazy commander's 2IC may
   if (!squad || !squad.m_Group || squad.HasPlayer()) return false;
   if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad) || squad.m_bMortar || squad.Aircraft()) return false;
   if (ACR_AirLift.Busy(squad)) return false;
@@ -3071,7 +3071,7 @@ class ACR_AICommander : Managed
   if (now < entry.m_fReadyAt && !waveSlot) return false;
   if (now < m_fNextAirLiftTry && !waveSlot) return false;
   int cost = entry.CostFor(true);
-  if (data.m_iRP < cost + SUPPORT_RESERVE) return false;
+  if (Purse(data) < cost + SUPPORT_RESERVE) return false;
   if (squad.KnownEnemies(300) > 0) return false;
 
   // AI priority gate: when known enemy bases exist, preserve air lifts for combat attacks
@@ -3080,7 +3080,7 @@ class ACR_AICommander : Managed
   {
    if (HasKnownEnemyBase())
    {
-    if (FriendlyBaseThreatened() || !m_Attacks.IsEmpty() || data.m_iRP < cost * 2 + SUPPORT_RESERVE) return false;
+    if (FriendlyBaseThreatened() || !m_Attacks.IsEmpty() || Purse(data) < cost * 2 + SUPPORT_RESERVE) return false;
    }
   }
 
@@ -4478,7 +4478,7 @@ class ACR_AICommander : Managed
   foreach (int i, ACR_RequisitionEntry entry : data.m_aRequisitions)
   {
    if (!entry.m_bMortarTeam || entry.m_iRemaining <= 0) continue;
-   if (data.m_iRP < entry.m_iCost + SUPPORT_RESERVE) return false;
+   if (Purse(data) < entry.m_iCost + SUPPORT_RESERVE) return false;
    Say(string.Format("[ACR] AI %1 requisition (mortar team): %2", m_sFaction, m_Manager.PurchaseAt(m_sFaction, i, spawn)));
    return true;
   }
@@ -4503,7 +4503,7 @@ class ACR_AICommander : Managed
    if (entry.m_iSupportHeli == 3) { pick = i; break; }
    if (entry.m_iSupportHeli == 1 && pick < 0) pick = i;
   }
-  if (pick < 0 || data.m_iRP < data.m_aRequisitions[pick].m_iCost + SUPPORT_RESERVE) return false;
+  if (pick < 0 || Purse(data) < data.m_aRequisitions[pick].m_iCost + SUPPORT_RESERVE) return false;
   string kind = "support gunship";
   if (data.m_aRequisitions[pick].m_iSupportHeli == 3) kind = "attack helicopter";
   Say(string.Format("[ACR] AI %1 requisition (%2): %3", m_sFaction, kind, m_Manager.PurchaseAt(m_sFaction, pick, base)));
@@ -4615,6 +4615,7 @@ class ACR_AICommander : Managed
   {
    ACR_Squad squad = team.m_Squad;
    if (!squad || squad.HasPlayer() || team.m_bLost || team.m_bFiring) continue;
+   if (m_bHandedOnly && (squad.m_bClaimed || squad.m_Commander != 0)) continue; // the lazy commander's 2IC: a team the player ordered is theirs
    if (team.m_eState == ACR_EMortarState.PACKING || team.m_eState == ACR_EMortarState.DEPLOYING) continue;
    // Shoot-and-scoot: after firing a mission, displace slightly so counter-battery misses
    if (team.m_eState == ACR_EMortarState.DEPLOYED && team.m_iFired > 0 && !team.m_bFiring && team.m_fLastFinished > 0 && (now / 1000) > team.m_fLastFinished + 15.0)
@@ -4764,7 +4765,7 @@ class ACR_AICommander : Managed
    int cost = missing.Count() * ACR_Requisition.REINFORCE_COST_PER_SOLDIER;
    ACR_Base depot = m_Manager.m_Requisition.DeployBaseAt(m_sFaction, PositionOf(squad));
    if (depot) cost += m_Manager.m_Requisition.InstantRestockCost(squad, depot);
-   if (data.m_iRP - keep < cost)
+   if (Purse(data) - keep < cost)
    {
     if (!m_RefillWaiting) m_RefillWaiting = squad;
     continue;
@@ -4797,7 +4798,7 @@ class ACR_AICommander : Managed
   int cap = 8;
   if (settings) cap = settings.m_iAIUnitCap;
   // Money piling up: field a few more squads rather than sit on it.
-  int banked = m_Manager.m_Bases.GetRP(m_sFaction);
+  int banked = Purse();
   int maxCapBonus = 4;
   int myBases = 0;
   foreach (ACR_Base b : ACR_Base.s_All) if (b.m_sOwner == m_sFaction) myBases++;
@@ -4818,7 +4819,7 @@ class ACR_AICommander : Managed
    if (refillNow >= m_fNextRefillLog)
    {
     m_fNextRefillLog = refillNow + 60000;
-    Say(string.Format("[ACR] AI %1: holding purchases until %2 can be refilled (%3 RP)", m_sFaction, m_RefillWaiting.GetName(), data.m_iRP));
+    Say(string.Format("[ACR] AI %1: holding purchases until %2 can be refilled (%3 RP)", m_sFaction, m_RefillWaiting.GetName(), Purse(data)));
    }
    return;
   }
@@ -4874,7 +4875,7 @@ class ACR_AICommander : Managed
     int pick = -1;
     foreach (int e, ACR_RequisitionEntry offer : data.m_aRequisitions)
     {
-     if (offer.m_iRemaining <= 0 || offer.m_iCost > data.m_iRP || offer.m_sVehicle.IsEmpty()) continue;
+     if (offer.m_iRemaining <= 0 || offer.m_iCost > Purse(data) || offer.m_sVehicle.IsEmpty()) continue;
      if ((ACR_Logistics.ServiceOfName(offer.m_sVehicle) & service) == 0) continue;
      if (pick < 0 || offer.m_iCost < data.m_aRequisitions[pick].m_iCost) pick = e;
     }
@@ -4894,7 +4895,7 @@ class ACR_AICommander : Managed
    int truck = -1;
    foreach (int t, ACR_RequisitionEntry candidate : data.m_aRequisitions)
    {
-    if (!candidate.m_bTransport || IsServiceVehicle(candidate) || candidate.m_iRemaining <= 0 || candidate.m_iCost > data.m_iRP) continue;
+    if (!candidate.m_bTransport || IsServiceVehicle(candidate) || candidate.m_iRemaining <= 0 || candidate.m_iCost > Purse(data)) continue;
     if (truck < 0) { truck = t; continue; }
     ACR_RequisitionEntry held = data.m_aRequisitions[truck];
     if (armedRide && candidate.m_bArmed != held.m_bArmed) { if (candidate.m_bArmed) truck = t; continue; }
@@ -4948,7 +4949,7 @@ class ACR_AICommander : Managed
     break;
    }
   }
-  int budget = data.m_iRP - keep;
+  int budget = Purse(data) - keep;
   // Save up for a pricier unit only with a working force in the field; short of
   // troops, or when troops are urgent, buy what is affordable now.
   int saveMax = Math.Max(budget, 85);
@@ -4969,7 +4970,7 @@ class ACR_AICommander : Managed
   // vehicles and 1-man remnants filled it on Everon and the AI sat on 1000 RP.
   for (int n = 0; n < 2 && capUsed < cap; n++)
   {
-   budget = data.m_iRP - keep;
+   budget = Purse(data) - keep;
    int pick = -1;
    if (m_iSaveForEntry >= 0 && m_iSaveForEntry < data.m_aRequisitions.Count() && data.m_aRequisitions[m_iSaveForEntry].m_iRemaining > 0 && data.m_aRequisitions[m_iSaveForEntry].m_iCost <= budget)
    {
@@ -5041,13 +5042,13 @@ class ACR_AICommander : Managed
     }
    }
    ACR_RequisitionEntry chosen = data.m_aRequisitions[pick];
-   if (chosen.m_iCost > data.m_iRP - keep)
+   if (chosen.m_iCost > Purse(data) - keep)
    {
     m_iSaveForEntry = pick;
     if (m_iLastSavedLog != pick)
     {
      m_iLastSavedLog = pick;
-     Say(string.Format("[ACR] AI %1 saving RP for %2 (%3/%4 RP)", m_sFaction, chosen.m_sName, Math.Max(0, data.m_iRP - keep), chosen.m_iCost));
+     Say(string.Format("[ACR] AI %1 saving RP for %2 (%3/%4 RP)", m_sFaction, chosen.m_sName, Math.Max(0, Purse(data) - keep), chosen.m_iCost));
     }
     return;
    }
@@ -5255,7 +5256,7 @@ class ACR_AICommander : Managed
     if (!station || best < ACR_Logistics.SERVICE_RANGE) continue; // none, or already being served
     ACR_Squad crew = CrewOf(station);
     bool holding = squad.m_iAITask == ACR_EAITask.DEFEND || squad.m_iAITask == ACR_EAITask.POSTED || !squad.m_Group.GetCurrentWaypoint();
-    bool crewFree = crew && !crew.HasPlayer() && !m_ServiceJobs.Contains(crew) && !StuckLately(crew);
+    bool crewFree = crew && !crew.HasPlayer() && Ours(crew) && !m_ServiceJobs.Contains(crew) && !StuckLately(crew);
     string what = ACR_Logistics.ServiceName(service);
     if (crewFree && (holding || squad.IsMounted() == false && best > 800) && !DangerOnTheWay(crew, PositionOf(squad)))
     {
@@ -5654,14 +5655,14 @@ class ACR_AICommander : Managed
   int pick = -1;
   foreach (int e, ACR_RequisitionEntry offer : data.m_aRequisitions)
   {
-   if (offer.m_iRemaining <= 0 || offer.m_iCost > data.m_iRP || offer.m_sVehicle.IsEmpty()) continue;
+   if (offer.m_iRemaining <= 0 || offer.m_iCost > Purse(data) || offer.m_sVehicle.IsEmpty()) continue;
    if ((ACR_Logistics.ServiceOfName(offer.m_sVehicle) & ACR_EService.CONSTRUCTION) == 0) continue;
    if (pick < 0 || offer.m_iCost < data.m_aRequisitions[pick].m_iCost) pick = e;
   }
   if (pick < 0) return false;
 
   int cost = data.m_aRequisitions[pick].m_iCost;
-  if (data.m_iRP < cost + FOB_RP_COMBAT_RESERVE) return false;
+  if (Purse(data) < cost + FOB_RP_COMBAT_RESERVE) return false;
 
   string bought = m_Manager.PurchaseAt(m_sFaction, pick, spawn);
   Say(string.Format("[ACR] AI %1 requisition (FOB construction truck): %2", m_sFaction, bought));
@@ -5884,7 +5885,7 @@ class ACR_AICommander : Managed
   if (nextSlot >= 0) minNeeded = Math.Max(500, ACR_FobSlots.SlotCost(nextSlot, nextTier));
   if (stock >= minNeeded) return false;
 
-  if (data.m_iRP < ACR_FobSupply.DELIVERY_COST + FOB_RP_COMBAT_RESERVE) return false;
+  if (Purse(data) < ACR_FobSupply.DELIVERY_COST + FOB_RP_COMBAT_RESERVE) return false;
 
   string result = ACR_FobSupply.Order(m_Manager, m_sFaction, base);
   Say(string.Format("[ACR] AI %1 ordered supplies for %2: %3", m_sFaction, base.m_sName, result));
@@ -6059,12 +6060,14 @@ class ACR_AICommander : Managed
  // aside already), else with 'reserve' RP to spare as well.
  bool CanBuild(int cost, int reserve)
  {
+  // The lazy commander's 2IC never builds into the player's keep, budget or not.
+  if (m_bTwoICAll && Purse() < cost) return false;
   if (SideShare() > 0) return BuildBudget() >= cost;
   // The 2IC (squads handed to the AI) builds only out of the budget, never from the side's RP,
   // which is the commanding player's (#14): with the share off it builds nothing.
-  if (m_bHandedOnly) return false;
+  if (m_bHandedOnly && !m_bTwoICAll) return false;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
-  return data && data.m_iRP >= cost + reserve;
+  return data && Purse(data) >= cost + reserve;
  }
 
  // Our uncontested bases nearest to an enemy base, nearest first (at most 'most'), each with
@@ -6677,7 +6680,7 @@ class ACR_AICommander : Managed
    bool repair = ACR_BaseWorks.NeedsRepair(front);
    int next = ACR_BaseWorks.TierOf(front) + 1;
    if (front.m_bBuilt) continue;
-   if (!repair && (next > ACR_Fortify.MAX_TIER || data.m_iRP < next * WORKS_BANK_STEP || !CanBuild(ACR_Fortify.Cost(next), 30))) continue;
+   if (!repair && (next > ACR_Fortify.MAX_TIER || Purse(data) < next * WORKS_BANK_STEP || !CanBuild(ACR_Fortify.Cost(next), 30))) continue;
    if (repair && !CanBuild(ACR_Fortify.Cost(1), 30)) continue;
    open.Insert(front);
    float score = ThreatTo(front) + 1 - DefenceOf(front) * 0.1;
@@ -6907,7 +6910,7 @@ class ACR_AICommander : Managed
    // Still defending, or taken by something else since: it waits.
    if (squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED) continue;
    done.Insert(squad);
-   if (squad.HasPlayer() || squad.m_Commander != 0 || ManningSquad(fort) != null) continue;
+   if (squad.HasPlayer() || squad.m_Commander != 0 || !Ours(squad) || ManningSquad(fort) != null) continue;
    if (Holding() >= m_Doctrine.m_iHolders) continue;
    if (!squad.ManFortification(fort)) continue;
    squad.SetAITask(ACR_EAITask.FORTIFY);
@@ -6924,7 +6927,7 @@ class ACR_AICommander : Managed
    }
    if (left.m_iAITask != ACR_EAITask.FREE && left.m_iAITask != ACR_EAITask.POSTED) continue;
    done.Insert(left);
-   if (left.HasPlayer() || left.m_Commander != 0 || RoadblockManningSquad(rb) != null) continue;
+   if (left.HasPlayer() || left.m_Commander != 0 || !Ours(left) || RoadblockManningSquad(rb) != null) continue;
    if (Holding() >= m_Doctrine.m_iHolders) continue;
    if (!left.ManRoadblock(rb)) continue;
    left.SetAITask(ACR_EAITask.ROADBLOCK);
@@ -7077,11 +7080,22 @@ class ACR_AICommander : Managed
  // A player commands the side (or it has no AI commander): the squad logic runs for the squads
  // handed to the AI (squad panel, ACR_SquadAI) and only them: MySquads and DefendInDepth see
  // no other squad. No purchases, logistics, FOB building, mortars or crews for the side.
+ // all (-acr2IC 2, the lazy commander's 2IC, while a player commands): the whole of Tick's turn
+ // as well (purchases, logistics, FOBs, mortars, crews, supports, fortifying), still only with
+ // the squads handed to it, and spending the side's RP down to the player's keep (Purse).
  protected bool m_bHandedOnly;
+ protected bool m_bTwoICAll;
+ protected bool m_bTwoICAllShown;
  protected int m_iHandedSeconds;
- void TickHanded()
+ void TickHanded(bool all = false)
  {
   m_bHandedOnly = true;
+  m_bTwoICAll = all;
+  if (all != m_bTwoICAllShown)
+  {
+   m_bTwoICAllShown = all;
+   if (all) TwoICReport(string.Format("Running the side: buying, supplies, FOBs and fire support. %1 RP stays yours", ACR_SquadAI.TwoICKeep()));
+  }
   GatherIntel();
   TickSapperDemos(); // its FOB raids' charges, as in Tick (AssignAttacks starts them)
   m_iHandedSeconds++;
@@ -7095,9 +7109,19 @@ class ACR_AICommander : Managed
    Assess();
    UpdateAttacks();
    AssignDefenders();
+   if (all) ReturnToPosts();
    AssignAttacks();
    PostIdle();
    CatchRides();
+   if (all)
+   {
+    PositionMortars();
+    Recrew();
+    ManageLogistics();
+    ManageDangerRoads();
+    ManageFobBuild();
+    ManageFobUpgrades();
+   }
    int beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
    ManageRoadblocks();
    SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
@@ -7109,9 +7133,45 @@ class ACR_AICommander : Managed
    beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
    ManagePendingBuilds();
    SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
-   PrintFormat("[ACR] AI %1: commanding %2 squad(s) handed to it, %3 attack(s)", m_sFaction, ACR_SquadAI.CountFor(m_sFaction), m_Attacks.Count());
+   if (all)
+   {
+    beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
+    ManageFortify();
+    SpendBuildBudget(beforeBuild - m_Manager.m_Bases.GetRP(m_sFaction));
+    Requisition();
+   }
+   PrintFormat("[ACR] AI %1: commanding %2 squad(s) handed to it, %3 attack(s)%4", m_sFaction, ACR_SquadAI.CountFor(m_sFaction), m_Attacks.Count(), TwoICAllStatus());
   }
+  m_bTwoICAll = false;
   m_bHandedOnly = false;
+ }
+
+ protected string TwoICAllStatus()
+ {
+  if (!m_bTwoICAll) return "";
+  return string.Format(" | running the side, %1 RP to spend over the player's %2", Purse(), ACR_SquadAI.TwoICKeep());
+ }
+
+ // The RP this commander may spend: all of the side's, but while it is the lazy commander's 2IC
+ // (-acr2IC 2) the player's keep stays theirs. Every purchase check reads this, not m_iRP.
+ int PurseForTest(bool all)
+ {
+  bool was = m_bTwoICAll;
+  m_bTwoICAll = all;
+  int purse = Purse();
+  m_bTwoICAll = was;
+  return purse;
+ }
+
+ // A squad this commander may order: any of its side's, but as the 2IC only those handed to it.
+ protected bool Ours(ACR_Squad squad) { return squad && (!m_bHandedOnly || squad.m_bAICommanded); }
+
+ int Purse(ACR_FactionData data = null)
+ {
+  if (!data && m_Manager && m_Manager.m_Bases) data = m_Manager.m_Bases.GetFaction(m_sFaction);
+  if (!data) return 0;
+  if (!m_bTwoICAll) return data.m_iRP;
+  return Math.Max(0, data.m_iRP - ACR_SquadAI.TwoICKeep());
  }
 
  // ---------------------------------------------------------------- the 2IC's map UI (#14 v1)

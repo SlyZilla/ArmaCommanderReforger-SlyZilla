@@ -8,6 +8,11 @@ modded class ACR_TestHooks
 
  protected ref ACR_TestHarness m_Harness;
 
+ override bool PlayerCommandsForTest(string factionKey)
+ {
+  return ACR_TestTwoICAll.s_sCommanded == factionKey && !factionKey.IsEmpty();
+ }
+
  override void RangeStarted(ACR_TestRange range)
  {
   if (System.IsCLIParam("acrAirLiftTest") || System.IsCLIParam("acrAirLiftTwoTest") || System.IsCLIParam("acrAirLiftContactTest")) ACR_Options.Set("acrAI", "none");

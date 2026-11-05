@@ -13,6 +13,13 @@ class ACR_SquadAI
 {
  static bool TwoIC() { return ACR_Options.Flag("acr2IC"); }
 
+ // -acr2IC 2, the lazy commander's 2IC: it runs the whole side as the AI commander would (buys
+ // units, logistics, FOBs, mortars, supports, fortifying) with every squad nobody has claimed,
+ // while the player keeps command and whatever squads they lead or order. It leaves the side
+ // TwoICKeep() RP for the player's own purchases (ACR_AICommander.Purse).
+ static bool TwoICAll() { return ACR_LogisticsRules.Choice("acr2IC", "0") == "2"; }
+ static int TwoICKeep() { return Math.ClampInt(ACR_LogisticsRules.Choice("acr2ICKeep", "100").ToInt(), 0, 100000); }
+
  // The 2IC runs a side a player commands, or one with no AI commander at all (its squads would
  // stand idle). A side the AI commander leads never has one, its start-up hold included: pn10
  // (26 Oct) had the 2IC take on Red's squads in the 45 s before Red's AI commander took command.
@@ -25,6 +32,19 @@ class ACR_SquadAI
   if (commanders && !commanders.IsEmpty()) return true;
   ACR_FactionSettings settings = ACR_FactionSettings.Find(faction);
   return !settings || !settings.m_bAICommander;
+ }
+
+ // The lazy commander's 2IC runs the whole side (TwoICAll) only while a player commands it: a
+ // side the mission gave no AI commander and nobody commands keeps the plain 2IC (its squads),
+ // so it never gets an AI economy just because nobody has taken command yet.
+ static bool RunsAll(ACR_Manager manager, string faction)
+ {
+  if (!manager || !TwoICAll()) return false;
+  if (ACR_TestHooks.Get().PlayerCommandsForTest(faction)) return true;
+  Faction side = GetGame().GetFactionManager().GetFactionByKey(faction);
+  if (!side) return false;
+  array<int> commanders = manager.GetCommanders(side);
+  return commanders && !commanders.IsEmpty();
  }
 
  // The 2IC takes on every squad of the side nobody has claimed (as they are: their AI tasks
