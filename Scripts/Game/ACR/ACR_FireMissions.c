@@ -34,7 +34,13 @@ class ACR_FireMissions : Managed
  protected int m_iTicks;
  protected ref map<string, float> m_NextCall = new map<string, float>();
  protected ref map<ACR_MortarTeam, float> m_NextFree = new map<ACR_MortarTeam, float>();
- static ref array<SCR_AIGroup> s_ObserverGroups = {}; // bought FO teams (their squads start with fire at will)
+ static ref array<SCR_AIGroup> s_ObserverGroups; // bought FO teams (their squads start with fire at will)
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_ObserverGroups = {};
+ }
+ static void Reset() { s_ObserverGroups.Clear(); }
  static int s_iCalls;      // tests
  static int s_iFreeFires;  // tests
 
@@ -110,13 +116,14 @@ class ACR_FireMissions : Managed
   return false;
  }
 
- // An AI-led side fires as often as its commander's doctrine wants (Firepower more, Blitz less).
+ // An AI-led side fires as often as its commander's doctrine wants (Firepower more, Blitz less),
+ // and more often while rich (ACR_AICommander.FireFactor, #28).
  protected float Gap(string key, bool ai)
  {
   if (!ai) return 1;
   ACR_AICommander commander = m_Manager.AICommanderFor(key);
   if (!commander || !commander.Doctrine()) return 1;
-  return commander.Doctrine().m_fFireMissionGap;
+  return commander.Doctrine().m_fFireMissionGap / commander.FireFactor();
  }
 
  protected bool AILed(string key)
@@ -202,7 +209,8 @@ class ACR_FireMissions : Managed
    string what = ACR_Intel.Describe(best.m_iKind, best.m_iCount);
    PrintFormat("[ACR] FIRE %1 observer %2 calls mortars on %3 at %4: %5", key, observer.GetName(), what, best.m_Pos, result);
    if (!ai) m_Manager.NotifyFaction(key, string.Format("%1: fire mission on %2 %3", observer.GetName(), what, intel.Place(best.m_Pos)));
-   intel.AddFeed(GetGame().GetWorld().GetWorldTime(), string.Format("%1 calls fire on %2 %3", observer.GetName(), what, intel.Place(best.m_Pos)));
+   intel.AddFeed(GetGame().GetWorld().GetWorldTime(), string.Format("%1 calls fire on %2 %3", observer.GetName(), what, intel.Place(best.m_Pos)), best.m_Pos);
+   ACR_RadioIntercept.Transmitted(key, eye, observer.GetName());
    return;
   }
  }

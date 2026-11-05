@@ -3,9 +3,16 @@
 // vehicles for its map without scanning the world.
 class ACR_Vehicles
 {
- protected static ref array<IEntity> s_All = {};
- protected static ref map<IEntity, string> s_Owner = new map<IEntity, string>();
- protected static ref map<IEntity, ResourceName> s_CustomCrew = new map<IEntity, ResourceName>();
+ protected static ref array<IEntity> s_All;
+ protected static ref map<IEntity, string> s_Owner;
+ protected static ref map<IEntity, ResourceName> s_CustomCrew;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+  s_Owner = new map<IEntity, string>();
+  s_CustomCrew = new map<IEntity, ResourceName>();
+ }
 
  static void Register(IEntity vehicle)
  {
@@ -204,7 +211,8 @@ modded class SCR_ArsenalComponent
 
 // Bought vehicles of a side with its own crewmen (RHS) seat those instead of the
 // vehicle's default crew: RHS reuses vanilla vehicles, whose seats name vanilla 80s
-// soldiers (Jacob, 8 Oct). Missing defaults stay empty except Typhoon crew seats.
+// soldiers (Jacob, 8 Oct). Missing defaults stay empty except Typhoon crew seats and the crew
+// seats a content pack fills (ACR_ContentSocket).
 modded class BaseCompartmentSlot
 {
  override ResourceName GetDefaultOccupantPrefab(bool checkIfValid = true)
@@ -215,6 +223,14 @@ modded class BaseCompartmentSlot
   if (owner.IsEmpty()) return own;
   ResourceName custom = ACR_Vehicles.CustomCrew(vehicle);
   if (!custom.IsEmpty()) return custom;
+  // A content pack's vehicles name the other side's soldiers or nobody (#108: Zagoria tanks seat
+  // USSR riflemen whoever owns them, the M2 has no driver): the pack picks. Empty passenger
+  // seats stay empty.
+  if (!own.IsEmpty() || GetType() == ECompartmentType.PILOT || GetType() == ECompartmentType.TURRET)
+  {
+   ResourceName packed = ACR_ContentSocket.Get().Crewman(owner, vehicle, GetType());
+   if (!packed.IsEmpty()) return packed;
+  }
   if (own.IsEmpty())
   {
    // RHS/UA Typhoons omit default occupants, including the armed turret. Supply

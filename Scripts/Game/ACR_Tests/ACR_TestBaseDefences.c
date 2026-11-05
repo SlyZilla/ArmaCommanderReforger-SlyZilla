@@ -2,11 +2,12 @@
 // Everon base. Prints each base's plan (BASEDEF lines) and, for the two towns with the most
 // corner walls, their buildings and roads (FORTGEO lines) so a plan can be drawn and checked.
 // Checks: plans exist for the towns (all four kinds), most are dressed, corner walls face a threat and leave a lane, no
-// piece stands inside a building, planning time, and the preview spawns and clears its props.
+// piece stands inside a building, planning time, a long building's far end counts as a building, and
+// the preview spawns and clears its props.
 class ACR_TestBaseDefences
 {
- static const int EXPECTED = 15;
- static ref array<IEntity> s_aSpawned = {};
+ static const int EXPECTED = 16;
+ static ref array<IEntity> s_aSpawned;
 
  // Neutral bases are planned for the US (the preview does the same with the player's side).
  static string Owner(ACR_Base base)
@@ -17,8 +18,48 @@ class ACR_TestBaseDefences
 
  static void Run(int tick)
  {
-  if (tick == 10) Plan();
+  if (tick == 10) { Plan(); FarEnd(); }
   if (tick == 12) Cleared();
+ }
+
+ // BuildingGap only looked at buildings within 'within' + 40 m of their origin, so the far end of a
+ // long one wasn't seen, and a piece could stand against a hangar's wall. The building with the
+ // farthest corner of any base here, a spot 1 m past that corner.
+ static void FarEnd()
+ {
+  IEntity longest;
+  float reach;
+  vector corner;
+  array<IEntity> found = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired) continue;
+   ACR_BaseDefences.Buildings(base.GetOrigin(), ACR_BaseDefences.SearchRadius(base) + 20, found);
+   foreach (IEntity building : found)
+   {
+    vector mins, maxs;
+    building.GetBounds(mins, maxs);
+    array<vector> corners = {Vector(mins[0], 0, mins[2]), Vector(mins[0], 0, maxs[2]), Vector(maxs[0], 0, mins[2]), Vector(maxs[0], 0, maxs[2])};
+    foreach (vector c : corners)
+    {
+     if (c.Length() <= reach) continue;
+     reach = c.Length();
+     corner = c;
+     longest = building;
+    }
+   }
+  }
+  if (!longest)
+  {
+   ACR_TestRegress.Skip("base defences: a long building's far end counts as a building", "no building");
+   return;
+  }
+  vector local = corner * ((reach + 1) / reach);
+  vector spot = longest.CoordToParent(local);
+  array<IEntity> only = {longest};
+  float gap = ACR_BaseDefences.BuildingGap(only, spot, 6);
+  PrintFormat("[ACR] BASEDEF farthest corner: %1 m from the origin of %2 at %3", (int)reach, FilePath.StripPath(longest.GetPrefabData().GetPrefabName()), longest.GetOrigin());
+  ACR_TestRegress.Check("base defences: a long building's far end counts as a building", gap < 3, string.Format("%1 m off, %2 m from its origin: gap %3", 1, (int)reach, gap));
  }
 
  static void Plan()
@@ -198,7 +239,13 @@ class ACR_TestBaseDefences
   }
  }
 
- protected static ref array<IEntity> s_aTypes = {};
+ protected static ref array<IEntity> s_aTypes;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aSpawned = {};
+  s_aTypes = {};
+ }
  protected static bool CollectType(IEntity e)
  {
   if (!e || e.GetParent()) return true;

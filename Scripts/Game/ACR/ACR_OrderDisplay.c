@@ -54,11 +54,15 @@ class ACR_OrderDisplay : Managed
   m_Commands.Clear();
   DrawBaseAreas(mapEntity, data);
   DrawZones(mapEntity, data);
+  DrawMineShapes(mapEntity, data);
   DrawOrders(mapEntity, data);
   DrawOtherSelections(mapEntity, data);
   DrawStatusBars(mapEntity, data);
   DrawPending(mapEntity, data);
+  DrawContactHeadings(mapEntity, data);
   if (boxing) DrawBox(mapEntity, boxStart);
+  if (data.m_bAiming) DrawAim(mapEntity, data.m_vAimFrom, data.m_vAimTo);
+  DrawMinePreview(mapEntity, data);
   ACR_PingDisplay.DrawOnMap(this, mapEntity, data);
   m_Canvas.SetDrawCommands(m_Commands);
  }
@@ -115,7 +119,77 @@ class ACR_OrderDisplay : Managed
   dot.m_iColor = color;
   dot.m_Vertices = {};
   m_Canvas.TessellateCircle(Vector(x, y, 0), radius, 12, dot.m_Vertices);
-  m_Commands.Insert(dot);
+  AddPolygon(dot);
+ }
+
+ // ---------------------------------------------------------------- filled shapes
+ // The game triangulates every PolygonDrawCommand, every frame, and logs "DrawPolygon triangulation
+ // failed, is the polygon degenerated?" for each one it can't. Live (27 Oct, Everon): 160,000 of those
+ // lines, up to 30 a frame, while the map was zoomed in: the far squads' status bars and order dots
+ // were tens of thousands of pixels off the canvas, where a shape a few pixels wide no longer
+ // triangulates. Such shapes are skipped (nobody can see them), and so is one with fewer than three
+ // distinct points, no area or a NaN. Anything on the canvas draws exactly as before.
+ static const float POLYGON_MIN_AREA = 0.05; // square pixels
+ static const float POLYGON_MARGIN = 2; // pixels past the canvas edge that still count as on it
+ static const float POLYGON_FAR = 1000000000; // a coordinate past this (or NaN) is garbage
+
+ // Whether the game can fill this polygon ({x0, y0, x1, y1, ...}) and it shows on a width x height
+ // canvas (a size of 0 means not known: not checked).
+ static bool PolygonDrawable(array<float> vertices, float width, float height)
+ {
+  if (!vertices || vertices.Count() % 2 != 0) return false;
+  int points = vertices.Count() / 2;
+  if (points < 3) return false;
+  float x0 = vertices[0];
+  float y0 = vertices[1];
+  float minX = x0;
+  float maxX = x0;
+  float minY = y0;
+  float maxY = y0;
+  float twiceArea = 0;
+  int distinct = 0;
+  for (int p = 0; p < points; p++)
+  {
+   float x = vertices[p * 2];
+   float y = vertices[p * 2 + 1];
+   // NaN fails every comparison, so this rejects it too.
+   if (!(Math.AbsFloat(x) < POLYGON_FAR) || !(Math.AbsFloat(y) < POLYGON_FAR)) return false;
+   minX = Math.Min(minX, x);
+   maxX = Math.Max(maxX, x);
+   minY = Math.Min(minY, y);
+   maxY = Math.Max(maxY, y);
+   int q = (p + 1) % points;
+   float nx = vertices[q * 2];
+   float ny = vertices[q * 2 + 1];
+   if (Math.AbsFloat(nx - x) > 0.01 || Math.AbsFloat(ny - y) > 0.01) distinct++;
+   // Shoelace, relative to the first point so far-off coordinates keep their precision.
+   twiceArea += (x - x0) * (ny - y0) - (nx - x0) * (y - y0);
+  }
+  if (distinct < 3 || Math.AbsFloat(twiceArea) < 2 * POLYGON_MIN_AREA) return false;
+  if (width <= 0 || height <= 0) return true;
+  if (maxX < -POLYGON_MARGIN || maxY < -POLYGON_MARGIN) return false;
+  return minX <= width + POLYGON_MARGIN && minY <= height + POLYGON_MARGIN;
+ }
+
+ // The canvas's size in native pixels (the units of WorldToScreen and of the draw commands).
+ protected void CanvasSize(out float width, out float height)
+ {
+  width = 0;
+  height = 0;
+  if (m_Canvas) m_Canvas.GetScreenSize(width, height);
+  WorkspaceWidget workspace = GetGame().GetWorkspace();
+  if (!workspace) return;
+  width = Math.Max(width, workspace.GetWidth());
+  height = Math.Max(height, workspace.GetHeight());
+ }
+
+ // A filled shape, unless the game couldn't fill it or it's off the canvas (PolygonDrawable).
+ void AddPolygon(PolygonDrawCommand polygon)
+ {
+  if (!polygon) return;
+  float width, height;
+  CanvasSize(width, height);
+  if (PolygonDrawable(polygon.m_Vertices, width, height)) m_Commands.Insert(polygon);
  }
 
  // ---------------------------------------------------------------- order lines
@@ -260,12 +334,12 @@ class ACR_OrderDisplay : Managed
   PolygonDrawCommand back1 = new PolygonDrawCommand();
   back1.m_iColor = darkColor;
   back1.m_Vertices = {x0, y0, x1, y0, x1, y1};
-  m_Commands.Insert(back1);
+  AddPolygon(back1);
 
   PolygonDrawCommand back2 = new PolygonDrawCommand();
   back2.m_iColor = darkColor;
   back2.m_Vertices = {x0, y0, x1, y1, x0, y1};
-  m_Commands.Insert(back2);
+  AddPolygon(back2);
 
   float fillWidth = width * fill;
   if (fillWidth < 1.0) return;
@@ -275,12 +349,12 @@ class ACR_OrderDisplay : Managed
   PolygonDrawCommand bar1 = new PolygonDrawCommand();
   bar1.m_iColor = barColor;
   bar1.m_Vertices = {x, y, right, y, right, y + height};
-  m_Commands.Insert(bar1);
+  AddPolygon(bar1);
 
   PolygonDrawCommand bar2 = new PolygonDrawCommand();
   bar2.m_iColor = barColor;
   bar2.m_Vertices = {x, y, right, y + height, x, y + height};
-  m_Commands.Insert(bar2);
+  AddPolygon(bar2);
  }
 
  // ---------------------------------------------------------------- bases, zones
@@ -295,7 +369,7 @@ class ACR_OrderDisplay : Managed
    float radius = Math.AbsFloat(ex - cx);
    if (radius < 3) continue;
    float width = 2;
-   if (data.m_BaseContested[i] == 1) width = 4;
+   if ((data.m_BaseContested[i] & 1) != 0) width = 4;
    Ring(cx, cy, radius, BaseColor(data.m_BaseOwners[i], 0.9).PackToInt(), width, 48);
   }
  }
@@ -311,6 +385,8 @@ class ACR_OrderDisplay : Managed
    mapEntity.WorldToScreen(pos[0], pos[2], cx, cy, true);
    mapEntity.WorldToScreen(pos[0] + data.m_ZoneRadii[i], pos[2], ex, ey, true);
    float radius = Math.Max(Math.AbsFloat(ex - cx), 6);
+   // A shaped minefield draws its outline instead (DrawMineShapes).
+   if (ShapeAt(data, pos)) continue;
    // A mortar team's range ("~" label): thin and pale.
    if (i < data.m_ZoneLabels.Count() && data.m_ZoneLabels[i].StartsWith("~"))
    {
@@ -319,6 +395,104 @@ class ACR_OrderDisplay : Managed
    }
    Ring(cx, cy, radius, red.PackToInt(), 3, 48);
   }
+ }
+
+ // ---------------------------------------------------------------- shaped minefields (#200)
+ // Whether a shaped minefield's middle is at 'pos' (its zone: the label stays, the circle doesn't).
+ protected static bool ShapeAt(ACR_MapData data, vector pos)
+ {
+  int at = 0;
+  foreach (int count : data.m_MineShapeCounts)
+  {
+   if (count < 1 || at + count > data.m_MineShapeCorners.Count()) return false;
+   array<vector> corners = {};
+   for (int k = 0; k < count; k++) corners.Insert(data.m_MineShapeCorners[at + k]);
+   at += count;
+   if (vector.DistanceXZ(ACR_MineShape.Middle(corners), pos) < 2) return true;
+  }
+  return false;
+ }
+
+ // Each shaped field: a faint red fill and a red outline.
+ protected void DrawMineShapes(SCR_MapEntity mapEntity, ACR_MapData data)
+ {
+  Color red = new Color(1, 0.15, 0.1, 0.95);
+  Color fill = new Color(1, 0.15, 0.1, 0.16);
+  int at = 0;
+  foreach (int count : data.m_MineShapeCounts)
+  {
+   if (count < 3 || at + count > data.m_MineShapeCorners.Count()) break;
+   array<float> screen = {};
+   for (int k = 0; k < count; k++)
+   {
+    vector corner = data.m_MineShapeCorners[at + k];
+    int sx, sy;
+    mapEntity.WorldToScreen(corner[0], corner[2], sx, sy, true);
+    screen.Insert(sx);
+    screen.Insert(sy);
+   }
+   at += count;
+   PolygonDrawCommand area = new PolygonDrawCommand();
+   area.m_iColor = fill.PackToInt();
+   area.m_Vertices = {};
+   area.m_Vertices.Copy(screen);
+   AddPolygon(area);
+   LineDrawCommand edge = new LineDrawCommand();
+   edge.m_iColor = red.PackToInt();
+   edge.m_fWidth = 3;
+   edge.m_bShouldEnclose = true;
+   edge.m_Vertices = {};
+   edge.m_Vertices.Copy(screen);
+   m_Commands.Insert(edge);
+  }
+ }
+
+ // The commander's minefield points so far: dots, the edges between them, dashed edges through the cursor
+ // (where the next point would go) and a faint fill of what three or more already make; a ring on the last
+ // point, the one to click again.
+ protected void DrawMinePreview(SCR_MapEntity mapEntity, ACR_MapData data)
+ {
+  int count = data.m_MineCorners.Count();
+  if (count == 0) return;
+  Color line = new Color(1, 0.55, 0.15, 0.95);
+  Color fill = new Color(1, 0.55, 0.15, 0.18);
+  array<float> screen = {};
+  foreach (vector corner : data.m_MineCorners)
+  {
+   int sx, sy;
+   mapEntity.WorldToScreen(corner[0], corner[2], sx, sy, true);
+   screen.Insert(sx);
+   screen.Insert(sy);
+  }
+  if (count >= 3)
+  {
+   array<vector> outline = {};
+   outline.Copy(data.m_MineCorners);
+   ACR_MineShape.Order(outline);
+   PolygonDrawCommand area = new PolygonDrawCommand();
+   area.m_iColor = fill.PackToInt();
+   area.m_Vertices = {};
+   foreach (vector o : outline)
+   {
+    int ox, oy;
+    mapEntity.WorldToScreen(o[0], o[2], ox, oy, true);
+    area.m_Vertices.Insert(ox);
+    area.m_Vertices.Insert(oy);
+   }
+   AddPolygon(area);
+  }
+  for (int i = 0; i + 1 < count; i++) Line(screen[i * 2], screen[i * 2 + 1], screen[i * 2 + 2], screen[i * 2 + 3], line.PackToInt(), 3);
+  int cx, cy;
+  mapEntity.WorldToScreen(data.m_vMineCursor[0], data.m_vMineCursor[2], cx, cy, true);
+  float lx = screen[count * 2 - 2];
+  float ly = screen[count * 2 - 1];
+  if (count < ACR_MineShape.MOST_CORNERS)
+  {
+   DashedLine(lx, ly, cx, cy, line.PackToInt(), 2);
+   if (count >= 2) DashedLine(cx, cy, screen[0], screen[1], line.PackToInt(), 2);
+  }
+  for (int d = 0; d < count; d++) Dot(screen[d * 2], screen[d * 2 + 1], 4, line.PackToInt());
+  Ring(lx, ly, 9, line.PackToInt(), 2, 16);
  }
 
  // ---------------------------------------------------------------- pending, box
@@ -340,6 +514,69 @@ class ACR_OrderDisplay : Managed
    mapEntity.WorldToScreen(data.m_PendingFrom[i][0], data.m_PendingFrom[i][2], x0, y0, true);
    mapEntity.WorldToScreen(data.m_PendingTo[i][0], data.m_PendingTo[i][2], x1, y1, true);
    Line(x0, y0, x1, y1, faint.PackToInt(), 2);
+  }
+ }
+
+ static const float HEADING_FROM_PX = 16; // past the contact's symbol
+ static const float HEADING_TO_PX = 42;
+
+ // Spotted enemies seen moving: a red arrow from the symbol the way they were going.
+ protected void DrawContactHeadings(SCR_MapEntity mapEntity, ACR_MapData data)
+ {
+  foreach (int i, vector pos : data.m_ContactArrowPos)
+  {
+   float radians = data.m_ContactArrowHeading[i] * Math.DEG2RAD;
+   vector ahead = pos + Vector(Math.Sin(radians), 0, Math.Cos(radians)) * 100;
+   int x0, y0, x1, y1;
+   mapEntity.WorldToScreen(pos[0], pos[2], x0, y0, true);
+   mapEntity.WorldToScreen(ahead[0], ahead[2], x1, y1, true);
+   float dx = x1 - x0;
+   float dy = y1 - y0;
+   float length = Math.Sqrt(dx * dx + dy * dy);
+   if (length < 0.01) continue;
+   dx = dx / length;
+   dy = dy / length;
+   float alpha = data.m_ContactArrowAlpha[i];
+   Color shadeColor = new Color(0, 0, 0, 0.5 * alpha);
+   Color redColor = new Color(1, 0.25, 0.2, alpha);
+   float sx = x0 + dx * HEADING_FROM_PX;
+   float sy = y0 + dy * HEADING_FROM_PX;
+   float tx = x0 + dx * HEADING_TO_PX;
+   float ty = y0 + dy * HEADING_TO_PX;
+   float angle = Math.Atan2(dy, dx);
+   for (int pass = 0; pass < 2; pass++)
+   {
+    int color = shadeColor.PackToInt();
+    float width = 5;
+    if (pass == 1)
+    {
+     color = redColor.PackToInt();
+     width = 2.5;
+    }
+    Line(sx, sy, tx, ty, color, width);
+    for (int side = -1; side <= 1; side += 2)
+    {
+     float back = angle + Math.PI + side * 0.55;
+     Line(tx, ty, tx + Math.Cos(back) * 9, ty + Math.Sin(back) * 9, color, width);
+    }
+   }
+  }
+ }
+
+ // Drag to aim: an arrow from where the order goes to where it will face.
+ protected void DrawAim(SCR_MapEntity mapEntity, vector from, vector to)
+ {
+  int x0, y0, x1, y1;
+  mapEntity.WorldToScreen(from[0], from[2], x0, y0, true);
+  mapEntity.WorldToScreen(to[0], to[2], x1, y1, true);
+  Color gold = new Color(1, 0.85, 0.2, 0.95);
+  int color = gold.PackToInt();
+  Line(x0, y0, x1, y1, color, 3);
+  float angle = Math.Atan2(y1 - y0, x1 - x0);
+  for (int side = -1; side <= 1; side += 2)
+  {
+   float back = angle + Math.PI + side * 0.5;
+   Line(x1, y1, x1 + Math.Cos(back) * 14, y1 + Math.Sin(back) * 14, color, 3);
   }
  }
 

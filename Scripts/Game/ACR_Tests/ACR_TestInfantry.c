@@ -6,13 +6,22 @@ modded class ACR_AICommander
 // Native purchase, inventory and casualty-replacement acceptance for RU/UA defaults.
 class ACR_TestInfantry
 {
- static ref array<ref ACR_PendingPurchase> s_Units = {};
- static ref array<ref ACR_RequisitionEntry> s_Entries = {};
- static ref array<ref ACR_PendingPurchase> s_Replacements = {};
+ static ref array<ref ACR_PendingPurchase> s_Units;
+ static ref array<ref ACR_RequisitionEntry> s_Entries;
+ static ref array<ref ACR_PendingPurchase> s_Replacements;
  static int s_Checks;
  static bool s_USMC;
- static ref array<IEntity> s_NativeMarines = {};
- static ref array<string> s_NativeRoles = {"Rifleman", "SL", "LAT", "AMG", "TL_Marksman"};
+ static ref array<IEntity> s_NativeMarines;
+ static ref array<string> s_NativeRoles;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Units = {};
+  s_Entries = {};
+  s_Replacements = {};
+  s_NativeMarines = {};
+  s_NativeRoles = {"Rifleman", "SL", "LAT", "AMG", "TL_Marksman"};
+ }
 
  static void Check(string label, bool ok, string detail = "")
  {

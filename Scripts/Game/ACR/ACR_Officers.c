@@ -34,6 +34,14 @@ modded class SCR_LoadoutManager
   // Any other faction in the world (FIA, other faction mods): its own leader from its catalog,
   // so a side picked on the setup screen always has a command unit.
   ACR_AddCatalogOfficers(officers);
+  // A content pack's command units (ACR_ContentSocket.Officer: the same on every machine).
+  foreach (SCR_BasePlayerLoadout officer : officers)
+  {
+   SCR_FactionPlayerLoadout factionOfficer = SCR_FactionPlayerLoadout.Cast(officer);
+   if (!factionOfficer) continue;
+   ResourceName swapped = ACR_ContentSocket.Get().Officer(factionOfficer.m_sAffiliatedFaction, factionOfficer.m_sLoadoutResource);
+   if (!swapped.IsEmpty()) factionOfficer.m_sLoadoutResource = swapped;
+  }
   m_aPlayerLoadouts = officers;
   PrintFormat("[ACR] Player loadouts: officers only (%1)", officers.Count());
  }

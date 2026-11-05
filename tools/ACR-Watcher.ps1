@@ -6,11 +6,8 @@
 # log lines. It can only run these presets. It never touches a game you started
 # yourself: if Reforger is already running, the request is refused.
 #
-# Besides test presets it accepts one other request, 'publish': it runs
-# tools\Publish-Release.ps1 exactly like double-clicking Publish-Release.cmd
-# (uploads the already-built dist\ACActual-Arland.zip with your GitHub login).
-# And 'push': runs 'git push origin main' for this repo (backup of committed
-# work to the private GitHub repo, with your GitHub login). Nothing else.
+# It runs test presets only. 'publish' and 'push' requests are refused: releases go through the
+# release console (Mod-Release-Console.cmd) and pushes are Jacob's call, not a queued request.
 #
 # A request of the form 'srv:<preset>' runs the test on a hidden dedicated
 # server instead (no game window, no focus stolen, you can keep using the PC
@@ -58,6 +55,8 @@ Set-Content -LiteralPath (Join-Path $RequestDir 'watcher-started.txt') -Value (G
 $pruneBefore = (Get-Date).AddDays(-14)
 try {
     Get-ChildItem -LiteralPath $RequestDir -File | Where-Object { ($_.Name -like '*.result.txt' -or $_.Name -like '*.build.txt') -and $_.LastWriteTime -lt $pruneBefore } | Remove-Item -Force -ErrorAction SilentlyContinue
+    # Leftovers nothing reads: old queue markers and pid files (audit 31 Oct).
+    Get-ChildItem -LiteralPath $RequestDir -File | Where-Object { ($_.Name -like '*.queued' -or $_.Name -like '*.pid') -and $_.LastWriteTime -lt (Get-Date).AddDays(-2) } | Remove-Item -Force -ErrorAction SilentlyContinue
     foreach ($logDir in @((Join-Path $ProjectRoot '.local-game\logs'), (Join-Path $ProjectRoot '.local-testserver\logs'), (Join-Path $ProjectRoot '.local-server\logs'))) {
         if (Test-Path -LiteralPath $logDir) {
             Get-ChildItem -LiteralPath $logDir -Directory | Where-Object { $_.LastWriteTime -lt $pruneBefore } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
@@ -116,44 +115,13 @@ function Invoke-Inspect($id) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 'inspect' finished: $outcome, $exports files" -ForegroundColor Green
 }
 
-# Runs the release script unattended and reports its outcome and log.
-function Invoke-Publish($id) {
-    $script = Join-Path $PSScriptRoot 'Publish-Release.ps1'
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Publishing the current package to GitHub..." -ForegroundColor Cyan
-    $started = Get-Date
-    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $script + '"') -WindowStyle Hidden -PassThru
-    $outcome = 'completed'
-    if (!$proc.WaitForExit(300000)) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; $outcome = 'timeout' }
-    elseif ($proc.ExitCode -ne 0) { $outcome = 'failed' }
-    $result = @("status=$outcome", 'preset=publish', "seconds=$([int]((Get-Date) - $started).TotalSeconds)", '---')
-    $logFile = Join-Path $ProjectRoot 'dist\publish-log.txt'
-    if (Test-Path -LiteralPath $logFile) { $result += Get-Content -LiteralPath $logFile | Select-Object -Last 25 }
-    Write-Result $id $result
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Publish finished: $outcome" -ForegroundColor Green
-}
-
-# Pushes committed work on main to the private GitHub repo (fixed command, no arguments taken).
-function Invoke-Push($id) {
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Pushing main to GitHub..." -ForegroundColor Cyan
-    $started = Get-Date
-    $out = Join-Path $env:TEMP 'acr-push-out.txt'
-    $err = Join-Path $env:TEMP 'acr-push-err.txt'
-    $proc = Start-Process -FilePath 'git' -ArgumentList 'push origin main' -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
-    $null = $proc.Handle  # cache the handle, or ExitCode comes back empty and a good push reads as failed
-    $outcome = 'completed'
-    if (!$proc.WaitForExit(120000)) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; $outcome = 'timeout' }
-    elseif ($proc.ExitCode -ne 0) { $outcome = 'failed' }
-    $result = @("status=$outcome", 'preset=push', "seconds=$([int]((Get-Date) - $started).TotalSeconds)", '---')
-    foreach ($f in @($out, $err)) { if (Test-Path -LiteralPath $f) { $result += Get-Content -LiteralPath $f | Select-Object -Last 15 } }
-    Write-Result $id $result
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Push finished: $outcome" -ForegroundColor Green
-}
-
 # Scenario id for a world: Worlds/X.ent -> "{GUID}Missions/X.conf" from its .meta.
 function Get-TestMissionId($world) {
     $name = [IO.Path]::GetFileNameWithoutExtension($world)
     $meta = Join-Path $ProjectRoot ('Missions/' + $name + '.conf.meta')
     if (!(Test-Path -LiteralPath $meta)) { $meta = Join-Path (Split-Path $ProjectRoot -Parent) ('BetterBattleBuddies/Missions/' + $name + '.conf.meta') }
+    # ACA map add-ons (ACAMap*, 29 Oct): their worlds need the map mods, so the args file applies.
+    if (!(Test-Path -LiteralPath $meta)) { $found = Get-ChildItem -Path (Split-Path $ProjectRoot -Parent) -Directory -Filter 'ACAMap*' | ForEach-Object { Join-Path $_.FullName ('Missions/' + $name + '.conf.meta') } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1; if ($found) { $meta = $found } }
     if (!(Test-Path -LiteralPath $meta)) { return $null }
     $m = Select-String -LiteralPath $meta -Pattern 'Name\s+"(\{[0-9A-F]{16}\}Missions/[^"]+)"' | Select-Object -First 1
     if ($m) { return $m.Matches[0].Groups[1].Value }
@@ -176,11 +144,18 @@ function Update-TestPack($name, $source) {
     try { $stamp = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($files | Sort-Object) -join "`n"))).Replace('-', '') } finally { $sha.Dispose() }
     $out = Join-Path $PackRoot "addons\$name"
     $stampFile = Join-Path $PackRoot "$name.stamp"
-    if ((Test-Path -LiteralPath (Join-Path $out 'data.pak')) -and (Test-Path -LiteralPath $stampFile) -and (Get-Content -LiteralPath $stampFile -Raw).Trim() -eq $stamp) { return $null }
+    $tmp = "$out.new"
+    # A pack nested in the old one (the swap below failed, 27 Oct) means the old one is stale.
+    $nested = Join-Path $out "$name.new"
+    # Download manifests in the pack mean the backend replaced it with the Workshop release (30 Oct:
+    # Workshop 0.5.8 > local, so every pak: run tested the published build, without the test harness).
+    $downloaded = @(Get-ChildItem -LiteralPath $out -Filter '*_manifest.json' -ErrorAction SilentlyContinue).Count -gt 0
+    if ((Test-Path -LiteralPath (Join-Path $out 'data.pak')) -and !(Test-Path -LiteralPath $nested) -and !$downloaded -and (Test-Path -LiteralPath $stampFile) -and (Get-Content -LiteralPath $stampFile -Raw).Trim() -eq $stamp) { return $null }
+    # No stamp until the new pack is in place: any failure below repacks on the next run.
+    Remove-Item -LiteralPath $stampFile -Force -ErrorAction SilentlyContinue
     $wb = Find-Workbench
     $gameAddons = Join-Path (Split-Path (Find-Game) -Parent) 'addons'
     # Pack into a fresh folder and swap it in, so a failed pack leaves the last good one.
-    $tmp = "$out.new"
     $wbProfile = Join-Path $PackRoot 'workbench'
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force $tmp, $wbProfile | Out-Null
@@ -189,10 +164,30 @@ function Update-TestPack($name, $source) {
     $proc = Start-Process -FilePath $wb -ArgumentList $wbArgs -WindowStyle Hidden -PassThru
     if (!$proc.WaitForExit(900000)) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; return "packing $name timed out" }
     if (!(Test-Path -LiteralPath (Join-Path $tmp 'data.pak'))) { return "packing $name failed (Workbench log: $wbProfile\logs)" }
-    Remove-Item -LiteralPath $out -Recurse -Force -ErrorAction SilentlyContinue
-    Move-Item -LiteralPath $tmp -Destination $out
+    # The swap. A server that has just been stopped can still hold the old data.pak for a moment:
+    # removing it failed silently, Move-Item then put the new pack inside the old folder and the
+    # stamp was written, so every pak: run tested the old pack (27 Oct, a day's stale BBB and ACA).
+    for ($try = 0; $try -lt 10 -and (Test-Path -LiteralPath $out); $try++) {
+        Remove-Item -LiteralPath $out -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $out) { Start-Sleep -Seconds 2 }
+    }
+    if (Test-Path -LiteralPath $out) { return "couldn't replace the old $name pack in $out (still in use? close any server or Workbench using it)" }
+    try { Move-Item -LiteralPath $tmp -Destination $out -ErrorAction Stop } catch { return "couldn't move the new $name pack into place: $($_.Exception.Message)" }
+    if (!(Test-Path -LiteralPath (Join-Path $out 'data.pak')) -or (Test-Path -LiteralPath $nested)) { return "the new $name pack isn't in place in $out" }
     Set-Content -LiteralPath $stampFile -Value $stamp -Encoding ASCII
     return $null
+}
+
+# The version of a mod the pak: server's backend already has (its first run downloads the Workshop
+# copies into the profile). A config asking for "latest" made it "update" our packs to a newer
+# Workshop release (30 Oct, 0.5.7 -> 0.5.8: every pak: run tested the published build, no test
+# harness); asking for the version it has keeps it from downloading, and our packs are mounted.
+function Get-CachedModVersion($modId) {
+    $dir = Get-ChildItem -LiteralPath (Join-Path $PackServerProfile 'addons') -Directory -Filter "*_$modId" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (!$dir) { return $null }
+    $file = Join-Path $dir.FullName 'ServerData.json'
+    if (!(Test-Path -LiteralPath $file)) { return $null }
+    try { return [string]((Get-Content -LiteralPath $file -Raw | ConvertFrom-Json).revision.version) } catch { return $null }
 }
 
 function Test-UdpPortBusy($port) {
@@ -206,7 +201,8 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
     $prefix = 'srv'; if ($packed) { $prefix = 'pak' }
     if ($config.Workbench) { Write-Result $id @('status=refused', 'reason=inspect cannot run on the server'); return }
     # Never two test servers at once (an old one is closed first).
-    if ($script:TestServerPid) { Stop-Process -Id $script:TestServerPid -ErrorAction SilentlyContinue; $script:TestServerPid = 0 }
+    # Wait for it to exit: it holds the packs a pak: run is about to replace.
+    if ($script:TestServerPid) { Stop-Process -Id $script:TestServerPid -ErrorAction SilentlyContinue; Wait-Process -Id $script:TestServerPid -Timeout 30 -ErrorAction SilentlyContinue; $script:TestServerPid = 0 }
     $server = Find-SteamApp 'Arma Reforger Server' 'ArmaReforgerServer.exe'
     if (!$server) { Write-Result $id @('status=refused', 'reason=Arma Reforger Server not found'); return }
     $world = 'Worlds/ACR_TestRange.ent'
@@ -234,6 +230,14 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
         if (Get-Process -Name 'ArmaReforgerServer' -ErrorAction SilentlyContinue) { Write-Result $id @('status=refused', 'reason=another Reforger server kept running (port 2001)'); return }
         if ($waited -gt 0) { Write-Host "[$time] Waited $waited s for another server to close" -ForegroundColor Yellow }
         $profileDir = $TestServerProfile
+        # Unpacked mods resolve their own prefabs only through resourceDatabase.rdb (gitignored,
+        # written when Workbench opens the project). A fresh worktree has none: the server logs
+        # 'Wrong GUID/name for resource' and tests fail or pass on half-loaded prefabs (1 Nov).
+        foreach ($modDir in @($ProjectRoot, (Join-Path $AddonsDir 'BetterBattleBuddies'))) {
+            if ((Test-Path -LiteralPath (Join-Path $modDir 'addon.gproj')) -and !(Test-Path -LiteralPath (Join-Path $modDir 'resourceDatabase.rdb'))) {
+                Write-Result $id @('status=refused', "reason=no resourceDatabase.rdb in $modDir (open its addon.gproj in Workbench once)"); return
+            }
+        }
         $serverAddons = $AddonsDir
         $template = '-server "{world}" -addonsDir "{addonsDir}" -addons AC230926A0010001 -profile "{profile}" -maxFPS 60 -noBackend -acrAdminPassword 1'
     }
@@ -250,6 +254,14 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
     $cfgPath = Join-Path $profileDir 'testserver.json'
     if ($template -match '\{config\}' -and (Test-Path -LiteralPath $cfgTemplate)) {
         $json = (Get-Content -LiteralPath $cfgTemplate -Raw).Replace('{mission}', $mission)
+        if ($packed) {
+            $cfg = $json | ConvertFrom-Json
+            foreach ($mod in @($cfg.game.mods)) {
+                $have = Get-CachedModVersion $mod.modId
+                if ($have) { $mod | Add-Member -NotePropertyName version -NotePropertyValue $have -Force }
+            }
+            $json = $cfg | ConvertTo-Json -Depth 10
+        }
         Set-Content -LiteralPath $cfgPath -Value $json -Encoding ASCII
     }
     $serverArgs = $template.Replace('{world}', $world).Replace('{mission}', [string]$mission).Replace('{profile}', $profileDir).Replace('{addonsDir}', $serverAddons).Replace('{config}', $cfgPath) + ' ' + $config.Flags
@@ -263,8 +275,10 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
     while ($true) {
         Start-Sleep -Seconds 3
         if (!$log -and (Test-Path -LiteralPath $serverLogs)) {
-            $dir = Get-ChildItem -LiteralPath $serverLogs -Directory | Where-Object { $_.CreationTime -ge $started.AddSeconds(-5) } |
-                   Sort-Object CreationTime -Descending | Select-Object -First 1
+            # UTC: when the clock goes back (end of daylight saving) the last hour's log folders
+            # looked newer in local time, and a run read an old log (1 Nov, a stale verdict in 5 s).
+            $dir = Get-ChildItem -LiteralPath $serverLogs -Directory | Where-Object { $_.CreationTimeUtc -ge $started.ToUniversalTime().AddSeconds(-5) } |
+                   Sort-Object CreationTimeUtc -Descending | Select-Object -First 1
             if ($dir) { $log = Join-Path $dir.FullName 'console.log' }
         }
         if ($proc.HasExited) { $outcome = 'server exited'; break }
@@ -277,7 +291,8 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
         }
         if (((Get-Date) - $started).TotalSeconds -gt ($config.TimeoutSec + 30)) { break }
     }
-    if (!$proc.HasExited) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue }
+    # Wait for it to exit, so the next queued pak: run can replace the packs it holds.
+    if (!$proc.HasExited) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue; [void]$proc.WaitForExit(30000) }
     $script:TestServerPid = 0
     $result = @("status=$outcome", "preset=${prefix}:$preset", "started=$($started.ToString('s'))", "seconds=$([int]((Get-Date) - $started).TotalSeconds)", "log=$log")
     if ($packed) { $result += "packSeconds=$packSeconds" }
@@ -298,19 +313,86 @@ function Remove-KnownNoise($text) {
     # Vanilla AI bug: a group whose members all died processes a failed move (null leader).
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer[^\r\n]*\s+Class:\s+'SCR_AIProcessFailedMovementResult'", 'vanilla AI null-leader exception (ignored)')
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: No suppression volume provided!", 'vanilla suppression exception (ignored)')
+    # Vanilla SCR_AIOccupyDriversInUsedVehicles: a vehicle crew's member list still holds a soldier
+    # killed that frame when it looks for a new driver (Everon long soak 27 Oct, armed off-road crew).
+    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: NULL pointer to instance\. Variable 'agent'\s+Class:\s+'SCR_AIOccupyDriversInUsedVehicles'", 'vanilla AI replacement-driver exception (ignored)')
     # Vanilla failed-move report (NodeErrorOnce in SCR_AIProcessFailedMovementResult), e.g. when a
     # built composition cuts the navmesh under a group still walking (Everon long soak 23 Oct).
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Virtual Machine Exception\s+Reason: Failed move from[^\r\n]*(?:\r?\n(?!\d\d:\d\d:)[^\r\n]*)*?SCR_AIProcessFailedMovementResult\.c", 'vanilla AI failed-move report (ignored)')
     # Vanilla SCR_AIGetFireTimes: RandomFloat(0.1, m_fShotSpan * 1.9) when the shot span is 0.
     $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Math\.RandomFloat: invalid parameters min = 0\.100000 max = 0\.000000", 'vanilla AI fire-time warning (ignored)')
+    # Vanilla SCR_AILookAtThreatSystemLogic: RandomFloat(x, coefficient * x) with its default coefficient 1
+    # (Kolguyev long soak 27 Oct, after an air strike). Equal min and max only.
+    $text = [regex]::Replace($text, "SCRIPT\s+\(E\): Math\.RandomFloat: invalid parameters min = ([\d.]+) max = \1(?!\d)", 'vanilla AI look-timer warning (ignored)')
     # Vanilla ammo storage (built composition) on a dedicated server: its resupply action has no storage manager.
     $text = ($text -split "`n" | Where-Object { $_ -notmatch "SCR_ResupplySelfSupportStationAction.*no storage manager found" }) -join "`n"
+    # Vanilla AI comms: a contact report whose target is gone by the time it is spoken (Everon long
+    # soak 27 Oct), and the failed request it reports in turn.
+    $text = ($text -split "`n" | Where-Object { $_ -notmatch "SCR_AISoundHandling: SetSignalsAndTransmit: Missing entity or position for|SCR_AICommsHandler: SCR_AISoundHandling\.SetSignalsAndTransmit failed for request" }) -join "`n"
     return $text
 }
 
 function Write-Result($id, $lines) {
     $path = Join-Path $RequestDir "$id.result.txt"
     $lines | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
+# What a test checks, for the banner: the comment that names its flag in the test scripts
+# ("// -acrPadsTest: helipads on this scenario's map"), else the header of the file that reads it.
+function Get-FirstSentence($text) {
+    $cut = $text.IndexOf('. ')
+    if ($cut -gt 0) { $text = $text.Substring(0, $cut + 1) }
+    if ($text.Length -gt 150) { $text = $text.Substring(0, 147).TrimEnd() + '...' }
+    if ($text) { $text = $text.Substring(0, 1).ToUpper() + $text.Substring(1) }
+    return $text
+}
+
+function Get-TestPurpose($flags) {
+    if ($flags -notmatch '-(acr[A-Za-z]+Test)') { return '' }
+    $name = $Matches[1]
+    $testDir = Join-Path $ProjectRoot 'Scripts\Game\ACR_Tests'
+    if (!(Test-Path -LiteralPath $testDir)) { return '' }
+    $hit = Select-String -Path (Join-Path $testDir '*.c') -Pattern ('//.*-' + $name + '\b[^:]*:\s*(.+)') | Select-Object -First 1
+    if ($hit) {
+        # The comment may run on over the next lines (up to three more).
+        $text = $hit.Matches[0].Groups[1].Value.Trim()
+        $next = @(Get-Content -LiteralPath $hit.Path | Select-Object -Skip $hit.LineNumber -First 3)
+        foreach ($line in $next) {
+            if ($text -match '[.)]$' -or $line -notmatch '^\s*//\s*(.+)' -or $line -match '//\s*-acr') { break }
+            $text += ' ' + $Matches[1].Trim()
+        }
+        return (Get-FirstSentence $text)
+    }
+    $file = Select-String -Path (Join-Path $testDir '*.c') -Pattern ('"' + $name + '"') -List | Where-Object { $_.Filename -notmatch '^ACR_Test(Harness|HooksImpl)\.c$' } | Select-Object -First 1
+    if ($file) {
+        $first = Get-Content -LiteralPath $file.Path -TotalCount 1
+        if ($first -match '^\s*//\s*(.+)') { return (Get-FirstSentence $Matches[1].Trim()) }
+    }
+    return ''
+}
+
+# Jacob, 1 Nov: a test that opens the game on his screen says so on screen. The banner is a
+# separate click-through window (tools\Show-TestBanner.ps1) that closes with the game.
+function Start-TestBanner($id, $preset, $config, $gamePid, $started) {
+    try {
+        $lines = @()
+        $purpose = Get-TestPurpose $config.Flags
+        if ($purpose) { $lines += $purpose }
+        $build = ''
+        $buildFile = Join-Path $RequestDir "$id.build.txt"
+        if (Test-Path -LiteralPath $buildFile) { $build = ' | build ' + (Get-Content -LiteralPath $buildFile -Raw).Trim() }
+        $lines += "Run '$id'$build | started $($started.ToString('HH:mm'))"
+        $lines += "Requested by an agent. Closes by itself; leave mouse and keyboard alone until then."
+        $spec = Join-Path $RequestDir "$id.banner.json"
+        @{ title = "AUTOMATED TEST: AC: Actual '$preset'"; lines = $lines; timeoutSec = $config.TimeoutSec; started = $started.ToString('o') } |
+            ConvertTo-Json | Set-Content -LiteralPath $spec -Encoding UTF8
+        $script = Join-Path $PSScriptRoot 'Show-TestBanner.ps1'
+        $bannerArgs = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $script + '" -SpecFile "' + $spec + '" -WatchPid ' + $gamePid
+        return Start-Process -FilePath 'powershell.exe' -ArgumentList $bannerArgs -WindowStyle Hidden -PassThru
+    } catch {
+        Write-Host "Banner not shown: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $null
+    }
 }
 
 function Invoke-Request($file) {
@@ -336,8 +418,11 @@ function Invoke-Request($file) {
             $Presets[$parts[0].Trim().ToLower()] = @{ Flags = $parts[1]; TimeoutSec = [int]$parts[2]; DoneWhen = '\[ACR\] TEST COMPLETE'; World = $world }
         }
     }
-    if ($preset -eq 'publish') { Invoke-Publish $id; return }
-    if ($preset -eq 'push') { Invoke-Push $id; return }
+    if ($preset -eq 'publish' -or $preset -eq 'push') {
+        Write-Host "[$time] Refused '$preset': use the release console (releases) or ask Jacob (pushes)" -ForegroundColor Yellow
+        Write-Result $id @("status=refused", "reason='$preset' is no longer a watcher request: releases go through Mod-Release-Console.cmd, pushes are Jacob's")
+        return
+    }
     if (!$Presets.ContainsKey($preset)) {
         Write-Host "[$time] Refused unknown preset '$preset'" -ForegroundColor Yellow
         Write-Result $id @("status=refused", "reason=unknown preset '$preset'")
@@ -361,14 +446,15 @@ function Invoke-Request($file) {
     Write-Host "[$time] Running '$preset'..." -ForegroundColor Cyan
     $started = Get-Date
     $proc = Start-Process -FilePath $game -ArgumentList $gameArgs -WorkingDirectory (Split-Path $game -Parent) -PassThru
+    $banner = Start-TestBanner $id $preset $config $proc.Id $started
 
     $outcome = 'timeout'
     $log = $null
     while ($true) {
         Start-Sleep -Seconds 3
         if (!$log -and (Test-Path -LiteralPath $LogRoot)) {
-            $dir = Get-ChildItem -LiteralPath $LogRoot -Directory | Where-Object { $_.CreationTime -ge $started.AddSeconds(-5) } |
-                   Sort-Object CreationTime -Descending | Select-Object -First 1
+            $dir = Get-ChildItem -LiteralPath $LogRoot -Directory | Where-Object { $_.CreationTimeUtc -ge $started.ToUniversalTime().AddSeconds(-5) } |
+                   Sort-Object CreationTimeUtc -Descending | Select-Object -First 1
             if ($dir) { $log = Join-Path $dir.FullName 'console.log' }
         }
         if ($proc.HasExited) { $outcome = 'game exited'; break }
@@ -383,6 +469,7 @@ function Invoke-Request($file) {
         if (((Get-Date) - $started).TotalSeconds -gt $config.TimeoutSec) { break }
     }
     if (!$proc.HasExited) { Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue }
+    if ($banner -and !$banner.HasExited) { Stop-Process -Id $banner.Id -ErrorAction SilentlyContinue }
 
     $result = @("status=$outcome", "preset=$preset", "started=$($started.ToString('s'))", "seconds=$([int]((Get-Date) - $started).TotalSeconds)", "log=$log", '---')
     if ($log -and (Test-Path -LiteralPath $log)) {

@@ -124,7 +124,12 @@ class ACR_Think
  // 0 off; otherwise 1 + side * 2 + page.
  protected static int s_iMode;
  protected static Widget s_Root;
- protected static ref array<TextWidget> s_Texts = {};
+ protected static ref array<TextWidget> s_Texts;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Texts = {};
+ }
  protected static const int MAX_LINES = 50;
  protected static const ResourceName TEXT_LAYOUT = "{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout";
 
@@ -154,6 +159,17 @@ class ACR_Think
   if (side < 0 && s_iMode > 0) side = (s_iMode - 1) / 2;
   if (side < 0) side = 0;
   Open(1 + side * 2 + page);
+ }
+
+ // Per mission (ACR_Manager.Stop): the card isn't tracked by ACR_Hud, so it and its poll went on
+ // into the main menu and the next match.
+ static void Reset()
+ {
+  if (GetGame()) GetGame().GetCallqueue().Remove(Poll);
+  s_iMode = 0;
+  if (s_Root) s_Root.RemoveFromHierarchy();
+  s_Root = null;
+  s_Texts.Clear();
  }
 
  protected static void Open(int mode)

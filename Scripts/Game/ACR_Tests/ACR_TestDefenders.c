@@ -4,10 +4,19 @@
 // (their own group, not a squad, defending the position); one killed, then every enemy dead:
 // they pack up with 3 back in reserve; a position that is gone takes its reserve with it.
 // Checkpoints: none by default, -acrRoadblockDefenders 2 gives one 2 (a barricade none), and a
-// dismantled one takes them with it.
+// dismantled one takes them with it. A crew from the reserve onto four guns: each man takes his own
+// gun, all four manned within 30 s.
 class ACR_TestDefenders
 {
- static const int CHECKS = 8;
+ static const int CHECKS = 9;
+ static const int CREW_GUNS = 4;
+ static ref array<IEntity> s_aGuns;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aGuns = {};
+ }
+ static ref ACR_DefenderPost s_CrewPost;
  static int s_iStep;
  static int s_iStepAt;
  static ACR_Fortification s_Fort;
@@ -82,8 +91,13 @@ class ACR_TestDefenders
    if (!s_Post.m_Group && waited < 15) return;
    int alive = manager.m_Bases.GuardsAlive(s_Post.m_Group);
    bool notSquad = s_Post.m_Group && !manager.FindSquadByGroup(s_Post.m_Group) && manager.m_Bases.IsGarrison(s_Post.m_Group);
-   bool defending = s_Post.m_Group && s_Post.m_Group.GetCurrentWaypoint() && vector.DistanceXZ(s_Post.m_Group.GetCurrentWaypoint().GetOrigin(), s_Fort.m_vPos) < 1;
-   ACR_TestRegress.Check("defenders: an enemy 300 m out deploys them, defending the position (not a squad)", alive == 4 && s_Post.m_iReserve == 0 && notSquad && defending, string.Format("out %1 after %2 s, %3 alive, reserve %4, not a squad %5, defending %6", s_Post.m_Group != null, waited, alive, s_Post.m_iReserve, notSquad, defending));
+   // #155: they hold behind the line, each on a post behind a sandbag position's wall.
+   bool defending = s_Post.m_Group && s_Post.m_Group.GetCurrentWaypoint() && (vector.DistanceXZ(s_Post.m_Group.GetCurrentWaypoint().GetOrigin(), ACR_Fortify.HoldCentre(s_Fort)) < 1 || (s_Post.m_bOnWings && vector.DistanceXZ(s_Post.m_Group.GetCurrentWaypoint().GetOrigin(), s_Fort.m_vPos) < 1));
+   array<IEntity> posts = {};
+   ACR_Garrison.PostEntities(s_Post.m_Group, posts);
+   int behind;
+   foreach (IEntity post : posts) if (post && ACR_TestFortify.BagZ(s_Fort, post.GetOrigin()) < ACR_TestFortify.WALL_Z) behind++;
+   ACR_TestRegress.Check("defenders: an enemy 300 m out deploys them, defending the position from posts behind its bags (not a squad)", alive == 4 && s_Post.m_iReserve == 0 && notSquad && defending && posts.Count() == 4 && behind == 4, string.Format("out %1 after %2 s, %3 alive, reserve %4, not a squad %5, defending %6, %7 of %8 posts behind the bags", s_Post.m_Group != null, waited, alive, s_Post.m_iReserve, notSquad, defending, behind, posts.Count()));
    // One is killed; then every enemy is dead.
    array<AIAgent> agents = {};
    if (s_Post.m_Group) s_Post.m_Group.GetAgents(agents);
@@ -122,8 +136,30 @@ class ACR_TestDefenders
    if (plain) ACR_Roadblocks.DismantleRoadblock(plain);
    if (held) ACR_Roadblocks.DismantleRoadblock(held);
    ACR_TestRegress.Check("defenders: a checkpoint gets them only with -acrRoadblockDefenders (2 here, a barricade none), dismantled they go", sized && rbPost.m_bGone, string.Format("plain %1 (defenders %2), held %3 (reserve %4, gone %5), barricade %6", plain != null, plain && plain.m_Defenders != null, held != null, rbPost && rbPost.m_iReserve, rbPost && rbPost.m_bGone, barricade));
+   // A crew from the reserve onto guns standing apart.
+   vector gunsAt = alpha.GetAnchor().GetOrigin() + Vector(60, 0, 40);
+   s_CrewPost = ACR_Defenders.Add(us, ACR_Manager.Ground(gunsAt), "Gun test", 20);
+   s_CrewPost.m_iReserve = CREW_GUNS;
+   for (int g = 0; g < CREW_GUNS; g++)
+   {
+    IEntity gun = ACR_Manager.SpawnPrefab(ACR_TestGunHold.MG, ACR_Manager.Ground(gunsAt + Vector(g * 8, 0, 0)));
+    if (gun) s_aGuns.Insert(gun);
+   }
+   ACR_Defenders.CrewGuns(s_CrewPost, s_aGuns);
+   NextStep(tick);
+   return;
+  }
+
+  if (s_iStep == 4)
+  {
+   int manned;
+   foreach (IEntity crewGun : s_aGuns) if (crewGun && !ACR_Defenders.FreeTurret(crewGun)) manned++;
+   if (waited % 5 == 0) PrintFormat("[ACR] DEFENDERS test: %1 of %2 guns manned after %3 s", manned, s_aGuns.Count(), waited);
+   if (manned < CREW_GUNS && waited < 30) return;
+   ACR_TestRegress.Check("defenders: a gun crew from the reserve mans every gun, each man his own", manned == CREW_GUNS, string.Format("%1 of %2 guns manned after %3 s", manned, CREW_GUNS, waited));
+   ACR_Defenders.Remove(s_CrewPost);
    ACR_TestRegress.Complete("defenders", CHECKS);
-   s_iStep = 4;
+   s_iStep = 5;
   }
  }
 

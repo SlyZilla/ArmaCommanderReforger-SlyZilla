@@ -5,9 +5,16 @@
 // blast damage (ACR_Supports.BlastDamage), for comparison.
 class ACR_TestBlast
 {
- static ref array<IEntity> s_Soldiers = {};
- static ref array<int> s_Ring = {};
- static ref array<float> s_Rings = {4, 8, 12, 16, 20, 25, 30, 40};
+ static ref array<IEntity> s_Soldiers;
+ static ref array<int> s_Ring;
+ static ref array<float> s_Rings;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Soldiers = {};
+  s_Ring = {};
+  s_Rings = {4, 8, 12, 16, 20, 25, 30, 40};
+ }
  static vector s_Center;
 
  static void Run(ACR_TestHarness h, int tick)

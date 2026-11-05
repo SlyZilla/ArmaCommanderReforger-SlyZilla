@@ -7,7 +7,8 @@
 // large ones carry a machine gun) and plain barricades sized to the road. East sides (USSR,
 // Russian, SLA) build the Soviet set, FIA log barricades. A construction truck with the squad
 // pays in supplies (vanilla composition prices) when it has them, otherwise RP; a cancelled
-// build refunds wherever it was paid from.
+// build refunds wherever it was paid from. Every roadblock keeps a chicane lane its side's trucks
+// and APCs can drive (ACR_RoadblockLane), with the gun and the holders' post beside it.
 
 enum ACR_ERoadblockType
 {
@@ -31,11 +32,28 @@ class ACR_Roadblock : Managed
 	IEntity m_PaidTruck;  // the construction truck that paid for it (none: RP)
 	float m_fPaidLoads;
 	ACR_DefenderPost m_Defenders; // its defenders (-acrRoadblockDefenders, ACR_Defenders)
+	vector m_vPost;               // where its holders and defenders post, off the lane (ACR_RoadblockLane.Post)
+	float m_fPostRadius = 15;
+	int m_iLaneMoved;             // pieces slid out of the lane
+	ref array<IEntity> m_aWings = {}; // the bags running out from its ends (ACR_Wings)
+	ref array<ref ACR_WingPlan> m_aWingPlans = {};
 }
 
 class ACR_Roadblocks : Managed
 {
-	static ref array<ref ACR_Roadblock> s_aRoadblocks = {};
+	static ref array<ref ACR_Roadblock> s_aRoadblocks;
+	// Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+	static void ACR_InitStatics()
+	{
+		s_aRoadblocks = {};
+	}
+	static const float WORKS_CLEARANCE = 25; // m from a Fortify position (and half that past a minefield's size)
+
+	// Per match (ACR_Manager.Stop): the last mission's roadblocks fed the next one's siting and AI.
+	static void Reset()
+	{
+		s_aRoadblocks.Clear();
+	}
 
 	static const ResourceName PREFAB_US = "{55D508179EF5E64A}Prefabs/Compositions/Slotted/SlotRoadMedium/Checkpoint_M_US_01.et";
 	static const ResourceName PREFAB_USSR = "{7C85836D444E3797}Prefabs/Compositions/Slotted/SlotRoadMedium/Checkpoint_M_USSR_01.et";
@@ -241,14 +259,18 @@ class ACR_Roadblocks : Managed
 		return manager.m_Bases.GetRP(factionKey) + squad.PendingRP() >= Cost(type);
 	}
 
-	// Beside the road on the squad's side, clear of the footprint: the squad heads there, so a
-	// truck it brings does not park on the spot.
+	// Beside the road, clear of the footprint: the squad heads there, so a truck it brings does
+	// not park on the spot. On the side of its post (the composition's -X side, where every
+	// checkpoint has its gun: ACR_RoadblockLane.Post), so the squad crosses the road before the
+	// wire is up: from the far side it walked through the finished checkpoint's barbed wire to its
+	// post and bled (srv:rblane, 27 Oct). With the lane off, the squad's own side as before.
 	static vector Stage(vector site, float yaw, int type, vector from)
 	{
 		float rad = yaw * Math.DEG2RAD;
 		vector side = Vector(Math.Cos(rad), 0, -Math.Sin(rad));
 		vector toSquad = from - site;
-		if (toSquad[0] * side[0] + toSquad[2] * side[2] < 0) side = side * -1;
+		if (!ACR_RoadblockLane.s_bOff) side = side * -1;
+		else if (toSquad[0] * side[0] + toSquad[2] * side[2] < 0) side = side * -1;
 		return ACR_Manager.Ground(site + side * (Footprint(type) + STAGE_GAP));
 	}
 
@@ -322,7 +344,8 @@ class ACR_Roadblocks : Managed
 		return best;
 	}
 
-	static bool ValidateSite(vector pos, out vector outRoadPos, out float outYaw, out string refusal, string faction = "", vector facing = vector.Zero)
+	// ownBase: a base whose own works these are (ACR_BaseLines): it may stand inside that one's distance.
+	static bool ValidateSite(vector pos, out vector outRoadPos, out float outYaw, out string refusal, string faction = "", vector facing = vector.Zero, ACR_Base ownBase = null)
 	{
 		ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
 		if (!aiWorld || !aiWorld.GetRoadNetworkManager())
@@ -403,7 +426,7 @@ class ACR_Roadblocks : Managed
 		// Distance check to bases
 		foreach (ACR_Base base : ACR_Base.s_All)
 		{
-			if (vector.DistanceXZ(outRoadPos, base.GetOrigin()) < MIN_BASE_DIST)
+			if (base != ownBase && vector.DistanceXZ(outRoadPos, base.GetOrigin()) < MIN_BASE_DIST)
 			{
 				refusal = "too close to base perimeter";
 				return false;
@@ -417,6 +440,25 @@ class ACR_Roadblocks : Managed
 			if (vector.DistanceXZ(outRoadPos, rb.m_vPos) < MIN_ROADBLOCK_DIST)
 			{
 				refusal = "too close to existing roadblock";
+				return false;
+			}
+		}
+
+		// Nor on top of a dug-in position or through a minefield (audit 31 Oct): the checkpoint
+		// clipped through the position's sandbags, or put mines in its own lane.
+		foreach (ACR_Fortification fort : ACR_Fortify.s_Positions)
+		{
+			if (fort && vector.DistanceXZ(outRoadPos, fort.m_vPos) < WORKS_CLEARANCE)
+			{
+				refusal = "too close to a dug-in position";
+				return false;
+			}
+		}
+		foreach (ACR_Minefield field : ACR_Minefields.s_Fields)
+		{
+			if (field && vector.DistanceXZ(outRoadPos, field.m_vPos) < ACR_Minefields.SIZE + WORKS_CLEARANCE * 0.5)
+			{
+				refusal = "a minefield is there";
 				return false;
 			}
 		}
@@ -439,7 +481,16 @@ class ACR_Roadblocks : Managed
 		return Math.ClampInt(ACR_LogisticsRules.Choice("acrRoadblockDefenders", "0").ToInt(), 0, 8);
 	}
 
-	static ACR_Roadblock SpawnRoadblock(string factionKey, vector pos, float yaw, string squadName = "", int type = ACR_ERoadblockType.MEDIUM)
+	// The layout record's length in ints (0: none, the prefab's layout everywhere).
+	static int LayoutSize(IEntity ent)
+	{
+		SCR_CampaignBuildingCompositionComponent comp = ACR_StructureLayout.Comp(ent);
+		if (!comp) return 0;
+		return comp.ACR_LayoutSize();
+	}
+
+	// lane false: no lane for anyone's vehicles (an FIA ambush's barricade is there to stop the convoy).
+	static ACR_Roadblock SpawnRoadblock(string factionKey, vector pos, float yaw, string squadName = "", int type = ACR_ERoadblockType.MEDIUM, bool lane = true)
 	{
 		ResourceName prefab = PrefabFor(type, factionKey, RoadWidthAt(pos));
 		type = TypeFor(type, factionKey);
@@ -457,6 +508,12 @@ class ACR_Roadblocks : Managed
 		if (!ent) return null;
 
 		ent.SetYawPitchRoll(Vector(yaw, 0, 0));
+		ACR_GroundTilt.Place(ent, prefab, pos, yaw); // barricades lie on the ground; checkpoints stay upright
+		// A lane our own trucks and APCs can drive, before the navmesh is rebuilt round it.
+		int laneMoved;
+		if (lane) laneMoved = ACR_RoadblockLane.Open(ent, type == ACR_ERoadblockType.BARRICADE);
+		// Every machine shows the lane: a client builds the composition from its prefab (ACR_StructureLayout).
+		if (laneMoved > 0) ACR_StructureLayout.Record(ent);
 
 		SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(ent.FindComponent(SCR_CampaignBuildingCompositionComponent));
 		if (comp)
@@ -477,15 +534,25 @@ class ACR_Roadblocks : Managed
 		rb.m_sBuilderSquad = squadName;
 		rb.m_fSpawnedAt = GetGame().GetWorld().GetWorldTime();
 		rb.m_iType = type;
+		rb.m_iLaneMoved = laneMoved;
+		rb.m_vPost = pos;
+		if (lane && !ACR_RoadblockLane.s_bOff)
+		{
+			rb.m_vPost = ACR_RoadblockLane.Post(ent, rb.m_Turret);
+			rb.m_fPostRadius = ACR_RoadblockLane.POST_RADIUS;
+		}
 		int defenders = Defenders(type);
 		if (defenders > 0)
 		{
-			rb.m_Defenders = ACR_Defenders.Add(factionKey, pos, string.Format("%1 roadblock", factionKey), 15);
+			rb.m_Defenders = ACR_Defenders.Add(factionKey, rb.m_vPost, string.Format("%1 roadblock", factionKey), rb.m_fPostRadius);
 			rb.m_Defenders.m_iReserve = defenders;
 		}
 
+		// Its gun and its holders see out: the bushes round them go (ACR_FieldOfFire).
+		if (rb.m_Turret) ACR_FieldOfFire.ForGun(rb.m_Turret);
+		ACR_FieldOfFire.Round(rb.m_vPost, ACR_FieldOfFire.POST_M, "roadblock post");
 		s_aRoadblocks.Insert(rb);
-		PrintFormat("[ACR] ROADBLOCK spawned for %1 at %2 (%3, turret=%4)", factionKey, pos, Name(type), rb.m_Turret != null);
+		PrintFormat("[ACR] ROADBLOCK spawned for %1 at %2 (%3, turret=%4, lane: %5 pieces moved, post %6 m off, layout record %7 bytes)", factionKey, pos, Name(type), rb.m_Turret != null, laneMoved, vector.DistanceXZ(rb.m_vPost, pos), ACR_StructureLayout.Bytes(LayoutSize(ent)));
 		return rb;
 	}
 
@@ -494,6 +561,7 @@ class ACR_Roadblocks : Managed
 		if (!rb) return;
 		if (rb.m_Turret) VacateTurret(rb.m_Turret);
 		if (rb.m_Entity) ACR_Navmesh.DeleteStructure(rb.m_Entity);
+		ACR_Wings.Remove(rb.m_aWings);
 
 		// Half its price back where it was paid from (the medium checkpoint's DISMANTLE_REFUND RP);
 		// a destroyed truck's half is lost.
@@ -592,10 +660,35 @@ class ACR_Roadblocks : Managed
 			ACR_Roadblock rb = s_aRoadblocks[i];
 			if (!rb || !rb.m_Entity || rb.m_Entity.IsDeleted())
 			{
-				if (rb) ACR_Defenders.Remove(rb.m_Defenders);
+				if (rb)
+				{
+					ACR_Defenders.Remove(rb.m_Defenders);
+					ACR_Wings.Remove(rb.m_aWings);
+				}
 				s_aRoadblocks.RemoveOrdered(i);
 			}
 		}
+	}
+
+	// Our own AI drivers take a roadblock's lane at LANE_SPEED_KMH from LANE_SLOW_RANGE out
+	// (ACR_Squad.LaneSpeed): the chicane is no place for a truck at road speed.
+	static const float LANE_SPEED_KMH = 12;
+	static const float LANE_SLOW_RANGE = 30;
+
+	// The nearest of the side's roadblocks within range of pos (null: none).
+	static ACR_Roadblock OwnNear(vector pos, string factionKey, float range = LANE_SLOW_RANGE)
+	{
+		ACR_Roadblock best = null;
+		float bestDist = range;
+		foreach (ACR_Roadblock rb : s_aRoadblocks)
+		{
+			if (!rb || !rb.m_Entity || rb.m_sFaction != factionKey) continue;
+			float d = vector.DistanceXZ(pos, rb.m_vPos);
+			if (d >= bestDist) continue;
+			bestDist = d;
+			best = rb;
+		}
+		return best;
 	}
 
 	static ACR_Roadblock FindNearest(vector pos, float maxDist = 50.0)

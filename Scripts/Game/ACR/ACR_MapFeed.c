@@ -55,13 +55,18 @@ class ACR_FeedFrame : Managed
  ref array<float> m_ZoneRadii = {};
  ref array<string> m_ZoneLabels = {};
  string m_sZonesSig;
+ ref array<vector> m_MineShapeCorners = {}; // shaped minefields' outlines (#200), each one's corners in turn
+ ref array<int> m_MineShapeCounts = {};
+ string m_sMineShapesSig;
  // intel and our empty vehicles
  ref array<vector> m_ContactPos = {};
  ref array<int> m_ContactKinds = {};
  ref array<int> m_ContactCounts = {};
  ref array<int> m_ContactAges = {};
+ ref array<int> m_ContactDetails = {}; // 3 per contact: id, NATO icons, heading (degrees, -1 none)
  ref array<string> m_Feed = {};
  ref array<int> m_FeedAges = {};
+ ref array<vector> m_FeedPos = {}; // where each line happened (vector.Zero: nowhere)
  string m_sIntelSig;
  ref array<vector> m_VehiclePos = {};
  ref array<string> m_VehicleNames = {};
@@ -91,8 +96,23 @@ class ACR_FeedFrame : Managed
 class ACR_MapFeed
 {
  static const float FULL_EVERY_MS = 10000;
- protected static ref map<int, ref map<string, string>> s_Sent = new map<int, ref map<string, string>>();
- protected static ref map<int, float> s_LastFull = new map<int, float>();
+ protected static ref map<int, ref map<string, string>> s_Sent;
+ protected static ref map<int, float> s_LastFull;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sent = new map<int, ref map<string, string>>();
+  s_LastFull = new map<int, float>();
+ }
+
+ // Per mission (ACR_Manager.Stop): player ids start again and the world clock restarts near 0,
+ // so the old signatures held back unchanged-looking sections (an empty buy list for the host)
+ // and the full resend waited as long as the last match ran.
+ static void Reset()
+ {
+  s_Sent.Clear();
+  s_LastFull.Clear();
+ }
 
  static void PublishAll(ACR_Manager manager)
  {
@@ -108,8 +128,14 @@ class ACR_MapFeed
   foreach (int id : players)
   {
    SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(id));
-   if (!pc || !pc.GetControlledEntity()) continue;
+   if (!pc) continue;
    Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
+   if (!pc.GetControlledEntity())
+   {
+    // No body: the empty label hides a capture bar left from where he died (sent once, deduplicated).
+    if (faction) PublishCapture(pc, faction.GetFactionKey());
+    continue;
+   }
    if (!faction) continue;
    string key = faction.GetFactionKey();
    ACR_FeedFrame frame;
@@ -118,7 +144,7 @@ class ACR_MapFeed
     frame = Build(manager, faction);
     frames.Insert(key, frame);
    }
-   bool full = now - s_LastFull.Get(id) >= FULL_EVERY_MS;
+   bool full = now - s_LastFull.Get(id) >= FULL_EVERY_MS || now < s_LastFull.Get(id);
    if (full) s_LastFull.Set(id, now);
    SendFrame(manager, pc, id, frame, full);
   }
@@ -172,7 +198,7 @@ class ACR_MapFeed
   // Per player: command status (the countdown is counted on by the client).
   string key = frame.m_sKey;
   bool commander = manager.IsCommander(id);
-  string text = manager.CommandStatus(id);
+  string text = manager.CommandStatus(id) + ACR_Insurgency.StandingTag(key);
   int rp = manager.m_Bases.GetRP(key);
   int income = manager.m_Bases.GetIncome(key);
   int seconds = manager.m_Bases.SecondsToIncome();
@@ -185,16 +211,75 @@ class ACR_MapFeed
   if (Changed(id, "debug", string.Format("%1|%2", debugAllowed, debugText), full)) pc.ACR_SendDebug(debugAllowed, debugText);
   string report = ACR_Report.Text(key);
   if (Changed(id, "report", report, full)) pc.ACR_SendReport(report);
+  bool calm = ACR_MapDeclutter.OptionOn();
+  if (Changed(id, "style", string.Format("%1", calm), full)) pc.ACR_SendMapStyle(calm);
   if (Changed(id, "bases", frame.m_sBasesSig, full)) { pc.ACR_SendBases(frame.m_BasePos, frame.m_BaseNames, frame.m_BaseOwners, frame.m_BaseDetails, frame.m_BaseRadii, frame.m_BaseContested, frame.m_BaseSupply); Count(frame, "bases"); }
   if (Changed(id, "reqs", frame.m_sReqSig, full)) { pc.ACR_SendRequisitions(frame.m_ReqNames, frame.m_ReqCosts, frame.m_ReqRemaining); Count(frame, "reqs"); }
   if (Changed(id, "sups", frame.m_sSupSig, full)) { pc.ACR_SendSupports(frame.m_SupNames, frame.m_SupCosts, frame.m_SupCooldowns); Count(frame, "sups"); }
   if (Changed(id, "zones", frame.m_sZonesSig, full)) { pc.ACR_SendZones(frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels); Count(frame, "zones"); }
+  if (Changed(id, "mineshapes", frame.m_sMineShapesSig, full)) { pc.ACR_SendMineShapes(frame.m_MineShapeCorners, frame.m_MineShapeCounts); Count(frame, "mineshapes"); }
   if (Changed(id, "orders", frame.m_sOrdersSig, full)) { pc.ACR_SendOrders(frame.m_OrderGroups, frame.m_OrderTargets, frame.m_OrderKinds, frame.m_OrderIssuers); Count(frame, "orders"); }
   PublishCapture(pc, key);
-  if (Changed(id, "intel", frame.m_sIntelSig, full)) { pc.ACR_SendIntel(frame.m_ContactPos, frame.m_ContactKinds, frame.m_ContactCounts, frame.m_ContactAges, frame.m_Feed, frame.m_FeedAges); Count(frame, "intel"); }
+  if (Changed(id, "intel", frame.m_sIntelSig, full)) { pc.ACR_SendIntel(frame.m_ContactPos, frame.m_ContactKinds, frame.m_ContactCounts, frame.m_ContactAges, frame.m_ContactDetails, frame.m_Feed, frame.m_FeedAges, frame.m_FeedPos); Count(frame, "intel"); }
   if (Changed(id, "vehicles", frame.m_sVehiclesSig, full)) { pc.ACR_SendVehicles(frame.m_VehiclePos, frame.m_VehicleNames, frame.m_VehicleAges); Count(frame, "vehicles"); }
   if (Changed(id, "cmd", frame.m_sCmdSig, full)) { pc.ACR_SendCommanders(frame.m_CmdIds, frame.m_CmdTags, frame.m_CmdActions, frame.m_CmdActionAges, frame.m_SelGroups, frame.m_SelOwners); Count(frame, "cmd"); }
   if (Changed(id, "pings", frame.m_sPingsSig, full)) { pc.ACR_SendPings(frame.m_PingIds, frame.m_PingKinds, frame.m_PingPos, frame.m_PingOwners, frame.m_PingTags, frame.m_PingAges, frame.m_PingAnswers); Count(frame, "pings"); }
+  PublishTwoIC(manager, pc, id, key, full);
+ }
+
+ // The 2IC's card and channel (ACR_TwoIC, #14 v1), when they changed. Nothing while the 2IC is
+ // off, except one empty card to a player who had it on.
+ protected static void PublishTwoIC(ACR_Manager manager, SCR_PlayerController pc, int id, string key, bool full)
+ {
+  map<string, string> sent = s_Sent.Get(id);
+  if (!ACR_TwoIC.On())
+  {
+   if (!sent || !sent.Contains("2ic")) return;
+   sent.Remove("2ic");
+   sent.Remove("2icch");
+   array<int> none = {};
+   pc.ACR_SendTwoICCard(none, "");
+   return;
+  }
+  ACR_TwoICCard card = ACR_TwoIC.CardFor(manager, key);
+  if (Changed(id, "2ic", card.Sig(), full))
+  {
+   array<int> numbers = {};
+   card.Pack(numbers);
+   pc.ACR_SendTwoICCard(numbers, card.m_sDoing);
+  }
+  if (Changed(id, "2icch", ACR_TwoIC.ChannelSig(key), full))
+  {
+   array<int> ids = {};
+   array<int> kinds = {};
+   array<string> texts = {};
+   array<string> answers = {};
+   array<string> statuses = {};
+   array<int> ages = {};
+   array<int> flags = {};
+   ACR_TwoIC.Channel(key, ids, kinds, texts, answers, statuses, ages, flags);
+   pc.ACR_SendTwoICChannel(ids, kinds, texts, answers, statuses, ages, flags, (int)(GetGame().GetWorld().GetWorldTime() / 1000));
+  }
+  // Live requests' rings on the map.
+  if (Changed(id, "2icring", ACR_TwoICRequests.RingsSig(key), full))
+  {
+   array<vector> ringPos = {};
+   array<string> ringLabels = {};
+   array<int> ringKinds = {};
+   ACR_TwoICRequests.Rings(key, ringPos, ringLabels, ringKinds);
+   pc.ACR_SendTwoICRings(ringPos, ringLabels, ringKinds);
+  }
+  // The pinned no-truck line's "Buy a truck": its price, or why it can't be bought now.
+  int truckCost;
+  string truckBase, truckWhy;
+  if (Changed(id, "2ictruck", ACR_TwoICSuggest.OfferFor(manager, key, truckCost, truckBase, truckWhy), full)) pc.ACR_SendTwoICTruck(truckCost, truckBase, truckWhy);
+  // The panel's rows, while the player has it open.
+  if (!ACR_TwoIC.PanelOpen(id)) return;
+  ACR_TwoICPanelData panel = ACR_TwoIC.PanelFor(manager, key);
+  bool fresh = ACR_TwoIC.PanelFresh(id);
+  if (!Changed(id, "2icpanel", panel.Sig(), full || fresh)) return;
+  pc.ACR_SendTwoICSquads(panel.m_SquadIds, panel.m_SquadNames, panel.m_Wheres, panel.m_Doings, panel.m_RunBys, panel.m_SquadFlags);
+  pc.ACR_SendTwoICPanel(panel.m_FobLabels, panel.m_FobFlags, panel.m_iShare, panel.m_sSmall);
  }
 
  // ---------------------------------------------------------------- building
@@ -324,6 +409,7 @@ class ACR_MapFeed
    IEntity ridden = ACR_Transport.VehicleOf(leader);
    if (ridden) markerAnchor = ridden;
    frame.m_LeaderPos.Insert(markerAnchor.GetOrigin());
+   if (squad && squad.m_bAICommanded) name += " [AI]";
    frame.m_GroupNames.Insert(name);
    frame.m_Symbols.Insert(icons);
    frame.m_Symbols.Insert(dimension);
@@ -335,7 +421,9 @@ class ACR_MapFeed
    if (squad && !squad.IsVehicle() && squad.CountAlive() > 0) mode |= 64; // + flag: can build roadblock
    if (ACR_Minefields.CanLay(squad)) mode |= 128; // + flag: can lay / disarm mines
    if (ACR_Fortify.CanFortify(squad)) mode |= 256; // + flag: can fortify
-   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB, +64 roadblock, +128 minefields, +256 fortify)
+   if (squad && squad.m_bAICommanded) mode |= 1024; // + flag: handed to the AI (ACR_SquadAI)
+   if (squad && squad.m_bPatrol) mode |= 512; // + flag: patrolling
+   frame.m_Symbols.Insert(mode); // 4 ints per group: icons, dimension, amplifier, move mode (+16 manned turret, +32 can establish FOB, +64 roadblock, +128 minefields, +256 fortify, +512 patrolling, +1024 handed to the AI, 2048 = a commander's command unit)
    int state = 0;
    if (ACR_Squad.FindController(leader) > 0) state = 1;
    frame.m_LeaderStates.Insert(state);
@@ -389,7 +477,7 @@ class ACR_MapFeed
     {
      frame.m_LeaderPos[existing] = anchor.GetOrigin();
      frame.m_GroupNames[existing] = label;
-     frame.m_Symbols[existing * 4 + 3] = 32;
+     frame.m_Symbols[existing * 4 + 3] = 2048;
      frame.m_Commandable[existing] = 0;
      continue;
     }
@@ -399,7 +487,7 @@ class ACR_MapFeed
     frame.m_Symbols.Insert(EMilitarySymbolIcon.INFANTRY);
     frame.m_Symbols.Insert(EMilitarySymbolDimension.LAND);
     frame.m_Symbols.Insert(EMilitarySymbolAmplifier.SQUAD);
-    frame.m_Symbols.Insert(32); // persistent commander marker; excluded from F7 possession
+    frame.m_Symbols.Insert(2048); // persistent commander marker; excluded from F7 possession (its own bit: 32 is "can establish FOB")
     int commandState;
     if (ACR_Squad.FindController(unit) > 0) commandState = 1;
     frame.m_LeaderStates.Insert(commandState);
@@ -455,6 +543,7 @@ class ACR_MapFeed
  {
   string sig = "";
   int bytes;
+  bool calm = ACR_MapDeclutter.OptionOn();
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (!base.IsVisibleTo(frame.m_sKey)) continue;
@@ -465,6 +554,8 @@ class ACR_MapFeed
     detail += ACR_FobSupply.Describe(base);
     detail += ACR_FobSlots.Describe(base);
    }
+   // The calm map names the enemy's HQ when zoomed out (ACR_MapDeclutter.IsHQ).
+   if (calm && ACR_LogisticsRules.IsHQ(base)) detail += " | HQ";
    frame.m_BasePos.Insert(base.GetOrigin());
    frame.m_BaseNames.Insert(base.GetLabel());
    frame.m_BaseOwners.Insert(owner);
@@ -472,6 +563,7 @@ class ACR_MapFeed
    frame.m_BaseRadii.Insert(base.m_fRadius);
    int flag = 0;
    if (base.m_bContested) flag = 1;
+   if (base.m_sOwner == frame.m_sKey) flag += ACR_FobAI.FeedFlag(base); // +2: handed to the AI
    frame.m_BaseContested.Insert(flag);
    int stock = -1;
    if (base.m_bBuilt && base.m_sOwner == frame.m_sKey && base.m_FobSupply) stock = ACR_FobSupply.Stock(base.m_FobSupply);
@@ -524,7 +616,7 @@ class ACR_MapFeed
    // Helicopter supports (worlds with helipads) say whether a stationed helicopter is ready.
    string heli = "";
    if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.UsesPads(frame.m_sKey) && manager.m_Supports)
-    heli = manager.m_Supports.Station().StatusFor(frame.m_sKey, ACR_HeliStation.NeedsGunship(entry.m_eType));
+    heli = manager.m_Supports.Station().StatusFor(frame.m_sKey, ACR_HeliStation.NeedsGunship(entry.m_eType), ACR_HeliStation.IsAttack(entry.m_eType));
    if (ACR_Mortars.IsMortarType(entry.m_eType)) frame.m_SupNames.Insert(entry.m_sName + "  [" + mortars + "]");
    else if (!heli.IsEmpty()) frame.m_SupNames.Insert(entry.m_sName + "  [" + heli + "]");
    else frame.m_SupNames.Insert(entry.m_sName);
@@ -567,9 +659,24 @@ class ACR_MapFeed
   ACR_Minefields.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
   // ... and its fortified positions (pale rings).
   ACR_Fortify.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
+  // ...and its ambushes' kill zones (pale rings).
+  ACR_Ambush.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
+  // ...and the areas its QRFs cover (pale rings).
+  ACR_Qrf.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
+  // ...and roads where FIA ambushed it (danger areas, ACR_Insurgency).
+  ACR_Insurgency.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
+  ACR_Guerrillas.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
+  // ...and enemy transmissions it picked up (pale rings, ACR_RadioIntercept).
+  ACR_RadioIntercept.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
   foreach (int r, vector rangePos : frame.m_ZonePos) sig += P(rangePos) + frame.m_ZoneLabels[r] + ";";
   frame.m_sZonesSig = sig;
   frame.m_Bytes.Set("zones", sig.Length() + frame.m_ZonePos.Count() * 16 + 12);
+  // The side's shaped minefields' outlines (#200), drawn instead of their circles.
+  ACR_Minefields.Shapes(frame.m_sKey, frame.m_MineShapeCorners, frame.m_MineShapeCounts);
+  string shapes = "";
+  foreach (vector corner : frame.m_MineShapeCorners) shapes += P(corner);
+  frame.m_sMineShapesSig = shapes;
+  frame.m_Bytes.Set("mineshapes", frame.m_MineShapeCorners.Count() * 12 + frame.m_MineShapeCounts.Count() * 4 + 8);
  }
 
  // Spotted enemies (hostile markers), the side's feed, our known empty vehicles.
@@ -586,8 +693,12 @@ class ACR_MapFeed
    frame.m_ContactCounts.Insert(contact.m_iCount);
    int age = (now - contact.m_fSeen) / 1000;
    frame.m_ContactAges.Insert(age);
+   int heading = Math.Round(contact.m_fHeading);
+   frame.m_ContactDetails.Insert(contact.m_sKey.Hash());
+   frame.m_ContactDetails.Insert(contact.m_iIcons);
+   frame.m_ContactDetails.Insert(heading);
    int seen = contact.m_fSeen / 1000;
-   sig += P(contact.m_Pos) + contact.m_iKind.ToString() + "," + contact.m_iCount.ToString() + "," + seen.ToString() + ";";
+   sig += P(contact.m_Pos) + contact.m_iKind.ToString() + "," + contact.m_iCount.ToString() + "," + seen.ToString() + "," + contact.m_iIcons.ToString() + "," + heading.ToString() + ";";
   }
   int feedBytes;
   foreach (int i, string line : intel.m_Feed)
@@ -596,12 +707,15 @@ class ACR_MapFeed
    if (seconds > 600) break; // older than 10 min: not news any more
    frame.m_Feed.Insert(line);
    frame.m_FeedAges.Insert(seconds);
+   vector spot = vector.Zero;
+   if (i < intel.m_FeedPos.Count()) spot = intel.m_FeedPos[i];
+   frame.m_FeedPos.Insert(spot);
    int at = intel.m_FeedTime[i] / 1000;
    sig += line + at.ToString() + ";";
-   feedBytes += line.Length() + 8;
+   feedBytes += line.Length() + 20;
   }
   frame.m_sIntelSig = sig;
-  frame.m_Bytes.Set("intel", frame.m_ContactPos.Count() * 24 + feedBytes + 24);
+  frame.m_Bytes.Set("intel", frame.m_ContactPos.Count() * 36 + feedBytes + 28);
   string vehicleSig = "";
   int vehicleBytes;
   foreach (IEntity vehicle, float seenAt : intel.m_VehicleSeen)

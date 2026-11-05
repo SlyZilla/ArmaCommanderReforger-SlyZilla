@@ -12,6 +12,9 @@ class ACR_UnitMarker : SCR_MapMarkerBase
  RplId m_GroupId;      // squad this marker belongs to
  int m_BaseIndex = -1; // >= 0: this marker is a base
  bool m_bContact;      // spotted enemy: clicks go through to the map
+ bool m_bSuspected;    // spotted enemy not seen for a while (ACR_CONTACT_SUSPECTED)
+ float m_fAlpha = 1;   // spotted enemy: fades as the sighting ages
+ int m_iContactShape = -1; // spotted enemy: icons and dimension it was prepared with
  int m_iPingId = -1;   // >= 0: this marker is a ping's label
  int m_iSymbolKey;     // changes when m_GroupSymbol is set differently
  protected Widget m_wPip; // ground-level reticle pip for spotted contacts
@@ -28,6 +31,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   // Always update: units move into view without the map being panned.
   m_bTestVisibleFrame = false;
   m_sStyled = "-";
+  m_wPip = null; // it went with the old root
   super.OnCreateMarker(true);
   if (!m_wRoot) return;
   m_Click = new ACR_MarkerClick();
@@ -52,7 +56,8 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (!m_MarkerWidgetComp) return;
   string shown = m_Label;
   if (m_BaseIndex >= 0) shown = m_BaseCaption;
-  string key = string.Format("%1|%2|%3|%4|%5|%6", shown, m_State, m_Original, m_Selected, m_iSymbolKey, m_BaseHover);
+  int alphaStep = Math.Round(m_fAlpha * 20);
+  string key = string.Format("%1|%2|%3|%4|%5|%6|%7|%8", shown, m_State, m_Original, m_Selected, m_iSymbolKey, m_BaseHover, alphaStep, m_bSuspected);
   if (key == m_sStyled) return;
   m_sStyled = key;
   if (m_BaseIndex >= 0) m_MarkerWidgetComp.SetEventListening(true);
@@ -67,9 +72,11 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   if (m_State == 6) color = new Color(1, 1, 1, 1);          // ping label (coloured by kind afterwards)
   if (m_Original) color = new Color(0.2, 1, 0.3, 1);
   if (m_Selected) color = new Color(1, 1, 1, 1);
+  if (m_fAlpha < 1) color = new Color(color.R(), color.G(), color.B(), color.A() * m_fAlpha);
   m_MarkerWidgetComp.SetColor(color);
   if (m_GroupSymbol) m_MarkerWidgetComp.UpdateMilitarySymbol(m_GroupSymbol);
-  if (m_bContact && m_wRoot && !m_wPip)
+  // A spotted enemy's reticle; not our empty vehicles (state 4), which use m_bContact for click-through
+  if (m_bContact && m_State != 4 && m_wRoot && !m_wPip)
   {
    WorkspaceWidget ws = GetGame().GetWorkspace();
    if (ws)
@@ -83,8 +90,8 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   }
   if (m_wPip)
   {
-   float pipAlpha = 0.95;
-   if (m_State == 3 && m_Label.Contains("?")) pipAlpha = 0.55;
+   float pipAlpha = 0.95 * m_fAlpha;
+   if (m_bSuspected) pipAlpha = Math.Min(pipAlpha, 0.55);
    m_wPip.SetColor(new Color(1, 0.22, 0.18, pipAlpha));
   }
  }
@@ -122,7 +129,7 @@ class ACR_UnitMarker : SCR_MapMarkerBase
   }
   if (m_Original) pc.ACR_Request(ACR_ERequest.RETURN);
   else if (m_BaseIndex >= 0) pc.ACR_ClickBase(m_Label);
-  else pc.ACR_SelectGroup(pc.ACR_CycleOverlap(this));
+  else pc.ACR_PickGroup(this);
  }
 }
 class ACR_MarkerClick : ScriptedWidgetEventHandler
@@ -175,18 +182,25 @@ modded class SCR_PlayerController
  protected float m_ACR_LastCommand = -1000;
  protected float m_ACR_CommandWindow = -1000;
  protected int m_ACR_CommandsInWindow;
- void ACR_Request(int command, RplId targetId = RplId.Invalid(), vector point = vector.Zero)
+ protected ref ACR_SameClickGuard m_ACR_SameClick = new ACR_SameClickGuard();
+ // aim: where a player dragged the order to face (drag to aim), else vector.Zero.
+ void ACR_Request(int command, RplId targetId = RplId.Invalid(), vector point = vector.Zero, vector aim = vector.Zero)
  {
   if (!ACR_Manager.GetInstance()) return;
-  if (command == ACR_ERequest.POSSESS || command == ACR_ERequest.RETURN) ACR_MapHandoff.Release(this, GetControlledEntity(), false);
-  Rpc(ACR_CommandServer, command, targetId, point);
+  // F8 (or the COMMAND UNIT marker) while already in the command unit is refused by the server:
+  // don't pull the map out of his hand for it.
+  bool returning = command == ACR_ERequest.RETURN && GetControlledEntity() != GetMainEntity();
+  if (command == ACR_ERequest.POSSESS || returning) ACR_MapHandoff.Release(this, GetControlledEntity(), false);
+  Rpc(ACR_CommandServer, command, targetId, point, aim);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
- protected void ACR_CommandServer(int command, RplId targetId, vector point)
+ protected void ACR_CommandServer(int command, RplId targetId, vector point, vector aim)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
-  // Flood guard: up to 24 orders a second (one click can order a dozen squads).
+  // Flood guard: up to 96 orders a second. One click sends one per selected squad and a box
+  // selection has no cap: at 24, ordering 30 squads silently left 6 behind (audit 31 Oct). A
+  // dropped order is said, once a window.
   float now = GetGame().GetWorld().GetWorldTime();
   if (now - m_ACR_CommandWindow > 1000)
   {
@@ -194,8 +208,20 @@ modded class SCR_PlayerController
    m_ACR_CommandsInWindow = 0;
   }
   m_ACR_CommandsInWindow++;
-  if (m_ACR_CommandsInWindow > 24) return;
+  if (m_ACR_CommandsInWindow > 96)
+  {
+   if (m_ACR_CommandsInWindow == 97) manager.Notify(GetPlayerId(), "Too many orders at once: some were not given, order again");
+   return;
+  }
+  if (m_ACR_SameClick.Drop(command, targetId, now))
+  {
+   PrintFormat("[ACR] ORDER dropped: a move right after an order that takes a facing for the same squad (the same click), player %1", GetPlayerId());
+   return;
+  }
+  ACR_Requests.s_vAim = aim;
   string message = manager.HandleRequest(this, command, targetId, point);
+  ACR_Requests.s_vAim = vector.Zero;
+  m_ACR_SameClick.Note(command, targetId, now);
   if (command == ACR_ERequest.REINFORCE) Rpc(ACR_ReinforceFeedbackOwner, message);
   else Rpc(ACR_FeedbackOwner, message);
  }
@@ -283,7 +309,7 @@ modded class SCR_PlayerController
   m_bDeathTransitionActive = false;
   if (m_DeathBlackoutRoot)
   {
-   m_DeathBlackoutRoot.RemoveFromHierarchy();
+   ACR_Hud.Remove(m_DeathBlackoutRoot); // created through ACR_Hud.CreateLayer: untrack it too
    m_DeathBlackoutRoot = null;
    m_DeathBlackoutImage = null;
    m_DeathBlackoutText = null;
@@ -294,7 +320,7 @@ modded class SCR_PlayerController
  protected void ACR_EnsureDeathOverlay()
  {
   if (m_DeathBlackoutRoot && m_DeathBlackoutImage && m_DeathBlackoutText) return;
-  if (m_DeathBlackoutRoot) m_DeathBlackoutRoot.RemoveFromHierarchy();
+  if (m_DeathBlackoutRoot) ACR_Hud.Remove(m_DeathBlackoutRoot);
   m_DeathBlackoutRoot = null;
   m_DeathBlackoutImage = null;
   m_DeathBlackoutText = null;
@@ -470,10 +496,12 @@ modded class SCR_PlayerController
  }
  void ACR_RequestDebug(int action)
  {
-  Rpc(ACR_DebugServer, action, m_ACR_SelectedBase);
+  Rpc(ACR_DebugServer, action, m_ACR_SelectedBase, m_ACR_SelectedGroup);
  }
+ // group: the squad selected on the caller's map. The server's copy of the controller never has
+ // the selection, so a remote admin's Heal/Kill Squad hit the wrong squad or none (audit 31 Oct).
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
- protected void ACR_DebugServer(int action, string baseName)
+ protected void ACR_DebugServer(int action, string baseName, RplId group)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
@@ -494,7 +522,7 @@ modded class SCR_PlayerController
   if (action == ACR_EDebug.HEAL_SQUAD)
   {
    ACR_Squad target = null;
-   if (m_ACR_SelectedGroup.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(m_ACR_SelectedGroup)));
+   if (group.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(group)));
    if (!target) manager.m_LastSquad.Find(GetPlayerId(), target);
    if (target)
    {
@@ -515,7 +543,7 @@ modded class SCR_PlayerController
   if (action == ACR_EDebug.KILL_SQUAD)
   {
    ACR_Squad target = null;
-   if (m_ACR_SelectedGroup.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(m_ACR_SelectedGroup)));
+   if (group.IsValid()) target = manager.FindSquadByGroup(SCR_AIGroup.Cast(SCR_EntityHelper.RplIdToEntity(group)));
    if (target)
    {
     ACR_DebugCommand.KillSquad(target);
@@ -548,6 +576,18 @@ modded class SCR_PlayerController
  {
   string result = ACR_DebugCommand.Execute(this, cmd, baseName, groupId, cursorPos);
   Rpc(ACR_DebugCommandOwner, result);
+ }
+
+ bool m_ACR_AdminUnbound; // server: this admin's RTS camera has no leash (/acr unbound)
+ void ACR_SendUnbound(bool unbound)
+ {
+  if (GetPlayerId() == SCR_PlayerController.GetLocalPlayerId()) ACR_RTSCameraManager.s_bAdminUnbound = unbound;
+  else Rpc(ACR_UnboundOwner, unbound);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_UnboundOwner(bool unbound)
+ {
+  ACR_RTSCameraManager.s_bAdminUnbound = unbound;
  }
 
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
@@ -851,12 +891,13 @@ modded class SCR_PlayerController
    foreach (ACR_UnitMarker groupMarker : m_ACR_GroupMarkers) manager.ACR_RemoveMarker(groupMarker);
    foreach (ACR_UnitMarker baseMarker : m_ACR_BaseMarkers) manager.ACR_RemoveMarker(baseMarker);
    foreach (ACR_UnitMarker zoneMarker : m_ACR_ZoneMarkers) manager.ACR_RemoveMarker(zoneMarker);
-   foreach (ACR_UnitMarker contactMarker : m_ACR_ContactMarkers) manager.ACR_RemoveMarker(contactMarker);
+   foreach (int contactId, ACR_UnitMarker contactMarker : m_ACR_ContactById) manager.ACR_RemoveMarker(contactMarker);
    foreach (ACR_UnitMarker vehicleMarker : m_ACR_VehicleMarkers) manager.ACR_RemoveMarker(vehicleMarker);
   }
   m_ACR_Display.ClearMarkers(manager);
   m_ACR_VehicleMarkers.Clear();
   m_ACR_ContactMarkers.Clear();
+  m_ACR_ContactById.Clear();
   m_ACR_ZoneMarkers.Clear();
   m_ACR_BaseMarkers.Clear();
   m_ACR_Markers.Clear();
@@ -969,7 +1010,7 @@ modded class SCR_PlayerController
   if (cursorModule)
   {
    float wheel = 1;
-   if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) wheel = 0;
+   if (ACR_OverOwnUI(WidgetManager.GetWidgetUnderCursor())) wheel = 0;
    cursorModule.SetWheelZoomMultiplier(wheel);
   }
   ACR_UpdatePicker();
@@ -1084,9 +1125,9 @@ modded class SCR_PlayerController
   {
    ACR_UnitMarker marker = m_ACR_GroupMarkers[i];
    marker.m_UnitId = m_ACR_Data.m_LeaderIds[i];
-   marker.m_Label = m_ACR_Data.m_GroupNames[i];
+   marker.m_Label = ACR_GroupLabel(i, m_ACR_Data.m_GroupNames[i]);
    marker.m_GroupId = m_ACR_Data.m_GroupIds[i];
-   marker.m_bCommandUnit = (m_ACR_GroupSymbols[i * 4 + 3] & 32) != 0;
+   marker.m_bCommandUnit = (m_ACR_GroupSymbols[i * 4 + 3] & 2048) != 0;
    marker.m_Selected = ACR_IsSelected(marker.m_GroupId);
    marker.m_State = m_ACR_LeaderStates[i];
    if (marker.m_State == 1) marker.m_Label += " [PLAYER LEADER]";
@@ -1125,6 +1166,13 @@ modded class SCR_PlayerController
   if (selected && selected.m_Original) ACR_Request(ACR_ERequest.RETURN);
   else if (selected) ACR_Request(ACR_ERequest.POSSESS, selected.m_UnitId);
   else SCR_HintManagerComponent.ShowCustomHint("Place the cursor over a unit marker, then press F7", "Possess soldier", 4, true);
+ }
+
+ // A left-click on a squad's marker: select it (a pile of overlapping markers: the next one in it).
+ // The calm map opens a list of the squads behind a "×N" instead (ACR_PlayerMapDeclutter).
+ void ACR_PickGroup(ACR_UnitMarker marker)
+ {
+  ACR_SelectGroup(ACR_CycleOverlap(marker));
  }
 
  // Squads whose markers overlap (a squad riding in a truck, a crew next to its
@@ -1207,7 +1255,11 @@ modded class SCR_PlayerController
  void ACR_ToggleRTSCamera()
  {
   if (GetGame().GetMenuManager().IsAnyMenuOpen())
+  {
    GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
+   ACR_RTSCameraManager.OpenAfterMap();
+   return;
+  }
   ACR_RTSCameraManager.Toggle();
  }
 
@@ -1372,9 +1424,23 @@ modded class SCR_PlayerController
   SCR_MapEntity.GetOnSelection().Insert(ACR_OnMapClick);
  }
 
+ // The cursor is over one of our boxes (the panel, the feed, the 2IC's: ACR_TwoICView).
+ protected bool ACR_OverOwnUI(Widget widget)
+ {
+  return m_ACR_Panel && m_ACR_Panel.Contains(widget);
+ }
+
+ // A group marker's label (the 2IC tags its squads: ACR_TwoICView).
+ protected string ACR_GroupLabel(int index, string label)
+ {
+  return label;
+ }
+
  protected void ACR_ClosePanel()
  {
+  m_ACR_MineCorners.Clear();
   SCR_MapEntity.GetOnSelection().Remove(ACR_OnMapClick);
+  m_ACR_AimHeld = false; // closed with the button held: the release listener is gone with the map
   if (m_ACR_Panel) m_ACR_Panel.Destroy();
   m_ACR_Panel = null;
   if (m_ACR_Display.GetCanvas()) m_ACR_Display.GetCanvas().RemoveFromHierarchy();
@@ -1391,7 +1457,7 @@ modded class SCR_PlayerController
  {
   if (ACR_EditorOpen()) return;
   if (System.GetTickCount() - m_ACR_LastUiClick < 400) return;
-  if (m_ACR_Panel && m_ACR_Panel.Contains(WidgetManager.GetWidgetUnderCursor())) return;
+  if (ACR_OverOwnUI(WidgetManager.GetWidgetUnderCursor())) return;
   ACR_ClosePicker();
   if (ACR_ModifierHeld("ACR_MapAlt"))
   {
@@ -1421,9 +1487,18 @@ modded class SCR_PlayerController
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
  }
 
+ bool ACR_IsCommanderForHints() { return m_ACR_IsCommander; }
+ ACR_CommandPanel ACR_CommandPanelForTest() { return m_ACR_Panel; }
+
+ void ACR_RefreshKeyHintsButton()
+ {
+  if (m_ACR_Panel) m_ACR_Panel.RefreshKeyHints();
+ }
+
  protected void ACR_UpdatePanel()
  {
   if (!m_ACR_Panel) return;
+  m_ACR_Panel.TickDrag();
   string reinforceFeedback = "";
   if (GetGame().GetWorld().GetWorldTime() - m_ACR_ReinforceFeedbackAt < 12000) reinforceFeedback = m_ACR_ReinforceFeedback;
   m_ACR_Panel.SetReinforceFeedback(reinforceFeedback);
@@ -1469,7 +1544,7 @@ modded class SCR_PlayerController
    int baseIndex = m_ACR_Data.m_BaseNames.Find(m_ACR_SelectedBase);
    if (baseIndex >= 0)
    {
-    m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], m_ACR_Data.m_BaseDetails[baseIndex]);
+    m_ACR_Panel.SetBase(m_ACR_Data.m_BaseNames[baseIndex], ACR_CommandPanel.FobDetail(m_ACR_Data.m_BaseDetails[baseIndex]));
     int stride = 3 + ACR_FobSlots.UPGRADE_COUNT;
     int supplyOffset = baseIndex * stride;
     if (m_ACR_Data.m_BaseSupply.Count() >= supplyOffset + stride)
@@ -1478,7 +1553,7 @@ modded class SCR_PlayerController
      int capacity = m_ACR_Data.m_BaseSupply[supplyOffset + 1];
      int delivery = m_ACR_Data.m_BaseSupply[supplyOffset + 2];
      // delivery -1: the FOB's HQ is destroyed and it is offline until rebuilt.
-     bool ready = m_ACR_IsCommander && m_ACR_Data.m_BaseContested[baseIndex] == 0 && delivery >= 0;
+     bool ready = m_ACR_IsCommander && (m_ACR_Data.m_BaseContested[baseIndex] & 1) == 0 && delivery >= 0;
      string factionKey = "";
      Faction myFaction = SCR_FactionManager.SGetPlayerFaction(GetPlayerId());
      if (myFaction) factionKey = myFaction.GetFactionKey();
@@ -1488,13 +1563,14 @@ modded class SCR_PlayerController
       slotStates.Insert(m_ACR_Data.m_BaseSupply[supplyOffset + 3 + s]);
      }
      m_ACR_Panel.SetFob(stock >= 0, ready && capacity - stock >= ACR_FobSupply.DELIVERY_AMOUNT && delivery == 0 && m_ACR_RP >= ACR_FobSupply.DELIVERY_COST, ready && stock > 0, slotStates, stock, ready, factionKey);
+     m_ACR_Panel.SetFobAI(m_ACR_IsCommander && delivery >= 0, (m_ACR_Data.m_BaseContested[baseIndex] & 2) != 0);
     }
     else if (m_ACR_Data.m_BaseSupply.Count() > supplyOffset + 2)
     {
      int stock = m_ACR_Data.m_BaseSupply[supplyOffset];
      int capacity = m_ACR_Data.m_BaseSupply[supplyOffset + 1];
      int delivery = m_ACR_Data.m_BaseSupply[supplyOffset + 2];
-     bool ready = m_ACR_IsCommander && m_ACR_Data.m_BaseContested[baseIndex] == 0;
+     bool ready = m_ACR_IsCommander && (m_ACR_Data.m_BaseContested[baseIndex] & 1) == 0;
      m_ACR_Panel.SetFob(stock >= 0, ready && capacity - stock >= ACR_FobSupply.DELIVERY_AMOUNT && delivery == 0 && m_ACR_RP >= ACR_FobSupply.DELIVERY_COST, ready && stock > 0);
     }
     return;
@@ -1533,7 +1609,7 @@ modded class SCR_PlayerController
   string hint;
   if (!friendly) hint = "Player group: not commandable";
   else if (!m_ACR_IsCommander) hint = "Take command to give orders";
-  else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend there (click Defend again to cancel)";
+  else if (m_ACR_CursorMode == ACR_ECursorMode.DEFEND) hint = "Right-click: defend there, on a road an ambush (click Defend again to cancel). Dragged: posts where you pressed facing where you let go, an ambush when you let go on a road.";
   else if (m_ACR_CursorMode == ACR_ECursorMode.GARRISON) hint = "Right-click a building: they hold its windows and doors, filling the next buildings if needed (click Garrison again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.GET_IN) hint = "Right-click near a vehicle: get in (click Get in again to cancel)";
   else if (m_ACR_CursorMode == ACR_ECursorMode.LZ) hint = "Right-click the landing zone: they jump out when their ride sets down there";
@@ -1541,8 +1617,10 @@ modded class SCR_PlayerController
   else if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) hint = "Right-click a clear site: establish forward base (click Establish FOB again to cancel)";
   else if (roadblock >= 0) hint = ACR_Roadblocks.Hint(roadblock, roadblockFaction);
   else if (m_ACR_CursorMode == ACR_ECursorMode.FORTIFY) hint = ACR_Fortify.Hint();
-  else if (m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES) hint = ACR_Minefields.Hint(ACR_Minefields.KindOfCursor(m_ACR_CursorMode));
+  else if (m_ACR_CursorMode == ACR_ECursorMode.QRF) hint = "Right-click its post: it stands by there, goes after enemies your side spots within 300 m and comes back (click QRF again to cancel)";
+  else if (m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.DISARM_MINES) hint = ACR_Minefields.Hint(ACR_Minefields.KindOfCursor(m_ACR_CursorMode)) + ACR_MineShapeHint();
   else hint = "Right-click: move there";
+  if (friendly && m_ACR_IsCommander && ACR_Aimable()) hint += " Right-click and drag to set the way it faces (a right-drag aims while this is armed, it doesn't pan the map).";
   string title = m_ACR_Data.m_GroupNames[index];
   string detail = m_ACR_GroupDetails[index];
   string orderedBy = ACR_OrderedByText(m_ACR_SelectedGroup);
@@ -1563,6 +1641,8 @@ modded class SCR_PlayerController
   if (friendly && m_ACR_IsCommander && m_ACR_CursorMode == ACR_ECursorMode.MOVE) hint += "  |  Shift+right-click: add waypoint  |  Ctrl+drag: select squads";
   m_ACR_Panel.SetGroup(title, detail, friendly, m_ACR_IsCommander, modeAndFlags & 15, m_ACR_CursorMode, hint);
   m_ACR_Panel.SetGunner(friendly && (modeAndFlags & 16) != 0 && m_ACR_Data.m_Selected.Count() <= 1);
+  m_ACR_Panel.SetSquadAI(friendly && m_ACR_IsCommander && m_ACR_Data.m_Selected.Count() <= 1, (modeAndFlags & 1024) != 0);
+  m_ACR_Panel.SetPatrol((modeAndFlags & 512) != 0);
   m_ACR_Panel.SetEstablishFob(canEstablishFob);
   m_ACR_Panel.SetRoadblock(canRoadblock, !ACR_Roadblocks.IsFia(roadblockFaction));
   m_ACR_Panel.SetMines(canMines);
@@ -1619,6 +1699,8 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.REINFORCE: ACR_RequestSelected(ACR_ERequest.REINFORCE); return;
    case ACR_EPanelAction.FOB_SUPPLY: Rpc(ACR_FobServer, m_ACR_SelectedBase, false); return;
    case ACR_EPanelAction.FOB_BUILD: Rpc(ACR_FobServer, m_ACR_SelectedBase, true); return;
+   case ACR_EPanelAction.FOB_AI: Rpc(ACR_FobAIServer, m_ACR_SelectedBase); return;
+   case ACR_EPanelAction.SQUAD_AI: ACR_RequestSelected(ACR_ERequest.ORDER_SQUAD_AI); return;
    case ACR_EPanelAction.ESTABLISH_FOB:
     if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
     else m_ACR_CursorMode = ACR_ECursorMode.ESTABLISH_FOB;
@@ -1627,13 +1709,28 @@ modded class SCR_PlayerController
    case ACR_EPanelAction.ROADBLOCK_S: ACR_ToggleCursor(ACR_ECursorMode.ROADBLOCK_S); return;
    case ACR_EPanelAction.ROADBLOCK_L: ACR_ToggleCursor(ACR_ECursorMode.ROADBLOCK_L); return;
    case ACR_EPanelAction.BARRICADE: ACR_ToggleCursor(ACR_ECursorMode.BARRICADE); return;
+   case ACR_EPanelAction.QRF: ACR_ToggleCursor(ACR_ECursorMode.QRF); return;
    case ACR_EPanelAction.MINES_AP: ACR_ToggleCursor(ACR_ECursorMode.MINES_AP); return;
    case ACR_EPanelAction.MINES_AT: ACR_ToggleCursor(ACR_ECursorMode.MINES_AT); return;
    case ACR_EPanelAction.MINES_MIXED: ACR_ToggleCursor(ACR_ECursorMode.MINES_MIXED); return;
    case ACR_EPanelAction.DISARM_MINES: ACR_ToggleCursor(ACR_ECursorMode.DISARM_MINES); return;
    case ACR_EPanelAction.FORTIFY: ACR_ToggleCursor(ACR_ECursorMode.FORTIFY); return;
+   case ACR_EPanelAction.BUILD_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleBuildFold();
+    return;
+   case ACR_EPanelAction.UPGRADES_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleUpgradesFold();
+    return;
+   case ACR_EPanelAction.MORE_FOLD:
+    if (m_ACR_Panel) m_ACR_Panel.ToggleMoreFold();
+    return;
+   case ACR_EPanelAction.KEY_HINTS:
+    ACR_KeyHints.Toggle();
+    ACR_RefreshKeyHintsButton();
+    return;
    case ACR_EPanelAction.HALT: ACR_RequestSelected(ACR_ERequest.ORDER_HALT); return;
    case ACR_EPanelAction.FIRE_AT_WILL: ACR_RequestSelected(ACR_ERequest.ORDER_FIRE_AT_WILL); return;
+   case ACR_EPanelAction.PATROL: ACR_RequestSelected(ACR_ERequest.ORDER_PATROL); return;
    case ACR_EPanelAction.PING_LOOK: ACR_PickPing(ACR_EPing.LOOK); return;
    case ACR_EPanelAction.PING_ATTACK: ACR_PickPing(ACR_EPing.ATTACK); return;
    case ACR_EPanelAction.PING_DEFEND: ACR_PickPing(ACR_EPing.DEFEND); return;
@@ -1700,8 +1797,105 @@ modded class SCR_PlayerController
   return editor && editor.IsOpened();
  }
 
+ // ---------------------------------------------------------------- drag to aim
+ // Roadblocks, Fortify and the minefields face the threat (ACR_Intel.ThreatPoint) on a plain
+ // right-click, as before. Right-click and drag sets the facing instead: the order goes where
+ // the hold began and faces where the button came up, with an arrow on the map while dragging
+ // (the map doesn't pan then: see SCR_MapCursorModule in ACR_CommandPanel).
+ // The facing goes with the order request (ACR_Requests.s_vAim), so it holds in multiplayer;
+ // the AI commander keeps ThreatPoint.
+ // Minefield points (#200): the right-clicks so far for the armed mine order, for one squad in one mode.
+ protected ref array<vector> m_ACR_MineCorners = {};
+ protected RplId m_ACR_MineCornersFor;
+ protected int m_ACR_MineCornersMode = -1;
+ static const int MINE_SAME_PX = 14;      // px: the last point clicked again
+ protected bool m_ACR_AimHeld;
+ protected vector m_ACR_AimFrom;
+ protected int m_ACR_AimFromX;
+ protected int m_ACR_AimFromY;
+ protected float m_ACR_AimAt;
+ static const int AIM_DEAD_ZONE = 12;     // px: a smaller move is a plain click
+ static const float AIM_MAX_MS = 15000;   // a press held longer is dropped
+ protected bool m_ACR_AimReleased;        // ACR_AimUp passes its facing to ACR_HandleMapRightClick
+ protected vector m_ACR_AimRelease;
+ protected ref ACR_ClickGate m_ACR_ClickGate = new ACR_ClickGate(); // one right-click, one order
+
+ // An order that takes a facing is armed for a squad we command: a right-drag aims it.
+ bool ACR_AimArmed()
+ {
+  return m_ACR_IsCommander && m_ACR_SelectedGroup.IsValid() && ACR_Aimable() && !ACR_EditorOpen();
+ }
+
+ bool ACR_Aimable()
+ {
+  if (ACR_CommandPanel.RoadblockOfMode(m_ACR_CursorMode) >= 0 || m_ACR_CursorMode == ACR_ECursorMode.FORTIFY || m_ACR_CursorMode == ACR_ECursorMode.DEFEND) return true;
+  return m_ACR_CursorMode >= ACR_ECursorMode.MINES_AP && m_ACR_CursorMode <= ACR_ECursorMode.MINES_MIXED;
+ }
+
+ // The map's right button has been held for the hold time (MapPanDrag, SCR_MapRadialUI).
+ void ACR_AimDown()
+ {
+  m_ACR_AimHeld = false;
+  if (!ACR_AimArmed()) return;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity) return;
+  float wx, wz;
+  mapEntity.GetMapCursorWorldPosition(wx, wz);
+  m_ACR_AimFrom = Vector(wx, 0, wz);
+  WidgetManager.GetMousePos(m_ACR_AimFromX, m_ACR_AimFromY);
+  m_ACR_AimAt = System.GetTickCount();
+  m_ACR_AimHeld = true;
+ }
+
+ // While it is down and has moved past the dead zone: where the facing points now.
+ bool ACR_AimDrag(out vector to)
+ {
+  if (!m_ACR_AimHeld) return false;
+  if (System.GetTickCount() - m_ACR_AimAt > AIM_MAX_MS || !ACR_Aimable())
+  {
+   m_ACR_AimHeld = false;
+   return false;
+  }
+  int x, y;
+  WidgetManager.GetMousePos(x, y);
+  if (Math.AbsInt(x - m_ACR_AimFromX) <= AIM_DEAD_ZONE && Math.AbsInt(y - m_ACR_AimFromY) <= AIM_DEAD_ZONE) return false;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity) return false;
+  float wx, wz;
+  mapEntity.GetMapCursorWorldPosition(wx, wz);
+  to = Vector(wx, 0, wz);
+  return true;
+ }
+
+ // ...and came up: a drag orders with its facing, a long press without one is a plain
+ // right-click there.
+ void ACR_AimUp()
+ {
+  if (!m_ACR_AimHeld) return;
+  vector to;
+  bool dragged = ACR_AimDrag(to);
+  m_ACR_AimHeld = false;
+  m_ACR_AimReleased = dragged;
+  m_ACR_AimRelease = to;
+  if (ACR_HandleMapRightClick()) m_ACR_ClickGate.ReleaseOrdered(System.GetTickCount());
+  m_ACR_AimReleased = false;
+ }
+
+ // The map's right-click (MapContextualMenu, SCR_MapRadialUI): an order, unless it is the press
+ // a release has just ordered for (ACR_ClickGate).
+ bool ACR_HandleMapClick()
+ {
+  if (m_ACR_ClickGate.SwallowClick(System.GetTickCount())) return true;
+  return ACR_HandleMapRightClick();
+ }
+
  bool ACR_HandleMapRightClick()
  {
+  // A drag to aim ends in ACR_AimUp, which passes its facing here; a click has none.
+  vector aimTo = m_ACR_AimRelease;
+  bool aimed = m_ACR_AimReleased;
+  m_ACR_AimReleased = false;
+  m_ACR_AimHeld = false;
   if (!ACR_Manager.GetInstance()) return false;
   if (ACR_EditorOpen()) return false;
   if (ACR_ModifierHeld("ACR_MapAlt"))
@@ -1759,6 +1953,7 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.RIDE) command = ACR_ERequest.ORDER_RIDE;
   if (m_ACR_CursorMode == ACR_ECursorMode.ESTABLISH_FOB) command = ACR_ERequest.ORDER_ESTABLISH_FOB;
   if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK) command = ACR_ERequest.ORDER_ROADBLOCK;
+  if (m_ACR_CursorMode == ACR_ECursorMode.QRF) command = ACR_ERequest.ORDER_QRF;
   if (m_ACR_CursorMode == ACR_ECursorMode.MINES_AP) command = ACR_ERequest.ORDER_MINES_AP;
   if (m_ACR_CursorMode == ACR_ECursorMode.MINES_AT) command = ACR_ERequest.ORDER_MINES_AT;
   if (m_ACR_CursorMode == ACR_ECursorMode.MINES_MIXED) command = ACR_ERequest.ORDER_MINES_MIXED;
@@ -1767,7 +1962,19 @@ modded class SCR_PlayerController
   if (m_ACR_CursorMode == ACR_ECursorMode.ROADBLOCK_L) command = ACR_ERequest.ORDER_ROADBLOCK_L;
   if (m_ACR_CursorMode == ACR_ECursorMode.BARRICADE) command = ACR_ERequest.ORDER_BARRICADE;
   if (m_ACR_CursorMode == ACR_ECursorMode.FORTIFY) command = ACR_ERequest.ORDER_FORTIFY;
+  // Minefield points (#200): a right-click drops a point and the last one clicked again lays the field (one
+  // point the square as before, two a line, three or four that area); a fourth lays it at once. A drag on
+  // the first point still lays the square facing the drag.
+  ACR_MineCornersCheck();
+  if (ACR_MineShapeMode() && !append && !(aimed && m_ACR_MineCorners.IsEmpty())) return ACR_MineShapeClick(mapEntity, command, Vector(x, 0, z));
   vector target = Vector(x, 0, z);
+  // Dragged: the order goes where the button went down, facing where it came up.
+  vector aim;
+  if (aimed && ACR_Aimable())
+  {
+   aim = aimTo;
+   target = m_ACR_AimFrom;
+  }
   // Right-click on a spotted enemy: hunt it down.
   if (m_ACR_CursorMode == ACR_ECursorMode.MOVE && !append)
   {
@@ -1778,7 +1985,7 @@ modded class SCR_PlayerController
     target = m_ACR_ContactPositions[hunted];
    }
   }
-  ACR_IssueOrder(command, target, append);
+  ACR_IssueOrder(command, target, append, aim);
   return true;
  }
 
@@ -1787,9 +1994,98 @@ modded class SCR_PlayerController
  {
   if (m_ACR_CursorMode == mode) m_ACR_CursorMode = ACR_ECursorMode.MOVE;
   else m_ACR_CursorMode = mode;
+  m_ACR_MineCorners.Clear();
  }
 
- bool ACR_IssueOrder(int command, vector target, bool append = false)
+ // ---------------------------------------------------------------- minefield points (#200)
+ protected bool ACR_MineShapeMode()
+ {
+  return m_ACR_CursorMode == ACR_ECursorMode.MINES_AP || m_ACR_CursorMode == ACR_ECursorMode.MINES_AT || m_ACR_CursorMode == ACR_ECursorMode.MINES_MIXED;
+ }
+
+ // The points belong to the squad and the order they were clicked for: another squad, another order or the
+ // order disarmed drops them.
+ protected void ACR_MineCornersCheck()
+ {
+  if (m_ACR_MineCorners.IsEmpty()) return;
+  if (!ACR_MineShapeMode() || m_ACR_MineCornersFor != m_ACR_SelectedGroup || m_ACR_MineCornersMode != m_ACR_CursorMode) m_ACR_MineCorners.Clear();
+ }
+
+ // A right-click with a mine order armed: a point more, or (the last point clicked again, or a fourth point)
+ // the field laid.
+ protected bool ACR_MineShapeClick(SCR_MapEntity mapEntity, int command, vector point)
+ {
+  ACR_MineCornersCheck();
+  if (!m_ACR_MineCorners.IsEmpty())
+  {
+   vector last = m_ACR_MineCorners[m_ACR_MineCorners.Count() - 1];
+   int lx, ly, px, py;
+   mapEntity.WorldToScreen(last[0], last[2], lx, ly, true);
+   mapEntity.WorldToScreen(point[0], point[2], px, py, true);
+   if (Math.AbsInt(lx - px) <= MINE_SAME_PX && Math.AbsInt(ly - py) <= MINE_SAME_PX)
+   {
+    ACR_LayMineShape(command);
+    return true;
+   }
+  }
+  m_ACR_MineCorners.Insert(point);
+  m_ACR_MineCornersFor = m_ACR_SelectedGroup;
+  m_ACR_MineCornersMode = m_ACR_CursorMode;
+  if (m_ACR_MineCorners.Count() >= ACR_MineShape.MOST_CORNERS) ACR_LayMineShape(command);
+  return true;
+ }
+
+ // One point: the square there, as before. Two to four: that shape, laid by the selected squad (one squad
+ // lays one field).
+ protected void ACR_LayMineShape(int command)
+ {
+  array<vector> corners = {};
+  corners.Copy(m_ACR_MineCorners);
+  m_ACR_MineCorners.Clear();
+  if (corners.Count() == 1)
+  {
+   ACR_IssueOrder(command, corners[0]);
+   return;
+  }
+  array<RplId> squads = {};
+  squads.Insert(m_ACR_SelectedGroup);
+  if (!ACR_ConfirmOverride(squads)) return;
+  Rpc(ACR_ShapeServer, command, m_ACR_SelectedGroup, corners);
+ }
+
+ // The hint's line while points are down: how many, and what they make.
+ protected string ACR_MineShapeHint()
+ {
+  int count = m_ACR_MineCorners.Count();
+  if (count == 0) return "";
+  if (count == 1) return " 1 point: right-click it again for the 30 m square, or add points.";
+  array<vector> outline = {};
+  string why = ACR_MineShape.Outline(m_ACR_MineCorners, outline);
+  if (!why.IsEmpty()) return string.Format(" %1 points: %2. Add or right-click the last again.", count, why);
+  int mines = ACR_Minefields.MinesOf(ACR_Minefields.KindOfCursor(m_ACR_CursorMode));
+  float area = ACR_MineShape.Area(outline);
+  if (count == 2) return string.Format(" A %1 m line: right-click its end again to lay it, or add points.", (int)vector.DistanceXZ(m_ACR_MineCorners[0], m_ACR_MineCorners[1]));
+  float every = Math.Sqrt(area / Math.Max(mines, 1));
+  return string.Format(" %1 points, %2 m², a mine every %3 m or so: right-click the last again to lay it.", count, (int)area, (int)Math.Round(every));
+ }
+
+ // A shaped minefield order (#200): the corners go with the request (ACR_Requests.s_aCorners), the point is
+ // their middle.
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_ShapeServer(int command, RplId targetId, array<vector> corners)
+ {
+  if (!ACR_Minefields.IsRequest(command) || !corners || corners.Count() < 2 || corners.Count() > ACR_MineShape.MOST_CORNERS) return;
+  foreach (vector corner : corners)
+  {
+   if (!ACR_Manager.OnMap(corner)) return;
+  }
+  ACR_Requests.s_aCorners = new array<vector>();
+  ACR_Requests.s_aCorners.Copy(corners);
+  ACR_CommandServer(command, targetId, ACR_MineShape.Middle(corners), vector.Zero);
+  ACR_Requests.s_aCorners = null;
+ }
+
+ bool ACR_IssueOrder(int command, vector target, bool append = false, vector aim = vector.Zero)
  {
   bool spread = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_RIDE;
   // Several squads: a loose line across the direction of travel, 40 m apart,
@@ -1824,7 +2120,7 @@ modded class SCR_PlayerController
   {
    vector point = target;
    if (spread && squads.Count() > 1) point = target + side * ((k - (squads.Count() - 1) * 0.5) * 40);
-   ACR_Request(command, squadId, point);
+   ACR_Request(command, squadId, point, aim);
    if (spread) ACR_AddPending(m_ACR_Data.LeaderPos(m_ACR_Data.m_GroupIds.Find(squadId)), point);
   }
   m_ACR_CursorMode = ACR_ECursorMode.MOVE;
@@ -1856,6 +2152,16 @@ modded class SCR_PlayerController
  protected void ACR_DrawOrders(SCR_MapEntity mapEntity)
  {
   m_ACR_Data.m_iMyId = GetPlayerId();
+  vector aimTo;
+  m_ACR_Data.m_bAiming = ACR_AimDrag(aimTo);
+  m_ACR_Data.m_vAimFrom = m_ACR_AimFrom;
+  m_ACR_Data.m_vAimTo = aimTo;
+  // The minefield points so far and where the cursor is (the preview's last edge).
+  ACR_MineCornersCheck();
+  m_ACR_Data.m_MineCorners.Copy(m_ACR_MineCorners);
+  float mcx, mcz;
+  mapEntity.GetMapCursorWorldPosition(mcx, mcz);
+  m_ACR_Data.m_vMineCursor = Vector(mcx, 0, mcz);
   m_ACR_Display.Draw(mapEntity, m_ACR_Data, m_ACR_Boxing, m_ACR_BoxStart);
  }
 
@@ -1868,26 +2174,33 @@ modded class SCR_PlayerController
  protected ref array<int> m_ACR_ContactKinds = {};
  protected ref array<int> m_ACR_ContactCounts = {};
  protected ref array<int> m_ACR_ContactAges = {};
+ protected ref array<int> m_ACR_ContactDetails = {}; // 3 per contact: id, NATO icons, heading (-1 none)
  protected ref array<string> m_ACR_Feed = {};
- protected ref array<ref ACR_UnitMarker> m_ACR_ContactMarkers = {};
- protected ref array<int> m_ACR_ContactMarkerKinds = {};
+ protected ref array<ref ACR_UnitMarker> m_ACR_ContactMarkers = {}; // in contact order
+ protected ref map<int, ref ACR_UnitMarker> m_ACR_ContactById = new map<int, ref ACR_UnitMarker>();
  static const int ACR_CONTACT_SUSPECTED = 30; // s: older sightings are drawn as suspected
 
  protected ref array<int> m_ACR_FeedAges = {};
+ protected ref array<vector> m_ACR_FeedPos = {};
+ // Where each INTEL line as shown happened (vector.Zero: nowhere), as ACR_FeedLines last made them:
+ // a click on the line jumps the map there (ACR_FeedClick).
+ protected ref array<vector> m_ACR_FeedShownPos = {};
  protected int m_ACR_IntelAt;
- void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges)
+ void ACR_SendIntel(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<int> details, array<string> feed, array<int> feedAges, array<vector> feedPos)
  {
-  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, feed, feedAges);
+  Rpc(ACR_IntelOwner, positions, kinds, counts, ages, details, feed, feedAges, feedPos);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<string> feed, array<int> feedAges)
+ protected void ACR_IntelOwner(array<vector> positions, array<int> kinds, array<int> counts, array<int> ages, array<int> details, array<string> feed, array<int> feedAges, array<vector> feedPos)
  {
   m_ACR_ContactPositions.Copy(positions);
   m_ACR_ContactKinds.Copy(kinds);
   m_ACR_ContactCounts.Copy(counts);
   m_ACR_ContactAges.Copy(ages);
+  m_ACR_ContactDetails.Copy(details);
   m_ACR_Feed.Copy(feed);
   m_ACR_FeedAges.Copy(feedAges);
+  m_ACR_FeedPos.Copy(feedPos);
   m_ACR_IntelAt = System.GetTickCount();
  }
 
@@ -1895,12 +2208,16 @@ modded class SCR_PlayerController
  protected void ACR_FeedLines(notnull array<string> lines)
  {
   lines.Clear();
+  m_ACR_FeedShownPos.Clear();
   int since = ACR_MapData.Since(m_ACR_IntelAt);
   foreach (int i, string line : m_ACR_Feed)
   {
    int seconds = since;
    if (i < m_ACR_FeedAges.Count()) seconds += m_ACR_FeedAges[i];
    if (seconds > 600) break;
+   vector spot = vector.Zero;
+   if (i < m_ACR_FeedPos.Count()) spot = m_ACR_FeedPos[i];
+   m_ACR_FeedShownPos.Insert(spot);
    string when = seconds.ToString() + "s";
    if (seconds >= 60)
    {
@@ -1912,6 +2229,34 @@ modded class SCR_PlayerController
  }
 
  int ACR_ContactCount() { return m_ACR_ContactPositions.Count(); }
+
+ // Contact i as the map shows it: last known spot, kind, head count and seconds since seen.
+ void ACR_GetContact(int i, out vector pos, out int kind, out int count, out int age)
+ {
+  pos = m_ACR_ContactPositions[i];
+  kind = 0;
+  if (i < m_ACR_ContactKinds.Count()) kind = m_ACR_ContactKinds[i];
+  count = 1;
+  if (i < m_ACR_ContactCounts.Count()) count = m_ACR_ContactCounts[i];
+  age = ACR_MapData.Since(m_ACR_IntelAt);
+  if (i < m_ACR_ContactAges.Count()) age += m_ACR_ContactAges[i];
+ }
+
+ // Contact i's stable id, NATO icons and heading (degrees, -1: none seen). A contact without
+ // details (a test's) gets an id from its index and its kind's plain symbol.
+ void ACR_GetContactSymbol(int i, out int id, out int icons, out int heading)
+ {
+  id = -(i + 1);
+  heading = -1;
+  int kind = 0;
+  if (i < m_ACR_ContactKinds.Count()) kind = m_ACR_ContactKinds[i];
+  icons = ACR_Intel.IconOf(kind);
+  if (i * 3 + 2 >= m_ACR_ContactDetails.Count()) return;
+  id = m_ACR_ContactDetails[i * 3];
+  icons = m_ACR_ContactDetails[i * 3 + 1];
+  heading = m_ACR_ContactDetails[i * 3 + 2];
+  if (icons == 0) icons = ACR_Intel.IconOf(kind);
+ }
 
  // Index of the enemy contact marker within 16 px of the map cursor, or -1.
  protected int ACR_ContactUnderCursor(SCR_MapEntity mapEntity, float x, float z)
@@ -1964,6 +2309,7 @@ modded class SCR_PlayerController
    {
     ACR_UnitMarker marker = new ACR_UnitMarker();
     marker.m_bContact = true; // clicks go through: right-click next to it for Get in
+    marker.m_State = 4; // before it is inserted: creating its widget styles it (no contact pip)
     marker.SetType(SCR_EMapMarkerType.SIMPLE);
     marker.SetMarkerConfigID(1);
     marker.SetCanBeRemovedByOwner(false);
@@ -2015,60 +2361,87 @@ modded class SCR_PlayerController
  }
  int ACR_FeedCount() { return m_ACR_Feed.Count(); }
 
- protected static int ACR_ContactIcon(int kind) { return ACR_Intel.IconOf(kind); }
  protected static int ACR_ContactDimension(int kind) { return ACR_Intel.DimensionOf(kind); }
 
+ // Each contact keeps its marker while it is known (keyed by the server's contact id), so markers
+ // don't blink when another contact comes or goes; one is only remade when its symbol's shape changes.
  protected void ACR_UpdateContactMarkers(SCR_MapMarkerManagerComponent manager)
  {
-  // Rebuild when the number or the kinds change (the symbol shape is set at creation).
-  bool rebuild = m_ACR_ContactMarkers.Count() != m_ACR_ContactKinds.Count();
-  if (!rebuild)
-   foreach (int k, int kind : m_ACR_ContactKinds)
-    if (m_ACR_ContactMarkerKinds[k] != kind) rebuild = true;
-  if (rebuild)
+  m_ACR_ContactMarkers.Clear();
+  array<int> used = {};
+  m_ACR_Data.m_ContactArrowPos.Clear();
+  m_ACR_Data.m_ContactArrowHeading.Clear();
+  m_ACR_Data.m_ContactArrowAlpha.Clear();
+  foreach (int i, vector pos : m_ACR_ContactPositions)
   {
-   foreach (ACR_UnitMarker old : m_ACR_ContactMarkers) manager.ACR_RemoveMarker(old);
-   m_ACR_ContactMarkers.Clear();
-   m_ACR_ContactMarkerKinds.Clear();
-   foreach (int kindToMake : m_ACR_ContactKinds)
+   int id, icons, heading;
+   ACR_GetContactSymbol(i, id, icons, heading);
+   if (used.Contains(id)) id = -(i + 1);
+   used.Insert(id);
+   int kind = 0;
+   if (i < m_ACR_ContactKinds.Count()) kind = m_ACR_ContactKinds[i];
+   int count = 1;
+   if (i < m_ACR_ContactCounts.Count()) count = m_ACR_ContactCounts[i];
+   int age = ACR_MapData.Since(m_ACR_IntelAt);
+   if (i < m_ACR_ContactAges.Count()) age += m_ACR_ContactAges[i];
+   int dimension = ACR_ContactDimension(kind);
+   if (ACR_Intel.Has(icons, EMilitarySymbolIcon.ROTARY_WING) || ACR_Intel.Has(icons, EMilitarySymbolIcon.FIXED_WING)) dimension = EMilitarySymbolDimension.AIR;
+   int shape = icons * 10 + dimension;
+   ACR_UnitMarker contact = m_ACR_ContactById.Get(id);
+   if (contact && contact.m_iContactShape != shape)
    {
-    ACR_UnitMarker marker = new ACR_UnitMarker();
-    marker.m_bContact = true;
-    SCR_MapMarkerBase prepared = manager.PrepareMilitaryMarker(EMilitarySymbolIdentity.OPFOR, ACR_ContactDimension(kindToMake), ACR_ContactIcon(kindToMake));
+    manager.ACR_RemoveMarker(contact);
+    contact = null;
+   }
+   if (!contact)
+   {
+    contact = new ACR_UnitMarker();
+    SCR_MapMarkerBase prepared = manager.PrepareMilitaryMarker(EMilitarySymbolIdentity.OPFOR, dimension, icons);
     if (prepared)
     {
-     marker.SetType(prepared.GetType());
-     marker.SetMarkerConfigID(prepared.GetMarkerConfigID());
-     marker.SetFlags(prepared.GetFlags());
+     contact.SetType(prepared.GetType());
+     contact.SetMarkerConfigID(prepared.GetMarkerConfigID());
+     contact.SetFlags(prepared.GetFlags());
     }
     else
     {
-     marker.SetType(SCR_EMapMarkerType.SIMPLE);
-     marker.SetMarkerConfigID(1);
+     contact.SetType(SCR_EMapMarkerType.SIMPLE);
+     contact.SetMarkerConfigID(1);
     }
-    marker.SetCanBeRemovedByOwner(false);
-    marker.m_bContact = true;
-    m_ACR_ContactMarkers.Insert(marker);
-    m_ACR_ContactMarkerKinds.Insert(kindToMake);
-    manager.InsertStaticMarker(marker, true);
-    marker.SetMarkerOwnerID(-1);
+    contact.SetCanBeRemovedByOwner(false);
+    contact.m_bContact = true;
+    contact.m_iContactShape = shape;
+    m_ACR_ContactById.Set(id, contact);
+    manager.InsertStaticMarker(contact, true);
+    contact.SetMarkerOwnerID(-1);
    }
-  }
-  foreach (int i, ACR_UnitMarker contact : m_ACR_ContactMarkers)
-  {
-   int age = m_ACR_ContactAges[i] + ACR_MapData.Since(m_ACR_IntelAt);
-   int kindNow = m_ACR_ContactKinds[i];
-   contact.m_Label = ACR_Intel.Describe(kindNow, m_ACR_ContactCounts[i]) + " (" + age.ToString() + "s)";
+   m_ACR_ContactMarkers.Insert(contact);
+   float alpha = ACR_RTSOverlay.ContactAlpha(age);
+   contact.m_Label = ACR_Intel.DescribeSymbol(icons, kind, count) + ", " + ACR_Intel.AgeText(age);
    contact.m_State = 3;
    contact.m_bContact = true;
-   vector pos = m_ACR_ContactPositions[i];
+   contact.m_bSuspected = age > ACR_CONTACT_SUSPECTED;
+   contact.m_fAlpha = alpha;
    contact.SetWorldPos(pos[0], pos[2]);
+   // Hostile while fresh, "assumed hostile" (dashed frame) once it's only a last known spot.
    int identity = EMilitarySymbolIdentity.OPFOR;
-   if (age > ACR_CONTACT_SUSPECTED) identity = EMilitarySymbolIdentity.ASSUMED_OPFOR;
+   if (contact.m_bSuspected) identity = EMilitarySymbolIdentity.ASSUMED_OPFOR;
+   int echelon = ACR_Intel.EchelonOf(kind, count);
    if (!contact.m_GroupSymbol) contact.m_GroupSymbol = new SCR_MilitarySymbol();
-   contact.m_GroupSymbol.Set(identity, ACR_ContactDimension(kindNow), ACR_ContactIcon(kindNow), EMilitarySymbolAmplifier.NONE);
-   contact.m_iSymbolKey = ACR_ContactIcon(kindNow) * 1000 + ACR_ContactDimension(kindNow) * 10 + identity;
+   contact.m_GroupSymbol.Set(identity, dimension, icons, echelon);
+   contact.m_iSymbolKey = shape * 1000 + echelon * 10 + identity;
    contact.RefreshStyle();
+   if (heading < 0) continue;
+   m_ACR_Data.m_ContactArrowPos.Insert(pos);
+   m_ACR_Data.m_ContactArrowHeading.Insert(heading);
+   m_ACR_Data.m_ContactArrowAlpha.Insert(alpha);
+  }
+  array<int> gone = {};
+  foreach (int known, ACR_UnitMarker marker : m_ACR_ContactById) if (!used.Contains(known)) gone.Insert(known);
+  foreach (int lost : gone)
+  {
+   manager.ACR_RemoveMarker(m_ACR_ContactById.Get(lost));
+   m_ACR_ContactById.Remove(lost);
   }
  }
 
@@ -2080,6 +2453,18 @@ modded class SCR_PlayerController
  void ACR_SendZones(array<vector> positions, array<float> radii, array<string> labels)
  {
   Rpc(ACR_ZonesOwner, positions, radii, labels);
+ }
+
+ // The side's shaped minefields' outlines (#200, ACR_Minefields.Shapes).
+ void ACR_SendMineShapes(array<vector> corners, array<int> counts)
+ {
+  Rpc(ACR_MineShapesOwner, corners, counts);
+ }
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void ACR_MineShapesOwner(array<vector> corners, array<int> counts)
+ {
+  m_ACR_Data.m_MineShapeCorners.Copy(corners);
+  m_ACR_Data.m_MineShapeCounts.Copy(counts);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
  protected void ACR_ZonesOwner(array<vector> positions, array<float> radii, array<string> labels)
@@ -2148,6 +2533,16 @@ modded class SCR_PlayerController
   if (now - m_ACR_LastFobRequest < 500) return;
   m_ACR_LastFobRequest = now;
   Rpc(ACR_FeedbackOwner, ACR_FobSupply.Request(this, label, build));
+ }
+
+ // FOB panel: "AI manages this FOB" (ACR_FobAI).
+ [RplRpc(RplChannel.Reliable, RplRcver.Server)]
+ protected void ACR_FobAIServer(string label)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now - m_ACR_LastFobRequest < 500) return;
+  m_ACR_LastFobRequest = now;
+  Rpc(ACR_FeedbackOwner, ACR_FobAI.Toggle(this, label));
  }
 
  void ACR_SelectBase(string label)

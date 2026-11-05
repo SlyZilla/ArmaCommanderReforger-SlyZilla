@@ -5,7 +5,7 @@
 // Start applies them (threat high reaches the game, starting units spawn).
 class ACR_TestSetup
 {
- static const int CHECKS = 24;
+ static const int CHECKS = 25;
  protected static int s_iStartedAt = -1;
 
  static bool Wanted() { return System.IsCLIParam("acrSetupTest"); }
@@ -43,6 +43,44 @@ class ACR_TestSetup
    foreach (int tabCount : tabRows) { if (tabCount > largest) largest = tabCount; counts += tabCount.ToString() + " "; }
    float used = (perPage + 2) * ACR_SetupDialog.ROW_HEIGHT + ACR_SetupDialog.CHROME;
    ACR_TestRegress.Check("setup: every tab fits one page of a 1080p screen", perPage >= 10 && used <= 1080 && largest <= perPage, string.Format("rows per tab %1, %2 a page (%3 of 1080 used)", counts, perPage, used));
+   // Every row fits its button at 1080p at every value it can show, and every line under the rows
+   // (each company's and doctrine's, both sides) fits too (pn10b, 26 Oct: the company and doctrine
+   // rows ran past theirs).
+   int rowsChecked = 0;
+   int tooLong = 0;
+   string longestRow = "";
+   string overLong = "";
+   foreach (string rowLine : lines)
+   {
+    array<string> rowParts = {};
+    rowLine.Split("\t", rowParts, false);
+    if (rowParts.Count() < 2 || rowParts[0] == "map" || rowParts[0] == "undo") continue;
+    array<string> shownTexts = {};
+    if (rowParts[0].StartsWith("about")) shownTexts.Insert(rowParts[1]);
+    else
+    {
+     array<string> shownValues = ACR_Setup.Values(rowParts[0]);
+     shownValues.Insert(ACR_Setup.Current(rowParts[0]));
+     foreach (string rowValue : shownValues) shownTexts.Insert(ACR_Setup.Label(rowParts[0]) + ": " + ACR_Setup.ValueName(rowParts[0], rowValue));
+    }
+    if (rowParts[0] == "aboutcompanywest")
+    {
+     array<string> companyKeys = {"", "mechanized", "weapons", "engineers", "recon"};
+     foreach (string companyKey : companyKeys) shownTexts.Insert("Blue: " + ACR_DoctrineKits.CompanySummary(companyKey));
+     foreach (ACR_AIDoctrine eachDoctrine : ACR_AIDoctrine.All()) shownTexts.Insert("Blue: " + eachDoctrine.m_sName + ": " + eachDoctrine.m_sBrief);
+    }
+    foreach (string rowText : shownTexts)
+    {
+     rowsChecked++;
+     if (rowText.Length() > longestRow.Length()) longestRow = rowText;
+     if (rowText.Length() > ACR_Setup.ROW_CHARS)
+     {
+      tooLong++;
+      overLong += rowText + " | ";
+     }
+    }
+   }
+   ACR_TestRegress.Check("setup: every row fits its button at every value", rowsChecked > 50 && tooLong == 0, string.Format("%1 rows checked, %2 over %3 characters: %4longest '%5' (%6)", rowsChecked, tooLong, ACR_Setup.ROW_CHARS, overLong, longestRow, longestRow.Length()));
    ACR_TestRegress.Check("setup: the map preview is on the first tab with the battlefield", ACR_SetupDialog.Tab("map") == 0 && ACR_SetupDialog.Tab("seed") == 0 && ACR_SetupDialog.Tab("layout") == 0 && rows.Contains("map\t") && rows.IndexOf("map\t") < rows.IndexOf("pockets\t"), "");
    ACR_MissionHeader logisticsHeader = new ACR_MissionHeader();
    logisticsHeader.m_sAcrDeployment = "military";
@@ -183,6 +221,9 @@ class ACR_TestSetup
  protected static int s_iMapBeforeDelete;
  protected static vector s_vRememberedMapCenter;
  protected static float s_fRememberedMapZoom;
+ protected static int s_iMapSeedBefore;
+ protected static SCR_ButtonTextComponent s_MapSeedButton;
+
  static void RunMap(int second)
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
@@ -205,9 +246,20 @@ class ACR_TestSetup
    ACR_TestRegress.Check("setup map: hover expands full details and leave restores compact text", pc && pc.ACR_TestBaseHover(), "actual enter/leave callbacks");
    ACR_TestRegress.Check("setup map: repeated creation replaces and positions the widget", pc && pc.ACR_TestBaseRecreate(), "old root detached, new root at world projection");
    ACR_TestRegress.Check("setup map: the dialog stays hidden while the map is open", SCR_ConfigurableDialogUi.GetCurrentDialog() == null, "");
+   // New seed on the map: rolls the layout without going back to the dialog.
+   s_iMapSeedBefore = ACR_Generator.Seed();
+   SCR_MapMenuUI seedMenu = SCR_MapMenuUI.Cast(GetGame().GetMenuManager().GetTopMenu());
+   Widget seedWidget;
+   if (seedMenu) seedWidget = seedMenu.GetRootWidget().FindAnyWidget("ACR_SetupSeed");
+   if (seedWidget) s_MapSeedButton = SCR_ButtonTextComponent.FindButtonTextComponent(seedWidget);
+   if (s_MapSeedButton) s_MapSeedButton.m_OnClicked.Invoke(s_MapSeedButton);
   }
   if (second == 20)
   {
+   int seedMarkers = 0;
+   if (pc) seedMarkers = pc.ACR_BaseMarkerCount();
+   int seedNow = ACR_Generator.Seed();
+   ACR_TestRegress.Check("setup map: New seed button rolls a new layout and the map redraws it", s_MapSeedButton && seedNow != s_iMapSeedBefore && seedMarkers == ACR_Setup.s_PreviewNames.Count() && ACR_SetupClient.s_sRows.Contains(seedNow.ToString()), string.Format("seed %1 -> %2, %3 markers, %4 planned", s_iMapSeedBefore, seedNow, seedMarkers, ACR_Setup.s_PreviewNames.Count()));
    array<ref ACR_GenSite> layout = {};
    array<ACR_GenSite> hqs = {};
    ACR_Generator.Plan(ACR_Generator.Seed(), ACR_Skirmish.SizeOption(), layout, hqs);
@@ -310,7 +362,7 @@ class ACR_TestSetup
    bool sameView = restored && restored.IsOpen() && s_fRememberedMapZoom > 0 && vector.DistanceXZ(s_vRememberedMapCenter, Vector(restoredX, 0, restoredZ)) < 5 && Math.AbsFloat(restored.GetCurrentZoom() - s_fRememberedMapZoom) < 0.001;
    ACR_TestRegress.Check("setup map: reopening gameplay map preserves pan and zoom", sameView, string.Format("centre %1 -> %2, zoom %3", s_vRememberedMapCenter, Vector(restoredX, 0, restoredZ), s_fRememberedMapZoom));
    ACR_TestRegress.Check("setup map: reopened gameplay restores visible base captions", pc && pc.ACR_TestBaseCaptionsVisible(true), "also after mouse leave");
-   ACR_TestRegress.Complete("setupmap", 22);
+   ACR_TestRegress.Complete("setupmap", 23);
   }
  }
 
@@ -319,7 +371,12 @@ class ACR_TestSetup
  // secure non-HQ base, not the Airbase HQ. Logs the five best candidates.
  // -acrSetupGenTest 1 (server, Kolguyev, ~40 s): the layout preview during setup (aca-f07).
  static const int GEN_CHECKS = 25;
- protected static ref array<string> s_PreviewNames = {};
+ protected static ref array<string> s_PreviewNames;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_PreviewNames = {};
+ }
  static bool GenWanted() { return System.IsCLIParam("acrSetupGenTest"); }
  static void RunGen(int second)
  {
@@ -592,7 +649,17 @@ modded class SCR_PlayerController
    if (!component) return false;
    if (mouseLeave) component.OnMouseLeave(root, null, 0, 0);
    TextWidget caption = TextWidget.Cast(root.FindAnyWidget("MarkerText"));
-   if (!caption || !caption.IsVisible() || caption.GetText() != marker.m_BaseCaption) return false;
+   // A base under the real mouse cursor (someone focused the game window) shows its full
+   // details: that is the hover working, not a hidden caption (cc88map4, 28 Oct).
+   string wanted = marker.m_BaseCaption;
+   if (component.ACR_Hovered()) wanted = marker.m_BaseHover;
+   if (!caption || !caption.IsVisible() || caption.GetText() != wanted)
+   {
+    string shown = "no caption";
+    if (caption) shown = string.Format("visible %1 text '%2'", caption.IsVisible(), caption.GetText());
+    PrintFormat("[ACR] TEST caption hidden: wanted '%1', %2, root visible %3", wanted, shown, root.IsVisible());
+    return false;
+   }
   }
   return true;
  }

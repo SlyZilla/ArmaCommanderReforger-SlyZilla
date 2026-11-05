@@ -28,13 +28,26 @@ class ACR_MapData : Managed
  ref array<int> m_BaseContested = {};
  ref array<int> m_BaseSupply = {};
  ref array<vector> m_ZonePositions = {};
+ bool m_bAiming;     // drag to aim in progress: an arrow from m_vAimFrom to m_vAimTo
+ vector m_vAimFrom;
+ vector m_vAimTo;
  ref array<float> m_ZoneRadii = {};
  ref array<string> m_ZoneLabels = {};
  // own selection, and the faint lines of orders just clicked
  ref array<RplId> m_Selected = {};
  ref array<vector> m_PendingFrom = {};
  ref array<vector> m_PendingTo = {};
+ // the commander's minefield points so far (#200) and the cursor, for the preview
+ ref array<vector> m_MineCorners = {};
+ vector m_vMineCursor;
+ // the side's shaped minefields: each one's corners in turn, how many per field
+ ref array<vector> m_MineShapeCorners = {};
+ ref array<int> m_MineShapeCounts = {};
  ref array<int> m_PendingUntil = {};
+ // spotted enemies seen moving: where, heading (degrees, 0 = north) and fade
+ ref array<vector> m_ContactArrowPos = {};
+ ref array<int> m_ContactArrowHeading = {};
+ ref array<float> m_ContactArrowAlpha = {};
  // shared command
  ref array<int> m_CmdIds = {};
  ref array<string> m_CmdTags = {};

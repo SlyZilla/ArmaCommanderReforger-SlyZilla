@@ -86,9 +86,12 @@ class ACR_Requisition : Managed
    vector candidate = ACR_Manager.Ground(base.GetOrigin() + Vector(Math.Cos(angle) * distance, 0, Math.Sin(angle) * distance));
    if (attempt == 0) fallback = candidate;
    vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 8, clearance, 2.5))
-    return ACR_Manager.Ground(free);
+   if (ACR_BaseSystem.ClearGround(free, candidate, 8, clearance)) return free;
   }
+  // None in the ring (a crowded base): the nearest clear ground further out, before a spot
+  // nobody checked (#87: a Humvee in an airport hangar).
+  vector wide;
+  if (ACR_BaseSystem.ClearGround(wide, fallback, 60, clearance)) return wide;
   return fallback;
  }
 
@@ -101,8 +104,8 @@ class ACR_Requisition : Managed
   if (flat.Length() > ring) spot = centre + flat.Normalized() * ring;
   vector candidate = ACR_Manager.Ground(spot);
   vector free;
-  if (SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 15, clearance, 2.5)) return ACR_Manager.Ground(free);
-  return candidate;
+  if (ACR_BaseSystem.ClearGround(free, candidate, 15, clearance)) return free;
+  return SpawnPoint(base, 0, ring, clearance);
  }
 
  string Purchase(SCR_PlayerController pc, int entryIndex, string baseLabel, vector spot = "0 0 0", bool hasSpot = false)
@@ -132,6 +135,7 @@ class ACR_Requisition : Managed
   ACR_RequisitionEntry entry = data.m_aRequisitions[entryIndex];
   if (entry.m_iRemaining <= 0) return entry.m_sName + ": none left";
   if (!base || base.m_sOwner != key) return "Deploy at one of your own bases";
+  if (base.m_bHqLost) return base.m_sName + "'s HQ is destroyed: an Establish FOB order rebuilds it";
   if (ACR_LogisticsRules.RelayBlocked(base)) return base.m_sName + " needs a completed friendly radio relay inside its circle before deploying new units";
   if (!ACR_LogisticsRules.CanDeploy(base)) return base.m_sName + " cannot deploy new units (use a military base, HQ or FOB)";
   if (base.m_bContested) return base.m_sName + " is under attack";
@@ -185,7 +189,7 @@ class ACR_Requisition : Managed
   }
   if (entry.m_iSupportHeli > 0)
   {
-   if (!m_Manager.m_Supports.Station().Station(key, entry.m_iSupportHeli == 1, base, name))
+   if (!m_Manager.m_Supports.Station().Station(key, entry.m_iSupportHeli != 2, base, name, entry.m_iSupportHeli == 3))
    {
     Refund(purchase, "no helipad");
     return name + " could not be placed on a helipad";
@@ -246,9 +250,13 @@ class ACR_Requisition : Managed
  {
   array<IEntity> made = {};
   bool all = true;
+  IEntity navAgent = ACR_Garrison.AnyAgent();
   foreach (int i, ResourceName prefab : men)
   {
-   IEntity man = SpawnForPurchase(prefab, pos + Vector(1.5 * i, 0, 1));
+   // A line beside the spot, each man on his own clear ground (#87: not inside a heap).
+   vector at = ACR_Manager.Ground(pos + Vector(1.5 * i, 0, 1));
+   if (!ACR_BaseSystem.RoomAt(at) || ACR_BaseSystem.Covered(at)) at = ACR_BaseSystem.SoldierSpot(at, 2, navAgent);
+   IEntity man = SpawnForPurchase(prefab, at);
    if (!man) { all = false; break; }
    made.Insert(man);
    if (!group.AddAIEntityToGroup(man)) { all = false; break; }
@@ -294,7 +302,7 @@ class ACR_Requisition : Managed
   {
    ACR_RequisitionEntry formation = purchase.m_Entry;
    if (!formation) formation = ACR_InfantryCatalog.Starting(faction, group);
-   SCR_AIGroup spawned = SpawnFormation(group, formation, groupPos);
+   SCR_AIGroup spawned = SpawnFormation(faction, group, formation, groupPos);
    if (!spawned) { purchase.m_sError = "group did not spawn"; return false; }
    SetUnitFaction(spawned, faction);
    purchase.m_Group = spawned;
@@ -304,7 +312,7 @@ class ACR_Requisition : Managed
   {
    ACR_RequisitionEntry passengerFormation;
    if (!purchase.m_Entry) passengerFormation = ACR_InfantryCatalog.Starting(faction, passengers);
-   SCR_AIGroup riders = SpawnFormation(passengers, passengerFormation, groupPos);
+   SCR_AIGroup riders = SpawnFormation(faction, passengers, passengerFormation, groupPos);
    if (!riders) { purchase.m_sError = "passengers did not spawn"; return false; }
    SetUnitFaction(riders, faction);
    purchase.m_Riders = riders;
@@ -315,19 +323,25 @@ class ACR_Requisition : Managed
  }
 
  // The same native group construction is used for purchased infantry and starting riders.
- protected SCR_AIGroup SpawnFormation(ResourceName group, ACR_RequisitionEntry formation, vector position)
+ // A content pack's soldier swaps (ACR_ContentSocket.Soldier) turn a catalog group into a
+ // formation of the swapped soldiers, which is then also its reinforcement recipe.
+ protected SCR_AIGroup SpawnFormation(string faction, ResourceName group, ACR_RequisitionEntry formation, vector position)
  {
-  bool customFormation = formation && formation.m_aSoldiers && !formation.m_aSoldiers.IsEmpty();
+  array<ResourceName> soldiers = {};
+  if (formation && formation.m_aSoldiers) soldiers.Copy(formation.m_aSoldiers);
+  ACR_ContentSocket.Get().SwapSoldiers(faction, group, soldiers);
+  bool customFormation = !soldiers.IsEmpty();
   if (customFormation) SCR_AIGroup.IgnoreSpawning(true);
   SCR_AIGroup spawned = SCR_AIGroup.Cast(SpawnForPurchase(group, position));
   if (customFormation) SCR_AIGroup.IgnoreSpawning(false);
   if (spawned && customFormation)
   {
    if (!spawned.m_aUnitPrefabSlots) spawned.m_aUnitPrefabSlots = {};
-   spawned.m_aUnitPrefabSlots.Copy(formation.m_aSoldiers);
-   spawned.m_eACRFormation = formation.m_eFormation;
-   if (!FillGroup(spawned, formation.m_aSoldiers, position)) return null;
+   spawned.m_aUnitPrefabSlots.Copy(soldiers);
+   if (formation) spawned.m_eACRFormation = formation.m_eFormation;
+   if (!FillGroup(spawned, soldiers, position)) return null;
   }
+  else if (spawned) ACR_BaseSystem.SettleSoon(spawned); // the game's own formation spawn
   return spawned;
  }
 
@@ -384,8 +398,7 @@ class ACR_Requisition : Managed
  // price step (later purchases keep theirs; names are never reused).
  void Refund(ACR_PendingPurchase purchase, string why)
  {
-  ACR_FactionData data = m_Manager.m_Bases.GetFaction(purchase.m_sFaction);
-  if (data) data.m_iRP += purchase.m_iPaid;
+  m_Manager.m_Bases.Refund(purchase.m_sFaction, purchase.m_iPaid);
   ACR_RequisitionEntry entry = purchase.m_Entry;
   if (entry)
   {
@@ -534,6 +547,8 @@ class ACR_Requisition : Managed
   ACR_MortarTeam mortar = m_Manager.Mortars().TeamOf(squad);
   bool newTube = mortar && mortar.m_bLost;
   if (newTube && depot && !ACR_LogisticsRules.CanDeploy(depot)) return "A replacement mortar needs a military base, HQ or FOB";
+  // A full team gets its new tube where reinforcements could deploy, as a team missing men does.
+  if (missing.IsEmpty() && newTube && !depot) return "A replacement mortar needs a military base, HQ or FOB: bring the team in";
   if (missing.IsEmpty() && newTube)
   {
    if (!m_Manager.m_Bases.Spend(key, ACR_Mortars.TUBE_COST)) return string.Format("Not enough RP for a new mortar (%1 needed)", ACR_Mortars.TUBE_COST);
@@ -639,8 +654,11 @@ class ACR_Requisition : Managed
    float empty = 1 - magazine.GetAmmoCount() / (float)max;
    cost += empty * AmmoWorth(magazine);
   }
-  float health = ACR_Logistics.Health(vehicle);
-  if (health < 0.99) cost += (1 - health) * REPAIR_COST_FULL;
+  // Engine, rotor and wheel damage is repaired too (ServiceVehicles), so it is priced too.
+  float worn = 1 - ACR_Logistics.Health(vehicle);
+  SCR_DamageManagerComponent damage = SCR_DamageManagerComponent.Cast(vehicle.FindComponent(SCR_DamageManagerComponent));
+  if (damage) worn = Math.Max(worn, damage.GetMovementDamage());
+  if (worn > 0.01) cost += worn * REPAIR_COST_FULL;
   return Math.Ceil(cost);
  }
 

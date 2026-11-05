@@ -174,9 +174,16 @@ flags also work through the normal options precedence.
 ### Minefields
 
 Infantry squads can lay minefields and disarm mines on the commander's orders (map panel: **AP
-mines**, **AT mines**, **Mixed mines**, **Disarm mines**). A field is a 30 m square: AT mines go in
-both lanes of a road within 20 m of the click (across the area without one) and AP mines off the
-road; vanilla minefield signs mark the corners and the area shows on the owning side's command map.
+mines**, **AT mines**, **Mixed mines**, **Disarm mines**). A point right-clicked twice lays a 30 m
+square: AT mines go in both lanes of a road within 20 m of it (across the area without one) and AP
+mines off the road; vanilla minefield signs mark the corners and the area shows on the owning side's
+command map. The commander can shape a field instead (#200): right-click up to four points, then the
+last one again (a fourth point lays at once). Two points make a line (a 6 m band, at least 10 m long),
+three or four that area. The field keeps its mines and its price, spread over the shape, which may be
+at most 120 m corner to corner and 2,700 m² (three times the square); AT mines go on the roads inside
+it first, signs stand every 25 m along its edges (16 at most), its outline shows on the map, and a
+bigger area takes longer to lay. With `-acrMinesAI 1` the AI commanders shape their fields too: a
+belt across a road, a block along it, or a band across the enemy's approach.
 Orders cost 15 / 20 / 25 RP (AP / AT / mixed) or 3 RP to disarm and lift every armed mine within
 25 m (8 s per mine, 4 s with engineers); they are paid up front and refund the share not laid when
 called off. Work pauses while the site is contested and runs twice
@@ -267,7 +274,7 @@ One per world. Place it anywhere.
 |---|---|---|
 | `m_bHostGameMaster` | on | The host and server admins also get Game Master |
 | `m_bSharedCommand` | on | Every player of a side may command all its squads. Off: one commander per side |
-| `m_iAISkill` | 70 (Veteran) | Skill of all AI soldiers in the mode |
+| `m_iAISkill` | 70 (Veteran) | Skill of AI soldiers in AC: Actual's squads and base garrisons, unless a side or unit sets its own |
 | `m_fAIPerception` | 1.6 | How fast AI spot and identify targets (game default 1) |
 | `m_iRespawnSeconds` | 15 | Delay before a player whose command unit was killed can redeploy |
 
@@ -280,11 +287,15 @@ AI commander is turned off.
 | Setting | Default | What it does |
 |---|---|---|
 | `m_sFaction` | `US` | Which side these settings are for. It must match a side in the faction manager, such as `US` or `USSR` |
-| `m_iStartingRP` | 100 | Requisition points at the start |
+| `m_iStartingRP` | 100 | Requisition points at the start. Income stops at 1000 RP; a side that starts above that keeps its RP but earns nothing until it spends below 1000 |
 | `m_bAICommander` | on | An AI commander leads this side whenever no player is in command |
 | `m_iAIUnitCap` | 8 | Maximum number of squads the AI commander keeps in the field |
 | `m_iAIAttacks` | 1 | How many base attacks the AI commander can run at once |
-| `m_eAIDoctrine` | `RANDOM` | How the AI commander fights: `RANDOM` (a new pick each match), `BALANCED`, `BLITZ`, `FIREPOWER`, `FORTRESS` or `RAIDER` (see AI commander doctrines). The setup screen or `-acrDoctrineWest`/`-acrDoctrineEast` override it |
+| `m_eAIDoctrine` | `RANDOM` | How the AI commander fights when no company is picked for its side: `RANDOM` (leaves it to the company: Balanced for a Rifle Company), `BALANCED`, `BLITZ`, `FIREPOWER`, `FORTRESS` or `RAIDER` (see AI commander doctrines). A company picked on the setup screen, the setup screen's doctrine row or `-acrDoctrineWest`/`-acrDoctrineEast` override it |
+| `m_iAISkill` | `NONE` | AI skill of this side's soldiers. `NONE` uses the mode's skill (see AI skill per side and unit) |
+| `m_fAIReactionScale` | 1 | Multiplies the mode's reaction speed for this side: 0.8 spots 20% slower, 1.2 20% faster |
+| `m_iAIStrongerShare` | 0 | Percent of this side's soldiers one skill level higher, rolled once per soldier |
+| `m_aAISkillProfiles` | empty | Skill and reaction for particular groups or soldiers, such as an elite unit on the same side |
 | `m_ePricing` | `STEPPED` | How the buy list limits purchases: `STEPPED` or `FIXED_STOCK` (see Prices below) |
 | `m_bAutoFill` | on | Add the faction's eligible Game Master catalog units to the buy list at automatic prices |
 | `m_aRequisitions` | empty | Units you add to the buy list yourself. An entry replaces the matching automatic item |
@@ -302,11 +313,48 @@ AC: Actual uses faction keys to tell sides apart. For default support assets, `R
 starting with `USSR` count as eastern; otherwise keys containing `US`, or exactly `NATO` or
 `BLUFOR`, count as western. Other keys use eastern defaults unless prefab mappings replace them.
 
+#### AI skill per side and unit
+
+AC: Actual sets every soldier in its squads to the mode's skill (`m_iAISkill`, `-acrSkill`) and
+reaction speed (`m_fAIPerception`, `-acrReaction`) every second, so a value a script sets once at
+spawn doesn't last. Base garrison soldiers get the same values once, when they spawn. Set skill per
+side and per unit here instead. A soldier gets, first to last:
+
+1. values a mission script pinned on him with `ACR_AISkill.Pin(soldier, EAISkill.EXPERT, 1.2)`
+   (kept until `ACR_AISkill.Unpin(soldier)`; this also works on base garrison soldiers);
+2. the first `m_aAISkillProfiles` row whose prefab he is (or inherits from), else the first whose
+   prefab his group is;
+3. his side's `m_iAISkill`, `m_fAIReactionScale` and `m_iAIStrongerShare`;
+4. the skill and spotting speed set in Better Battle Buddies' Settings tab (or its preset or
+   launch parameters `-bbbAISkill`, `-bbbAIPerception`), when they are set there;
+5. the mode's skill and reaction.
+
+A profile row (`ACR_AISkillProfile`) has `m_sName` (for your own reference), `m_aPrefabs` (group or
+soldier prefabs), `m_iSkill` (`NONE` = the side's), `m_fReactionScale` (0 = the side's) and
+`m_iStrongerShare` (-1 = the side's). Reaction is always a multiple of the mode's reaction speed
+(1.6 by default, not the game's 1), so 1 means "as fast as everyone else".
+
+Skill only takes the game's named levels: Novice 10, Rookie 20, Regular 50, Veteran 70, Expert 80
+and Perfect 100. In vanilla it sets how far a soldier's aim strays (each level about halves it;
+Perfect never misses). Other values snap down to a named level. A stronger soldier goes up one
+level, up to Expert (only a side or profile set to Perfect fields Perfect soldiers). Reaction sets
+how quickly a soldier spots and identifies targets, not how far he can see. A side without its own
+`ACR_FactionSettings` (a faction mod) copies the side's skill, reaction and stronger share from the
+authored side it replaces, but not its profiles, which name that side's prefabs.
+
+Example: militia side Rookie, reaction 0.8, 15% stronger; Rangers side Veteran, reaction 1; a
+profile for the Delta group prefabs on the Rangers' side with Expert and reaction 1.2. Health and
+damage aren't touched, and none of this changes orders or soldier takeover. Squads a player is
+leading keep whatever values they have until he hands them back.
+
 #### AI commander doctrines
 
-Each AI commander starts the match with one doctrine. By default each side gets a random one;
-the setup screen (Blue/Red AI doctrine), `-acrDoctrineWest`/`-acrDoctrineEast` or `m_eAIDoctrine`
-pick it. Doctrines change how the commander plans, attacks, defends, moves, fires and buys, never how
+Each AI commander starts the match with one doctrine. By default it follows its side's company
+(the setup screen's Blue/Red company, `-acrCompanyWest`/`-acrCompanyEast`): Combat Engineers fight as
+Fortress, Mechanized as Blitz, Fire Support as Firepower, Recon as Raider, and a Rifle Company (none
+picked) as Balanced, or as the faction's `m_eAIDoctrine` when it sets one.
+The setup screen's Blue/Red AI doctrine row or `-acrDoctrineWest`/`-acrDoctrineEast` override it
+(`random` rolls one). Doctrines change how the commander plans, attacks, defends, moves, fires and buys, never how
 big its army is: squad cap, RP and stock are the same for all of them (Raider's 2-3 man teams take
 half a squad-cap slot each, so it fields about as many men; the soldier cap still applies).
 
@@ -431,6 +479,7 @@ Each entry is one action in the commander's support menu, such as a mortar strik
 | `m_iBombRunBombs` | 4 | Virtual bombs in `VIRTUAL` or `FLYOVER` mode; clamped to 1-12 |
 | `m_fBombRunSpacing` | 28 m | Distance between impact points in `FLYOVER` mode; clamped to 1-500 m |
 | `m_fBombRunScatter` | 5 m | Random lateral impact scatter in metres; clamped to 0-100 m |
+| `m_sReconPrefab` | empty | `RECON_FLIGHT` only: the aircraft prefab flown over the corridor, carrying its own engine sound; empty = AC: Actual's default for the side (RHS's FA-18 for a western side when RHS is loaded, otherwise none: the flight works unseen) |
 
 | Type | Default name | RP | Cooldown (s) |
 |---|---|---|---|
@@ -446,6 +495,22 @@ Each entry is one action in the commander's support menu, such as a mortar strik
 | `HELI_DOOR_GUNS` | Helicopter: door gunners (120 s) | 20 | 150 |
 | `ARTILLERY_BATTERY` | Artillery: howitzer battery | 60 | 300 |
 | `AIR_LIFT` | Helicopter: air lift | 40 (AI commander 20) | 240 |
+| `ATTACK_HELI` | Helicopter: *airframe* (120 s) | 55 | 300 |
+| `RECON_FLIGHT` | Air: recon flight | 15 | 180 |
+
+`RECON_FLIGHT` sends a jet over a corridor 2.4 km long and 600 m wide, centred on the called point and
+flown from the side's nearest base, about 30 s after the call. Enemy soldiers and vehicles under it go
+on the side's map as if spotted (vehicles and men in the open mostly, men under a roof or trees
+rarely), each group shown up to 50 m (vehicles 20 m) off its true spot, and kept 5 minutes; hidden
+FOBs in it are found. Nothing can shoot it down or turn it back. The side flown over is told a jet went over. The AI commander calls it too.
+Side lists made before it existed get it added; add a `RECON_FLIGHT` row with **Enabled** off to
+leave it out. Radio intercepts need no setting: a side's contact reports and fire-mission calls may
+be picked up by the enemy as a 400 m ring on its map that holds the transmitter.
+
+`ATTACK_HELI` exists only when a content pack names an attack helicopter for the side (the Cold War
+pack: AH-1S Cobra for US, Mi-24V Hind for USSR; the Modern pack: AH-64D Apache for the RHS US side,
+Mi-24V Hind for the RHS Russian side). The side's list gets it automatically, named after the airframe;
+a row for it in a side's list (on or off) decides instead. Without such a pack the row is ignored.
 
 Set the bomb-run style in each side's support row. `VIRTUAL` uses AC: Actual's existing explosions and
 does not show a plane. `FLYOVER` sends the chosen aircraft or model over the target, then uses AC: Actual's
@@ -517,8 +582,10 @@ at a free pad with its crew. After a call, it starts up (about 20 seconds), flie
 the pad, and is repaired and rearmed (60 seconds). Buy another one if it is destroyed. If no ready
 helicopter is parked at a pad at a base the side still owns, the call is declined without a charge. The
 support list says whether one is ready, being serviced, or needs to be bought. Gunships handle rocket
-runs and gunship calls; door-gunner helicopters handle door-gunner calls. The AI commander keeps one
-gunship if a pad is free. Without a helipad, helicopters arrive from off the map and do not need to be
+runs and gunship calls; door-gunner helicopters handle door-gunner calls. With a content pack that has
+an attack helicopter for the side, the buy list also offers two "Support attack helicopter" (100 RP each)
+for its attack-helicopter calls. The AI commander keeps one support helicopter if a pad is free: the
+attack helicopter when it can buy one, else a gunship. Without a helipad, helicopters arrive from off the map and do not need to be
 bought.
 
 ### ACR_Helipad
@@ -702,6 +769,11 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_sAcrLayout` | `-acrLayout` |
 | `m_sAcrSize` | `-acrSize` |
 | `m_sAcrPockets` | `-acrPockets few` (default), `many`, `off` |
+| `m_sAcrQuickStart` | `-acrQuickStart off` (default), `even`, `uneven` |
+| `m_sAcrGuerrillas` | `-acrGuerrillas few` (default), `many`, `off` |
+| `m_sAcrFIAHidden` | `-acrFIAHidden 1` (default 0) |
+| `m_sAcrFIAAllegiance` | `-acrFIAAllegiance hostile` (default), `west`, `east` |
+| `m_sAcrFIALeaning` | `-acrFIALeaning 1` (default 0) |
 | `m_sAcrFactions` | `-acrFactions` |
 | `m_sAcrPlayers` | `-acrPlayers` |
 | `m_sAcrThreat` | `-acrThreat` |
@@ -710,9 +782,12 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_sAcrDoctrineWest` | `-acrDoctrineWest` |
 | `m_sAcrDoctrineEast` | `-acrDoctrineEast` |
 | `m_sAcrDoctrineAdapt` | `-acrDoctrineAdapt` |
+| `m_sAcrCompanyWest` | `-acrCompanyWest` |
+| `m_sAcrCompanyEast` | `-acrCompanyEast` |
 | `m_iAcrUnitCap` | `-acrUnitCap` |
 | `m_iAcrSeed` | `-acrSeed` |
 | `m_iAcrSoldierCap` | `-acrSoldierCap` |
+| `m_iAcrCapScale` | `-acrCapScale 0` (default) or `1`; scale the AI squad cap and soldier cap with the map |
 | `m_iAcrStartRP` | `-acrStartRP` |
 | `m_fAcrIncome` | `-acrIncome` |
 | `m_iAcrSkill` | `-acrSkill` |
@@ -731,10 +806,25 @@ in-game setup screen, when enabled, overrides these defaults at Start.
 | `m_iAcrFobRPServiceCost` | `-acrFobRPServiceCost 3` default, 0–100; RP per soldier actually serviced instantly at a FOB in supplied mode; zero makes this fallback free |
 | `m_iAcrMines` | `-acrMines 1` (default) or `0`; the commander's minefield orders (see [Minefields](#minefields)) |
 | `m_iAcrHoldGuns` | `-acrHoldGuns 1` (default) or `0`; gunners stay on the static guns of a spot their squad holds |
+| `m_iAcrMapDeclutter` | `-acrMapDeclutter 1` (default) or `0`; the calm command map, or the classic one |
 | `m_iAcrMinesRealistic` | `-acrMinesRealistic 0` (default) or `1`; with 1 the owning side's AI sets off its own mines too |
 | `m_iAcrMinesAI` | `-acrMinesAI 0` (default) or `1`; AI commanders lay minefields on their approaches |
 | `m_iAcrFortify` | `-acrFortify 1` (default) or `0`; the commander's Fortify order (see [Fortify position](#fortify-position)) |
 | `m_iAcrFortifyAI` | `-acrFortifyAI 0` (default) or `1`; AI commanders dig in and upgrade positions on their approaches |
+| `m_iAcrBaseWorks` | `-acrBaseWorks 1` (default) or `0`; Fortify on the middle of a base of ours fortifies the whole town |
+| `m_iAcrBaseBays` | `-acrBaseBays 1` (default) or `0`; a fortified town's long lines step in and out with fire bays |
+| `m_iAcrBaseSmallGuns` | `-acrBaseSmallGuns 1` (default) or `0`; a small gun position takes one piece of a line where a big nest has no room |
+| `m_iAcrWings` | `-acrWings 1` (default) or `0`; new Fortify positions and squad-built checkpoints get sandbag wings |
+| `m_iAcrBaseStyles` | `-acrBaseStyles 1` (default) or `0`; each fortified town gets a defence style from its ground; 0 makes every town a wall |
+| `m_iAcrBasePlacement` | `-acrBasePlacement 1` (default) or `0`; a fortified town's lines keep out of yards and off squares, and its guns look for the ways in |
+| `m_iAcrEmplacements` | `-acrEmplacements 1` (default) or `0`; guns stand in emplacements built from parts as well as the game's ready-made nests |
+| `m_iAcrWingMen` | `-acrWingMen 1` (default) or `0`; a Fortify position's reserve goes behind its wings when an enemy comes |
+| `m_iAcrBagHold` | `-acrBagHold 1` (default) or `0`; men with a place behind bags hold it in a fight and shoot over them, and squads defending at bags take places there |
+| `m_iAcrBaseDress` | `-acrBaseDress 1` (default) or `0`; lines have stretches of low or netted bags and dirt in front, not only plain high bags |
+| `m_iAcrBaseObstacles` | `-acrBaseObstacles 1` (default) or `0`; hedgehogs or log barricades out in front of a line either side of its road |
+| `m_iAcrBaseRing` | `-acrBaseRing 1` (default) or `0`; where a town's lines go. On: one shortest path right round the town, bags on open ground and houses, stone walls, water and cliffs for free, so the bags close the town from house to house outside its yards. Off: lines walked out from seeds along each approach, as before. |
+| `m_iAcrKillGround` | `-acrKillGround 1` (default) or `0`; how a town's bags and guns are chosen. On: the enemy is walked in over the real ground from where he comes, and each place is valued by what it fires on of his ways, the softest way most, then he walks again round what's going in. Off: by the threat per sector and how far a place sees. |
+| `m_iAcrBaseFinalWalk` | `-acrBaseFinalWalk 1` (default) or `0`; once a town's works are planned (lines, nests, gate guns, posts, the command post), the enemy is walked in once more against everything that stands, and while tiers I and II have pieces left one more line goes on his softest way in, or a small gun position where no line fits. Off: the plan ends with what the rounds laid. |
 | `m_iAcrFortifyDefenders1` | `-acrFortifyDefenders1 1` default, 0–12; defenders in reserve at a Fortify tier I position (0: none) |
 | `m_iAcrFortifyDefenders2` | `-acrFortifyDefenders2 2` default, 0–12; defenders in reserve at a Fortify tier II position (0: none) |
 | `m_iAcrFortifyDefenders3` | `-acrFortifyDefenders3 4` default, 0–12; defenders in reserve at a tier III position |
@@ -828,29 +918,61 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrAI both` / `none` / `<faction>` | Which sides an AI commander leads (overrides `m_bAICommander`) |
 | `-acrDoctrineWest <doctrine>` / `-acrDoctrineEast <doctrine>` | The blue / red side AI commander's doctrine: `random`, `balanced`, `blitz`, `firepower`, `fortress` or `raider` (overrides `m_eAIDoctrine`; default random each match). The log names each side's pick (`AI commander <faction> doctrine:`) |
 | `-acrDoctrineAdapt 1` / `0` | AI commanders change doctrine when theirs isn't working (default on; see AI commander doctrines). Each review logs `AI commander <faction> doctrine review:` |
+| `-acrCompanyWest <company>` / `-acrCompanyEast <company>` | The blue / red side's company, its starting kit given at Start to an AI commander or a player side: `rifle` (default, no kit), `mechanized` (an APC or IFV in place of the starting truck), `weapons` (a mortar team and a forward observer team), `engineers` (two tier I Fortify positions at its front bases) or `recon` (two recon teams). A kit is bought at list price out of the side's starting RP. The setup screen's Economy tab has the same rows (Blue company / Red company). The log names each kit (`COMPANY KIT <side>:`) |
 | `-acrUnitCap N` | AI commander squad cap for every side (overrides `m_iAIUnitCap`) |
 | `-acrThreat low` / `normal` / `high` | Threat level. Low: prices climb +25% per purchase (stepped pricing; finite stock in either mode: half the infantry stock, a third of the vehicles, at least one each), 0.75x soldier limit, 0.6x AI squad cap, one AI attack at a time, AI buys few vehicles. High: prices climb +8% (finite stock in either mode: rare units get quadruple base stock, other units double stock), 1.5x soldier limit and AI squad cap, one more AI attack at a time. Normal: +15%, nothing else changes |
 | `-acrSize full` / `half` / `flashpoint` | Skirmish size: the whole map (default) or a random `ACR_Skirmish` layout of that size. Hand-built worlds without a matching layout play in full; generated layouts support all three sizes |
 | `-acrPockets few` / `many` / `off` | FIA pockets of resistance (default few with the setup screen, off without it): on whole-map and half-map battles, neutral bases away from both starting bases start held by an FIA garrison (villages 4-6 men, industry 6-8, military sites 8-10 plus a 2-man patrol). Few = 7 on a whole map, 3 on a half; many = 12 / 6; never on flashpoints, or when FIA plays a main side. Other sides see a pocket as unclaimed until one of their units comes within 400 m. Whoever clears one captures the base |
+| `-acrQuickStart off` / `even` / `uneven` | Quick start (setup row "Quick start", default off): the match opens with the map already split between the sides, on any layout (generated or the world's own) and size. The open bases are split along a front line whose shape comes from the layout seed (straight, slanted or a salient; the setup map preview shows the split), balanced by what the bases earn; a strip along the line may stay neutral (FIA pockets only appear there, at least 700 m from both sides' bases). Front bases (the third nearest the enemy) get a garrison by kind of site, rear bases a small one; the side's foot squads start at its front bases plus 1-3 extra holding squads, vehicles at the HQ; two roadblocks a side at the front (three for an Engineers company). `uneven`: one side holds about two thirds of the map with stronger garrisons, the other starts with double RP. Hidden landmarks stay unclaimed |
+| `-acrGuerrillas few` / `many` / `off` | FIA guerrillas (setup row **FIA guerrillas**; default few with the setup screen, off without it): on whole-map and half-map battles, small FIA cells outside every base. Road ambushes (4-6 men) start on the roads out of each starting base (900 m out at least) and between other bases, and follow the traffic: every 5 minutes one waiting ambush on a quiet road moves to the stretch where the sides' vehicles drive most. They lie in wait 20-35 m off it holding their fire, spring when an enemy enters the kill zone, comes within 30 m or hits one of them, and sometimes block the road with a log barricade first; after about 90 s or half their men lost they pull back 350 m and pack up, and set up on another road 10-20 minutes later. House cells (3-5 men, as far from the starting bases as the pockets) hold the windows of an ordinary building and open fire on enemies within 120 m. A cell is only there while an enemy is near (700 m for an ambush, 400 m for a house); one that is wiped out is gone for the match. Few = 4 ambushes and 3 houses on a whole map, half that on a half map; many = 8 and 6. **Hideouts** come with them (1 per 2 ambushes: 2 with few on a whole map): FIA's homes in a small isolated group of buildings (3+ buildings close together, no more than 10 within 300 m, as far from the starting bases as the houses, outside every base). 6-8 men in the windows, out while an enemy is within 400 m; they open fire within 150 m and fight to the last, never moving. While a hideout stands, every 10 minutes it sends a man back to each short-handed cell within 3 km, and every 30 minutes it raises a new cell if there are fewer than at the start. A side that fights one has found it: a feed line, an **FIA hideout** ring on its map, and its AI commander sends a squad to clear it (up to 3 tries; supply runs don't wait for it). Destroyed, the sides that knew it hear of it. Never on flashpoints, or when FIA plays a main side |
+| `-acrFIAAllegiance hostile` / `west` / `east` | Insurgency: who FIA sides with (setup row **FIA sides with**; default hostile to both). Allied to a side: the game's factions are friendly (neither side's AI fires on the other), FIA pockets and guerrillas never deploy against it, it can't take an FIA pocket and its AI doesn't attack or shell one, and it knows where the pockets are from the start. Whatever the setting, where a side loses men or vehicles to FIA on a road, that spot shows on its map as an **FIA ambush** danger area for 20 minutes; its AI commander sends a free combat squad to clear it (cleared after a minute there without contact) and holds supply runs that would pass it |
+| `-acrFIALeaning 1` | Insurgency: FIA leans by conduct (setup row **FIA leans by conduct**, off by default). Each side has a standing with FIA, shown on the command panel's command line (FIA: hostile, wary, neutral or friendly), with a feed line when it changes. **Hostile:** the ambushes go after its traffic first. **Wary:** FIA as without this option. **Neutral:** the guerrilla cells leave it alone (they don't set up, spring or follow its traffic for it); the pockets still hold their ground. **Friendly:** as an ally under **FIA sides with** (no fire either way, free passage through the pockets, which it knows), and FIA tips it off: its enemies within 500 m of an FIA cell or pocket show on its map, with a feed line. The standing falls when the side kills FIA fighters (less when a cell sprang an ambush on it), takes an FIA pocket, holds a base within 1.5 km of a pocket, destroys buildings (twice as much near a pocket or cell), or destroys an FIA hideout with its men there; after 5 minutes without killing FIA, taking a pocket or destroying a building it climbs back slowly, up to just above the friendly mark. **FIA sides with** sets the start: its ally starts friendly, a side it is hostile to starts wary |
+| `-acrFIAHidden 1` | Hidden FIA (setup row **Hidden FIA**, off by default): no "FIA resistance at" message, and a side only finds an FIA pocket by entering it; guerrillas are only found by contact either way |
 | `-acrLayout <name>` | Play this `ACR_Skirmish` layout (spaces may be written as `_`); overrides `-acrSize`. `-acrLayout generated` builds a layout from the map instead (see Generated layouts) |
 | `-acrSeed N` | Seed of a generated layout: the same seed, size and terrain data give the same plan within a version (before manual moves). Unset or 0 = a new random layout each match |
 | `-acrPricing stepped` / `stock` | Overrides every side's `m_ePricing` (stepped prices or fixed stock) |
 | `-acrStartRP N` | Positive starting RP for every side (overrides `m_iStartingRP`; 0 does not override) |
 | `-acrIncome X` | Income multiplier (default 1) |
 | `-acrSkill N` | AI skill (overrides `m_iAISkill`) |
+| `-acrGroundTilt 0` | Built pieces that lie on the ground (sandbag positions, wire, barricades) spawn dead level instead of following a slope; default 1 tilts them up to 12 degrees |
 | `-acrReaction X` | AI spotting speed (overrides `m_fAIPerception`) |
 | `-acrSoldierCap N` | Soft living-AI threshold per side before purchases/reinforcements stop (default 100 before threat scaling). A purchase begun below it can take the side over. The active-AI limit is raised to at least 2 x the resolved cap + 64 to avoid the vanilla 128-agent ceiling |
+| `-acrCapScale 1` | Bigger maps get bigger armies: every side's AI squad cap and the soldier cap are multiplied by the map's bases / 12 or the spread of its bases / 5 km, whichever is more, between x1 and x2 (the soldier cap stops at 250; a higher one set by the host stays). Applied once the match starts, after the threat level; the active-AI limit follows, and the log line `[ACR] CAP SCALE` shows the result. Off by default; the setup screen's **Squad caps scale with map** row turns it on |
 | `-acrSharedCommand 0` / `1` | Overrides `m_bSharedCommand` |
 | `-acrRespawnSeconds N` | Overrides `m_iRespawnSeconds` |
 | `-acrGameMasterAll` | Game Master for every player, not just host and admins |
 | `-acrMines 0` | Turn off the commander's minefield orders (on by default; see [Minefields](#minefields)) |
 | `-acrHoldGuns 0` | Vanilla gunners: by default a squad holding a spot (Defend, a checkpoint, a Fortify position) keeps its men on the static guns there, unless an enemy seen in the last 10 s is within 60 m; an empty held gun is manned again after 8 s. Vanilla gets a gunner out whenever anything he knows of is outside the gun's arc. Setup row **Gunners stay on held guns** |
+| `-acrMapDeclutter 0` | The classic command map. By default the map is calm: dark panels, merged INTEL lines, base dots with size pips, squads at a base gathered into one icon with ×N, names and order lines thinned out when zoomed out. Setup row **Calm command map** |
+| `-acrSquadTactics 1` | AI squads use squad tactics inside an objective (off by default): an AI squad assaulting a base uses Better Battle Buddies' squad tactics (assault, flank, hold, search) and fire and manoeuvre once it is inside the base's ring, never leaving it, and squads defending a base on a Defend order may bound to cover or push back an enemy inside the base, never chasing out of it. Garrisons in buildings, squads staging or riding, and squads under a player's command are never affected |
+| `-acrRoadFlow 0` | AI vehicles stop at every road waypoint, as before 0.5.9. By default a crewed vehicle on a long road trip skips the waypoints on straight stretches (up to 600 m ahead, keeping those at bends and junctions) and gets its next waypoint earlier the faster it goes, so it doesn't brake and re-plan every 160 m |
+| `-acrFieldRoutes 0` | AI foot squads walk the game's own path, roads included, everywhere. By default an AI squad on foot crossing ground that isn't friendly (the nearest held base belongs to someone else) keeps at least 45 m off the roads (a waypoint every 60 m), except on the last 150 m to its destination, and crosses rivers on the nearest bridge within 300 m; on friendly ground it may use them. Player-led squads and player orders are never changed |
+| `-acrNoRoadHops 0` | AI vehicles drive longer trips along the roads in short hops, as before #102. By default a trip is one waypoint, and a failed drive falls back to hops once |
+| `-acrPullOver 1` | A squad told to get out on a road first has its driver pull onto the verge (off by default; needs Better Battle Buddies). Under fire or with nowhere to go, out where it stands |
+| `-acrEvadeArmour 1` | An unarmed vehicle of ours that sees an armed enemy vehicle drives 300 m away, then resumes its order (off by default; Better Battle Buddies asks only with its `bbbEvadeArmour` on) |
 | `-acrMinesRealistic 1` | Mines go off for everyone. By default the owning side's AI never sets off its own mines; its players do |
 | `-acrFortify 0` | Turn off the commander's Fortify order (on by default; see [Fortify position](#fortify-position)) |
 | `-acrFortifyAI 1` | AI commanders fortify: every 60 s, with RP to spare, one order at a time, they upgrade their position nearest the frontline base or (fewer than two positions) dig a free infantry squad in 80-160 m out towards the nearest enemy base (off by default) |
+| `-acrBaseWorks 0` | Turn off fortifying a whole base (on by default): Fortify on the middle of a base we hold has a squad work the town site by site, one tier per order (street corners and perimeter sandbags; redoubts, MG nests and checkpoints; the command post, bunkers and towers), paying per site; with `-acrFortifyAI 1` AI commanders do it at threatened front bases with RP banked |
+| `-acrBaseBays 0` | A fortified town's long lines run without fire bays (on by default: most long lines step in or out every 5 to 9 pieces, each at its own spacing) |
+| `-acrBaseSmallGuns 0` | Fortified towns get big MG nests only (on by default: where a big nest has no room on a line, the game's small gun position takes the place of one piece; FIA has none) |
+| `-acrWings 0` | New Fortify positions and squad-built checkpoints stand without sandbag wings (on by default: each end ties into a wall, building or rock within 30 m, 20 m for a checkpoint, or bends back or runs on and curls back, picked from what's there, weighted and seeded; a checkpoint's lane stays clear) |
+| `-acrFieldsOfFire 1` | Built guns and posts clear the bushes round them (off by default): all round a gun, a checkpoint's post or a Fortify piece (7 m, 10 m round a post), and 35 m out in a 70-degree cone in front of a gun, a checkpoint's own cut branches included. Vegetation under 4 m only. Every machine clears the same |
+| `-acrBaseStyles 0` | Every fortified town is a wall across its approaches (on by default: each town gets a wall, strongpoints, depth, funnel or, for a small place, a ring, from its ground, what threatens it and its side's doctrine, weighted and seeded per town and side) |
+| `-acrBasePlacement 0` | The older placement of a fortified town's lines and guns (on by default: bags that would watch only a fence from a yard, or stand on a square, go elsewhere, and guns favour places that cover a way into town and see far) |
+| `-acrEmplacements 0` | Only the game's ready-made MG nests (on by default: guns also stand in emplacements built from parts, shaped to the spot) |
+| `-acrWingMen 0` | A Fortify position's reserve stays round the position (on by default: each man goes behind the bags of its wings) |
+| `-acrBagHold 0` | Men behind bags move and take stances as the game's combat movement has them, and squads defend or garrison as they would with no bags there (on by default: each man stands to fire over the bags and crouches to hide, and comes back to his place if something moves him) |
+| `-acrBaseDress 0` | Every base-works line plain high bags (on by default: low stretches on a town's first lines, netted ones later, FIA low whenever, dirt in front here and there) |
+| `-acrBaseObstacles 0` | Only wire out in front of base-works lines (on by default: Czech hedgehogs, or log barricades for FIA, either side of a line's road) |
+| `-acrBaseRing 0` | A town's lines walked out from seeds along each approach instead of closing the town (on by default). |
+| `-acrKillGround 0` | A town's bags and guns valued by the threat per sector and how far they see, instead of by what they do to the enemy on the ways he'd walk (on by default). |
+| `-acrBaseFinalWalk 0` | No last walk against a town's finished works and no last line or small gun on his softest way in (on by default). |
 | `-acrFortifyDefenders1 N` / `-acrFortifyDefenders2 N` / `-acrFortifyDefenders3 N` | Defenders held in reserve at a Fortify tier I / II / III position (1 / 2 / 4 by default, 0 none, at most 12; see [Fortify position](#fortify-position)) |
 | `-acrRoadblockDefenders N` | Defenders held in reserve at every checkpoint (small, medium, large; not a plain barricade), as at a Fortify position: they deploy when an enemy comes within 400 m and are used up as they die (0, none, by default; at most 8) |
-| `-acrAIBuildShare N` | AI commanders set N% (at most 30) of the RP they gain aside as an engineering budget, up to 100 RP: unit purchases leave it alone, so their roadblocks, minefields (`-acrMinesAI`) and Fortify positions (`-acrFortifyAI`) get built even when they would otherwise spend everything on units; those orders are paid out of it, and it gets at least 2 RP every strategy tick (15 s) on top of the share (twice both for a Fortress). Shown in the AI status log line. Off by default; the setup screen's **AI build budget** row sets it (off, 10, 15 or 25%) |
+| `-acrAIBuildShare N` | AI commanders set N% (at most 30) of the RP they gain aside as an engineering budget, up to 100 RP: unit purchases leave it alone, so their roadblocks, minefields (`-acrMinesAI`) and Fortify positions (`-acrFortifyAI`) get built even when they would otherwise spend everything on units; those orders are paid out of it, and it gets at least 2 RP every strategy tick (15 s) on top of the share (twice both for a Fortress). A side with more than 600 RP banked digs in with the surplus: its share rises with it, to twice the share at the 1000 RP cap (at most 50%), and the budget is kept at least at that share of what is over 600 (still at most 100 RP), since a side at the cap gains nothing to take a share of. Shown in the AI status log line. Off by default; the setup screen's **AI build budget** row sets it (off, 10, 15 or 25%) |
+| `-acr2IC 1` | The second-in-command (off by default): on a side a player commands, or one with no AI commander, the AI runs every squad nobody has claimed (attacks, defenders, grabs, idle posting, roadblocks and minefields) with the AI commander's own logic. A player claims a squad by leading it or ordering it and hands it back with the squad panel's **AI commands this squad**; **AI manages this FOB** hands over a FOB. It builds only from the AI build budget, never from the side's RP |
+| `-acrVariety 0` | AI choices always take the single best option. By default (`1`) an AI choice made from scored options (where to site a Fortify position, say) is picked at random among those within 12% of the best, the best most likely, seeded from the match's seed so a replayed seed makes the same choices |
 | `-acrMinesAI 1` | AI commanders lay minefields: every 30 s, with RP to spare and fewer than two fields down, a free infantry squad (sappers first) mines the approach 150-270 m out from its frontline base towards the nearest enemy base (off by default) |
 | `-acrSetup 1` / `0` | Setup screen before the match. With 1, nothing spawns until the host (or a logged-in admin on a dedicated server) picks the battlefield, factions, threat, prices, AI commanders, AI squad cap, starting RP, income and shared command in a dialog and presses Start; other players wait. A dedicated server starts by itself 5 minutes after the first player joins if nobody does. Our Arland, Everon and Kolguyev scenarios set it in their header; the AC: Actual Play and Host launchers pass `-acrSetup 1` and leave match settings to this screen |
 | `-acrFirstPlayerHost` | On dedicated servers, additionally trust the first connected player for this session. Off by default for ordinary dedicated servers; Host-ACA enables it for its separate local server, so the launching host must connect before friends. Configured admins remain trusted, and authority does not transfer after the first player disconnects |

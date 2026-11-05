@@ -16,6 +16,7 @@ class ACR_GarrisonSpot : Managed
  vector m_Look;   // horizontal unit vector out of the window
  bool m_bStand;   // the view is only clear standing (high sill)
  bool m_bInterior; // no window: a place inside for soldiers the windows can't take
+ IEntity m_Bags;   // a place behind these bags: he holds it in a fight (ACR_BagHold)
  float m_fScore;
 }
 
@@ -31,10 +32,14 @@ class ACR_Garrison
  static const float GRID = 1.25;      // survey step
  static const float OPENING = 1.6;    // a post is this close to the outside
  static const float VIEW = 8;         // clear view out through the opening
+ static const float BAGS_CLOSE = 6;   // a garrison order this close to bags of ours means them, whatever house stands near
+ static const float BAGS_DEFEND = 15; // a defend order this close means them too
+ static const float BAGS_REACH = 30;  // a garrison order with no house to be had takes bags this close
+ static const float BAGS_WALK = 250;  // men this far from places behind bags go there each on his own, not as a group
 
- protected static ref map<SCR_AIGroup, ref array<IEntity>> s_Posts = new map<SCR_AIGroup, ref array<IEntity>>();
- protected static ref map<IEntity, ref array<ref ACR_GarrisonSpot>> s_Survey = new map<IEntity, ref array<ref ACR_GarrisonSpot>>();
- protected static ref array<IEntity> s_aFound = {};
+ protected static ref map<SCR_AIGroup, ref array<IEntity>> s_Posts;
+ protected static ref map<IEntity, ref array<ref ACR_GarrisonSpot>> s_Survey;
+ protected static ref array<IEntity> s_aFound;
  protected static IEntity s_Building; // the building a ceiling trace must hit
  static int s_iNoHead, s_iNoRoof, s_iNoMesh, s_iNoView, s_iNoWall; // survey rejections (log)
  static bool s_bDebugViews; // tests: print what blocks views
@@ -65,6 +70,19 @@ class ACR_Garrison
   }
  }
 
+ // Another group's post this close (a Fortify position's squad and its reserve, ACR_Fortify.PostSpots).
+ static bool PostNear(vector at, float spacing, SCR_AIGroup except)
+ {
+  foreach (SCR_AIGroup group, array<IEntity> posts : s_Posts)
+  {
+   if (group == except) continue;
+   array<vector> taken = {};
+   foreach (IEntity post : posts) if (post) taken.Insert(post.GetOrigin());
+   if (TooClose(at, taken, spacing)) return true;
+  }
+  return false;
+ }
+
  static void PostEntities(SCR_AIGroup group, notnull array<IEntity> result)
  {
   result.Clear();
@@ -78,9 +96,20 @@ class ACR_Garrison
  static void Release(SCR_AIGroup group)
  {
   if (!group) return;
+  ACR_BagHold.Forget(group);
   array<IEntity> posts = s_Posts.Get(group);
   if (!posts) return;
   s_Posts.Remove(group);
+  if (s_Posts.IsEmpty())
+  {
+   // nobody garrisons now: forget the men watched on the way in (dead or deleted ones included)
+   s_StragglerAt.Clear();
+   s_StragglerFor.Clear();
+   s_StallAt.Clear();
+   s_StallFor.Clear();
+   s_Resend.Clear();
+   s_Resends.Clear();
+  }
   group.ReleaseSmartActions();
   foreach (IEntity post : posts)
   {
@@ -97,6 +126,7 @@ class ACR_Garrison
  // Posts of groups that are gone (every second from the manager).
  static void Sweep()
  {
+  ACR_BagHold.Sweep();
   for (int i = s_Posts.Count() - 1; i >= 0; i--)
   {
    SCR_AIGroup group = s_Posts.GetKey(i);
@@ -106,6 +136,7 @@ class ACR_Garrison
     continue;
    }
    array<IEntity> posts = s_Posts.GetElement(i);
+   ACR_BagHold.Forget(group);
    s_Posts.RemoveElement(i);
    if (!posts) continue;
    foreach (IEntity post : posts) DeletePost(post);
@@ -128,12 +159,14 @@ class ACR_Garrison
  static int Assign(SCR_AIGroup group, IEntity navAgent, vector point, int wanted, out vector center, out float radius, bool waitForMesh = true)
  {
   if (!group) return 0;
+  int behindBags = ACR_BaseWorks.AssignBags(group, point, wanted, BAGS_CLOSE, center, radius);
+  if (behindBags > 0) return behindBags;
   Release(group);
   s_Replans.Remove(group);
   point[1] = GetGame().GetWorld().GetSurfaceY(point[0], point[2]);
   array<IEntity> buildings = {};
   BuildingsNear(point, buildings);
-  if (buildings.IsEmpty()) return 0;
+  if (buildings.IsEmpty()) return ACR_BaseWorks.AssignBags(group, point, wanted, BAGS_REACH, center, radius);
   IEntity first = buildings[0];
   array<ref ACR_GarrisonSpot> chosen = {};
   if (!PickSpots(buildings, navAgent, wanted, waitForMesh, SPILL_RADIUS, chosen)) return -1;
@@ -171,6 +204,50 @@ class ACR_Garrison
   }
   s_Tight.Set(group, tight);
   PrintFormat("[ACR] GARRISON %1: %2 posts for %3 soldiers in %4 (+neighbours), radius %5", group.GetCustomName(), posts.Count(), wanted, Describe(first), radius);
+  return posts.Count();
+ }
+
+ // Posts at the given spots for a group (another order's own posts: an ambush's, ACR_Ambush), each
+ // crouched and looking along its m_Look, registered as a garrison's so the game's defend activity
+ // sends one soldier to each under a garrison waypoint at 'center'. The waypoint's radius for them.
+ static int PostsAt(SCR_AIGroup group, notnull array<ref ACR_GarrisonSpot> spots, vector center, out float radius)
+ {
+  radius = 15;
+  if (!group) return 0;
+  Release(group);
+  s_Replans.Remove(group);
+  array<IEntity> posts = {};
+  foreach (ACR_GarrisonSpot spot : spots)
+  {
+   IEntity post = SpawnPost(spot);
+   if (!post) continue;
+   posts.Insert(post);
+   ACR_BagHold.AddPlace(group, post, spot);
+  }
+  if (posts.IsEmpty()) return 0;
+  s_Posts.Set(group, posts);
+  float tight = 6;
+  foreach (IEntity placed : posts)
+  {
+   radius = Math.Max(radius, vector.DistanceXZ(center, placed.GetOrigin()) + 5);
+   tight = Math.Max(tight, vector.DistanceXZ(center, placed.GetOrigin()) + 2);
+  }
+  s_Tight.Set(group, tight);
+  // Behind bags: the game hands out posts once every man is inside the radius, and a group that can't path to the
+  // first of them stands where its path ends with nobody on the bags (srv:worksfight, 1 Nov: 38 m off, and the town
+  // taken without a shot). With every man inside it from the start each goes to his own place.
+  if (ACR_BagHold.HasPlaces(group))
+  {
+   array<AIAgent> agents = {};
+   group.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    IEntity body = agent.GetControlledEntity();
+    if (!body) continue;
+    float away = vector.DistanceXZ(center, body.GetOrigin());
+    if (away < BAGS_WALK) radius = Math.Max(radius, away + 5);
+   }
+  }
   return posts.Count();
  }
 
@@ -212,11 +289,29 @@ class ACR_Garrison
  // game hands out the posts afresh.
  static int STUCK_LIMIT = 18;
  static const int MAX_REPLANS = 6;
- protected static ref map<IEntity, int> s_Stuck = new map<IEntity, int>();
- protected static ref map<IEntity, vector> s_LastPos = new map<IEntity, vector>();
- protected static ref map<SCR_AIGroup, int> s_Replans = new map<SCR_AIGroup, int>();
- protected static ref map<SCR_AIGroup, float> s_Tight = new map<SCR_AIGroup, float>();
- protected static ref array<vector> s_aBad = {};
+ protected static ref map<IEntity, int> s_Stuck;
+ protected static ref map<IEntity, vector> s_LastPos;
+ protected static ref map<SCR_AIGroup, int> s_Replans;
+ protected static ref map<SCR_AIGroup, float> s_Tight;
+ protected static ref array<vector> s_aBad;
+
+ // Per match (ACR_Manager.Stop): a restart on the same map inherited the blacklisted post spots.
+ static void Reset()
+ {
+  s_Posts.Clear();
+  s_Survey.Clear();
+  s_Stuck.Clear();
+  s_LastPos.Clear();
+  s_Replans.Clear();
+  s_Tight.Clear();
+  s_aBad.Clear();
+  s_StragglerAt.Clear();
+  s_StragglerFor.Clear();
+  s_StallAt.Clear();
+  s_StallFor.Clear();
+  s_Resend.Clear();
+  s_Resends.Clear();
+ }
  static int s_iDropped; // tests
 
  protected static bool IsBad(vector at)
@@ -243,12 +338,20 @@ class ACR_Garrison
  {
   SCR_DefendWaypoint waypoint = SCR_DefendWaypoint.Cast(group.GetCurrentWaypoint());
   if (!waypoint || !waypoint.GetPrefabData() || !waypoint.GetPrefabData().GetPrefabName().Contains("ACR_Waypoint_Garrison")) return;
+  // Bags: each man walks to his own place from wherever he is (PostsAt), so a walk that came to nothing is caught on
+  // the way, not once the leader is there (a slow leader kept a man stood in the town for good).
+  if (ACR_BagHold.HasPlaces(group))
+  {
+   SCR_AIGroupUtilityComponent bagUtility = SCR_AIGroupUtilityComponent.Cast(group.FindComponent(SCR_AIGroupUtilityComponent));
+   if (bagUtility && SCR_AIDefendActivity.Cast(bagUtility.GetCurrentAction())) ResendStalled(group, waypoint, bagUtility, posts);
+  }
   AIAgent leader = group.GetLeaderAgent();
   if (!leader || !leader.GetControlledEntity()) return;
   if (vector.DistanceXZ(leader.GetControlledEntity().GetOrigin(), waypoint.GetOrigin()) > waypoint.GetCompletionRadius() + 10) return;
   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(group.FindComponent(SCR_AIGroupUtilityComponent));
   if (!utility) return;
   AIActionBase activity = utility.GetCurrentAction();
+  if (SCR_AIMoveActivity.Cast(activity)) { TakeInStragglers(group, waypoint); return; }
   if (!SCR_AIDefendActivity.Cast(activity) && !SCR_AIIdleActivity.Cast(activity)) return; // still on the way, or fighting
   // In a fight soldiers leave their posts to shoot (the game's attack outranks them):
   // that's no sign a post can't be reached, so nothing is counted then.
@@ -269,6 +372,9 @@ class ACR_Garrison
    waypoint.SetCompletionRadius(tight);
    PrintFormat("[ACR] GARRISON %1: in position, holding within %2 m", group.GetCustomName(), tight);
   }
+  // Bags: a man short of his place is still behind them, and a place he truly can't reach is given up in the fight (ACR_BagHold).
+  // One whose walk there came to nothing is sent again (ResendStalled, above).
+  if (ACR_BagHold.HasPlaces(group)) return;
   array<IEntity> dropped = {};
   foreach (IEntity post : posts)
   {
@@ -344,6 +450,154 @@ class ACR_Garrison
   PrintFormat("[ACR] GARRISON %1: %2 posts nobody could reach dropped, %3 replacements (%4 handed out)", group.GetCustomName(), dropped.Count(), chosen.Count(), handed);
   // The defend activity is over (everyone's post failed at once): start it afresh.
   if (!SCR_AIDefendActivity.Cast(activity)) waypoint.GetOnWaypointPropertiesChanged().Invoke();
+ }
+
+ // The game hands out the posts only once every soldier is inside the waypoint's radius: one man
+ // jammed on the way (a fence, a doorway) kept the whole squad milling about outside with no posts
+ // (srv:garrisonoffice, 30 Oct: one man 25 m out for 40 s, 3 of 9 on posts). A man outside it who
+ // hasn't moved for STRAGGLER_LIMIT s is taken in by widening the radius to him; WatchPosts
+ // tightens it again once the defend activity runs. Counted in calls: Sweep runs WatchPosts
+ // once a second (from the manager).
+ static const int STRAGGLER_LIMIT = 8;
+ static const float STRAGGLER_REACH = 60;
+ protected static ref map<IEntity, vector> s_StragglerAt;
+ protected static ref map<IEntity, int> s_StragglerFor;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Posts = new map<SCR_AIGroup, ref array<IEntity>>();
+  s_Survey = new map<IEntity, ref array<ref ACR_GarrisonSpot>>();
+  s_aFound = {};
+  s_Stuck = new map<IEntity, int>();
+  s_LastPos = new map<IEntity, vector>();
+  s_Replans = new map<SCR_AIGroup, int>();
+  s_Tight = new map<SCR_AIGroup, float>();
+  s_aBad = {};
+  s_StragglerAt = new map<IEntity, vector>();
+  s_StragglerFor = new map<IEntity, int>();
+  s_StallAt = new map<IEntity, vector>();
+  s_StallFor = new map<IEntity, int>();
+  s_Resend = new map<IEntity, AIAgent>();
+  s_Resends = new map<IEntity, int>();
+ }
+ static int s_iWidened; // tests
+
+ protected static void TakeInStragglers(SCR_AIGroup group, SCR_DefendWaypoint waypoint)
+ {
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  float radius = waypoint.GetCompletionRadius();
+  float wanted = radius;
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body) continue;
+   float gap = vector.DistanceXZ(body.GetOrigin(), waypoint.GetOrigin());
+   if (gap <= radius)
+   {
+    s_StragglerAt.Remove(body);
+    s_StragglerFor.Remove(body);
+    continue;
+   }
+   vector was;
+   int still;
+   if (s_StragglerAt.Find(body, was) && vector.Distance(body.GetOrigin(), was) < 0.5)
+   {
+    s_StragglerFor.Find(body, still);
+    still++;
+   }
+   else s_StragglerAt.Set(body, body.GetOrigin());
+   s_StragglerFor.Set(body, still);
+   if (still >= STRAGGLER_LIMIT && gap < STRAGGLER_REACH) wanted = Math.Max(wanted, gap + 2);
+  }
+  if (wanted <= radius) return;
+  waypoint.SetCompletionRadius(wanted);
+  s_iWidened++;
+  PrintFormat("[ACR] GARRISON %1: a man stuck %2 m out, radius widened to take him in", group.GetCustomName(), Math.Round(wanted - 2));
+ }
+
+ // ---------------------------------------------------------------- stalled on the way to bags
+ // A man sent to his place behind bags whose path request came to nothing stands where he is with no path, still
+ // "performing" the post, for good (srv:bagholdsquads, 4 Nov 2026: 1-3 men of 9 stood in the town 150-185 m off
+ // with an empty path, every run, their posts on the navmesh; the squad held its line short-handed). Buildings have
+ // the unreachable-post check above; bags skip it, a man a little short of his place being behind them still. A man
+ // over STALL_GAP m from his post who hasn't moved and has no path for STALL_LIMIT s (on the way in too: a path is
+ // planned again in pieces as he goes, and one of those failing stopped a man 33 m short) has that walk ended; the next
+ // second, the post free again, it's handed back to him, which asks for a path afresh. STALL_RESENDS times a post.
+ static const int STALL_LIMIT = 10; // s: a long path through a town can take a few seconds to come
+ static const float STALL_GAP = 5;
+ static const int STALL_RESENDS = 3;
+ protected static ref map<IEntity, vector> s_StallAt;
+ protected static ref map<IEntity, int> s_StallFor;
+ protected static ref map<IEntity, AIAgent> s_Resend;  // post: the man it goes back to once it's free
+ protected static ref map<IEntity, int> s_Resends;
+ static int s_iResent; // tests
+
+ protected static void ResendStalled(SCR_AIGroup group, SCR_DefendWaypoint waypoint, SCR_AIGroupUtilityComponent utility, array<IEntity> posts)
+ {
+  foreach (IEntity post : posts)
+  {
+   if (!post) continue;
+   SCR_AISmartActionComponent action = SCR_AISmartActionComponent.Cast(post.FindComponent(SCR_AISmartActionComponent));
+   if (!action) continue;
+   AIAgent user = action.GetUser();
+   AIAgent waiting;
+   if (s_Resend.Find(post, waiting))
+   {
+    s_Resend.Remove(post);
+    // Taken again meanwhile (the game handed it out itself): his.
+    if (user || !waiting || !waiting.GetControlledEntity()) continue;
+    if (HandOut(group, waypoint, utility, post, waiting))
+    {
+     s_iResent++;
+     int tries;
+     s_Resends.Find(post, tries);
+     PrintFormat("[ACR] GARRISON %1: a man stood %2 m from his place behind the bags with no way there, sent again (%3 of %4)", group.GetCustomName(), Math.Round(vector.DistanceXZ(waiting.GetControlledEntity().GetOrigin(), post.GetOrigin())), tries, STALL_RESENDS);
+    }
+    continue;
+   }
+   IEntity body;
+   if (user) body = user.GetControlledEntity();
+   if (!body)
+   {
+    s_StallAt.Remove(post);
+    s_StallFor.Remove(post);
+    continue;
+   }
+   vector at = body.GetOrigin();
+   vector was;
+   int still;
+   if (s_StallAt.Find(post, was) && vector.Distance(at, was) < 0.25 && vector.DistanceXZ(at, post.GetOrigin()) > STALL_GAP && !HasPath(user))
+   {
+    s_StallFor.Find(post, still);
+    still++;
+   }
+   s_StallAt.Set(post, at);
+   s_StallFor.Set(post, still);
+   if (still < STALL_LIMIT) continue;
+   int resends;
+   s_Resends.Find(post, resends);
+   if (resends >= STALL_RESENDS) continue;
+   SCR_ChimeraAIAgent chimera = SCR_ChimeraAIAgent.Cast(user);
+   if (!chimera || !chimera.m_UtilityComponent) continue;
+   SCR_AIPerformActionBehavior walk = SCR_AIPerformActionBehavior.Cast(chimera.m_UtilityComponent.GetCurrentBehavior());
+   if (!walk || walk.m_SmartActionComponent.m_Value != action) continue;
+   // Ended now, handed back next time round: the ended walk lets the post go (OnActionFailed) after this.
+   walk.Fail();
+   s_Resends.Set(post, resends + 1);
+   s_Resend.Set(post, user);
+   s_StallAt.Remove(post);
+   s_StallFor.Remove(post);
+  }
+ }
+
+ protected static bool HasPath(AIAgent agent)
+ {
+  AIBaseMovementComponent movement = agent.GetMovementComponent();
+  if (!movement) return true;
+  array<vector> path = {};
+  movement.GetCurrentPath(path);
+  return !path.IsEmpty();
  }
 
  // A new post to one soldier who has none, the way the game's defend activity hands

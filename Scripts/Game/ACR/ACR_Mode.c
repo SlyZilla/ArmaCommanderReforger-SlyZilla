@@ -78,12 +78,27 @@ class ACR_Mode : GenericEntity
    GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 1000, false);
    return;
   }
+  // Company kits (#38): the host options (the setup's company rows) first.
+  if (ACR_DoctrineKits.Enabled() && !manager.HostOptionsApplied())
+  {
+   GetGame().GetCallqueue().CallLater(SpawnStartingUnits, 1000, false);
+   return;
+  }
+  ACR_DoctrineKits.Plan(manager);
   foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All)
   {
    string factionKey = "";
    float nearest = 1000000;
+   // Moved to its side's new HQ by a layout (ACR_Skirmish, ACR_QuickStart.SideOf reads it so):
+   // where it stood, the nearest owned base can be the enemy's new HQ.
+   if (unit.m_MovedTo && !unit.m_MovedTo.m_sOwner.IsEmpty())
+   {
+    factionKey = unit.m_MovedTo.m_sOwner;
+    nearest = -1;
+   }
    foreach (ACR_Base base : ACR_Base.s_All)
    {
+    if (nearest < 0) break;
     if (base.m_sOwner.IsEmpty()) continue;
     float distance = vector.Distance(unit.GetOrigin(), base.GetOrigin());
     if (distance < nearest) { nearest = distance; factionKey = base.m_sOwner; }
@@ -107,13 +122,18 @@ class ACR_Mode : GenericEntity
     if (vehicle.IsEmpty()) groupPos = manager.ClearSpotNear(unit.m_MovedTo, 5, 20, 1.5);
     else groupPos = ACR_Manager.Ground(vehiclePos + Vector(6, 0, 6));
    }
+   // A mechanized company's kit: its carrier in place of this truck (bought with the rest of the kit).
+   if (ACR_DoctrineKits.SwapsTruck(manager, factionKey, unit.m_sName, group, vehicle, unit.m_bCrewed, passengers, vehiclePos, groupPos)) continue;
    // The side owns its starting units like bought ones: crews and members join it (with a
    // mod pair the crews kept the vehicle's vanilla US/USSR side and kit, 8 Oct).
    manager.m_sSpawningFaction = factionKey;
    manager.SpawnUnit(unit.m_sName, group, vehicle, unit.m_bCrewed, passengers, vehiclePos, groupPos);
    manager.m_sSpawningFaction = "";
+   ACR_DoctrineKits.CountStarting(factionKey, group, vehicle, unit.m_bCrewed, passengers);
    PrintFormat("[ACR] Starting unit: %1 (%2) at %3: %4 %5 %6", unit.m_sName, factionKey, groupPos, FilePath.StripPath(group), FilePath.StripPath(vehicle), FilePath.StripPath(passengers));
   }
+  if (ACR_DoctrineKits.Enabled()) ACR_DoctrineKits.GiveAll();
+  ACR_QuickStart.Fortify();
  }
 
  // Optional log summary for automated runs (-acrScenarioTest 1).
@@ -223,7 +243,12 @@ class ACR_StartingUnit : GenericEntity
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Group riding in the vehicle (optional)", "et")]
  ResourceName m_sPassengers;
 
- static ref array<ACR_StartingUnit> s_All = {};
+ static ref array<ACR_StartingUnit> s_All;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+ }
  ACR_Base m_MovedTo; // runtime: a skirmish layout put this side's HQ at another base
 
  void ACR_StartingUnit(IEntitySource src, IEntity parent)

@@ -32,7 +32,7 @@ class ACR_PlayerSide
   s_bRead = true;
   string value;
   if (!ACR_Options.Get("acrPlayers", value)) return s_sKey;
-  value.Trim();
+  value.TrimInPlace();
   string lower = value;
   lower.ToLower();
   if (lower == "" || lower == "any" || lower == "free") return s_sKey;
@@ -59,6 +59,15 @@ class ACR_PlayerSide
  // Place one at that side's own base farthest from the other side's spawn points.
  static const ResourceName SPAWN_POINT = "{5A2220DD0C16958B}Prefabs/MP/Spawning/SpawnPoint_US.et";
  static bool s_bSpawnChecked; // (regress test resets it)
+
+ // Per match (ACR_Manager.Stop): the last mission's spawn point went with its world, and a
+ // rotation may read another -acrPlayers.
+ static void Reset()
+ {
+  s_bRead = false;
+  s_sKey = "";
+  s_bSpawnChecked = false;
+ }
  static void EnsureSpawnPoint()
  {
   if (s_bSpawnChecked) return;
@@ -196,7 +205,7 @@ class ACR_FactionSelection
  // A faction key as the world spells it, matched without case; "" if it isn't a candidate.
  static string Key(string wanted)
  {
-  wanted.Trim();
+  wanted.TrimInPlace();
   wanted.ToLower();
   array<string> keys = {};
   Candidates(keys);
@@ -266,7 +275,12 @@ class ACR_FactionSelection
   }
  }
 
- protected static ref map<int, string> s_PlayableSent = new map<int, string>();
+ protected static ref map<int, string> s_PlayableSent;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_PlayableSent = new map<int, string>();
+ }
 
  // Server, every second once the pair is applied: each player's game learns the pair once.
  static void SyncClients()

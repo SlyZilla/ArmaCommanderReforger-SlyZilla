@@ -5,6 +5,7 @@ class ACR_FobProviderComponent : SCR_CampaignBuildingProviderComponent
 {
  [RplProp(onRplName: "ACR_LinkStore")]
  protected RplId m_ACRCommandPost = RplId.Invalid();
+ protected int m_iACRLinkRetryMs;   // current wait between tries to link the CP store (0: linked or not trying)
 
  IEntity CommandPost()
  {
@@ -28,11 +29,16 @@ class ACR_FobProviderComponent : SCR_CampaignBuildingProviderComponent
   SCR_ResourceComponent resource = GetResourceComponent();
   SCR_ResourceConsumer consumer;
   if (resource) consumer = resource.GetConsumer(EResourceGeneratorID.DEFAULT, EResourceType.SUPPLIES);
+  // One retry chain at a time (the replicated id, post-init and binding each start one), backing
+  // off to one try every 10 s: a client that joins after the HQ is gone kept polling 4 times a second.
+  GetGame().GetCallqueue().Remove(ACR_LinkStore);
   if (!store || !consumer)
   {
-   GetGame().GetCallqueue().CallLater(ACR_LinkStore, 250, false);
+   m_iACRLinkRetryMs = Math.ClampInt(m_iACRLinkRetryMs * 2, 250, 10000);
+   GetGame().GetCallqueue().CallLater(ACR_LinkStore, m_iACRLinkRetryMs, false);
    return;
   }
+  m_iACRLinkRetryMs = 0;
   consumer.RegisterContainerForced(store);
  }
 
@@ -168,6 +174,25 @@ class ACR_FobSupply
   return null;
  }
 
+ // #156: the FOB's own arsenals and resupply points (the ammo dump's arsenal boxes) draw on the
+ // CP store like vanilla base arsenals, so players can take gear there. Only a DEFAULT consumer
+ // inside the FOB's ring, on the FOB's side and not on a vehicle: trucks load through
+ // VEHICLE_LOAD, and an arsenal truck parked here keeps using its own load.
+ static bool ServesFrom(IEntity provider, notnull SCR_ResourceInteractor interactor)
+ {
+  SCR_ResourceConsumer consumer = SCR_ResourceConsumer.Cast(interactor);
+  if (!consumer || consumer.GetGeneratorIdentifier() != EResourceGeneratorID.DEFAULT) return false;
+  IEntity owner = interactor.GetOwner();
+  if (!owner) return false;
+  for (IEntity part = owner; part; part = part.GetParent())
+   if (Vehicle.Cast(part)) return false;
+  ACR_Base base = AtProvider(provider);
+  if (!base || base.m_bHqLost || vector.DistanceXZ(owner.GetOrigin(), base.GetOrigin()) > base.m_fRadius) return false;
+  FactionAffiliationComponent affiliation = interactor.GetComponent().GetFactionAffiliationComponent();
+  if (affiliation && affiliation.GetAffiliatedFaction() && affiliation.GetAffiliatedFaction().GetFactionKey() != base.m_sOwner) return false;
+  return true;
+ }
+
  static bool SpendBuild(IEntity provider, int cost)
  {
   if (!Replication.IsServer() || cost < 0) return false;
@@ -287,15 +312,19 @@ modded class SCR_CampaignBuildingManagerComponent
 }
 
 // CP stock remains native/replicated and visible, but cannot be extracted by
-// trucks, arsenals or vanilla generators. Only its paid construction adapter
-// may connect; ACR services debit the same container explicitly.
+// trucks or vanilla generators. Its paid construction adapter and the FOB's own
+// arsenals (ACR_FobSupply.ServesFrom) may connect; ACR services debit the same
+// container explicitly.
 modded class SCR_ResourceContainer
 {
  override bool IsAllowed(notnull SCR_ResourceInteractor interactor)
  {
   IEntity provider = ACR_FobSupply.EditorProvider(GetOwner());
   if (provider != GetOwner() && provider && provider.FindComponent(ACR_FobProviderComponent))
-   return interactor.GetOwner() == provider && SCR_ResourceConsumer.Cast(interactor) != null;
+  {
+   if (interactor.GetOwner() == provider) return SCR_ResourceConsumer.Cast(interactor) != null;
+   return ACR_FobSupply.ServesFrom(provider, interactor) && super.IsAllowed(interactor);
+  }
   return super.IsAllowed(interactor);
  }
 }

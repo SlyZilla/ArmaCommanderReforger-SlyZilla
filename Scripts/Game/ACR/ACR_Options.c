@@ -8,7 +8,12 @@
 // Readers ask with the flag name ("acrThreat") and get the flag's text ("high").
 class ACR_Options
 {
- protected static ref map<string, string> s_Set = new map<string, string>();
+ protected static ref map<string, string> s_Set;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Set = new map<string, string>();
+ }
  protected static ref map<string, string> s_Header;
 
  // The option's text, or false when no source sets it.
@@ -48,6 +53,7 @@ class ACR_Options
  static void Set(string name, string value) { s_Set.Set(name, value); }
  static void Unset(string name) { s_Set.Remove(name); }
  static void ClearSet() { s_Set.Clear(); }
+ static void ForgetHeader() { s_Header = null; }
 
  protected static map<string, string> Header()
  {
@@ -68,7 +74,7 @@ class ACR_Options
  static void Log()
  {
   string line;
-  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrHoldGuns", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders"};
+  array<string> names = {"acrLayout", "acrSize", "acrPockets", "acrQuickStart", "acrGuerrillas", "acrFIAAllegiance", "acrFIALeaning", "acrFIAHidden", "acrFactions", "acrPlayers", "acrThreat", "acrPricing", "acrAI", "acrDoctrineWest", "acrDoctrineEast", "acrDoctrineAdapt", "acrCompanyWest", "acrCompanyEast", "acrUnitCap", "acrSoldierCap", "acrStartRP", "acrIncome", "acrSkill", "acrReaction", "acrSharedCommand", "acrRespawnSeconds", "acrGameMasterAll", "acrMarksmen", "acrFirstPlayerHost", "acrSetup", "acrDeployment", "acrReinforcement", "acrFobServices", "acrFobRelay", "acrDepotCapacity", "acrServiceSupplyCost", "acrFobRPServiceCost", "acrMines", "acrMinesRealistic", "acrMinesAI", "acrCapScale", "acrAIBuildShare", "acrFortify", "acrFortifyAI", "acrBaseWorks", "acrBaseBays", "acrBaseSmallGuns", "acrWings", "acrBaseStyles", "acrBasePlacement", "acrEmplacements", "acrWingMen", "acrBaseDress", "acrBaseObstacles", "acrBagHold", "acrBaseRing", "acrKillGround", "acrBaseFinalWalk", "acrHoldGuns", "acrMapDeclutter", "acrSquadTactics", "acrRoadFlow", "acrFortifyDefenders1", "acrFortifyDefenders2", "acrFortifyDefenders3", "acrRoadblockDefenders", "acrFieldRoutes"};
   foreach (string name : names)
   {
    string value;
@@ -92,6 +98,16 @@ class ACR_MissionHeader : SCR_MissionHeader
  string m_sAcrSize;
  [Attribute("", UIWidgets.EditBox, "FIA pockets of resistance on whole/half maps: few (default), many or off (-acrPockets)")]
  string m_sAcrPockets;
+ [Attribute("", UIWidgets.EditBox, "Quick start, the map already split between the sides: off (default), even or uneven (-acrQuickStart)")]
+ string m_sAcrQuickStart;
+ [Attribute("", UIWidgets.EditBox, "FIA guerrillas (road ambushes, houses) on whole/half maps: few (default), many or off (-acrGuerrillas)")]
+ string m_sAcrGuerrillas;
+ [Attribute("", UIWidgets.EditBox, "Hidden FIA: 1 = no messages about FIA; pockets are only found by entering them (-acrFIAHidden)")]
+ string m_sAcrFIAHidden;
+ [Attribute("", UIWidgets.EditBox, "Who FIA sides with: hostile (both, default), west or east (-acrFIAAllegiance)")]
+ string m_sAcrFIAAllegiance;
+ [Attribute("", UIWidgets.EditBox, "FIA leans by conduct: 1 = each side's standing with FIA rises and falls with how it treats FIA (-acrFIALeaning)")]
+ string m_sAcrFIALeaning;
  [Attribute("", UIWidgets.EditBox, "Faction pair: vanilla, ru_us, ru_ua, us_ua or two faction keys WEST,EAST (-acrFactions)")]
  string m_sAcrFactions;
  [Attribute("", UIWidgets.EditBox, "Put every player on this faction key, or any (-acrPlayers)")]
@@ -108,12 +124,18 @@ class ACR_MissionHeader : SCR_MissionHeader
  string m_sAcrDoctrineEast;
  [Attribute("", UIWidgets.EditBox, "AI commanders change doctrine when theirs isn't working: 1 (default) or 0 (-acrDoctrineAdapt)")]
  string m_sAcrDoctrineAdapt;
+ [Attribute("", UIWidgets.EditBox, "Blue side company, its starting kit: rifle (default), mechanized, weapons, engineers or recon (-acrCompanyWest)")]
+ string m_sAcrCompanyWest;
+ [Attribute("", UIWidgets.EditBox, "Red side company, its starting kit: rifle (default), mechanized, weapons, engineers or recon (-acrCompanyEast)")]
+ string m_sAcrCompanyEast;
  [Attribute("-1", UIWidgets.EditBox, "AI commander squad cap per side (-acrUnitCap)")]
  int m_iAcrUnitCap;
  [Attribute("-1", UIWidgets.EditBox, "Generated layout seed (-acrSeed); -1 or 0 = a new random layout each match")]
  int m_iAcrSeed;
  [Attribute("-1", UIWidgets.EditBox, "Living AI soldiers per side (-acrSoldierCap)")]
  int m_iAcrSoldierCap;
+ [Attribute("-1", UIWidgets.EditBox, "Scale the AI squad cap and soldier cap with the map's bases / size: 0 default (off), 1 on (-acrCapScale)")]
+ int m_iAcrCapScale;
  [Attribute("-1", UIWidgets.EditBox, "Starting RP per side (-acrStartRP)")]
  int m_iAcrStartRP;
  [Attribute("-1", UIWidgets.EditBox, "Income multiplier (-acrIncome)")]
@@ -153,12 +175,42 @@ class ACR_MissionHeader : SCR_MissionHeader
  int m_iAcrMinesRealistic;
  [Attribute("-1", UIWidgets.EditBox, "Gunners stay on the static guns of a spot their squad holds: 1 default, 0 vanilla (-acrHoldGuns)")]
  int m_iAcrHoldGuns;
+ [Attribute("-1", UIWidgets.EditBox, "The calm command map: 1 default, 0 the classic map (-acrMapDeclutter)")]
+ int m_iAcrMapDeclutter;
  [Attribute("-1", UIWidgets.EditBox, "AI commanders lay minefields: 0 default, 1 enables (-acrMinesAI)")]
  int m_iAcrMinesAI;
  [Attribute("-1", UIWidgets.EditBox, "Commander Fortify orders: 1 default, 0 disables (-acrFortify)")]
  int m_iAcrFortify;
  [Attribute("-1", UIWidgets.EditBox, "AI commanders fortify: 0 default, 1 enables (-acrFortifyAI)")]
  int m_iAcrFortifyAI;
+ [Attribute("-1", UIWidgets.EditBox, "Fortify on the middle of a base fortifies the town: 1 default, 0 disables (-acrBaseWorks)")]
+ int m_iAcrBaseWorks;
+ [Attribute("-1", UIWidgets.EditBox, "A fortified town's long lines step in and out with fire bays: 1 default, 0 disables (-acrBaseBays)")]
+ int m_iAcrBaseBays;
+ [Attribute("-1", UIWidgets.EditBox, "A small gun position takes one piece of a line where a big nest has no room: 1 default, 0 disables (-acrBaseSmallGuns)")]
+ int m_iAcrBaseSmallGuns;
+ [Attribute("-1", UIWidgets.EditBox, "New Fortify positions and squad-built checkpoints get sandbag wings: 1 default, 0 disables (-acrWings)")]
+ int m_iAcrWings;
+ [Attribute("-1", UIWidgets.EditBox, "Each fortified town gets a defence style from its ground: 1 default, 0 makes every town a wall (-acrBaseStyles)")]
+ int m_iAcrBaseStyles;
+ [Attribute("-1", UIWidgets.EditBox, "A fortified town's lines keep out of yards and off squares, and its guns look for the ways in: 1 default, 0 the older placement (-acrBasePlacement)")]
+ int m_iAcrBasePlacement;
+ [Attribute("-1", UIWidgets.EditBox, "Guns stand in emplacements built from parts as well as the game's ready-made nests: 1 default, 0 ready-made only (-acrEmplacements)")]
+ int m_iAcrEmplacements;
+ [Attribute("-1", UIWidgets.EditBox, "A Fortify position's reserve goes behind its wings when an enemy comes: 1 default, 0 stays round the position. -1 leaves it to the command line.")]
+ int m_iAcrWingMen;
+ [Attribute("-1", UIWidgets.EditBox, "Men with a place behind bags hold it in a fight and shoot over them: 1 default, 0 the game's own movement. -1 leaves it to the command line.")]
+ int m_iAcrBagHold;
+ [Attribute("-1", UIWidgets.EditBox, "Lines have stretches of low or netted bags and dirt in front, not only plain high bags: 1 default, 0 plain. -1 leaves it to the command line.")]
+ int m_iAcrBaseDress;
+ [Attribute("-1", UIWidgets.EditBox, "Hedgehogs or log barricades out in front of a line either side of its road: 1 default, 0 only wire. -1 leaves it to the command line.")]
+ int m_iAcrBaseObstacles;
+ [Attribute("-1", UIWidgets.EditBox, "A town's lines go round the town by the cheapest way that closes it: 1 default, 0 walked out from seeds. -1 leaves it to the command line (-acrBaseRing)")]
+ int m_iAcrBaseRing;
+ [Attribute("-1", UIWidgets.EditBox, "A town's bags and guns are chosen by what they do to the enemy on the ways he would walk: 1 default, 0 by threat per sector and view. -1 leaves it to the command line (-acrKillGround)")]
+ int m_iAcrKillGround;
+ [Attribute("-1", UIWidgets.EditBox, "Once a town's works are planned the enemy is walked in against them once more and the last pieces go on his softest way: 1 default, 0 not. -1 leaves it to the command line (-acrBaseFinalWalk)")]
+ int m_iAcrBaseFinalWalk;
  [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a Fortify tier I position: 1 default, 0 none (-acrFortifyDefenders1)")]
  int m_iAcrFortifyDefenders1;
  [Attribute("-1", UIWidgets.EditBox, "Defenders in reserve at a Fortify tier II position: 2 default, 0 none (-acrFortifyDefenders2)")]
@@ -175,6 +227,11 @@ class ACR_MissionHeader : SCR_MissionHeader
   Text(values, "acrLayout", m_sAcrLayout);
   Text(values, "acrSize", m_sAcrSize);
   Text(values, "acrPockets", m_sAcrPockets);
+  Text(values, "acrQuickStart", m_sAcrQuickStart);
+  Text(values, "acrGuerrillas", m_sAcrGuerrillas);
+  Text(values, "acrFIAHidden", m_sAcrFIAHidden);
+  Text(values, "acrFIAAllegiance", m_sAcrFIAAllegiance);
+  Text(values, "acrFIALeaning", m_sAcrFIALeaning);
   Text(values, "acrFactions", m_sAcrFactions);
   Text(values, "acrPlayers", m_sAcrPlayers);
   Text(values, "acrThreat", m_sAcrThreat);
@@ -183,9 +240,12 @@ class ACR_MissionHeader : SCR_MissionHeader
   Text(values, "acrDoctrineWest", m_sAcrDoctrineWest);
   Text(values, "acrDoctrineEast", m_sAcrDoctrineEast);
   Text(values, "acrDoctrineAdapt", m_sAcrDoctrineAdapt);
+  Text(values, "acrCompanyWest", m_sAcrCompanyWest);
+  Text(values, "acrCompanyEast", m_sAcrCompanyEast);
   Number(values, "acrUnitCap", m_iAcrUnitCap);
   Number(values, "acrSeed", m_iAcrSeed);
   Number(values, "acrSoldierCap", m_iAcrSoldierCap);
+  Number(values, "acrCapScale", m_iAcrCapScale);
   Number(values, "acrStartRP", m_iAcrStartRP);
   if (m_fAcrIncome >= 0) values.Set("acrIncome", m_fAcrIncome.ToString());
   Number(values, "acrSkill", m_iAcrSkill);
@@ -205,9 +265,24 @@ class ACR_MissionHeader : SCR_MissionHeader
   Number(values, "acrMines", m_iAcrMines);
   Number(values, "acrMinesRealistic", m_iAcrMinesRealistic);
   Number(values, "acrHoldGuns", m_iAcrHoldGuns);
+  Number(values, "acrMapDeclutter", m_iAcrMapDeclutter);
   Number(values, "acrMinesAI", m_iAcrMinesAI);
   Number(values, "acrFortify", m_iAcrFortify);
   Number(values, "acrFortifyAI", m_iAcrFortifyAI);
+  Number(values, "acrBaseWorks", m_iAcrBaseWorks);
+  Number(values, "acrBaseBays", m_iAcrBaseBays);
+  Number(values, "acrBaseSmallGuns", m_iAcrBaseSmallGuns);
+  Number(values, "acrWings", m_iAcrWings);
+  Number(values, "acrBaseStyles", m_iAcrBaseStyles);
+  Number(values, "acrBasePlacement", m_iAcrBasePlacement);
+  Number(values, "acrEmplacements", m_iAcrEmplacements);
+  Number(values, "acrWingMen", m_iAcrWingMen);
+  Number(values, "acrBagHold", m_iAcrBagHold);
+  Number(values, "acrBaseDress", m_iAcrBaseDress);
+  Number(values, "acrBaseObstacles", m_iAcrBaseObstacles);
+  Number(values, "acrBaseRing", m_iAcrBaseRing);
+  Number(values, "acrKillGround", m_iAcrKillGround);
+  Number(values, "acrBaseFinalWalk", m_iAcrBaseFinalWalk);
   Number(values, "acrFortifyDefenders1", m_iAcrFortifyDefenders1);
   Number(values, "acrFortifyDefenders2", m_iAcrFortifyDefenders2);
   Number(values, "acrFortifyDefenders3", m_iAcrFortifyDefenders3);
@@ -218,7 +293,7 @@ class ACR_MissionHeader : SCR_MissionHeader
  protected static void Text(map<string, string> values, string name, string value)
  {
   string trimmed = value;
-  trimmed.Trim();
+  trimmed.TrimInPlace();
   if (trimmed != "") values.Set(name, trimmed);
  }
  protected static void Number(map<string, string> values, string name, int value)

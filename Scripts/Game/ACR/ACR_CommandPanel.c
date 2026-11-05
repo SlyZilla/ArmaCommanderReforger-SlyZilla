@@ -26,6 +26,8 @@ enum ACR_EPanelAction
  TOGGLE_RTS_CAMERA,
  FOB_SUPPLY,
  FOB_BUILD,
+ FOB_AI,                  // "AI manages this FOB" (ACR_FobAI)
+ SQUAD_AI,                // "AI commands this squad" (ACR_SquadAI)
  ESTABLISH_FOB,
  ROADBLOCK,
  MINES_AP,                // the minefield buttons
@@ -36,6 +38,12 @@ enum ACR_EPanelAction
  ROADBLOCK_L,
  BARRICADE,
  FORTIFY,
+ PATROL,
+ QRF,
+ KEY_HINTS,
+ BUILD_FOLD,
+ UPGRADES_FOLD,
+ MORE_FOLD,
  DEBUG_TOGGLE = 50,
  DEBUG_THINK,             // the AC:A Think card (ACR_Think)
  DEBUG_ACTION = 60,       // + ACR_EDebug (below 100)
@@ -61,7 +69,8 @@ enum ACR_ECursorMode
  ROADBLOCK_S,
  ROADBLOCK_L,
  BARRICADE,
- FORTIFY
+ FORTIFY,
+ QRF
 }
 
 // Arma Commander side panel on the fullscreen map. Built from script out of the
@@ -73,6 +82,10 @@ class ACR_CommandPanel : Managed
  protected static const ResourceName LAYOUT_TEXT = "{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout";
  protected static const ResourceName LAYOUT_HEADING = "{0D7FF083FDE39877}UI/layouts/WidgetLibrary/TextWidgets/Text_Heading4.layout";
  protected static const float WIDTH = 340;
+ protected static const float REQUISITION_HEIGHT = 340;
+ protected static const float SUPPORT_HEIGHT = 300;
+ protected static const float LIST_MIN_HEIGHT = 160; // an open list gives way to here before the panel scrolls
+ protected static const float SCREEN_GAP = 4;        // what the panel keeps from the screen's top and bottom
 
  Widget m_Root;
  protected Widget m_FeedRoot;
@@ -80,6 +93,11 @@ class ACR_CommandPanel : Managed
  protected ref array<TextWidget> m_FeedLines = {};
  protected string m_sFeedShown = "-";
  protected Widget m_Content;
+ protected SizeLayoutWidget m_BodyBox;
+ protected ScrollLayoutWidget m_BodyScroll;
+ protected SizeLayoutWidget m_BodyMark;
+ protected SCR_ButtonTextComponent m_MoreButton;
+ protected Widget m_MoreSection;
  protected TextWidget m_Status;
  protected TextWidget m_ReinforceFeedback;
  protected TextWidget m_Economy;
@@ -101,14 +119,19 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_ReinforceButton;
  protected Widget m_FobSection;
  protected SCR_ButtonTextComponent m_FobSupplyButton;
+ protected SCR_ButtonTextComponent m_FobAIButton;
+ protected SCR_ButtonTextComponent m_SquadAIButton;
+ protected Widget m_SquadAIWidget;
  protected SCR_ButtonTextComponent m_FobBuildButton;
  protected Widget m_FobUpgradesLayout;
+ protected SCR_ButtonTextComponent m_FobUpgradesFold;
+ protected Widget m_FobUpgradesBox;
  protected ref array<SCR_ButtonTextComponent> m_aFobUpgradeButtons = {};
  protected ref array<Widget> m_aFobUpgradeWidgets = {};
  protected SCR_ButtonTextComponent m_RequisitionButton;
  protected Widget m_RequisitionWidget;
  protected Widget m_RequisitionSection;
- protected Widget m_RequisitionBox;
+ protected SizeLayoutWidget m_RequisitionBox;
  protected ref array<SCR_ButtonTextComponent> m_EntryButtons = {};
  protected SCR_ButtonTextComponent m_SupportButton;
  protected SCR_ButtonTextComponent m_ReportButton;
@@ -116,7 +139,7 @@ class ACR_CommandPanel : Managed
  protected TextWidget m_ReportText;
  protected Widget m_SupportWidget;
  protected Widget m_SupportSection;
- protected Widget m_SupportBox;
+ protected SizeLayoutWidget m_SupportBox;
  protected ref array<SCR_ButtonTextComponent> m_SupportButtons = {};
  protected SCR_ButtonTextComponent m_GetInButton;
  protected SCR_ButtonTextComponent m_LZButton;
@@ -124,7 +147,9 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_EstablishFobButton;
  protected Widget m_EstablishFobWidget;
  protected ref array<SCR_ButtonTextComponent> m_RoadblockButtons = {}; // by ACR_ERoadblockType
+ protected SCR_ButtonTextComponent m_QrfButton;
  protected Widget m_RoadblockWidget;
+ protected SCR_ButtonTextComponent m_PatrolButton;
  protected Widget m_MinesWidget;
  protected ref array<SCR_ButtonTextComponent> m_MineButtons = {};
  protected Widget m_RoadblockSizes;
@@ -140,6 +165,10 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_DebugCaptureOwn;
  protected SCR_ButtonTextComponent m_DebugCaptureEnemy;
  protected string m_sDebugShown = "-";
+ protected static const float NOTE_WIDTH = 340;
+ protected Widget m_NoteRoot;
+ protected TextWidget m_NoteText;
+ protected string m_sNote;
 
  void Create(Widget parent, SCR_PlayerController owner)
  {
@@ -149,34 +178,38 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetAnchorMin(m_Root, 1, 0);
   FrameSlot.SetAnchorMax(m_Root, 1, 0);
   FrameSlot.SetAlignment(m_Root, 1, 0);
-  FrameSlot.SetPos(m_Root, -24, 96);
   FrameSlot.SetSizeToContent(m_Root, true);
   m_Root.SetZOrder(1000);
+  ACR_UiPrefs.Load();
+  GetGame().GetInputManager().AddActionListener("MouseLeft", EActionTrigger.UP, OnMouseLeftUp);
 
-  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.86), 0, m_Root);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, PanelBackground(0.86), 0, m_Root);
   AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
   AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
 
   SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_Root));
   size.EnableWidthOverride(true);
-  size.SetWidthOverride(WIDTH);
+  size.SetWidthOverride(PanelWidth());
   AlignableSlot.SetPadding(size, 14, 12, 14, 16);
-  m_Content = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
+  Widget frame = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
+  AlignableSlot.SetHorizontalAlign(frame, LayoutHorizontalAlign.Stretch);
 
-  AddText(m_Content, LAYOUT_HEADING, "AC: ACTUAL");
-  m_Economy = AddText(m_Content, LAYOUT_TEXT, "");
-  m_Status = AddText(m_Content, LAYOUT_TEXT, "");
-  m_ReinforceFeedback = AddText(m_Content, LAYOUT_TEXT, "");
+  // The head stays put; everything under it goes in the body, which scrolls if it can't fit (FitBody).
+  AddHeading(frame, "AC: ACTUAL");
+  m_Economy = AddText(frame, LAYOUT_TEXT, "");
+  m_Status = AddText(frame, LAYOUT_TEXT, "");
+  m_ReinforceFeedback = AddText(frame, LAYOUT_TEXT, "");
   if (m_ReinforceFeedback) m_ReinforceFeedback.SetVisible(false);
-  m_Roster = AddText(m_Content, LAYOUT_TEXT, "");
+  m_Roster = AddText(frame, LAYOUT_TEXT, "");
   if (m_Roster) m_Roster.SetVisible(false);
+  CreateBody(frame);
   m_CommandButton = AddButton(m_Content, "Take command", ACR_EPanelAction.TOGGLE_COMMAND);
   m_RequisitionButton = AddButton(m_Content, "Requisition", ACR_EPanelAction.TOGGLE_REQUISITION);
   m_RequisitionWidget = m_LastButtonWidget;
   // Long buy lists scroll inside a fixed-height box.
   SizeLayoutWidget listBox = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content));
   listBox.EnableHeightOverride(true);
-  listBox.SetHeightOverride(340);
+  listBox.SetHeightOverride(REQUISITION_HEIGHT);
   AlignableSlot.SetPadding(listBox, 0, 6, 0, 0);
   m_RequisitionBox = listBox;
   // Clip, or the buttons of a long list draw over the whole panel.
@@ -187,17 +220,24 @@ class ACR_CommandPanel : Managed
   m_SupportWidget = m_LastButtonWidget;
   SizeLayoutWidget supportBox = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content));
   supportBox.EnableHeightOverride(true);
-  supportBox.SetHeightOverride(300);
+  supportBox.SetHeightOverride(SUPPORT_HEIGHT);
   AlignableSlot.SetPadding(supportBox, 0, 6, 0, 0);
   m_SupportBox = supportBox;
   Widget supportScroll = ws.CreateWidget(WidgetType.ScrollLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.CLIPCHILDREN, Color.FromInt(Color.WHITE), 0, supportBox);
   m_SupportSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, supportScroll);
 
+  // What isn't needed to run the fight folds away under one button.
+  m_MoreButton = AddButton(m_Content, "", ACR_EPanelAction.MORE_FOLD);
+  m_MoreSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   // After-action report (ACR_Report): everyone on the side can open it.
-  m_ReportButton = AddButton(m_Content, "Report", ACR_EPanelAction.TOGGLE_REPORT);
-  m_ReportText = AddText(m_Content, LAYOUT_TEXT, "");
+  m_ReportButton = AddButton(m_MoreSection, "Report", ACR_EPanelAction.TOGGLE_REPORT);
+  m_ReportText = AddText(m_MoreSection, LAYOUT_TEXT, "");
   if (m_ReportText) { m_ReportText.SetVisible(false); AlignableSlot.SetPadding(m_ReportText, 0, 4, 0, 4); }
-  m_RTSCameraButton = AddButton(m_Content, "3D Camera  [F10]", ACR_EPanelAction.TOGGLE_RTS_CAMERA);
+  m_RTSCameraButton = AddButton(m_MoreSection, "3D Camera  [F10]", ACR_EPanelAction.TOGGLE_RTS_CAMERA);
+  m_KeyHintsButton = AddButton(m_MoreSection, "", ACR_EPanelAction.KEY_HINTS);
+  RefreshKeyHints();
+  AddExtraRows(m_MoreSection);
+  RefreshMore();
 
   m_GroupSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_Content);
   AlignableSlot.SetPadding(m_GroupSection, 0, 14, 0, 0);
@@ -206,12 +246,17 @@ class ACR_CommandPanel : Managed
   m_FobSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_GroupSection);
   m_FobSupplyButton = AddButton(m_FobSection, "Order 500 supplies - 20 RP / 60 s", ACR_EPanelAction.FOB_SUPPLY);
   m_FobBuildButton = AddButton(m_FobSection, "Build at FOB (stand inside its circle)", ACR_EPanelAction.FOB_BUILD);
+  m_FobAIButton = AddButton(m_FobSection, "AI manages this FOB: off", ACR_EPanelAction.FOB_AI);
   m_FobUpgradesLayout = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, 0, Color.FromInt(Color.WHITE), 0, m_FobSection);
-  AddText(m_FobUpgradesLayout, LAYOUT_TEXT, "FOB Upgrades");
+  // The eight upgrades fold away (all open the panel ran off the screen, a playtester's report). The
+  // defences are one button that says what it is, so they stay out.
+  m_FobUpgradesFold = AddButton(m_FobUpgradesLayout, "FOB Upgrades", ACR_EPanelAction.UPGRADES_FOLD);
+  m_FobUpgradesBox = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_FobUpgradesLayout);
   for (int s = 0; s < ACR_FobSlots.UPGRADE_COUNT; s++)
   {
-   if (s == ACR_FobSlots.SLOT_DEFENCES) AddText(m_FobUpgradesLayout, LAYOUT_TEXT, "FOB Defences");
-   SCR_ButtonTextComponent upgradeBtn = AddButton(m_FobUpgradesLayout, ACR_FobSlots.SlotName(s), ACR_EPanelAction.FOB_UPGRADE + s);
+   Widget slotParent = m_FobUpgradesBox;
+   if (s == ACR_FobSlots.SLOT_DEFENCES) slotParent = m_FobUpgradesLayout;
+   SCR_ButtonTextComponent upgradeBtn = AddButton(slotParent, ACR_FobSlots.SlotName(s), ACR_EPanelAction.FOB_UPGRADE + s);
    m_aFobUpgradeButtons.Insert(upgradeBtn);
    m_aFobUpgradeWidgets.Insert(m_LastButtonWidget);
   }
@@ -219,6 +264,8 @@ class ACR_CommandPanel : Managed
   m_SwitchWidget = m_LastButtonWidget;
   AddButton(m_GroupSection, "Take over gunner", ACR_EPanelAction.TAKE_GUNNER);
   m_GunnerWidget = m_LastButtonWidget;
+  m_SquadAIButton = AddButton(m_GroupSection, "AI commands this squad: off", ACR_EPanelAction.SQUAD_AI);
+  m_SquadAIWidget = m_LastButtonWidget;
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
 
   m_OrderSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_GroupSection);
@@ -241,26 +288,35 @@ class ACR_CommandPanel : Managed
   m_RideButton = AddButton(orders3, "Ride", ACR_EPanelAction.RIDE, true);
   m_LZButton = AddButton(orders3, "Unload at LZ", ACR_EPanelAction.SET_LZ, true);
   AddButton(orders3, "Fire at will", ACR_EPanelAction.FIRE_AT_WILL, true);
+  // Standing orders.
+  Widget orders4 = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_PatrolButton = AddButton(orders4, "Patrol", ACR_EPanelAction.PATROL, true);
+  m_QrfButton = AddButton(orders4, "QRF", ACR_EPanelAction.QRF, true);
   m_ReinforceButton = AddButton(m_OrderSection, "Reinforce", ACR_EPanelAction.REINFORCE);
-  m_EstablishFobButton = AddButton(m_OrderSection, "Establish FOB", ACR_EPanelAction.ESTABLISH_FOB);
+  // What a squad builds folds away: with it open and a squad selected the panel took most of the
+  // screen and covered the game's hints (a player's report).
+  m_BuildFoldButton = AddButton(m_OrderSection, "", ACR_EPanelAction.BUILD_FOLD);
+  m_BuildFoldWidget = m_LastButtonWidget;
+  m_BuildSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_EstablishFobButton = AddButton(m_BuildSection, "Establish FOB", ACR_EPanelAction.ESTABLISH_FOB);
   m_EstablishFobWidget = m_LastButtonWidget;
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
   // Roadblocks: the three checkpoint sizes in a row, a barricade under them.
-  m_RoadblockWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_RoadblockWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_BuildSection);
   m_RoadblockSizes = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_RoadblockWidget);
   m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.SMALL), ACR_EPanelAction.ROADBLOCK_S, true));
   m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.MEDIUM), ACR_EPanelAction.ROADBLOCK, true));
   m_RoadblockButtons.Insert(AddButton(m_RoadblockSizes, ACR_Roadblocks.Button(ACR_ERoadblockType.LARGE), ACR_EPanelAction.ROADBLOCK_L, true));
   m_RoadblockButtons.Insert(AddButton(m_RoadblockWidget, ACR_Roadblocks.Button(ACR_ERoadblockType.BARRICADE), ACR_EPanelAction.BARRICADE));
   if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(false);
-  m_MinesWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_OrderSection);
+  m_MinesWidget = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_BuildSection);
   Widget layMines = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_MinesWidget);
   m_MineButtons.Insert(AddButton(layMines, ACR_Minefields.Button(ACR_EMineKind.AP), ACR_EPanelAction.MINES_AP, true));
   m_MineButtons.Insert(AddButton(layMines, ACR_Minefields.Button(ACR_EMineKind.AT), ACR_EPanelAction.MINES_AT, true));
   m_MineButtons.Insert(AddButton(layMines, ACR_Minefields.Button(ACR_EMineKind.MIXED), ACR_EPanelAction.MINES_MIXED, true));
   m_MineButtons.Insert(AddButton(m_MinesWidget, ACR_Minefields.Button(ACR_EMineKind.DISARM), ACR_EPanelAction.DISARM_MINES));
   if (m_MinesWidget) m_MinesWidget.SetVisible(false);
-  m_FortifyButton = AddButton(m_OrderSection, "Fortify", ACR_EPanelAction.FORTIFY);
+  m_FortifyButton = AddButton(m_BuildSection, "Fortify", ACR_EPanelAction.FORTIFY);
   m_FortifyWidget = m_LastButtonWidget;
   if (m_FortifyWidget) m_FortifyWidget.SetVisible(false);
   m_Hint = AddText(m_GroupSection, LAYOUT_TEXT, "");
@@ -268,6 +324,163 @@ class ACR_CommandPanel : Managed
   CreateFeed(parent);
   CreatePicker(parent);
   CreateDebug(parent);
+  CreateNote(parent);
+  RegisterPanels();
+ }
+
+ // The panel's rows below its head (m_Content): in a box as tall as they are, as far as the screen lets
+ // it. A mark on the panel's edge shows how far down it is when it scrolls.
+ protected void CreateBody(Widget parent)
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  m_BodyBox = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, parent));
+  m_BodyBox.EnableHeightOverride(true);
+  m_BodyBox.SetHeightOverride(400);
+  AlignableSlot.SetHorizontalAlign(m_BodyBox, LayoutHorizontalAlign.Stretch);
+  m_BodyScroll = ScrollLayoutWidget.Cast(ws.CreateWidget(WidgetType.ScrollLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.CLIPCHILDREN, Color.FromInt(Color.WHITE), 0, m_BodyBox));
+  AlignableSlot.SetHorizontalAlign(m_BodyScroll, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(m_BodyScroll, LayoutVerticalAlign.Stretch);
+  // A scroll layout gives its child any width, and centres a short one.
+  SizeLayoutWidget width = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_BodyScroll));
+  width.EnableWidthOverride(true);
+  width.SetWidthOverride(PanelWidth());
+  AlignableSlot.SetVerticalAlign(width, LayoutVerticalAlign.Top);
+  m_Content = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, width);
+  AlignableSlot.SetHorizontalAlign(m_Content, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(m_Content, LayoutVerticalAlign.Top);
+
+  m_BodyMark = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 6, m_Root));
+  m_BodyMark.EnableWidthOverride(true);
+  m_BodyMark.SetWidthOverride(4);
+  m_BodyMark.EnableHeightOverride(true);
+  AlignableSlot.SetHorizontalAlign(m_BodyMark, LayoutHorizontalAlign.Right);
+  AlignableSlot.SetVerticalAlign(m_BodyMark, LayoutVerticalAlign.Top);
+  Widget mark = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, new Color(1, 1, 1, 0.5), 0, m_BodyMark);
+  AlignableSlot.SetHorizontalAlign(mark, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(mark, LayoutVerticalAlign.Stretch);
+ }
+
+ // Every frame: the panel is never taller than the screen. A list that's open gives way first, as it
+ // scrolls by itself; then the body scrolls.
+ protected void FitBody()
+ {
+  if (!m_BodyBox || !m_Root || !m_Root.IsVisible()) return;
+  RefreshMore();
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float width, rootHeight, boxHeight, content;
+  m_Root.GetScreenSize(width, rootHeight);
+  m_BodyBox.GetScreenSize(width, boxHeight);
+  m_Content.GetScreenSize(width, content);
+  // Not laid out yet.
+  if (content <= 0) return;
+  rootHeight = ws.DPIUnscale(rootHeight);
+  boxHeight = ws.DPIUnscale(boxHeight);
+  content = ws.DPIUnscale(content);
+  float room = Math.Max(ws.DPIUnscale(ws.GetHeight()) - 2 * SCREEN_GAP - (rootHeight - boxHeight), LIST_MIN_HEIGHT);
+  content = FitList(m_RequisitionBox, REQUISITION_HEIGHT, content, room);
+  content = FitList(m_SupportBox, SUPPORT_HEIGHT, content, room);
+  float height = Math.Min(content, room);
+  if (Math.AbsFloat(height - boxHeight) >= 1) m_BodyBox.SetHeightOverride(height);
+  PlaceBodyMark(height, content);
+ }
+
+ // How tall the rows are with this list's box at its height for this much room.
+ protected float FitList(SizeLayoutWidget box, float full, float content, float room)
+ {
+  if (!box || !box.IsVisibleInHierarchy()) return content;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float width, now;
+  box.GetScreenSize(width, now);
+  now = ws.DPIUnscale(now);
+  float wanted = Math.Clamp(room - (content - now), LIST_MIN_HEIGHT, full);
+  if (Math.AbsFloat(wanted - now) >= 1) box.SetHeightOverride(wanted);
+  return content - now + wanted;
+ }
+
+ protected void PlaceBodyMark(float height, float content)
+ {
+  if (!m_BodyMark || !m_BodyScroll) return;
+  bool scrolls = content > height + 1;
+  m_BodyMark.SetVisible(scrolls);
+  if (!scrolls) return;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float rootX, rootY, boxX, boxY, sliderX, sliderY;
+  m_Root.GetScreenPos(rootX, rootY);
+  m_BodyBox.GetScreenPos(boxX, boxY);
+  m_BodyScroll.GetSliderPos(sliderX, sliderY);
+  float markHeight = Math.Max(height * height / content, 24);
+  m_BodyMark.SetHeightOverride(markHeight);
+  AlignableSlot.SetPadding(m_BodyMark, 0, ws.DPIUnscale(boxY - rootY) + sliderY * (height - markHeight), 5, 0);
+ }
+
+ protected void RefreshMore()
+ {
+  if (m_MoreSection) m_MoreSection.SetVisible(ACR_UiPrefs.s_bMoreOpen);
+  if (!m_MoreButton) return;
+  if (ACR_UiPrefs.s_bMoreOpen) m_MoreButton.SetText("More  [hide]");
+  else m_MoreButton.SetText("More");
+ }
+
+ // What an armed order does, in a box of its own beside the panel. At the panel's foot it ran off the
+ // screen with the build orders open (their rows add up to about 1150 px of a 1080 px screen), just
+ // when the player has asked for it. Clicks go through it to the map.
+ protected void CreateNote(Widget parent)
+ {
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  m_NoteRoot = ws.CreateWidget(WidgetType.OverlayWidgetTypeID, WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 0, parent);
+  FrameSlot.SetAnchorMin(m_NoteRoot, 0, 0);
+  FrameSlot.SetAnchorMax(m_NoteRoot, 0, 0);
+  FrameSlot.SetAlignment(m_NoteRoot, 0, 0);
+  FrameSlot.SetSizeToContent(m_NoteRoot, true);
+  m_NoteRoot.SetZOrder(1002);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH | WidgetFlags.IGNORE_CURSOR, PanelBackground(0.94), 0, m_NoteRoot);
+  AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
+  AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
+  SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR, Color.FromInt(Color.WHITE), 1, m_NoteRoot));
+  size.EnableWidthOverride(true);
+  size.SetWidthOverride(NOTE_WIDTH);
+  AlignableSlot.SetPadding(size, 10, 8, 10, 8);
+  m_NoteText = AddText(size, LAYOUT_TEXT, "");
+  if (m_NoteText)
+  {
+   m_NoteText.SetFlags(WidgetFlags.IGNORE_CURSOR);
+   AlignableSlot.SetHorizontalAlign(m_NoteText, LayoutHorizontalAlign.Stretch);
+  }
+ }
+
+ protected void SetNote(string text)
+ {
+  if (text == m_sNote) return;
+  m_sNote = text;
+  if (m_NoteText) m_NoteText.SetText(text);
+ }
+
+ // Beside the panel, level with its top; clear of a hint. Only while the panel shows (placing a FOB
+ // with the 2IC, its own banner says it all).
+ protected void PlaceNote()
+ {
+  if (!m_NoteRoot) return;
+  bool show = !m_sNote.IsEmpty() && m_Root && m_Root.IsVisible();
+  if (m_NoteRoot.IsVisible() != show) m_NoteRoot.SetVisible(show);
+  if (!show) return;
+  WorkspaceWidget ws = GetGame().GetWorkspace();
+  float screenW = ws.DPIUnscale(ws.GetWidth());
+  float screenH = ws.DPIUnscale(ws.GetHeight());
+  float px, py, pw, ph, nw, nh;
+  m_Root.GetScreenPos(px, py);
+  m_Root.GetScreenSize(pw, ph);
+  m_NoteRoot.GetScreenSize(nw, nh);
+  nw = ws.DPIUnscale(nw);
+  nh = ws.DPIUnscale(nh);
+  float x = ACR_UiPrefs.BesideX(ws.DPIUnscale(px), ws.DPIUnscale(pw), nw, screenW);
+  float y = ACR_UiPrefs.FitY(ws.DPIUnscale(py), 0, screenH, nh);
+  float hx, hy, hw, hh, toX, toY;
+  if (ACR_PanelMover.HintRect(hx, hy, hw, hh) && ACR_UiPrefs.StepAside(x, y, nw, nh, hx, hy, hw, hh, screenW, screenH, toX, toY))
+  {
+   x = toX;
+   y = toY;
+  }
+  FrameSlot.SetPos(m_NoteRoot, x, y);
  }
 
  // Debug menu (host and admins): a small box at the bottom left, closed by default.
@@ -281,13 +494,13 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetPos(m_DebugRoot, 110, -96);
   FrameSlot.SetSizeToContent(m_DebugRoot, true);
   m_DebugRoot.SetZOrder(1000);
-  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.86), 0, m_DebugRoot);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, PanelBackground(0.86), 0, m_DebugRoot);
   AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
   AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
   SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_DebugRoot));
   size.EnableWidthOverride(true);
   size.SetWidthOverride(320);
-  AlignableSlot.SetPadding(size, 8, 6, 8, 8);
+  AlignableSlot.SetPadding(size, 8, 14, 8, 8); // room above the button to hold it by
   Widget column = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
   m_DebugToggle = AddButton(column, "Debug", ACR_EPanelAction.DEBUG_TOGGLE);
   m_DebugSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, column);
@@ -360,7 +573,7 @@ class ACR_CommandPanel : Managed
   FrameSlot.SetAnchorMax(m_PickerRoot, 0, 0);
   FrameSlot.SetSizeToContent(m_PickerRoot, true);
   m_PickerRoot.SetZOrder(1001);
-  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, new Color(0.02, 0.13, 0.30, 0.90), 0, m_PickerRoot);
+  Widget background = ws.CreateWidget(WidgetType.ImageWidgetTypeID, WidgetFlags.VISIBLE | WidgetFlags.BLEND | WidgetFlags.STRETCH, PanelBackground(0.90), 0, m_PickerRoot);
   AlignableSlot.SetHorizontalAlign(background, LayoutHorizontalAlign.Stretch);
   AlignableSlot.SetVerticalAlign(background, LayoutVerticalAlign.Stretch);
   SizeLayoutWidget size = SizeLayoutWidget.Cast(ws.CreateWidget(WidgetType.SizeLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 1, m_PickerRoot));
@@ -465,11 +678,208 @@ class ACR_CommandPanel : Managed
   }
  }
 
+ // The INTEL line under the screen point x, y (native px), -1 none. The feed's widgets ignore the
+ // cursor, so a click on a line reaches the map (SCR_PlayerController.ACR_OnMapClick) and is matched
+ // here by where it fell.
+ int FeedLineAt(float x, float y)
+ {
+  if (!m_FeedRoot || !m_FeedRoot.IsVisible()) return -1;
+  float rx, ry, rw, rh;
+  m_FeedRoot.GetScreenPos(rx, ry);
+  m_FeedRoot.GetScreenSize(rw, rh);
+  if (x < rx || x > rx + rw || y < ry || y > ry + rh) return -1;
+  foreach (int i, TextWidget line : m_FeedLines)
+  {
+   if (!line || !line.IsVisible()) continue;
+   float lx, ly, lw, lh;
+   line.GetScreenPos(lx, ly);
+   line.GetScreenSize(lw, lh);
+   if (y >= ly && y <= ly + lh) return i;
+  }
+  return -1;
+ }
+
+ // The INTEL line under the cursor that a click would jump from, lit (-1: none).
+ protected ref array<ref Color> m_FeedLineColors = {};
+ protected int m_iFeedLit = -1;
+ void LightFeedLine(int i)
+ {
+  if (i == m_iFeedLit) return;
+  while (m_FeedLineColors.Count() < m_FeedLines.Count())
+  {
+   TextWidget unlit = m_FeedLines[m_FeedLineColors.Count()];
+   Color color = Color.FromInt(Color.WHITE);
+   if (unlit) color = unlit.GetColor();
+   m_FeedLineColors.Insert(color);
+  }
+  if (m_iFeedLit >= 0 && m_iFeedLit < m_FeedLines.Count() && m_FeedLines[m_iFeedLit]) m_FeedLines[m_iFeedLit].SetColor(m_FeedLineColors[m_iFeedLit]);
+  m_iFeedLit = i;
+  if (i >= 0 && i < m_FeedLines.Count() && m_FeedLines[i]) m_FeedLines[i].SetColor(Color.FromRGBA(255, 200, 130, 255));
+ }
+
+ // The intel feed's top (the 2IC card moves it down, ACR_TwoICView).
+ void SetFeedTop(float y)
+ {
+  ACR_PanelMover.Natural(ACR_UiPrefs.FEED, ACR_UiPrefs.FEED_HOME_X, y);
+ }
+
+ Widget DebugRoot() { return m_DebugRoot; }
+
+ // ---------------------------------------------------------------- moving the panels
+
+ protected SCR_ButtonTextComponent m_KeyHintsButton;
+
+ protected SCR_ButtonTextComponent m_BuildFoldButton;
+ protected Widget m_BuildFoldWidget;
+ protected Widget m_BuildSection;
+
+ void ToggleBuildFold()
+ {
+  ACR_UiPrefs.s_bBuildOpen = !ACR_UiPrefs.s_bBuildOpen;
+  ACR_UiPrefs.Save();
+ }
+
+ void ToggleUpgradesFold()
+ {
+  ACR_UiPrefs.s_bUpgradesOpen = !ACR_UiPrefs.s_bUpgradesOpen;
+  ACR_UiPrefs.Save();
+ }
+
+ void ToggleMoreFold()
+ {
+  ACR_UiPrefs.s_bMoreOpen = !ACR_UiPrefs.s_bMoreOpen;
+  ACR_UiPrefs.Save();
+ }
+
+ // Open while one of its orders is armed (its button shows that, and its second click cancels). The
+ // fold button only shows when the squad can build something.
+ protected void RefreshBuildFold(int cursorMode)
+ {
+  if (!m_BuildSection || !m_BuildFoldButton) return;
+  bool armed = cursorMode == ACR_ECursorMode.ESTABLISH_FOB || cursorMode == ACR_ECursorMode.FORTIFY || cursorMode == ACR_ECursorMode.DISARM_MINES;
+  if (ACR_CommandPanel.RoadblockOfMode(cursorMode) >= 0) armed = true;
+  if (cursorMode >= ACR_ECursorMode.MINES_AP && cursorMode <= ACR_ECursorMode.MINES_MIXED) armed = true;
+  bool any = (m_EstablishFobWidget && m_EstablishFobWidget.IsVisible()) || (m_RoadblockWidget && m_RoadblockWidget.IsVisible()) || (m_MinesWidget && m_MinesWidget.IsVisible()) || (m_FortifyWidget && m_FortifyWidget.IsVisible());
+  bool open = ACR_UiPrefs.s_bBuildOpen || armed;
+  if (m_BuildFoldWidget) m_BuildFoldWidget.SetVisible(any);
+  m_BuildSection.SetVisible(any && open);
+  if (open) m_BuildFoldButton.SetText("Build orders  [hide]");
+  else m_BuildFoldButton.SetText("Build orders");
+ }
+
+ // Tests: an armed order's note shows, clear of the panel.
+ bool NoteShownForTest() { return m_NoteRoot && m_NoteRoot.IsVisible(); }
+ bool NoteClearForTest()
+ {
+  if (!NoteShownForTest() || !m_Root) return false;
+  float x, y, w, h, nx, ny, nw, nh;
+  m_Root.GetScreenPos(x, y);
+  m_Root.GetScreenSize(w, h);
+  m_NoteRoot.GetScreenPos(nx, ny);
+  m_NoteRoot.GetScreenSize(nw, nh);
+  return nw > 0 && !ACR_UiPrefs.Overlap(x, y, w, h, nx, ny, nw, nh);
+ }
+ // Tests: the middle of the first line INTEL shows, in screen pixels (x, y; zero: no line).
+ vector FeedLineForTest()
+ {
+  foreach (TextWidget line : m_FeedLines)
+  {
+   if (!line || !line.IsVisible()) continue;
+   float x, y, w, h;
+   line.GetScreenPos(x, y);
+   line.GetScreenSize(w, h);
+   return Vector(x + w * 0.5, y + h * 0.5, 0);
+  }
+  return vector.Zero;
+ }
+ // Tests: INTEL's title bar ends above the first line it shows.
+ bool FeedTitleClearForTest()
+ {
+  Widget first = FirstFeedLine();
+  vector grip = ACR_PanelMover.GripForTest(ACR_UiPrefs.FEED);
+  if (!first || grip == vector.Zero) return false;
+  float x, y;
+  first.GetScreenPos(x, y);
+  return FeedLineAt(grip[0], grip[1]) < 0 && grip[1] < y;
+ }
+ // Tests: the middle of the key reminders button, in screen pixels (x, y).
+ vector KeyHintsButtonForTest()
+ {
+  if (!m_KeyHintsButton) return vector.Zero;
+  float x, y, w, h;
+  m_KeyHintsButton.GetRootWidget().GetScreenPos(x, y);
+  m_KeyHintsButton.GetRootWidget().GetScreenSize(w, h);
+  return Vector(x + w * 0.5, y + h * 0.5, 0);
+ }
+
+ void RefreshKeyHints()
+ {
+  if (!m_KeyHintsButton) return;
+  ACR_UiPrefs.Load();
+  if (ACR_UiPrefs.s_bKeyHints) m_KeyHintsButton.SetText("Key reminders: on");
+  else m_KeyHintsButton.SetText("Key reminders: off");
+ }
+
+ // Each panel of this box's, for the one way of moving a panel (ACR_PanelMover). The ACA panel is held
+ // by its face or its title; INTEL by its title only: the rest lets the cursor through to the map
+ // (a click on a line jumps there).
+ protected void RegisterPanels()
+ {
+  ACR_PanelMover.Add(ACR_UiPrefs.PANEL, m_Root, 1, 0, ACR_UiPrefs.PANEL_HOME_X, ACR_UiPrefs.PANEL_HOME_Y);
+  ACR_PanelMover.Grip(ACR_UiPrefs.PANEL, m_Root);
+  ACR_PanelMover.TitleBar(ACR_UiPrefs.PANEL, m_Root, 44);
+  ACR_PanelMover.Add(ACR_UiPrefs.FEED, m_FeedRoot, 0, 0, ACR_UiPrefs.FEED_HOME_X, ACR_UiPrefs.FEED_HOME_Y);
+  ACR_PanelMover.TitleBar(ACR_UiPrefs.FEED, m_FeedRoot, 34);
+  ACR_PanelMover.Add(ACR_UiPrefs.DEBUG_BOX, m_DebugRoot, 0, 1, ACR_UiPrefs.FEED_HOME_X, -96);
+  ACR_PanelMover.Body(ACR_UiPrefs.DEBUG_BOX, m_DebugRoot);
+ }
+
+ // INTEL's first line showing, what its title bar must stop short of.
+ protected Widget FirstFeedLine()
+ {
+  if (m_FeedText && m_FeedText.IsVisible()) return m_FeedText;
+  foreach (TextWidget line : m_FeedLines)
+  {
+   if (line && line.IsVisible()) return line;
+  }
+  return null;
+ }
+
+ // Every frame the map is open (SCR_PlayerController.ACR_UpdatePanel).
+ void TickDrag()
+ {
+  ACR_PanelMover.FitTitleBar(ACR_UiPrefs.PANEL, m_Economy);
+  ACR_PanelMover.FitTitleBar(ACR_UiPrefs.FEED, FirstFeedLine());
+  FitBody();
+  ACR_PanelMover.Tick();
+  PlaceNote();
+ }
+
+ protected void OnMouseLeftUp(float value = 0, EActionTrigger reason = 0) { ACR_PanelMover.DragEnd(); }
+
  protected TextWidget AddText(Widget parent, ResourceName layout, string text)
  {
   TextWidget widget = TextWidget.Cast(GetGame().GetWorkspace().CreateWidgets(layout, parent));
   if (widget) widget.SetText(text);
+  StyleText(widget, layout == LAYOUT_HEADING);
   return widget;
+ }
+
+ // Look hooks: the calm map (ACR_MapDeclutterView) restyles the panel through these.
+ protected Color PanelBackground(float alpha) { return new Color(0.02, 0.13, 0.30, alpha); }
+ protected float PanelWidth() { return WIDTH; }
+ protected TextWidget AddHeading(Widget parent, string text) { return AddText(parent, LAYOUT_HEADING, text); }
+ protected void StyleText(TextWidget widget, bool heading) {}
+ protected void AddExtraRows(Widget content) {}
+
+ // Arma Commander blue instead of the vanilla orange.
+ protected void StyleButton(SCR_ButtonTextComponent button, Widget widget)
+ {
+  Color normal = new Color(0.16, 0.42, 0.80, 0.40);
+  button.SetBackgroundColors(normal, new Color(0.26, 0.56, 0.96, 0.70), new Color(0.30, 0.62, 1.0, 0.95), new Color(0.36, 0.68, 1.0, 1.0), new Color(0.30, 0.62, 1.0, 0.95));
+  if (button.m_wBackground) button.m_wBackground.SetColor(normal);
+  Widget border = widget.FindAnyWidget("Border");
+  if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
  }
 
  protected SCR_ButtonTextComponent AddButton(Widget parent, string text, int action, bool fill = false)
@@ -482,12 +892,7 @@ class ACR_CommandPanel : Managed
   SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(widget);
   if (!button) return null;
   button.SetText(text);
-  // Arma Commander blue instead of the vanilla orange.
-  Color normal = new Color(0.16, 0.42, 0.80, 0.40);
-  button.SetBackgroundColors(normal, new Color(0.26, 0.56, 0.96, 0.70), new Color(0.30, 0.62, 1.0, 0.95), new Color(0.36, 0.68, 1.0, 1.0), new Color(0.30, 0.62, 1.0, 0.95));
-  if (button.m_wBackground) button.m_wBackground.SetColor(normal);
-  Widget border = widget.FindAnyWidget("Border");
-  if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
+  StyleButton(button, widget);
   button.m_OnClicked.Insert(OnButton);
   m_Actions.Insert(button, action);
   return button;
@@ -526,7 +931,11 @@ class ACR_CommandPanel : Managed
   if (m_FobSection) m_FobSection.SetVisible(false);
   if (!m_GroupSection) return;
   m_GroupSection.SetVisible(!name.IsEmpty());
-  if (name.IsEmpty()) return;
+  if (name.IsEmpty())
+  {
+   SetNote("");
+   return;
+  }
   m_GroupName.SetText(name);
   m_GroupDetail.SetText(detail);
   if (m_SwitchWidget) m_SwitchWidget.SetVisible(true);
@@ -570,6 +979,11 @@ class ACR_CommandPanel : Managed
    if (cursorMode == ACR_ECursorMode.ESTABLISH_FOB) m_EstablishFobButton.SetText("[Establish FOB]");
    else m_EstablishFobButton.SetText("Establish FOB");
   }
+  if (m_QrfButton)
+  {
+   if (cursorMode == ACR_ECursorMode.QRF) m_QrfButton.SetText("[QRF]");
+   else m_QrfButton.SetText("QRF");
+  }
   int armed = RoadblockOfMode(cursorMode);
   foreach (int type, SCR_ButtonTextComponent roadblockButton : m_RoadblockButtons)
   {
@@ -588,7 +1002,14 @@ class ACR_CommandPanel : Managed
    if (cursorMode == ACR_ECursorMode.FORTIFY) m_FortifyButton.SetText("[Fortify]");
    else m_FortifyButton.SetText("Fortify");
   }
-  if (m_Hint) m_Hint.SetText(hint);
+  RefreshBuildFold(cursorMode);
+  // An armed order's words stand beside the panel (CreateNote), the plain reminder at its foot.
+  bool armedNote = friendly && isCommander && cursorMode != ACR_ECursorMode.MOVE;
+  if (armedNote) SetNote(hint);
+  else SetNote("");
+  if (!m_Hint) return;
+  m_Hint.SetVisible(!armedNote);
+  if (!armedNote) m_Hint.SetText(hint);
  }
 
  // Buy list: one button per entry, rebuilt when the entry count changes.
@@ -686,6 +1107,15 @@ class ACR_CommandPanel : Managed
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(visible);
  }
 
+ // "AI commands this squad" (ACR_SquadAI): one friendly squad selected; on or off.
+ void SetSquadAI(bool visible, bool on)
+ {
+  if (m_SquadAIWidget) m_SquadAIWidget.SetVisible(visible);
+  if (!m_SquadAIButton) return;
+  if (on) m_SquadAIButton.SetText("[AI commands this squad: on]");
+  else m_SquadAIButton.SetText("AI commands this squad: off");
+ }
+
  void SetReinforce(string text, bool enabled)
  {
   if (!m_ReinforceButton) return;
@@ -716,12 +1146,49 @@ class ACR_CommandPanel : Managed
   m_GroupDetail.SetText(detail);
   if (m_SwitchWidget) m_SwitchWidget.SetVisible(false);
   if (m_GunnerWidget) m_GunnerWidget.SetVisible(false);
+  if (m_SquadAIWidget) m_SquadAIWidget.SetVisible(false);
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(false);
   if (m_RoadblockWidget) m_RoadblockWidget.SetVisible(false);
   if (m_MinesWidget) m_MinesWidget.SetVisible(false);
   if (m_FortifyWidget) m_FortifyWidget.SetVisible(false);
   m_OrderSection.SetVisible(false);
-  if (m_Hint) m_Hint.SetText("");
+  SetNote("");
+  if (m_Hint) m_Hint.SetVisible(false);
+ }
+
+ // A FOB's words without its built upgrades: their buttons say so (ACR_FobSlots.Describe). What is
+ // being built and what is blocked, and why, are only said here.
+ static string FobDetail(string detail)
+ {
+  if (!detail.Contains("\nUpgrades:")) return detail;
+  array<string> lines = {};
+  detail.Split("\n", lines, false);
+  string kept = "";
+  string heading = "";
+  bool upgrades = false;
+  foreach (string line : lines)
+  {
+   if (line == "Upgrades:")
+   {
+    upgrades = true;
+    heading = line + "\n";
+    continue;
+   }
+   if (upgrades && line.Contains(" (built)")) continue;
+   if (!kept.IsEmpty()) kept += "\n";
+   kept += heading + line;
+   heading = "";
+  }
+  return kept;
+ }
+
+ // "AI manages this FOB" (ACR_FobAI): on or off; only the commander can change it.
+ void SetFobAI(bool canToggle, bool on)
+ {
+  if (!m_FobAIButton) return;
+  m_FobAIButton.SetEnabled(canToggle, false);
+  if (on) m_FobAIButton.SetText("[AI manages this FOB: on]");
+  else m_FobAIButton.SetText("AI manages this FOB: off");
  }
 
  // Upgrade states: ACR_FobSlots.FeedState (decoded with FeedBuilding / FeedBuilt).
@@ -751,6 +1218,9 @@ class ACR_CommandPanel : Managed
    }
   }
 
+  int slots = 0;
+  int builtSlots = 0;
+  int buildingPct = -1;
   for (int i = 0; i < m_aFobUpgradeButtons.Count(); i++)
   {
    SCR_ButtonTextComponent btn = m_aFobUpgradeButtons[i];
@@ -761,6 +1231,12 @@ class ACR_CommandPanel : Managed
     continue;
    }
    int state = slotStates[i];
+   if (i < ACR_FobSlots.SLOT_DEFENCES)
+   {
+    slots++;
+    if (ACR_FobSlots.FeedBuilt(state, tier, nextBlocked)) builtSlots++;
+    else if (ACR_FobSlots.FeedBuilding(state, tier, pct)) buildingPct = pct;
+   }
    string label;
    bool enabled = false;
    if (ACR_FobSlots.FeedBuilt(state, tier, nextBlocked))
@@ -797,11 +1273,25 @@ class ACR_CommandPanel : Managed
    btn.SetText(label);
    btn.SetEnabled(enabled, false);
   }
+  if (m_FobUpgradesBox) m_FobUpgradesBox.SetVisible(ACR_UiPrefs.s_bUpgradesOpen);
+  if (!m_FobUpgradesFold) return;
+  string fold = string.Format("FOB Upgrades  %1/%2", builtSlots, slots);
+  if (buildingPct >= 0) fold += string.Format("  (%1%%)", buildingPct);
+  if (ACR_UiPrefs.s_bUpgradesOpen) fold += "  [hide]";
+  m_FobUpgradesFold.SetText(fold);
  }
 
  void SetEstablishFob(bool visible)
  {
   if (m_EstablishFobWidget) m_EstablishFobWidget.SetVisible(visible);
+ }
+
+ // "[Patrol]" while the squad patrols.
+ void SetPatrol(bool on)
+ {
+  if (!m_PatrolButton) return;
+  if (on) m_PatrolButton.SetText("[Patrol]");
+  else m_PatrolButton.SetText("Patrol");
  }
 
  // sizes false: only the barricade (FIA builds log barricades whatever the order).
@@ -836,6 +1326,14 @@ class ACR_CommandPanel : Managed
 
  void Destroy()
  {
+  ACR_PanelMover.DragEnd();
+  ACR_PanelMover.Remove(ACR_UiPrefs.PANEL);
+  ACR_PanelMover.Remove(ACR_UiPrefs.FEED);
+  ACR_PanelMover.Remove(ACR_UiPrefs.DEBUG_BOX);
+  if (m_NoteRoot) m_NoteRoot.RemoveFromHierarchy();
+  m_NoteRoot = null;
+  m_NoteText = null;
+  GetGame().GetInputManager().RemoveActionListener("MouseLeft", EActionTrigger.UP, OnMouseLeftUp);
   if (m_Root) m_Root.RemoveFromHierarchy();
   m_Root = null;
   if (m_FeedRoot) m_FeedRoot.RemoveFromHierarchy();
@@ -859,7 +1357,54 @@ modded class SCR_MapRadialUI
  override protected void OnInputMenuOpen(float value, EActionTrigger reason)
  {
   SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
-  if (pc && pc.ACR_HandleMapRightClick()) return;
+  if (pc && pc.ACR_HandleMapClick()) return;
   super.OnInputMenuOpen(value, reason);
+ }
+
+ // Drag to aim. The right button is two actions in the game's input config: a click is
+ // MapContextualMenu (above: the order), a hold of 100 ms is MapPanDrag (map panning), so a
+ // drag never makes a click. With an order that takes a facing armed, the hold aims instead
+ // (SCR_MapCursorModule below doesn't pan then): it starts when the hold does and the order
+ // goes out when the button comes up (ACR_AimDown / ACR_AimUp).
+ override void OnMapOpen(MapConfiguration config)
+ {
+  super.OnMapOpen(config);
+  GetGame().GetInputManager().AddActionListener("MapPanDrag", EActionTrigger.DOWN, ACR_OnHoldDown);
+  GetGame().GetInputManager().AddActionListener("MapPanDrag", EActionTrigger.UP, ACR_OnHoldUp);
+ }
+
+ override void OnMapClose(MapConfiguration config)
+ {
+  GetGame().GetInputManager().RemoveActionListener("MapPanDrag", EActionTrigger.DOWN, ACR_OnHoldDown);
+  GetGame().GetInputManager().RemoveActionListener("MapPanDrag", EActionTrigger.UP, ACR_OnHoldUp);
+  super.OnMapClose(config);
+ }
+
+ protected void ACR_OnHoldDown(float value, EActionTrigger reason)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (pc) pc.ACR_AimDown();
+ }
+
+ protected void ACR_OnHoldUp(float value, EActionTrigger reason)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (pc) pc.ACR_AimUp();
+ }
+}
+
+// Drag to aim: while an order that takes a facing is armed, holding the right button aims it
+// (ACR_PlayerController.ACR_AimArmed) and doesn't pan the map. Any other time it pans as usual;
+// the keyboard and the screen edges pan either way.
+// (The container attribute must be repeated on a modded config class: without it the map
+// configs no longer know the class, and the map opens with no cursor module: no pan, no zoom.)
+[BaseContainerProps()]
+modded class SCR_MapCursorModule
+{
+ override protected void OnInputPanDrag(float value, EActionTrigger reason)
+ {
+  SCR_PlayerController pc = SCR_PlayerController.Cast(GetGame().GetPlayerController());
+  if (pc && pc.ACR_AimArmed()) return;
+  super.OnInputPanDrag(value, reason);
  }
 }

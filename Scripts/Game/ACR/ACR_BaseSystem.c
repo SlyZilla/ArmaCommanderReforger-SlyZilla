@@ -14,6 +14,8 @@ class ACR_BaseSystem : Managed
  static const float CAPTURE_MAX_STEP = 6;   // cap per second (original mod: 2; raised so more troops cap faster)
  static const float SPAWN_RANGE = 400;      // enemies this close deploy the garrison
  static const float DESPAWN_RANGE = 450;    // no enemies this close: garrison packs up
+ static const float WORKS_SPAWN_RANGE = 600; // ... a base with works standing: the AI stages its attack about 320 m out, so its
+                                            // garrison is behind the bags before the assault steps off (the user, 2 Nov, Chotain Base)
  static const int POINTS_CAP = 1000;
 
  int m_iIncomeInterval = 60;                // seconds
@@ -45,14 +47,27 @@ class ACR_BaseSystem : Managed
   if (ACR_Manager.StartRPOption() > 0) data.m_iRP = ACR_Manager.StartRPOption();
   ACR_FactionCatalog.BuildRequisitions(factionKey, settings, data.m_aRequisitions);
   ACR_FactionCatalog.BuildGarrisonPool(factionKey, settings, data.m_aGarrison);
+  // Only prefabs that load: an empty row, a typo or a mod that isn't loaded spawned nothing, and
+  // the next tick counted the missing men as lost for good (audit 31 Oct).
+  for (int g = data.m_aGarrison.Count() - 1; g >= 0; g--)
+  {
+   ResourceName soldier = data.m_aGarrison[g];
+   if (!soldier.IsEmpty() && Resource.Load(soldier).IsValid()) continue;
+   PrintFormat("[ACR] Garrison soldier prefab for %1 doesn't load, skipped: '%2'", factionKey, soldier);
+   data.m_aGarrison.Remove(g);
+  }
   if (!settings || settings.m_bSupports)
   {
+   bool listsAttack = false;
    if (settings && settings.m_aSupports && !settings.m_aSupports.IsEmpty())
    {
     bool listsAirLift = false;
+    bool listsRecon = false;
     foreach (ACR_SupportEntry configured : settings.m_aSupports)
     {
      if (configured && configured.m_eType == ACR_ESupportType.AIR_LIFT) listsAirLift = true;
+     if (configured && configured.m_eType == ACR_ESupportType.ATTACK_HELI) listsAttack = true;
+     if (configured && configured.m_eType == ACR_ESupportType.RECON_FLIGHT) listsRecon = true;
      if (!configured || !configured.m_bEnabled) continue;
      data.m_aSupports.Insert(configured.Copy());
     }
@@ -67,8 +82,12 @@ class ACR_BaseSystem : Managed
      lift.Resolve();
      data.m_aSupports.Insert(lift);
     }
+    // ...and the recon flight (4 Nov), the same way.
+    if (!listsRecon) data.m_aSupports.Insert(ACR_Supports.NewEntry(ACR_ESupportType.RECON_FLIGHT));
    }
    else ACR_Supports.BuildDefaults(data.m_aSupports);
+   // A content pack's attack helicopter for the side adds its support.
+   ACR_Supports.FitAttackHelicopter(factionKey, data.m_aSupports, listsAttack);
   }
   m_Factions.Insert(factionKey, data);
   return data;
@@ -83,11 +102,12 @@ class ACR_BaseSystem : Managed
   return true;
  }
 
+ // Gives back what Spend took, in full: the cap limits income, not a refund.
  void Refund(string factionKey, int amount)
  {
   ACR_FactionData data = GetFaction(factionKey);
   if (!data) return;
-  data.m_iRP = Math.Min(data.m_iRP + amount, POINTS_CAP);
+  data.m_iRP += amount;
   ACR_Report.OnRefund(factionKey, amount);
  }
 
@@ -111,6 +131,8 @@ class ACR_BaseSystem : Managed
   return income;
  }
 
+ static bool s_bNoIncomeForTest;
+
  int SecondsToIncome()
  {
   if (m_fNextIncome < 0) return m_iIncomeInterval;
@@ -123,6 +145,7 @@ class ACR_BaseSystem : Managed
   if (m_fNextIncome < 0) m_fNextIncome = now + m_iIncomeInterval * 1000;
   if (now < m_fNextIncome) return;
   m_fNextIncome = now + m_iIncomeInterval * 1000;
+  if (s_bNoIncomeForTest) return;
   array<Faction> factions = {};
   GetGame().GetFactionManager().GetFactionsList(factions);
   foreach (Faction faction : factions)
@@ -131,7 +154,8 @@ class ACR_BaseSystem : Managed
    int added = Math.Round(GetIncome(key) * ACR_Manager.IncomeOption());
    ACR_FactionData data = GetFaction(key);
    int before = data.m_iRP;
-   data.m_iRP = Math.Min(data.m_iRP + added, POINTS_CAP);
+   // Income stops at the cap but never cuts a side above it (starting RP over 1000).
+   if (data.m_iRP < POINTS_CAP) data.m_iRP = Math.Min(data.m_iRP + added, POINTS_CAP);
    ACR_Report.OnIncome(key, data.m_iRP - before);
   }
   PrintFormat("[ACR] Income paid");
@@ -185,12 +209,21 @@ class ACR_BaseSystem : Managed
   vector center = base.GetOrigin();
   map<string, int> inside = new map<string, int>();
   bool enemyNear, enemyInRange, enemyApproaching;
+  float spawnRange = SPAWN_RANGE;
+  float despawnRange = DESPAWN_RANGE;
+  if (ACR_BaseWorks.LinesStand(base))
+  {
+   spawnRange = WORKS_SPAWN_RANGE;
+   despawnRange = WORKS_SPAWN_RANGE + DESPAWN_RANGE - SPAWN_RANGE;
+  }
   foreach (int i, IEntity body : m_Bodies)
   {
    if (!body) continue; // deleted this tick (e.g. a garrison packed up after a capture)
    string key = m_BodyFactions[i];
    float distance = vector.DistanceXZ(body.GetOrigin(), center);
-   if (distance <= base.m_fRadius)
+   // FIA's ally neither fights nor takes its pockets (ACR_Insurgency).
+   bool friendOfOwner = base.m_bPocket && key != base.m_sOwner && ACR_Insurgency.Friendly(key, base.m_sOwner);
+   if (distance <= base.m_fRadius && !friendOfOwner)
    {
     int count;
     inside.Find(key, count);
@@ -207,18 +240,19 @@ class ACR_BaseSystem : Managed
      }
     }
    }
-   if (!base.m_sOwner.IsEmpty() && key != base.m_sOwner)
+   if (!base.m_sOwner.IsEmpty() && key != base.m_sOwner && !friendOfOwner)
    {
     // An FIA pocket is found once its garrison would deploy against you.
-    if (base.m_bPocket && distance <= SPAWN_RANGE && !base.m_aDetectedBy.Contains(key))
+    // Hidden FIA (-acrFIAHidden): only by entering it (above), and nobody is told.
+    if (base.m_bPocket && distance <= SPAWN_RANGE && !base.m_aDetectedBy.Contains(key) && !ACR_Guerrillas.Hidden())
     {
      base.m_aDetectedBy.Insert(key);
      manager.NotifyFaction(key, string.Format("FIA resistance at %1", base.m_sName));
      PrintFormat("[ACR] POCKETS %1 found by %2", base.m_sName, key);
     }
-    if (distance <= SPAWN_RANGE) enemyNear = true;
-    if (distance <= SPAWN_RANGE + 300) enemyApproaching = true;
-    if (distance <= DESPAWN_RANGE) enemyInRange = true;
+    if (distance <= spawnRange) enemyNear = true;
+    if (distance <= spawnRange + 300) enemyApproaching = true;
+    if (distance <= despawnRange) enemyInRange = true;
    }
   }
   UpdateCapture(manager, base, inside);
@@ -343,13 +377,167 @@ class ACR_BaseSystem : Managed
   }
  }
 
+ // #73: where a garrison, patrol or guard soldier appears near center: clear of walls (a 0.6 m
+ // wide, 2 m tall cylinder), not under a roof, and on the soldiers' navmesh. Before, a soldier
+ // whose random spot had no room within 5 m spawned there anyway, and a spot with room inside a
+ // house was dropped to the terrain under its floor: FIA in walls, every village. Each try reaches
+ // further out; with none good, the navmesh point nearest the centre (walkable, maybe indoors),
+ // else the clear ground nearest it.
+ // Where the navmesh isn't loaded (no AI near on a server) room and roof alone decide.
+ // Soldiers with window posts are moved onto them afterwards (ACR_Garrison), as before.
+ static const int SPOT_TRIES = 10;
+ static vector SoldierSpot(vector center, float spread, IEntity navAgent)
+ {
+  AIPathfindingComponent pathing;
+  if (navAgent) pathing = AIPathfindingComponent.Cast(navAgent.FindComponent(AIPathfindingComponent));
+  NavmeshWorldComponent mesh;
+  if (pathing) mesh = pathing.GetNavmeshComponent();
+  if (mesh && !mesh.IsTileLoaded(center)) mesh.LoadTileIn(center);
+  vector onMesh;
+  for (int attempt = 0; attempt < SPOT_TRIES; attempt++)
+  {
+   float reach = spread + attempt * 4;
+   vector candidate = ACR_Manager.Ground(center + Vector(Math.RandomFloat(-reach, reach), 0, Math.RandomFloat(-reach, reach)));
+   vector free;
+   if (!SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 6, 0.6, 2)) continue;
+   free = ACR_Manager.Ground(free);
+   // The finder's spot may sit on something; on the terrain it must still have room.
+   if (!RoomAt(free) || Covered(free)) continue;
+   if (!pathing || (mesh && !mesh.IsTileLoaded(free))) return free;
+   if (!pathing.GetClosestPositionOnNavmesh(free, Vector(1, 1.5, 1), onMesh)) continue;
+   if (vector.DistanceXZ(onMesh, free) > 1) continue;
+   return free;
+  }
+  vector near = ACR_Manager.Ground(center);
+  if (pathing && pathing.GetClosestPositionOnNavmesh(near, Vector(30, 10, 30), onMesh)) return onMesh + Vector(0, 0.15, 0);
+  vector wide;
+  if (SCR_WorldTools.FindEmptyTerrainPosition(wide, near, 40, 0.6, 2)) return ACR_Manager.Ground(wide);
+  return near;
+ }
+
+ // Room for a soldier standing right here (only the spot itself is tried): nothing solid where
+ // his body would be, other soldiers included ('ignore': the one standing there now).
+ // The game's finder (FindEmptyTerrainPosition) tests four diagonal lines through its cylinder,
+ // which miss a wall crossing it off-centre below head height, and a line starting inside a thick
+ // wall or a rock hits nothing at all: FIA went on spawning in walls after #73 (Jacob, 3 Nov).
+ // A box overlap catches both; the box starts above the ankles so a kerb or a step doesn't count.
+ static bool RoomAt(vector spot, IEntity ignore = null)
+ {
+  // The finder can't be told to skip the man standing here: for him, the box alone.
+  vector free;
+  if (!ignore && (!SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 0.7, 0.6, 2) || vector.DistanceXZ(free, spot) >= 0.1)) return false;
+  TraceBox body = new TraceBox();
+  body.Mins = Vector(-0.3, 0.35, -0.3);
+  body.Maxs = Vector(0.3, 1.75, 0.3);
+  body.Start = spot;
+  body.Flags = TraceFlags.ENTS;
+  array<IEntity> skip = {};
+  if (ignore)
+  {
+   Hierarchy(ignore, skip); // his rifle and kit are entities of their own
+   body.ExcludeArray = skip;
+  }
+  return GetGame().GetWorld().TracePosition(body, null) >= 0;
+ }
+
+ protected static void Hierarchy(IEntity root, notnull array<IEntity> into)
+ {
+  into.Insert(root);
+  IEntity child = root.GetChildren();
+  while (child)
+  {
+   Hierarchy(child, into);
+   child = child.GetSibling();
+  }
+ }
+
+ // Something other than a tree or a person overhead within 25 m: a roof, a floor, a bridge.
+ static bool Roofed(vector spot)
+ {
+  TraceParam trace = new TraceParam();
+  trace.Start = spot + Vector(0, 0.3, 0);
+  trace.End = spot + Vector(0, 25, 0);
+  trace.Flags = TraceFlags.ENTS;
+  float hit = GetGame().GetWorld().TraceMove(trace, null);
+  if (hit >= 1 || !trace.TraceEnt) return false;
+  return !Tree.Cast(trace.TraceEnt) && !ChimeraCharacter.Cast(trace.TraceEnt);
+ }
+
+ // #87: inside a heap, seen from above: a sand or gravel pile, rubble or a low roof over the spot.
+ // The game's empty-spot finder hands out spots inside piles (10 of 20 round two piles in
+ // srv:regress), and squads, bought units and spawn points took its spots unchecked: squads stood
+ // buried in industrial yards. Walks down from 30 m, past trees, bushes and people (the soldier
+ // standing there included).
+ static bool Buried(vector spot)
+ {
+  TraceParam trace = new TraceParam();
+  trace.Flags = TraceFlags.ENTS;
+  vector top = spot + Vector(0, 30, 0);
+  vector bottom = spot + Vector(0, 0.4, 0);
+  for (int pass = 0; pass < 6; pass++)
+  {
+   trace.Start = top;
+   trace.End = bottom;
+   float hit = GetGame().GetWorld().TraceMove(trace, null);
+   if (hit >= 1 || !trace.TraceEnt) return false;
+   IEntity root = trace.TraceEnt.GetRootParent();
+   if (!Tree.Cast(trace.TraceEnt) && !ChimeraCharacter.Cast(root)) return true;
+   top = top + (bottom - top) * hit - Vector(0, 0.05, 0);
+   if (top[1] <= bottom[1]) return false;
+  }
+  return false;
+ }
+
+ static bool Covered(vector spot) { return Roofed(spot) || Buried(spot); }
+
+ // Clear ground for something clearance wide near center: the game's empty spots, minus those
+ // under a heap (#87). False when there's none within radius.
+ static bool ClearGround(out vector result, vector center, float radius, float clearance, float height = 2.5)
+ {
+  array<vector> spots = {};
+  SCR_WorldTools.FindAllEmptyTerrainPositions(spots, center, radius, clearance, height, 12);
+  foreach (vector spot : spots)
+  {
+   vector ground = ACR_Manager.Ground(spot);
+   if (Buried(ground)) continue;
+   result = ground;
+   return true;
+  }
+  return false;
+ }
+
+ // #87: a squad the game spawned in its formation round one spot: anyone who came out inside a
+ // wall or a heap or under a roof steps to clear ground near where he stands. The game queues its members
+ // over a few frames, so it looks twice.
+ static void SettleSoon(SCR_AIGroup group)
+ {
+  if (!group) return;
+  GetGame().GetCallqueue().CallLater(Settle, 1500, false, group, 0);
+ }
+
+ protected static void Settle(SCR_AIGroup group, int pass)
+ {
+  if (!group) return;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity body = agent.GetControlledEntity();
+   if (!body || !ACR_Respawn.IsAlive(body) || EntityUtils.IsPlayer(body) || ACR_Transport.VehicleOf(body)) continue;
+   vector at = body.GetOrigin();
+   if (!Covered(at) && RoomAt(at, body)) continue;
+   vector spot = SoldierSpot(at, 3, agent);
+   if (Covered(spot) || !RoomAt(spot, body)) continue;
+   body.SetOrigin(spot);
+   PrintFormat("[ACR] SPAWN %1: a soldier who came out inside something stepped %2 m clear", group.GetCustomName(), (int)vector.DistanceXZ(at, spot));
+  }
+  if (pass < 1) GetGame().GetCallqueue().CallLater(Settle, 4000, false, group, pass + 1);
+ }
+
  protected void AddGarrisonSoldier(ACR_Base base, SCR_AIGroup group, array<ResourceName> pool)
  {
   float spread = Math.Min(base.m_fRadius * 0.6, 25);
-  vector offset = Vector(Math.RandomFloat(-spread, spread), 0, Math.RandomFloat(-spread, spread));
-  vector spot = ACR_Manager.Ground(base.GetOrigin() + offset);
-  vector free;
-  if (SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 5, 0.6, 2)) spot = ACR_Manager.Ground(free);
+  vector spot = SoldierSpot(base.GetOrigin(), spread, ACR_Garrison.AnyAgent());
   IEntity soldier = ACR_Manager.SpawnPrefab(pool.GetRandomElement(), spot);
   if (!soldier) return;
   if (!group.AddAIEntityToGroup(soldier))
@@ -359,6 +547,10 @@ class ACR_BaseSystem : Managed
   }
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(soldier.FindComponent(FactionAffiliationComponent));
   if (affiliation) affiliation.SetAffiliatedFactionByKey(base.m_sOwner);
+  // Garrisons get their side's and profiles' skill too (no tactics tick sets it again).
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  SCR_AICombatComponent combat = SCR_AICombatComponent.Cast(soldier.FindComponent(SCR_AICombatComponent));
+  if (manager && combat) ACR_AISkill.Apply(combat, group, manager.m_iAISkill, manager.m_fAIPerception, base.m_sOwner);
  }
 
  protected void UpdateGarrison(ACR_Manager manager, ACR_Base base, bool enemyNear, bool enemyInRange)
@@ -409,6 +601,20 @@ class ACR_BaseSystem : Managed
    AddGarrisonSoldier(base, group, pool);
   ACR_Squad.KeepSimulated(group);
   base.m_GarrisonGroup = group;
+  // A base with works standing: the garrison mans the lines that face the enemy before it takes to the houses
+  // (the user, 2 Nov, Chotain Base: the attack came, nobody was on the bags, the garrison sat in the offices).
+  ACR_BaseWork work = ACR_BaseWorks.Find(base);
+  vector lineCenter;
+  float lineRadius;
+  int line;
+  if (work && work.m_sFaction == base.m_sOwner && ACR_BaseWorks.ManSquad(work, group, base.m_iGarrisonLeft, lineCenter, lineRadius, line))
+  {
+   ACR_Guerrillas.Order(group, ACR_Squad.WP_GARRISON, lineCenter, lineRadius, true);
+   // ... and kept there as the works' reserve is: the line it faces looked at again, a gun beside it re-manned.
+   ACR_BaseWorks.WatchGarrison(work, group, line);
+   PrintFormat("[ACR] Garrison deployed at %1: %2 soldiers, %3 in group, behind its bags", base.m_sName, base.m_iGarrisonLeft, group.GetAgentsCount());
+   return;
+  }
   // The base's buildings get posts at their windows; the soldiers start on them (the
   // game's fast init) and the rest hold the base round its centre as before.
   IEntity navAgent = ACR_Garrison.AnyAgent();
@@ -471,11 +677,10 @@ class ACR_BaseSystem : Managed
   m_GarrisonGroups.Insert(group); // before any soldier joins, so it is never registered as a squad
   group.SetDeleteWhenEmpty(false);
   group.SetCustomName(name, 0);
+  IEntity navAgent = ACR_Garrison.AnyAgent();
   for (int i = 0; i < count; i++)
   {
-   vector spot = ACR_Manager.Ground(center + Vector(Math.RandomFloat(-8, 8), 0, Math.RandomFloat(-8, 8)));
-   vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, spot, 5, 0.6, 2)) spot = ACR_Manager.Ground(free);
+   vector spot = SoldierSpot(center, 8, navAgent);
    IEntity soldier = ACR_Manager.SpawnPrefab(data.m_aGarrison.GetRandomElement(), spot);
    if (!soldier) continue;
    if (!group.AddAIEntityToGroup(soldier))

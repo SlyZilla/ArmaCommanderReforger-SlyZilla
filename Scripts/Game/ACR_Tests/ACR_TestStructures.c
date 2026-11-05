@@ -235,11 +235,52 @@ class ACR_TestStructures
   ACR_TestRegress.Check("FOB: full store refuses delivery without charge", manager.m_Bases.GetRP("US") == beforeFull && fob.m_iSupplyDelivery == 0, "");
   SCR_ResourceConsumer loader = ACR_Logistics.SupplyContainer(s_Construction).GetComponent().GetConsumer(EResourceGeneratorID.VEHICLE_LOAD, EResourceType.SUPPLIES);
   ACR_TestRegress.Check("FOB: paid store forbids native truck loading", loader && !store.IsAllowed(loader), "");
+  CheckArsenal(fob, store);
   // An emptied truck inside the FOB must stay empty across real logistics ticks.
   manager.m_Logistics.Use(s_Construction, manager.m_Logistics.StockOf(s_Construction));
   s_Construction.SetOrigin(fob.GetOrigin() + Vector(0, 0, 18));
   s_EmptyTruckStock = manager.m_Logistics.StockOf(s_Construction);
   if (built) SCR_EntityHelper.DeleteEntityAndChildren(built);
+ }
+
+ // #156: a built ammo dump's arsenal takes gear on the FOB's store; one outside the FOB's ring
+ // doesn't reach it.
+ static void CheckArsenal(ACR_Base fob, SCR_ResourceContainer store)
+ {
+  IEntity inside = Place(AMMO, fob.GetOrigin() + Vector(-14, 0, 14));
+  IEntity outside = Place(AMMO, fob.GetOrigin() + Vector(fob.m_fRadius + 40, 0, 0));
+  SCR_ResourceConsumer arsenal = ArsenalConsumer(inside);
+  SCR_ResourceConsumer far = ArsenalConsumer(outside);
+  ACR_TestRegress.Check("FOB: ammo dump arsenal may draw on the store", arsenal && store.IsAllowed(arsenal), string.Format("arsenal %1", arsenal != null));
+  ACR_TestRegress.Check("FOB: arsenal outside the FOB can't draw on the store", far && !store.IsAllowed(far), string.Format("arsenal %1", far != null));
+  store.SetResourceValue(1000);
+  SCR_ResourceConsumtionResponse response;
+  if (arsenal) response = arsenal.RequestConsumtion(100);
+  float left = store.GetResourceValue();
+  ACR_TestRegress.Check("FOB: taking gear at the ammo dump spends the store", response && response.GetReason() == EResourceReason.SUFFICIENT && left < 1000, string.Format("store %1", left));
+  if (inside) SCR_EntityHelper.DeleteEntityAndChildren(inside);
+  if (outside) SCR_EntityHelper.DeleteEntityAndChildren(outside);
+  store.SetResourceValue(1000);
+ }
+
+ static SCR_ResourceConsumer ArsenalConsumer(IEntity entity)
+ {
+  if (!entity) return null;
+  if (entity.FindComponent(SCR_ArsenalComponent))
+  {
+   SCR_ResourceComponent resource = SCR_ResourceComponent.Cast(entity.FindComponent(SCR_ResourceComponent));
+   if (resource)
+   {
+    SCR_ResourceConsumer consumer = resource.GetConsumer(EResourceGeneratorID.DEFAULT, EResourceType.SUPPLIES);
+    if (consumer) return consumer;
+   }
+  }
+  for (IEntity child = entity.GetChildren(); child; child = child.GetSibling())
+  {
+   SCR_ResourceConsumer found = ArsenalConsumer(child);
+   if (found) return found;
+  }
+  return null;
  }
 
  static IEntity Place(ResourceName prefab, vector at)
@@ -451,7 +492,20 @@ class ACR_TestStructures
    ACR_TestRegress.Check("housing: capacity loss recalls excess real defenders", GuardCount() == 11 && s_GuardBase.m_iGarrison == 11, GuardCount().ToString());
    manager.m_Bases.ACR_TestPackGuards(s_GuardBase);
    ACR_TestRegress.Check("housing: packing preserves surviving defenders", !s_GuardBase.m_GarrisonGroup && s_GuardBase.m_iGarrisonLeft == 11, "");
-   s_GuardBase.Retire("fixture complete");
+   // A posted squad's trip to a FOB ends when the FOB is retired (it keeps its owner).
+   ACR_AICommander tripAI = new ACR_AICommander(manager, "US");
+   string beforeRetire = "-";
+   string afterRetire = "-";
+   if (h.m_Range && manager.FindSquadByGroup(h.m_Range.m_Group))
+   {
+    ACR_Squad walker = manager.FindSquadByGroup(h.m_Range.m_Group);
+    beforeRetire = tripAI.TripOverForTest(walker, s_GuardBase);
+    s_GuardBase.Retire("fixture complete");
+    afterRetire = tripAI.TripOverForTest(walker, s_GuardBase);
+   }
+   else s_GuardBase.Retire("fixture complete");
+   ACR_TestRegress.Check("trips: a posted squad's trip to a FOB is over once the FOB is retired", beforeRetire != "base lost" && afterRetire == "base lost" && s_GuardBase.m_sOwner == "US",
+    string.Format("before '%1', after '%2', owner %3", beforeRetire, afterRetire, s_GuardBase.m_sOwner));
    SCR_EntityHelper.DeleteEntityAndChildren(s_GuardBase);
   }
   if (tick == 18)
@@ -533,6 +587,7 @@ class ACR_TestStructures
    ACR_Supports.s_bCookOffOff = true; // its charges go off next to the other fixtures
    ACR_TestFobDesign.Run(manager, s_Fob, alpha, s_Construction);
    ACR_Supports.s_bCookOffOff = false;
+   ACR_TestFobBuiltRace.Run(manager, alpha, s_Construction);
    ACR_TestSapperLive.Start(manager, alpha, alpha.m_Home);
   }
   if (tick > 50 && tick <= 94) ACR_TestSapperLive.Step(manager, tick);
@@ -582,7 +637,7 @@ class ACR_TestStructures
    ACR_TestRegress.Check("structures: pad gone with its helipad", last.Faction() == "", last.Faction());
    ACR_TestRegress.Check("FOB: supply provider removed with command post", s_Fob && !s_Fob.m_FobSupply && s_Fob.m_iSupplyDelivery == 0, "");
    ACR_TestSapperLive.Final();
-   ACR_TestRegress.Complete("structures", 85 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS + ACR_TestFobUpgrades.CHECKS + ACR_TestFobDefences.CHECKS + ACR_TestFobIntel.CHECKS + ACR_TestFobPatrol.CHECKS + ACR_TestSapperDemo.CHECKS + ACR_TestFobDesign.CHECKS + ACR_TestSapperLive.CHECKS);
+   ACR_TestRegress.Complete("structures", 86 + ACR_TestLogisticsRules.CHECKS + ACR_TestFobRelay.CHECKS + ACR_TestFobBuild.CHECKS + ACR_TestFobSlots.CHECKS + ACR_TestFobUpgrades.CHECKS + ACR_TestFobDefences.CHECKS + ACR_TestFobIntel.CHECKS + ACR_TestFobPatrol.CHECKS + ACR_TestSapperDemo.CHECKS + ACR_TestFobDesign.CHECKS + ACR_TestFobBuiltRace.CHECKS + ACR_TestSapperLive.CHECKS);
   }
  }
 

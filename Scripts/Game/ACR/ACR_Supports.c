@@ -10,6 +10,8 @@
 //    flies along a path (the AI cannot fly). Its door gunners fight on their own; it
 //    fires rocket salvos itself. It can be shot down. The door-gunner support is the
 //    transport version (no rockets) orbiting longer for less.
+//  - Attack helicopter: only with a content pack that names one for the side
+//    (ACR_ContentSocket.AttackHelicopter): its airframe on a longer loiter with more rockets.
 enum ACR_ESupportType
 {
  MORTAR_HE_SMALL,
@@ -23,7 +25,9 @@ enum ACR_ESupportType
  HELI_LOITER,
  HELI_DOOR_GUNS, // transport helicopter, door gunners only, orbiting
  ARTILLERY_BATTERY, // battalion howitzers: no range limit, three heavy salvos over a wide area
- AIR_LIFT          // off-map transport helicopter flies a squad to a landing zone (ACR_AirLift)
+ AIR_LIFT,         // off-map transport helicopter flies a squad to a landing zone (ACR_AirLift)
+ ATTACK_HELI,      // a content pack's attack helicopter (ACR_ContentSocket.AttackHelicopter) on station
+ RECON_FLIGHT      // off-map jet photographs a corridor: sightings into the side's intel (ACR_Recon)
 }
 
 enum ACR_EBombRunDelivery
@@ -62,6 +66,8 @@ class ACR_SupportEntry
 	float m_fBombRunSpacing = 28;
 	[Attribute("5", UIWidgets.EditBox, "Random lateral scatter for virtual bomb impacts in metres")]
 	float m_fBombRunScatter = 5;
+	[Attribute("", UIWidgets.ResourcePickerThumbnail, "Recon flight: aircraft prefab flown over the corridor, with its own engine sound (empty = ACA's default for the side)", "et")]
+	ResourceName m_sReconPrefab;
 
  // runtime
  float m_fReadyAt;
@@ -101,6 +107,7 @@ class ACR_SupportEntry
   copy.m_iBombRunBombs = m_iBombRunBombs;
   copy.m_fBombRunSpacing = m_fBombRunSpacing;
   copy.m_fBombRunScatter = m_fBombRunScatter;
+  copy.m_sReconPrefab = m_sReconPrefab;
   copy.m_fReadyAt = 0;
   copy.Resolve();
   return copy;
@@ -122,7 +129,12 @@ class ACR_SupportRun : Managed
 // its own engine sound (a loop that starts within 4 km of the listener, heard to 1.5 km).
 class ACR_LocalFlyover : Managed
 {
-	protected static ref array<ref ACR_LocalFlyover> s_All = {};
+	protected static ref array<ref ACR_LocalFlyover> s_All;
+	// Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+	static void ACR_InitStatics()
+	{
+		s_All = {};
+	}
 	static int s_iStarted; // tests
 	IEntity m_Plane;
 	vector m_vStart;
@@ -648,6 +660,9 @@ class ACR_HeliRun : ACR_SupportRun
  }
  bool m_bLoiter;
  bool m_bDoorGuns;   // transport version: no rockets
+ bool m_bAttack;     // a content pack's attack helicopter: longer on station, more rockets
+ static const float ATTACK_LOITER_MS = 120000;
+ static const int ATTACK_ROCKETS = 24;
  static const float DOOR_SIDE_SWAP_MS = 30000;
  float m_fNextSideSwap;
  float m_fLoiterMs = LOITER_TIME_MS;
@@ -714,10 +729,13 @@ class ACR_HeliRun : ACR_SupportRun
   supports.m_Vehicles.Insert(m_Vehicle);
   Physics physics = m_Vehicle.GetPhysics();
   if (physics) physics.EnableGravity(false);
+  // A pack's airframe seats the side's own pilots and gunners (ACR_ContentSocket.Crewman reads the owner).
+  if (m_bAttack) ACR_Vehicles.SetOwner(m_Vehicle, m_sFaction);
   SCR_BaseCompartmentManagerComponent compartments = SCR_BaseCompartmentManagerComponent.Cast(m_Vehicle.FindComponent(SCR_BaseCompartmentManagerComponent));
   array<ECompartmentType> seats = {ECompartmentType.PILOT, ECompartmentType.TURRET};
   if (compartments) compartments.SpawnDefaultOccupants(seats);
-  ResourceName selectedCrew = supports.ConfiguredCrewPrefab(m_sFaction, !m_bDoorGuns);
+  ResourceName selectedCrew;
+  if (!m_bAttack) selectedCrew = supports.ConfiguredCrewPrefab(m_sFaction, !m_bDoorGuns);
   if (!selectedCrew.IsEmpty()) supports.Station().ApplyCrewPrefab(m_Vehicle, selectedCrew);
   BaseVehicleControllerComponent controller = BaseVehicleControllerComponent.Cast(m_Vehicle.FindComponent(BaseVehicleControllerComponent));
   if (controller) controller.ForceStartEngine();
@@ -727,9 +745,12 @@ class ACR_HeliRun : ACR_SupportRun
   PrintFormat("[ACR] SUPPORT helicopter %1 inbound from %2 (%3 m out, clear of bases that aren't ours: %4)", prefab, m_Pos, (int)vector.DistanceXZ(m_Pos, m_Target), ClearOfEnemies(m_Pos));
   m_iRockets = 14;
   if (m_bLoiter) m_iRockets = 16;
+  if (m_bAttack) m_iRockets = ATTACK_ROCKETS;
   if (m_bDoorGuns) m_iRockets = 0;
   return true;
  }
+
+ static const float PARK_DRIFT = 5; // m from where it was set down before a helicopter is put back to lift
 
  // Takes off from its helipad (the helicopter and crew are already there).
  bool StartFromPad(ACR_Supports supports, ACR_StationedHeli home, float now)
@@ -738,6 +759,16 @@ class ACR_HeliRun : ACR_SupportRun
   m_Home = home;
   m_Vehicle = home.m_Vehicle;
   m_Pos = m_Vehicle.GetOrigin();
+  // Pushed since it was set down (Everon long match 31 Oct: 33 m, under a light tower, and the lift
+  // held there for good, the side's gunship "out on a mission" with nothing flying): the lift is
+  // only known to be clear from where it was set down, so it goes back there first. (That spot, not
+  // its pad: a helicopter re-homed to another pad flies from where it stands.)
+  if (home.m_vParked != vector.Zero && vector.DistanceXZ(m_Pos, home.m_vParked) > PARK_DRIFT)
+  {
+   PrintFormat("[ACR] SUPPORT %1 was %2 m from where it was set down, back there before it lifts", home.m_sName, (int)vector.DistanceXZ(m_Pos, home.m_vParked));
+   m_Pos = home.m_vParked;
+   m_Vehicle.SetOrigin(m_Pos);
+  }
   m_Start = m_Pos;
   vector toward = m_Target - m_Pos;
   toward[1] = 0;
@@ -747,13 +778,14 @@ class ACR_HeliRun : ACR_SupportRun
   m_bLifting = true;
   Physics physics = m_Vehicle.GetPhysics();
   if (physics) { physics.EnableGravity(false); physics.SetVelocity(vector.Zero); }
-  supports.Station().ReplaceCrew(m_Vehicle, m_sFaction, m_Home.m_bGunship);
+  supports.Station().ReplaceCrew(m_Vehicle, m_sFaction, m_Home.m_bGunship, m_Home.m_bAttack);
   BaseVehicleControllerComponent controller = BaseVehicleControllerComponent.Cast(m_Vehicle.FindComponent(BaseVehicleControllerComponent));
   if (controller) controller.ForceStartEngine();
   Spool();
   m_fStarted = now;
   m_iRockets = 14;
   if (m_bLoiter) m_iRockets = 16;
+  if (m_bAttack) m_iRockets = ATTACK_ROCKETS;
   if (m_bDoorGuns) m_iRockets = 0;
   PrintFormat("[ACR] SUPPORT %1 taking off from its helipad at %2, %3 m from the target", home.m_sName, m_Pos, (int)vector.DistanceXZ(m_Pos, m_Target));
   return true;
@@ -926,8 +958,21 @@ class ACR_HeliRun : ACR_SupportRun
    m_fNextAltLog = now + 5000;
    PrintFormat("[ACR] SUPPORT %1 coming in: %2 m from its landing spot, %3 m up, %4 m/s", LogName(), (int)d, (int)(m_Pos[1] - ground), (int)m_fSpeed);
   }
-  return d < 1 && m_Pos[1] <= pad[1] + 0.35;
+  if (d < 1 && m_Pos[1] <= pad[1] + 0.35) return true;
+  // Over the pad, the last metres blocked (a truck parked beside the pad in the rotor sweep): it
+  // hovered there for good and the support never came back (srv:helipad, 1 Nov). Centred on its
+  // own pad the body clears what the sweep touches: after 10 s it sets down.
+  bool lowOverPad = d < 1 && m_Pos[1] <= pad[1] + 3;
+  if (!lowOverPad || now >= m_fGuardRetryAt) m_fLandBlockedSince = -1;
+  else if (m_fLandBlockedSince < 0) m_fLandBlockedSince = now;
+  if (lowOverPad && m_fLandBlockedSince >= 0 && now - m_fLandBlockedSince > 10000)
+  {
+   PrintFormat("[ACR] SUPPORT %1 sets down on its pad past an obstacle in the rotor sweep", LogName());
+   return true;
+  }
+  return false;
  }
+ protected float m_fLandBlockedSince = -1;
 
  // On the pad: physics back on, engine off, servicing starts.
  void Touchdown(ACR_Supports supports)
@@ -1021,6 +1066,21 @@ class ACR_HeliRun : ACR_SupportRun
  // a rotor shot off it kept flying (live 1 Oct, Mi-8). The damage manager's movement
  // damage combines engine, gearbox and every rotor (a lost tail rotor counts too).
  static const float CRIPPLED_MOVEMENT_DAMAGE = 0.75;
+
+ // Going down: gravity back and the engine off. With the engine left running, the game's own flight
+ // model kept it in the air: crippled at 83 m it climbed to 232 m in 40 s (srv:helidown), and one
+ // from a pad flew 1.8 km off until its wreck timer removed it in mid-air (srv:helipad, 31 Oct).
+ protected void LetFall()
+ {
+  Physics wreck = m_Vehicle.GetPhysics();
+  if (wreck) wreck.EnableGravity(true);
+  VehicleHelicopterSimulation rotors = VehicleHelicopterSimulation.Cast(m_Vehicle.FindComponent(VehicleHelicopterSimulation));
+  if (rotors)
+  {
+   rotors.SetThrottle(0);
+   rotors.EngineStop();
+  }
+ }
  float MovementDamage()
  {
   DamageManagerComponent damage = DamageManagerComponent.Cast(m_Vehicle.FindComponent(DamageManagerComponent));
@@ -1064,8 +1124,14 @@ class ACR_HeliRun : ACR_SupportRun
   foreach (BaseCompartmentSlot empty : slots)
   {
    if (empty.GetOccupant() || empty.GetType() != ECompartmentType.TURRET) continue;
-   IEntity seatedCrew = empty.SpawnCharacterInCompartment(crewman, crewGroup);
-   PrintFormat("[ACR] SUPPORT seated %1 in %2: %3", crewman, empty.GetCompartmentName(), seatedCrew != null);
+   ResourceName gunner = crewman;
+   if (m_bAttack)
+   {
+    ResourceName packed = ACR_ContentSocket.Get().Crewman(m_sFaction, m_Vehicle, ECompartmentType.TURRET);
+    if (!packed.IsEmpty()) gunner = packed;
+   }
+   IEntity seatedCrew = empty.SpawnCharacterInCompartment(gunner, crewGroup);
+   PrintFormat("[ACR] SUPPORT seated %1 in %2: %3", gunner, empty.GetCompartmentName(), seatedCrew != null);
   }
   foreach (BaseCompartmentSlot slot : slots)
   {
@@ -1142,8 +1208,7 @@ class ACR_HeliRun : ACR_SupportRun
   if (IsDestroyed() || movementDamage >= CRIPPLED_MOVEMENT_DAMAGE)
   {
    m_bDestroyed = true;
-   Physics wreck = m_Vehicle.GetPhysics();
-   if (wreck) wreck.EnableGravity(true);
+   LetFall();
    supports.m_Manager.NotifyFaction(m_sFaction, "Support helicopter is going down!");
    PrintFormat("[ACR] SUPPORT helicopter going down (destroyed=%1 movement damage=%2)", IsDestroyed(), movementDamage);
    if (m_Home) supports.Station().Lost(m_Home);
@@ -1433,6 +1498,7 @@ class ACR_HeliRun : ACR_SupportRun
  string StationName()
  {
   if (m_bDoorGuns) return "Door gunners";
+  if (m_bAttack) return "Attack helicopter";
   return "Gunship";
  }
 
@@ -1458,7 +1524,21 @@ class ACR_HeliRun : ACR_SupportRun
    compartments.GetCompartments(slots);
    foreach (BaseCompartmentSlot slot : slots) if (slot.GetOccupant()) crew.Insert(slot.GetOccupant());
   }
-  foreach (IEntity member : crew) SCR_EntityHelper.DeleteEntityAndChildren(member);
+  // Only AI goes with it: a player aboard (he climbed into a lift in the air or a seat nobody
+  // emptied) is put out rather than deleted with his loadout.
+  foreach (IEntity member : crew)
+  {
+   if (EntityUtils.IsPlayer(member))
+   {
+    ChimeraCharacter player = ChimeraCharacter.Cast(member);
+    CompartmentAccessComponent access;
+    if (player) access = player.GetCompartmentAccessComponent();
+    if (access) access.GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+    PrintFormat("[ACR] SUPPORT helicopter left the area with a player aboard: put out");
+    continue;
+   }
+   SCR_EntityHelper.DeleteEntityAndChildren(member);
+  }
   SCR_EntityHelper.DeleteEntityAndChildren(m_Vehicle);
   Print("[ACR] SUPPORT helicopter left the area");
  }
@@ -1501,7 +1581,13 @@ class ACR_Supports : Managed
  static const float BATTERY_DROP_HEIGHT = 700;  // the shell falls from here (~3 s): its travel sound is the incoming whistle
  static const int BATTERY_FALL_SECONDS = 3;
  static int s_iBatteryImpacts;                  // tests
- static ref array<vector> s_aBatteryImpacts = {};
+ static ref array<vector> s_aBatteryImpacts;
+ // Per match (ACR_Manager.Stop): the impact log grew for as long as the server ran.
+ static void Reset()
+ {
+  s_iBatteryImpacts = 0;
+  s_aBatteryImpacts.Clear();
+ }
  protected ref array<IEntity> m_BatteryShells = {};
  protected ref array<vector> m_BatteryLast = {};
  protected ref array<vector> m_BatteryAim = {};
@@ -1580,6 +1666,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_GUN_RUN: return 40;
    case ACR_ESupportType.HELI_LOITER: return ACR_HeliRun.LOITER_RADIUS;
    case ACR_ESupportType.HELI_DOOR_GUNS: return ACR_HeliRun.LOITER_RADIUS;
+   case ACR_ESupportType.ATTACK_HELI: return ACR_HeliRun.LOITER_RADIUS;
    case ACR_ESupportType.ARTILLERY_BATTERY: return BATTERY_RADIUS + 30;
   }
   return 50;
@@ -1592,6 +1679,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.MORTAR_SMOKE: return 60;
    case ACR_ESupportType.HELI_LOITER: return 100;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 130;
+   case ACR_ESupportType.ATTACK_HELI: return 130;
    case ACR_ESupportType.MORTAR_CREEPING: return 50;
    case ACR_ESupportType.ARTILLERY_BATTERY: return BATTERY_SALVOS * BATTERY_SALVO_SECONDS + 10;
    case ACR_ESupportType.MORTAR_HE_LARGE: return 40;
@@ -1618,6 +1706,8 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_DOOR_GUNS: return "Helicopter: door gunners (120 s)";
    case ACR_ESupportType.ARTILLERY_BATTERY: return "Artillery: howitzer battery";
    case ACR_ESupportType.AIR_LIFT: return "Helicopter: air lift";
+   case ACR_ESupportType.ATTACK_HELI: return "Helicopter: attack helicopter (120 s)";
+   case ACR_ESupportType.RECON_FLIGHT: return "Air: recon flight";
   }
   return "Support";
  }
@@ -1635,8 +1725,10 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_GUN_RUN: return 30;
    case ACR_ESupportType.HELI_LOITER: return 45;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 20;
+   case ACR_ESupportType.ATTACK_HELI: return 55;
    case ACR_ESupportType.ARTILLERY_BATTERY: return 60;
    case ACR_ESupportType.AIR_LIFT: return 40;
+   case ACR_ESupportType.RECON_FLIGHT: return 15;
   }
   return 20;
  }
@@ -1654,8 +1746,10 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_GUN_RUN: return 180;
    case ACR_ESupportType.HELI_LOITER: return 300;
    case ACR_ESupportType.HELI_DOOR_GUNS: return 150;
+   case ACR_ESupportType.ATTACK_HELI: return 300;
    case ACR_ESupportType.ARTILLERY_BATTERY: return 300;
    case ACR_ESupportType.AIR_LIFT: return 240;
+   case ACR_ESupportType.RECON_FLIGHT: return 180;
   }
   return 120;
  }
@@ -1681,6 +1775,7 @@ class ACR_Supports : Managed
  // Every support type, used when a faction's settings list none.
  static void BuildDefaults(array<ref ACR_SupportEntry> entries)
  {
+  // (ATTACK_HELI only comes with a content pack: FitAttackHelicopter.)
   for (int type = ACR_ESupportType.MORTAR_HE_SMALL; type <= ACR_ESupportType.AIR_LIFT; type++)
   {
    ACR_SupportEntry entry = new ACR_SupportEntry();
@@ -1697,6 +1792,59 @@ class ACR_Supports : Managed
    }
    entries.Insert(entry);
   }
+  entries.Insert(NewEntry(ACR_ESupportType.RECON_FLIGHT));
+ }
+
+ // A default row of one type.
+ static ACR_SupportEntry NewEntry(ACR_ESupportType type)
+ {
+  ACR_SupportEntry entry = new ACR_SupportEntry();
+  entry.m_eType = type;
+  entry.m_iCost = -1;
+  entry.m_iAICost = -1;
+  entry.m_iCooldown = -1;
+  entry.Resolve();
+  return entry;
+ }
+
+ // The side's attack helicopter from a content pack (ACR_ContentSocket.AttackHelicopter), or null:
+ // none named, or its prefab doesn't load.
+ static ACR_SocketAttackHeli AttackHelicopterFor(string factionKey)
+ {
+  ACR_SocketAttackHeli heli = ACR_ContentSocket.Get().AttackHelicopter(factionKey);
+  if (!heli || heli.m_sPrefab.IsEmpty() || !HasPrefab(heli.m_sPrefab)) return null;
+  if (heli.m_sName.IsEmpty()) heli.m_sName = "attack helicopter";
+  return heli;
+ }
+
+ // A side's support list and the pack's attack helicopter: with one, the list gets its support
+ // (unless a configured row for it, on or off, decides: listed) named after the airframe; without
+ // one, configured rows for it are dropped (nothing could fly them).
+ static void FitAttackHelicopter(string factionKey, array<ref ACR_SupportEntry> entries, bool listed)
+ {
+  ACR_SocketAttackHeli heli = AttackHelicopterFor(factionKey);
+  if (!heli)
+  {
+   for (int i = entries.Count() - 1; i >= 0; i--)
+    if (entries[i].m_eType == ACR_ESupportType.ATTACK_HELI) entries.RemoveOrdered(i);
+   return;
+  }
+  if (!listed)
+  {
+   ACR_SupportEntry added = new ACR_SupportEntry();
+   added.m_eType = ACR_ESupportType.ATTACK_HELI;
+   added.m_iCost = heli.m_iCost;
+   added.m_iAICost = -1;
+   added.m_iCooldown = -1;
+   added.Resolve();
+   entries.Insert(added);
+  }
+  foreach (ACR_SupportEntry entry : entries)
+  {
+   if (entry.m_eType != ACR_ESupportType.ATTACK_HELI || entry.m_sName != DefaultName(ACR_ESupportType.ATTACK_HELI)) continue;
+   entry.m_sName = string.Format("Helicopter: %1 (120 s)", heli.m_sName);
+  }
+  PrintFormat("[ACR] SUPPORT %1 attack helicopter from the content pack: %2 (%3)", factionKey, heli.m_sName, heli.m_sPrefab);
  }
 
  static const ResourceName FA18_FLYOVER = "{76571A125EF9ECD7}Prefabs/Vehicles/Airplanes/FA18A/FA18A_Mesh.et";
@@ -1781,6 +1929,13 @@ class ACR_Supports : Managed
   // Mortar supports are fired by a real mortar team (ACR_Mortars): nothing is spent unless one can.
   if (ACR_Mortars.IsMortarType(entry.m_eType)) return CallMortars(factionKey, entry, target, byAI);
   if (entry.m_eType == ACR_ESupportType.AIR_LIFT) return ACR_AirLift.Call(this, factionKey, entry, target, byAI, squad, finalPrefab, finalTarget, finalRadius, finalOrder, finalKind);
+  // The pack's attack helicopter (FitAttackHelicopter drops the row without one; this is a guard).
+  ACR_SocketAttackHeli attack;
+  if (entry.m_eType == ACR_ESupportType.ATTACK_HELI)
+  {
+   attack = AttackHelicopterFor(factionKey);
+   if (!attack) return "No attack helicopter in this mission";
+  }
   if (entry.m_eType == ACR_ESupportType.BOMB_RUN && entry.m_eBombRunDelivery != ACR_EBombRunDelivery.VIRTUAL)
   {
    if (entry.m_sBombRunPrefab.IsEmpty()) return "Choose a bomb-run prefab in this faction's support settings";
@@ -1791,10 +1946,10 @@ class ACR_Supports : Managed
   ACR_StationedHeli home;
   if (ACR_HeliStation.IsHeliType(entry.m_eType) && ACR_HeliStation.UsesPads(factionKey))
   {
-   home = Station().ReadyFor(factionKey, ACR_HeliStation.NeedsGunship(entry.m_eType), target);
+   home = Station().ReadyFor(factionKey, ACR_HeliStation.NeedsGunship(entry.m_eType), target, ACR_HeliStation.IsAttack(entry.m_eType));
    if (!home)
    {
-    string why = Station().WhyNot(factionKey, ACR_HeliStation.NeedsGunship(entry.m_eType));
+    string why = Station().WhyNot(factionKey, ACR_HeliStation.NeedsGunship(entry.m_eType), ACR_HeliStation.IsAttack(entry.m_eType));
     PrintFormat("[ACR] SUPPORT %1 %2 refused: %3", factionKey, entry.m_sName, why);
     return why;
    }
@@ -1806,6 +1961,17 @@ class ACR_Supports : Managed
   string where = ACR_Manager.Grid(target);
   int delay = DefaultDelay(entry.m_eType);
   PrintFormat("[ACR] SUPPORT %1 %2 at %3 (delay %4 s)", factionKey, entry.m_sName, target, delay);
+  // A recon flight harms nobody: no danger area on the map, and the photographs land in the
+  // side's intel as the jet crosses (ACR_ReconRun).
+  if (entry.m_eType == ACR_ESupportType.RECON_FLIGHT)
+  {
+   ACR_ReconRun recon = new ACR_ReconRun();
+   delay = recon.Start(entry, factionKey, target, dir);
+   m_Runs.Insert(recon);
+   string reconMessage = string.Format("%1 over %2, overhead in about %3 s.", entry.m_sName, where, delay);
+   if (!byAI) m_Manager.NotifyFaction(factionKey, reconMessage);
+   return reconMessage;
+  }
   switch (entry.m_eType)
   {
    case ACR_ESupportType.ROCKET_STRIKE:
@@ -1841,7 +2007,7 @@ class ACR_Supports : Managed
    case ACR_ESupportType.BOMB_RUN:
     if (!StartBombRun(entry, target, dir, delay, callerPlayerId))
     {
-     data.m_iRP += entry.m_iCost;
+     m_Manager.m_Bases.Refund(factionKey, entry.m_iCost);
      entry.m_fReadyAt = now;
      return "Bomb-run prefab could not be spawned";
     }
@@ -1849,24 +2015,29 @@ class ACR_Supports : Managed
    case ACR_ESupportType.HELI_GUN_RUN:
    case ACR_ESupportType.HELI_LOITER:
    case ACR_ESupportType.HELI_DOOR_GUNS:
+   case ACR_ESupportType.ATTACK_HELI:
    {
     ACR_HeliRun heli = new ACR_HeliRun();
     heli.m_sFaction = factionKey;
     heli.m_bDoorGuns = entry.m_eType == ACR_ESupportType.HELI_DOOR_GUNS;
-    heli.m_bLoiter = entry.m_eType == ACR_ESupportType.HELI_LOITER || heli.m_bDoorGuns;
+    heli.m_bAttack = attack != null;
+    heli.m_bLoiter = entry.m_eType == ACR_ESupportType.HELI_LOITER || heli.m_bDoorGuns || heli.m_bAttack;
     if (heli.m_bDoorGuns) heli.m_fLoiterMs = 120000;
+    if (heli.m_bAttack) heli.m_fLoiterMs = ACR_HeliRun.ATTACK_LOITER_MS;
     heli.m_Target = target;
     heli.m_Dir = dir;
     heli.m_Rocket = RocketFor(factionKey);
+    if (attack && !attack.m_sRocket.IsEmpty()) heli.m_Rocket = attack.m_sRocket;
     ResourceName helicopter = HelicopterFor(factionKey);
     if (heli.m_bDoorGuns) helicopter = TransportHelicopterFor(factionKey);
+    if (attack) helicopter = attack.m_sPrefab;
     bool started;
     if (home) started = heli.StartFromPad(this, home, now);
     else started = heli.Start(this, helicopter, now);
     if (!started)
     {
      // Nothing flew: give the RP and the cooldown back.
-     data.m_iRP += entry.m_iCost;
+     m_Manager.m_Bases.Refund(factionKey, entry.m_iCost);
      entry.m_fReadyAt = now;
      return "No helicopter available";
     }
@@ -1996,6 +2167,8 @@ class ACR_Supports : Managed
    return team;
   }
   m_Manager.m_Bases.Spend(factionKey, entry.m_iCost);
+  ACR_MortarTeam started = m_Manager.Mortars().m_LastStarted;
+  if (started && started.m_bFiring) started.m_iPaid = entry.m_iCost;
   float now = GetGame().GetWorld().GetWorldTime();
   entry.m_fReadyAt = now + entry.m_iCooldown * 1000;
   PrintFormat("[ACR] SUPPORT %1 %2 at %3 by %4 (ETA %5 s)", factionKey, entry.m_sName, target, team, eta);
@@ -2222,7 +2395,13 @@ class ACR_Supports : Managed
  static float BLAST_COVER = 0.25;
  static bool s_bBlastOff;
  static const float BLAST_DAMAGE = 120; // per hit zone at the kill radius (tuned with srv:blast)
- static ref array<IEntity> s_BlastFound = {};
+ static ref array<IEntity> s_BlastFound;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_aBatteryImpacts = {};
+  s_BlastFound = {};
+ }
 
  static bool CollectBlast(IEntity e)
  {
@@ -2365,14 +2544,15 @@ class ACR_Supports : Managed
   array<AIAgent> agents = {};
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
-   if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() == factionKey) continue;
+   // Friendly, not equal: FIA allied to the caller (acrFIAAllegiance / leaning) is no target.
+   if (!squad.GetFaction() || ACR_Insurgency.Friendly(squad.GetFaction().GetFactionKey(), factionKey)) continue;
    agents.Clear();
    squad.GetAgents(agents);
    foreach (AIAgent agent : agents) AddIfNear(agent.GetControlledEntity(), center, radius, result);
   }
   foreach (SCR_AIGroup garrison : m_Manager.m_Bases.m_GarrisonGroups)
   {
-   if (!garrison || !garrison.GetFaction() || garrison.GetFaction().GetFactionKey() == factionKey) continue;
+   if (!garrison || !garrison.GetFaction() || ACR_Insurgency.Friendly(garrison.GetFaction().GetFactionKey(), factionKey)) continue;
    agents.Clear();
    garrison.GetAgents(agents);
    foreach (AIAgent guard : agents) AddIfNear(guard.GetControlledEntity(), center, radius, result);
@@ -2382,7 +2562,7 @@ class ACR_Supports : Managed
   foreach (int id : players)
   {
    Faction faction = SCR_FactionManager.SGetPlayerFaction(id);
-   if (!faction || faction.GetFactionKey() == factionKey) continue;
+   if (!faction || ACR_Insurgency.Friendly(faction.GetFactionKey(), factionKey)) continue;
    PlayerController pc = GetGame().GetPlayerManager().GetPlayerController(id);
    if (pc) AddIfNear(pc.GetControlledEntity(), center, radius, result);
   }
@@ -2464,6 +2644,18 @@ modded class SCR_BaseGameMode
 
  protected override void OnPlayerDisconnected(int playerId, KickCauseCode cause, int timeout)
  {
+  // Possessing a squad soldier: hand him back first. Vanilla deletes the player's controlled
+  // entity, which was that soldier, and left his command unit standing with nobody in it
+  // (audit 31 Oct; as ACR_Requests.ReturnToCommandUnit).
+  SCR_PlayerController possessor = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(playerId));
+  if (Replication.IsServer() && possessor && possessor.IsPossessing())
+  {
+   ACR_Manager owner = ACR_Manager.GetInstance();
+   ACR_MapHandoff.Release(possessor, possessor.GetControlledEntity());
+   if (owner) owner.ReleaseAuthority(possessor);
+   possessor.SetPossessedEntity(null);
+   PrintFormat("[ACR] RETURN player=%1 (disconnected while possessing)", playerId);
+  }
   super.OnPlayerDisconnected(playerId, cause, timeout);
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (manager && Replication.IsServer()) manager.PlayerDisconnected(playerId);

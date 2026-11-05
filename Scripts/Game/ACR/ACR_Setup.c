@@ -12,16 +12,31 @@ class ACR_Setup
  protected static bool s_bWanted;
  protected static bool s_bStarted;
  protected static float s_fFirstPlayerAt = -1;
- protected static ref map<int, string> s_Sent = new map<int, string>();
+ protected static ref map<int, string> s_Sent;
  // Layout preview (aca-f07 editor, step 1): the bases the chosen battlefield will have, sent to
  // the host's map as base markers while the phase lasts.
  protected static string s_sPreviewSig;
- static ref array<vector> s_PreviewPos = {};
- static ref array<string> s_PreviewNames = {};
- protected static ref array<string> s_PreviewOwners = {};
- protected static ref array<string> s_PreviewDetails = {};
- protected static ref array<float> s_PreviewRadii = {};
- protected static ref map<int, string> s_PreviewSent = new map<int, string>();
+ static ref array<vector> s_PreviewPos;
+ static ref array<string> s_PreviewNames;
+ protected static ref array<string> s_PreviewOwners;
+ protected static ref array<string> s_PreviewDetails;
+ protected static ref array<float> s_PreviewRadii;
+ protected static ref array<float> s_PreviewWeights; // quick start split (ACR_QuickStart.Weight)
+ protected static ref array<bool> s_PreviewHidden;
+ protected static ref map<int, string> s_PreviewSent;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sent = new map<int, string>();
+  s_PreviewPos = {};
+  s_PreviewNames = {};
+  s_PreviewOwners = {};
+  s_PreviewDetails = {};
+  s_PreviewRadii = {};
+  s_PreviewWeights = {};
+  s_PreviewHidden = {};
+  s_PreviewSent = new map<int, string>();
+ }
 
  static bool Wanted()
  {
@@ -62,11 +77,12 @@ class ACR_Setup
  {
   string layout = Current("layout");
   bool generated = layout.StartsWith("gen:");
+  string quick = Current("quickstart");
   int seed = 0;
-  if (generated) seed = ACR_Generator.Seed();
+  if (generated || quick != "off") seed = ACR_Generator.Seed();
   string west = ACR_FactionSelection.West();
   string east = ACR_FactionSelection.East();
-  string signature = string.Format("%1|%2|%3|%4|%5", layout, seed, west, east, ACR_Generator.s_iMovesVersion);
+  string signature = string.Format("%1|%2|%3|%4|%5|%6", layout, seed, west, east, ACR_Generator.s_iMovesVersion, quick);
   if (signature == s_sPreviewSig) return;
   s_sPreviewSig = signature;
   s_PreviewPos.Clear();
@@ -74,6 +90,8 @@ class ACR_Setup
   s_PreviewOwners.Clear();
   s_PreviewDetails.Clear();
   s_PreviewRadii.Clear();
+  s_PreviewWeights.Clear();
+  s_PreviewHidden.Clear();
   if (generated)
   {
    array<ref ACR_GenSite> plan = {};
@@ -85,7 +103,7 @@ class ACR_Setup
     string detail = site.Describe();
     if (hqs.Count() == 2 && site == hqs[0]) { owner = west; detail = "HQ (" + ACR_FactionSelection.DisplayName(west) + "), 2 RP"; }
     if (hqs.Count() == 2 && site == hqs[1]) { owner = east; detail = "HQ (" + ACR_FactionSelection.DisplayName(east) + "), 2 RP"; }
-    AddPreview(site.m_vPos, site.m_sName, owner, detail, site.m_fRadius);
+    AddPreview(site.m_vPos, site.m_sName, owner, detail, site.m_fRadius, ACR_QuickStart.Weight(site.m_bIncome, site.m_iValue), site.m_sKind == "landmark");
    }
   }
   else
@@ -98,14 +116,40 @@ class ACR_Setup
     string baseDetail = string.Format("Control point, %1 RP", base.m_iValue);
     if (!base.m_bIncome) baseDetail = "Control point, no income";
     if (base.m_bHidden) baseDetail += " | Hidden";
-    AddPreview(base.GetOrigin(), base.m_sName, baseOwner, baseDetail, base.m_fRadius);
+    AddPreview(base.GetOrigin(), base.m_sName, baseOwner, baseDetail, base.m_fRadius, ACR_QuickStart.Weight(base.m_bIncome, base.m_iValue), base.m_bHidden);
    }
   }
+  if (quick != "off") PreviewQuickStart(quick, seed, west, east);
   PrintFormat("[ACR] SETUP preview %1: %2 bases", signature, s_PreviewNames.Count());
  }
 
- protected static void AddPreview(vector pos, string name, string owner, string detail, float radius)
+ // Quick start (#88): the preview shows the split ACR_QuickStart.Apply will make (same seed and
+ // bases). Hidden landmarks and held bases stay as they are.
+ protected static void PreviewQuickStart(string mode, int seed, string west, string east)
  {
+  array<int> sides = {};
+  foreach (int i, string owner : s_PreviewOwners)
+  {
+   int side = -1;
+   if (owner == west) side = 0;
+   else if (owner == east) side = 1;
+   else if (owner != "" || s_PreviewHidden[i]) side = -2;
+   sides.Insert(side);
+  }
+  string front = ACR_QuickStart.Split(s_PreviewPos, s_PreviewWeights, sides, seed, mode, ACR_Skirmish.SizeOption() == ACR_ESkirmishSize.FLASHPOINT);
+  foreach (int j, int given : sides)
+  {
+   if (s_PreviewOwners[j] != "") continue;
+   if (given == 0) s_PreviewOwners[j] = west;
+   if (given == 1) s_PreviewOwners[j] = east;
+  }
+  PrintFormat("[ACR] SETUP quick start preview %1 seed %2: %3", mode, seed, front);
+ }
+
+ protected static void AddPreview(vector pos, string name, string owner, string detail, float radius, float weight = 0.5, bool hidden = false)
+ {
+  s_PreviewWeights.Insert(weight);
+  s_PreviewHidden.Insert(hidden);
   s_PreviewPos.Insert(pos);
   s_PreviewNames.Insert(name);
   s_PreviewOwners.Insert(owner);
@@ -206,10 +250,10 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "startrp", "income", "shared", "holdguns", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks"};
   foreach (string key : keys)
   {
-   if (key == "seed" && !generated) continue;
+   if (key == "seed" && !generated && Current("quickstart") == "off") continue;
    // Opens the map on the host's own screen with the layout drawn on it (client side).
    if (key == "map")
    {
@@ -225,9 +269,36 @@ class ACR_Setup
     continue;
    }
    rows += key + "\t" + Label(key) + ": " + ValueName(key, Current(key)) + "\n";
+   // The company and doctrine rows show a name; what it means goes on a line under the tab's rows
+   // (pn10b, 26 Oct: in the rows, the descriptions ran past the buttons).
+   if (key == "companywest" || key == "companyeast" || key == "doctrinewest" || key == "doctrineeast") rows += "about" + key + "\t" + About(key) + "\n";
   }
   return rows;
  }
+
+ // The line under the tab's rows for a company or doctrine row: "Blue: Combat Engineers: two tier I
+ // positions at its front", "Red: Fortress: holds in depth, counterattacks lost bases".
+ static string About(string key)
+ {
+  string side = "Blue: ";
+  string faction = ACR_FactionSelection.West();
+  if (key == "companyeast" || key == "doctrineeast")
+  {
+   side = "Red: ";
+   faction = ACR_FactionSelection.East();
+  }
+  if (key == "companywest" || key == "companyeast") return side + ACR_DoctrineKits.CompanySummary(ACR_DoctrineKits.CompanyOf(faction));
+  string value = Current(key);
+  if (value == ACR_AIDoctrine.RANDOM) return side + "a random doctrine each match";
+  ACR_AIDoctrine doctrine = ACR_AIDoctrine.Find(value);
+  if (!doctrine) doctrine = ACR_AIDoctrine.Find(ACR_AIDoctrine.FollowedKey(faction));
+  return side + doctrine.m_sName + ": " + doctrine.m_sBrief;
+ }
+
+ // A row's text ("Label: value") fits its button at 1080p in this many characters (pn10b, 26 Oct:
+ // "Blue AI doctrine: Fortress: defends in depth behind manned roadblocks, ..." was cut off at
+ // about 70); srv:setup checks every row at every value.
+ static const int ROW_CHARS = 60;
 
  static string Label(string key)
  {
@@ -236,18 +307,27 @@ class ACR_Setup
   if (key == "layout") return "Battlefield";
   if (key == "seed") return "Layout seed";
   if (key == "pockets") return "FIA resistance";
+  if (key == "quickstart") return "Quick start";
+  if (key == "guerrillas") return "FIA guerrillas";
+  if (key == "fiahidden") return "Hidden FIA";
+  if (key == "fiaallegiance") return "FIA sides with";
+  if (key == "fialeaning") return "FIA leans by conduct";
   if (key == "threat") return "Threat";
   if (key == "pricing") return "Prices";
   if (key == "ai") return "AI commanders";
   if (key == "doctrinewest") return "Blue AI doctrine";
   if (key == "doctrineeast") return "Red AI doctrine";
   if (key == "doctrineadapt") return "AI doctrines adapt";
+  if (key == "companywest") return "Blue company";
+  if (key == "companyeast") return "Red company";
   if (key == "unitcap") return "AI squad cap";
   if (key == "aibuild") return "AI build budget";
+  if (key == "capscale") return "Squad caps scale with map";
   if (key == "startrp") return "Starting RP";
   if (key == "income") return "Income";
   if (key == "shared") return "Shared command";
   if (key == "holdguns") return "Gunners stay on held guns";
+  if (key == "declutter") return "Calm command map";
   if (key == "deployment") return "New-unit deployment";
   if (key == "reinforcement") return "Infantry replacements";
   if (key == "fobservices") return "FOB service payment";
@@ -260,6 +340,7 @@ class ACR_Setup
   if (key == "minesai") return "AI commanders lay mines";
   if (key == "fortify") return "Fortify orders";
   if (key == "fortifyai") return "AI commanders fortify";
+  if (key == "baseworks") return "Fortify a whole base";
   return key;
  }
 
@@ -294,6 +375,11 @@ class ACR_Setup
    foreach (string candidate : keys) if (candidate != other) values.Insert(candidate);
   }
   else if (key == "pockets") values = {"few", "many", "off"};
+  else if (key == "quickstart") values = {"off", "even", "uneven"};
+  else if (key == "guerrillas") values = {"few", "many", "off"};
+  else if (key == "fiahidden") values = {"0", "1"};
+  else if (key == "fiaallegiance") values = {"hostile", "west", "east"};
+  else if (key == "fialeaning") values = {"0", "1"};
   else if (key == "threat") values = {"low", "normal", "high"};
   else if (key == "pricing") values = {"stepped", "stock"};
   else if (key == "ai")
@@ -302,12 +388,15 @@ class ACR_Setup
   }
   else if (key == "doctrinewest" || key == "doctrineeast") values = {"", "random", "balanced", "blitz", "firepower", "fortress", "raider"};
   else if (key == "doctrineadapt") values = {"1", "0"};
+  else if (key == "companywest" || key == "companyeast") values = {"", "mechanized", "weapons", "engineers", "recon"};
   else if (key == "unitcap") values = {"", "4", "6", "8", "12", "16", "24"};
   else if (key == "aibuild") values = {"0", "10", "15", "25"};
+  else if (key == "capscale") values = {"0", "1"};
   else if (key == "startrp") values = {"", "50", "100", "200", "400", "800"};
   else if (key == "income") values = {"", "0.5", "1", "1.5", "2", "3"};
   else if (key == "shared") values = {"1", "0"};
   else if (key == "holdguns") values = {"1", "0"};
+  else if (key == "declutter") values = {"1", "0"};
   else if (key == "deployment") values = {"military", "all", "hq"};
   else if (key == "reinforcement") values = {"settlements", "all", "deployment"};
   else if (key == "fobservices") values = {"supplies", "free"};
@@ -315,7 +404,7 @@ class ACR_Setup
   else if (key == "depotcapacity") values = {"0", "1000", "2000", "4000"};
   else if (key == "servicecost") values = {"5", "10", "20"};
   else if (key == "rpservice") values = {"0", "3", "5"};
-  else if (key == "mines" || key == "fortify") values = {"1", "0"};
+  else if (key == "mines" || key == "fortify" || key == "baseworks") values = {"1", "0"};
   else if (key == "minesreal" || key == "minesai" || key == "fortifyai") values = {"0", "1"};
   return values;
  }
@@ -323,18 +412,27 @@ class ACR_Setup
  static string Option(string key)
  {
   if (key == "pockets") return "acrPockets";
+  if (key == "quickstart") return "acrQuickStart";
+  if (key == "guerrillas") return "acrGuerrillas";
+  if (key == "fiahidden") return "acrFIAHidden";
+  if (key == "fiaallegiance") return "acrFIAAllegiance";
+  if (key == "fialeaning") return "acrFIALeaning";
   if (key == "threat") return "acrThreat";
   if (key == "pricing") return "acrPricing";
   if (key == "ai") return "acrAI";
   if (key == "doctrinewest") return "acrDoctrineWest";
   if (key == "doctrineeast") return "acrDoctrineEast";
   if (key == "doctrineadapt") return "acrDoctrineAdapt";
+  if (key == "companywest") return "acrCompanyWest";
+  if (key == "companyeast") return "acrCompanyEast";
   if (key == "unitcap") return "acrUnitCap";
   if (key == "aibuild") return "acrAIBuildShare";
+  if (key == "capscale") return "acrCapScale";
   if (key == "startrp") return "acrStartRP";
   if (key == "income") return "acrIncome";
   if (key == "shared") return "acrSharedCommand";
   if (key == "holdguns") return "acrHoldGuns";
+  if (key == "declutter") return ACR_MapDeclutter.OPTION;
   if (key == "deployment") return "acrDeployment";
   if (key == "reinforcement") return "acrReinforcement";
   if (key == "fobservices") return "acrFobServices";
@@ -347,6 +445,7 @@ class ACR_Setup
   if (key == "minesai") return "acrMinesAI";
   if (key == "fortify") return "acrFortify";
   if (key == "fortifyai") return "acrFortifyAI";
+  if (key == "baseworks") return "acrBaseWorks";
   return "";
  }
 
@@ -379,6 +478,11 @@ class ACR_Setup
   if (value == "")
   {
    if (key == "pockets") return "few";
+   if (key == "quickstart") return "off";
+   if (key == "guerrillas") return "few";
+   if (key == "fiahidden") return "0";
+   if (key == "fiaallegiance") return "hostile";
+   if (key == "fialeaning") return "0";
    if (key == "deployment") return "military";
    if (key == "reinforcement") return "settlements";
    if (key == "fobservices") return "supplies";
@@ -386,15 +490,17 @@ class ACR_Setup
    if (key == "depotcapacity") return "2000";
    if (key == "servicecost") return "10";
    if (key == "rpservice") return "3";
-   if (key == "mines" || key == "doctrineadapt" || key == "fortify") return "1";
+   if (key == "mines" || key == "doctrineadapt" || key == "fortify" || key == "baseworks") return "1";
    if (key == "minesreal" || key == "minesai" || key == "fortifyai") return "0";
    if (key == "aibuild") return "0";
+   if (key == "capscale") return "0";
   }
   if (key == "threat" && value == "") return "normal";
   if (key == "pricing" && value == "") return "";
   if (key == "ai" && value == "") return "";
   if (key == "shared" && value == "") return "1";
   if (key == "holdguns" && value == "") return "1";
+  if (key == "declutter" && value == "") return "1";
   return value;
  }
 
@@ -411,7 +517,9 @@ class ACR_Setup
    if (key == "rpservice") return "3 RP per serviced soldier (scenario default)";
    if (key == "seed") return "random (click to roll one)";
    if (key == "pricing" || key == "ai") return "scenario's choice";
-   if (key == "doctrinewest" || key == "doctrineeast") return "scenario's choice (random unless it sets one)";
+   if (key == "doctrinewest") return ACR_AIDoctrine.FollowsRow(ACR_FactionSelection.West());
+   if (key == "doctrineeast") return ACR_AIDoctrine.FollowsRow(ACR_FactionSelection.East());
+   if (key == "companywest" || key == "companyeast") return ACR_DoctrineKits.CompanyName("rifle");
    return "scenario default";
   }
   if (key == "layout")
@@ -439,12 +547,26 @@ class ACR_Setup
   {
    ACR_AIDoctrine doctrine = ACR_AIDoctrine.Find(value);
    if (!doctrine) return "random each match";
-   return doctrine.m_sName + ": " + doctrine.m_sSummary;
+   return doctrine.m_sName;
   }
+  if (key == "companywest" || key == "companyeast") return ACR_DoctrineKits.CompanyName(value);
   if (key == "income") return "x" + value;
   if (key == "pockets" && value == "few") return "a few pockets (whole/half map)";
   if (key == "pockets" && value == "many") return "many pockets (whole/half map)";
   if (key == "pockets" && value == "off") return "off";
+  if (key == "quickstart" && value == "even") return "the map split along a front, roadblocks up";
+  if (key == "quickstart" && value == "uneven") return "one side holds 2/3, the other has double RP";
+  if (key == "quickstart") return "off (both sides start from their HQ)";
+  if (key == "guerrillas" && value == "few") return "a few cells (whole/half map)";
+  if (key == "guerrillas" && value == "many") return "many cells (whole/half map)";
+  if (key == "guerrillas" && value == "off") return "off";
+  if (key == "fiahidden" && value == "1") return "on: no FIA messages, pockets found by entering";
+  if (key == "fiahidden" && value == "0") return "off";
+  if (key == "fiaallegiance" && value == "hostile") return "nobody: hostile to both";
+  if (key == "fiaallegiance" && value == "west") return "the Blue side";
+  if (key == "fiaallegiance" && value == "east") return "the Red side";
+  if (key == "fialeaning" && value == "1") return "on: FIA treats sides by their conduct";
+  if (key == "fialeaning" && value == "0") return "off: as FIA sides with";
   if (key == "deployment" && value == "military") return "military bases / HQs / FOBs";
   if (key == "deployment" && value == "hq") return "HQs / FOBs only";
   if (key == "deployment" && value == "all") return "all deployment-enabled points";
@@ -455,9 +577,13 @@ class ACR_Setup
   if (key == "aibuild") return value + "% of income";
   if (key == "holdguns" && value == "0") return "off (vanilla)";
   if (key == "holdguns") return "on";
+  if (key == "capscale" && value == "1") return "on";
+  if (key == "capscale") return "off";
+  if (key == "declutter" && value == "0") return "off (the classic map)";
+  if (key == "declutter") return "on";
   if (key == "minesreal" && value == "1") return "dangerous to all";
   if (key == "minesreal") return "safe for our AI";
-  if (key == "shared" || key == "fobrelay" || key == "mines" || key == "minesai" || key == "fortify" || key == "fortifyai")
+  if (key == "shared" || key == "fobrelay" || key == "mines" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks")
   {
    if (value == "0") return "off";
    return "on";
@@ -706,7 +832,7 @@ class ACR_SetupClient
   if (s_Dialog) { s_Dialog.Close(); s_Dialog = null; }
   GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   string hint = "The planned layout. Press Escape or Return to match setup to go back.";
-  if (s_sRows.Contains("Show and edit")) hint = "Click a CP, then its destination or Delete selected CP. HQs can only be moved. Undo layout edits restores moves and deletions. Markers show RP value and hidden sites. Press Escape or Return to match setup to go back.";
+  if (s_sRows.Contains("Show and edit")) hint = "Click a CP, then its destination or Delete selected CP. HQs can only be moved. Undo layout edits restores moves and deletions; New seed rolls a different layout (edits belong to one seed). Markers show RP value and hidden sites. Press Escape or Return to match setup to go back.";
   SCR_HintManagerComponent.ShowCustomHint(hint, "AC: Actual", 12, true);
  }
 
@@ -721,6 +847,12 @@ class ACR_SetupClient
   DropCamera();
   s_bActive = false;
   s_bAllowed = false;
+  // World-time stamps: the next mission's clock starts near 0 again.
+  s_fHintAt = -100000;
+  s_fDiagAt = 0;
+  s_sRows = "";
+  s_sInfo = "";
+  s_bChanged = false;
   if (s_Dialog) s_Dialog.Close();
   s_Dialog = null;
  }
@@ -732,6 +864,7 @@ modded class SCR_MapMenuUI
 {
  protected Widget m_ACR_SetupReturn;
  protected Widget m_ACR_SetupDelete;
+ protected Widget m_ACR_SetupSeed;
  protected bool m_ACR_SetupPreview;
 
  override void OnMenuOpen()
@@ -756,14 +889,25 @@ modded class SCR_MapMenuUI
    button.SetText("Return to match setup");
    button.m_OnClicked.Insert(ACR_OnSetupReturn);
   }
-  if (!ACR_SetupClient.s_bAllowed || !ACR_SetupClient.s_sRows.Contains("Show and edit")) return;
+  if (!ACR_SetupClient.s_bAllowed) return;
+  // New seed: the setup's Layout seed row (a generated layout, or a quick start's split) without
+  // going back to the dialog; the server sends the new preview and the map redraws it.
+  if (ACR_SetupClient.s_sRows.Contains("seed\t"))
+  {
+   m_ACR_SetupSeed = ACR_SetupButton("ACR_SetupSeed", 152, "New seed");
+   SCR_ButtonTextComponent seedButton = SCR_ButtonTextComponent.FindButtonTextComponent(m_ACR_SetupSeed);
+   if (seedButton) seedButton.m_OnClicked.Insert(ACR_OnSetupSeed);
+  }
+  if (!ACR_SetupClient.s_sRows.Contains("Show and edit")) return;
   m_ACR_SetupDelete = GetGame().GetWorkspace().CreateWidgets("{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout", GetRootWidget());
   if (!m_ACR_SetupDelete) return;
   m_ACR_SetupDelete.SetName("ACR_SetupDelete");
   FrameSlot.SetAnchorMin(m_ACR_SetupDelete, 1, 0);
   FrameSlot.SetAnchorMax(m_ACR_SetupDelete, 1, 0);
   FrameSlot.SetAlignment(m_ACR_SetupDelete, 1, 0);
-  FrameSlot.SetPos(m_ACR_SetupDelete, -24, 152);
+  float deleteY = 152;
+  if (m_ACR_SetupSeed) deleteY = 208;
+  FrameSlot.SetPos(m_ACR_SetupDelete, -24, deleteY);
   FrameSlot.SetSize(m_ACR_SetupDelete, 340, 48);
   SCR_ButtonTextComponent deleteButton = SCR_ButtonTextComponent.FindButtonTextComponent(m_ACR_SetupDelete);
   if (deleteButton)
@@ -771,6 +915,26 @@ modded class SCR_MapMenuUI
    deleteButton.SetText("Delete selected CP");
    deleteButton.m_OnClicked.Insert(ACR_OnSetupDelete);
   }
+ }
+
+ protected Widget ACR_SetupButton(string name, float y, string text)
+ {
+  Widget root = GetGame().GetWorkspace().CreateWidgets("{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout", GetRootWidget());
+  if (!root) return null;
+  root.SetName(name);
+  FrameSlot.SetAnchorMin(root, 1, 0);
+  FrameSlot.SetAnchorMax(root, 1, 0);
+  FrameSlot.SetAlignment(root, 1, 0);
+  FrameSlot.SetPos(root, -24, y);
+  FrameSlot.SetSize(root, 340, 48);
+  SCR_ButtonTextComponent button = SCR_ButtonTextComponent.FindButtonTextComponent(root);
+  if (button) button.SetText(text);
+  return root;
+ }
+
+ protected void ACR_OnSetupSeed(SCR_ButtonBaseComponent button)
+ {
+  ACR_SetupClient.Request("seed");
  }
 
  protected void ACR_OnSetupDelete(SCR_ButtonBaseComponent button)
@@ -803,6 +967,8 @@ modded class SCR_MapMenuUI
   m_ACR_SetupReturn = null;
   if (m_ACR_SetupDelete) m_ACR_SetupDelete.RemoveFromHierarchy();
   m_ACR_SetupDelete = null;
+  if (m_ACR_SetupSeed) m_ACR_SetupSeed.RemoveFromHierarchy();
+  m_ACR_SetupSeed = null;
   super.OnMenuClose();
  }
 }
@@ -811,6 +977,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
 {
  static const ResourceName PRESETS = "{AC230926A00100F0}Configs/ACR_Dialogs.conf";
  protected static const ResourceName LAYOUT_BUTTON = "{75C912A1C89BE6C2}UI/layouts/WidgetLibrary/Buttons/WLib_ButtonText.layout";
+ protected static const ResourceName LAYOUT_TEXT = "{B537936D5B7E2BA1}UI/layouts/WidgetLibrary/TextWidgets/Text_BodySmall.layout";
  protected ref map<SCR_ButtonBaseComponent, string> m_Keys = new map<SCR_ButtonBaseComponent, string>();
  protected Widget m_wTabs;
  protected Widget m_wRows;
@@ -856,10 +1023,12 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  // The tab a row belongs to; rows nobody sorted yet land on the first tab, where they are seen.
  static int Tab(string key)
  {
-  if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "holdguns" || key == "aibuild") return 1;
-  if (key == "pricing" || key == "startrp" || key == "income") return 2;
+  // A row's description line goes with its row.
+  if (key.StartsWith("about")) return Tab(key.Substring(5, key.Length() - 5));
+  if (key == "shared" || key == "ai" || key == "doctrinewest" || key == "doctrineeast" || key == "doctrineadapt" || key == "unitcap" || key == "holdguns" || key == "declutter" || key == "aibuild" || key == "capscale") return 1;
+  if (key == "pricing" || key == "startrp" || key == "income" || key == "companywest" || key == "companyeast") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
-  if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai") return 4;
+  if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks") return 4;
   return 0;
  }
 
@@ -917,11 +1086,18 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   rows.Split("\n", lines, true);
   array<string> keys = {};
   array<string> texts = {};
+  array<string> abouts = {};
   foreach (string line : lines)
   {
    array<string> parts = {};
    line.Split("\t", parts, false);
    if (parts.Count() < 2 || Tab(parts[0]) != m_iTab) continue;
+   // A description line, shown under the rows (not a button).
+   if (parts[0].StartsWith("about"))
+   {
+    abouts.Insert(parts[1]);
+    continue;
+   }
    keys.Insert(parts[0]);
    texts.Insert(parts[1]);
   }
@@ -932,6 +1108,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   if (m_iPage >= m_iPages) m_iPage = m_iPages - 1;
   int first = m_iPage * perPage;
   for (int i = first; i < keys.Count() && i < first + perPage; i++) AddButton(m_wRows, keys[i], texts[i]);
+  foreach (string about : abouts) AddText(m_wRows, about);
   if (m_iPages > 1)
   {
    string more = string.Format("More settings (page %1 of %2)...", m_iPage + 1, m_iPages);
@@ -952,6 +1129,14 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  {
   foreach (SCR_ButtonBaseComponent button, string shown : m_Keys) if (shown == key) return true;
   return false;
+ }
+
+ protected void AddText(Widget parent, string text)
+ {
+  TextWidget widget = TextWidget.Cast(GetGame().GetWorkspace().CreateWidgets(LAYOUT_TEXT, parent));
+  if (!widget) return;
+  AlignableSlot.SetPadding(widget, 8, 4, 2, 0);
+  widget.SetText(text);
  }
 
  protected SCR_ButtonTextComponent AddButton(Widget parent, string key, string text, bool fill = false)

@@ -59,7 +59,12 @@ class ACR_RoadblockSiting
  static float s_fFloor = FLOOR;           // tests raise it
  static bool s_bNoFanForTest;             // tests: the fan finds nothing (the first-fit fallback)
  static int s_iEvaluated;                 // tests and the log
- protected static ref map<string, ref ACR_RoadSiteCache> s_mCache = new map<string, ref ACR_RoadSiteCache>();
+ protected static ref map<string, ref ACR_RoadSiteCache> s_mCache;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_mCache = new map<string, ref ACR_RoadSiteCache>();
+ }
 
  // ---------------------------------------------------------------- scoring
 

@@ -16,7 +16,12 @@ class ACR_TestMinefields
  static vector s_vRoad;
  static int s_iPlanned;
  static ACR_Minefield s_Field;
- static ref array<IEntity> s_Signs = {};
+ static ref array<IEntity> s_Signs;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Signs = {};
+ }
  static IEntity s_EnemyMine, s_FriendMine, s_Enemy, s_Friend;
  static ref ACR_OrderSnapshot s_Regroup;
  static string s_sRegroup;
@@ -345,7 +350,7 @@ class ACR_TestMinefields
  }
 
  // A road point away from the bases with no other road within 25 m.
- protected static bool FindRoad(vector origin, out vector point, out vector dir, out float width)
+ static bool FindRoad(vector origin, out vector point, out vector dir, out float width)
  {
   ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
   if (!aiWorld || !aiWorld.GetRoadNetworkManager()) return false;
@@ -375,7 +380,7 @@ class ACR_TestMinefields
  }
 
  // A spot near the squad where the order plans (away from the bases, dry, clear of our fields).
- protected static bool FindSite(ACR_Squad squad, ACR_EMineKind kind, out vector site)
+ static bool FindSite(ACR_Squad squad, ACR_EMineKind kind, out vector site)
  {
   vector from = squad.GetAnchor().GetOrigin();
   for (int r = 0; r < 4; r++)

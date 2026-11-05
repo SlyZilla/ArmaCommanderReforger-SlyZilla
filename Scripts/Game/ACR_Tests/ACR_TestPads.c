@@ -5,9 +5,11 @@
 // Then each side buys both support helicopters for its HQ's pads: they must sit upright and unhurt.
 // Then each side calls its door-gunner helicopter on Military Hill: it must lift off its pad
 // (above 25 m) unhurt, which catches pads hemmed in by roofs, wires or trees (~75 s in all).
+// A flashpoint layout (padslevie, padsmontignac, padsphilippe) has its HQs inside the flashpoint,
+// with no pads (since f5b8fc8): nothing to buy, and the door gunners fly in from off the map.
 class ACR_TestPads
 {
- static ref array<IEntity> s_Found = {};
+ static ref array<IEntity> s_Found;
  static bool Collect(IEntity e)
  {
   if (!e || !e.GetPrefabData()) return true;
@@ -62,7 +64,7 @@ class ACR_TestPads
   }
   if (printed == 0) PrintFormat("[ACR] PADS %1: no open spot within %2 m", base.m_sName, reach);
  }
- static ref array<vector> s_Spots = {};
+ static ref array<vector> s_Spots;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -211,8 +213,16 @@ class ACR_TestPads
   }
  }
 
- static ref map<string, float> s_Lift = new map<string, float>();
- static ref map<string, float> s_Health = new map<string, float>();
+ static ref map<string, float> s_Lift;
+ static ref map<string, float> s_Health;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Found = {};
+  s_Spots = {};
+  s_Lift = new map<string, float>();
+  s_Health = new map<string, float>();
+ }
 
  static void CallBoth()
  {
@@ -240,9 +250,29 @@ class ACR_TestPads
   }
  }
 
+ // No side has a pad in this layout.
+ protected static bool NoPads()
+ {
+  return !ACR_HeliStation.UsesPads("US") && !ACR_HeliStation.UsesPads("USSR");
+ }
+
  static void WatchLift()
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
+  if (NoPads())
+  {
+   array<ACR_HeliRun> flying = {};
+   manager.m_Supports.Helicopters(flying);
+   foreach (ACR_HeliRun run : flying)
+   {
+    if (!run.m_bDoorGuns || !run.m_Vehicle) continue;
+    vector at = run.m_Vehicle.GetOrigin();
+    float above = at[1] - GetGame().GetWorld().GetSurfaceY(at[0], at[2]);
+    s_Lift.Set(run.m_sFaction, Math.Max(s_Lift.Get(run.m_sFaction), above));
+    s_Health.Set(run.m_sFaction, Math.Min(s_Health.Get(run.m_sFaction), ACR_Logistics.Health(run.m_Vehicle)));
+   }
+   return;
+  }
   foreach (ACR_StationedHeli heli : manager.m_Supports.Station().m_Helis)
   {
    if (!heli.m_sName.Contains("door") || !heli.m_Vehicle) continue;
@@ -257,7 +287,9 @@ class ACR_TestPads
   foreach (string side, float lift : s_Lift)
   {
    PrintFormat("[ACR] PADS %1 door gunners: rose %2 m over the pad, lowest health %3", side, lift, s_Health.Get(side));
-   ACR_TestRegress.Check("pads: " + side + " door gunners lift off the pad unhurt", lift > 25 && s_Health.Get(side) > 0.9, string.Format("%1 m, health %2", lift, s_Health.Get(side)));
+   string name = "pads: " + side + " door gunners lift off the pad unhurt";
+   if (NoPads()) name = "pads: " + side + " door gunners fly in from off the map unhurt";
+   ACR_TestRegress.Check(name, lift > 25 && s_Health.Get(side) > 0.9, string.Format("%1 m, health %2", lift, s_Health.Get(side)));
   }
  }
 
@@ -275,7 +307,18 @@ class ACR_TestPads
    PrintFormat("[ACR] PADS %1 %2 at %3: pitch %4 roll %5, health %6, %7 m above the pad, %8 m off it, state %9", heli.m_sFaction, heli.m_sName, heli.m_Pad.Base().m_sName, angles[1], angles[2], health, height, off, heli.m_eState);
    ACR_TestRegress.Check("pads: " + heli.m_sName + " " + heli.m_sFaction + " parked upright and unhurt", Math.AbsFloat(angles[1]) < 8 && Math.AbsFloat(angles[2]) < 8 && health > 0.95 && off < 2 && heli.m_eState == ACR_EHeliState.READY, "");
   }
-  ACR_TestRegress.Check("pads: four helicopters on the HQ pads", count == 4, string.Format("%1", count));
+  if (NoPads())
+  {
+   int forSale;
+   array<string> sides = {"US", "USSR"};
+   foreach (string side : sides)
+   {
+    foreach (ACR_RequisitionEntry entry : manager.m_Bases.GetFaction(side).m_aRequisitions)
+     if (entry.m_iSupportHeli > 0) forSale++;
+   }
+   ACR_TestRegress.Check("pads: no pads in this layout: no helicopters parked and none for sale", count == 0 && forSale == 0, string.Format("%1 parked, %2 for sale", count, forSale));
+  }
+  else ACR_TestRegress.Check("pads: four helicopters on the HQ pads", count == 4, string.Format("%1", count));
   int models, inPlay;
   foreach (ACR_Helipad pad : ACR_Helipad.s_All)
   {

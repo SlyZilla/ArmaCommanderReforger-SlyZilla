@@ -1,0 +1,120 @@
+// -acrRecrewTest 1 (server-capable, ~70 s): Jacob's 27 Oct game. A Typhoon's driver and gunner
+// got out on their own, only the gunner went back, and the AI sent the driverless vehicle on
+// move after move for 37 min, each failing where it stood (Recrew only took crews back into an
+// empty vehicle). Two armed Humvees: in the first the driver gets out, in the second the gunner.
+// The AI commander's Recrew puts the first one's driver back in his seat (the group's Get in
+// waypoint seats nobody while the gunner is aboard); the second truck it leaves alone. A third crew,
+// both men out, is told again and again without getting in: it is left on foot for a while (Everon
+// long match 31 Oct: 14 tries in 20 min).
+class ACR_TestRecrew
+{
+ static ACR_Squad s_Driverless, s_Gunnerless, s_Walking;
+ static IEntity s_DriverlessVehicle, s_GunnerlessVehicle;
+
+ static void Eject(ACR_Squad squad, ECompartmentType seat)
+ {
+  array<AIAgent> agents = {};
+  squad.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (body && ACR_Transport.SeatOf(body) == seat) body.GetCompartmentAccessComponent().GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+  }
+ }
+
+ static string State(ACR_Squad squad, IEntity vehicle)
+ {
+  if (!squad || !vehicle) return "missing";
+  return string.Format("%1: driver %2, mounted %3, bailed flag %4, order '%5'", squad.GetName(), ACR_Squad.DriverOf(vehicle) != null, squad.IsMounted(), squad.m_bDriverBailed, squad.m_Order);
+ }
+
+ static void Run(ACR_TestHarness h, int tick)
+ {
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return;
+  if (tick == 1)
+  {
+   ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
+   if (soviets) soviets.m_bAICommander = false;
+   ACR_FactionSettings us = ACR_FactionSettings.Find("US");
+   if (us) us.m_bAICommander = false;
+  }
+  if (tick == 5)
+  {
+   manager.SpawnUnit("Recrew Truck", "", "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et", true, "", h.Ground("1390 0 2795"), h.Ground("1395 0 2790"));
+   manager.SpawnUnit("Gunner Truck", "", "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et", true, "", h.Ground("1420 0 2795"), h.Ground("1425 0 2790"));
+   manager.SpawnUnit("Walking Truck", "", "{3EA6F47D95867114}Prefabs/Vehicles/Wheeled/M998/M1025_armed_M2HB.et", true, "", h.Ground("1450 0 2795"), h.Ground("1455 0 2790"));
+  }
+  if (tick == 14)
+  {
+   s_Driverless = h.NamedSquad(manager, "Recrew Truck");
+   s_Gunnerless = h.NamedSquad(manager, "Gunner Truck");
+   if (s_Driverless) s_DriverlessVehicle = s_Driverless.m_OwnVehicle;
+   if (s_Gunnerless) s_GunnerlessVehicle = s_Gunnerless.m_OwnVehicle;
+   if (!s_DriverlessVehicle || !s_GunnerlessVehicle || !ACR_Squad.DriverOf(s_DriverlessVehicle)) { ACR_TestRegress.Abort("recrew", "a truck or its crew is missing"); return; }
+   Eject(s_Driverless, ECompartmentType.PILOT);
+   Eject(s_Gunnerless, ECompartmentType.TURRET);
+   s_Walking = h.NamedSquad(manager, "Walking Truck");
+   if (s_Walking)
+   {
+    Eject(s_Walking, ECompartmentType.PILOT);
+    Eject(s_Walking, ECompartmentType.TURRET);
+   }
+  }
+  // (After the first truck's own try at tick 18: every Recrew call covers every crew.)
+  if (tick == 20 && s_Walking)
+  {
+   ACR_AICommander tries = manager.FobAICommanderFor("US");
+   // Told again as soon as each try's wait is taken away, until the rest starts.
+   int told;
+   float rest = 0;
+   float now = GetGame().GetWorld().GetWorldTime();
+   for (int t = 0; tries && t <= ACR_AICommander.RECREW_TRIES + 1 && rest < 300000; t++)
+   {
+    tries.RecrewSoonForTest(s_Walking);
+    tries.RecrewForTest();
+    rest = tries.RecrewNextForTest(s_Walking) - now;
+    if (rest < 300000) told++;
+   }
+   ACR_TestRegress.Check("recrew: a crew told again and again without getting in is left on foot for a while", told > 0 && told <= ACR_AICommander.RECREW_TRIES && rest > 300000, string.Format("told %1 more times, next try in %2 s, order '%3'", told, (int)(rest / 1000), s_Walking.m_Order));
+  }
+  if (!s_Driverless || !s_Gunnerless || tick <= 14) return;
+  if (tick % 5 == 0) PrintFormat("[ACR] RECREW t=%1: %2 | %3", tick, State(s_Driverless, s_DriverlessVehicle), State(s_Gunnerless, s_GunnerlessVehicle));
+  if (tick == 18)
+  {
+   bool noticed = s_Driverless.m_bDriverBailed && !ACR_Squad.DriverOf(s_DriverlessVehicle) && s_Driverless.IsMounted() && !s_Gunnerless.m_bDriverBailed;
+   ACR_TestRegress.Check("recrew: a driver who got out on his own is noticed (a gunner isn't taken for one)", noticed, State(s_Driverless, s_DriverlessVehicle) + " | " + State(s_Gunnerless, s_GunnerlessVehicle));
+   string gunnerOrder = s_Gunnerless.m_Order;
+   string driverlessOrder = s_Driverless.m_Order;
+   ACR_AICommander ai = manager.FobAICommanderFor("US");
+   if (ai) ai.RecrewForTest();
+   // The group's Get in seated nobody here (first run: 50 s on 'Getting in'): one man goes for
+   // the driver's seat, and both squads keep their orders.
+   bool going = s_Driverless.m_Order == driverlessOrder && s_Gunnerless.m_Order == gunnerOrder;
+   ACR_TestRegress.Check("recrew: the AI sends a man back to the driver's seat, and leaves the other truck be", going, State(s_Driverless, s_DriverlessVehicle) + " | " + State(s_Gunnerless, s_GunnerlessVehicle));
+  }
+  // Not in after 30 s: the next try (the AI ticks Recrew) places him.
+  if (tick == 50 && s_Driverless.m_bDriverBailed)
+  {
+   ACR_AICommander retry = manager.FobAICommanderFor("US");
+   if (retry) retry.RecrewForTest();
+  }
+  if (tick == 65)
+  {
+   bool back = ACR_Squad.DriverOf(s_DriverlessVehicle) != null && !s_Driverless.m_bDriverBailed;
+   ACR_TestRegress.Check("recrew: someone drives the truck again and the flag is cleared", back, State(s_Driverless, s_DriverlessVehicle));
+   // Two more bails in the window (the first was at tick 14): taken as stuck, so Recrew and the
+   // logistics runs leave it (Jacob's 26 Oct game: a BTR crew bailed and was put back for 90 min).
+   Eject(s_Driverless, ECompartmentType.PILOT);
+  }
+  if (tick == 68) s_Driverless.ReseatDriver(s_DriverlessVehicle);
+  if (tick == 74) Eject(s_Driverless, ECompartmentType.PILOT);
+  if (tick == 77)
+  {
+   bool stuck = GetGame().GetWorld().GetWorldTime() - s_Driverless.m_fStuckAt < 10000;
+   ACR_TestRegress.Check("recrew: a driver who bails a third time in 10 min marks the crew stuck", stuck, string.Format("%1, stuck %2 s ago", State(s_Driverless, s_DriverlessVehicle), (int)((GetGame().GetWorld().GetWorldTime() - s_Driverless.m_fStuckAt) / 1000)));
+   ACR_TestRegress.Complete("recrew", 5);
+  }
+  if (tick == 79) Print("[ACR] TEST COMPLETE");
+ }
+}

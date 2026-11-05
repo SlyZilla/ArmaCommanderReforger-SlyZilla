@@ -18,98 +18,116 @@ function Get-PairLabel([string]$pair) {
   }
 }
 
-function Get-ACRAddonList([string]$pair, [string]$ace) {
+# Expansion packs: separate add-ons beside ACA that plug into ACR_ContentSocket. Only those
+# whose folder is present are offered. (Civil Population needs ACA's civilians branch: not here.)
+$script:ACRPacks = @(
+  @{ Key = 'coldwar'; Folder = 'ACAColdWar'; Id = 'AC230926CC000002'; Label = 'Cold War (era vehicles and kit)' },
+  @{ Key = 'modern'; Folder = 'ACAModern'; Id = 'AC230926DD000003'; Label = 'Modern (RHS sides: pick RHS Russia vs RHS US)' }
+)
+
+function Get-AvailablePacks {
+  $root = Split-Path $PSScriptRoot -Parent
+  return @($script:ACRPacks | Where-Object { Test-Path -LiteralPath (Join-Path (Join-Path $root $_.Folder) 'addon.gproj') })
+}
+
+function Get-PackLabel([string]$pack) {
+  foreach ($p in $script:ACRPacks) { if ($p.Key -eq $pack) { return $p.Label } }
+  return 'none'
+}
+
+# ACA map add-ons beside ACA (ACAMap*): world path -> add-on GUID, for the map row.
+function Get-MapAddons {
+  $maps = [ordered]@{}
+  $root = Split-Path $PSScriptRoot -Parent
+  foreach ($dir in Get-ChildItem -LiteralPath $root -Directory -Filter 'ACAMap*' -ErrorAction SilentlyContinue) {
+    $project = Join-Path $dir.FullName 'addon.gproj'
+    if (!(Test-Path -LiteralPath $project)) { continue }
+    $m = [regex]::Match((Get-Content -LiteralPath $project -Raw), 'GUID\s+"([0-9A-Fa-f]{16})"')
+    if (!$m.Success) { continue }
+    foreach ($world in Get-ChildItem -LiteralPath (Join-Path $dir.FullName 'Worlds') -Filter 'ACR_*.ent' -ErrorAction SilentlyContinue) {
+      $maps['Worlds/' + $world.Name] = $m.Groups[1].Value
+    }
+  }
+  return $maps
+}
+
+# A pack or a map add-on brings Workshop mods of its own, as faction mods and ACE do.
+function Test-NeedsModAddons([string]$pair, [string]$ace, [string]$pack, [string]$mapId) {
+  return ($pair -ne 'vanilla' -or $ace -eq 'yes' -or ($pack -and $pack -ne 'none') -or [bool]$mapId)
+}
+
+function Get-ACRAddonList([string]$pair, [string]$ace, [string]$pack = 'none', [string]$mapId = '') {
   $ids = @('AC230926A0010001')
   if ($pair -ne 'vanilla') {
     $ids += @('595F2BF2F44836FB', '1337C0DE5DABBEEF', 'BADC0DEDABBEDA5E')
     if ($pair -eq 'ru_ua' -or $pair -eq 'us_ua') { $ids += '65F92D51845AC237' }
   }
   if ($ace -eq 'yes') { $ids += '60C4E0B49618CC62' }
+  foreach ($p in $script:ACRPacks) { if ($p.Key -eq $pack) { $ids += $p.Id } }
+  if ($mapId) { $ids += $mapId }
   return ($ids -join ',')
 }
 
-# Every BBB host option. BBB reads them where the AI runs (this server). Default is BBB's own
-# default; only changed values are passed. No Min = a switch ('1' on, '0' off).
-# Left out: bbbBios/bbbIdentityEggs (every machine must match), bbbVanilla (ACA starts BBB),
-# test-only flags, and aliases (bbbAntiArmor, bbbThreatDecay, bbbThreatExplosion).
-$script:BBBOptions = @(
-  @{ Flag = 'bbbExposedFire'; Group = 'Combat'; Label = 'Pinned in the open: keep spotting, fire faster'; Default = '1' }
-  @{ Flag = 'bbbCombatResponse'; Group = 'Combat'; Label = 'Return fire toward incoming fire (no target yet)'; Default = '1' }
-  @{ Flag = 'bbbCombatRadio'; Group = 'Combat'; Label = 'Squads share contact reports'; Default = '1' }
-  @{ Flag = 'bbbCombatDetail'; Group = 'Combat'; Label = 'Keep AI near a firefight fully simulated'; Default = '1' }
-  @{ Flag = 'bbbCombatEngagement'; Group = 'Combat'; Label = 'Take the shot before repositioning (< 100 m)'; Default = '1' }
-  @{ Flag = 'bbbCombatTargetPriority'; Group = 'Combat'; Label = 'Prefer a visible close enemy to a remembered one'; Default = '1' }
-  @{ Flag = 'bbbCombatManeuver'; Group = 'Combat'; Label = 'Shorter waits in cover under fire (experimental)'; Default = '0' }
-  @{ Flag = 'bbbFireManeuver'; Group = 'Combat'; Label = 'Fire and maneuver: base of fire + assault (experimental)'; Default = '0' }
-  @{ Flag = 'bbbBuildings'; Group = 'Combat'; Label = 'Use and clear buildings near contacts (experimental)'; Default = '0' }
-  @{ Flag = 'bbbGrenades'; Group = 'Grenades'; Label = 'Throw frag grenades at enemies in cover'; Default = '0' }
-  @{ Flag = 'bbbGrenadesMinDist'; Group = 'Grenades'; Label = 'Closest throw (m)'; Default = '12'; Min = 8; Max = 25 }
-  @{ Flag = 'bbbGrenadesMaxDist'; Group = 'Grenades'; Label = 'Farthest throw (m)'; Default = '38'; Min = 20; Max = 45 }
-  @{ Flag = 'bbbGrenadesFriendlyDist'; Group = 'Grenades'; Label = 'Keep friendlies this far from the blast (m)'; Default = '14'; Min = 8; Max = 25 }
-  @{ Flag = 'bbbGrenadesCooldown'; Group = 'Grenades'; Label = 'Squad cooldown (s)'; Default = '25'; Min = 5; Max = 120 }
-  @{ Flag = 'bbbThreat'; Group = 'Suppression'; Label = 'BBB suppression tuning (off = all of this group vanilla)'; Default = '1' }
-  @{ Flag = 'bbbSuppressionDecay'; Group = 'Suppression'; Label = 'Suppression wears off at (1 = vanilla, lower = longer)'; Default = '0.55'; Min = 0.05; Max = 5 }
-  @{ Flag = 'bbbExplosionThreat'; Group = 'Suppression'; Label = 'Explosion suppression (1 = vanilla)'; Default = '2.2'; Min = 0.1; Max = 5 }
-  @{ Flag = 'bbbExplosionReflex'; Group = 'Suppression'; Label = 'Hit the dirt when a blast wave arrives'; Default = '1' }
-  @{ Flag = 'bbbThreatGeometry'; Group = 'Suppression'; Label = 'High ground, flank and ambush fire pin harder'; Default = '1' }
-  @{ Flag = 'bbbElevationThreat'; Group = 'Suppression'; Label = 'High-ground factor (0 = off)'; Default = '1'; Min = 0; Max = 3 }
-  @{ Flag = 'bbbFlankThreat'; Group = 'Suppression'; Label = 'Rear/flank bonus (0 = off)'; Default = '0.5'; Min = 0; Max = 2 }
-  @{ Flag = 'bbbAmbushThreat'; Group = 'Suppression'; Label = 'Ambush shock (0 = off)'; Default = '0.2'; Min = 0; Max = 1 }
-  @{ Flag = 'bbbSkySuppression'; Group = 'Suppression'; Label = 'Aircraft gunfire is not a ground contact (fix)'; Default = '1' }
-  @{ Flag = 'bbbAimFixes'; Group = 'Aim'; Label = 'Aim fixes (binoculars, suppressed aim)'; Default = '1' }
-  @{ Flag = 'bbbAimTuning'; Group = 'Aim'; Label = 'Tuned aim preset (launchers, long range; untested)'; Default = '0' }
-  @{ Flag = 'bbbAimScale'; Group = 'Aim'; Label = 'Aim error scale (1 = vanilla, higher = worse)'; Default = '1'; Min = 0; Max = 5 }
-  @{ Flag = 'bbbSuppressedAim'; Group = 'Aim'; Label = 'Aim error when suppressed (1 = none)'; Default = '1.3'; Min = 1; Max = 5 }
-  @{ Flag = 'bbbLauncherAim'; Group = 'Aim'; Label = 'Launcher aim error (0 = vanilla, never miss)'; Default = '0'; Min = 0; Max = 5 }
-  @{ Flag = 'bbbLongRangeAim'; Group = 'Aim'; Label = 'Aim error growth past 215 m (0 = vanilla)'; Default = '0'; Min = 0; Max = 5 }
-  @{ Flag = 'bbbBinocsUnderFire'; Group = 'Aim'; Label = 'Allow binoculars while under fire (vanilla)'; Default = '0' }
-  @{ Flag = 'bbbArmour'; Group = 'Vehicles'; Label = 'Hold rifle fire at armour it cannot hurt'; Default = '1' }
-  @{ Flag = 'bbbArmourHits'; Group = 'Vehicles'; Label = 'Hits before a round counts as useless'; Default = '12'; Min = 1; Max = 100 }
-  @{ Flag = 'bbbArmourScatter'; Group = 'Vehicles'; Label = 'Non-AT infantry get low near armour'; Default = '0' }
-  @{ Flag = 'bbbArmorReaction'; Group = 'Vehicles'; Label = 'Vehicles smoke and reverse from AT fire (experimental)'; Default = '0' }
-  @{ Flag = 'bbbCrewTurnout'; Group = 'Vehicles'; Label = 'Crews turn out when quiet (experimental)'; Default = '0' }
-  @{ Flag = 'bbbDriverAlign'; Group = 'Vehicles'; Label = 'Drivers turn for the gunner (experimental)'; Default = '0' }
-  @{ Flag = 'bbbCommanderCrew'; Group = 'Vehicles'; Label = 'Commander seats count as crew'; Default = '1' }
-  @{ Flag = 'bbbTacticalDismount'; Group = 'Vehicles'; Label = 'Passengers dismount under fire'; Default = '1' }
-  @{ Flag = 'bbbGunnerReplace'; Group = 'Vehicles'; Label = 'Replace a dead or downed gunner'; Default = '1' }
-  @{ Flag = 'bbbGunnerDrill'; Group = 'Vehicles'; Label = 'Gunners fire back at unseen shooters'; Default = '1' }
-  @{ Flag = 'bbbGunnerScan'; Group = 'Vehicles'; Label = 'Gunners scan wider while moving'; Default = '1' }
-  @{ Flag = 'bbbUnstick'; Group = 'Vehicles'; Label = 'Free stuck vehicles'; Default = '1' }
-  @{ Flag = 'bbbDoors'; Group = 'Vehicles'; Label = 'Crews close doors and hatches'; Default = '1' }
-  @{ Flag = 'bbbStaticWeapons'; Group = 'Static weapons'; Label = 'Man nearby static weapons in contact'; Default = '0' }
-  @{ Flag = 'bbbStaticReach'; Group = 'Static weapons'; Label = 'Search radius (m)'; Default = '35'; Min = 10; Max = 80 }
-  @{ Flag = 'bbbStaticArc'; Group = 'Static weapons'; Label = 'Enemy within this traverse arc (deg)'; Default = '60'; Min = 15; Max = 180 }
-  @{ Flag = 'bbbStaticQuiet'; Group = 'Static weapons'; Label = 'Leave the gun after this long quiet (s)'; Default = '15'; Min = 5; Max = 120 }
-  @{ Flag = 'bbbMedic'; Group = 'Medical'; Label = 'Safer healing (wait for cover and smoke)'; Default = '0' }
-  @{ Flag = 'bbbMedicSmoke'; Group = 'Medical'; Label = 'Smoke before reaching an exposed casualty'; Default = '1' }
-  @{ Flag = 'bbbDrag'; Group = 'Medical'; Label = 'Drag casualties into cover (with ACE)'; Default = '1' }
-  @{ Flag = 'bbbSmoke'; Group = 'Smoke'; Label = 'Tactical smoke screens'; Default = '0' }
-  @{ Flag = 'bbbSmokeDrag'; Group = 'Smoke'; Label = '... for casualty drags'; Default = '1' }
-  @{ Flag = 'bbbSmokeManeuver'; Group = 'Smoke'; Label = '... for bounding advances'; Default = '1' }
-  @{ Flag = 'bbbSmokeMorale'; Group = 'Smoke'; Label = '... for withdrawals'; Default = '1' }
-  @{ Flag = 'bbbSmokeCooldown'; Group = 'Smoke'; Label = 'Squad cooldown (s)'; Default = '30'; Min = 5; Max = 180 }
-  @{ Flag = 'bbbSmokeDist'; Group = 'Smoke'; Label = 'Throw distance (m)'; Default = '20'; Min = 8; Max = 35 }
-  @{ Flag = 'bbbMorale'; Group = 'Morale'; Label = 'Badly hurt squads break contact (experimental)'; Default = '0' }
-  @{ Flag = 'bbbMoraleSurrender'; Group = 'Morale'; Label = 'Cornered, out-of-ammo men surrender'; Default = '1' }
-  @{ Flag = 'bbbMoraleCasualties'; Group = 'Morale'; Label = 'Break at this share of casualties'; Default = '0.5'; Min = 0.11; Max = 0.9 }
-  @{ Flag = 'bbbMoraleSuppression'; Group = 'Morale'; Label = 'Break at this squad suppression'; Default = '0.6'; Min = 0.11; Max = 1 }
-  @{ Flag = 'bbbMoraleDistance'; Group = 'Morale'; Label = 'Withdrawal bound (m)'; Default = '25'; Min = 10; Max = 50 }
-  @{ Flag = 'bbbRearm'; Group = 'Soldiers'; Label = 'Take ammo and launchers from the fallen'; Default = '1' }
-  @{ Flag = 'bbbRearmRadius'; Group = 'Soldiers'; Label = 'Rearm search radius (m)'; Default = '25'; Min = 5; Max = 100 }
-  @{ Flag = 'bbbWeaponReady'; Group = 'Soldiers'; Label = 'Take the weapon in hand when walking empty-handed'; Default = '1' }
-  @{ Flag = 'bbbRelaxedMarch'; Group = 'Soldiers'; Label = 'Lower weapons on quiet marches'; Default = '1' }
-  @{ Flag = 'bbbHorizonScan'; Group = 'Soldiers'; Label = 'Scan horizons and flanks'; Default = '1' }
-  @{ Flag = 'bbbThink'; Group = 'Diagnostics'; Label = 'Think overlay: look at an AI to see why it acts'; Default = '0' }
-  @{ Flag = 'bbbPerf'; Group = 'Diagnostics'; Label = 'BBB timing report in the server log'; Default = '0' }
-  @{ Flag = 'bbbTurretTrace'; Group = 'Diagnostics'; Label = 'Log turret boarding handoffs'; Default = '0' }
-)
+# Every BBB host option, read from BBB's own settings registry (BBB_Settings.c in the BBB
+# addon beside ACA: the dev checkout or the package's BetterBattleBuddies folder), so the
+# launcher always offers what the BBB it starts has. BBB reads them where the AI runs (this
+# server). Default is BBB's own default; only changed values are passed. A switch has no Min
+# and no Values; a choice has Values.
+# Left out: bbbVanilla (ACA starts BBB) and bbbBios/bbbIdentityEggs (every machine must match).
+$script:BBBSkip = @('bbbVanilla', 'bbbBios', 'bbbIdentityEggs')
 
-# The launcher starts every BBB switch on. Kept off: binoculars under fire (on = vanilla,
-# undoing a fix) and log-only diagnostics. Default stays BBB's own, so args still reach BBB.
-$script:BBBKeepOff = @('bbbBinocsUnderFire', 'bbbPerf', 'bbbTurretTrace')
+function Find-BBBSettingsFile {
+  $root = Split-Path $PSScriptRoot -Parent
+  foreach ($addon in Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue) {
+    $project = Join-Path $addon.FullName 'addon.gproj'
+    if (!(Test-Path -LiteralPath $project)) { continue }
+    if ((Get-Content -LiteralPath $project -Raw) -notmatch 'GUID\s+"BBB0261015000001"') { continue }
+    $file = Join-Path $addon.FullName 'Scripts\Game\BBB\BBB_Settings.c'
+    if (Test-Path -LiteralPath $file) { return $file }
+  }
+  return $null
+}
 
+function Read-BBBOptions {
+  $options = @()
+  $file = Find-BBBSettingsFile
+  if (!$file) { return $options }
+  $str = '"((?:[^"\\]|\\.)*)"'
+  $num = '(-?[\d.]+)'
+  $group = ''
+  $culture = [Globalization.CultureInfo]::InvariantCulture
+  foreach ($line in Get-Content -LiteralPath $file) {
+    $m = [regex]::Match($line, '^\s*g = ' + $str + ';')
+    if ($m.Success) { $group = $m.Groups[1].Value; continue }
+    $m = [regex]::Match($line, '^\s*(On|Off)\(g, ' + $str + ', ' + $str)
+    if ($m.Success) {
+      $default = '0'
+      if ($m.Groups[1].Value -eq 'On') { $default = '1' }
+      $options += @{ Flag = $m.Groups[2].Value; Group = $group; Label = $m.Groups[3].Value; Default = $default }
+      continue
+    }
+    $m = [regex]::Match($line, '^\s*Num\(g, ' + $str + ', ' + $num + ', ' + $num + ', ' + $num + ', ' + $num + ', ' + $str)
+    if ($m.Success) {
+      $options += @{ Flag = $m.Groups[1].Value; Group = $group; Label = $m.Groups[6].Value; Default = $m.Groups[2].Value
+                     Min = [double]::Parse($m.Groups[3].Value, $culture); Max = [double]::Parse($m.Groups[4].Value, $culture) }
+      continue
+    }
+    $m = [regex]::Match($line, '^\s*Def\(g, ' + $str + ', BBB_ESettingKind\.CHOICE, ' + $str + ', ' + $str + '.*\.Choices\(' + $str + ', ' + $str + '\)')
+    if ($m.Success) {
+      $options += @{ Flag = $m.Groups[1].Value; Group = $group; Label = $m.Groups[3].Value; Default = $m.Groups[2].Value
+                     Values = $m.Groups[4].Value.Split('|'); Labels = $m.Groups[5].Value.Split('|') }
+    }
+  }
+  return @($options | Where-Object { $script:BBBSkip -notcontains $_.Flag })
+}
+
+$script:BBBOptions = @(Read-BBBOptions)
+
+# The launcher starts every BBB switch on, the experimental and off-by-default ones too (Hot AI,
+# vehicles giving way...). Kept at BBB's default: numbers, choices (binoculars under fire = vanilla,
+# AI skill = the mission's own, Think panel) and the log-only Diagnostics group.
 function Get-BBBLaunchDefault($o) {
-  if ($o.ContainsKey('Min') -or $script:BBBKeepOff -contains $o.Flag) { return $o.Default }
+  if ($o.ContainsKey('Min') -or $o.ContainsKey('Values') -or $o.Group -eq 'Diagnostics') { return $o.Default }
   return '1'
 }
 
@@ -118,7 +136,8 @@ function Get-BBBChangedCount($bbb) {
 }
 
 function Get-BBBSummary($bbb) {
-  $switches = @($script:BBBOptions | Where-Object { !$_.ContainsKey('Min') })
+  if ($script:BBBOptions.Count -eq 0) { return "BBB's own defaults (BBB_Settings.c not found beside ACA)" }
+  $switches = @($script:BBBOptions | Where-Object { !$_.ContainsKey('Min') -and !$_.ContainsKey('Values') })
   $onCount = @($switches | Where-Object { $bbb[$_.Flag] -eq '1' }).Count
   return ([string]$onCount + ' of ' + $switches.Count + ' on, ' + (Get-BBBChangedCount $bbb) + ' changed from defaults')
 }
@@ -133,11 +152,17 @@ function Get-BBBArgs($bbb) {
 
 function Format-BBBValue($o, [string]$value) {
   if ($o.ContainsKey('Min')) { return $value }
+  if ($o.ContainsKey('Values')) {
+    $i = [array]::IndexOf($o.Values, $value)
+    if ($i -ge 0 -and $i -lt $o.Labels.Count) { return $o.Labels[$i] }
+    return $value
+  }
   if ($value -eq '1') { return 'on' }
   return 'off'
 }
 
 function Show-BBBOptions($bbb) {
+  if ($script:BBBOptions.Count -eq 0) { Write-Host "BBB's settings file was not found beside ACA: BBB runs with its own defaults." -ForegroundColor Yellow; return }
   while ($true) {
     Write-Host ''
     Write-Host '=== ALL BBB OPTIONS ===  (number: toggle or set, d: all defaults, Enter: back)' -ForegroundColor Cyan
@@ -157,6 +182,11 @@ function Show-BBBOptions($bbb) {
     $n = 0
     if (![int]::TryParse($choice, [ref]$n) -or $n -lt 1 -or $n -gt $script:BBBOptions.Count) { Write-Host ('Type a number from 1 to ' + $script:BBBOptions.Count + ', d, or Enter.') -ForegroundColor Yellow; continue }
     $o = $script:BBBOptions[$n - 1]
+    if ($o.ContainsKey('Values')) {
+      $i = [array]::IndexOf($o.Values, $bbb[$o.Flag])
+      $bbb[$o.Flag] = $o.Values[($i + 1) % $o.Values.Count]
+      continue
+    }
     if (!$o.ContainsKey('Min')) {
       if ($bbb[$o.Flag] -eq '1') { $bbb[$o.Flag] = '0' } else { $bbb[$o.Flag] = '1' }
       continue
@@ -175,7 +205,7 @@ function Show-HostSetup([switch]$Solo) {
   if ($Solo) { $name = 'play-settings.txt' }
   $file = Join-Path $PSScriptRoot $name
   # Only pre-load choices belong here. Ignore old saved match settings.
-  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; AiO = 'yes'; Civilians = 'no' }
+  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; Pack = 'none'; AiO = 'yes'; Civilians = 'no' }
   $bbb = @{}
   foreach ($o in $script:BBBOptions) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o }
   # Settings files from before the full BBB list used these names (yes/no).
@@ -193,7 +223,11 @@ function Show-HostSetup([switch]$Solo) {
   $worlds = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Worlds') -Filter 'ACR_*.ent' -ErrorAction SilentlyContinue |
               Where-Object { $_.Name -notlike '*TestRange*' } | ForEach-Object { 'Worlds/' + $_.Name })
   if ($worlds.Count -eq 0) { $worlds = @('Worlds/ACR_Arland.ent') }
+  $mapAddons = Get-MapAddons
+  foreach ($w in $mapAddons.Keys) { if ($worlds -notcontains $w) { $worlds += $w } }
   if ($worlds -notcontains $s.World) { $s.World = $worlds[0] }
+  $packs = @('none') + @(Get-AvailablePacks | ForEach-Object { $_.Key })
+  if ($packs -notcontains $s.Pack) { $s.Pack = 'none' }
   if (@('vanilla', 'ru_us', 'ru_ua', 'us_ua') -notcontains $s.Factions) { $s.Factions = 'vanilla' }
   if (@('yes', 'no') -notcontains $s.ACE) { $s.ACE = 'no' }
   if (@('yes', 'no') -notcontains $s.AiO) { $s.AiO = 'yes' }
@@ -203,7 +237,8 @@ function Show-HostSetup([switch]$Solo) {
   $hasCivilians = Test-CivilPopulation
   foreach ($o in $script:BBBOptions) {
     $v = 0.0
-    if (!$o.ContainsKey('Min')) { if (@('0', '1') -notcontains $bbb[$o.Flag]) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o } }
+    if ($o.ContainsKey('Values')) { if ($o.Values -notcontains $bbb[$o.Flag]) { $bbb[$o.Flag] = $o.Default } }
+    elseif (!$o.ContainsKey('Min')) { if (@('0', '1') -notcontains $bbb[$o.Flag]) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o } }
     elseif (![double]::TryParse($bbb[$o.Flag], [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$v) -or $v -lt $o.Min -or $v -gt $o.Max) { $bbb[$o.Flag] = $o.Default }
   }
   while ($true) {
@@ -212,12 +247,15 @@ function Show-HostSetup([switch]$Solo) {
     $title = '=== HOST: MAP AND MODS ==='
     if ($Solo) { $title = '=== PLAY: MAP AND MODS ===' }
     Write-Host ($title + '  (type a number to change, Enter to launch)') -ForegroundColor Cyan
-    Write-Host (' 1  Map                     ' + $mapName)
+    $mapNote = ''
+    if ($mapAddons.Contains($s.World)) { $mapNote = '   (map add-on)' }
+    Write-Host (' 1  Map                     ' + $mapName + $mapNote)
     Write-Host (' 2  Faction mods            ' + (Get-PairLabel $s.Factions))
     Write-Host (' 3  ACE All in One          ' + $s.ACE)
     Write-Host (' 4  BBB options             ' + (Get-BBBSummary $bbb))
-    if ($hasAio) { Write-Host (' 5  AiO Command Menu        ' + $s.AiO) }
-    if ($hasCivilians) { Write-Host (' 6  Civilians (Civil Pop.)  ' + $s.Civilians) }
+    if ($packs.Count -gt 1) { Write-Host (' 5  Expansion pack          ' + (Get-PackLabel $s.Pack)) }
+    if ($hasAio) { Write-Host (' 6  AiO Command Menu        ' + $s.AiO) }
+    if ($hasCivilians) { Write-Host (' 7  Civilians (Civil Pop.)  ' + $s.Civilians) }
     Write-Host 'Choose the playable sides, battlefield and match settings in game, then press Start.' -ForegroundColor DarkGray
     Write-Host 'Faction mods must be loaded now; UA replaces vanilla US while loaded.' -ForegroundColor DarkGray
     if (!$Solo) { Write-Host 'Connect before friends: the first connection controls setup; access does not transfer after disconnect.' -ForegroundColor Yellow }
@@ -228,8 +266,9 @@ function Show-HostSetup([switch]$Solo) {
       '2' { $pairs = @('vanilla', 'ru_us', 'ru_ua', 'us_ua'); $i = [array]::IndexOf($pairs, $s.Factions); $s.Factions = $pairs[($i + 1) % $pairs.Count] }
       '3' { if ($s.ACE -eq 'yes') { $s.ACE = 'no' } else { $s.ACE = 'yes' } }
       '4' { Show-BBBOptions $bbb }
-      '5' { if ($hasAio) { if ($s.AiO -eq 'yes') { $s.AiO = 'no' } else { $s.AiO = 'yes' } } }
-      '6' { if ($hasCivilians) { if ($s.Civilians -eq 'yes') { $s.Civilians = 'no' } else { $s.Civilians = 'yes' } } }
+      '5' { if ($packs.Count -gt 1) { $i = [array]::IndexOf($packs, $s.Pack); $s.Pack = $packs[($i + 1) % $packs.Count] } else { Write-Host 'No expansion pack is installed beside ACA.' -ForegroundColor Yellow } }
+      '6' { if ($hasAio) { if ($s.AiO -eq 'yes') { $s.AiO = 'no' } else { $s.AiO = 'yes' } } }
+      '7' { if ($hasCivilians) { if ($s.Civilians -eq 'yes') { $s.Civilians = 'no' } else { $s.Civilians = 'yes' } } }
       default { Write-Host 'Type a number from the list, or press Enter to launch.' -ForegroundColor Yellow }
     }
   }
@@ -246,21 +285,32 @@ function Show-HostSetup([switch]$Solo) {
   if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git')) { $extra += ' -acrAdminPassword 1' }
   # BBB options changed from their defaults (the AI runs where these args go).
   $extra += Get-BBBArgs $bbb
-  return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE); Factions = $s.Factions; ACE = $s.ACE; AiO = $s.AiO; Civilians = $s.Civilians }
+  $mapId = ''
+  if ($mapAddons.Contains($s.World)) { $mapId = $mapAddons[$s.World] }
+  return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE $s.Pack $mapId); Factions = $s.Factions; ACE = $s.ACE; Pack = $s.Pack; AiO = $s.AiO; Civilians = $s.Civilians; NeedsMods = (Test-NeedsModAddons $s.Factions $s.ACE $s.Pack $mapId) }
 }
 
 function Show-JoinModSetup {
   $file = Join-Path $PSScriptRoot 'join-settings.txt'
-  $pair = 'vanilla'; $ace = 'no'; $aio = 'yes'; $civilians = 'no'
+  $pair = 'vanilla'; $ace = 'no'; $pack = 'none'; $map = 'none'; $aio = 'yes'; $civilians = 'no'
   if (Test-Path -LiteralPath $file) {
     foreach ($line in Get-Content -LiteralPath $file) {
       $kv = $line.Split('=', 2)
       if ($kv.Count -eq 2 -and $kv[0] -eq 'Factions') { $pair = $kv[1] }
       if ($kv.Count -eq 2 -and $kv[0] -eq 'ACE') { $ace = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'Pack') { $pack = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'Map') { $map = $kv[1] }
       if ($kv.Count -eq 2 -and $kv[0] -eq 'AiO' -and @('yes', 'no') -contains $kv[1]) { $aio = $kv[1] }
       if ($kv.Count -eq 2 -and $kv[0] -eq 'Civilians' -and @('yes', 'no') -contains $kv[1]) { $civilians = $kv[1] }
     }
   }
+  $packs = @('none') + @(Get-AvailablePacks | ForEach-Object { $_.Key })
+  if ($packs -notcontains $pack) { $pack = 'none' }
+  # A host on a map add-on's world: the joiner loads that add-on too.
+  $mapAddons = Get-MapAddons
+  $maps = @('none') + @($mapAddons.Keys)
+  if ($maps -notcontains $map) { $map = 'none' }
+  # Optional mods get a row only when installed (ACR-Find.ps1).
   $hasAio = (Find-WorkshopMod '629405AEFC950C12') -ne ''
   $hasCivilians = Test-CivilPopulation
   while ($true) {
@@ -268,16 +318,26 @@ function Show-JoinModSetup {
     Write-Host '=== JOIN MODS ===' -ForegroundColor Cyan
     Write-Host (' 1  Factions    ' + (Get-PairLabel $pair) + '   (must match the host)')
     Write-Host (' 2  ACE         ' + $ace + '   (must match the host)')
-    if ($hasAio) { Write-Host (' 3  AiO         ' + $aio + '   (must match the host)') }
-    if ($hasCivilians) { Write-Host (' 4  Civilians   ' + $civilians + '   (must match the host)') }
+    if ($packs.Count -gt 1) { Write-Host (' 3  Expansion   ' + (Get-PackLabel $pack) + '   (must match the host)') }
+    if ($maps.Count -gt 1) {
+      $mapLabel = 'none (a map built into ACA)'
+      if ($map -ne 'none') { $mapLabel = [IO.Path]::GetFileNameWithoutExtension($map) -replace '^ACR_', '' }
+      Write-Host (' 4  Map add-on  ' + $mapLabel + '   (the host''s map, if it is a map add-on)')
+    }
+    if ($hasAio) { Write-Host (' 5  AiO         ' + $aio + '   (must match the host)') }
+    if ($hasCivilians) { Write-Host (' 6  Civilians   ' + $civilians + '   (must match the host)') }
     $choice = (Read-Host 'Choice (Enter to continue)').Trim()
     if ($choice -eq '1') {
       $pairs = @('vanilla', 'ru_us', 'ru_ua', 'us_ua'); $i = [array]::IndexOf($pairs, $pair); $pair = $pairs[($i + 1) % $pairs.Count]
     } elseif ($choice -eq '2') { if ($ace -eq 'yes') { $ace = 'no' } else { $ace = 'yes' } }
-    elseif ($choice -eq '3' -and $hasAio) { if ($aio -eq 'yes') { $aio = 'no' } else { $aio = 'yes' } }
-    elseif ($choice -eq '4' -and $hasCivilians) { if ($civilians -eq 'yes') { $civilians = 'no' } else { $civilians = 'yes' } }
+    elseif ($choice -eq '3' -and $packs.Count -gt 1) { $i = [array]::IndexOf($packs, $pack); $pack = $packs[($i + 1) % $packs.Count] }
+    elseif ($choice -eq '4' -and $maps.Count -gt 1) { $i = [array]::IndexOf($maps, $map); $map = $maps[($i + 1) % $maps.Count] }
+    elseif ($choice -eq '5' -and $hasAio) { if ($aio -eq 'yes') { $aio = 'no' } else { $aio = 'yes' } }
+    elseif ($choice -eq '6' -and $hasCivilians) { if ($civilians -eq 'yes') { $civilians = 'no' } else { $civilians = 'yes' } }
     else { break }
   }
-  @('Factions=' + $pair, 'ACE=' + $ace, 'AiO=' + $aio, 'Civilians=' + $civilians) | Set-Content -LiteralPath $file
-  return @{ Addons = (Get-ACRAddonList $pair $ace); Factions = $pair; ACE = $ace; AiO = $aio; Civilians = $civilians }
+  @('Factions=' + $pair, 'ACE=' + $ace, 'Pack=' + $pack, 'Map=' + $map, 'AiO=' + $aio, 'Civilians=' + $civilians) | Set-Content -LiteralPath $file
+  $mapId = ''
+  if ($map -ne 'none') { $mapId = $mapAddons[$map] }
+  return @{ Addons = (Get-ACRAddonList $pair $ace $pack $mapId); Factions = $pair; ACE = $ace; Pack = $pack; AiO = $aio; Civilians = $civilians; NeedsMods = (Test-NeedsModAddons $pair $ace $pack $mapId) }
 }

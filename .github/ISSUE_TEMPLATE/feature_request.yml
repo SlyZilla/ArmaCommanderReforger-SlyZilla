@@ -1,0 +1,55 @@
+name: Feature request
+description: "Suggest an idea or a change to AC: Actual."
+title: '[Feature]: '
+labels:
+- enhancement
+body:
+- type: markdown
+  attributes:
+    value: Search existing issues first. Describe one idea per request and the match situation it would
+      improve.
+- type: textarea
+  id: problem
+  attributes:
+    label: What problem would this solve?
+    description: Give a concrete example from a match, e.g. what the commander, economy, orders or AI
+      did that felt wrong or missing.
+  validations:
+    required: true
+- type: textarea
+  id: proposal
+  attributes:
+    label: Proposed change
+    description: Describe what should happen and when. Say whether it is for the player commander, the
+      AI commander, squads or the whole mode.
+  validations:
+    required: true
+- type: dropdown
+  id: area
+  attributes:
+    label: Area
+    options:
+    - Commander and strategy
+    - Economy and resources
+    - Orders and squads
+    - Soldier and crew combat
+    - Map, layouts and factions
+    - Interface and menus
+    - Multiplayer and servers
+    - Other / not sure
+  validations:
+    required: true
+- type: textarea
+  id: alternatives
+  attributes:
+    label: Alternatives or workarounds
+    description: Describe anything you have tried or other approaches worth considering.
+  validations:
+    required: false
+- type: textarea
+  id: context
+  attributes:
+    label: Map, mods and examples
+    description: Include relevant maps, layouts, factions, other mods, screenshots or video links.
+  validations:
+    required: false

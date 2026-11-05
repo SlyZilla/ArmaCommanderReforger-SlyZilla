@@ -15,7 +15,12 @@ class ACR_FlipSights : Managed
 class ACR_IronSights
 {
  static const int DELAY_MS = 2000; // after RHS folds them (server) or loads the server state (client)
- protected static ref map<ResourceName, ref ACR_FlipSights> s_Prefabs = new map<ResourceName, ref ACR_FlipSights>();
+ protected static ref map<ResourceName, ref ACR_FlipSights> s_Prefabs;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Prefabs = new map<ResourceName, ref ACR_FlipSights>();
+ }
  static int s_iFlipped;         // tests: sights flipped up
 
  static void Schedule(IEntity weapon)

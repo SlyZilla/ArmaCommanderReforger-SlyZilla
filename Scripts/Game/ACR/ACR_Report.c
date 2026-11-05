@@ -25,7 +25,12 @@ class ACR_SideStats : Managed
 class ACR_Report
 {
  static const int TIMELINE = 12;
- protected static ref map<string, ref ACR_SideStats> s_Sides = new map<string, ref ACR_SideStats>();
+ protected static ref map<string, ref ACR_SideStats> s_Sides;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sides = new map<string, ref ACR_SideStats>();
+ }
 
  static void Reset() { s_Sides.Clear(); }
 
@@ -65,6 +70,10 @@ class ACR_Report
 
  static void OnSoldierDown(IEntity victim, Instigator instigator)
  {
+  IEntity shooter;
+  if (instigator) shooter = instigator.GetInstigatorEntity();
+  if (victim) ACR_Insurgency.OnLoss(ACR_Intel.FactionKeyOf(victim), victim.GetOrigin(), ACR_Intel.FactionKeyOf(shooter));
+  if (victim && ACR_Intel.FactionKeyOf(victim) == ACR_Pockets.FACTION) ACR_Insurgency.OnFIAKilled(victim, ACR_Intel.FactionKeyOf(shooter));
   if (!Running()) return;
   string side = ACR_Intel.FactionKeyOf(victim);
   ACR_SideStats lost = Of(side);
@@ -77,13 +86,17 @@ class ACR_Report
 
  static void OnVehicleDown(IEntity vehicle, Instigator instigator, string side)
  {
+  IEntity shooter;
+  if (instigator) shooter = instigator.GetInstigatorEntity();
+  if (vehicle) ACR_Insurgency.OnLoss(side, vehicle.GetOrigin(), ACR_Intel.FactionKeyOf(shooter));
   if (!Running()) return;
   ACR_SideStats lost = Of(side);
   if (lost) lost.m_iVehiclesLost++;
   IEntity killer;
   if (instigator) killer = instigator.GetInstigatorEntity();
   string by = ACR_Intel.FactionKeyOf(killer);
-  if (!by.IsEmpty() && by != side) { ACR_SideStats won = Of(by); if (won) won.m_iVehicleKills++; }
+  // An empty vehicle has no side: a wreck, a civilian car or one's own abandoned truck isn't a kill.
+  if (!by.IsEmpty() && !side.IsEmpty() && by != side) { ACR_SideStats won = Of(by); if (won) won.m_iVehicleKills++; }
   string name = "vehicle";
   if (vehicle && vehicle.GetPrefabData()) name = FilePath.StripExtension(FilePath.StripPath(vehicle.GetPrefabData().GetPrefabName()));
   if (!side.IsEmpty()) Event(side, "lost a " + name);
@@ -91,6 +104,7 @@ class ACR_Report
 
  static void OnCapture(string base, string by, string from)
  {
+  ACR_Insurgency.OnCapture(by, from);
   ACR_SideStats won = Of(by);
   if (won) { won.m_iBasesWon++; Event(by, "took " + base); }
   ACR_SideStats lost = Of(from);
@@ -140,9 +154,27 @@ modded class SCR_VehicleDamageManagerComponent
 {
  override void OnDamageStateChanged(EDamageState newState, EDamageState previousDamageState, bool isJIP)
  {
-  // The vehicle's side before it burns (an empty wreck reports none).
+  // The vehicle's side before it burns. The game clears that when the last occupant leaves, so with
+  // the crew dead or bailed out (nearly always, by the time it blows up) nobody lost it (2-hour
+  // matches: 8 destroyed, 0 lost): then the side that bought it. Nobody's if neither (a civilian car).
   string side = ACR_Intel.FactionKeyOf(GetOwner());
+  if (side.IsEmpty()) side = ACR_Vehicles.BoughtBy(GetOwner());
   super.OnDamageStateChanged(newState, previousDamageState, isJIP);
   if (newState == EDamageState.DESTROYED && previousDamageState != EDamageState.DESTROYED && !isJIP) ACR_Report.OnVehicleDown(GetOwner(), GetInstigator(), side);
+ }
+}
+
+// A building destroyed counts against the side that did it (ACR_Insurgency, leaning by conduct).
+modded class SCR_DestructibleBuildingComponent
+{
+ protected override void OnDamageStateChanged(EDamageState newState, EDamageState previousDamageState, bool isJIP)
+ {
+  bool wasDestroyed = m_bDestroyed;
+  super.OnDamageStateChanged(newState, previousDamageState, isJIP);
+  if (newState != EDamageState.DESTROYED || wasDestroyed || isJIP || IsProxy() || !ACR_Insurgency.Leaning()) return;
+  Instigator instigator = GetInstigator();
+  IEntity by;
+  if (instigator) by = instigator.GetInstigatorEntity();
+  ACR_Insurgency.OnBuildingDown(GetOwner().GetOrigin(), ACR_Intel.FactionKeyOf(by));
  }
 }

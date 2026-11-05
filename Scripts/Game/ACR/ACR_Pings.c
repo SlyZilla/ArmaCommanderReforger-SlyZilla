@@ -61,7 +61,7 @@ class ACR_Pings : Managed
  // Place a ping. fromWorld: aimed in the 3D view (checked against reach).
  string Place(int playerId, int kind, vector pos, bool fromWorld, string tag)
  {
-  if (kind < ACR_EPing.LOOK || kind > ACR_EPing.SUPPORT) return "Unknown ping";
+  if (kind < ACR_EPing.LOOK || kind > ACR_EPing.SUPPORT) return "Unknown ping"; // int-math ok: ACR_EPing enum, not a float LOOK constant
   Faction faction = SCR_FactionManager.SGetPlayerFaction(playerId);
   if (!faction) return "You have no side";
   IEntity body = GetGame().GetPlayerManager().GetPlayerControlledEntity(playerId);
@@ -103,7 +103,7 @@ class ACR_Pings : Managed
   ACR_Intel intel = m_Manager.IntelFor(ping.m_sFaction);
   string place = "";
   if (intel) place = " (" + intel.Place(pos) + ")";
-  if (intel) intel.AddFeed(now, string.Format("%1: %2%3", tag, KindName(kind), place));
+  if (intel) intel.AddFeed(now, string.Format("%1: %2%3", tag, KindName(kind), place), pos);
   PrintFormat("[ACR] PING %1 %2 by %3 at %4", ping.m_sFaction, KindName(kind), tag, pos);
   return ping;
  }

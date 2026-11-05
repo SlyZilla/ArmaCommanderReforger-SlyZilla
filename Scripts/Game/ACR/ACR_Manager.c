@@ -36,7 +36,10 @@ enum ACR_ERequest
  ORDER_ROADBLOCK_S,  // ... a small checkpoint (no machine gun)
  ORDER_ROADBLOCK_L,  // ... a large checkpoint (heavy machine gun)
  ORDER_BARRICADE,    // ... a barricade sized to the road
- ORDER_FORTIFY       // dig in at point, or upgrade our position there (ACR_Fortify)
+ ORDER_FORTIFY,      // dig in at point, or upgrade our position there (ACR_Fortify)
+ ORDER_SQUAD_AI,     // toggle: the AI commander commands this squad (ACR_SquadAI)
+ ORDER_PATROL,       // toggle: the squad walks its queued points in a loop
+ ORDER_QRF           // stand by at point and go after enemies the side spots round it (ACR_Qrf)
 }
 
 // Arma Commander core. One instance exists on every machine while the mode is
@@ -50,6 +53,7 @@ class ACR_Manager : Managed
  ref ACR_BaseSystem m_Bases = new ACR_BaseSystem();
  ref ACR_Debug m_Debug = new ACR_Debug(); // debug menu state (pause, reveal)
  protected ref map<string, ref ACR_AICommander> m_AICommanders = new map<string, ref ACR_AICommander>();
+ protected ref map<string, ref ACR_AICommander> m_FobAIOnly = new map<string, ref ACR_AICommander>(); // sides with no AI commander, for ACR_FobAI
  protected ref map<string, ref ACR_Intel> m_Intel = new map<string, ref ACR_Intel>();
  string m_sSpawningFaction; // side paying for the unit being spawned
  ref map<int, ACR_Squad> m_LastSquad = new map<int, ACR_Squad>();
@@ -93,6 +97,7 @@ class ACR_Manager : Managed
  ref ACR_Launchers m_Launchers;
  int m_iSoldierCap = 100;   // living AI soldiers per side (purchases stop above it)
  protected bool m_bHostOptionsApplied;
+ bool HostOptionsApplied() { return m_bHostOptionsApplied; }
  protected int m_iStatusTick;
  protected ref map<string, ref array<int>> m_Commanders = new map<string, ref array<int>>();
  protected ref array<int> m_LeftCommand = {};   // players who chose to leave command
@@ -220,17 +225,57 @@ class ACR_Manager : Managed
   ACR_Setup.Reset();
   ACR_SetupClient.Reset();
   ACR_FactionSelection.Reset();
+  ACR_PlayerSide.Reset();
   ACR_Vehicles.Reset();
   ACR_Generator.Reset();
+  ACR_QuickStart.Reset();
   ACR_Minefields.Reset();
   ACR_Fortify.Reset();
   ACR_SpawnPoints.Reset();
+  // Caches keyed by world time: on the next mission the clock starts near 0 again, so their
+  // "too recent" checks held for as long as the last match ran.
+  ACR_TwoIC.Reset();
+  ACR_LandingZone.Reset();
+  ACR_AirLift.Reset();
+  ACR_FobSiting.Reset();
+  ACR_RoadblockSiting.Reset();
+  ACR_MapFeed.Reset();
+  // Lists and caches of the last match's entities (audit 31 Oct).
+  ACR_Roadblocks.Reset();
+  ACR_GunHold.Reset();
+  ACR_Garrison.Reset();
+  ACR_FireMissions.Reset();
+  ACR_Structures.Reset();
+  ACR_SquadAI.Reset();
+  ACR_BBBHooks.ResetIntents();
+  ACR_Transport.ResetHorns();
+  ACR_FactionCatalog.ForgetResolved();
+  ACR_Supports.Reset();
+  ACR_DoctrineKits.Reset();
+  ACR_Think.Reset();
+  ACR_Insurgency.Reset();
+  // Setup screen choices are per match (Jacob, 31 Oct), and a rotation reads its own header.
+  ACR_Options.ClearSet();
+  ACR_Options.ForgetHeader();
   if (!s_Instance) return;
   if (GetGame()) GetGame().GetCallqueue().Remove(s_Instance.Tick);
   BBB.Stop();
   ACR_SquadMarksmen.Reset();
   ACR_UALoadout.Reset();
   s_Instance = null;
+ }
+
+ // The world is going away (mission end, restart, rotation): each squad is a slave of its hidden
+ // command group (LinkSquad), so vanilla's groups manager listens for members leaving it, and the
+ // teardown's removals each sent an RPC through the already-unregistered manager (one RPL error per
+ // soldier in the log). Nobody needs those removals broadcast now.
+ static void UnhookGroups()
+ {
+  if (!s_Instance) return;
+  SCR_GroupsManagerComponent groups = SCR_GroupsManagerComponent.GetInstance();
+  if (!groups) return;
+  foreach (ACR_Squad squad : s_Instance.m_Squads)
+   if (squad && squad.m_Group) squad.m_Group.GetOnAgentRemoved().Remove(groups.OnAIMemberRemoved);
  }
 
  static vector Ground(vector point)
@@ -280,7 +325,7 @@ class ACR_Manager : Managed
    ACR_Intel intel = IntelFor(key);
    string place = "";
    if (intel) place = " " + intel.Place(target);
-   Command().Feed(key, string.Format("%1 called %2%3 (-%4 RP)", tag, support, place, spent));
+   Command().Feed(key, string.Format("%1 called %2%3 (-%4 RP)", tag, support, place, spent), target);
    Command().Note(pc.GetPlayerId(), support + place);
    Pings().OnSupportCalled(key, target, tag, support);
   }
@@ -368,6 +413,64 @@ class ACR_Manager : Managed
    m_iAISkill, m_fAIPerception, m_iSoldierCap, ai, unitCap, StartRPOption(), IncomeOption(), m_SharedCommand);
  }
 
+ // Bigger battlefields (host option -acrCapScale 1, off by default): every side's AI squad cap
+ // and the soldier soft cap grow with the map, by its bases (CAP_SCALE_BASES or fewer: x1) or
+ // their spread (CAP_SCALE_SPREAD or less: x1), whichever says more, up to CAP_SCALE_MAX; the
+ // soldier cap is never scaled past CAP_SCALE_SOLDIERS (a host's higher cap stays). Resolved
+ // once, at the first tick after setup (the bases are all known then), after the threat level;
+ // the active-AI limit is raised again to match.
+ static const int CAP_SCALE_BASES = 12;
+ static const float CAP_SCALE_SPREAD = 5000;
+ static const float CAP_SCALE_MAX = 2;
+ static const int CAP_SCALE_SOLDIERS = 250;
+ protected bool m_bCapsScaled;
+ float m_fCapScale = 1; // the factor it resolved (tests read it)
+ void ScaleCapsToMap(bool force = false)
+ {
+  if (ACR_Base.s_All.IsEmpty()) return;
+  m_bCapsScaled = true;
+  if (!force && !ACR_Options.Flag("acrCapScale")) return;
+  int bases;
+  float minX = float.MAX;
+  float minZ = float.MAX;
+  float maxX = -float.MAX;
+  float maxZ = -float.MAX;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired) continue;
+   bases++;
+   vector p = base.GetOrigin();
+   minX = Math.Min(minX, p[0]);
+   minZ = Math.Min(minZ, p[2]);
+   maxX = Math.Max(maxX, p[0]);
+   maxZ = Math.Max(maxZ, p[2]);
+  }
+  float spread = 0;
+  if (bases > 1) spread = Math.Sqrt((maxX - minX) * (maxX - minX) + (maxZ - minZ) * (maxZ - minZ));
+  ApplyCapScale(CapScaleFor(bases, spread), string.Format("%1 bases, spread %2 km", bases, Math.Round(spread / 100) / 10));
+ }
+
+ static float CapScaleFor(int bases, float spread)
+ {
+  return Math.Clamp(Math.Max(bases / (float)CAP_SCALE_BASES, spread / CAP_SCALE_SPREAD), 1, CAP_SCALE_MAX);
+ }
+
+ void ApplyCapScale(float factor, string why)
+ {
+  m_fCapScale = factor;
+  int soldiersWas = m_iSoldierCap;
+  if (m_iSoldierCap < CAP_SCALE_SOLDIERS) m_iSoldierCap = Math.Min(CAP_SCALE_SOLDIERS, (int)Math.Round(m_iSoldierCap * factor));
+  string caps;
+  foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
+  {
+   int was = settings.m_iAIUnitCap;
+   settings.m_iAIUnitCap = (int)Math.Round(was * factor);
+   caps += string.Format(" %1 %2->%3", settings.m_sFaction, was, settings.m_iAIUnitCap);
+  }
+  RaiseActiveAILimit();
+  PrintFormat("[ACR] CAP SCALE %1: x%2; squad caps%3; soldier cap %4->%5", why, factor, caps, soldiersWas, m_iSoldierCap);
+ }
+
  // The engine's own active-AI limit (SCR_AIWorld.et "Active AI limit", 128 for the whole world)
  // evicts groups above it: their soldiers are deleted and the empty group stays (live 4 Oct:
  // 3/4 of the enemy markers had nobody in them at soldier cap 150). Make room for both sides'
@@ -451,6 +554,7 @@ class ACR_Manager : Managed
   int t = System.GetTickCount();
   int tickStarted = t;
   if (!m_bHostOptionsApplied) ApplyHostOptions();
+  if (!m_bCapsScaled) ScaleCapsToMap();
   ScanForSquads();
   ResolveCrewNames();
   m_Requisition.TickPending();
@@ -483,6 +587,8 @@ class ACR_Manager : Managed
   Pings().Tick();
   ACR_Minefields.Tick();
   ACR_Fortify.Tick();
+  ACR_Guerrillas.Tick();
+  ACR_Insurgency.Tick();
   t = ACR_Perf.Lap("cleanup", t);
   WatchEvictions();
   array<IEntity> allVehicles = {};
@@ -825,12 +931,7 @@ class ACR_Manager : Managed
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All)
   {
    if (!settings.m_bAICommander) continue;
-   ACR_AICommander ai;
-   if (!m_AICommanders.Find(settings.m_sFaction, ai))
-   {
-    ai = new ACR_AICommander(this, settings.m_sFaction);
-    m_AICommanders.Insert(settings.m_sFaction, ai);
-   }
+   ACR_AICommander ai = EnsureAICommander(settings.m_sFaction);
    Faction faction = GetGame().GetFactionManager().GetFactionByKey(settings.m_sFaction);
    array<int> commanders = GetCommanders(faction);
    bool noCommander = commanders == null || commanders.IsEmpty();
@@ -844,6 +945,46 @@ class ACR_Manager : Managed
    if (m_Debug.IsPaused(settings.m_sFaction)) continue; // debug menu: frozen, squads keep their orders
    ai.Tick(noCommander && !hold);
   }
+  // FOBs handed to the AI (FOB panel) on a side a player commands (ACR_FobAI).
+  foreach (ACR_FactionSettings handed : ACR_FactionSettings.s_All)
+  {
+   if (m_Debug.IsPaused(handed.m_sFaction) || !ACR_FobAI.AnyFor(handed.m_sFaction)) continue; // paused: as the AI commander
+   ACR_AICommander fobAI = FobAICommanderFor(handed.m_sFaction);
+   // In command, the AI runs every FOB already.
+   if (fobAI && !(handed.m_bAICommander && fobAI.m_bActive)) fobAI.ManageHandedFobs();
+  }
+  // Squads handed to the AI (squad panel) on a side a player commands (ACR_SquadAI); with the
+  // 2IC on, every squad of that side no player has claimed.
+  foreach (ACR_FactionSettings squads : ACR_FactionSettings.s_All)
+  {
+   if (m_Debug.IsPaused(squads.m_sFaction)) continue; // debug menu: frozen, as the AI commander
+   ACR_AICommander squadAI;
+   if (ACR_SquadAI.TwoIC())
+   {
+    squadAI = FobAICommanderFor(squads.m_sFaction);
+    bool twoICRuns = squadAI && ACR_TwoIC.Running(this, squads.m_sFaction);
+    if (twoICRuns) ACR_SquadAI.Adopt(squads.m_sFaction);
+    // Players' requests first (ACR_TwoICRequests), ahead of its own plans.
+    ACR_TwoICRequests.Tick(squads.m_sFaction, squadAI, twoICRuns);
+    ACR_TwoICSuggest.Tick(this, squads.m_sFaction, squadAI, twoICRuns);
+   }
+   if (!ACR_SquadAI.AnyFor(squads.m_sFaction)) continue;
+   squadAI = FobAICommanderFor(squads.m_sFaction);
+   if (squadAI && !(squads.m_bAICommander && squadAI.m_bActive)) squadAI.TickHanded();
+  }
+ }
+
+ // The side's AI commander, or (a side without one) one made only to run its handed FOBs.
+ ACR_AICommander FobAICommanderFor(string factionKey)
+ {
+  ACR_AICommander ai;
+  if (m_AICommanders.Find(factionKey, ai)) return ai;
+  if (!m_FobAIOnly.Find(factionKey, ai))
+  {
+   ai = new ACR_AICommander(this, factionKey);
+   m_FobAIOnly.Insert(factionKey, ai);
+  }
+  return ai;
  }
 
  // The AI commander waits while players may still be loading in, so it doesn't spend
@@ -854,6 +995,15 @@ class ACR_Manager : Managed
  static const float AI_JOIN_HOLD_MS = 60000;
  float m_fAIHoldStart = -1; // (regress test resets it)
  protected ref map<int, float> m_PlayerSeenAt = new map<int, float>();
+ // Tests: players already here count as joined long ago (a client run's own player has only
+ // just joined, so the join hold held his side's AI through the regress checks).
+ void EndJoinHoldsForTest()
+ {
+  float past = GetGame().GetWorld().GetWorldTime() - AI_JOIN_HOLD_MS;
+  array<int> players = {};
+  GetGame().GetPlayerManager().GetPlayers(players);
+  foreach (int playerId : players) m_PlayerSeenAt.Set(playerId, past);
+ }
  protected ref array<string> m_AIHeld = {};
  bool HoldAIFor(string factionKey)
  {
@@ -938,6 +1088,19 @@ class ACR_Manager : Managed
   return ai;
  }
 
+ // The side's AI commander, made now if it isn't yet (the doctrine kits read its doctrine before
+ // its first tick, ACR_DoctrineKits).
+ ACR_AICommander EnsureAICommander(string factionKey)
+ {
+  ACR_AICommander ai;
+  if (!m_AICommanders.Find(factionKey, ai))
+  {
+   ai = new ACR_AICommander(this, factionKey);
+   m_AICommanders.Insert(factionKey, ai);
+  }
+  return ai;
+ }
+
  bool IsAIInCommand(string factionKey)
  {
   ACR_AICommander ai;
@@ -975,7 +1138,14 @@ class ACR_Manager : Managed
    for (int i = list.Count() - 1; i >= 0; i--)
    {
     Faction faction = SCR_FactionManager.SGetPlayerFaction(list[i]);
-    if (!players.Contains(list[i]) || !faction || faction.GetFactionKey() != key) list.RemoveOrdered(i);
+    if (players.Contains(list[i]) && faction && faction.GetFactionKey() == key) continue;
+    // Gone or on another side: his command state goes too, as for LeaveCommand (his last order
+    // showed on the other side's strip after a side move; audit 31 Oct).
+    string gone = Command().TagOf(list[i]);
+    if (gone.IsEmpty()) gone = GetGame().GetPlayerManager().GetPlayerName(list[i]);
+    if (gone.IsEmpty()) gone = "The commander";
+    Command().OnLeft(list[i], key, gone);
+    list.RemoveOrdered(i);
    }
   }
   for (int i = m_LeftCommand.Count() - 1; i >= 0; i--)
@@ -1132,6 +1302,9 @@ class ACR_Manager : Managed
    PrintFormat("[ACR] GUNNER DRIVE start: %1 (player %2)", squad.GetName(), playerId);
   }
   drive.m_PlayerId = playerId;
+  // NaN from a client fails both comparisons: no input.
+  if (!(throttle == throttle)) throttle = 0;
+  if (!(steer == steer)) steer = 0;
   drive.m_Throttle = Math.Clamp(throttle, -1, 1);
   drive.m_Steer = Math.Clamp(steer, -1, 1);
   drive.m_LastInput = GetGame().GetWorld().GetWorldTime();
@@ -1168,7 +1341,7 @@ class ACR_Manager : Managed
   if (m_Respawn) m_Respawn.Frame(timeSlice);
   ACR_Perf.Lap("frames", t);
   CheckLandingZones();
-  ACR_Transport.UpdateHorns();
+  // Horns: ACR_Mode.EOnPostFrame runs the governor once a frame, after the AI's inputs.
   BBB.Frame(); // backing stuck vehicles out (inputs every frame)
   if (m_Drives.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
@@ -1204,6 +1377,10 @@ class ACR_Manager : Managed
   if (!pc || !pc.GetControlledEntity())
   {
    ACR_RTSCameraManager.Close();
+   // Dead or on the deploy screen: the HUD pings and the hold hint are drawn only with a body,
+   // so the last frame's stayed frozen on screen until the next spawn.
+   if (pc && pc.ACR_GetData()) ACR_PingDisplay.UpdateHud(pc.ACR_GetData(), null, false);
+   ACR_PingDisplay.ShowHoldHint(-1);
    return;
   }
   InputManager input = GetGame().GetInputManager();
@@ -1257,6 +1434,12 @@ class ACR_Manager : Managed
   m_WasMovementActive = movementActive;
   m_WasMapOpen = mapOpen;
   pc.ACR_UpdateMap();
+  if (input.GetActionTriggered("ACR_KeyHints"))
+  {
+   ACR_KeyHints.Toggle();
+   pc.ACR_RefreshKeyHintsButton();
+  }
+  ACR_KeyHints.Update(pc.ACR_IsCommanderForHints(), mapOpen, localBody);
   // Gunner drives: WASD in a turret steers the AI driver (Arma 3 style).
   ChimeraCharacter driveDriver;
   IEntity driveVehicle;
@@ -1316,10 +1499,21 @@ class ACR_Manager : Managed
    if (mapOpen) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
    else GetGame().GetMenuManager().OpenMenu(ChimeraMenuPreset.MapMenu);
   }
-  if (input.GetActionTriggered("ACR_RTSCamera"))
-  {
-   if (mapOpen) GetGame().GetMenuManager().CloseMenuByPreset(ChimeraMenuPreset.MapMenu);
-   ACR_RTSCameraManager.Toggle();
-  }
+  if (input.GetActionTriggered("ACR_RTSCamera")) pc.ACR_ToggleRTSCamera();
+ }
+}
+
+modded class ArmaReforgerScripted
+{
+ // Runs in CreateGame, before any world or entity: ACA's statics exist from the first frame.
+ void ArmaReforgerScripted()
+ {
+  ACR_StaticInit.Run();
+ }
+
+ protected override void OnBeforeWorldCleanup()
+ {
+  ACR_Manager.UnhookGroups();
+  super.OnBeforeWorldCleanup();
  }
 }

@@ -63,17 +63,26 @@ class ACR_Generator
 {
  protected static bool s_bBuilt;
  static int s_iSeed;
- static ref array<ref ACR_GenSite> s_Sites = {};   // the layout in play (after Build)
- protected static ref array<IEntity> s_Found = {};
+ static ref array<ref ACR_GenSite> s_Sites;   // the layout in play (after Build)
+ protected static ref array<IEntity> s_Found;
 
  protected static ref array<ref ACR_GenSite> s_Surveyed;  // the map's sites, read once
  protected static ref ACR_GenAccess s_Access;
- protected static ref array<ref ACR_GenSite> s_NamePlaces = {}; // named hills need not become CPs
+ protected static ref array<ref ACR_GenSite> s_NamePlaces; // named hills need not become CPs
 
  // Layout editor (aca-f07): bases the host moved on the setup map, by stable site ID. They belong
  // to one seed and size; another seed or size ignores them.
- static ref map<string, vector> s_Moves = new map<string, vector>();
- protected static ref array<string> s_Deleted = {};
+ static ref map<string, vector> s_Moves;
+ protected static ref array<string> s_Deleted;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Sites = {};
+  s_Found = {};
+  s_NamePlaces = {};
+  s_Moves = new map<string, vector>();
+  s_Deleted = {};
+ }
  protected static int s_iMovesSeed;
  protected static int s_iMovesSize;
  static int s_iMovesVersion;
@@ -186,6 +195,12 @@ class ACR_Generator
    }
    string shown = raw;
    if (raw.StartsWith("#")) shown = WidgetManager.Translate(raw);
+   // Third-party maps (29 Oct, Kunar): names with stray tabs/line breaks, and "?" placeholders.
+   shown.Replace("\n", " ");
+   shown.Replace("\r", " ");
+   shown.Replace("\t", " ");
+   shown = shown.Trim();
+   if (shown != "" && !shown.StartsWith("#") && !HasLetter(shown)) continue;
    if (type == EMapDescriptorType.MDT_NAME_HILL && shown != "" && !shown.StartsWith("#"))
    {
     ACR_GenSite hill = new ACR_GenSite();
@@ -209,7 +224,31 @@ class ACR_Generator
    pending.RemoveOrdered(best);
   }
   NameIndustry(sites);
-  foreach (ACR_GenSite identified : sites) identified.m_sId = identified.m_sName;
+  // Names find the site to edit and ids key the edit: two places with one name (a town and a
+  // village label) were moved or deleted together and showed as two bases of one name. The second
+  // and later get " 2", " 3"... (the order is stable, so a seed keeps its names).
+  map<string, int> seen = new map<string, int>();
+  foreach (ACR_GenSite identified : sites)
+  {
+   int count = seen.Get(identified.m_sName) + 1;
+   seen.Set(identified.m_sName, count);
+   identified.m_sId = identified.m_sName;
+   if (count > 1)
+   {
+    identified.m_sName = identified.m_sName + " " + count.ToString();
+    identified.m_sId = identified.m_sName;
+   }
+  }
+ }
+
+ static bool HasLetter(string text)
+ {
+  for (int i = 0; i < text.Length(); i++)
+  {
+   int c = text.Get(i).ToAscii();
+   if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c > 127 || c < 0) return true;
+  }
+  return false;
  }
 
  // Kind, radius, value and (for settlements and landmarks) the name. False = not a base.
@@ -328,13 +367,35 @@ class ACR_Generator
  // ---------------------------------------------------------------- choosing the layout
  // The layout for a seed and size, without touching the world (tests call this to compare).
  // size: -1 full, else ACR_ESkirmishSize. hqs[0] = west HQ, hqs[1] = east HQ.
+ // A seed whose draw can't make a playable layout (29 Oct: one flashpoint seed in eight on
+ // Gulfcoast Islands' sparse islands) tries a few derived draws, still deterministically. A
+ // failed plan leaves a generated world with no bases, so this beats reporting failure.
+ // Host edits stay keyed to the seed the host chose. Seeds that plan first time are unchanged.
  static bool Plan(int seed, int size, notnull array<ref ACR_GenSite> layout, notnull array<ACR_GenSite> hqs, array<ref ACR_GenSite> incomeCandidates = null)
+ {
+  for (int retry = 0; retry < 6; retry++)
+   if (PlanDraw(seed, seed + retry * 7919, size, layout, hqs, incomeCandidates)) return true;
+  // Every draw failed with military/airport HQs (the only two on different islands, or two labels
+  // on one airfield, so the same pair failed every time): the same draws with any site as HQ
+  // before the map gets no bases at all. Only after a full failure, so layouts that planned
+  // before are unchanged.
+  s_bAnyHQSite = true;
+  bool planned = false;
+  for (int anyRetry = 0; anyRetry < 6 && !planned; anyRetry++)
+   planned = PlanDraw(seed, seed + anyRetry * 7919, size, layout, hqs, incomeCandidates);
+  s_bAnyHQSite = false;
+  if (planned) PrintFormat("[ACR] GENERATOR seed %1: no military pair works, HQs from any site", seed);
+  return planned;
+ }
+ protected static bool s_bAnyHQSite;
+
+ protected static bool PlanDraw(int seed, int draw, int size, notnull array<ref ACR_GenSite> layout, notnull array<ACR_GenSite> hqs, array<ref ACR_GenSite> incomeCandidates)
  {
   layout.Clear();
   hqs.Clear();
   if (incomeCandidates) incomeCandidates.Clear();
   RandomGenerator rng = new RandomGenerator();
-  rng.SetSeed(seed);
+  rng.SetSeed(draw);
   // The map's places are read once (about a second), then copied for each plan.
   if (!s_Surveyed)
   {
@@ -385,7 +446,9 @@ class ACR_Generator
   bool flash = size == ACR_ESkirmishSize.FLASHPOINT;
   array<ACR_GenSite> pool = {}, hqPool = {};
   int attempts = 1;
-  if (flash) attempts = 8;
+  // Halves too (29 Oct, Gulfcoast Islands): a band can cut an archipelago into unreachable
+  // islands. Retries only follow a failed draw, so maps that plan first time are unchanged.
+  if (flash || size == ACR_ESkirmishSize.HALF) attempts = 8;
   bool selected = false;
   for (int attempt = 0; attempt < attempts; attempt++)
   {
@@ -412,7 +475,7 @@ class ACR_Generator
   if (pool.Count() < 3) return false;
   foreach (ACR_GenSite p : pool) layout.Insert(p);
   // Establish the original income budget before omitting any optional tactical sites.
-  AssignEconomy(layout, hqs, flash, seed);
+  AssignEconomy(layout, hqs, flash, draw);
   // Optional owned snapshot of the actual economic candidate pool, before tactical omission.
   if (incomeCandidates) foreach (ACR_GenSite economic : layout) incomeCandidates.Insert(economic.Copy());
   int economySize = layout.Count();
@@ -425,7 +488,7 @@ class ACR_Generator
   ApplyMoves(seed, size, layout);
   // Host edits remain authoritative; moving an HQ relocates its protected opening income.
   // Automatically omitted tactical sites must not lower the economic target on a re-plan.
-  if (edited) AssignEconomy(layout, hqs, flash, seed, layout.Count() + omitted);
+  if (edited) AssignEconomy(layout, hqs, flash, draw, layout.Count() + omitted);
   // HQs get a 70 m circle where there is room for it.
   foreach (ACR_GenSite hq : hqs)
   {
@@ -1030,10 +1093,10 @@ class ACR_Generator
  // pairs as quality anchors and sample up to nine alternatives with at most two more rear
  // objectives. Only pairs within one accessible objective of the best checked pair compete.
  // Actual objectives still pass FairObjectives and ThinObjectives, regardless of the pair.
- protected static void PickHQs(array<ACR_GenSite> pool, bool flashpoint, RandomGenerator rng, out ACR_GenSite west, out ACR_GenSite east)
+ protected static void PickHQs(array<ACR_GenSite> pool, bool flashpoint, RandomGenerator rng, out ACR_GenSite west, out ACR_GenSite east, float spanShare = 0.8)
  {
   array<ACR_GenSite> candidates = {};
-  if (!flashpoint)
+  if (!flashpoint && !s_bAnyHQSite)
    foreach (ACR_GenSite site : pool) if (site.m_sKind == "military" || site.m_sKind == "airport") candidates.Insert(site);
   if (candidates.Count() < 2)
   {
@@ -1046,7 +1109,7 @@ class ACR_Generator
   ACR_GenSite spanA, spanB;
   Farthest(candidates, spanA, spanB);
   if (!spanA || !spanB) return;
-  float minimumSpan = 0.8 * vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
+  float minimumSpan = spanShare * vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
   array<int> allA = {}, allB = {}, rearCounts = {};
   array<float> distances = {};
   int bestRear = int.MAX;
@@ -1092,7 +1155,13 @@ class ACR_Generator
   array<int> suitable = {};
   foreach (int checked, int total : counts)
    if (total >= bestCount - 1 && total >= 3) suitable.Insert(shortlist[checked]);
-  if (suitable.IsEmpty()) return;
+  // Archipelagos (29 Oct, Gulfcoast Islands): every widely separated pair can sit on islands
+  // with no dry route between them. Only then accept closer pairs; other maps keep 80%.
+  if (suitable.IsEmpty())
+  {
+   if (spanShare > 0.3) PickHQs(pool, flashpoint, rng, west, east, spanShare - 0.2);
+   return;
+  }
   int pick = Math.Min(suitable.Count() - 1, Math.Floor(rng.RandFloat01() * suitable.Count()));
   int choice = suitable[pick];
   west = candidates[allA[choice]];
@@ -1118,7 +1187,14 @@ class ACR_Generator
   string eastSide = ACR_FactionSelection.East();
   // Hand-built bases and pads go; their starting units follow their side to the new HQ.
   map<ACR_StartingUnit, string> unitSides = new map<ACR_StartingUnit, string>();
-  foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All) unitSides.Set(unit, NearestOwner(unit.GetOrigin()));
+  foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All)
+  {
+   string unitSide = NearestOwner(unit.GetOrigin());
+   // A generated-only world has no owned bases: the nearest player spawn point's side (else every
+   // unit went to the west HQ).
+   if (unitSide == "") unitSide = NearestSpawnSide(unit.GetOrigin(), westSide, eastSide);
+   unitSides.Set(unit, unitSide);
+  }
   array<ACR_Base> old = {};
   old.Copy(ACR_Base.s_All);
   foreach (ACR_Base gone : old) if (!gone.m_bBuilt) gone.Retire("generated layout");
@@ -1164,7 +1240,7 @@ class ACR_Generator
    point.SetFactionKey(key);
    vector at = ACR_Manager.Ground(target.GetOrigin() + Vector(6, 0, 6));
    vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, at, 20, 1.5, 2.5)) at = ACR_Manager.Ground(free);
+   if (ACR_BaseSystem.ClearGround(free, at, 20, 1.5)) at = free;
    point.SetOrigin(at);
   }
   string sizeName = "full";
@@ -1238,6 +1314,23 @@ class ACR_Generator
   unit.m_sVehicle = vehicle;
   unit.m_bCrewed = true;
   unit.m_MovedTo = hq;
+ }
+
+ protected static string NearestSpawnSide(vector position, string westSide, string eastSide)
+ {
+  string side = "";
+  float bestDistance = float.MAX;
+  foreach (SCR_SpawnPoint point : SCR_SpawnPoint.GetSpawnPoints())
+  {
+   if (!point || ACR_SpawnPoints.IsBasePoint(point)) continue;
+   string key = point.GetFactionKey();
+   if (key == "US") key = westSide;
+   else if (key == "USSR") key = eastSide;
+   if (key != westSide && key != eastSide) continue;
+   float distance = vector.DistanceXZ(point.GetOrigin(), position);
+   if (distance < bestDistance) { bestDistance = distance; side = key; }
+  }
+  return side;
  }
 
  protected static string NearestOwner(vector position)

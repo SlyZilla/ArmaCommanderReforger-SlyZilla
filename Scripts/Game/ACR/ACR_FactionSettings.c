@@ -21,10 +21,12 @@ class ACR_RequisitionEntry
  bool m_bAircraft;   // set automatically; the AI commander never buys these (its AI cannot fly)
  bool m_bTransport;  // set automatically: an unarmed truck, which the AI commander buys to ferry squads
  bool m_bArmed = true; // set automatically for vehicles: has a weapon (the AI doesn't buy unarmed cars to fight with)
+ bool m_bSquadCarrier; // set automatically: a carrier that seats a squad (TRAIT_PASSENGERS_LARGE: a BTR-70, not a BRDM-2)
+ bool m_bCarrier;     // set automatically: an armed APC or IFV (Blitz's starting kit, ACR_DoctrineKits)
  bool m_bMortarTeam;  // the built-in mortar team (ACR_Mortars), added to every faction's list
  bool m_bObserverTeam; // the built-in forward observer team (ACR_FireMissions)
  bool m_bRare;        // set automatically: aircraft, armour, mortar team, support helicopters keep a fixed stock
- int m_iSupportHeli;  // support helicopter for a helipad (ACR_HeliStation): 1 gunship, 2 door gunners
+ int m_iSupportHeli;  // support helicopter for a helipad (ACR_HeliStation): 1 gunship, 2 door gunners, 3 a pack's attack helicopter
 
  ACR_EFormation m_eFormation; // independent of display names
  ref array<ResourceName> m_aSoldiers; // native templates retained for reinforcement
@@ -125,6 +127,15 @@ class ACR_FactionSettings : GenericEntity
   if (m_eAIDoctrine == ACR_EAIDoctrineChoice.RAIDER) return "raider";
   return "";
  }
+ // Skill and reaction of this side's soldiers (ACR_AISkill).
+ [Attribute("0", UIWidgets.ComboBox, "AI skill of this side's soldiers (NONE = the mode's)", "", ParamEnumArray.FromEnum(EAISkill))]
+ int m_iAISkill;
+ [Attribute("1", UIWidgets.EditBox, "AI reaction scale: multiplies the mode's reaction speed for this side, e.g. 0.8 spots 20% slower")]
+ float m_fAIReactionScale;
+ [Attribute("0", UIWidgets.EditBox, "Percent of this side's soldiers one skill level higher (0-100)")]
+ int m_iAIStrongerShare;
+ [Attribute(desc: "Skill for particular units (e.g. Delta among Rangers). A soldier gets the first entry whose prefab he is, else the first whose prefab his group is; unset values fall back to the side's.")]
+ ref array<ref ACR_AISkillProfile> m_aAISkillProfiles;
  [Attribute("0", UIWidgets.ComboBox, "Stepped prices: infantry, cars and trucks can be bought without limit but each purchase raises that unit's price (threat level sets the step); aircraft, armour, mortar teams and support helicopters keep their stock. Fixed stock: every unit has a stock per match, scaled by threat level, at a fixed price.", "", ParamEnumArray.FromEnum(ACR_EPricing))]
  ACR_EPricing m_ePricing;
  [Attribute("1", UIWidgets.CheckBox, "Add every group and vehicle from the faction's Game Master catalog with automatic prices. Entries below override or add to it.")]
@@ -159,7 +170,12 @@ class ACR_FactionSettings : GenericEntity
   return null;
  }
 
- static ref array<ACR_FactionSettings> s_All = {};
+ static ref array<ACR_FactionSettings> s_All;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+ }
 
  void ACR_FactionSettings(IEntitySource src, IEntity parent)
  {
@@ -204,8 +220,12 @@ class ACR_FactionSettings : GenericEntity
   made.m_ePricing = ACR_EPricing.STEPPED;
   made.m_bAutoFill = true;
   made.m_bSupports = true;
+  made.m_fAIReactionScale = 1;
   if (template)
   {
+   made.m_iAISkill = template.m_iAISkill;
+   made.m_fAIReactionScale = template.m_fAIReactionScale;
+   made.m_iAIStrongerShare = template.m_iAIStrongerShare;
    made.m_iStartingRP = template.m_iStartingRP;
    made.m_bAICommander = template.m_bAICommander;
    made.m_iAIUnitCap = template.m_iAIUnitCap;
@@ -231,8 +251,8 @@ class ACR_FactionCatalog
  // prefab with the same role/name suffix, which covers RHS group variants.
  // Results are cached (Jacob 18 Oct, Kolguyev with RHS: the mortar range ring resolved its shell
  // through a full catalog scan about four times a second, logging a fallback line each time).
- static ref map<string, ResourceName> s_Resolved = new map<string, ResourceName>();
- static void ForgetResolved() { s_Resolved.Clear(); }
+ static ref map<string, ResourceName> s_Resolved;
+ static void ForgetResolved() { s_Resolved.Clear(); s_Crewmen.Clear(); }
 
  static ResourceName ResolvePrefab(string factionKey, ResourceName source, EEntityCatalogType type)
  {
@@ -266,7 +286,7 @@ class ACR_FactionCatalog
    PaintSuffixes(factionKey, paints);
    foreach (string paint : paints)
     foreach (SCR_EntityCatalogEntry entry : entries)
-     if (entry.IsEnabled() && FilePath.StripExtension(FilePath.StripPath(entry.GetPrefab())) == sourceLeaf + paint) return entry.GetPrefab();
+     if (entry.IsEnabled() && FilePath.StripExtension(FilePath.StripPath(entry.GetPrefab())) == sourceLeaf + paint && Allowed(factionKey, type, entry.GetPrefab())) return entry.GetPrefab();
   }
   // The faction's standard subunit first; any other match only if it has none.
   ResourceName found = MatchCatalog(entries, sourceLeaf, wanted, factionKey, type, true);
@@ -342,6 +362,7 @@ class ACR_FactionCatalog
   {
    if (!entry.IsEnabled()) continue;
    ResourceName candidate = entry.GetPrefab();
+   if (!Allowed(factionKey, type, candidate)) continue;
    if (standardOnly && !IsStandard(factionKey, candidate, type)) continue;
    string leaf = FilePath.StripExtension(FilePath.StripPath(candidate));
    if (leaf == sourceLeaf) return candidate;
@@ -375,7 +396,7 @@ class ACR_FactionCatalog
  static bool IsStandard(string factionKey, ResourceName prefab, EEntityCatalogType type)
  {
   string path = prefab;
-  if (path.Contains("NotSpawned")) return false;
+  if (path.Contains("NotSpawned") || !Allowed(factionKey, type, prefab)) return false;
   string leaf = FilePath.StripExtension(FilePath.StripPath(prefab));
   if (type == EEntityCatalogType.VEHICLE)
   {
@@ -387,7 +408,19 @@ class ACR_FactionCatalog
   return standard.IsEmpty() || path.Contains(standard);
  }
 
- protected static ref map<string, ResourceName> s_Crewmen = new map<string, ResourceName>();
+ // A plugged-in content pack (ACR_ContentSocket) may keep mod entries out of the catalogs.
+ static bool Allowed(string factionKey, EEntityCatalogType type, ResourceName prefab)
+ {
+  return ACR_ContentSocket.Get().AllowsCatalogEntry(factionKey, type, prefab);
+ }
+
+ protected static ref map<string, ResourceName> s_Crewmen;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Resolved = new map<string, ResourceName>();
+  s_Crewmen = new map<string, ResourceName>();
+ }
 
  // The standard subunit's crewman (helicopter pilot for helicopters), "" when the faction
  // has no standard subunit or no such soldier.
@@ -462,6 +495,7 @@ class ACR_FactionCatalog
    if (ACR_InfantryCatalog.UseDefaults(factionKey, settings)) ACR_InfantryCatalog.Build(factionKey, result);
    else AddCatalog(factionKey, EEntityCatalogType.GROUP, used, exclude, result);
    AddCatalog(factionKey, EEntityCatalogType.VEHICLE, used, exclude, result);
+   ACR_ContentSocket.Get().AddRequisitions(factionKey, result);
    EnsureWestGunship(factionKey, exclude, result);
   }
   EnsureRUAFVehicles(factionKey, result);
@@ -479,6 +513,9 @@ class ACR_FactionCatalog
    if (ApplySupportUnit(supportEntry, settings, ACR_ESupportUnitRole.GUNSHIP)) result.Insert(supportEntry);
    supportEntry = ACR_HeliStation.MakeEntry(false, settings);
    if (ApplySupportUnit(supportEntry, settings, ACR_ESupportUnitRole.DOOR_GUN_HELI)) result.Insert(supportEntry);
+   // A content pack's attack helicopter for the side (ACR_ContentSocket.AttackHelicopter).
+   supportEntry = ACR_HeliStation.MakeAttackEntry(factionKey);
+   if (supportEntry) result.Insert(supportEntry);
   }
   bool stepped = ACR_Pricing.Stepped(settings);
   foreach (ACR_RequisitionEntry entry : result)
@@ -542,6 +579,8 @@ class ACR_FactionCatalog
   item.m_bArmed = entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED);
   item.m_bTransport = entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_TRUCK) && !entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMED) && !item.m_bAircraft;
   item.m_bRare = item.m_bAircraft || entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_APC) || entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ARMOR);
+  item.m_bCarrier = item.m_bArmed && !item.m_bAircraft && entry.HasEditableEntityLabel(EEditableEntityLabel.VEHICLE_APC);
+  item.m_bSquadCarrier = item.m_bCarrier && entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_PASSENGERS_LARGE);
  }
 
  protected static SCR_EntityCatalog GetCatalog(string factionKey, EEntityCatalogType type)
@@ -706,13 +745,20 @@ class ACR_FactionCatalog
   catalog.GetEntityList(entries);
   AddGarrisonSoldiers(factionKey, entries, true, result);
   if (result.IsEmpty()) AddGarrisonSoldiers(factionKey, entries, false, result);
+  // A content pack's soldier swaps (per entry, so a varied swap gives a varied pool).
+  ACR_ContentSocket socket = ACR_ContentSocket.Get();
+  for (int i = 0; i < result.Count(); i++)
+  {
+   ResourceName swapped = socket.Soldier(factionKey, result[i]);
+   if (!swapped.IsEmpty()) result[i] = swapped;
+  }
  }
 
  protected static void AddGarrisonSoldiers(string factionKey, array<SCR_EntityCatalogEntry> entries, bool standardOnly, array<ResourceName> result)
  {
   foreach (SCR_EntityCatalogEntry entry : entries)
   {
-   if (!entry.IsEnabled()) continue;
+   if (!entry.IsEnabled() || !Allowed(factionKey, EEntityCatalogType.CHARACTER, entry.GetPrefab())) continue;
    if (standardOnly && !IsStandard(factionKey, entry.GetPrefab(), EEntityCatalogType.CHARACTER)) continue;
    if (entry.HasEditableEntityLabel(EEditableEntityLabel.ROLE_RIFLEMAN))
    {

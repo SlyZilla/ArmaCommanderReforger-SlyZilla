@@ -10,6 +10,7 @@ class ACR_TestHarness : Managed
  ref ACR_TestBattle m_Battle = new ACR_TestBattle(this);
  ref ACR_TestLogistics m_Logistics = new ACR_TestLogistics(this);
 
+ static const int MODE_VARIETY = 89; // the dynamism picker (ACR_Variety)
  static const int MODE_AUTO = 1;
  static const int MODE_COMMAND = 2;
  static const int MODE_MAP_HANDOFF = 3;
@@ -27,6 +28,16 @@ class ACR_TestHarness : Managed
  static const int MODE_TACTICS = 15;
  static const int MODE_TRANSPORT = 16;
  static const int MODE_STALL = 17;
+ static const int MODE_RTSOVERLAY = 119; // #66: RTS camera order-line clipping and contact fading
+ static const int MODE_INTELMARKS = 146; // intel map markers: NATO symbols, labels, headings
+ static const int MODE_RECON = 250; // recon flight and radio intercept (ACR_Recon)
+ static const int MODE_RESTART = 147; // a match restarted in the same process starts clean
+ static const int MODE_RIDECOMMIT = 158; // posted squads keep their trip, catch rides on it, convoys (148-157 left for open branches)
+ static const int MODE_STALLWAIT = 118; // #53: a vehicle waiting for its own crew to board isn't stuck
+ static const int MODE_RECREW = 121; // a driver who bailed is put back (120: order voices, parked)
+ static const int MODE_MORTARGIVEUP = 122; // a mortar that can't reach its base isn't sent there again
+ static const int MODE_CONTENTPACK = 145; // #108 a content pack plugged into ACR_ContentSocket (138-144 left for open branches)
+ static const int MODE_ROADHOPS = 137; // #86 a vehicle drives through road hops (134-136 left for open branches)
  static const int MODE_RIDE = 18;
  static const int MODE_LOGISTICS = 19;
  static const int MODE_QUEUE = 20;
@@ -43,6 +54,7 @@ class ACR_TestHarness : Managed
  static const int MODE_TAGS = 31;
  static const int MODE_SHARED = 32;
  static const int MODE_REGRESS = 33;
+ static const int MODE_MAPPOLYGON = 117; // the command map's filled-shape guard (ACR_OrderDisplay.PolygonDrawable)
  static const int MODE_GETOUT = 34;
  static const int MODE_MORTAR = 35;
  static const int MODE_CREW = 36;
@@ -69,14 +81,47 @@ class ACR_TestHarness : Managed
  static const int MODE_AIDEFENCES = 65;
  static const int MODE_ROADSITING = 67;
  static const int MODE_BUILDRIDE = 73;
+ static const int MODE_FOBSITING = 76; // 74-75: the slope tilt, the 2IC (own branches)
  static const int MODE_GUNHOLD = 64; // 54-63: the playtest branches
+ static const int MODE_POSITIONGUN = 88; // 80-87: the playtest branches, the 2IC and the LAV fixes
  static const int MODE_RIDEJOB = 68; // 54-67: Fortify and the playtest branches
+ static const int MODE_AMBUSH = 56;
  static const int MODE_MINESITING = 71; // 68-70: ride job, defend swap, LAV ride (own branches)
+ static const int MODE_GROUNDTILT = 74; // 69-73: the playtest branches
+ static const int MODE_STRUCTLAYOUT = 126; // 117: map-polygon-guard, 125: roadblock-friendly-lane
+ static const int MODE_POSSITING = 72; // 68-71: ride job, defend swap, LAV ride, mine siting (own branches)
  static const int MODE_ATTACKREACH = 79; // 69-78: the playtest branches
- static const int MODE_CIVILIANS = 80;
+ static const int MODE_FOBAI = 58; // 52 / 53 / 55 / 56 / 57: Fortify / roadblocks / patrol / ambush / QRF
+ static const int MODE_SQUADAI = 63; // 59-62: defenders, budget, cap scale, aim (own branches)
+ static const int MODE_TWOIC = 75; // 74: the slope tilt (own branch)
+ static const int MODE_PATROL = 55; // 52 / 53: Fortify / roadblocks (#7, #8)
+ static const int MODE_HOLDRETURN = 85; // 79-84: the playtest branches and the 2IC
+ static const int MODE_AIM = 62; // 55-61: patrol, ambush, QRF, FOB AI, defenders, budget, cap scale (own branches)
+ static const int MODE_LAVGETOUT = 86; // 80-85: the playtest branches and the 2IC
+ static const int MODE_RIDECARRY = 87; // 80-86: the playtest branches, the 2IC and a LAV fix
+ static const int MODE_CAPSCALE = 61; // 52-60: Fortify, roadblocks, patrol, ambush, QRF, FOB AI, defenders, budget (own branches)
+ static const int MODE_DOCTRINEKITS = 80; // 73-79: the playtest branches
+ static const int MODE_CIVILIANS = 171; // the civilian socket (Civil Population compat)
  static const int MODE_GRABS = 77; // 69-76: the playtest branches
  static const int MODE_MORTARSPOT = 78; // 69-77: the playtest branches
+ static const int MODE_TWOICUI = 82; // 79-81: the playtest branches
+ static const int MODE_TWOICASK = 83;
+ static const int MODE_TWOICSUGGEST = 84;
+ static const int MODE_TWOICSHOTS = 91; // a game client run (89 variety, 90 the armour duel probe)
+ static const int MODE_TWOICDECLUTTER = 131; // the 2IC declutter (117, 120, 125: own branches)
  static const int MODE_RIDELAV = 70; // 69: the playtest branches
+ static const int MODE_MAPDECLUTTER = 133; // the calm command map's rules (90-97, 117, 120, 125 taken elsewhere)
+ static const int MODE_PANELSHOTS = 248; // the movable panels and key strip in a game client (screenshots)
+ static const int MODE_PANELFIT = 249;   // the ACA panel fits the screen, in a game client (screenshots)
+ static const int MODE_MAPDECLUTTERSHOTS = 132; // the calm command map in a game client (screenshots)
+ static const int MODE_RBLANE = 125; // 117: map-polygon-guard
+ static const int MODE_QRF = 57; // 52 / 53 / 55 / 56: Fortify / roadblocks / patrol / ambush
+ static const int MODE_HELIDOWN = 141; // a helicopter crippled in the air comes down
+ static const int MODE_FIELDROUTES = 164; // foot squads off the roads, over bridges (3 Nov)
+ static const int MODE_MINESHAPES = 165; // minefield shapes from a commander's points (#200)
+ static const int MODE_SKILLBBB = 163; // ACA's skill update lets BBB's Settings-tab values through
+ static const int MODE_MANNERS = 162; // vehicle manners: give way, pull over, handbrake, evade
+ static const int MODE_FIELDSOFFIRE = 161; // bushes knocked down round guns and posts (160: a local test)
 
  ACR_TestRange m_Range;
  int m_Mode;
@@ -97,7 +142,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrAITest", flag)) mode = MODE_AI;
   if (System.GetCLIParam("acrGunnerTest", flag)) mode = MODE_GUNNER;
   if (System.GetCLIParam("acrProbeTest", flag)) mode = MODE_PROBE;
-  if (System.GetCLIParam("acrRespawnTest", flag) || System.GetCLIParam("acrDeathFadeTest", flag) || System.GetCLIParam("acrRTSCameraTest", flag) || System.GetCLIParam("acrThinkOverlayTest", flag)) mode = MODE_RESPAWN;
+  if (System.GetCLIParam("acrRespawnTest", flag) || System.GetCLIParam("acrDeathFadeTest", flag) || System.GetCLIParam("acrRTSCameraTest", flag) || System.GetCLIParam("acrRTSAimTest", flag) || System.GetCLIParam("acrRTSLookTest", flag) || System.GetCLIParam("acrThinkOverlayTest", flag)) mode = MODE_RESPAWN;
   if (System.GetCLIParam("acrSupportTest", flag)) mode = MODE_SUPPORT;
   if (System.GetCLIParam("acrGunshipTest", flag)) mode = MODE_GUNSHIP;
   // -acrHeliTest 1: door gunners (Mi-8) and a rocket run (UH-1H) instead of two gunships.
@@ -105,6 +150,21 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrTacticsTest", flag)) mode = MODE_TACTICS;
   if (System.GetCLIParam("acrTransportTest", flag)) mode = MODE_TRANSPORT;
   if (System.GetCLIParam("acrStallTest", flag)) mode = MODE_STALL;
+  if (System.GetCLIParam("acrStallWaitTest", flag)) mode = MODE_STALLWAIT;
+  if (System.GetCLIParam("acrRecrewTest", flag)) mode = MODE_RECREW;
+  if (System.GetCLIParam("acrHeliDownTest", flag)) mode = MODE_HELIDOWN;
+  if (System.GetCLIParam("acrSkillBBBTest", flag)) mode = MODE_SKILLBBB;
+  if (System.GetCLIParam("acrFieldRoutesTest", flag)) mode = MODE_FIELDROUTES;
+  if (System.GetCLIParam("acrMineShapesTest", flag)) mode = MODE_MINESHAPES;
+  if (System.GetCLIParam("acrMortarGiveUpTest", flag)) mode = MODE_MORTARGIVEUP;
+  if (System.GetCLIParam("acrContentPackTest", flag)) mode = MODE_CONTENTPACK;
+  if (System.GetCLIParam("acrContentPackWinterTest", flag)) mode = MODE_CONTENTPACK;
+  if (System.GetCLIParam("acrRoadHopsTest", flag)) mode = MODE_ROADHOPS;
+  if (System.GetCLIParam("acrRoadHopsOffTest", flag)) mode = MODE_ROADHOPS;
+  if (System.GetCLIParam("acrRTSOverlayTest", flag)) mode = MODE_RTSOVERLAY;
+  if (System.GetCLIParam("acrIntelMarksTest", flag)) mode = MODE_INTELMARKS;
+  if (System.GetCLIParam("acrReconTest", flag)) mode = MODE_RECON;
+  if (System.GetCLIParam("acrRestartTest", flag)) mode = MODE_RESTART;
   if (System.GetCLIParam("acrRideTest", flag)) mode = MODE_RIDE;
   if (System.GetCLIParam("acrLogisticsTest", flag)) mode = MODE_LOGISTICS;
   if (System.GetCLIParam("acrQueueTest", flag)) mode = MODE_QUEUE;
@@ -121,6 +181,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrTagsTest", flag)) mode = MODE_TAGS;
   if (System.GetCLIParam("acrSharedTest", flag)) mode = MODE_SHARED;
   if (System.GetCLIParam("acrRegressTest", flag)) mode = MODE_REGRESS;
+  if (System.GetCLIParam("acrMapPolygonTest", flag)) mode = MODE_MAPPOLYGON;
   if (System.GetCLIParam("acrMortarTest", flag)) mode = MODE_MORTAR;
   if (System.GetCLIParam("acrBatteryTest", flag)) mode = MODE_BATTERY;
   if (System.GetCLIParam("acrBlastTest", flag) || System.GetCLIParam("acrBlastOldTest", flag)) mode = MODE_BLAST;
@@ -141,14 +202,44 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrAIDefencesTest", flag)) mode = MODE_AIDEFENCES;
   if (System.GetCLIParam("acrRoadSitingTest", flag)) mode = MODE_ROADSITING;
   if (System.GetCLIParam("acrBuildRideTest", flag)) mode = MODE_BUILDRIDE;
+  if (System.GetCLIParam("acrFobSitingTest", flag)) mode = MODE_FOBSITING;
   if (System.GetCLIParam("acrGunHoldTest", flag)) mode = MODE_GUNHOLD;
+  if (System.GetCLIParam("acrPositionGunTest", flag)) mode = MODE_POSITIONGUN;
   if (System.GetCLIParam("acrRideJobTest", flag)) mode = MODE_RIDEJOB;
+  if (System.GetCLIParam("acrVarietyTest", flag)) mode = MODE_VARIETY;
+  if (System.GetCLIParam("acrAmbushTest", flag) || System.GetCLIParam("acrAmbushRoadTest", flag) || System.GetCLIParam("acrAmbushRoadCommandedTest", flag) || System.GetCLIParam("acrAmbushDragTest", flag) || System.GetCLIParam("acrAmbushSlopeTest", flag)) mode = MODE_AMBUSH;
   if (System.GetCLIParam("acrMineSitingTest", flag)) mode = MODE_MINESITING;
+  if (System.GetCLIParam("acrMapDeclutterTest", flag)) mode = MODE_MAPDECLUTTER;
+  if (System.GetCLIParam("acrMapDeclutterShotsTest", flag)) mode = MODE_MAPDECLUTTERSHOTS;
+  if (System.GetCLIParam("acrPanelShotsTest", flag)) mode = MODE_PANELSHOTS;
+  if (System.GetCLIParam("acrPanelFitTest", flag)) mode = MODE_PANELFIT;
+  if (System.GetCLIParam("acrPanelFitClassicTest", flag)) mode = MODE_PANELFIT;
+  if (System.GetCLIParam("acrGroundTiltTest", flag)) mode = MODE_GROUNDTILT;
+  if (System.GetCLIParam("acrStructureLayoutTest", flag)) mode = MODE_STRUCTLAYOUT;
+  if (System.GetCLIParam("acrPositionSitingTest", flag)) mode = MODE_POSSITING;
   if (System.GetCLIParam("acrAttackReachTest", flag)) mode = MODE_ATTACKREACH;
+  if (System.GetCLIParam("acrFobAITest", flag)) mode = MODE_FOBAI;
+  if (System.GetCLIParam("acrSquadAITest", flag)) mode = MODE_SQUADAI;
+  if (System.GetCLIParam("acrTwoICTest", flag)) mode = MODE_TWOIC;
+  if (System.GetCLIParam("acrPatrolTest", flag)) mode = MODE_PATROL;
+  if (System.GetCLIParam("acrHoldReturnTest", flag)) mode = MODE_HOLDRETURN;
+  if (System.GetCLIParam("acrAimTest", flag)) mode = MODE_AIM;
+  if (System.GetCLIParam("acrLavGetOutTest", flag) || System.GetCLIParam("acrLavGetOutOldTest", flag)) mode = MODE_LAVGETOUT;
+  if (System.GetCLIParam("acrRideCarryTest", flag)) mode = MODE_RIDECARRY;
+  if (System.GetCLIParam("acrRideCommitTest", flag)) mode = MODE_RIDECOMMIT;
+  if (System.GetCLIParam("acrCapScaleTest", flag)) mode = MODE_CAPSCALE;
+  if (System.GetCLIParam("acrDoctrineKitsTest", flag)) mode = MODE_DOCTRINEKITS;
   if (System.GetCLIParam("acrGrabsTest", flag)) mode = MODE_GRABS;
   if (System.GetCLIParam("acrMortarSpotTest", flag)) mode = MODE_MORTARSPOT;
+  if (System.GetCLIParam("acrTwoICUITest", flag)) mode = MODE_TWOICUI;
+  if (System.GetCLIParam("acrTwoICAskTest", flag)) mode = MODE_TWOICASK;
+  if (System.GetCLIParam("acrTwoICSuggestTest", flag)) mode = MODE_TWOICSUGGEST;
+  if (System.GetCLIParam("acrTwoICShotsTest", flag)) mode = MODE_TWOICSHOTS;
+  if (System.GetCLIParam("acrTwoICDeclutterTest", flag)) mode = MODE_TWOICDECLUTTER;
   if (System.GetCLIParam("acrRideLavTest", flag) || System.GetCLIParam("acrRideTruckTest", flag)) mode = MODE_RIDELAV;
   if (System.GetCLIParam("acrRideLavKillTest", flag) || System.GetCLIParam("acrRideLavGetOutTest", flag)) mode = MODE_RIDELAV;
+  if (System.GetCLIParam("acrRoadblockLaneTest", flag)) mode = MODE_RBLANE;
+  if (System.GetCLIParam("acrQrfTest", flag)) mode = MODE_QRF;
   if (System.GetCLIParam("acrAirLiftContactTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
   if (System.GetCLIParam("acrAirLiftTest", flag) || System.GetCLIParam("acrAirLiftBoardingTest", flag)) mode = MODE_AIRLIFT;
   if (System.GetCLIParam("acrAirLiftTwoTest", flag)) { mode = MODE_AIRLIFT; ACR_LiftHeli.s_iTestSeats = 2; }
@@ -156,8 +247,11 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrHelipadTest", flag)) mode = MODE_HELIPAD;
   if (System.GetCLIParam("acrGarrisonTest", flag)) mode = MODE_GARRISON;
   if (System.GetCLIParam("acrGarrisonOfficeTest", flag)) { mode = MODE_GARRISON; ACR_TestGarrison.s_bOffice = true; }
+  if (System.GetCLIParam("acrGarrisonStuckTest", flag)) { mode = MODE_GARRISON; ACR_TestGarrison.s_bOffice = true; ACR_TestGarrison.s_bStuck = true; }
   if (System.GetCLIParam("acrStructuresTest", flag)) mode = MODE_STRUCTURES;
   if (System.GetCLIParam("acrCrewTest", flag) || System.GetCLIParam("acrCrewOldTest", flag)) mode = MODE_CREW;
+  if (System.GetCLIParam("acrMannersTest", flag) || System.GetCLIParam("acrMannersGetOutTest", flag) || System.GetCLIParam("acrMannersEvadeTest", flag)) mode = MODE_MANNERS;
+  if (System.GetCLIParam("acrFieldsOfFireTest", flag)) mode = MODE_FIELDSOFFIRE;
   if (System.GetCLIParam("acrGetOutTest", flag) || System.GetCLIParam("acrGetOutOldTest", flag)) mode = MODE_GETOUT;
   if (System.GetCLIParam("acrDriveAITest", flag) || System.GetCLIParam("acrDriveLockTest", flag) || System.GetCLIParam("acrDriveFixedTest", flag) || System.GetCLIParam("acrDriveAttachedTest", flag)) mode = MODE_DRIVE;
   if (!mode) return null;
@@ -229,6 +323,19 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_TACTICS) { m_Battle.TestTactics(); return; }
   if (m_Mode == MODE_TRANSPORT) { m_Vehicles.TestTransport(); return; }
   if (m_Mode == MODE_STALL) { m_Vehicles.TestStall(); return; }
+  if (m_Mode == MODE_STALLWAIT) { ACR_TestStallWait.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RECREW) { ACR_TestRecrew.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_HELIDOWN) { ACR_TestHeliDown.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_SKILLBBB) { ACR_TestSkillBBB.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_FIELDROUTES) { ACR_TestFieldRoutes.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MINESHAPES) { ACR_TestMineShapes.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MORTARGIVEUP) { ACR_TestMortarGiveUp.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_CONTENTPACK) { ACR_TestContentPack.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_ROADHOPS) { ACR_TestRoadHops.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RTSOVERLAY) { ACR_TestRTSOverlay.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_INTELMARKS) { ACR_TestIntelMarkers.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RECON) { ACR_TestRecon.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RESTART) { ACR_TestRestart.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDE) { m_Vehicles.TestRide(); return; }
   if (m_Mode == MODE_LOGISTICS) { m_Logistics.TestLogistics(); return; }
   if (m_Mode == MODE_QUEUE) { m_Battle.TestQueue(); return; }
@@ -243,9 +350,12 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_TAGS) { ACR_TestShared.TestTags(this, m_Ticks); return; }
   if (m_Mode == MODE_SHARED) { ACR_TestShared.TestShared(this, m_Ticks); return; }
   if (m_Mode == MODE_REGRESS) { ACR_TestRegress.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MAPPOLYGON) { ACR_TestMapPolygon.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GETOUT) { ACR_TestGetOut.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MORTAR) { ACR_TestMortar.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_CREW) { ACR_TestCrew.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MANNERS) { ACR_TestManners.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_FIELDSOFFIRE) { ACR_TestFieldOfFire.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BATTERY) { ACR_TestBattery.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_AIRLIFT)
   {
@@ -271,13 +381,42 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_AIDEFENCES) { ACR_TestAIDefences.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ROADSITING) { ACR_TestRoadSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_BUILDRIDE) { ACR_TestBuildRide.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_FOBSITING) { ACR_TestFobSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GUNHOLD) { ACR_TestGunHold.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_POSITIONGUN) { ACR_TestPositionGun.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDEJOB) { ACR_TestRideJob.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_VARIETY) { ACR_TestVariety.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_AMBUSH) { ACR_TestAmbush.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MINESITING) { ACR_TestMineSiting.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MAPDECLUTTER) { ACR_TestMapDeclutter.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_MAPDECLUTTERSHOTS) { ACR_TestMapDeclutterShots.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_PANELSHOTS) { ACR_TestPanelShots.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_PANELFIT) { ACR_TestPanelFit.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_GROUNDTILT) { ACR_TestGroundTilt.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_STRUCTLAYOUT) { ACR_TestStructureLayout.RunLayout(this, m_Ticks); return; }
+  if (m_Mode == MODE_POSSITING) { ACR_TestPositionSiting.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_ATTACKREACH) { ACR_TestAttackReach.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_FOBAI) { ACR_TestFobAI.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_SQUADAI) { ACR_TestSquadAI.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOIC) { ACR_TestTwoIC.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_PATROL) { ACR_TestPatrol.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_HOLDRETURN) { ACR_TestHoldReturn.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_AIM) { ACR_TestAim.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_LAVGETOUT) { ACR_TestLavGetOut.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RIDECARRY) { ACR_TestRideCarry.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RIDECOMMIT) { ACR_TestRideCommit.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_CAPSCALE) { ACR_TestCapScale.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_DOCTRINEKITS) { ACR_TestDoctrineKits.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GRABS) { ACR_TestGrabs.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_MORTARSPOT) { ACR_TestMortarSpot.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICUI) { ACR_TestTwoICUI.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICASK) { ACR_TestTwoICAsk.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICSUGGEST) { ACR_TestTwoICSuggest.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICSHOTS) { ACR_TestTwoICShots.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_TWOICDECLUTTER) { ACR_TestTwoICDeclutter.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDELAV) { ACR_TestRideLav.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RBLANE) { ACR_TestRoadblockLane.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_QRF) { ACR_TestQrf.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_PADS) { ACR_TestPads.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_HELIPAD) { ACR_TestHelipad.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GARRISON) { ACR_TestGarrison.Run(this, m_Ticks); return; }

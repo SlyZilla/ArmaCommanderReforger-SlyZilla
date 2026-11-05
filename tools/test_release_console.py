@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from release_console import Console, SPECS, Blocked, digest, write_json, read_json
+import bbb_dependency
 import package_guard
 
 
@@ -67,6 +68,9 @@ class GuardTests(unittest.TestCase):
         runtime.write_text('BehaviorTree { Name "handheld flare fixture" }\n')
         meta = Path(str(runtime) + '.meta')
         meta.write_text('MetaFileClass { Name "{BBB0F1A200000001}Prefabs/BBB/FireHandheldFlare.bt" }\n')
+        layout = self.bbb / 'UI/layouts/BBB/BBB_SettingsTab.layout'
+        layout.parent.mkdir(parents=True, exist_ok=True)
+        layout.write_text('HorizontalLayoutWidgetClass { Name "settings tab fixture" }\n')
         test_script = self.bbb / 'Scripts/Game/BBB_Tests/BBB_FlareTest.c'
         test_script.parent.mkdir(parents=True, exist_ok=True)
         test_script.write_text('class BBB_FlareTest {}\n')
@@ -80,8 +84,43 @@ class GuardTests(unittest.TestCase):
         payload = parent / SPECS['BBB']['folder']
         self.assertEqual((payload / runtime.relative_to(self.bbb)).read_bytes(), runtime.read_bytes())
         self.assertEqual((payload / meta.relative_to(self.bbb)).read_bytes(), meta.read_bytes())
+        self.assertEqual((payload / layout.relative_to(self.bbb)).read_bytes(), layout.read_bytes())
         self.assertFalse((payload / test_script.relative_to(self.bbb)).exists())
         self.assertFalse((payload / test_prefab.relative_to(self.bbb)).exists())
+
+    def write_flare_script(self):
+        """BBB's flare script loads its behaviour tree by resource path, as the real BBB_Flares.c does."""
+        runtime = self.bbb / 'Prefabs/BBB/FireHandheldFlare.bt'
+        runtime.parent.mkdir(parents=True, exist_ok=True)
+        runtime.write_text('BehaviorTree { Name "handheld flare fixture" }\n')
+        Path(str(runtime) + '.meta').write_text('MetaFileClass { Name "{BBB0F1A200000001}Prefabs/BBB/FireHandheldFlare.bt" }\n')
+        (self.bbb / 'Scripts/Game/BBB/BBB_Flares.c').write_text(
+            'ResourceName tree = "{BBB0F1A200000001}Prefabs/BBB/FireHandheldFlare.bt";\n'
+            'ResourceName rifleman = "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et";\n')
+
+    def test_fallback_zip_ships_what_the_workshop_ships(self):
+        self.write_flare_script()
+        test_prefab = self.bbb / 'Prefabs/BBB_Tests/FlareFixture.et'
+        test_prefab.parent.mkdir(parents=True, exist_ok=True)
+        test_prefab.write_text('GenericEntity {}\n')
+        changelog = self.bbb / 'CHANGELOG.md'
+        changelog.write_text(changelog.read_text() + '- Reviewed flare fixture.\n')
+        self.commit(self.bbb)
+        payload = self.console.stage('BBB') / SPECS['BBB']['folder']
+        workshop = {p.relative_to(payload).as_posix() for p in payload.rglob('*') if p.is_file()}
+        fallback = {p.relative_to(self.bbb).as_posix() for p in bbb_dependency.release_files(self.bbb)}
+        self.assertEqual(fallback, workshop)
+        self.assertIn('Prefabs/BBB/FireHandheldFlare.bt', fallback)
+        self.assertIn('Prefabs/BBB/FireHandheldFlare.bt.meta', fallback)
+        self.assertEqual(bbb_dependency.missing_references(self.bbb), {})
+
+    def test_fallback_zip_check_names_a_loaded_file_the_package_leaves_out(self):
+        self.write_flare_script()
+        without_prefabs = [p for p in bbb_dependency.release_files(self.bbb) if 'Prefabs' not in p.relative_to(self.bbb).parts]
+        script = 'Scripts/Game/BBB/BBB_Flares.c'
+        # The base-game rifleman is not in BBB's checkout, so only the tree and its meta are reported.
+        self.assertEqual(bbb_dependency.missing_references(self.bbb, without_prefabs),
+                         {'Prefabs/BBB/FireHandheldFlare.bt': script, 'Prefabs/BBB/FireHandheldFlare.bt.meta': script})
 
     def test_fresh_candidate_and_unique_rebuild(self):
         first = self.mark_checked('BBB')

@@ -22,6 +22,8 @@ class ACR_Fortification : Managed
  int m_iTier;                        // 1-3
  ref array<IEntity> m_aPieces = {};  // one per spot (null: none)
  ref array<IEntity> m_aWire = {};    // the wire line's segments (tier I)
+ ref array<IEntity> m_aWings = {};   // the bags running out from its end posts (ACR_Wings)
+ ref array<ref ACR_WingPlan> m_aWingPlans = {};
  ref array<IEntity> m_aTurrets = {}; // the guns among its pieces (ACR_Fortify.RefreshTurrets)
  ACR_DefenderPost m_Defenders;       // its defenders (tier II and III, ACR_Defenders)
  float m_fUpgradeHeldUntil;          // world ms: an upgrade here was refused, the AI leaves it till then
@@ -47,11 +49,21 @@ class ACR_FortifyPlan : Managed
  float m_fLastProgress;              // world ms of the last progress (3 min without it at the site: give up)
  float m_fDeadline;                  // world ms by which the squad must reach the site
  bool m_bArrived;
+ vector m_vWalkFrom;                 // where the squad last was on its walk ...
+ float m_fWalkAt;                    // ... and when (ACR_Squad.KeepWalking)
+ int m_iWalkRetries;
+ ACR_BaseWork m_Work;                // base works: the town it is part of (ACR_BaseWorks)
+ ACR_BaseSite m_Site;                // ... and the site
 }
 
 class ACR_Fortify
 {
- static ref array<ref ACR_Fortification> s_Positions = {};
+ static ref array<ref ACR_Fortification> s_Positions;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Positions = {};
+ }
  protected static int s_iNextId;
  protected static int s_iTicks;
 
@@ -84,7 +96,12 @@ class ACR_Fortify
  static const float MAX_AIM_UP = 15;       // a gun aims this far up rising ground in front of it
  static const float UPGRADE_HOLD_S = 900;  // a refused upgrade: the AI leaves the position this long
  static const int UPGRADE_GIVE_UP = 2;     // ... and for good once refused this often for one reason
- static const float HOLD_RADIUS = 24;      // the holding squad's Defend: every gun's place inside
+ static const float HOLD_RADIUS = 24;      // the position's ring on the map, and its reserve defenders' area
+ // #93 (playtest 29 Oct): a Defend of HOLD_RADIUS round the centre reached 10 m past the wire, and the
+ // holders stood in the field in front. They hold a circle behind the line instead (HoldCentre): its
+ // front edge is at the sandbags, short of the wire (6-14 m out); the guns are held by ACR_GunHold.
+ static const float HOLDER_BACK = 8;       // m behind the line's centre
+ static const float HOLDER_RADIUS = 16;
  static const float FLANK_TURN = 20;       // the heavy MG turns in this far from its flank
  static float WORK_SCALE = 1;              // tests shorten the work
 
@@ -120,7 +137,7 @@ class ACR_Fortify
   string faction = squad.GetFaction().GetFactionKey();
   foreach (ACR_Fortification fort : s_Positions)
    if (fort.m_sFaction == faction && fort.m_aTurrets.Contains(vehicle)) return true;
-  return false;
+  return ACR_BaseWorks.OwnGun(faction, vehicle);
  }
 
  // ---------------------------------------------------------------- tiers and spots
@@ -155,7 +172,7 @@ class ACR_Fortify
 
  static string Hint()
  {
-  return string.Format("Right-click: dig in there, facing the nearest known enemy or enemy base (%1 RP); again on our position to upgrade it (%2 / %3 RP; click Fortify again to cancel)", Cost(1), Cost(2), Cost(3));
+  return string.Format("Right-click: dig in there, facing the nearest known enemy or enemy base (%1 RP); again on our position to upgrade it (%2 / %3 RP); on the middle of our base to fortify the town (click Fortify again to cancel)", Cost(1), Cost(2), Cost(3));
  }
 
  // Each spot's place in the position's frame (x across, z towards the threat) and its piece's
@@ -244,6 +261,22 @@ class ACR_Fortify
   return "the covered post";
  }
 
+ // The small gun position, for one long piece's place in a line (ACR_BaseLines). FIA's has no small one.
+ static ResourceName CompactGun(string faction)
+ {
+  if (faction == "FIA") return "";
+  if (faction == "USSR" || faction == "RHS_AFRF") return HMG_USSR;
+  return HMG_US;
+ }
+
+ // Its muzzle in its own frame: across, up, forward (measured on the built ones: the tripod stands behind the
+ // middle, the height is the gun's top less 0.1 m, as LineOfFire takes it).
+ static vector CompactMuzzle(string faction)
+ {
+  if (faction == "USSR" || faction == "RHS_AFRF") return Vector(0.016, 1.249, -0.677);
+  return Vector(-0.106, 1.036, -0.592);
+ }
+
  static ResourceName PrefabFor(int spot, string faction, int tier)
  {
   bool east = faction == "USSR" || faction.Contains("AFRF") || faction.Contains("RU") || faction.Contains("SLA");
@@ -320,6 +353,98 @@ class ACR_Fortify
   return world;
  }
 
+ // Where the holding squad's Defend goes (HOLDER_RADIUS round it): behind the line, or its centre
+ // when the ground behind is water.
+ static vector HoldCentre(ACR_Fortification fort)
+ {
+  vector centre = ToWorld(fort.m_vPos, fort.m_fYaw, Vector(0, 0, -HOLDER_BACK));
+  if (BBB_Terrain.IsWaterAt(centre)) return fort.m_vPos;
+  return centre;
+ }
+
+ // #155 (playtest): holders still stood in front of the sandbags. Native Defend gives posts to only
+ // part of a group (60%) and sends the rest to sectors round its ring, the front one 8 m past the
+ // line. So the hold (and the reserve) is a Defend with every man on a post (WP_HOLD: guns first,
+ // then posts) and a post per man behind the bags of each sandbag position: a row standing at the
+ // wall to fire over it (its wall is 1.4-2.2 m in front of the piece's origin), crouched rows behind.
+ static const ResourceName WP_HOLD = "{AC230926A00100A3}Prefabs/ACR/ACR_Waypoint_FortHold.et";
+ static const float POST_SPACING = 1.8;
+
+ // A post per man behind the bags, the standing row first, the middle position first; none past the
+ // hold's ring (BBB's leash) or by another group's post (the squad's and its reserve's).
+ static void PostSpots(ACR_Fortification fort, SCR_AIGroup group, int men, notnull array<ref ACR_GarrisonSpot> spots)
+ {
+  spots.Clear();
+  array<float> rows = {0.7, -1.6, -3.9};
+  array<float> across = {0, -2.3, 2.0}; // clear of the chair and crate at its right end
+  array<int> order = {2, 0, 1};
+  vector hold = HoldCentre(fort);
+  foreach (int row, float z : rows)
+  {
+   foreach (int spot : order)
+   {
+    if (spot >= fort.m_aPieces.Count()) continue;
+    IEntity piece = fort.m_aPieces[spot];
+    if (!IsSandbagPosition(piece)) continue;
+    vector angles = piece.GetYawPitchRoll();
+    float rad = angles[0] * Math.DEG2RAD;
+    foreach (float x : across)
+    {
+     if (spots.Count() >= men) return;
+     vector at = ToWorld(piece.GetOrigin(), angles[0], Vector(x, 0, z));
+     if (vector.DistanceXZ(at, hold) > HOLDER_RADIUS - 1 || BBB_Terrain.IsWaterAt(at)) continue;
+     if (ACR_Garrison.PostNear(at, POST_SPACING, group)) continue;
+     ACR_GarrisonSpot post = new ACR_GarrisonSpot();
+     post.m_Pos = at;
+     post.m_Look = Vector(Math.Sin(rad), 0, Math.Cos(rad));
+     post.m_bStand = row == 0;
+     spots.Insert(post);
+    }
+   }
+  }
+ }
+
+ static bool IsSandbagPosition(IEntity piece)
+ {
+  if (!piece || !piece.GetPrefabData()) return false;
+  ResourceName prefab = piece.GetPrefabData().GetPrefabName();
+  return prefab == ACR_FobDefences.SANDBAGS_US || prefab == ACR_FobDefences.SANDBAGS_USSR || prefab == ACR_FobDefences.SANDBAGS_FIA;
+ }
+
+ // The group's posts behind the bags (after its hold waypoint went out: a new waypoint drops them).
+ static int PostMen(ACR_Fortification fort, SCR_AIGroup group, int men)
+ {
+  if (!fort || !group || men <= 0) return 0;
+  array<ref ACR_GarrisonSpot> spots = {};
+  PostSpots(fort, group, men, spots);
+  if (spots.IsEmpty()) return 0;
+  float radius;
+  int placed = ACR_Garrison.PostsAt(group, spots, HoldCentre(fort), radius);
+  PrintFormat("[ACR] FORTIFY %1 position %2: %3 posts behind the bags for %4 men", fort.m_sFaction, fort.m_iId, placed, men);
+  return placed;
+ }
+
+ // A Defend the squad holding 'fort' is given at its hold (ACR_Squad.IssueWaypoint, every time it
+ // goes out: the hold itself, a regroup or set-aside put back): WP_HOLD with posts behind the bags.
+ static bool IsHold(ACR_Fortification fort, ResourceName prefab, vector position)
+ {
+  return fort != null && prefab == ACR_Squad.WP_DEFEND && vector.DistanceXZ(position, HoldCentre(fort)) < 1;
+ }
+
+ // Its reserve out (ACR_Defenders): behind the bags too, not round the position's centre.
+ static bool ManReserve(ACR_DefenderPost post, int men)
+ {
+  if (!post || !post.m_Group) return false;
+  foreach (ACR_Fortification fort : s_Positions)
+  {
+   if (fort.m_Defenders != post) continue;
+   if (PostMen(fort, post.m_Group, men) <= 0) return false;
+   ACR_Guerrillas.Order(post.m_Group, WP_HOLD, HoldCentre(fort), HOLDER_RADIUS, true);
+   return true;
+  }
+  return false;
+ }
+
  // Where a spot's piece goes: where its current piece stands, else the spot itself or the first
  // clear point beside it, off asphalt and concrete if any will do. The position's own pieces
  // never block it. 'wide': an upgrade's piece also tries the wider ring (WideOffsets).
@@ -389,6 +514,8 @@ class ACR_Fortify
   if (target)
   {
    foreach (IEntity piece : target.m_aPieces) if (piece) ignore.Insert(piece);
+   // Its wings make way for what goes in (ACR_Wings.Cut).
+   foreach (IEntity wingPiece : target.m_aWings) if (wingPiece) ignore.Insert(wingPiece);
   }
   array<float> across = {0, 2, -2, 4, -4};
   array<float> along = {0, -2, 2};
@@ -507,9 +634,9 @@ class ACR_Fortify
  }
 
  // The same check before the piece exists (an order's dry run, UpgradeBlocker): a gun facing
- // compass 'facing' at 'place', its muzzle MUZZLE_UP above the ground; 'replaced' is the piece it
+ // compass 'facing' at 'place', its muzzle 'up' above the ground; 'replaced' is the piece it
  // takes the place of (the middle post), which doesn't count.
- static bool LineOfFireAt(vector place, float facing, IEntity replaced, out string detail)
+ static bool LineOfFireAt(vector place, float facing, IEntity replaced, out string detail, float up = MUZZLE_UP)
  {
   detail = "";
   if (s_bBlockFireForTest)
@@ -518,7 +645,7 @@ class ACR_Fortify
    return false;
   }
   vector muzzle = place;
-  muzzle[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]) + MUZZLE_UP;
+  muzzle[1] = GetGame().GetWorld().GetSurfaceY(place[0], place[2]) + up;
   return FireClear(muzzle, facing, replaced, detail);
  }
 
@@ -666,6 +793,7 @@ class ACR_Fortify
 
  static bool VehicleOnSpots(ACR_FortifyPlan plan)
  {
+  if (plan.m_Work) return ACR_BaseWorks.VehicleOnSite(plan);
   for (int spot = 0; spot < SPOT_COUNT; spot++)
   {
    if (!SpotChangesAt(spot, plan.m_iTier)) continue;
@@ -756,6 +884,12 @@ class ACR_Fortify
    }
    plan.m_vSite = point;
    plan.m_fYaw = FacingYaw(squad, point, faction, faceTowards);
+   // Nobody said which way: the way he'd come, not just the line to him.
+   if (faceTowards == vector.Zero)
+   {
+    vector threat = ACR_Intel.ThreatPoint(faction, point);
+    if (threat != vector.Zero) plan.m_fYaw = ACR_PositionSiting.BestFacingAt(point, plan.m_fYaw, threat, faction);
+   }
    plan.m_iTier = 1;
   }
   plan.m_iCost = Cost(plan.m_iTier);
@@ -913,8 +1047,15 @@ class ACR_Fortify
    foreach (vector place : tries)
    {
     ACR_FobBuild.FellTrees(place, SpotRadius(s));
-    piece = SpawnPiece(PrefabFor(s, fort.m_sFaction, plan.m_iTier), place, fort.m_fYaw + TurnAt(fort.m_vPos, fort.m_fYaw, s, place), fort.m_sFaction);
-    if (!piece) continue;
+    float placeYaw = fort.m_fYaw + TurnAt(fort.m_vPos, fort.m_fYaw, s, place);
+    array<ref ACR_WingCut> cuts = {};
+    if (s >= 2) ACR_Wings.Cut(fort.m_aWings, place, placeYaw, IsGun(s), cuts);
+    piece = SpawnPiece(PrefabFor(s, fort.m_sFaction, plan.m_iTier), place, placeYaw, fort.m_sFaction);
+    if (!piece)
+    {
+     ACR_Wings.PutBack(fort.m_aWings, cuts);
+     continue;
+    }
     string fireWhy;
     if (LineOfFire(piece, fireWhy))
     {
@@ -922,6 +1063,7 @@ class ACR_Fortify
      break;
     }
     PrintFormat("[ACR] FORTIFY spot %1 at %2: %3, trying another place", s, place, fireWhy);
+    ACR_Wings.PutBack(fort.m_aWings, cuts);
     DeletePiece(piece);
     piece = null;
     reason = fireWhy;
@@ -950,6 +1092,8 @@ class ACR_Fortify
    if (reason.IsEmpty()) reason = "no piece could be placed";
    return null;
   }
+  // Wings first: they'd take the wire for a fence to tie into, and the wire stays off their bags.
+  if (created) ACR_Wings.ForPosition(fort);
   if (plan.m_iTier == 1) LayWire(fort);
   RefreshTurrets(fort);
   int wasTier = fort.m_iTier;
@@ -998,6 +1142,7 @@ class ACR_Fortify
  // The wire segment's length and long axis, measured once from a segment spawned and removed.
  protected static float s_fWireLength = -1;
  protected static bool s_bWireAlongX;
+ static bool WireAlongX() { return s_bWireAlongX; }
  static float WireLength(vector at)
  {
   if (s_fWireLength > 0) return s_fWireLength;
@@ -1033,6 +1178,7 @@ class ACR_Fortify
   IEntity piece = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
   if (!piece) return null;
   piece.SetYawPitchRoll(Vector(yaw, 0, 0));
+  ACR_GroundTilt.Place(piece, prefab, pos, yaw); // on a slope sandbags and wire lie on the ground
   SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(piece.FindComponent(SCR_CampaignBuildingCompositionComponent));
   if (comp)
   {
@@ -1041,6 +1187,7 @@ class ACR_Fortify
    comp.ACR_SetCompositionSpawned(true);
   }
   ACR_Navmesh.RebuildAfterSpawn(piece);
+  ACR_FieldOfFire.ForPiece(piece); // the men behind it see out
   return piece;
  }
 
@@ -1086,6 +1233,7 @@ class ACR_Fortify
   int more = Defenders(fort.m_iTier) - Defenders(wasTier);
   if (more <= 0) return;
   if (!fort.m_Defenders) fort.m_Defenders = ACR_Defenders.Add(fort.m_sFaction, fort.m_vPos, string.Format("%1 position %2", fort.m_sFaction, fort.m_iId), HOLD_RADIUS);
+  fort.m_Defenders.m_Fort = fort;
   fort.m_Defenders.m_iReserve += more;
   PrintFormat("[ACR] FORTIFY %1 %2 at %3: %4 defenders in reserve", fort.m_sFaction, TierName(fort.m_iTier), fort.m_vPos, fort.m_Defenders.m_iReserve);
  }
@@ -1106,6 +1254,7 @@ class ACR_Fortify
   s_iTicks++;
   if (s_iTicks % 5 != 0) return;
   ACR_Defenders.Tick();
+  ACR_BaseWorks.Tick();
   if (s_Positions.IsEmpty()) return;
   for (int f = s_Positions.Count() - 1; f >= 0; f--)
   {
@@ -1120,6 +1269,7 @@ class ACR_Fortify
    // Its wire goes with it.
    foreach (IEntity segment : fort.m_aWire) DeletePiece(segment);
    fort.m_aWire.Clear();
+   ACR_Wings.Remove(fort.m_aWings);
    ACR_Defenders.Remove(fort.m_Defenders);
    s_Positions.RemoveOrdered(f);
   }
@@ -1135,12 +1285,14 @@ class ACR_Fortify
    radii.Insert(HOLD_RADIUS);
    labels.Insert("~" + TierName(fort.m_iTier));
   }
+  ACR_BaseWorks.Zones(faction, positions, radii, labels);
  }
 
  static void Reset()
  {
   s_Positions.Clear();
   ACR_Defenders.Reset();
+  ACR_BaseWorks.Reset();
   s_iNextId = 0;
   s_iTicks = 0;
   WORK_SCALE = 1;

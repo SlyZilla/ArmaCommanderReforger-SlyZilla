@@ -4,8 +4,14 @@
 // terrain and surface material. Lines: SURVEY <region> OBJ|ROAD|ROW|MAT ...
 class ACR_TestSurvey
 {
- static ref array<IEntity> s_Found = {};
- static ref map<string, int> s_Mats = new map<string, int>();
+ static ref array<IEntity> s_Found;
+ static ref map<string, int> s_Mats;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Found = {};
+  s_Mats = new map<string, int>();
+ }
 
  static bool Collect(IEntity e)
  {

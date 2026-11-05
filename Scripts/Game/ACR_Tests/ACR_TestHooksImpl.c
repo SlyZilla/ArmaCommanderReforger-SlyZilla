@@ -1,6 +1,11 @@
 // Connects the tests to the game code (see ACR/ACR_TestHooks.c). Not in the player package.
 modded class ACR_TestHooks
 {
+ override void InitStatics()
+ {
+  ACR_TestStaticInit.Run();
+ }
+
  protected ref ACR_TestHarness m_Harness;
 
  override void RangeStarted(ACR_TestRange range)
@@ -41,17 +46,53 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrLzBenchTest")) ACR_TestLzBench.Run(seconds);
   // -acrShoreRoutesTest: BBB land routes keep legs off the shore (ACR_TestShoreRoutes).
   if (System.IsCLIParam("acrShoreRoutesTest")) ACR_TestShoreRoutes.Run(seconds);
+  // -acrFieldBridgesTest: foot routes over bridges on Everon (ACR_TestFieldRoutes).
+  if (System.IsCLIParam("acrFieldBridgesTest")) ACR_TestFieldRoutes.RunBridges(seconds);
   if (System.IsCLIParam("acrSlopesTest")) ACR_TestSlopes.Run(seconds);
   // -acrPathProbeTest: can foot squads reach Gallows Base's centre (ACR_TestPathProbe).
   if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
+  // -acrWorksShotsTest: Fortify a whole base, photographed (ACR_TestWorksShots).
+  if (System.IsCLIParam("acrPlaceAuditTest") || System.IsCLIParam("acrPlaceAuditOldTest")) ACR_TestPlaceAudit.Run(seconds);
+  if (System.IsCLIParam("acrPartsTest")) ACR_TestParts.Run(seconds);
+  if (System.IsCLIParam("acrWingsTest") || System.IsCLIParam("acrWingsOffTest") || System.IsCLIParam("acrWingShotsTest")) ACR_TestWings.Run(seconds);
+  if (System.IsCLIParam("acrWorksShotsTest") || System.IsCLIParam("acrWorksShotsCompactTest") || ACR_TestBaseWorks.StyleTest("acrStyleShots")) ACR_TestWorksShots.Run(seconds);
+  // -acrBaseWorksTest: Fortify on a base (ACR_TestBaseWorks, #105).
+  if (ACR_TestBaseWorks.StyleTest("acrStylePlan")) ACR_TestBaseWorks.Run(seconds);
+  if (System.IsCLIParam("acrBaseWorksTest") || System.IsCLIParam("acrBaseWorksCompactTest") || System.IsCLIParam("acrBaseWorksAITest") || System.IsCLIParam("acrBaseWorksPlanTest")) ACR_TestBaseWorks.Run(seconds);
+  // -acrWorksFightTest / -acrWorksFightOldTest: what a fortified town costs an attacker (ACR_TestWorksFight).
+  if (System.IsCLIParam("acrWorksFightTest") || System.IsCLIParam("acrWorksFightValueOffTest") || System.IsCLIParam("acrWorksFightVillageTest") || System.IsCLIParam("acrWorksFightVillageOffTest") || System.IsCLIParam("acrWorksFightOldTest") || System.IsCLIParam("acrWorksFightCompactTest") || System.IsCLIParam("acrWorksFightOffTest") || System.IsCLIParam("acrWorksFightBaseTest")) ACR_TestWorksFight.Run(seconds);
+  // -acrBagHoldTest / -acrBagHoldLateTest: men behind bags in a fight (ACR_TestBagHold).
+  if (System.IsCLIParam("acrBagHoldTest") || System.IsCLIParam("acrBagHoldLateTest") || System.IsCLIParam("acrBagHoldOffTest") || System.IsCLIParam("acrBagHoldLowTest")) ACR_TestBagHold.Run(seconds);
+  if (System.IsCLIParam("acrBagHoldSquadsTest")) ACR_TestBagHoldSquads.Run(seconds);
+  // -acrWorksAISoakTest: does the AI fortify (ACR_TestWorksSoak).
+  if (System.IsCLIParam("acrWorksAISoakTest")) ACR_TestWorksSoak.Run(seconds);
+  // -acrKeyHintsTest: the key reminders and UI prefs (ACR_TestKeyHints).
+  if (System.IsCLIParam("acrKeyHintsTest")) ACR_TestKeyHints.Run(seconds);
+  // -acrQuickStartFIATest: FIA's cells on a Quick start (ACR_TestQuickStartFIA).
+  if (System.IsCLIParam("acrQuickStartFIATest")) ACR_TestQuickStartFIA.Run(seconds);
+  // -acrGuerrillasTest: FIA guerrilla cells (ACR_TestGuerrillas, #89).
+  if (System.IsCLIParam("acrGuerrillasTest")) ACR_TestGuerrillas.Run(seconds);
+  // -acrInsurgencyTest: FIA allegiance and dangerous roads (ACR_TestInsurgency, #89).
+  if (System.IsCLIParam("acrInsurgencyTest")) ACR_TestInsurgency.Run(seconds);
+  // -acrFIALeaningTest: FIA leans by conduct (ACR_TestFIALeaning, #89 part 2).
+  if (System.IsCLIParam("acrFIALeaningTest")) ACR_TestFIALeaning.Run(seconds);
+  // -acrHideoutsTest: FIA hideouts (ACR_TestHideouts, #89).
+  if (System.IsCLIParam("acrHideoutsTest")) ACR_TestHideouts.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
+  if (System.IsCLIParam("acrGenerateMapTest")) ACR_TestGenerate.RunAnyMap(seconds);
   // -acrPocketsTest: FIA pockets of resistance (ACR_TestPockets).
   if (System.IsCLIParam("acrPocketsTest")) ACR_TestPockets.Run(seconds);
+  // -acrQuickStartTest: the map already split between the sides (ACR_TestQuickStart).
+  if (System.IsCLIParam("acrQuickStartTest")) ACR_TestQuickStart.Run(seconds);
+  // -acrStuckMenTest: a squad doesn't keep stopping for men who can't walk (ACR_TestStuckMen).
+  if (System.IsCLIParam("acrStuckMenTest")) ACR_TestStuckMen.Run(seconds);
   // -acrBaseDefencesTest: the fortification planner on Everon (ACR_TestBaseDefences).
   if (System.IsCLIParam("acrBaseDefencesTest")) ACR_TestBaseDefences.Run(seconds);
   if (System.IsCLIParam("acrBaseDefencesSurveyTest")) ACR_TestBaseDefences.RunSurvey(seconds);
   if (System.IsCLIParam("acrBaseDefencesModelsTest")) ACR_TestBaseDefences.RunModels(seconds);
+  // -acrPositionSitingArlandTest: no Fortify spot on Arland's runway (ACR_TestPositionSiting).
+  if (System.IsCLIParam("acrPositionSitingArlandTest")) ACR_TestPositionSiting.RunArland(seconds);
  }
 
  // Game tests (launched straight into a world) deploy their player at once, as the old
@@ -62,11 +103,25 @@ modded class ACR_TestHooks
   return "west";
  }
 
+ // Tests keep their worlds as authored; the guerrilla test and the balance soaks get guerrillas.
+ override string Guerrillas()
+ {
+  if (System.IsCLIParam("acrQuickStartFIATest") || System.IsCLIParam("acrWorksAISoakTest")) return "many";
+  if (System.IsCLIParam("acrGuerrillasTest") || System.IsCLIParam("acrInsurgencyTest") || System.IsCLIParam("acrFIALeaningTest") || System.IsCLIParam("acrHideoutsTest") || System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrLongSoakTest")) return "few";
+  return "";
+ }
+
  // Tests keep their worlds as authored; the pocket test and the balance soaks get pockets.
  override string Pockets()
  {
-  if (System.IsCLIParam("acrPocketsTest") || System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrLongSoakTest")) return "few";
+  if (System.IsCLIParam("acrPocketsTest") || System.IsCLIParam("acrQuickStartTest") || System.IsCLIParam("acrInsurgencyTest") || System.IsCLIParam("acrFIALeaningTest") || System.IsCLIParam("acrHideoutsTest") || System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrLongSoakTest")) return "few";
   if (System.IsCLIParam("acrSetupTest") || System.IsCLIParam("acrSetupUiTest") || System.IsCLIParam("acrSetupGenTest") || System.IsCLIParam("acrSetupMapTest")) return "off";
+  return "";
+ }
+
+ override string QuickStart()
+ {
+  if (System.IsCLIParam("acrQuickStartTest") || System.IsCLIParam("acrQuickStartFIATest") || System.IsCLIParam("acrWorksAISoakTest")) return "even";
   return "";
  }
 

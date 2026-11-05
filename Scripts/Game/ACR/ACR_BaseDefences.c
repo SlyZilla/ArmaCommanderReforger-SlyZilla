@@ -18,8 +18,8 @@
 // per spot from a generator seeded by its position, so a spot always looks the same.
 // Only replicated props without inventories are used (no loot, visible to every client).
 // Threat directions are the nearest bases the owner does not hold. Nothing here changes the
-// game: the only consumer so far is the debug preview (/acr defences), which spawns the props
-// (no navmesh rebuild, no structure registration) so the spots can be judged.
+// game by itself: ACR_BaseWorks builds what it plans, and the debug preview (/acr defences) spawns
+// the props (no navmesh rebuild, no structure registration) so the spots can be judged.
 
 enum ACR_EBaseDefenceKind
 {
@@ -27,7 +27,9 @@ enum ACR_EBaseDefenceKind
 	SQUARE,
 	PERIMETER,
 	EDGE,
-	POST
+	POST,
+	LINE,       // a stretch of a base's line (ACR_BaseLines)
+	WIRE        // wire in front of one
 }
 
 class ACR_BaseDefencePos : Managed
@@ -96,6 +98,7 @@ class ACR_BaseDefenceKit : Managed
 	ResourceName m_sLong;
 	ResourceName m_sEnd;
 	ResourceName m_sRound;
+	ResourceName m_sShort;
 	ResourceName m_sLight;
 	ResourceName m_sChair;
 	ResourceName m_sNet;
@@ -103,6 +106,7 @@ class ACR_BaseDefenceKit : Managed
 	ResourceName m_sTable;
 	ResourceName m_sRadio;
 	ResourceName m_sMap;
+	ResourceName m_sCrates;
 	ref array<ResourceName> m_aClutter = {};
 }
 
@@ -129,10 +133,16 @@ class ACR_BaseDefences : Managed
 {
 	static const ResourceName LONG_PLASTIC = "{31A455F7FD8DCE84}Prefabs/Props/Military/Sandbags/Sandbag_01_long_high_plastic.et";
 	static const ResourceName LONG_BURLAP = "{BE16EE8FAA315FE2}Prefabs/Props/Military/Sandbags/Sandbag_01_long_high_burlap.et";
+	static const ResourceName LONG_LOW_PLASTIC = "{4ADCE267EC510331}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_plastic.et";
+	static const ResourceName LONG_LOW_BURLAP = "{BDAA871A06DABD74}PrefabsEditable/Auto/Props/Military/Sandbags/E_Sandbag_01_long_burlap.et";
+	static const ResourceName LONG_CAMO_US = "{2E67A6863167B995}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/E_Sandbag_Camo_long_high_US.et";
+	static const ResourceName LONG_CAMO_EAST = "{777E1B31B83D74E4}PrefabsEditable/Auto/Compositions/Misc/SubCompositions/Fortifications/E_Sandbag_Camo_long_high_USSR.et";
 	static const ResourceName END_PLASTIC = "{35F2A674E602198F}Prefabs/Props/Military/Sandbags/Sandbag_01_end_high_plastic.et";
 	static const ResourceName END_BURLAP = "{B547CF929FCC6BB7}Prefabs/Props/Military/Sandbags/Sandbag_01_end_high_burlap.et";
 	static const ResourceName ROUND_PLASTIC = "{B6307C189CCCA0B9}Prefabs/Props/Military/Sandbags/Sandbag_01_round_high_plastic.et";
 	static const ResourceName ROUND_BURLAP = "{7AF4B627D5C90235}Prefabs/Props/Military/Sandbags/Sandbag_01_round_high_burlap.et";
+	static const ResourceName SHORT_PLASTIC = "{0B0C600941B2A6A8}Prefabs/Props/Military/Sandbags/Sandbag_01_short_high_plastic.et";
+	static const ResourceName SHORT_BURLAP = "{937999008F178E82}Prefabs/Props/Military/Sandbags/Sandbag_01_short_high_burlap.et";
 	static const ResourceName DUCKBOARD = "{CC66836BF4E211F9}Prefabs/Props/Military/Camps/Duckboard_01.et";
 	static const ResourceName LANTERN_US = "{50E6A3845C9F20FD}Prefabs/Props/Military/Camps/LanternMilitary_US_01.et";
 	static const ResourceName LAMP_EAST = "{2CB0AA2A87842C18}Prefabs/Props/Civilian/LampKerosene_01/LampKerosene_01_military_USSR.et";
@@ -144,7 +154,12 @@ class ACR_BaseDefences : Managed
 	// Deployed concertina wire (it snags, like vanilla's). Not BarbedTape_Coil: that is a spool on a pallet.
 	static const ResourceName COIL = "{EF39F5715EF2323E}Prefabs/Structures/Walls/BarbedWire/BarbedTape_01/BarbedTape_01_Short.et";
 	static const ResourceName WHEELBARROW = "{6DD0648BB7A52420}Prefabs/Props/Civilian/Wheelbarrow_01.et";
-	static const ResourceName CRATES = "{AA1E1DD1D69055EC}Prefabs/Props/Military/MilitaryCrates/CrateStack_01/CrateStack_01_green.et";
+	// A pallet of ammunition boxes (0.9 m high) in each side's colours and a low pile of shell containers
+	// (1 m). Not CrateStack_01: that one prefab is a 2.55 m tower of crates on a 1.2 x 1 m base, and with
+	// sandbags round it nobody could tell what it was (playtest 30 Oct).
+	static const ResourceName CRATES_US = "{AE0FFC699F429214}Prefabs/Props/Military/Camps/PalletAmmo_01_US.et";
+	static const ResourceName CRATES_EAST = "{47A2F2F3C8FAACD5}Prefabs/Props/Military/Camps/PalletAmmo_01_Soviet.et";
+	static const ResourceName SHELLS = "{77D49455528ED5E6}Prefabs/Props/Military/MilitaryCrates/ShellContainerstack_01/ShellContainerstack_01_pile_small.et";
 	static const ResourceName LOG = "{32654927F2657E8A}Prefabs/Props/Forest/WoodPile/WoodLog_01_A.et";
 	static const ResourceName TIRES = "{CEA239D9E1899899}Prefabs/Props/Garbage/Tires/TirePile_01_small.et";
 	static const ResourceName JEEP_TIRES = "{5CA44F8D9F7491ED}Prefabs/Props/VehicleParts/Tires/Tire_M151A2_pile.et";
@@ -187,11 +202,11 @@ class ACR_BaseDefences : Managed
 	static int s_iBlocked;
 	static int s_iNoSight;
 
-	static ref array<IEntity> s_aPreview = {};
-	protected static ref array<IEntity> s_aFound = {};
+	static ref array<IEntity> s_aPreview;
+	protected static ref array<IEntity> s_aFound;
 	protected static int s_iSeed = 1;
-	protected static ref array<IEntity> s_aSolid = {};
-	static ref map<string, int> s_mBlockers = new map<string, int>();   // what blocked pieces (tuning)
+	protected static ref array<IEntity> s_aSolid;
+	static ref map<string, int> s_mBlockers;   // what blocked pieces (tuning)
 	protected static IEntity s_Ignore;                                   // WorldClear: the post's own building
 	static const float TABLE_HALF_X = 0.67;
 	static const float TABLE_HALF_Z = 0.4;
@@ -201,6 +216,11 @@ class ACR_BaseDefences : Managed
 	static const float NETTOP_HALF = 2.0;
 	static const float NETTOP_OFFSET_X = 0.48;
 	static const float NETTOP_OFFSET_Z = -1.11;
+
+	static bool IsLong(ResourceName prefab)
+	{
+		return prefab == LONG_PLASTIC || prefab == LONG_BURLAP;
+	}
 
 	static bool IsNetTop(ResourceName prefab)
 	{
@@ -236,13 +256,16 @@ class ACR_BaseDefences : Managed
 	// Half extents (x, z) of each prop's footprint, from the model bounds srv:basedefences prints.
 	static vector HalfSize(ResourceName prefab)
 	{
-		if (prefab == LONG_PLASTIC || prefab == LONG_BURLAP) return Vector(1.72, 0, 0.61);
+		if (prefab == LONG_PLASTIC || prefab == LONG_BURLAP || prefab == LONG_LOW_PLASTIC || prefab == LONG_LOW_BURLAP) return Vector(1.72, 0, 0.61);
+		if (prefab == LONG_CAMO_US || prefab == LONG_CAMO_EAST) return Vector(1.72, 0, 1.08);
 		if (prefab == END_PLASTIC || prefab == END_BURLAP) return Vector(1.07, 0, 0.6);
+		if (prefab == SHORT_PLASTIC || prefab == SHORT_BURLAP) return Vector(0.88, 0, 0.6);
 		if (prefab == ROUND_PLASTIC || prefab == ROUND_BURLAP) return Vector(1.61, 0, 0.7);
 		if (prefab == DUCKBOARD) return Vector(0.63, 0, 1.9);
 		if (prefab == NET_US || prefab == NET_USSR || prefab == NET_FIA) return Vector(2.05, 0, 1.1);
 		if (prefab == WHEELBARROW) return Vector(0.43, 0, 1.08);
-		if (prefab == CRATES) return Vector(0.62, 0, 0.52);
+		if (prefab == CRATES_US || prefab == CRATES_EAST) return Vector(0.55, 0, 0.62);
+		if (prefab == SHELLS) return Vector(1.27, 0, 0.68);
 		if (prefab == PALLET) return Vector(0.41, 0, 0.62);
 		if (prefab == BARREL || prefab == JEEP_TIRES) return Vector(0.44, 0, 0.44);
 		if (prefab == CHAIR_US || prefab == CHAIR_EAST) return Vector(0.26, 0, 0.21);
@@ -309,7 +332,9 @@ class ACR_BaseDefences : Managed
 	// Nothing solid in the world under a footprint: fences, walls, poles, parked vehicles, props,
 	// tree trunks (bushes are fine, like vanilla's bought defences). Flat things (kerbs, rugs)
 	// and things overhead (wires, awnings, signs) don't count.
-	static bool WorldClear(vector at, float yaw, vector half, IEntity ignore = null)
+	// noTrees: a piece that fells them when it goes in (ACR_FobBuild.FellTrees). overLowRocks: sandbags can
+	// lie over a rock that stands under 1.1 m.
+	static bool WorldClear(vector at, float yaw, vector half, IEntity ignore = null, bool noTrees = false, bool overLowRocks = false)
 	{
 		s_Ignore = ignore;
 		s_aSolid.Clear();
@@ -322,7 +347,7 @@ class ACR_BaseDefences : Managed
 			vector size = maxs - mins;
 			if (Tree.Cast(e))
 			{
-				if (size[1] < 2.5) continue;
+				if (size[1] < 2.5 || noTrees) continue;
 				if (BoxesOverlap(at, yaw, half, e.GetOrigin(), 0, Vector(0.35, 0, 0.35), 0.1)) clear = false;
 				continue;
 			}
@@ -335,6 +360,7 @@ class ACR_BaseDefences : Managed
 			if (top < at[1] + 0.35 || bottom > at[1] + 2.2) continue;
 			string model = ModelName(e);
 			if (Walkable(model)) continue;
+			if (overLowRocks && top < at[1] + 1.1 && (model.Contains("Stone") || model.Contains("Rock") || model.Contains("Granite"))) continue;
 			float boxYaw = Bearing(e.VectorToParent(Vector(0, 0, 1)));
 			if (BoxesOverlap(at, yaw, half, boxCentre, boxYaw, size * 0.5, 0.1)) clear = false;
 			if (!clear)
@@ -391,6 +417,7 @@ class ACR_BaseDefences : Managed
 		kit.m_sLong = LONG_PLASTIC;
 		kit.m_sEnd = END_PLASTIC;
 		kit.m_sRound = ROUND_PLASTIC;
+		kit.m_sShort = SHORT_PLASTIC;
 		kit.m_sLight = LANTERN_US;
 		kit.m_sChair = CHAIR_US;
 		kit.m_sNet = NET_US;
@@ -398,14 +425,17 @@ class ACR_BaseDefences : Managed
 		kit.m_sTable = TABLE_US;
 		kit.m_sRadio = RADIO_US;
 		kit.m_sMap = TableMap(east || fia);
+		kit.m_sCrates = CRATES_US;
 		if (east || fia)
 		{
 			kit.m_sNetTop = NETTOP_USSR;
+			kit.m_sCrates = CRATES_EAST;
 			kit.m_sTable = TABLE_EAST;
 			kit.m_sRadio = RADIO_EAST;
 			kit.m_sLong = LONG_BURLAP;
 			kit.m_sEnd = END_BURLAP;
 			kit.m_sRound = ROUND_BURLAP;
+			kit.m_sShort = SHORT_BURLAP;
 			kit.m_sLight = LAMP_EAST;
 			kit.m_sChair = CHAIR_EAST;
 			kit.m_sNet = NET_USSR;
@@ -429,8 +459,8 @@ class ACR_BaseDefences : Managed
 		}
 		else
 		{
-			kit.m_aClutter.Insert(CRATES);
-			kit.m_aClutter.Insert(CRATES);
+			kit.m_aClutter.Insert(kit.m_sCrates);
+			kit.m_aClutter.Insert(SHELLS);
 			kit.m_aClutter.Insert(JEEP_TIRES);
 			kit.m_aClutter.Insert(WHEELBARROW);
 		}
@@ -596,12 +626,14 @@ class ACR_BaseDefences : Managed
 		return gap;
 	}
 
+	static const float BUILDING_REACH = 70; // m from its origin a building's walls can be
+
 	static float BuildingGap(array<IEntity> buildings, vector p, float within, IEntity ignore = null)
 	{
 		float gap = float.MAX;
 		foreach (IEntity b : buildings)
 		{
-			if (!b || b == ignore || vector.DistanceXZ(b.GetOrigin(), p) > within + 40) continue;
+			if (!b || b == ignore || vector.DistanceXZ(b.GetOrigin(), p) > within + BUILDING_REACH) continue;
 			float d = ACR_Garrison.DistanceToBox(b, p);
 			if (d < gap) gap = d;
 		}
@@ -1130,7 +1162,16 @@ class ACR_BaseDefences : Managed
 		return Math.Max(ground, ground + 1.8 - 2.3 * f);
 	}
 
-	protected static ref array<IEntity> s_aFences = {};
+	protected static ref array<IEntity> s_aFences;
+	// Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+	static void ACR_InitStatics()
+	{
+		s_aPreview = {};
+		s_aFound = {};
+		s_aSolid = {};
+		s_mBlockers = new map<string, int>();
+		s_aFences = {};
+	}
 	protected static bool CollectFence(IEntity e)
 	{
 		if (!e || !e.GetPhysics()) return true;
@@ -1210,7 +1251,7 @@ class ACR_BaseDefences : Managed
 			case "lamp": return kit.m_sLight;
 			case "chart": return FLIPCHART;
 			case "chair": return kit.m_sChair;
-			case "crates": return CRATES;
+			case "crates": return kit.m_sCrates;
 			case "lantern": return kit.m_sLight;
 			case "nettop": return kit.m_sNetTop;
 		}
@@ -1514,6 +1555,8 @@ class ACR_BaseDefences : Managed
 			case ACR_EBaseDefenceKind.PERIMETER: return "perimeter";
 			case ACR_EBaseDefenceKind.EDGE: return "house";
 			case ACR_EBaseDefenceKind.POST: return "post";
+			case ACR_EBaseDefenceKind.LINE: return "line";
+			case ACR_EBaseDefenceKind.WIRE: return "wire";
 		}
 		return "?";
 	}
@@ -1529,6 +1572,37 @@ class ACR_BaseDefences : Managed
 
 	// ---------------------------------------------------------------- debug preview
 
+	static IEntity SpawnProp(ResourceName prefab, vector at, float yaw)
+	{
+		Resource resource = Resource.Load(prefab);
+		if (!resource.IsValid()) return null;
+		EntitySpawnParams spawnParams = new EntitySpawnParams();
+		spawnParams.TransformMode = ETransformMode.WORLD;
+		// The Kolguyev map is an item held upright (vanilla's Everon table map lies flat):
+		// pitched to lie face up on the table.
+		float pitch = 0;
+		if (prefab == MAP_KOLGUYEV) pitch = 90;
+		Math3D.AnglesToMatrix(Vector(yaw, pitch, 0), spawnParams.Transform);
+		spawnParams.Transform[3] = at;
+		return GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
+	}
+
+	// A piece lying on the ground under it: spawned tilted, so the transform every machine gets is the
+	// tilted one (a move after spawning wouldn't reach clients, ACR_StructureLayout). -acrGroundTilt 0: level.
+	static IEntity SpawnOnGround(ResourceName prefab, vector at, float yaw)
+	{
+		if (!ACR_GroundTilt.Enabled()) return SpawnProp(prefab, at, yaw);
+		Resource resource = Resource.Load(prefab);
+		if (!resource.IsValid()) return null;
+		vector half = HalfSize(prefab);
+		vector mat[4];
+		ACR_GroundTilt.Transform(at, yaw, half[0], half[2], mat);
+		EntitySpawnParams spawnParams = new EntitySpawnParams();
+		spawnParams.TransformMode = ETransformMode.WORLD;
+		for (int i = 0; i < 4; i++) spawnParams.Transform[i] = mat[i];
+		return GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
+	}
+
 	static int SpawnPreview(array<ref ACR_BaseDefencePos> plan)
 	{
 		int spawned = 0;
@@ -1536,17 +1610,7 @@ class ACR_BaseDefences : Managed
 		{
 			foreach (int i, vector at : p.m_aPiecePos)
 			{
-				Resource resource = Resource.Load(p.m_aPiecePrefab[i]);
-				if (!resource.IsValid()) continue;
-				EntitySpawnParams spawnParams = new EntitySpawnParams();
-				spawnParams.TransformMode = ETransformMode.WORLD;
-				// The Kolguyev map is an item held upright (vanilla's Everon table map lies flat):
-				// pitched to lie face up on the table.
-				float pitch = 0;
-				if (p.m_aPiecePrefab[i] == MAP_KOLGUYEV) pitch = 90;
-				Math3D.AnglesToMatrix(Vector(p.m_aPieceYaw[i], pitch, 0), spawnParams.Transform);
-				spawnParams.Transform[3] = at;
-				IEntity ent = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawnParams);
+				IEntity ent = SpawnProp(p.m_aPiecePrefab[i], at, p.m_aPieceYaw[i]);
 				if (!ent) continue;
 				s_aPreview.Insert(ent);
 				spawned++;

@@ -25,7 +25,12 @@ class ACR_Base : GenericEntity
  [Attribute("50", UIWidgets.EditBox, "Capture radius in metres")]
  float m_fRadius;
 
- static ref array<ACR_Base> s_All = {};
+ static ref array<ACR_Base> s_All;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+ }
 
  // ---- server runtime state
  float m_fScore = 100;              // owned: 100 = secure, -100 = lost. Neutral: 0..100 progress for m_sCapturer
@@ -49,6 +54,8 @@ class ACR_Base : GenericEntity
  ref ACR_FobSlot m_FobDefences;     // the defences upgrade (ACR_FobDefences)
  float m_fFobSlotsLastTick;
  bool m_bHqLost;                    // built FOB whose HQ was destroyed: offline, capturable, rebuildable
+ bool m_bAIManaged;                 // handed to the AI (FOB panel, ACR_FobAI)...
+ string m_sAIManagedFor;            // ...by this side
  bool m_bPocket;                    // FIA pocket of resistance (ACR_Pockets) until someone captures it
 
  // A built FOB keeps its upgrades when its HQ is destroyed (Jacob, 18 Oct): no deployment,
@@ -57,6 +64,13 @@ class ACR_Base : GenericEntity
  {
   if (m_bRetired || !m_bBuilt || m_bHqLost) return;
   m_bHqLost = true;
+  // A delivery on its way is called off: its RP goes back (it was lost without a word).
+  ACR_Manager owner = ACR_Manager.GetInstance();
+  if (m_iSupplyDelivery > 0 && !m_sSupplyDeliveryFaction.IsEmpty() && owner && owner.m_Bases)
+  {
+   owner.m_Bases.Refund(m_sSupplyDeliveryFaction, ACR_FobSupply.DELIVERY_COST);
+   PrintFormat("[ACR] BASE %1 supply delivery called off (HQ lost): %2 RP refunded to %3", m_sName, ACR_FobSupply.DELIVERY_COST, m_sSupplyDeliveryFaction);
+  }
   m_iSupplyDelivery = 0;
   m_fSupplyDeliveryLeft = 0;
   PrintFormat("[ACR] BASE %1 offline (%2)", m_sName, why);
@@ -98,6 +112,17 @@ class ACR_Base : GenericEntity
  {
   if (!GetGame().InPlayMode()) return;
   if (m_sName.IsEmpty()) m_sName = string.Format("Base %1", s_All.Count() + 1);
+  // An authored radius of 0 or less could never be captured; a negative value drained income.
+  if (m_fRadius <= 0)
+  {
+   PrintFormat("[ACR] BASE %1: capture radius %2 m is not positive, using 50 m", m_sName, m_fRadius);
+   m_fRadius = 50;
+  }
+  if (m_iValue < 0)
+  {
+   PrintFormat("[ACR] BASE %1: value %2 is negative, using 0", m_sName, m_iValue);
+   m_iValue = 0;
+  }
   m_iGarrisonLeft = m_iGarrison;
   if (m_sOwner.IsEmpty()) m_fScore = 0;
   s_All.Insert(this);

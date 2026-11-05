@@ -8,6 +8,7 @@ class ACR_TestRegress
 {
  static ref ACR_Squad s_Heli;
  static int s_iReportLost;
+ static int s_iReportVehiclesLost;
  static int s_iPassed, s_iFailed, s_iSkipped;
  static bool s_bCompleted;
  // GitHub #39: every base a side can deploy at has an open spawn point named after it, the HQ
@@ -156,7 +157,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 128; // includes seven BBB order-leash, five roadblock placement, thirteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 142; // includes one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -346,6 +347,7 @@ class ACR_TestRegress
    if (!hooks.IsBinding(fixture.m_Group)) specialistBinding = false;
   }
   Check("BBB leash: transport regroup and construction remain binding", specialistBinding);
+  CheckSquadTacticLeash(hooks, fixture);
   fixture.m_Mode = savedMode; fixture.m_Commander = savedCommander;
   fixture.m_iOrderedBy = savedIssuer; fixture.m_bForced = savedForced;
   fixture.SetOrder(savedLabel, savedState);
@@ -370,6 +372,85 @@ class ACR_TestRegress
   crew.m_Mode = savedMode; crew.m_Commander = savedCommander;
   crew.m_iOrderedBy = savedIssuer; crew.m_bForced = savedForced;
   crew.SetOrder(savedLabel, savedState);
+ }
+
+ // #31/#101: one intent per squad for BBB. With -acrSquadTactics 1 a mover or attacker is PUSH,
+ // leashed to the target's ring only on its ASSAULT order inside the ring (else the order's own
+ // corridor, radius 0); a waiting squad is HOLD around its base; forced moves are TRANSIT; a
+ // squad a player commands is NONE. Off by default: no squad tactics, movers still PUSH (fire and
+ // manoeuvre as before), waiting squads TRANSIT, no ring.
+ static void CheckSquadTacticLeash(ACR_BBBHooks hooks, ACR_Squad fixture)
+ {
+  ACR_Base target;
+  foreach (ACR_Base base : ACR_Base.s_All) if (base && !base.m_bRetired) { target = base; break; }
+  if (!target || !fixture.GetAnchor())
+  {
+   Skip("BBB intent: attackers push, leashed to the ring only inside the objective", "no base or anchor");
+   return;
+  }
+  ACR_Options.Set("acrSquadTactics", "1");
+  ACR_BBBHooks.RereadSquadTactics();
+  int savedTask = fixture.m_iAITask;
+  ACR_Base savedTarget = fixture.m_AITarget;
+  float savedRadius = target.m_fRadius;
+  ACR_EMoveMode savedMode = fixture.m_Mode;
+  int savedCommander = fixture.m_Commander;
+  int savedIssuer = fixture.m_iOrderedBy;
+  bool savedForced = fixture.m_bForced;
+  string savedLabel = fixture.m_Order;
+  ACR_EOrderState savedState = fixture.OrderState();
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
+  fixture.m_Commander = 0; fixture.m_iOrderedBy = 0; fixture.m_bForced = false;
+  float gap = vector.DistanceXZ(fixture.GetAnchor().GetOrigin(), target.GetOrigin());
+  fixture.m_iAITask = ACR_EAITask.ATTACK;
+  fixture.m_AITarget = target;
+  vector centre;
+  float radius;
+  target.m_fRadius = gap + 20;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.ASSAULT);
+  bool inside = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && radius == gap + 20 && vector.DistanceXZ(centre, target.GetOrigin()) < 0.1 && hooks.AllowSquadTactic(fixture.m_Group);
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.MOVE);
+  bool staging = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && radius == 0;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.ASSAULT);
+  target.m_fRadius = Math.Max(1, gap - 20);
+  bool outside = gap < 21 || (hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && radius == 0);
+  target.m_fRadius = gap + 20;
+  fixture.m_iAITask = ACR_EAITask.FREE;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.NONE);
+  bool waits = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.HOLD && radius >= BBB_OrderLeash.DEFEND_RADIUS && vector.DistanceXZ(centre, target.GetOrigin()) < 0.1;
+  fixture.m_iAITask = ACR_EAITask.ATTACK;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.MOVE);
+  fixture.m_bForced = true;
+  bool forced = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT;
+  fixture.m_bForced = false;
+  // A FAST march that met the enemy: re-issued at combat level, still labelled FAST.
+  fixture.m_Mode = ACR_EMoveMode.FAST;
+  bool fastFights = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && !hooks.IsBinding(fixture.m_Group);
+  fixture.m_Mode = ACR_EMoveMode.SILENT;
+  bool quietOurs = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT && hooks.IsBinding(fixture.m_Group);
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
+  fixture.m_Commander = 1;
+  bool commanded = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.NONE;
+  fixture.m_Commander = 0;
+  ACR_Options.Unset("acrSquadTactics");
+  ACR_BBBHooks.RereadSquadTactics();
+  fixture.m_Mode = ACR_EMoveMode.FAST;
+  bool offFast = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT && hooks.IsBinding(fixture.m_Group);
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.ASSAULT);
+  bool offPush = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.PUSH && radius == 0 && !hooks.AllowSquadTactic(fixture.m_Group);
+  fixture.m_iAITask = ACR_EAITask.FREE;
+  fixture.SetOrder("Leash policy fixture", ACR_EOrderState.NONE);
+  bool offWait = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT;
+  target.m_fRadius = savedRadius;
+  fixture.m_iAITask = savedTask;
+  fixture.m_AITarget = savedTarget;
+  fixture.m_Mode = savedMode; fixture.m_Commander = savedCommander;
+  fixture.m_iOrderedBy = savedIssuer; fixture.m_bForced = savedForced;
+  fixture.SetOrder(savedLabel, savedState);
+  Check("BBB intent: attackers push, leashed to the ring only inside the objective", inside && staging && outside, string.Format("inside %1 staging %2 outside %3 (anchor %4 m from %5)", inside, staging, outside, (int)gap, target.m_sName));
+  Check("BBB intent: waiting squads hold at their base, forced and quiet moves are ours, a FAST march in contact fights, commanded squads are left alone", waits && forced && fastFights && quietOurs && commanded, string.Format("waits %1 forced %2 fast %3 quiet %4 commanded %5", waits, forced, fastFights, quietOurs, commanded));
+  Check("BBB intent: squad tactics off by default, movers still push, waiting squads and FAST marches stay ours", offPush && offWait && offFast, string.Format("push %1 wait %2 fast %3", offPush, offWait, offFast));
  }
 
  // A roadblock click by a joint of two road pieces, or on a side road by a T-crossing, stays on
@@ -664,6 +745,15 @@ class ACR_TestRegress
   if (!bravo) return;
   IEntity truck = harness.m_Range.m_Truck;
 
+  // #73: garrison soldiers spawn clear of walls (squads are out by now, for the navmesh).
+  if (tick == 6) ACR_TestGarrisonSpawn.Check();
+  // AI skill per side and unit for mission makers (ACR_AISkill).
+  if (tick == 5) ACR_TestAISkill.Setup(bravo);
+  if (tick == 8) ACR_TestAISkill.Check(bravo);
+  // #87: spawn spots and squads step off sand and gravel piles.
+  if (tick == 6) ACR_TestSpawnHeap.Place(harness.Ground("1250 0 2760"), harness.Ground("1235 0 2780"), harness.Ground("1180 0 2720"));
+  if (tick == 7) ACR_TestSpawnHeap.CheckSpots();
+  if (tick == 9) ACR_TestSpawnHeap.CheckSquad();
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {
@@ -671,6 +761,8 @@ class ACR_TestRegress
    CheckRoadblockSnap(harness.m_Range.GetOrigin());
    ACR_TestOptions.Run();
    ACR_TestDoctrine.Run(manager);
+   // Night audit 30 Oct: the abort share compared in ints (3 of 10 at 0.35 kept attacking).
+   Check("attack abort share compares as a float", ACR_AICommander.AttackBroken(3, 10, 0.35) && !ACR_AICommander.AttackBroken(4, 10, 0.35) && ACR_AICommander.AttackBroken(1, 6, 0.25) && !ACR_AICommander.AttackBroken(0, 0, 0.35), "3/10 and 1/6 must break, 4/10 and an unset start must not");
    ACR_TestAccess.Run();
    // R18 (14 Oct review): records of deleted vehicles are dropped.
    int recordsBefore = ACR_Vehicles.RecordCount();
@@ -824,6 +916,12 @@ class ACR_TestRegress
    int aiLimit = GetGame().GetAIWorld().GetLimitOfActiveAIs();
    Check("active AI limit fits both soldier caps", aiLimit >= 2 * manager.m_iSoldierCap, string.Format("limit %1, cap %2", aiLimit, manager.m_iSoldierCap));
    Check("US gets the UH-1H", manager.m_Supports.HelicopterFor("US") == ACR_Supports.HELI_WEST, manager.m_Supports.HelicopterFor("US"));
+   // Attack helicopters come only from a content pack: vanilla lists stay as they were.
+   int attackRows;
+   foreach (ACR_SupportEntry supportRow : manager.m_Bases.GetFaction("US").m_aSupports) if (supportRow.m_eType == ACR_ESupportType.ATTACK_HELI) attackRows++;
+   foreach (ACR_SupportEntry supportRowEast : manager.m_Bases.GetFaction("USSR").m_aSupports) if (supportRowEast.m_eType == ACR_ESupportType.ATTACK_HELI) attackRows++;
+   bool packed = ACR_ContentSocket.Get().Plugged();
+   Check("no attack-helicopter support without a content pack", packed || (attackRows == 0 && !ACR_HeliStation.MakeAttackEntry("US")), string.Format("%1 rows, pack %2", attackRows, ACR_ContentSocket.Get().Name()));
    ACR_FactionSettings soviets = ACR_FactionSettings.Find("USSR");
    string saved = soviets.m_sSupportHelicopter;
    soviets.m_sSupportHelicopter = "{0000000000000000}Prefabs/ACR/NoSuchHelicopter.et";
@@ -846,6 +944,7 @@ class ACR_TestRegress
   if (tick == 24)
   {
    float savedStart = manager.m_fAIHoldStart;
+   manager.EndJoinHoldsForTest(); // a client run's own player joined seconds ago
    manager.m_fAIHoldStart = GetGame().GetWorld().GetWorldTime();
    ACR_Perf.s_bChecks = false;
    bool held = manager.HoldAIFor("US");
@@ -1028,6 +1127,8 @@ class ACR_TestRegress
    Check("debug: pause and resume the enemy AI", paused && !dbg.IsPaused("US"), dbg.Status(manager, "USSR"));
    string attack = dbg.Run(manager, ACR_EDebug.ATTACK_NOW, "USSR", "");
    if (attack.Contains("no free squads")) Skip("debug: forced AI attack", attack);
+   // a client run's own player commands that side, so its AI commander is rightly off
+   else if (attack.Contains("isn't in command") && GetGame().GetPlayerManager().GetPlayerCount() > 0) Skip("debug: forced AI attack", attack);
    else Check("debug: forced AI attack", attack.Contains("attacking"), attack);
    dbg.Run(manager, ACR_EDebug.REVEAL, "US", "");
   }
@@ -1095,6 +1196,18 @@ class ACR_TestRegress
   {
    ACR_SideStats ussr = ACR_Report.Of("USSR");
    s_iReportLost = ussr.m_iLost;
+   // A vehicle of ours, far from everyone, its crew gone (the game clears the faction of a vehicle
+   // when its last occupant leaves), destroyed: still our loss.
+   s_iReportVehiclesLost = ACR_Report.Of("US").m_iVehiclesLost;
+   IEntity wreck = ACR_Manager.SpawnPrefab("{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", ACR_Manager.Ground("1135 0 3532"));
+   if (wreck)
+   {
+    ACR_Vehicles.SetOwner(wreck, "US");
+    SCR_VehicleFactionAffiliationComponent emptied = SCR_VehicleFactionAffiliationComponent.Cast(wreck.FindComponent(SCR_VehicleFactionAffiliationComponent));
+    if (emptied) emptied.ClearAffiliatedFaction();
+    SCR_DamageManagerComponent wreckDamage = SCR_DamageManagerComponent.Cast(wreck.FindComponent(SCR_DamageManagerComponent));
+    if (wreckDamage) wreckDamage.Kill(Instigator.CreateInstigator(null));
+   }
    IEntity victim;
    foreach (ACR_Squad squad : manager.m_Squads)
    {
@@ -1113,6 +1226,7 @@ class ACR_TestRegress
    string text = ACR_Report.Text("US");
    Check("report: bases won and lost tallied", us.m_iBasesWon >= 1 && ussr2.m_iBasesLost >= 1, string.Format("US won %1, USSR lost %2", us.m_iBasesWon, ussr2.m_iBasesLost));
    Check("report: a dead soldier counts as lost", ussr2.m_iLost > s_iReportLost, string.Format("%1 -> %2", s_iReportLost, ussr2.m_iLost));
+   Check("report: a vehicle destroyed after its crew left counts as lost by its side", us.m_iVehiclesLost > s_iReportVehiclesLost, string.Format("%1 -> %2", s_iReportVehiclesLost, us.m_iVehiclesLost));
    Check("report: RP spent tallied and panel text built", us.m_iRPSpent > 0 && text.Contains("Bases won"), string.Format("spent %1 | %2", us.m_iRPSpent, text.Length()));
    ACR_Report.LogAll();
   }
@@ -1235,6 +1349,20 @@ class ACR_TestRegress
    bravo.MoveTo(bravo.m_MoveTarget);
    Check("an order that cuts a regroup short starts the regroup cooldown", !bravo.RegroupingForTest() && bravo.NextRegroupForTest() >= regroupNow + ACR_Squad.REGROUP_FAILED_COOLDOWN_MS - 1000, string.Format("next regroup in %1 s", Math.Round((bravo.NextRegroupForTest() - regroupNow) / 1000)));
    Check("no regroup right after a new order; a regrouping reserve counts as moving", !ACR_Squad.OrderSettled(1000, 0) && ACR_Squad.OrderSettled(ACR_Squad.ORDER_SETTLE_MS, 0) && ACR_AICommander.ReserveMoving(ACR_EOrderState.REGROUP) && !ACR_AICommander.ReserveMoving(ACR_EOrderState.DEFEND), "settle and en-route rules");
+   // Jacob's 26 Oct game: a stuck arsenal truck was sent on 59 ammo runs in 2.5 h.
+   ACR_AICommander logisticsAI = manager.FobAICommanderFor("US");
+   float stuckBefore = bravo.m_fStuckAt;
+   bravo.m_fStuckAt = GetGame().GetWorld().GetWorldTime();
+   bool waits = logisticsAI && logisticsAI.StuckLatelyForTest(bravo);
+   bravo.m_fStuckAt = -1000000;
+   bool free = logisticsAI && !logisticsAI.StuckLatelyForTest(bravo);
+   bravo.m_fStuckAt = stuckBefore;
+   // RHS soak 28 Oct: a fuel truck that gave up its move was sent again every 45 s.
+   float gaveUpBefore = bravo.m_fGaveUpAt;
+   bravo.m_fGaveUpAt = GetGame().GetWorld().GetWorldTime();
+   bool waitsGaveUp = logisticsAI && logisticsAI.StuckLatelyForTest(bravo);
+   bravo.m_fGaveUpAt = gaveUpBefore;
+   Check("a service vehicle that gave up stuck or unreachable isn't sent on another run for a while", waits && free && waitsGaveUp, string.Format("waits %1, free later %2, waits after giving up %3", waits, free, waitsGaveUp));
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
@@ -1538,7 +1666,12 @@ class ACR_TestRegress
  static SCR_AIGroup s_ReinforceGroup;
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
 
- static ref array<IEntity> s_Found = {};
+ static ref array<IEntity> s_Found;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_Found = {};
+ }
  static bool CollectVehicle(IEntity e)
  {
   if (Vehicle.Cast(e)) s_Found.Insert(e);

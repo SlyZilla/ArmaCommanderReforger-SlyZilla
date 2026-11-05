@@ -154,13 +154,28 @@ class ACR_Requests : Managed
    PrintFormat("[ACR] ORDER refused player=%1 command=%2: %3", pc.GetPlayerId(), command, why);
    return why;
   }
+  return OrderSquad(pc, command, squad, point).m_sMessage;
+ }
+
+ // One order to exactly this squad. A squad handed to the AI: the player's order takes it back
+ // first (ACR_SquadAI), and a refused order (no RP, a bad site...) hands it back as it was, so a
+ // refusal never leaves a squad nobody runs (#60 review). pc null (tests): refused.
+ ACR_OrderOutcome OrderSquad(SCR_PlayerController pc, int command, ACR_Squad squad, vector point)
+ {
+  bool wasClaimed = squad.m_bClaimed;
+  // Only someone who may order the squad takes it back: anyone else's order is refused anyway,
+  // and taking it back and handing it over again would drop it out of the AI's attack plans.
+  bool mayOrder = pc && squad.GetFaction() == SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId()) && m_Manager.IsCommander(pc.GetPlayerId());
+  bool tookBack = mayOrder && ACR_SquadAI.TakeBack(squad, command);
   int serial = squad.m_iOrderSerial;
   int previous = squad.m_iOrderedBy;
   float previousAt = squad.m_fOrderedAt;
   ACR_OrderOutcome outcome = GiveOrderTo(pc, command, squad, point);
+  ACR_SquadAI.AfterOrder(squad, command, outcome.m_bAccepted, tookBack, wasClaimed);
+  if (tookBack && outcome.m_bAccepted) outcome.m_sMessage += " (taken back from the AI)";
   s_LastOutcome = outcome;
-  Credit(pc.GetPlayerId(), squad, command, point, outcome, serial, previous, previousAt);
-  return outcome.m_sMessage;
+  if (pc) Credit(pc.GetPlayerId(), squad, command, point, outcome, serial, previous, previousAt);
+  return outcome;
  }
 
  // Shared-command bookkeeping for one order (split out so srv:regress can check it
@@ -191,6 +206,38 @@ class ACR_Requests : Managed
  // The last order's outcome (tests read it).
  static ref ACR_OrderOutcome s_LastOutcome;
 
+ // Drag to aim: where the player dragged the order being handled to face (ACR_CommandServer
+ // sets it for the request), vector.Zero for none. Only player orders have one.
+ static vector s_vAim;
+ // A shaped minefield order's corners while it is handled (ACR_PlayerController.ACR_ShapeServer, #200); null otherwise.
+ static ref array<vector> s_aCorners;
+
+ // The orders a drag can aim (ACR_PlayerController.ACR_Aimable): roadblocks, minefields, Fortify.
+ static bool TakesFacing(int command)
+ {
+  return ACR_Roadblocks.TypeOfRequest(command) >= 0 || ACR_Minefields.IsRequest(command) || command == ACR_ERequest.ORDER_FORTIFY;
+ }
+ static const float AIM_MIN = 5;
+ static const float AIM_MAX = 3000;
+
+ // The dragged facing for an order at point, or vector.Zero (none, or nonsense from a client).
+ static vector AimFor(vector point)
+ {
+  if (s_vAim == vector.Zero) return vector.Zero;
+  float d = vector.DistanceXZ(s_vAim, point);
+  // Written so a NaN from a client fails too (both plain comparisons are false for NaN).
+  if (!(d >= AIM_MIN && d <= AIM_MAX)) return vector.Zero;
+  return s_vAim;
+ }
+
+ // What an order at point faces: the dragged facing, else the threat (ACR_Intel.ThreatPoint).
+ static vector FacingFor(string faction, vector point)
+ {
+  vector aim = AimFor(point);
+  if (aim != vector.Zero) return aim;
+  return ACR_Intel.ThreatPoint(faction, point);
+ }
+
  static string OrderWords(int command)
  {
   switch (command)
@@ -217,6 +264,7 @@ class ACR_Requests : Managed
    case ACR_ERequest.ORDER_ROADBLOCK_L: return "establishing roadblock";
    case ACR_ERequest.ORDER_BARRICADE: return "building barricade";
    case ACR_ERequest.ORDER_FORTIFY: return "fortifying";
+   case ACR_ERequest.ORDER_QRF: return "standing by as a QRF";
   }
   return "moving";
  }
@@ -236,11 +284,12 @@ class ACR_Requests : Managed
  {
   ACR_OrderOutcome outcome = new ACR_OrderOutcome();
   if (!squad) return outcome.Refuse("No squad selected");
+  if (!pc) return outcome.Refuse("No player");
   if (squad.GetFaction() != SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId())) return outcome.Refuse("That squad belongs to another faction");
   if (!m_Manager.IsCommander(pc.GetPlayerId())) return outcome.Refuse("Only the commander can give map orders. Take command first.");
   IEntity anchor = squad.GetAnchor();
   if (!anchor) return outcome.Refuse("That squad is not ready");
-  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB || ACR_Roadblocks.TypeOfRequest(command) >= 0 || ACR_Minefields.IsRequest(command) || command == ACR_ERequest.ORDER_FORTIFY;
+  bool usesPoint = command == ACR_ERequest.MOVE_TO || command == ACR_ERequest.ORDER_DEFEND || command == ACR_ERequest.ORDER_GET_IN || command == ACR_ERequest.ORDER_SET_LZ || command == ACR_ERequest.ORDER_RIDE || command == ACR_ERequest.QUEUE_MOVE || command == ACR_ERequest.QUEUE_DEFEND || command == ACR_ERequest.ORDER_HUNT || command == ACR_ERequest.ORDER_GARRISON || command == ACR_ERequest.QUEUE_GARRISON || command == ACR_ERequest.ORDER_ESTABLISH_FOB || ACR_Roadblocks.TypeOfRequest(command) >= 0 || ACR_Minefields.IsRequest(command) || command == ACR_ERequest.ORDER_FORTIFY || command == ACR_ERequest.ORDER_QRF;
   // Reject nonsense coordinates from a client.
   if (usesPoint && (vector.Distance(point, anchor.GetOrigin()) > 20000 || !ACR_Manager.OnMap(point))) return outcome.Refuse("Order is too far away");
   // Map clicks made inside Game Master / build mode are not orders (the client checks too).
@@ -258,7 +307,7 @@ class ACR_Requests : Managed
   {
    string mineWhy;
    ACR_EMineKind mineKind = ACR_Minefields.KindOf(command);
-   if (!ACR_Minefields.Order(squad, mineKind, point, mineWhy)) return outcome.Refuse(name + ": " + mineWhy);
+   if (!ACR_Minefields.Order(squad, mineKind, point, mineWhy, AimFor(point), s_aCorners)) return outcome.Refuse(name + ": " + mineWhy);
    PrintFormat("[ACR] MINEFIELD order player=%1 squad=%2 %3 at %4", pc.GetPlayerId(), name, ACR_Minefields.Name(mineKind), point);
    return outcome.Accept(name + ": " + OrderWords(command));
   }
@@ -268,8 +317,23 @@ class ACR_Requests : Managed
   if (command == ACR_ERequest.ORDER_FORTIFY)
   {
    string fortifyWhy;
-   if (!ACR_Fortify.Order(squad, point, fortifyWhy)) return outcome.Refuse(name + ": " + fortifyWhy);
-   PrintFormat("[ACR] FORTIFY order player=%1 squad=%2 at %3", pc.GetPlayerId(), name, point);
+   // An upgrade keeps the position's facing (a dragged one only turns a new position).
+   string fortifyFaction;
+   if (squad.GetFaction()) fortifyFaction = squad.GetFaction().GetFactionKey();
+   bool upgrade = ACR_Fortify.NearestOwn(fortifyFaction, point, ACR_Fortify.UPGRADE_RADIUS) != null;
+   vector fortifyAim = AimFor(point);
+   // On the middle of a base of ours: the whole town (ACR_BaseWorks).
+   ACR_Base worksBase;
+   if (!upgrade) worksBase = ACR_BaseWorks.BaseAt(point, fortifyFaction);
+   if (worksBase)
+   {
+    if (!ACR_BaseWorks.Order(squad, worksBase, fortifyWhy)) return outcome.Refuse(name + ": " + fortifyWhy);
+    PrintFormat("[ACR] BASEWORKS order player=%1 squad=%2 at %3", pc.GetPlayerId(), name, worksBase.m_sName);
+    return outcome.Accept(name + ": " + ACR_BaseWorks.Accepted(worksBase));
+   }
+   if (!ACR_Fortify.Order(squad, point, fortifyWhy, fortifyAim)) return outcome.Refuse(name + ": " + fortifyWhy);
+   PrintFormat("[ACR] FORTIFY order player=%1 squad=%2 at %3 aim %4", pc.GetPlayerId(), name, point, fortifyAim);
+   if (upgrade && fortifyAim != vector.Zero) return outcome.Accept(name + ": " + OrderWords(command) + " (an upgrade keeps the position's facing)");
    return outcome.Accept(name + ": " + OrderWords(command));
   }
   switch (command)
@@ -293,8 +357,27 @@ class ACR_Requests : Managed
     }
     break;
    case ACR_ERequest.ORDER_DEFEND:
+   {
+    // On a road: an ambush there (#12); anywhere else, or with no ambush to be had, a Defend.
+    // Dragged: posts where the drag began facing where it ended, an ambush when it ended by a road.
+    vector ambushSite, killZone;
+    string ambushWhy;
+    vector aim = AimFor(point);
+    bool ambush;
+    if (aim != vector.Zero && ACR_Ambush.DefendAimed(squad, point, aim, ambushSite, killZone, ambush, ambushWhy))
+    {
+     PrintFormat("[ACR] AMBUSH player=%1 squad=%2 site=%3 facing=%4 ambush=%5 (Defend dragged)", pc.GetPlayerId(), name, ambushSite, killZone, ambush);
+     if (ambush) return outcome.Accept(name + ": lying in wait, facing the road");
+     return outcome.Accept(name + ": defending, facing the way you dragged");
+    }
+    if (ACR_Ambush.DefendOnRoad(squad, point, ambushSite, killZone, ambushWhy))
+    {
+     PrintFormat("[ACR] AMBUSH player=%1 squad=%2 site=%3 kill zone=%4 (Defend on a road)", pc.GetPlayerId(), name, ambushSite, killZone);
+     return outcome.Accept(name + ": lying in wait by the road");
+    }
     if (squad.Defend(point)) return outcome.Accept(name + ": defending");
     break;
+   }
    case ACR_ERequest.ORDER_GARRISON:
     if (squad.Garrison(point)) return outcome.Accept(name + ": garrisoning");
     // Garrison falls back to a Defend there by itself.
@@ -357,6 +440,21 @@ class ACR_Requests : Managed
    case ACR_ERequest.MODE_FAST:
     squad.SetMode(ACR_EMoveMode.FAST);
     return outcome.Accept(name + ": fast");
+   case ACR_ERequest.ORDER_SQUAD_AI:
+   {
+    string handed = ACR_SquadAI.Toggle(squad);
+    PrintFormat("[ACR] SQUAD AI player=%1 %2: %3", pc.GetPlayerId(), name, squad.m_bAICommanded);
+    if (squad.m_bAICommanded || handed.Contains("back under your command")) return outcome.Accept(handed);
+    return outcome.Refuse(handed);
+   }
+   case ACR_ERequest.ORDER_PATROL:
+   {
+    string patrolWhy;
+    if (!squad.TogglePatrol(patrolWhy)) return outcome.Refuse(name + ": " + patrolWhy);
+    PrintFormat("[ACR] PATROL player=%1 %2 patrol %3", pc.GetPlayerId(), name, squad.m_bPatrol);
+    if (!squad.m_bPatrol) return outcome.Accept(name + ": patrol off (finishes the current leg)");
+    return outcome.Accept(name + ": patrolling its points in a loop");
+   }
    case ACR_ERequest.ORDER_FIRE_AT_WILL:
    {
     bool mortar = m_Manager.Mortars().TeamOf(squad) != null;
@@ -386,6 +484,14 @@ class ACR_Requests : Managed
     }
     return outcome.Refuse(name + ": unable to establish FOB");
    }
+   case ACR_ERequest.ORDER_QRF:
+   {
+    string qrfWhy;
+    if (!ACR_Qrf.CanOrder(squad, qrfWhy)) return outcome.Refuse(name + ": " + qrfWhy);
+    if (!squad.Qrf(point)) return outcome.Refuse(name + ": could not stand by there");
+    PrintFormat("[ACR] QRF player=%1 squad=%2 post=%3", pc.GetPlayerId(), name, point);
+    return outcome.Accept(string.Format("%1: %2, covering %3 m", name, OrderWords(command), ACR_Qrf.RADIUS));
+   }
    default:
     return outcome.Refuse("Unknown command");
   }
@@ -403,8 +509,8 @@ class ACR_Requests : Managed
   string siteWhy;
   string squadFaction = "";
   if (squad.GetFaction()) squadFaction = squad.GetFaction().GetFactionKey();
-  // Face the threat, as the AI commander's roadblocks face the enemy base.
-  if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction, ACR_Intel.ThreatPoint(squadFaction, point))) return outcome.Refuse(name + ": " + siteWhy);
+  // Face the threat, as the AI commander's roadblocks face the enemy base (or the dragged facing).
+  if (!ACR_Roadblocks.ValidateSite(point, validRoadPos, validYaw, siteWhy, squadFaction, FacingFor(squadFaction, point))) return outcome.Refuse(name + ": " + siteWhy);
   if (squad.EstablishRoadblock(validRoadPos, validYaw, type))
   {
    PrintFormat("[ACR] ESTABLISH ROADBLOCK player=%1 squad=%2 target=%3 type=%4", pc.GetPlayerId(), name, validRoadPos, ACR_Roadblocks.Name(squad.m_iRoadblockType));
@@ -415,13 +521,14 @@ class ACR_Requests : Managed
 
  // A free transport nearby (never fetched from far away) picks the squad up,
  // drops it at the point and it takes positions there (walking the rest if the ride fails).
+ // The player's order may take the side's own APC or IFV too (ACR_Rides.WhyNotTaxi).
  // going: a ride was arranged, or the squad walks instead (it moves either way).
  string Ride(ACR_Squad squad, vector point, out bool going)
  {
   going = false;
   if (!m_Manager.m_Rides) m_Manager.m_Rides = new ACR_Rides(m_Manager);
   string why;
-  if (!m_Manager.m_Rides.Request(squad, point, 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why))
+  if (!m_Manager.m_Rides.Request(squad, point, 0, ACR_Squad.WP_MOVE, -1, "Moving", 0, why, false, true))
   {
    // Walking beats the road there: just go.
    if (why.Contains("walking is faster") && squad.MoveTo(point)) { going = true; return squad.GetName() + ": " + why + ", on foot"; }
@@ -430,8 +537,10 @@ class ACR_Requests : Managed
   going = true;
   ACR_Ride ride = m_Manager.m_Rides.RideOf(squad);
   string taxi = "a transport";
-  if (ride) taxi = ride.m_Taxi.GetName();
-  return string.Format("%1: %2 is on its way to pick them up", squad.GetName(), taxi);
+  if (ride) taxi = ACR_Rides.TaxiNames(ride);
+  string coming = "is on its way";
+  if (ride && !ride.m_aExtraTaxis.IsEmpty()) coming = "are on their way";
+  return string.Format("%1: %2 %3 to pick them up", squad.GetName(), taxi, coming);
  }
 
  // Queue an unload: the passengers get out by themselves when their vehicle
@@ -462,6 +571,10 @@ class ACR_Requests : Managed
  {
   IEntity vehicle = ACR_Transport.VehicleOf(body);
   if (!vehicle) return "You are not in a vehicle";
+  // A rider in the back can't throw the side's squads out (mid-air that kills them, and it halts
+  // their orders): the driver or pilot, or the commander.
+  ECompartmentType seat = ACR_Transport.SeatOf(body);
+  if (seat != ECompartmentType.PILOT && !m_Manager.IsCommander(pc.GetPlayerId())) return "Only the driver or the commander can unload passengers";
   array<ACR_Squad> passengers = {};
   ACR_Transport.PassengerSquads(m_Manager, vehicle, passengers);
   Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());

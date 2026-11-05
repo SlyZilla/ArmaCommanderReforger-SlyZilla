@@ -31,7 +31,7 @@ class ACR_TestFactionPairs
  }
 
  protected static int s_iExpected;
- protected static ref array<IEntity> s_ArsenalTrucks = {};
+ protected static ref array<IEntity> s_ArsenalTrucks;
 
  // RHS sides: one subunit and camouflage per side (Jacob, 8 Oct live test: MARSOC, desert
  // and woodland mixed; officers and vehicle crews in vanilla 80s kit).
@@ -372,9 +372,17 @@ class ACR_TestFactionPairs
   BeginDMRReplacement(s_OtherDMRName);
  }
 
- protected static ref array<string> s_DMRNames = {};
- protected static ref array<ResourceName> s_DMRMissing = {};
- protected static ref array<vector> s_DMRLocations = {};
+ protected static ref array<string> s_DMRNames;
+ protected static ref array<ResourceName> s_DMRMissing;
+ protected static ref array<vector> s_DMRLocations;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_ArsenalTrucks = {};
+  s_DMRNames = {};
+  s_DMRMissing = {};
+  s_DMRLocations = {};
+ }
 
  static void BeginDMRReplacement(string name)
  {

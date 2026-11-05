@@ -27,12 +27,18 @@ class ACR_Skirmish : GenericEntity
  [Attribute("", UIWidgets.EditBox, "HQ per side as faction=base, separated by semicolons, e.g. US=Airbase; USSR=Power Plant")]
  string m_sHQs;
 
- static ref array<ACR_Skirmish> s_All = {};
+ static ref array<ACR_Skirmish> s_All;
 
  // Server state of the applied layout.
  protected static bool s_bApplied;
  static ACR_Skirmish s_Active;
- protected static ref array<string> s_PadSides = {};
+ protected static ref array<string> s_PadSides;
+ // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
+ static void ACR_InitStatics()
+ {
+  s_All = {};
+  s_PadSides = {};
+ }
 
  void ACR_Skirmish(IEntitySource src, IEntity parent)
  {
@@ -60,7 +66,8 @@ class ACR_Skirmish : GenericEntity
  // Helicopter supports of a side fly from its helipads, unless a layout left it without one.
  static bool SideHasPads(string factionKey)
  {
-  if (!s_Active && !ACR_Generator.Built()) return true;
+  // (A generated layout that failed plays the world as placed: its pads as placed too.)
+  if (!s_Active && (!ACR_Generator.Built() || ACR_Generator.s_Sites.IsEmpty())) return true;
   return s_PadSides.Contains(factionKey);
  }
 
@@ -155,7 +162,10 @@ class ACR_Skirmish : GenericEntity
    ACR_Skirmish layout = Choose();
    if (layout) layout.Apply();
   }
+  ACR_QuickStart.Apply();
   ACR_Pockets.Apply();
+  ACR_Guerrillas.Apply();
+  ACR_Insurgency.Apply();
  }
 
  void Apply()
@@ -214,7 +224,7 @@ class ACR_Skirmish : GenericEntity
    point.SetFactionKey(side);
    vector at = ACR_Manager.Ground(target.GetOrigin() + Vector(6, 0, 6));
    vector free;
-   if (SCR_WorldTools.FindEmptyTerrainPosition(free, at, 20, 1.5, 2.5)) at = ACR_Manager.Ground(free);
+   if (ACR_BaseSystem.ClearGround(free, at, 20, 1.5)) at = free;
    point.SetOrigin(at);
    PrintFormat("[ACR] SKIRMISH spawn point %1 moved to %2 %3", side, target.m_sName, at);
   }

@@ -846,6 +846,13 @@ class ACR_FobSlots : Managed
 
 		IEntity ent = SpawnComposition(PrefabFor(slot.m_eKind, base.m_sOwner, slot.m_iTier), pos, slot.m_fAngleDeg, base, slot.m_iTier);
 		if (ent) slot.m_Entity = ent;
+		else
+		{
+			// A failed action spends nothing: the supplies go back (the slot reads as lost next tick).
+			SCR_ResourceContainer refundStore = ACR_Logistics.SupplyContainer(base.m_FobSupply);
+			if (refundStore) refundStore.SetResourceValue(Math.Min(refundStore.GetMaxResourceValue(), ACR_FobSupply.Stock(base.m_FobSupply) + slot.m_iCost));
+			PrintFormat("[ACR] FOB %1: %2 failed to spawn, %3 supplies refunded", base.m_sName, slot.m_sName, slot.m_iCost);
+		}
 		// Long Everon soak 24 Oct: a barracks completion took the bases stage to 1285 ms in one tick.
 		int total = System.GetTickCount() - started;
 		if (total > SLOW_COMPLETION_MS) PrintFormat("[ACR] FOB %1: slow completion of %2, %3 ms (trees %4, load %5, spawn %6, navmesh %7)", base.m_sName, slot.m_sName, total, s_iFellMs, s_iLoadMs, s_iSpawnMs, s_iNavmeshMs);
@@ -878,6 +885,7 @@ class ACR_FobSlots : Managed
 		}
 		if (!ent) return null;
 		ent.SetYawPitchRoll(Vector(yaw, 0, 0));
+		ACR_GroundTilt.Place(ent, prefab, pos, yaw); // FOB sandbags lie on the ground; buildings stay upright
 		SCR_CampaignBuildingCompositionComponent comp = SCR_CampaignBuildingCompositionComponent.Cast(ent.FindComponent(SCR_CampaignBuildingCompositionComponent));
 		if (comp)
 		{
