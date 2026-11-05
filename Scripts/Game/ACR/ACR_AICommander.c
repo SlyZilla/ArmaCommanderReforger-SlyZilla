@@ -1350,7 +1350,7 @@ class ACR_AICommander : Managed
   }
   // New attacks: the planner's best-scored enemy bases (cheapest x nearest).
   bool laneActive = LaneActive();
-  bool laneStarved = LaneStarved();
+  bool laneOpen = LaneOpenToOthers();
   array<ACR_Base> targets = {};
   array<float> scores = {};
   foreach (ACR_Base base : ACR_Base.s_All)
@@ -1359,7 +1359,7 @@ class ACR_AICommander : Managed
    if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
    // The lane, as AssignAttacks weighs it: in it sooner, its flanks later, elsewhere not while it has work.
    float laneFactor = LaneTargetFactor(base);
-   if (laneFactor < 0 && !laneStarved) continue;
+   if (laneFactor < 0 && !laneOpen) continue;
    float score = Math.Max(10, DefenceOf(base) * ATTACK_RATIO * m_Doctrine.m_fAttackRatio) * (NearestFreeDistance(pool, base.GetOrigin()) / 1000 + 0.1);
    if (laneFactor > 0) score *= laneFactor;
    int at = 0;
@@ -2177,6 +2177,28 @@ class ACR_AICommander : Managed
  {
   if (!m_Lane || m_Lane.m_fStarvedSince < 0) return false;
   return GetGame().GetWorld().GetWorldTime() - m_Lane.m_fStarvedSince > ACR_AILanes.STARVE_S * 1000;
+ }
+
+ // Bases off the lane open as targets when it is starved, or when nothing in it or on its flanks
+ // can be attacked at all: a lane toward empty bases (soak 4 Nov) never starves, as starving counts
+ // only targets in it that couldn't be mustered for, and held every attack back for the whole match.
+ protected bool LaneOpenToOthers()
+ {
+  return LaneStarved() || !LaneHasTarget();
+ }
+ bool LaneOpenForTest() { return LaneOpenToOthers(); }
+
+ // An enemy base in the lane or on its flanks that the planners would attack (or already do).
+ protected bool LaneHasTarget()
+ {
+  if (!LaneActive()) return false;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner == m_sFaction || !HostileOwner(base) || !Visible(base) || CoolingDown(base)) continue;
+   if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
+   if (InLaneOrFlank(base)) return true;
+  }
+  return false;
  }
 
  // An attack target's score multiplier from the lane: 1 without one, -1 for a base it leaves alone.
@@ -3293,7 +3315,7 @@ class ACR_AICommander : Managed
    candidates.Insert(priority);
    scores.Insert(-1);
   }
-  bool laneStarved = LaneStarved();
+  bool laneOpen = LaneOpenToOthers();
   if (!priority || attacks < maxAttacks)
   {
    foreach (ACR_Base base : ACR_Base.s_All)
@@ -3306,7 +3328,7 @@ class ACR_AICommander : Managed
     if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
     // The lane: in it sooner (income first), its flanks a little later, elsewhere not while it has work.
     float laneFactor = LaneTargetFactor(base);
-    if (laneFactor < 0 && !laneStarved) continue;
+    if (laneFactor < 0 && !laneOpen) continue;
     float score = cost * (dist / 1000 + 0.1);
     if (laneFactor > 0) score *= laneFactor;
     if (base.m_bPocket) score *= m_Doctrine.m_fPocketScore;

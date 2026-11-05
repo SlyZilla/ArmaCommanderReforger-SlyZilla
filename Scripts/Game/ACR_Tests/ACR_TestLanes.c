@@ -103,6 +103,42 @@ class ACR_TestLanes
    if (base.m_bIncome && ai.FlankStrongpointForTest(base)) incomeNeverFlank = false;
   ACR_TestRegress.Check("lanes: only tactical points become flank strongpoints", incomeNeverFlank, "");
 
+  // A lane with nothing in it to attack doesn't hold attacks elsewhere back (soak 4 Nov: lanes
+  // toward empty bases kept both sides from attacking all match); one with an enemy base in it does.
+  // Narrow lanes from a base of ours to an empty base, then to an enemy one.
+  ACR_Base ownStart, empty, enemy;
+  foreach (ACR_Base pick : ACR_Base.s_All)
+  {
+   if (pick.m_bRetired || pick.m_bPocket) continue;
+   if (!ownStart && pick.m_sOwner == side && !pick.m_bContested) ownStart = pick;
+   else if (!empty && pick.OwnerSeenBy(side).IsEmpty() && pick.IsVisibleTo(side)) empty = pick;
+   else if (!enemy && !pick.OwnerSeenBy(side).IsEmpty() && pick.m_sOwner != side && !ACR_Insurgency.Friendly(pick.OwnerSeenBy(side), side) && pick.IsVisibleTo(side)) enemy = pick;
+  }
+  ai.SetDoctrineForTest(ACR_AIDoctrine.Find("balanced"));
+  bool openEmpty = true;
+  bool closedEnemy = true;
+  string found = string.Format("own %1, empty %2, enemy %3", ownStart != null, empty != null, enemy != null);
+  if (ownStart && empty)
+  {
+   ACR_AILane toEmpty = new ACR_AILane();
+   toEmpty.m_From = ownStart;
+   toEmpty.m_Objective = empty;
+   toEmpty.m_fHalfWidth = 1;
+   ai.SetLaneForTest(toEmpty);
+   openEmpty = ai.LaneOpenForTest();
+  }
+  if (ownStart && enemy)
+  {
+   ACR_AILane toEnemy = new ACR_AILane();
+   toEnemy.m_From = ownStart;
+   toEnemy.m_Objective = enemy;
+   toEnemy.m_fHalfWidth = 1;
+   ai.SetLaneForTest(toEnemy);
+   closedEnemy = !ai.LaneOpenForTest();
+  }
+  ai.SetLaneForTest(null);
+  ACR_TestRegress.Check("lanes: a lane with no enemy base in it lets attacks go elsewhere, one with an enemy base holds them", openEmpty && closedEnemy, found);
+
   // Raider has no lane.
   ai.SetDoctrineForTest(ACR_AIDoctrine.Find("raider"));
   ai.UpdateLaneForTest();
