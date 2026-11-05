@@ -173,8 +173,14 @@ class ACR_Intel : Managed
     if (!control || !control.GetAIAgent()) continue;
     SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(control.GetAIAgent().FindComponent(SCR_AIUtilityComponent));
     if (!utility || !utility.m_PerceptionComponent) continue;
+    // Identified enemies too: a target moves from DETECTED to ENEMY once it is made out, and intel read only the
+    // first list, so a squad watching an enemy walk in gave one sighting and then none (forecastdefend, 4 Nov:
+    // the contact aged to 81 s while the screen had him at 300 m). As ACR_Ambush reads them.
     array<BaseTarget> targets = {};
-    utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.DETECTED);
+    utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.ENEMY);
+    array<BaseTarget> detected = {};
+    utility.m_PerceptionComponent.GetTargetsList(detected, ETargetCategory.DETECTED);
+    targets.InsertAll(detected);
     foreach (BaseTarget target : targets)
     {
      if (!target || !RecentDetection(target.GetTimeSinceDetected())) continue;
