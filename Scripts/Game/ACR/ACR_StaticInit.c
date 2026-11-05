@@ -72,6 +72,7 @@ class ACR_StaticInit
   ACR_TwoIC.ACR_InitStatics();
   ACR_TwoICRequests.ACR_InitStatics();
   ACR_TwoICSuggest.ACR_InitStatics();
+  ACR_TwoICForecast.ACR_InitStatics();
   ACR_UALoadout.ACR_InitStatics();
   ACR_UiPrefs.ACR_InitStatics();
   ACR_Vehicles.ACR_InitStatics();

@@ -21,6 +21,84 @@ class ACR_TestForecast
   CheckDoctrine(a, b);
   CheckLanes(a, b);
   CheckSelfCheck(a, b);
+  // Step 2: acting on it.
+  CheckFirm(a);
+  CheckDemand(a, b);
+  CheckHedge();
+  CheckScreenSpot(a, b);
+ }
+
+ static ACR_BaseForecast Entry(ACR_Base base, float expected, float eta)
+ {
+  ACR_BaseForecast entry = new ACR_BaseForecast();
+  entry.m_Base = base;
+  entry.m_fExpected = expected;
+  entry.m_fEta = eta;
+  return entry;
+ }
+
+ static void CheckFirm(ACR_Base a)
+ {
+  bool strongSoon = ACR_DefenceForecast.IsFirm(Entry(a, 4, 200), false);
+  bool weak = ACR_DefenceForecast.IsFirm(Entry(a, 1.5, 200), false);
+  bool late = ACR_DefenceForecast.IsFirm(Entry(a, 4, 500), false);
+  bool remembered = ACR_DefenceForecast.IsFirm(Entry(a, 4, -1), false);
+  // Once firm it holds on the lower bars (no flicker at the edge), and lets go once clearly faded.
+  bool keepsWeak = ACR_DefenceForecast.IsFirm(Entry(a, 1.5, 200), true);
+  bool keepsLate = ACR_DefenceForecast.IsFirm(Entry(a, 4, 500), true);
+  bool fades = ACR_DefenceForecast.IsFirm(Entry(a, 0.5, 200), true);
+  bool ok = strongSoon && !weak && !late && !remembered && keepsWeak && keepsLate && !fades;
+  ACR_TestRegress.Check("forecast: firm when strong and due within lead time, held on lower bars, let go once faded", ok, string.Format("strong soon %1, weak %2, late %3, remembered %4, keeps weak %5, keeps late %6, faded %7", strongSoon, weak, late, remembered, keepsWeak, keepsLate, fades));
+ }
+
+ static void CheckDemand(ACR_Base a, ACR_Base b)
+ {
+  ACR_DefenceForecast forecast = new ACR_DefenceForecast("TEST");
+  vector at = Beside(a, b, 600, 1);
+  array<ACR_Base> ours = {};
+  ours.Insert(a);
+  ours.Insert(b);
+  array<int> defence = {0, 0};
+  array<ref ACR_ForecastContact> contacts = {};
+  ACR_ForecastContact coming = MakeContact(at, ACR_Intel.Bearing(at, a.GetOrigin()), 10, true);
+  contacts.Insert(coming);
+  ACR_DefenceForecast.Compute(ours, defence, contacts, null, "", forecast.m_aBases);
+  forecast.UpdateFirmForTest();
+  int toA = forecast.Demand(a);
+  int toB = forecast.Demand(b);
+  // It turns away: nothing left to defend against.
+  coming.m_fHeading = ACR_Intel.Bearing(a.GetOrigin(), at);
+  ACR_DefenceForecast.Compute(ours, defence, contacts, null, "", forecast.m_aBases);
+  forecast.UpdateFirmForTest();
+  int after = forecast.Demand(a);
+  ACR_TestRegress.Check("forecast: a firm forecast asks for defenders at its base only, and none once it turns away", toA > 0 && toB == 0 && after == 0, string.Format("A %1, B %2, A after it turned %3", toA, toB, after));
+ }
+
+ static void CheckHedge()
+ {
+  array<vector> spots = {Vector(0, 0, 0), Vector(1000, 0, 0), Vector(3000, 0, 0)};
+  array<vector> two = {Vector(0, 0, 1500), Vector(2000, 0, 1500)};
+  int between = ACR_DefenceForecast.Hedge(spots, two, -1, 300);
+  // The current base stays while it's nearly as good; the reserve moves only for a clear gain.
+  array<vector> near = {Vector(200, 0, 1500), Vector(1200, 0, 1500)}; // farthest: 1921 m from 0, 1700 m from 1
+  int kept = ACR_DefenceForecast.Hedge(spots, near, 0, 300);
+  int moved = ACR_DefenceForecast.Hedge(spots, near, 2, 300);
+  array<vector> none = {};
+  int nothing = ACR_DefenceForecast.Hedge(spots, none, -1, 300);
+  ACR_TestRegress.Check("forecast: the reserve hedges where the farthest likely target is nearest, and doesn't move for a small gain", between == 1 && kept == 0 && moved == 1 && nothing == -1, string.Format("between %1, kept %2, moved %3, none %4", between, kept, moved, nothing));
+ }
+
+ static void CheckScreenSpot(ACR_Base a, ACR_Base b)
+ {
+  float way = ACR_Intel.Bearing(a.GetOrigin(), b.GetOrigin());
+  array<ACR_Base> enemy = {};
+  vector spot;
+  int sees;
+  bool found = ACR_DefenceScreen.Spot(a, way, enemy, spot, sees);
+  float gap = vector.DistanceXZ(spot, a.GetOrigin()) - a.m_fRadius;
+  float off = ACR_DefenceForecast.AngleBetween(ACR_Intel.Bearing(a.GetOrigin(), spot), way);
+  bool placed = found && sees > 0 && gap >= ACR_DefenceScreen.OUT_LEAST - 5 && ACR_DefenceScreen.OUT_MOST + 5 >= gap && ACR_DefenceScreen.TURN_MOST + 1 >= off;
+  ACR_TestRegress.Check("forecast: a screen spot is found outside the base, toward the way, seeing some of it", placed, string.Format("%1: found %2, %3 m out, %4 deg off the way, sees %5/%6", a.m_sName, found, Math.Round(gap), Math.Round(off), sees, ACR_DefenceScreen.SAMPLES));
  }
 
  static void CheckOption()

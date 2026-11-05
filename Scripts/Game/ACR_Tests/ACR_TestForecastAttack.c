@@ -125,7 +125,7 @@ class ACR_TestForecastAttack
   return false;
  }
 
- protected static void MoveTo(SCR_AIGroup group, vector where)
+ static void MoveTo(SCR_AIGroup group, vector where)
  {
   SCR_AIWaypoint waypoint = SCR_AIWaypoint.Cast(ACR_Manager.SpawnPrefab(MOVE_WAYPOINT, ACR_Manager.Ground(where)));
   if (waypoint) group.AddWaypoint(waypoint);
@@ -212,7 +212,7 @@ class ACR_TestForecastAttack
   ACR_TestRegress.Complete("forecastattack", CHECKS);
  }
 
- protected static void Kill(ACR_TestHarness h, SCR_AIGroup group)
+ static void Kill(ACR_TestHarness h, SCR_AIGroup group)
  {
   if (!group) return;
   array<AIAgent> agents = {};

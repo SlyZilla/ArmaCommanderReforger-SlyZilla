@@ -141,10 +141,76 @@ class ACR_DefenceForecast : Managed
  int m_iAtDoor; // of the unforecast: nobody had seen them before they were at the base
  ref array<string> m_aSaid = {}; // lines for the commander's log, taken by it each tick
 
+ // The commander acting on it (-acrDefenceForecast 2, defence step 2): a firm forecast (enough
+ // expected, due within lead time) is defended ahead of the attack; it stays firm until it has
+ // clearly faded (a feint's projection decays, and its defenders are released by the same count).
+ // A fire team of 4 coming straight on reads ~2.5 (part of every contact is kept for 'going elsewhere'):
+ // at 3 it never firmed up (forecastdefend, 4 Nov). One man walking in stays under it.
+ static const float FIRM = 2;               // expected strength from which a base is defended ahead
+ static const float FIRM_KEEP = 1;          // ... and stays defended until it falls below this
+ static const float LEAD_S = 360;           // s: defended ahead when the attack is due within this
+ static const float LEAD_KEEP_S = 600;      // ... and stays defended while it is due within this
+ static const int HEDGE_TARGETS = 3;        // likeliest targets the reserve hedges between
+ protected ref map<ACR_Base, bool> m_Firm = new map<ACR_Base, bool>();
+
  void ACR_DefenceForecast(string faction) { m_sFaction = faction; }
 
- // 0 off (default), 1 forecast + log + Think.
+ // 0 off (default), 1 forecast + log + Think, 2 the AI commander also acts on it.
  static bool On() { return ACR_LogisticsRules.Choice("acrDefenceForecast", "0") != "0"; }
+ static bool Acts() { return ACR_LogisticsRules.Choice("acrDefenceForecast", "0").ToInt() >= 2; }
+
+ // Firm: worth defending ahead now. A base firm last tick keeps it on the lower bars.
+ static bool IsFirm(ACR_BaseForecast entry, bool wasFirm)
+ {
+  if (!entry || entry.m_fEta < 0) return false;
+  if (wasFirm) return entry.m_fExpected >= FIRM_KEEP && LEAD_KEEP_S >= entry.m_fEta;
+  return entry.m_fExpected >= FIRM && LEAD_S >= entry.m_fEta;
+ }
+
+ // Strength a base of ours should be defended against ahead of the attack (0: not firm).
+ int Demand(ACR_Base base)
+ {
+  bool firm;
+  if (!m_Firm.Find(base, firm) || !firm) return 0;
+  ACR_BaseForecast entry = Of(base);
+  if (!entry) return 0;
+  return (int)Math.Max(1, Math.Round(entry.m_fExpected));
+ }
+
+ // Our bases an attack is forecast on (expected at least NOTE), likeliest first, at most 'most'.
+ void Watched(notnull array<ACR_Base> into, int most)
+ {
+  into.Clear();
+  foreach (ACR_BaseForecast entry : m_aBases)
+  {
+   if (into.Count() >= most || entry.m_fExpected < NOTE) break;
+   into.Insert(entry.m_Base);
+  }
+ }
+
+ // Of 'candidates', the one whose farthest target is nearest: a reserve there reaches the worst case
+ // soonest, so a show of force at one base moves it toward both, not into one. 'keep' (-1: none) stays
+ // unless another is better by more than 'margin' m. -1: no candidates or no targets.
+ static int Hedge(notnull array<vector> candidates, notnull array<vector> targets, int keep, float margin)
+ {
+  if (targets.IsEmpty()) return -1;
+  int best = -1;
+  float bestWorst = float.MAX;
+  float keptWorst = float.MAX;
+  foreach (int c, vector at : candidates)
+  {
+   float worst = 0;
+   foreach (vector target : targets) worst = Math.Max(worst, vector.DistanceXZ(at, target));
+   if (c == keep) keptWorst = worst;
+   if (worst < bestWorst)
+   {
+    bestWorst = worst;
+    best = c;
+   }
+  }
+  if (keep >= 0 && keptWorst <= bestWorst + margin) return keep;
+  return best;
+ }
 
  static string Two(float value) { return "." + Math.ClampInt(Math.Round(value * 100), 0, 99).ToString(2); }
 
@@ -414,6 +480,7 @@ class ACR_DefenceForecast : Managed
    for (int j = i; j > 0 && m_aBases[j].m_fExpected > m_aBases[j - 1].m_fExpected; j--)
     m_aBases.SwapItems(j, j - 1);
   foreach (ACR_BaseForecast noted : m_aBases) LogChange(noted, now);
+  UpdateFirm();
   // Lapsed: a base noted before whose forecast fell away with no attack.
   array<ACR_Base> lapsed = {};
   foreach (ACR_Base base, float since : m_NotedSince)
@@ -436,6 +503,26 @@ class ACR_DefenceForecast : Managed
    m_aSaid.Insert(string.Format("forecast lapsed at %1: no attack came", gone.m_sName));
   }
  }
+
+ // Which bases are firm now; said when one turns firm or fades.
+ protected void UpdateFirm()
+ {
+  map<ACR_Base, bool> was = new map<ACR_Base, bool>();
+  was.Copy(m_Firm);
+  m_Firm.Clear();
+  foreach (ACR_BaseForecast entry : m_aBases)
+  {
+   bool before;
+   was.Find(entry.m_Base, before);
+   bool firm = IsFirm(entry, before);
+   if (firm) m_Firm.Set(entry.m_Base, true);
+   if (firm && !before) m_aSaid.Insert(string.Format("forecast firm at %1, defending ahead: %2", entry.m_Base.m_sName, entry.Line()));
+   if (!firm && before) m_aSaid.Insert(string.Format("forecast at %1 no longer firm (~%2 expected)", entry.m_Base.m_sName, Math.Round(entry.m_fExpected)));
+  }
+ }
+
+ // Tests: firm as a strategic tick would leave it.
+ void UpdateFirmForTest() { UpdateFirm(); }
 
  ACR_BaseForecast Of(ACR_Base base)
  {

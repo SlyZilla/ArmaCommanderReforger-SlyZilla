@@ -131,6 +131,7 @@ class ACR_TwoICRequests
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!Replication.IsServer() || !manager || !pc) return "Server unavailable";
   if (ACR_TwoICSuggest.Owns(id)) return ACR_TwoICSuggest.Act(pc, id, action);
+  if (ACR_TwoICForecast.Owns(id)) return ACR_TwoICForecast.Act(pc, id, action);
   ACR_TwoICRequest r = Find(id);
   if (!r) return "That request is over";
   Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
@@ -260,6 +261,7 @@ class ACR_TwoICRequests
    kinds.Insert(r.m_iKind);
   }
   ACR_TwoICSuggest.AddRings(faction, positions, labels, kinds);
+  ACR_TwoICForecast.AddRings(faction, positions, labels, kinds);
  }
 
  static string RingsSig(string faction)
@@ -267,7 +269,7 @@ class ACR_TwoICRequests
   string sig = faction;
   foreach (ACR_TwoICRequest r : s_Live)
    if (r.m_sFaction == faction) sig += string.Format("|%1;%2;%3", r.m_iId, r.m_iState, RingLabel(r));
-  return sig + ACR_TwoICSuggest.RingsSig(faction);
+  return sig + ACR_TwoICSuggest.RingsSig(faction) + ACR_TwoICForecast.RingsSig(faction);
  }
 
  static string RingLabel(ACR_TwoICRequest r)

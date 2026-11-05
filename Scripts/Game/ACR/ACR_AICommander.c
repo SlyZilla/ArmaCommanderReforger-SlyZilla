@@ -1147,6 +1147,7 @@ class ACR_AICommander : Managed
   else AssignAttacks();
   t = ACR_Perf.Lap("ai.plan", t);
   PostIdle(); // with the allocator in control: only the squads it left with nothing to do
+  ManageScreens();
   CatchRides();
   PositionMortars();
   Recrew();
@@ -1319,7 +1320,7 @@ class ACR_AICommander : Managed
    int task = candidate.m_iAITask;
    if (task != ACR_EAITask.FREE && task != ACR_EAITask.POSTED && task != ACR_EAITask.ATTACK && task != ACR_EAITask.DEFEND) continue;
    if (task == ACR_EAITask.DEFEND && (OnRequest(candidate) || candidate == m_FobEscort || !candidate.m_AITarget)) continue;
-   if (!candidate.IsCombatUnit() || IsRetreating(candidate) || IsReconTeam(candidate)) continue;
+   if (!candidate.IsCombatUnit() || IsRetreating(candidate) || IsReconTeam(candidate) || IsScreen(candidate)) continue;
    pool.Insert(candidate);
   }
   // Squads flown to their attack (MySquads leaves air-lifted squads out): in, and locked below, or
@@ -1411,10 +1412,10 @@ class ACR_AICommander : Managed
   foreach (ACR_Base held : ACR_Base.s_All)
   {
    if (!held || held.m_bRetired || held.m_sOwner != m_sFaction) continue;
-   int threat;
-   m_Threat.Find(held, threat);
+   int threat = DefenceThreat(held);
    int defence = DefenceOf(held);
-   if (threat <= 0 || (defence > 0 && threat > defence * CONCEDE_RATIO * m_Doctrine.m_fConcedeRatio)) continue;
+   // Given up only for the enemies there now: a forecast on a thinly held base is the time to reinforce it.
+   if (threat <= 0 || (defence > 0 && ThreatTo(held) > defence * CONCEDE_RATIO * m_Doctrine.m_fConcedeRatio)) continue;
    ACR_AIJob defend = AllocJob(ACR_EAITask.DEFEND, held, held.m_sName, ALLOC_DEFEND_VALUE * AllocWorth(held));
    defend.m_fNeed = threat * DEFENSE_RATIO * m_Doctrine.m_fDefenseRatio;
    defend.m_iMaxSquads = 4;
@@ -1979,6 +1980,7 @@ class ACR_AICommander : Managed
    if (freeOnly && squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED) continue;
    if (freeOnly && !squad.IsCombatUnit()) continue; // lone drivers, unarmed crews: kept out of the fighting
    if (freeOnly && IsRetreating(squad)) continue; // just broke contact: let it fall back instead of re-tasking at once
+   if (freeOnly && IsScreen(squad)) continue; // out front watching a way in: ManageScreens
    if (freeOnly && !committedToo && Committed(squad)) continue; // on its way to a posting: see the trips note
    result.Insert(squad);
   }
@@ -2572,7 +2574,9 @@ class ACR_AICommander : Managed
     if (!mine && !KnownPosition(squad, where)) continue;
     float distance = vector.DistanceXZ(where, center);
     bool friendly = squad.GetFaction().GetFactionKey() == base.m_sOwner;
-    if (friendly && distance < DEFENSE_DISTANCE) defence += squad.Strength();
+    // A screen out front isn't the base's defence until it comes back (forecastdefend: one 330 m out made a base
+    // look held, and nobody was sent).
+    if (friendly && distance < DEFENSE_DISTANCE && !IsScreen(squad)) defence += squad.Strength();
     if (!friendly && distance < THREAT_DISTANCE + base.m_fRadius) threat += squad.Strength();
    }
    // Player bodies not in any squad (command units) count too.
@@ -2658,8 +2662,69 @@ class ACR_AICommander : Managed
  void ThinkForecast(notnull array<string> lines)
  {
   if (m_Forecast && ACR_DefenceForecast.On()) m_Forecast.Think(lines);
+  ThinkScreens(lines);
  }
  protected int ThreatTo(ACR_Base base) { int v; m_Threat.Find(base, v); return v; }
+
+ // What a base of ours is defended against: the enemies at it, or (-acrDefenceForecast 2, defence
+ // step 2) the attack forecast on it within lead time, whichever is more. Defenders are sent, kept and
+ // released by this, so a firm forecast calls them minutes before the attackers reach the threat ring,
+ // and one that fades (a feint, a squad that turned away) lets them go by the same rule.
+ protected int DefenceThreat(ACR_Base base)
+ {
+  int threat = ThreatTo(base);
+  // A player's side (squads handed to the AI, the 2IC): the player commander decides, with the forecast
+  // as a 2IC advisement (ACR_TwoICForecast) whose Accept is their own order.
+  if (!m_Forecast || !ACR_DefenceForecast.Acts() || m_bHandedOnly) return threat;
+  return (int)Math.Max(threat, m_Forecast.Demand(base));
+ }
+
+ // The 2IC on a player's side (ACR_TwoICForecast): this side's forecast, refreshed. False: off.
+ bool ForecastForTwoIC()
+ {
+  if (!ACR_DefenceForecast.Acts()) return false;
+  Assess();
+  UpdateForecast();
+  return m_Forecast != null;
+ }
+
+ // The squad the 2IC would send to hold 'pos' (as it answers a Hold request), null if none in reach.
+ ACR_Squad TwoICDefender(vector pos)
+ {
+  bool handed = m_bHandedOnly;
+  m_bHandedOnly = true;
+  array<ACR_Squad> mine = {};
+  MySquads(mine, false);
+  ACR_Squad squad = RequestSquad(mine, pos);
+  m_bHandedOnly = handed;
+  if (!squad || vector.DistanceXZ(PositionOf(squad), pos) > REQUEST_REACH) return null;
+  return squad;
+ }
+
+ // Strength of our squads sent to defend 'base' that aren't there yet (outside DEFENSE_DISTANCE).
+ protected int EnRouteTo(ACR_Base base)
+ {
+  int strength;
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (!squad || squad.m_iAITask != ACR_EAITask.DEFEND || squad.m_AITarget != base || !squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction) continue;
+   if (vector.DistanceXZ(PositionOf(squad), base.GetOrigin()) >= DEFENSE_DISTANCE) strength += squad.Strength();
+  }
+  return strength;
+ }
+
+ // "threat 6" or "an attack forecast from the NE in ~3 min (~6)", for the defence lines.
+ protected string ThreatText(ACR_Base base)
+ {
+  int threat = ThreatTo(base);
+  if (threat > 0 || !m_Forecast) return string.Format("threat %1", threat);
+  ACR_BaseForecast entry = m_Forecast.Of(base);
+  if (!entry) return string.Format("threat %1", threat);
+  string from = "";
+  ACR_ForecastWay lead = entry.LeadWay();
+  if (lead) from = " from the " + ACR_DefenceForecast.CompassOf(lead.m_fBearing);
+  return string.Format("an attack forecast%1 in ~%2 min (~%3)", from, Math.Max(1, Math.Round(entry.m_fEta / 60)), Math.Round(entry.m_fExpected));
+ }
  int DefenceOfForTest(ACR_Base base) { return DefenceOf(base); }
 
  // A manned tier II or III position within DEFENSE_DISTANCE of a base counts its holders again,
@@ -2765,7 +2830,7 @@ class ACR_AICommander : Managed
    if (squad == m_FobEscort && HasActiveFobProject()) continue;
    if (OnRequest(squad)) continue; // a player's request to the 2IC (#14 v1)
    ACR_Base held = squad.m_AITarget;
-   if (!held || held.m_sOwner != m_sFaction || ThreatTo(held) == 0)
+   if (!held || held.m_sOwner != m_sFaction || DefenceThreat(held) == 0)
    {
     if (held && m_Manager.HasPrimedDemolition(held)) continue;
     squad.SetAITask(ACR_EAITask.FREE);
@@ -2784,11 +2849,15 @@ class ACR_AICommander : Managed
   foreach (ACR_Base base : ACR_Base.s_All)
   {
    if (base.m_sOwner != m_sFaction) continue;
-   int threat = ThreatTo(base);
+   int threat = DefenceThreat(base);
    if (threat == 0) continue;
+   string threatText = ThreatText(base);
    int defence = DefenceOf(base);
-   if (threat > defence * CONCEDE_RATIO * m_Doctrine.m_fConcedeRatio && defence > 0) continue; // lost cause
+   if (ThreatTo(base) > defence * CONCEDE_RATIO * m_Doctrine.m_fConcedeRatio && defence > 0) continue; // lost cause (the enemies there now, not a forecast)
    float needed = threat * DEFENSE_RATIO * m_Doctrine.m_fDefenseRatio - defence;
+   // Defending ahead of a forecast attack, the walk takes minutes: squads already on their way count, or a
+   // base with nobody there yet called one more every tick (forecastdefend: four teams for an expected 3).
+   if (ThreatTo(base) == 0) needed -= EnRouteTo(base);
    if (needed <= 0) continue;
    // Outnumbered there (the attackers outweigh all we have within DEFENSE_DISTANCE, its garrison
    // included): the squads holding our roadblocks and positions nearby go too, nearest first with
@@ -2817,9 +2886,9 @@ class ACR_AICommander : Managed
     pool.RemoveOrdered(k);
     free.RemoveItem(squad);
     if (holding)
-     Say(string.Format("[ACR] AI %1: %2 leaves what it holds to defend %3 (threat %4, outnumbered: defence %5)", m_sFaction, squad.GetName(), base.m_sName, threat, defence));
+     Say(string.Format("[ACR] AI %1: %2 leaves what it holds to defend %3 (%4, outnumbered: defence %5)", m_sFaction, squad.GetName(), base.m_sName, threatText, defence));
     else
-     Say(string.Format("[ACR] AI %1: %2 defends %3 (threat %4)", m_sFaction, squad.GetName(), base.m_sName, threat));
+     Say(string.Format("[ACR] AI %1: %2 defends %3 (%4)", m_sFaction, squad.GetName(), base.m_sName, threatText));
    }
    // Only a reserve still posted: one sent into an attack (or a sweep, a resupply) meanwhile kept
    // m_ReserveSquad, and was then also committed here and pulled between the two jobs.
@@ -2832,7 +2901,7 @@ class ACR_AICommander : Managed
     qrf.SetAITask(ACR_EAITask.DEFEND);
     qrf.m_AITarget = base;
     needed -= qrf.Strength();
-    Say(string.Format("[ACR] AI %1: QRF reserve %2 committed to defend %3 (threat %4)", m_sFaction, qrf.GetName(), base.m_sName, threat));
+    Say(string.Format("[ACR] AI %1: QRF reserve %2 committed to defend %3 (%4)", m_sFaction, qrf.GetName(), base.m_sName, threatText));
    }
    // Still short: the builders holding our roadblocks and positions nearby, as a last resort
    // (never a Fortress's while it isn't outnumbered there: its defences stay manned).
@@ -2849,7 +2918,7 @@ class ACR_AICommander : Managed
     holder.SetAITask(ACR_EAITask.DEFEND);
     holder.m_AITarget = base;
     needed -= holder.Strength();
-    Say(string.Format("[ACR] AI %1: %2 leaves what it holds to defend %3 (threat %4)", m_sFaction, holder.GetName(), base.m_sName, threat));
+    Say(string.Format("[ACR] AI %1: %2 leaves what it holds to defend %3 (%4)", m_sFaction, holder.GetName(), base.m_sName, threatText));
    }
   }
   DefendInDepth();
@@ -2943,14 +3012,14 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad gone : stale) m_ForwardAt.Remove(gone);
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_sOwner != m_sFaction || ThreatTo(base) == 0) continue;
+   if (base.m_sOwner != m_sFaction || DefenceThreat(base) == 0) continue;
    vector center = base.GetOrigin();
    array<ACR_Squad> defenders = {};
    foreach (ACR_Squad squad : m_Manager.m_Squads)
    {
     if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction || squad.HasPlayer() || !squad.GetAnchor()) continue;
     if (m_bHandedOnly && !squad.m_bAICommanded) continue;
-    if (squad == m_FobEscort || squad == m_ReserveSquad || squad.m_bMortar || squad.Aircraft() || ACR_AirLift.Busy(squad)) continue;
+    if (squad == m_FobEscort || squad == m_ReserveSquad || IsScreen(squad) || squad.m_bMortar || squad.Aircraft() || ACR_AirLift.Busy(squad)) continue;
     bool defending = squad.m_iAITask == ACR_EAITask.DEFEND && squad.m_AITarget == base;
     // Troops posted at a threatened base are its defence now.
     bool posted = squad.m_iAITask == ACR_EAITask.POSTED && squad.IsCombatUnit() && !IsSupportTeam(squad) && vector.DistanceXZ(PositionOf(squad), center) <= base.m_fRadius + 150;
@@ -3727,6 +3796,12 @@ class ACR_AICommander : Managed
 
  ACR_Base ReserveBase()
  {
+  ACR_Base hedged = HedgedReserveBase();
+  if (hedged)
+  {
+   m_ReserveBase = hedged;
+   return hedged;
+  }
   ACR_Base best;
   float bestScore = -float.MAX;
   foreach (ACR_Base base : ACR_Base.s_All)
@@ -3742,6 +3817,44 @@ class ACR_AICommander : Managed
   if (!best) best = HomeBase();
   m_ReserveBase = best;
   return best;
+ }
+
+ // Hedging (-acrDefenceForecast 2, defence step 2): with attacks forecast on some of our bases, the
+ // reserve waits at the base (one that fits a reserve, not a target itself) whose farthest likely
+ // target is nearest, rather than at front distance; it is committed to one of them only when that
+ // one's forecast firms up (AssignDefenders). Null: nothing forecast, the usual choice.
+ static const float HEDGE_MARGIN = 300; // m another base must be better by before the reserve moves
+ protected ACR_Base HedgedReserveBase()
+ {
+  if (!m_Forecast || !ACR_DefenceForecast.Acts() || m_bHandedOnly) return null;
+  array<ACR_Base> watched = {};
+  m_Forecast.Watched(watched, ACR_DefenceForecast.HEDGE_TARGETS);
+  if (watched.IsEmpty()) return null;
+  array<vector> targets = {};
+  foreach (ACR_Base target : watched) targets.Insert(target.GetOrigin());
+  array<ACR_Base> fits = {};
+  array<vector> spots = {};
+  int keep = -1;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || watched.Contains(base)) continue;
+   if (base.m_sOwner != m_sFaction || base.m_bContested || ThreatTo(base) > 0) continue;
+   if (base == m_ReserveBase) keep = fits.Count();
+   fits.Insert(base);
+   spots.Insert(base.GetOrigin());
+  }
+  int pick = ACR_DefenceForecast.Hedge(spots, targets, keep, HEDGE_MARGIN);
+  if (pick < 0) return null;
+  if (fits[pick] != m_ReserveBase)
+   Say(string.Format("[ACR] AI %1: the reserve hedges at %2 (attacks forecast on %3 targets, the farthest %4 m off)", m_sFaction, fits[pick].m_sName, watched.Count(), Math.Round(FarthestOf(fits[pick].GetOrigin(), targets))));
+  return fits[pick];
+ }
+
+ protected static float FarthestOf(vector from, notnull array<vector> points)
+ {
+  float worst;
+  foreach (vector point : points) worst = Math.Max(worst, vector.DistanceXZ(from, point));
+  return worst;
  }
 
  // The own spawn base furthest from the fighting.
@@ -4878,6 +4991,230 @@ class ACR_AICommander : Managed
    PostTo(squad, nearest);
   }
   PositionTransports();
+ }
+
+ // ---------------------------------------------------------------- 4b. the screen
+ // -acrDefenceForecast 2 (defence step 2; Jacob, 4 Nov: the forecast is blind without eyes forward).
+ // Our front bases an attack is likeliest on (the forecast's expected strength, and the enemy's lanes
+ // through them before anything is seen) get a screen: a recon team, else the smallest free squad,
+ // posted outside the base where it sees most of the way the attack would come (ACR_DefenceScreen).
+ // It watches and reports (its sightings are the side's intel like any squad's); with an enemy close or
+ // men lost it pulls back to the base and defends it, and the base isn't screened again for a while.
+ // A screen is out of the free pool (MySquads), so attacks, posts and the allocator leave it be.
+ static const int SCREEN_SQUADS_PER = 5;      // one screen per this many combat squads ...
+ static const int SCREEN_MOST = 3;            // ... at most
+ static const float SCREEN_FRONT = 2500;      // m: only bases this near the enemy are screened
+ static const float SCREEN_LANE_WEIGHT = 4;   // a base on the enemy's likeliest lane counts as 4 expected
+ static const float SCREEN_LEAST = 0.5;       // weight below which a base isn't screened
+ static const float SCREEN_REACH = 2000;      // m a squad is sent to a screen from at most
+ static const float SCREEN_CONTACT = 300;     // m: an enemy it knows of this close and it pulls back
+ static const float SCREEN_HURT = 0.7;        // ... or below this share of its men
+ static const float SCREEN_RESITE_ANGLE = 60; // degrees the way must swing before the screen moves
+ static const float SCREEN_RESITE_MS = 120000;
+ static const float SCREEN_QUIET_MS = 180000; // a base no longer wanted this long: its screen is released
+ static const float SCREEN_AGAIN_MS = 120000; // a base whose screen pulled back isn't screened again for this long
+ protected ref array<ref ACR_ScreenPost> m_Screens = {};
+ protected ref map<ACR_Base, float> m_ScreenAgain = new map<ACR_Base, float>();
+
+ bool IsScreen(ACR_Squad squad)
+ {
+  if (!squad) return false;
+  foreach (ACR_ScreenPost post : m_Screens)
+   if (post.m_Squad == squad) return true;
+  return false;
+ }
+
+ ACR_ScreenPost ScreenOf(ACR_Base base)
+ {
+  foreach (ACR_ScreenPost post : m_Screens)
+   if (post.m_Base == base) return post;
+  return null;
+ }
+
+ protected void ManageScreens()
+ {
+  if (!m_Forecast || !ACR_DefenceForecast.Acts())
+  {
+   m_Screens.Clear();
+   return;
+  }
+  float now = GetGame().GetWorld().GetWorldTime();
+  array<ACR_Base> enemyBases = {};
+  foreach (ACR_Base seen : ACR_Base.s_All)
+   if (seen && !seen.m_bRetired && seen.m_sOwner != m_sFaction && Visible(seen) && HostileOwner(seen)) enemyBases.Insert(seen);
+  array<ACR_Base> wanted = {};
+  ScreensWanted(enemyBases, now, wanted);
+  // The ones out: kept, pulled back, moved or released.
+  for (int i = m_Screens.Count() - 1; i >= 0; i--)
+  {
+   ACR_ScreenPost post = m_Screens[i];
+   ACR_Squad squad = post.m_Squad;
+   // Someone else has it now (a player, a defence, a refit), or it's gone.
+   if (!squad || !m_Manager.m_Squads.Contains(squad) || squad.CountAlive() == 0 || squad.HasPlayer() || squad.m_iAITask != ACR_EAITask.POSTED || !post.m_Base || post.m_Base.m_sOwner != m_sFaction)
+   {
+    m_Screens.Remove(i);
+    continue;
+   }
+   if (squad.KnownEnemies(SCREEN_CONTACT) > 0 || squad.StrengthRatio() < SCREEN_HURT)
+   {
+    string why = "the enemy is close";
+    if (squad.KnownEnemies(SCREEN_CONTACT) == 0) why = "men lost";
+    PullBackScreen(post, why, now);
+    m_Screens.Remove(i);
+    continue;
+   }
+   if (!wanted.Contains(post.m_Base))
+   {
+    if (post.m_fQuietSince < 0) post.m_fQuietSince = now;
+    if (now - post.m_fQuietSince >= SCREEN_QUIET_MS)
+    {
+     squad.SetAITask(ACR_EAITask.FREE);
+     Say(string.Format("[ACR] AI %1: screen %2 at %3 released (no attack expected there now)", m_sFaction, squad.GetName(), post.m_Base.m_sName));
+     m_Screens.Remove(i);
+    }
+    continue;
+   }
+   post.m_fQuietSince = -1;
+   float bearing = ScreenBearing(post.m_Base, enemyBases);
+   if (bearing < 0 || SCREEN_RESITE_ANGLE >= ACR_DefenceForecast.AngleBetween(bearing, post.m_fBearing) || now - post.m_fSince < SCREEN_RESITE_MS) continue;
+   vector moved;
+   int movedSees;
+   if (!ACR_DefenceScreen.Spot(post.m_Base, bearing, enemyBases, moved, movedSees)) continue;
+   SendScreen(post, squad, moved, bearing, movedSees, now, "moves to watch the " + ACR_DefenceForecast.CompassOf(bearing));
+  }
+  // New ones.
+  foreach (ACR_Base base : wanted)
+  {
+   float again;
+   if (ScreenOf(base) || (m_ScreenAgain.Find(base, again) && now < again)) continue; // its screen just pulled back
+   float way = ScreenBearing(base, enemyBases);
+   if (way < 0) continue;
+   vector spot;
+   int sees;
+   if (!ACR_DefenceScreen.Spot(base, way, enemyBases, spot, sees)) continue;
+   ACR_Squad screen = ScreenSquad(spot);
+   if (!screen) continue;
+   ACR_ScreenPost fresh = new ACR_ScreenPost();
+   fresh.m_Base = base;
+   m_Screens.Insert(fresh);
+   SendScreen(fresh, screen, spot, way, sees, now, "posted");
+  }
+ }
+
+ // Our front bases worth a screen, likeliest first, as many as the force allows.
+ protected void ScreensWanted(notnull array<ACR_Base> enemyBases, float now, notnull array<ACR_Base> wanted)
+ {
+  wanted.Clear();
+  if (enemyBases.IsEmpty()) return;
+  array<ACR_Squad> all = {};
+  MySquads(all, false);
+  int combat;
+  foreach (ACR_Squad squad : all) if (squad.IsCombatUnit()) combat++;
+  int most = (int)Math.Min(SCREEN_MOST, combat / SCREEN_SQUADS_PER);
+  if (most <= 0) return;
+  array<float> weights = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner != m_sFaction || FrontDistance(base) > SCREEN_FRONT) continue;
+   float again;
+   if (m_ScreenAgain.Find(base, again) && now < again && !ScreenOf(base)) continue;
+   ACR_BaseForecast entry = m_Forecast.Of(base);
+   if (!entry) continue;
+   float weight = entry.m_fExpected + entry.m_fLane * SCREEN_LANE_WEIGHT;
+   if (weight < SCREEN_LEAST) continue;
+   int at = 0;
+   while (at < weights.Count() && weights[at] >= weight) at++;
+   wanted.InsertAt(base, at);
+   weights.InsertAt(weight, at);
+  }
+  while (wanted.Count() > most) wanted.Remove(wanted.Count() - 1);
+ }
+
+ // The way a base's screen watches: the forecast's main way in, else toward the nearest enemy base we
+ // know of. -1: neither.
+ protected float ScreenBearing(ACR_Base base, notnull array<ACR_Base> enemyBases)
+ {
+  ACR_BaseForecast entry = m_Forecast.Of(base);
+  if (entry && entry.m_fExpected >= ACR_DefenceForecast.NOTE)
+  {
+   ACR_ForecastWay lead = entry.LeadWay();
+   if (lead) return lead.m_fBearing;
+  }
+  ACR_Base nearest;
+  float best = float.MAX;
+  foreach (ACR_Base enemy : enemyBases)
+  {
+   float d = vector.DistanceXZ(enemy.GetOrigin(), base.GetOrigin());
+   if (d < best) { best = d; nearest = enemy; }
+  }
+  if (!nearest) return -1;
+  return ACR_Intel.Bearing(base.GetOrigin(), nearest.GetOrigin());
+ }
+
+ // A recon team first, else the smallest free fighting squad, within reach of the spot.
+ protected ACR_Squad ScreenSquad(vector spot)
+ {
+  array<ACR_Squad> free = {};
+  MySquads(free, true);
+  ACR_Squad best;
+  float bestScore = float.MAX;
+  foreach (ACR_Squad squad : free)
+  {
+   if (squad == m_ReserveSquad || squad == m_FobEscort || squad.m_Commander != 0 || IsSupportTeam(squad) || squad.CountAlive() < 2) continue;
+   if (squad.KnownEnemies(SCREEN_CONTACT) > 0 || DueForRefit(squad)) continue;
+   float d = vector.DistanceXZ(PositionOf(squad), spot);
+   if (d > SCREEN_REACH) continue;
+   float score = squad.Strength() * 100 + d * 0.1;
+   if (IsReconTeam(squad)) score -= 100000;
+   if (score < bestScore) { bestScore = score; best = squad; }
+  }
+  return best;
+ }
+
+ protected void SendScreen(ACR_ScreenPost post, ACR_Squad squad, vector spot, float bearing, int sees, float now, string what)
+ {
+  post.m_Squad = squad;
+  post.m_vSpot = spot;
+  post.m_fBearing = bearing;
+  post.m_fSince = now;
+  post.m_iSees = sees;
+  post.m_fQuietSince = -1;
+  if (squad == m_ReserveSquad) m_ReserveSquad = null;
+  LeaveAttacks(squad);
+  squad.SetAITask(ACR_EAITask.POSTED);
+  squad.SetMode(ACR_EMoveMode.COMBAT);
+  squad.Defend(spot);
+  Say(string.Format("[ACR] AI %1: screen %2 %3 %4 m out from %5, watching the %6 (sees %7/%8 of the way out)", m_sFaction, squad.GetName(), what, Math.Round(vector.DistanceXZ(spot, post.m_Base.GetOrigin())), post.m_Base.m_sName, ACR_DefenceForecast.CompassOf(bearing), sees, ACR_DefenceScreen.SAMPLES));
+ }
+
+ // Back to the base it screened, as one of its defenders (AssignDefenders lets it go when nothing comes).
+ protected void PullBackScreen(ACR_ScreenPost post, string why, float now)
+ {
+  ACR_Squad squad = post.m_Squad;
+  m_ScreenAgain.Set(post.m_Base, now + SCREEN_AGAIN_MS);
+  squad.SetMode(ACR_EMoveMode.FAST);
+  Travel(squad, post.m_Base.GetOrigin(), true, 0);
+  squad.SetAITask(ACR_EAITask.DEFEND);
+  squad.m_AITarget = post.m_Base;
+  Say(string.Format("[ACR] AI %1: screen %2 pulls back to %3 (%4)", m_sFaction, squad.GetName(), post.m_Base.m_sName, why));
+ }
+
+ // Tests (forecastdefend): the defence part of a strategic tick (threat count, forecast, defenders, screens), nothing else.
+ void DefenceTickForTest()
+ {
+  GatherIntel();
+  Assess();
+  UpdateForecast();
+  AssignDefenders();
+  ManageScreens();
+ }
+
+ void ThinkScreens(notnull array<string> lines)
+ {
+  if (m_Screens.IsEmpty()) return;
+  lines.Insert("Screens:");
+  foreach (ACR_ScreenPost post : m_Screens)
+   if (post.m_Squad && post.m_Base) lines.Insert(string.Format("  %1 at %2, watching the %3 (%4 m out, sees %5/%6)", post.m_Squad.GetName(), post.m_Base.m_sName, ACR_DefenceForecast.CompassOf(post.m_fBearing), Math.Round(vector.DistanceXZ(post.m_vSpot, post.m_Base.GetOrigin())), post.m_iSees, ACR_DefenceScreen.SAMPLES));
  }
 
  // Keep idle unarmed transport trucks near safe bases where foot infantry spawn or stage,
@@ -6837,7 +7174,7 @@ class ACR_AICommander : Managed
    // sweepers, refits, rides out to build and the reserve were re-routed every 15 s, their paid
    // jobs cancelled (audit 31 Oct; RespondToCharge has the same rule).
    if (squad.m_iAITask != ACR_EAITask.FREE && squad.m_iAITask != ACR_EAITask.POSTED) continue;
-   if (squad == m_ReserveSquad || squad.HasJob() || PendingBuildOf(squad)) continue;
+   if (squad == m_ReserveSquad || IsScreen(squad) || squad.HasJob() || PendingBuildOf(squad)) continue;
    IEntity truck = squad.ConstructionTruck();
    bool hasTruck = truck && ACR_Logistics.Health(truck) > 0;
    if (!hasTruck && !ACR_SapperDemo.IsSapperSquad(squad)) continue;
@@ -7050,7 +7387,7 @@ class ACR_AICommander : Managed
     foreach (ACR_Squad squad : squads)
     {
      if (!squad || squad.HasPlayer() || squad.CountAlive() <= 0 || squad.IsVehicle() || IsSupportTeam(squad)) continue;
-     if (squad == m_ReserveSquad || squad.m_Commander != 0) continue;
+     if (squad == m_ReserveSquad || IsScreen(squad) || squad.m_Commander != 0) continue;
      if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
      if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
      if (DueForRefit(squad)) continue;
@@ -7289,7 +7626,7 @@ class ACR_AICommander : Managed
    float fartherDistance = FAR_BUILDER;
    foreach (ACR_Squad squad : squads)
    {
-    if (!squad || squad.HasPlayer() || squad.m_Commander != 0 || squad == m_ReserveSquad || IsSupportTeam(squad) || !ACR_Minefields.CanLay(squad)) continue;
+    if (!squad || squad.HasPlayer() || squad.m_Commander != 0 || squad == m_ReserveSquad || IsScreen(squad) || IsSupportTeam(squad) || !ACR_Minefields.CanLay(squad)) continue;
     if (squad.m_iAITask != ACR_EAITask.POSTED && squad.m_iAITask != ACR_EAITask.FREE) continue;
     if (squad.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || squad.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
     if (DueForRefit(squad)) continue;
@@ -7600,7 +7937,7 @@ class ACR_AICommander : Managed
   }
   foreach (ACR_Squad other : squads)
   {
-   if (!other || other.HasPlayer() || other.m_Commander != 0 || other == m_ReserveSquad || IsSupportTeam(other) || !ACR_Fortify.CanFortify(other) || DueForRefit(other)) continue;
+   if (!other || other.HasPlayer() || other.m_Commander != 0 || other == m_ReserveSquad || IsScreen(other) || IsSupportTeam(other) || !ACR_Fortify.CanFortify(other) || DueForRefit(other)) continue;
    if (other.m_MinePlan || other.m_ActiveRoadblock || other.m_Fortification || other.OrderState() == ACR_EOrderState.BUILD_ROADBLOCK || other.OrderState() == ACR_EOrderState.BUILD_FOB) continue;
    float d = vector.DistanceXZ(PositionOf(other), pos);
    bool isFree = (other.m_iAITask == ACR_EAITask.FREE || other.m_iAITask == ACR_EAITask.POSTED) && other.IsCombatUnit() && !IsRetreating(other);
@@ -8448,7 +8785,7 @@ class ACR_AICommander : Managed
  {
   foreach (ACR_AIAttack attack : m_Attacks)
    if (attack.m_Squads.Contains(squad)) return true;
-  return squad == m_ReserveSquad || m_Refitting.Contains(squad);
+  return squad == m_ReserveSquad || IsScreen(squad) || m_Refitting.Contains(squad);
  }
 
  protected void ReleaseAll()
