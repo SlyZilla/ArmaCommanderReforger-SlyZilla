@@ -13,13 +13,13 @@ import zlib
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS = {
-    'ACA': dict(folder='ArmaCommanderReforger', title='Arma Commander: Actual',
+    'ACA': dict(workshopDraft=True, folder='ArmaCommanderReforger', title='Arma Commander: Actual',
                 guid='AC230926A0010001', dirs=['Scripts', 'Configs', 'Missions', 'Prefabs', 'Worlds'],
                 files=['LICENSE.md', 'README.md', 'MISSION-MAKING.md']),
-    'BBB': dict(folder='BetterBattleBuddies', title='Better Battle Buddies',
+    'BBB': dict(workshopDraft=True, folder='BetterBattleBuddies', title='Better Battle Buddies',
                 guid='BBB0261015000001', dirs=['Scripts/Game/BBB', 'Configs/BBB', 'Prefabs/BBB', 'UI/layouts/BBB'],
                 files=['LICENSE.md', 'README.md']),
-    'AIO': dict(folder='AIOCommandMenu', title='AiO Command Menu (Reforger)',
+    'AIO': dict(workshopDraft=True, folder='AIOCommandMenu', title='AiO Command Menu (Reforger)',
                 guid='629405AEFC950C12', dirs=['Scripts', 'Configs'],
                 files=['COPYING', 'LICENSE.md', 'LICENSE.txt', 'README.md', 'CHANGELOG.md']),
 }
@@ -75,7 +75,7 @@ def no_links(path):
             raise Blocked(f'Linked path refused: {part}')
 
 
-def latest_release_notes(source, dependency_only=False):
+def latest_release_notes(source, dependency_only=False, require_draft=False):
     path = source / 'CHANGELOG.md'
     no_links(path)
     if not path.is_file():
@@ -100,7 +100,44 @@ def latest_release_notes(source, dependency_only=False):
     if not re.search(r'^[-*] \S', body, re.M) or re.search(r'\b(TODO|TBD|FIXME)\b', body, re.I):
         raise Blocked('The latest changelog needs reviewed release bullets without placeholders.')
     version = version[1]
+    draft = workshop_draft(source, version, dependency_only, require_draft)
+    if draft is not None:
+        return version, draft
     return version, f'{version}\n\n{body}\n'
+
+
+WORKSHOP_DRAFT = 'docs/workshop-changelog.md'
+WORKSHOP_CHANGELOG_LIMIT = 30000  # Workbench Publish Project changelog box
+
+
+def workshop_draft(source, version, dependency_only=False, required=False):
+    """The short player-facing Workshop text (Jacob, 5 Nov), when the mod keeps one.
+
+    CHANGELOG.md stays the full history; the Workshop box gets this draft instead. Its first line
+    is the version it was written for, then a blank line and the text, exactly as pasted.
+    """
+    path = source / WORKSHOP_DRAFT
+    if not path.is_file():
+        if required and not dependency_only:
+            raise Blocked(f'{source.name}: write {WORKSHOP_DRAFT}, the short Workshop changelog for {version}.')
+        return None
+    no_links(path)
+    text = path.read_text(encoding='utf-8-sig').replace('\r\n', '\n').strip() + '\n'
+    first, _, body = text.partition('\n')
+    if first.strip() != version:
+        if dependency_only:
+            return None  # a dependency staged at its published version keeps that version's notes
+        raise Blocked(f'{WORKSHOP_DRAFT} is for {first.strip() or "no version"}; '
+                      f'rewrite it for {version} (first line: the version).')
+    if not re.search(r'^- \S', body, re.M) or re.search(r'\b(TODO|TBD|FIXME)\b', body, re.I):
+        raise Blocked(f'{WORKSHOP_DRAFT} needs reviewed bullets without placeholders.')
+    if re.search(r'^#|\*\*|`', body, re.M):
+        raise Blocked(f'{WORKSHOP_DRAFT}: the Workshop shows text as typed, so #, ** and ` would appear '
+                      'literally. Use plain capitalised section labels and "- " bullets.')
+    if len(text) > WORKSHOP_CHANGELOG_LIMIT:
+        raise Blocked(f'{WORKSHOP_DRAFT} is {len(text)} characters; Workbench takes '
+                      f'{WORKSHOP_CHANGELOG_LIMIT}.')
+    return text
 
 
 def notes_digest(text, version):
@@ -180,18 +217,23 @@ class Console:
         source = self.source(mod)
         sha = clean_commit(source)
         no_links(source)
-        version, change_note = latest_release_notes(source, dependency_only=dependency_only)
+        version, change_note = latest_release_notes(source, dependency_only=dependency_only,
+                                                    require_draft=spec.get('workshopDraft', False))
         if not dependency_only:
             self.require_new_version(mod, version)
-        reviewed = git(source, 'log', '-1', '--format=%H', '--', 'CHANGELOG.md')
-        if not reviewed:
-            raise Blocked('Commit CHANGELOG.md before preparing a release.')
-        changed = git(source, 'diff', '--name-only', reviewed, 'HEAD', '--',
-                      'addon.gproj', *spec['dirs']).splitlines()
-        changed = [p for p in changed if not p.startswith(('Scripts/Game/ACR_Tests/',
-                   'Scripts/Game/BBB_Tests/')) and 'BBB_TestArland' not in p]
-        if changed:
-            raise Blocked(f'{mod}: production changed since CHANGELOG.md was reviewed. Update and commit its release notes first.')
+        notes = ['CHANGELOG.md']
+        if workshop_draft(source, version, dependency_only) is not None:
+            notes.append(WORKSHOP_DRAFT)  # the pasted text must be reviewed after the code too
+        for name in notes:
+            reviewed = git(source, 'log', '-1', '--format=%H', '--', name)
+            if not reviewed:
+                raise Blocked(f'Commit {name} before preparing a release.')
+            changed = git(source, 'diff', '--name-only', reviewed, 'HEAD', '--',
+                          'addon.gproj', *spec['dirs']).splitlines()
+            changed = [p for p in changed if not p.startswith(('Scripts/Game/ACR_Tests/',
+                       'Scripts/Game/BBB_Tests/')) and 'BBB_TestArland' not in p]
+            if changed:
+                raise Blocked(f'{mod}: production changed since {name} was reviewed. Update and commit its release notes first.')
         dependency = None
         if mod == 'ACA':
             dependency = read_json(source / 'tools/bbb-source.json')['commit']

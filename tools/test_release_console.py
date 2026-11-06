@@ -32,6 +32,9 @@ class GuardTests(unittest.TestCase):
             for name in spec['files'] + ['resourceDatabase.rdb']:
                 (root / name).write_text(name)
             (root / 'CHANGELOG.md').write_text('# Changelog\n\n## 0.1.0\n\n- Reviewed fixture release.\n')
+            if spec.get('workshopDraft'):
+                (root / 'docs').mkdir()
+                (root / 'docs/workshop-changelog.md').write_text('0.1.0\n\n- Reviewed fixture release.\n')
             deps = f'"{SPECS["BBB"]["guid"]}"' if mod == 'ACA' else ''
             (root / 'addon.gproj').write_text(f'GameProject {{\n GUID "{spec["guid"]}"\n TITLE "Development"\n Dependencies {{ {deps} }}\n}}')
             for directory in spec['dirs']:
@@ -77,8 +80,8 @@ class GuardTests(unittest.TestCase):
         test_prefab = self.bbb / 'Prefabs/BBB_Tests/FlareFixture.et'
         test_prefab.parent.mkdir(parents=True, exist_ok=True)
         test_prefab.write_text('GenericEntity {}\n')
-        changelog = self.bbb / 'CHANGELOG.md'
-        changelog.write_text(changelog.read_text() + '- Reviewed flare fixture.\n')
+        for notes in [self.bbb / 'CHANGELOG.md', self.bbb / 'docs/workshop-changelog.md']:
+            notes.write_text(notes.read_text() + '- Reviewed flare fixture.\n')
         self.commit(self.bbb)
         parent = self.console.stage('BBB')
         payload = parent / SPECS['BBB']['folder']
@@ -103,8 +106,8 @@ class GuardTests(unittest.TestCase):
         test_prefab = self.bbb / 'Prefabs/BBB_Tests/FlareFixture.et'
         test_prefab.parent.mkdir(parents=True, exist_ok=True)
         test_prefab.write_text('GenericEntity {}\n')
-        changelog = self.bbb / 'CHANGELOG.md'
-        changelog.write_text(changelog.read_text() + '- Reviewed flare fixture.\n')
+        for notes in [self.bbb / 'CHANGELOG.md', self.bbb / 'docs/workshop-changelog.md']:
+            notes.write_text(notes.read_text() + '- Reviewed flare fixture.\n')
         self.commit(self.bbb)
         payload = self.console.stage('BBB') / SPECS['BBB']['folder']
         workshop = {p.relative_to(payload).as_posix() for p in payload.rglob('*') if p.is_file()}
@@ -161,6 +164,7 @@ class GuardTests(unittest.TestCase):
         self.console.record_publication('BBB', '0.1.0', 'Owner confirmed')
         self.assertTrue(path.read_text(encoding='utf-8').startswith('# Changelog\n\n## 0.1.1'))
         self.assertIn('- New behavior.', path.read_text(encoding='utf-8'))
+        (self.bbb / 'docs/workshop-changelog.md').write_text('0.1.1\n\n- New behavior.\n', encoding='utf-8')
         self.commit(self.bbb)
         self.console.stage('BBB')
 
@@ -262,6 +266,7 @@ class GuardTests(unittest.TestCase):
     def test_release_notes_generated_and_history_preserved(self):
         notes = '# Changelog\n\n## 0.2.0 — next\n\n- New player feature.\n\n## 0.1.0\n\n- Old release.\n'
         (self.bbb / 'CHANGELOG.md').write_text(notes, encoding='utf-8')
+        (self.bbb / 'docs/workshop-changelog.md').write_text('0.2.0\n\n- New player feature.\n', encoding='utf-8')
         self.commit(self.bbb)
         parent = self.mark_checked('BBB')
         info = self.console.notes_info('BBB')
@@ -270,6 +275,41 @@ class GuardTests(unittest.TestCase):
         self.assertIn('New player feature.', output)
         self.assertNotIn('Old release.', output)
         self.assertIn('Old release.', (parent / 'CHANGELOG.md').read_text(encoding='utf-8'))
+
+    def test_workshop_draft_is_the_pasted_text(self):
+        notes = '# Changelog\n\n## 0.2.0 — next\n\n- A very long, detailed history line.\n\n## 0.1.0\n\n- Old.\n'
+        (self.bbb / 'CHANGELOG.md').write_text(notes, encoding='utf-8')
+        draft = self.bbb / 'docs/workshop-changelog.md'
+        draft.write_bytes(b'0.2.0\r\n\r\nShort headline.\r\n\r\nNEW\r\n\r\n- Short player line.\r\n')
+        self.commit(self.bbb)
+        parent = self.mark_checked('BBB')
+        output = Path(self.console.notes_info('BBB')['changelogFile']).read_text(encoding='utf-8')
+        self.assertEqual('0.2.0\n\nShort headline.\n\nNEW\n\n- Short player line.\n', output)
+        self.assertIn('detailed history', (parent / 'CHANGELOG.md').read_text(encoding='utf-8'))
+
+    def test_workshop_draft_refused_when_stale_formatted_long_or_unreviewed(self):
+        (self.bbb / 'CHANGELOG.md').write_text('# Changelog\n\n## 0.2.0\n\n- Feature.\n', encoding='utf-8')
+        draft = self.bbb / 'docs/workshop-changelog.md'
+        draft.unlink()
+        self.commit(self.bbb)
+        with self.assertRaisesRegex(Blocked, 'write docs/workshop-changelog.md'):
+            self.console.stage('BBB')
+        for value, reason in [('0.1.0\n\n- Old draft.\n', 'is for 0.1.0'),
+                              ('0.2.0\n\nNo bullets.\n', 'reviewed bullets'),
+                              ('0.2.0\n\n### NEW\n\n- Feature.\n', 'literally'),
+                              ('0.2.0\n\n- **Bold** feature.\n', 'literally'),
+                              ('0.2.0\n\n- ' + 'x' * 30000 + '\n', 'characters')]:
+            draft.write_text(value, encoding='utf-8')
+            self.commit(self.bbb)
+            with self.assertRaisesRegex(Blocked, reason):
+                self.console.stage('BBB')
+        draft.write_text('0.2.0\n\n- Feature.\n', encoding='utf-8')
+        self.commit(self.bbb)
+        (self.bbb / 'Scripts/Game/BBB/fixture.c').write_text('class Later {}')
+        (self.bbb / 'CHANGELOG.md').write_text('# Changelog\n\n## 0.2.0\n\n- Feature.\n- Later.\n', encoding='utf-8')
+        self.commit(self.bbb)
+        with self.assertRaisesRegex(Blocked, 'since docs/workshop-changelog.md was reviewed'):
+            self.console.stage('BBB')
 
     def test_release_notes_tamper_refused(self):
         parent = self.mark_checked('BBB')
@@ -296,6 +336,11 @@ class GuardTests(unittest.TestCase):
         with self.assertRaisesRegex(Blocked, 'production changed'):
             self.console.stage('BBB')
         with (self.bbb / 'CHANGELOG.md').open('a') as handle:
+            handle.write('- Added the new feature.\n')
+        self.commit(self.bbb)
+        with self.assertRaisesRegex(Blocked, 'since docs/workshop-changelog.md was reviewed'):
+            self.console.stage('BBB')
+        with (self.bbb / 'docs/workshop-changelog.md').open('a') as handle:
             handle.write('- Added the new feature.\n')
         self.commit(self.bbb)
         self.console.stage('BBB')
