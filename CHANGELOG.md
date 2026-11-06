@@ -1,5 +1,7 @@
 # Changelog
-## 0.5.9 — unreleased
+## 0.5.10 — unreleased
+
+## 0.5.9 — released
 
 - Works with Arma Reforger 1.9 (with Better Battle Buddies 0.1.8). In 1.9 the game's automatic gearbox overrode the vehicles that AC: Actual and Better Battle Buddies drive by hand, so they sat still or crept forward: a vehicle backing out of a jam, pulling over before a get-out, or backing away from an armed enemy vehicle moves again. A truck backing away from an armed vehicle now gets a few seconds to turn round before its crew gives up on it under fire, and a vehicle its crew abandons keeps its handbrake on: in 1.9 an empty vehicle drops into neutral, and one rolled downhill into the enemy it had just backed away from.
 - Loads with long mod lists. Every loaded mod shares one engine limit on the script set-up that runs as the game loads, and with a big stack (ACE, a content pack, AiO and more) it ran over and the game refused to load its scripts. AC: Actual now does that set-up once the game has started instead, so it no longer counts against the limit.
