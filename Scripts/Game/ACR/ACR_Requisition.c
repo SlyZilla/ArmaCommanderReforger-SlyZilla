@@ -108,6 +108,95 @@ class ACR_Requisition : Managed
   return SpawnPoint(base, 0, ring, clearance);
  }
 
+ // Where a bought vehicle appears (Jacob, 6 Nov: the AI's vehicles came out in courtyards they
+ // couldn't leave): clear ground in the ring that it can drive out of (ACR_BaseSystem.DrivesOut).
+ // Each try reaches further out. With none: the last such spot found at this base if it is still
+ // clear and open, then a wider look round the first try; failing all, the first clear spot, as
+ // before the check (said in the log). A spot inside a yard an earlier search mapped (this base
+ // keeps them SHUT_KEEP_MS) is refused without a search, so only the first vehicle bought at a
+ // cramped town pays for finding its yards (Saint-Philippe on Everon, where the old finder put
+ // 8-10 of 10 vehicles in yards; srv:vehexit). The tries in the ring get VEHICLE_SWEEPS sweeps,
+ // the fall-backs a little more.
+ static const int VEHICLE_TRIES = 8;
+ static const int VEHICLE_SWEEPS = 400;
+ static const float SHUT_KEEP_MS = 600000;
+ vector VehicleSpot(ACR_Base base, float minDistance, float maxDistance, float clearance)
+ {
+  set<int> enclosed = ShutCells(base);
+  int limit = ACR_BaseSystem.s_iExitSweeps + VEHICLE_SWEEPS;
+  vector origin = base.GetOrigin();
+  vector fallback = ACR_Manager.Ground(origin + Vector(minDistance, 0, 0));
+  bool anyClear;
+  vector firstClear;
+  for (int attempt = 0; attempt < VEHICLE_TRIES; attempt++)
+  {
+   float angle = Math.RandomFloat(0, Math.PI2);
+   float distance = Math.RandomFloat(minDistance, maxDistance + attempt * 8);
+   vector candidate = ACR_Manager.Ground(origin + Vector(Math.Cos(angle) * distance, 0, Math.Sin(angle) * distance));
+   if (attempt == 0) fallback = candidate;
+   vector spot, clear;
+   bool clearHere;
+   bool found = ACR_BaseSystem.DrivableGround(spot, clearHere, clear, candidate, 8, clearance, enclosed, limit);
+   if (clearHere && !anyClear) { anyClear = true; firstClear = clear; }
+   if (found) return KeepDriveOut(base, spot);
+  }
+  if (base.m_bDriveOut)
+  {
+   vector again, againClear;
+   bool againAny;
+   if (ACR_BaseSystem.DrivableGround(again, againAny, againClear, base.m_vDriveOut, 4, clearance, enclosed, limit + 30)) return KeepDriveOut(base, again);
+  }
+  vector wide, wideClear;
+  bool wideAny;
+  if (ACR_BaseSystem.DrivableGround(wide, wideAny, wideClear, fallback, 40, clearance, enclosed, limit + 100)) return KeepDriveOut(base, wide);
+  if (!anyClear && wideAny) { anyClear = true; firstClear = wideClear; }
+  if (!anyClear) firstClear = fallback;
+  PrintFormat("[ACR] SPAWN %1: no clear ground with a way out for a vehicle, it goes at %2", base.m_sName, firstClear);
+  return firstClear;
+ }
+
+ // The yards found at this base (DrivesOut's enclosed cells), forgotten after SHUT_KEEP_MS in
+ // case a wall came down.
+ protected set<int> ShutCells(ACR_Base base)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (!base.m_DriveOutShut || now - base.m_fDriveOutShutAt > SHUT_KEEP_MS)
+  {
+   base.m_DriveOutShut = new set<int>();
+   base.m_fDriveOutShutAt = now;
+  }
+  return base.m_DriveOutShut;
+ }
+
+ protected vector KeepDriveOut(ACR_Base base, vector spot)
+ {
+  base.m_vDriveOut = spot;
+  base.m_bDriveOut = true;
+  return spot;
+ }
+
+ // A vehicle at the commander's click (pulled inside the ring): the clear ground near it with a
+ // way out (within 15 m, then 35 m); with none, the clear ground nearest the click as before: the
+ // commander chose the place.
+ vector VehicleSpotInBase(ACR_Base base, vector spot, float clearance)
+ {
+  vector centre = base.GetOrigin();
+  float ring = Math.Max(base.m_fRadius, 30);
+  vector flat = Vector(spot[0] - centre[0], 0, spot[2] - centre[2]);
+  if (flat.Length() > ring) spot = centre + flat.Normalized() * ring;
+  vector candidate = ACR_Manager.Ground(spot);
+  set<int> enclosed = ShutCells(base);
+  int limit = ACR_BaseSystem.s_iExitSweeps + VEHICLE_SWEEPS;
+  vector open, clear;
+  bool anyClear;
+  if (ACR_BaseSystem.DrivableGround(open, anyClear, clear, candidate, 15, clearance, enclosed, limit)) return open;
+  vector further, furtherClear;
+  bool furtherAny;
+  if (ACR_BaseSystem.DrivableGround(further, furtherAny, furtherClear, candidate, 35, clearance, enclosed, limit + 100)) return further;
+  if (anyClear) return clear;
+  return SpotInBase(base, spot, clearance);
+ }
+
  string Purchase(SCR_PlayerController pc, int entryIndex, string baseLabel, vector spot = "0 0 0", bool hasSpot = false)
  {
   Faction faction = SCR_FactionManager.SGetPlayerFaction(pc.GetPlayerId());
@@ -164,17 +253,20 @@ class ACR_Requisition : Managed
   int paid = purchase.m_iPaid;
 
   vector vehiclePos, groupPos;
+  // A vehicle goes where it can drive out of (VehicleSpot).
+  bool vehicleToo = !entry.m_sVehicle.IsEmpty();
   if (hasSpot)
   {
-   vehiclePos = SpotInBase(base, spot, 4);
+   if (vehicleToo) vehiclePos = VehicleSpotInBase(base, spot, 4);
    // Infantry alone stands on the click; with a vehicle, beside it.
-   if (entry.m_sVehicle.IsEmpty()) groupPos = SpotInBase(base, spot, 1.5);
+   if (!vehicleToo) groupPos = SpotInBase(base, spot, 1.5);
    else groupPos = SpotInBase(base, vehiclePos + Vector(6, 0, 6), 1.5);
-   PrintFormat("[ACR] PURCHASE spot %1 -> vehicle %2 group %3", spot, vehiclePos, groupPos);
+   if (vehicleToo) PrintFormat("[ACR] PURCHASE spot %1 -> vehicle %2 group %3", spot, vehiclePos, groupPos);
+   else PrintFormat("[ACR] PURCHASE spot %1 -> group %2", spot, groupPos);
   }
   else
   {
-   vehiclePos = SpawnPoint(base, 10, 25, 4);
+   if (vehicleToo) vehiclePos = VehicleSpot(base, 10, 25, 4);
    groupPos = SpawnPoint(base, 5, 15, 1.5);
   }
   // Bought helicopters appear on a free helipad of the base when it has one.

@@ -506,6 +506,128 @@ class ACR_BaseSystem : Managed
   return false;
  }
 
+ // Clear ground near center (as ClearGround) that a vehicle can drive out of (DrivesOut).
+ // anyClear/firstClear: the first clear spot, drivable or not. Stops searching once
+ // s_iExitSweeps reaches sweepLimit (a cramped town costs a bounded number of sweeps).
+ static bool DrivableGround(out vector result, out bool anyClear, out vector firstClear, vector center, float radius, float clearance, set<int> enclosed, int sweepLimit)
+ {
+  anyClear = false;
+  array<vector> spots = {};
+  SCR_WorldTools.FindAllEmptyTerrainPositions(spots, center, radius, clearance, 2.5, 12);
+  foreach (vector spot : spots)
+  {
+   vector ground = ACR_Manager.Ground(spot);
+   if (Buried(ground)) continue;
+   if (!anyClear) { firstClear = ground; anyClear = true; }
+   if (s_iExitSweeps >= sweepLimit) return false;
+   if (!DrivesOut(ground, enclosed)) continue;
+   result = ground;
+   return true;
+  }
+  return false;
+ }
+
+ // A vehicle on this spot can drive away from it (Jacob, 6 Nov: the AI's vehicles came out in
+ // courtyards they couldn't leave; the finders only asked for room to stand). The way out is a
+ // lane EXIT_HALF_WIDTH * 2 wide, clear of what the vehicle navmesh is built round (colliders on
+ // the Navmesh/NavmeshVehicle layers: buildings, walls, fences, trees, rocks; not bushes, vehicles
+ // or soldiers, which give way or move), on slopes a vehicle climbs and off water, from the spot to
+ // ground EXIT_REACH m from it. Best-first over a world grid of EXIT_STEP cells, farthest from the
+ // spot first, each step swept only when it is taken: open ground costs about ten sweeps, an
+ // enclosed yard is searched out (at most EXIT_SWEEPS) and refused.
+ // enclosed: cells a failed search reached (kept a while per base): a spot in one of them is in
+ // the same yard and is refused without a search. A search that ran out of sweeps marks its cells
+ // too: a maze too big to call is no place for a bought vehicle either.
+ static const float EXIT_STEP = 4;
+ static const float EXIT_REACH = 40;
+ static const float EXIT_HALF_WIDTH = 1.4;
+ static const float EXIT_CLIMB = 0.6; // metres of rise per metre (31 degrees)
+ static const int EXIT_SWEEPS = 160;
+ static int s_iExitSweeps; // sweeps made by DrivesOut since the game started (tests, perf)
+ // The last refused search (tests): cells reached, steps too steep, into water, into a wall.
+ static int s_iExitReached;
+ static int s_iExitSteep;
+ static int s_iExitWet;
+ static int s_iExitWalled;
+
+ static bool DrivesOut(vector spot, set<int> enclosed = null)
+ {
+  int startX = (int)Math.Round(spot[0] / EXIT_STEP);
+  int startZ = (int)Math.Round(spot[2] / EXIT_STEP);
+  if (enclosed && enclosed.Contains(ExitCell(startX, startZ))) return false;
+  TraceBox lane = new TraceBox();
+  lane.Mins = Vector(-EXIT_HALF_WIDTH, 0.5, -EXIT_HALF_WIDTH);
+  lane.Maxs = Vector(EXIT_HALF_WIDTH, 2.4, EXIT_HALF_WIDTH);
+  lane.Flags = TraceFlags.ENTS;
+  lane.LayerMask = EPhysicsLayerDefs.Navmesh | EPhysicsLayerDefs.NavmeshVehicle;
+  BaseWorld world = GetGame().GetWorld();
+  set<int> reached = new set<int>();
+  reached.Insert(ExitCell(startX, startZ));
+  // Steps not taken yet: the cell, where it starts and where it ends.
+  array<int> stepX = {};
+  array<int> stepZ = {};
+  array<vector> stepFrom = {};
+  array<vector> stepTo = {};
+  ExitSteps(spot, startX, startZ, reached, stepX, stepZ, stepFrom, stepTo);
+  int sweeps, steep, wet;
+  bool escaped;
+  while (!stepTo.IsEmpty() && sweeps < EXIT_SWEEPS)
+  {
+   int pick;
+   float farthest = -1;
+   foreach (int i, vector to : stepTo)
+   {
+    float away = vector.DistanceSqXZ(to, spot);
+    if (away <= farthest) continue;
+    farthest = away;
+    pick = i;
+   }
+   int x = stepX[pick];
+   int z = stepZ[pick];
+   vector from = stepFrom[pick];
+   vector at = stepTo[pick];
+   stepX.Remove(pick);
+   stepZ.Remove(pick);
+   stepFrom.Remove(pick);
+   stepTo.Remove(pick);
+   if (reached.Contains(ExitCell(x, z))) continue;
+   if (Math.AbsFloat(at[1] - from[1]) > EXIT_CLIMB * vector.DistanceXZ(from, at)) { steep++; continue; }
+   if (BBB_Terrain.IsWaterAt(at)) { wet++; continue; }
+   sweeps++;
+   lane.Start = from;
+   lane.End = at;
+   if (world.TraceMove(lane, null) < 1) continue;
+   reached.Insert(ExitCell(x, z));
+   if (vector.DistanceXZ(at, spot) >= EXIT_REACH) { escaped = true; break; }
+   ExitSteps(at, x, z, reached, stepX, stepZ, stepFrom, stepTo);
+  }
+  s_iExitSweeps += sweeps;
+  if (escaped) return true;
+  s_iExitReached = reached.Count();
+  s_iExitSteep = steep;
+  s_iExitWet = wet;
+  s_iExitWalled = sweeps - reached.Count() + 1;
+  if (enclosed) foreach (int cell : reached) enclosed.Insert(cell);
+  return false;
+ }
+
+ protected static int ExitCell(int x, int z) { return x * 8192 + z; }
+
+ protected static void ExitSteps(vector from, int x, int z, set<int> reached, array<int> stepX, array<int> stepZ, array<vector> stepFrom, array<vector> stepTo)
+ {
+  for (int dx = -1; dx <= 1; dx++)
+  {
+   for (int dz = -1; dz <= 1; dz++)
+   {
+    if ((dx == 0 && dz == 0) || reached.Contains(ExitCell(x + dx, z + dz))) continue;
+    stepX.Insert(x + dx);
+    stepZ.Insert(z + dz);
+    stepFrom.Insert(from);
+    stepTo.Insert(ACR_Manager.Ground(Vector((x + dx) * EXIT_STEP, 0, (z + dz) * EXIT_STEP)));
+   }
+  }
+ }
+
  // #87: a squad the game spawned in its formation round one spot: anyone who came out inside a
  // wall or a heap or under a roof steps to clear ground near where he stands. The game queues its members
  // over a few frames, so it looks twice.

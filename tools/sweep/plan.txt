@@ -125,6 +125,8 @@ ACA|srv:skirmishplay|weekly|240   # not run in the last 14 days; server capabili
 ACA|srv:blast|weekly|90   # not run in the last 14 days; server capability not yet seen
 ACA|srv:blastold|skip|90   # A/B control with the feature off or the old code: run beside its pair by hand
 ACA|srv:everonpads|weekly|120   # not run in the last 14 days; server capability not yet seen
+ACA|srv:vehexit|weekly|120   # bought vehicles get spots they can drive out of (Everon, every base); ~40 s
+ACA|srv:vehexitarland|weekly|120   # same on Arland; ~35 s
 ACA|srv:padslevie|weekly|130   # not run in the last 14 days; server capability not yet seen
 ACA|srv:padsmontignac|weekly|130   # not run in the last 14 days; server capability not yet seen
 ACA|srv:padsphilippe|weekly|130   # not run in the last 14 days; server capability not yet seen

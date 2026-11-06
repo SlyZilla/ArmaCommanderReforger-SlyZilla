@@ -122,7 +122,8 @@ class ACR_Mode : GenericEntity
    // A skirmish layout moved this side's HQ: start at the new one.
    if (unit.m_MovedTo)
    {
-    vehiclePos = manager.ClearSpotNear(unit.m_MovedTo, 10, 30, 4);
+    if (vehicle.IsEmpty()) vehiclePos = manager.ClearSpotNear(unit.m_MovedTo, 10, 30, 4);
+    else vehiclePos = manager.m_Requisition.VehicleSpot(unit.m_MovedTo, 10, 30, 4);
     if (vehicle.IsEmpty()) groupPos = manager.ClearSpotNear(unit.m_MovedTo, 5, 20, 1.5);
     else groupPos = ACR_Manager.Ground(vehiclePos + Vector(6, 0, 6));
    }

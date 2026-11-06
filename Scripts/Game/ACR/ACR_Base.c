@@ -57,6 +57,10 @@ class ACR_Base : GenericEntity
  bool m_bAIManaged;                 // handed to the AI (FOB panel, ACR_FobAI)...
  string m_sAIManagedFor;            // ...by this side
  bool m_bPocket;                    // FIA pocket of resistance (ACR_Pockets) until someone captures it
+ vector m_vDriveOut;                // last vehicle spot found here with a way out (ACR_Requisition.VehicleSpot)
+ bool m_bDriveOut;
+ ref set<int> m_DriveOutShut;        // vehicle-grid cells found shut in (yards), ...
+ float m_fDriveOutShutAt;           // ...since this world time (ms): forgotten after a while
 
  // A built FOB keeps its upgrades when its HQ is destroyed (Jacob, 18 Oct): no deployment,
  // reinforcement, services, deliveries or upgrades until an Establish FOB order rebuilds the HQ.

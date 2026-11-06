@@ -41,6 +41,8 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrSurveyTest")) ACR_TestSurvey.Run(null, seconds);
   // -acrPlacesTest: named map locations, for laying out a new map (ACR_TestPlaces).
   if (System.IsCLIParam("acrPlacesTest")) ACR_TestPlaces.Run(seconds);
+  // -acrVehicleExitTest: bought vehicles get spots they can drive out of (ACR_TestVehicleExit).
+  if (System.IsCLIParam("acrVehicleExitTest")) ACR_TestVehicleExit.Run(seconds);
   // -acrSetupTest: the setup phase (ACR_TestSetup).
   if (ACR_TestSetup.Wanted()) ACR_TestSetup.Run(seconds);
   if (ACR_TestSetup.UiWanted()) ACR_TestSetup.RunUi(seconds);

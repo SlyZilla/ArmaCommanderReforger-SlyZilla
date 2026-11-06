@@ -89,6 +89,8 @@ bbbgrenadier|-acrBbbGrenadierTest 1|1500
 bbbglnear|-acrBbbGrenadierNearTest 1|600|Worlds/BBB_TestArland.ent
 places|-acrPlacesTest 1|120|Worlds/ACR_Everon.ent
 placeskolguyev|-acrPlacesTest 1|120|Worlds/ACR_Kolguyev.ent
+vehexit|-acrVehicleExitTest 1|120|Worlds/ACR_Everon.ent
+vehexitarland|-acrVehicleExitTest 1|120|Worlds/ACR_Arland.ent
 generate|-acrGenerateTest 1|150|Worlds/ACR_Kolguyev.ent
 setupgen|-acrSetupGenTest 1|120|Worlds/ACR_Kolguyev.ent
 generateeveron|-acrGenerateEveronTest 1|120|Worlds/ACR_Everon.ent
