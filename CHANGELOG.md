@@ -7,6 +7,10 @@
 - AI commanders whose HQ is far from every other base no longer sit there all match. Squads only walked to empty bases within 1.5 km, and a grab never used a truck, so on a generated map that put the HQ more than 2 km from its neighbours the AI took nothing, earned nothing and never grew strong enough to attack. A farther empty base is now grabbed by truck when one is free.
 - A squad manning a roadblock's machine gun no longer counts as riding a vehicle, and the gun no longer counts toward its strength when it leaves for an attack or a grab. Its first grab used to be called off "for too many losses" a second after it set out, as the gunner got off the gun.
 
+### Bases
+
+- A base's garrison no longer vanishes when the base is taken. Its survivors (and its patrol's) now fall back, returning fire, to their side's nearest base within 2.5 km, or 350 m away from the enemy when there is none, and help hold it if it is under attack. Once no enemy is near them they join that base's reserve. They don't count towards retaking the base they were just pushed out of. FIA pockets fall back to the next pocket the same way.
+
 ## 0.5.9 — released
 
 - Works with Arma Reforger 1.9 (with Better Battle Buddies 0.1.8). In 1.9 the game's automatic gearbox overrode the vehicles that AC: Actual and Better Battle Buddies drive by hand, so they sat still or crept forward: a vehicle backing out of a jam, pulling over before a get-out, or backing away from an armed enemy vehicle moves again. A truck backing away from an armed vehicle now gets a few seconds to turn round before its crew gives up on it under fire, and a vehicle its crew abandons keeps its handbrake on: in 1.9 an empty vehicle drops into neutral, and one rolled downhill into the enemy it had just backed away from.

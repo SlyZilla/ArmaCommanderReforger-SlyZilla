@@ -1,12 +1,16 @@
 // -acrPocketsTest 1 (server, Everon whole map, ~40 s): FIA pockets of resistance (ACR_Pockets).
 // Checks: a few neutral bases start held by FIA with garrisons by kind of site, away from both
 // starting bases and from each other; both sides see them as unclaimed; a US soldier 300 m from
-// one finds it (US now sees FIA, USSR still doesn't) and its garrison deploys; a capture ends it.
+// one finds it (US now sees FIA, USSR still doesn't) and its garrison deploys; a capture ends it
+// and its garrison's survivors fall back, then join another pocket's reserve (none vanish).
 class ACR_TestPockets
 {
  static const ResourceName US_RIFLEMAN = "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et";
  protected static ACR_Base s_Target;
  protected static IEntity s_Scout;
+ protected static int s_iSurvivors;
+ protected static int s_iOtherMen;   // FIA men at the other pockets (reserve + patrols) before the capture
+ static const int CHECKS = 14;
 
  static void Run(int tick)
  {
@@ -18,6 +22,18 @@ class ACR_TestPockets
   }
   if (tick == 10) Placement(manager);
   if (tick == 25) Found(manager);
+  if (tick == 40) Rejoined(manager);
+ }
+
+ protected static int OtherPocketMen(ACR_Manager manager)
+ {
+  int men;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base == s_Target || base.m_bRetired || base.m_sOwner != ACR_Pockets.FACTION) continue;
+   men += base.m_iGarrisonLeft + manager.m_Bases.GuardsAlive(base.m_PatrolGroup) + manager.m_Bases.GuardsAlive(base.m_GarrisonGroup);
+  }
+  return men;
  }
 
  protected static void Placement(ACR_Manager manager)
@@ -77,7 +93,7 @@ class ACR_TestPockets
  {
   if (!s_Target)
   {
-   ACR_TestRegress.Complete("pockets", 11);
+   ACR_TestRegress.Complete("pockets", CHECKS);
    return;
   }
   ACR_TestRegress.Check("pockets: the scout finds the pocket", s_Target.OwnerSeenBy("US") == ACR_Pockets.FACTION && s_Target.m_aDetectedBy.Contains("US"), s_Target.m_sName);
@@ -89,9 +105,24 @@ class ACR_TestPockets
   IEntity navAgent;
   if (s_Target.m_GarrisonGroup) navAgent = s_Target.m_GarrisonGroup.GetLeaderAgent();
   ACR_TestGarrisonSpawn.Check(navAgent);
+  if (s_Target.m_GarrisonGroup) s_iSurvivors = manager.m_Bases.GuardsAlive(s_Target.m_GarrisonGroup);
+  s_iOtherMen = OtherPocketMen(manager);
   manager.m_Bases.DebugCapture(manager, s_Target, "US");
   ACR_TestRegress.Check("pockets: a capture ends the pocket", !s_Target.m_bPocket && s_Target.m_sOwner == "US" && s_Target.OwnerSeenBy("USSR") == "US", s_Target.m_sOwner);
+  // Jacob, 6 Nov: an FIA team was simply gone once its town fell.
+  int falling = manager.m_Bases.FallingBack(ACR_Pockets.FACTION);
+  ACR_TestRegress.Check("pockets: its garrison's survivors fall back, not deleted", s_iSurvivors > 0 && falling == s_iSurvivors, string.Format("%1 of %2", falling, s_iSurvivors));
+  // The scout goes: nobody near them, they pack up into another pocket's reserve.
   if (s_Scout) SCR_EntityHelper.DeleteEntityAndChildren(s_Scout);
-  ACR_TestRegress.Complete("pockets", 11);
+ }
+
+ protected static void Rejoined(ACR_Manager manager)
+ {
+  if (!s_Target) return;
+  int falling = manager.m_Bases.FallingBack(ACR_Pockets.FACTION);
+  int now = OtherPocketMen(manager);
+  ACR_TestRegress.Check("pockets: clear of the enemy, they leave the field", falling == 0, string.Format("%1 still falling back", falling));
+  ACR_TestRegress.Check("pockets: ... into another pocket's reserve", now == s_iOtherMen + s_iSurvivors, string.Format("other pockets %1 -> %2, survivors %3", s_iOtherMen, now, s_iSurvivors));
+  ACR_TestRegress.Complete("pockets", CHECKS);
  }
 }

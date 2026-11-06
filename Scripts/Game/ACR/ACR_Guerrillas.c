@@ -899,7 +899,7 @@ class ACR_Guerrillas
 
  // ---------------------------------------------------------------- helpers
 
- protected static void SetCombatMode(SCR_AIGroup group, EAIGroupCombatMode mode)
+ static void SetCombatMode(SCR_AIGroup group, EAIGroupCombatMode mode)
  {
   if (!group) return;
   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(group.FindComponent(SCR_AIGroupUtilityComponent));
