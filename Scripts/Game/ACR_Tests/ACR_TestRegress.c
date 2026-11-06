@@ -157,7 +157,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 151; // includes one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 152; // includes one AI-transport-truck, one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -1002,6 +1002,22 @@ class ACR_TestRegress
    // Garrison order (3 Oct): hand-made prefabs load; its label is a defend state.
    Check("garrison waypoint and post prefabs load", Resource.Load(ACR_Squad.WP_GARRISON).IsValid() && Resource.Load(ACR_Garrison.POST_CROUCH).IsValid() && Resource.Load(ACR_Garrison.POST_STAND).IsValid());
    Check("garrisoning counts as defending", ACR_Squad.StateOfLabel("Garrisoning") == ACR_EOrderState.DEFEND);
+  }
+  // 7b. (6 Nov) The AI buys as transports only trucks a ride will take: arsenal and construction
+  // trucks passed as transports, rides refused them and the shortage bought 29 trucks in 3 h.
+  if (tick == 28)
+  {
+   int troopTrucks = 0, serviceTrucks = 0, wrongTrucks = 0;
+   string wrongNames;
+   foreach (ACR_RequisitionEntry truckEntry : manager.m_Bases.GetFaction("US").m_aRequisitions)
+   {
+    if (!truckEntry.m_bTransport || truckEntry.m_sVehicle.IsEmpty()) continue;
+    bool aiTransport = !ACR_AICommander.IsServiceVehicle(truckEntry);
+    if (aiTransport) troopTrucks++;
+    else serviceTrucks++;
+    if (aiTransport && ACR_Logistics.ServiceOfName(truckEntry.m_sVehicle) != 0) { wrongTrucks++; wrongNames += " " + truckEntry.m_sName; }
+   }
+   Check("AI transport trucks are ones a ride takes", troopTrucks > 0 && serviceTrucks > 0 && wrongTrucks == 0, string.Format("troop %1, service %2, taken wrongly %3:%4", troopTrucks, serviceTrucks, wrongTrucks, wrongNames));
   }
   // 8. (1 Oct MP) A construction truck's crew gets the building shovel.
   if (tick == 28)
