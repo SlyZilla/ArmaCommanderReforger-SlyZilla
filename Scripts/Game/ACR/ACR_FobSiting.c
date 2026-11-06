@@ -12,6 +12,11 @@
 // - cover: our roadblocks and Fortify positions within COVER_REACH;
 // - off the enemy's road route to the front base (BBB_Roads.Route, as the roadblock siting);
 // - inside a town costs score.
+// Above all of those (Jacob, 6 Nov: the AI spawned everything at its HQ 7 km back): a site DEPLOY_GAP
+// from every base that could fall (any but our own FOBs) outranks every site closer to one. The AI
+// deploys at a FOB only while it is ACR_AICommander.FOB_DEPLOY_MIN_FRONT from every base not ours,
+// and a FOB 300-550 m behind its front base stopped being a deploy point the moment that base fell
+// (USSR's FOB 1 at Stary Sobor: one purchase there in two hours). Closer sites stay the last resort.
 // Where the old offsets give fewer than ENOUGH sites with every spot clear, a wider fan is tried
 // too (300-900 m back, out to 120 deg either side): the playtest of 26 Oct had "no clear FOB site"
 // at two bases, five times. Never fewer FOBs: the score only orders the sites that pass, and the
@@ -28,6 +33,8 @@ class ACR_FobSite : Managed
  int m_iEyes;
  float m_fRoad;         // m to the nearest road (-1: none found)
  float m_fBack;         // m back from the front base
+ float m_fGap;          // m to the nearest base that could fall (any but our own FOBs)
+ string m_sGapBase;     // ... which one
  int m_iCover;          // our roadblocks and Fortify positions within COVER_REACH
  bool m_bOnRoute;       // within ROUTE_NEAR of the enemy's road route to the front base
  bool m_bTown;
@@ -51,7 +58,7 @@ class ACR_FobSiteCache : Managed
 class ACR_FobSiting
 {
  static const int VALIDATE_PER_STEP = 6;
- static const int ENOUGH = 3;           // sites with every spot clear from the old offsets: no wider fan
+ static const int ENOUGH = 3;           // sites with every spot clear that keep deploying, from the old offsets: no wider fan
  static const float CACHE_S = 600;
  static const float EYE = 2;            // m: an enemy's eye over the ground
  static const float HQ_TOP = 3;         // m: the top of the HQ, what an enemy would see of it
@@ -61,6 +68,8 @@ class ACR_FobSiting
  static const float ROAD_NEAR = 40;
  static const float ROAD_FAR = 120;
  static const float ENEMY_CLEAR = 600;  // m from an enemy or neutral base, as before
+ static const float DEPLOY_GAP = 600;   // m: ACR_AICommander.FOB_DEPLOY_MIN_FRONT (500) and a margin
+ static const float DEPLOY_TIER = 20;   // score for keeping DEPLOY_GAP: more than all the other terms' spread
  protected static ref map<string, ref ACR_FobSiteCache> s_mCache;
  // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
  static void ACR_InitStatics()
@@ -188,6 +197,15 @@ class ACR_FobSiting
   site.m_iSlots = slots;
   site.m_iDefences = defences;
   site.m_fBack = vector.DistanceXZ(spot, front.GetOrigin());
+  site.m_fGap = float.MAX;
+  foreach (ACR_Base near : ACR_Base.s_All)
+  {
+   if (!near || near.m_bRetired || (near.m_sOwner == faction && near.m_bBuilt)) continue;
+   float gap = vector.DistanceXZ(near.GetOrigin(), spot);
+   if (gap >= site.m_fGap) continue;
+   site.m_fGap = gap;
+   site.m_sGapBase = near.m_sName;
+  }
   site.m_fRoad = RoadDistance(spot);
   site.m_bTown = ACR_SiteScore.Buildings(spot, 40) >= 4;
   if (cache.m_aRoute.Count() >= 2) site.m_bOnRoute = ACR_SiteScore.OnPath(spot, cache.m_aRoute) <= ROUTE_NEAR;
@@ -231,7 +249,14 @@ class ACR_FobSiting
   score += Math.Min(s.m_iCover * 0.5, 1.5);
   if (s.m_bOnRoute) score -= 2;
   if (s.m_bTown) score -= 2;
+  if (KeepsDeploying(s)) score += DEPLOY_TIER;
   return score;
+ }
+
+ // Still a deploy point when any base near it falls.
+ static bool KeepsDeploying(ACR_FobSite s)
+ {
+  return s.m_fGap >= DEPLOY_GAP;
  }
 
  static string Breakdown(ACR_FobSite s)
@@ -245,6 +270,8 @@ class ACR_FobSiting
   if (s.m_iCover > 0) text += string.Format("; covered by %1 of ours", s.m_iCover);
   if (s.m_bOnRoute) text += "; on the enemy's road route";
   if (s.m_bTown) text += "; in a town";
+  if (!s.m_sGapBase.IsEmpty() && KeepsDeploying(s)) text += string.Format("; %1 m from the nearest base", (int)s.m_fGap);
+  else if (!s.m_sGapBase.IsEmpty()) text += string.Format("; only %1 m from %2: no deploying there if it falls", (int)s.m_fGap, s.m_sGapBase);
   text += string.Format("; the old order's #%1)", s.m_iOrder + 1);
   return text;
  }
@@ -284,7 +311,8 @@ class ACR_FobSiting
   int full;
   foreach (ACR_FobSite site : cache.m_aSites)
   {
-   if (site.m_iSlots >= ACR_FobSlots.SLOT_COUNT && site.m_iDefences >= ACR_FobDefences.SPOT_COUNT) full++;
+   // Only those that keep deploying: without enough of them the wider fan is searched too.
+   if (site.m_iSlots >= ACR_FobSlots.SLOT_COUNT && site.m_iDefences >= ACR_FobDefences.SPOT_COUNT && KeepsDeploying(site)) full++;
   }
   return full;
  }

@@ -2,7 +2,9 @@
 // For every US base, the old first fit (FindFobSite's offsets in their order, the first that
 // passes, as it was) against the scored search:
 // - never fewer FOBs: wherever the old first fit found a site, the scored search does too;
-// - the pick has all 8 upgrade slots and 7 defence spots clear wherever any site there does;
+// - the pick has all 8 upgrade slots and 7 defence spots clear wherever any site there does (among
+//   those that keep deploying, when there are any);
+// - the pick keeps DEPLOY_GAP from every base that could fall wherever any site there does;
 // - the old first fit is among the scored sites;
 // - a search in steps of VALIDATE_PER_STEP ends (the wider fan included) and picks what the whole one picks;
 // - the score's terms move as they should;
@@ -10,7 +12,7 @@
 // Each base's two sites and the pick's breakdown are logged as "[ACR] FOBSITING ...".
 class ACR_TestFobSiting
 {
- static const int CHECKS = 6;
+ static const int CHECKS = 7;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -28,6 +30,8 @@ class ACR_TestFobSiting
   int fullAvailable = 0;
   int fullPicked = 0;
   int oldMissing = 0;
+  int safeAvailable = 0;
+  int safePicked = 0;
   ACR_Base stepBase;
   ACR_Base twoSites;
   string detail = "";
@@ -44,13 +48,25 @@ class ACR_TestFobSiting
    if (old) oldFound++;
    if (found) newFound++;
    if (old && !found) fewer++;
+   // Keeping deploy distance ranks first: room is compared among the sites of the pick's tier.
+   bool anySafe = false;
+   foreach (ACR_FobSite safe : sites)
+   {
+    if (ACR_FobSiting.KeepsDeploying(safe)) anySafe = true;
+   }
    bool anyFull = false;
    foreach (ACR_FobSite s : sites)
    {
+    if (anySafe && !ACR_FobSiting.KeepsDeploying(s)) continue;
     if (s.m_iSlots >= ACR_FobSlots.SLOT_COUNT && s.m_iDefences >= ACR_FobDefences.SPOT_COUNT) anyFull = true;
    }
    array<vector> noAvoid = {};
    ACR_FobSite best = ACR_FobSiting.Best(sites, noAvoid);
+   if (anySafe)
+   {
+    safeAvailable++;
+    if (best && ACR_FobSiting.KeepsDeploying(best)) safePicked++;
+   }
    if (anyFull)
    {
     fullAvailable++;
@@ -81,6 +97,7 @@ class ACR_TestFobSiting
   detail = string.Format("old first fit found %1, scored %2, fewer %3", oldFound, newFound, fewer);
   ACR_TestRegress.Check("fobsiting: wherever the old first fit found a FOB site, the scored search does too", oldFound > 0 && fewer == 0, detail);
   ACR_TestRegress.Check("fobsiting: the pick has every upgrade slot and defence spot clear wherever a site there does", fullPicked == fullAvailable, string.Format("%1 of %2 bases", fullPicked, fullAvailable));
+  ACR_TestRegress.Check("fobsiting: the pick keeps deploy distance from every base wherever a site there does", safeAvailable > 0 && safePicked == safeAvailable, string.Format("%1 of %2 bases (of %3 with a site)", safePicked, safeAvailable, newFound));
   ACR_TestRegress.Check("fobsiting: the old first fit is among the scored sites", oldFound > 0 && oldMissing == 0, string.Format("missing at %1 of %2 bases", oldMissing, oldFound));
 
   // In steps, as ManageFobBuild runs it.
@@ -123,8 +140,25 @@ class ACR_TestFobSiting
   town.m_bTown = true;
   ACR_FobSite covered = Synthetic();
   covered.m_iCover = 2;
-  bool terms = ACR_FobSiting.Score(hidden) > baseScore && ACR_FobSiting.Score(road) > baseScore && ACR_FobSiting.Score(full) > baseScore && ACR_FobSiting.Score(farBack) < baseScore && ACR_FobSiting.Score(route) < baseScore && ACR_FobSiting.Score(town) < baseScore && ACR_FobSiting.Score(covered) > baseScore;
-  ACR_TestRegress.Check("fobsiting: the score's terms move as they should", terms, string.Format("plain %1, hidden %2, road %3, all spots %4, 750 m back %5, on route %6, town %7, covered %8", baseScore, ACR_FobSiting.Score(hidden), ACR_FobSiting.Score(road), ACR_FobSiting.Score(full), ACR_FobSiting.Score(farBack), ACR_FobSiting.Score(route), ACR_FobSiting.Score(town), ACR_FobSiting.Score(covered)));
+  // The worst site that keeps deploying outranks the best that doesn't.
+  ACR_FobSite worstSafe = Synthetic();
+  worstSafe.m_iSlots = 0;
+  worstSafe.m_iDefences = 0;
+  worstSafe.m_iHidden = 0;
+  worstSafe.m_fRoad = -1;
+  worstSafe.m_fBack = 2000;
+  worstSafe.m_bOnRoute = true;
+  worstSafe.m_bTown = true;
+  worstSafe.m_fGap = ACR_FobSiting.DEPLOY_GAP;
+  ACR_FobSite bestNear = Synthetic();
+  bestNear.m_iSlots = ACR_FobSlots.SLOT_COUNT;
+  bestNear.m_iDefences = ACR_FobDefences.SPOT_COUNT;
+  bestNear.m_iHidden = 4;
+  bestNear.m_fRoad = 10;
+  bestNear.m_iCover = 5;
+  bestNear.m_fGap = ACR_FobSiting.DEPLOY_GAP - 1;
+  bool terms = ACR_FobSiting.Score(hidden) > baseScore && ACR_FobSiting.Score(road) > baseScore && ACR_FobSiting.Score(full) > baseScore && ACR_FobSiting.Score(farBack) < baseScore && ACR_FobSiting.Score(route) < baseScore && ACR_FobSiting.Score(town) < baseScore && ACR_FobSiting.Score(covered) > baseScore && ACR_FobSiting.Score(worstSafe) > ACR_FobSiting.Score(bestNear) * 1.15;
+  ACR_TestRegress.Check("fobsiting: the score's terms move as they should", terms, string.Format("plain %1, hidden %2, road %3, all spots %4, 750 m back %5, on route %6, town %7, covered %8, worst deploying %9", baseScore, ACR_FobSiting.Score(hidden), ACR_FobSiting.Score(road), ACR_FobSiting.Score(full), ACR_FobSiting.Score(farBack), ACR_FobSiting.Score(route), ACR_FobSiting.Score(town), ACR_FobSiting.Score(covered), ACR_FobSiting.Score(worstSafe)) + string.Format(" vs best near %1", ACR_FobSiting.Score(bestNear)));
 
   // An abandoned site is skipped.
   bool skipped = false;
