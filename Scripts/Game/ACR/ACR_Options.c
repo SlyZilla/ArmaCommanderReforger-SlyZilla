@@ -94,7 +94,7 @@ class ACR_MissionHeader : SCR_MissionHeader
 {
  [Attribute("", UIWidgets.EditBox, "Skirmish layout by name (-acrLayout); blank = by size")]
  string m_sAcrLayout;
- [Attribute("", UIWidgets.EditBox, "Skirmish size: full, half or flashpoint (-acrSize)")]
+ [Attribute("", UIWidgets.EditBox, "Skirmish size: full, half, quarter or flashpoint (-acrSize)")]
  string m_sAcrSize;
  [Attribute("", UIWidgets.EditBox, "FIA pockets of resistance on whole/half maps: few (default), many or off (-acrPockets)")]
  string m_sAcrPockets;

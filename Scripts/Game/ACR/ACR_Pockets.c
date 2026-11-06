@@ -12,7 +12,7 @@ class ACR_Pockets
  static const float MIN_HQ_DISTANCE = 1500; // m from any side's starting base (whole map)
  static const float MIN_SPACING = 800;      // m between two pockets
 
- static int CountOption(bool half)
+ static int CountOption(bool half, bool quarter = false)
  {
   string value = ACR_TestHooks.Get().Pockets();
   if (value == "" && !ACR_Options.Get("acrPockets", value)) value = "";
@@ -25,9 +25,11 @@ class ACR_Pockets
   if (value == "off" || value == "0") return 0;
   if (value == "many")
   {
+   if (quarter) return 3;
    if (half) return 6;
    return 12;
   }
+  if (quarter) return 2;
   if (half) return 3;
   return 7;
  }
@@ -47,7 +49,7 @@ class ACR_Pockets
   int size = ACR_Skirmish.SizeOption();
   if (ACR_Skirmish.s_Active) size = ACR_Skirmish.s_Active.m_eSize;
   if (size == ACR_ESkirmishSize.FLASHPOINT) return;
-  int wanted = CountOption(size == ACR_ESkirmishSize.HALF);
+  int wanted = CountOption(size == ACR_ESkirmishSize.HALF, size == ACR_ESkirmishSize.QUARTER);
   if (wanted <= 0) return;
   if (ACR_FactionSelection.West() == FACTION || ACR_FactionSelection.East() == FACTION)
   {

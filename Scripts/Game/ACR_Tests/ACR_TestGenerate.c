@@ -647,6 +647,23 @@ class ACR_TestGenerate
   int unnamed;
   foreach (ACR_Base named : ACR_Base.s_All) if (named.m_sName == "" || named.m_sName.StartsWith("Base ") || named.m_sName.StartsWith("#")) unnamed++;
   ACR_TestRegress.Check("map: bases named from the map", unnamed == 0, string.Format("%1 unnamed", unnamed));
+  // Quarter (6 Nov): a district of about a quarter of the sites, HQs inside it, on every seed.
+  int quarterGood, quarterMax, halfLargest;
+  float quarterSpan;
+  for (int q = 1; q <= 8; q++)
+  {
+   array<ref ACR_GenSite> quarter = {};
+   array<ACR_GenSite> quarterHQs = {};
+   if (!ACR_Generator.Plan(q * 104729, ACR_ESkirmishSize.QUARTER, quarter, quarterHQs) || quarterHQs.Count() != 2 || quarterHQs[0] == quarterHQs[1] || quarter.Count() < 4) continue;
+   quarterGood++;
+   quarterMax = Math.Max(quarterMax, quarter.Count());
+   quarterSpan = Math.Max(quarterSpan, vector.DistanceXZ(quarterHQs[0].m_vPos, quarterHQs[1].m_vPos));
+   PrintFormat("[ACR] GEN QUARTER seed %1: %2 sites, HQs %3 / %4 %5 m apart", q * 104729, quarter.Count(), quarterHQs[0].m_sName, quarterHQs[1].m_sName, (int)vector.DistanceXZ(quarterHQs[0].m_vPos, quarterHQs[1].m_vPos));
+   array<ref ACR_GenSite> halfSame = {};
+   array<ACR_GenSite> halfSameHQs = {};
+   if (ACR_Generator.Plan(q * 104729, ACR_ESkirmishSize.HALF, halfSame, halfSameHQs)) halfLargest = Math.Max(halfLargest, halfSame.Count());
+  }
+  ACR_TestRegress.Check("map: quarter size on 8 seeds", quarterGood == 8 && quarterMax <= Math.Max(halfLargest, 8), string.Format("%1 of 8 planned, largest %2 sites (half up to %3), HQs up to %4 m apart", quarterGood, quarterMax, halfLargest, (int)quarterSpan));
   // Settlements on their houses (6 Nov: Chernarus labels lie in the fields beside the town).
   int settled, onHouses;
   string bare;
@@ -662,7 +679,7 @@ class ACR_TestGenerate
   }
   ACR_TestRegress.Check("map: towns sit on their houses", settled > 0 && 0.9 * settled <= onHouses, string.Format("%1 of %2 with 3+ buildings in the circle; bare:%3", onHouses, settled, bare));
  }
- static const int MAP_CHECKS = 12;
+ static const int MAP_CHECKS = 13;
 }
 
 // Synthetic terrain fixtures exercise the real sampler and graph traversal without relying on

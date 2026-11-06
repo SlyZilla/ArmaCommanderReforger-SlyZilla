@@ -10,7 +10,8 @@
 // Bases remain on their map places (moved onto dry ground when the place is in water).
 // Runs instead of a hand-built layout when the host picks "Generated" (acrLayout generated) or
 // the world has no bases (e.g. ACR_Kolguyev). Same seed + size + world = same layout.
-// Sizes: full map; half (a seeded rotated band or compact region); flashpoint (about seven
+// Sizes: full map; half (a seeded rotated band or compact region); quarter (a seeded district,
+// about a quarter of the sites); flashpoint (about seven
 // sites within 1.8 km of one town, HQs inside it at opposite ends).
 class ACR_GenSite
 {
@@ -521,13 +522,14 @@ class ACR_Generator
   int attempts = 1;
   // Halves too (29 Oct, Gulfcoast Islands): a band can cut an archipelago into unreachable
   // islands. Retries only follow a failed draw, so maps that plan first time are unchanged.
-  if (flash || size == ACR_ESkirmishSize.HALF) attempts = 8;
+  if (flash || size == ACR_ESkirmishSize.HALF || size == ACR_ESkirmishSize.QUARTER) attempts = 8;
   bool selected = false;
   for (int attempt = 0; attempt < attempts; attempt++)
   {
    pool.Clear(); hqPool.Clear();
    foreach (ACR_GenSite s : spaced) pool.Insert(s);
    if (size == ACR_ESkirmishSize.HALF) pool = Half(pool, rng);
+   else if (size == ACR_ESkirmishSize.QUARTER) pool = Quarter(pool, rng);
    else if (flash) pool = Flashpoint(pool, rng);
    if (pool.Count() < 3) continue;
    ACR_GenSite west, east;
@@ -1123,6 +1125,43 @@ class ACR_Generator
    if (position >= low && position <= high) result.Insert(included);
   }
   return result;
+ }
+
+ // A quarter (6 Nov, Jacob: Chernarus "desperately needs a quarter map"): the 22-30% of ordinary
+ // sites nearest a seeded anchor, measured in a seeded ellipse (round, or up to 1.8 times longer
+ // along a random bearing), so a quarter is a district rather than a strip. Landmarks inside
+ // come along as in a half. Same economy and spacing rules as a half or the full map.
+ protected static array<ACR_GenSite> Quarter(array<ACR_GenSite> pool, RandomGenerator rng)
+ {
+  array<ACR_GenSite> ordinary = {};
+  foreach (ACR_GenSite site : pool) if (site.m_sKind != "landmark") ordinary.Insert(site);
+  array<ACR_GenSite> result = {};
+  if (ordinary.Count() < 3) return result;
+  float angle = Math.PI2 * rng.RandFloat01();
+  vector axis = Vector(Math.Cos(angle), 0, Math.Sin(angle));
+  vector across = Vector(-axis[2], 0, axis[0]);
+  float stretch = 1 + 0.8 * rng.RandFloat01();
+  int anchorIndex = Math.Min(ordinary.Count() - 1, Math.Floor(rng.RandFloat01() * ordinary.Count()));
+  vector anchor = ordinary[anchorIndex].m_vPos;
+  int count = Math.Max(6, Math.Round((0.22 + 0.08 * rng.RandFloat01()) * ordinary.Count()));
+  count = Math.Min(count, ordinary.Count());
+  array<float> sorted = {};
+  foreach (ACR_GenSite point : ordinary) sorted.Insert(QuarterMetric(point.m_vPos, anchor, axis, across, stretch));
+  sorted.Sort();
+  float high = float.MAX;
+  if (count < sorted.Count()) high = 0.5 * (sorted[count - 1] + sorted[count]);
+  foreach (ACR_GenSite included : pool)
+   if (QuarterMetric(included.m_vPos, anchor, axis, across, stretch) <= high) result.Insert(included);
+  return result;
+ }
+
+ protected static float QuarterMetric(vector at, vector anchor, vector axis, vector across, float stretch)
+ {
+  vector offset = at - anchor;
+  offset[1] = 0;
+  float along = vector.Dot(offset, axis) / stretch;
+  float side = vector.Dot(offset, across);
+  return Math.Sqrt(along * along + side * side);
  }
 
  // An accessible local candidate pool; final selection keeps 5-7 actual objectives.
