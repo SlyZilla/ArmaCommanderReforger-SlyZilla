@@ -203,6 +203,13 @@ class Console:
             raise Blocked('Record the confirmed version in CHANGELOG.md before recording publication.')
         entry = dict(version=version, confirmedAt=dt.datetime.now(dt.timezone.utc).isoformat(),
                      evidence=evidence, notesSha256=notes_digest(text, version))
+        if not candidate and self.pointer(mod).is_file():
+            # A manual Workbench upload (option 8): tie the record to the checked copy of this
+            # version, so the next add-on update knows which commit is live.
+            pointed = Path(read_json(self.pointer(mod))['candidate'])
+            with contextlib.suppress(Blocked, OSError, ValueError, KeyError):
+                if read_json(pointed / 'WORKSHOP-BUILD.json')['releaseVersion'] == version:
+                    candidate = pointed
         if candidate:
             manifest = self.verify_manifest(candidate, current=False)
             if manifest['mod'] != mod or manifest['releaseVersion'] != version:
@@ -360,7 +367,7 @@ class Console:
             args += ['-DependencyRoot', str(dependency / SPECS['BBB']['folder'])]
         spec = SPECS[manifest['mod']]
         if 'world' in spec:
-            args += ['-AddonId', spec['guid'], '-World', spec['world'], '-InstalledRoot', str(self.installed_root)]
+            args += ['-AddonId', spec['guid'], '-World', spec['world'], '-InstalledRoot', self.addon_dirs()]
         if 'signal' in spec:
             args += ['-Signal', spec['signal']]
         subprocess.run(args, check=True, stdout=sys.stderr)
@@ -370,6 +377,78 @@ class Console:
             dependencyManifest=digest(dependency / 'WORKSHOP-BUILD.json') if dependency else None,
             checkedUtc=dt.datetime.now(dt.timezone.utc).isoformat()))
         write_json(self.pointer(manifest['mod']), dict(candidate=str(parent)))
+
+    def published_copy(self, mod):
+        """The exact copy uploaded for a mod's newest recorded release, or None."""
+        releases = self.release_history(mod)['releases']
+        if not releases:
+            return None
+        newest = max(releases, key=lambda r: tuple(map(int, r['version'].split('.'))))
+        if not newest.get('candidate'):
+            return None
+        parent = self.output.parent / newest['candidate']
+        with contextlib.suppress(Blocked, OSError, ValueError, KeyError):
+            if self.verify_manifest(parent, current=False)['releaseVersion'] == newest['version']:
+                return parent
+        return None
+
+    def addon_dirs(self):
+        """Mod folders an ACA add-on is checked and packed against: the copies of ACA and BBB that
+        are live on the Workshop (no download needed, never the development source), then the
+        downloaded Workshop mods (the map or the pack's own dependencies). First folder wins."""
+        dirs = [str(p) for p in (self.published_copy('ACA'), self.published_copy('BBB')) if p]
+        return ','.join(dirs + [str(self.installed_root)])
+
+    def addon_notes(self, mod):
+        """Next version of an ACA add-on with its changelog written and committed (6 Nov, Jacob:
+        add-on updates are published from the CLI when he asks). Bullets already under the next
+        version are kept; otherwise they are the commit subjects since the live release."""
+        if not mod.startswith(('MAP-', 'PACK-')):
+            raise Blocked('Automatic notes are for ACA add-ons (MAP-/PACK-) only.')
+        source, spec = self.source(mod), SPECS[mod]
+        clean_commit(source)
+        releases = self.release_history(mod)['releases']
+        if not releases:
+            raise Blocked(f'{mod}: publish the first version in Workbench (options 9, 10, then 8) first.')
+        live = max(releases, key=lambda r: tuple(map(int, r['version'].split('.'))))
+        since = live.get('sourceCommit')
+        if not since:
+            raise Blocked(f'{mod} {live["version"]}: its record has no source commit. Record it with --candidate.')
+        paths = ['addon.gproj', *spec['dirs']]
+        if not git(source, 'diff', '--name-only', since, 'HEAD', '--', *paths):
+            raise Blocked(f'{mod}: nothing changed since {live["version"]}; nothing to publish.')
+        major, minor, patch = map(int, live['version'].split('.'))
+        version = f'{major}.{minor}.{patch + 1}'
+        path = source / 'CHANGELOG.md'
+        raw = path.read_bytes()
+        newline = '\r\n' if b'\r\n' in raw else '\n'
+        text = raw.decode('utf-8-sig').replace('\r\n', '\n')
+        heading = re.search(r'^##\s+' + re.escape(version) + r'(?:\s[^\n]*)?\n', text, re.M)
+        if heading:
+            after = re.search(r'^##\s', text[heading.end():], re.M)
+            end = heading.end() + (after.start() if after else len(text) - heading.end())
+            if re.search(r'^[-*] \S', text[heading.end():end], re.M):
+                return dict(mod=mod, version=version, written=False, source=str(source))
+        subjects = git(source, 'log', '--no-merges', '--format=%s', f'{since}..HEAD', '--', *paths).splitlines()
+        bullets = []
+        for subject in subjects:
+            line = re.sub(r'\s*\((?:#\d+|needs [^)]*)\)\s*$', '', subject).strip()
+            line = re.sub(r'^(?:' + re.escape(spec['title'].split(' - ')[-1]) + r'|Cold War pack|Map):\s*', '', line, flags=re.I)
+            if line and not re.search(r'\b(TODO|TBD|FIXME)\b', line, re.I):
+                bullets.append('- ' + line[0].upper() + line[1:])
+        if not bullets:
+            raise Blocked(f'{mod}: no commit subjects to build the changelog from; write it by hand.')
+        section = f'## {version} — unreleased\n\n' + '\n'.join(reversed(bullets)) + '\n\n'
+        if heading:
+            text = text[:heading.start()] + section + text[end:].lstrip('\n')
+        else:
+            first = re.search(r'^##\s', text, re.M)
+            text = text[:first.start()] + section + text[first.start():]
+        path.write_bytes(text.replace('\n', newline).encode('utf-8'))
+        git(source, 'add', 'CHANGELOG.md')
+        git(source, 'commit', '-q', '-m', f'Changelog for {version}', '-m',
+            'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
+        return dict(mod=mod, version=version, written=True, source=str(source))
 
     def prepare(self, mod):
         dependency = None
@@ -412,7 +491,14 @@ class Console:
 
     def publish_info(self, mod, installed_root):
         info = self.notes_info(mod)
-        current = self.downloaded_version(mod, installed_root)
+        try:
+            current = self.downloaded_version(mod, installed_root)
+        except (Blocked, OSError):
+            # An ACA add-on need not be downloaded here: its own record says what is live.
+            releases = self.release_history(mod)['releases']
+            if not mod.startswith(('MAP-', 'PACK-')) or not releases:
+                raise
+            current = max((r['version'] for r in releases), key=lambda v: tuple(map(int, v.split('.'))))
         if tuple(map(int, info['version'].split('.'))) <= tuple(map(int, current.split('.'))):
             raise Blocked(f'{mod} {current} is already installed. A new update needs a higher version and reviewed changelog; do not republish for tooling-only changes.')
         if mod == 'ACA':
@@ -488,7 +574,8 @@ class Console:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'check', 'status', 'installed', 'notes', 'publish-info', 'record-publication'])
+    parser.add_argument('action', choices=['prepare', 'check', 'status', 'installed', 'notes', 'publish-info',
+                                           'record-publication', 'addon-notes', 'addon-dirs'])
     parser.add_argument('mod', choices=SPECS, nargs='?')
     parser.add_argument('--installed-root', type=Path, default=Path('E:/ArmaReforgerMods/addons'))
     parser.add_argument('--version')
@@ -507,8 +594,14 @@ def main():
             except (Blocked, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
                 print(f'{mod}: NOT READY - {error}')
         return
+    if options.action == 'addon-dirs':
+        print(console.addon_dirs())
+        return
     if not options.mod:
         parser.error('Choose a mod.')
+    if options.action == 'addon-notes':
+        print(json.dumps(console.addon_notes(options.mod)))
+        return
     if options.action == 'record-publication':
         if not options.version or not options.evidence:
             parser.error('record-publication requires --version and --evidence.')

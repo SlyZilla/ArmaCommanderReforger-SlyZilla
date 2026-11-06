@@ -27,7 +27,8 @@ function Invoke-Guard([string[]]$Arguments) {
  return $result
 }
 function Open-CheckedProject {
- param([string]$Mod, [switch]$PublishUpdate)
+ # -Confirmed: Jacob asked an agent to publish this update (Publish-AddOn.ps1, ACA add-ons only).
+ param([string]$Mod, [switch]$PublishUpdate, [switch]$Confirmed)
  if (Get-Process '*Workbench*' -ErrorAction SilentlyContinue) { throw 'Close Workbench first. This ensures the selected release opens as the active project.' }
  $project = Invoke-Guard @('check', $Mod, '--installed-root', $InstalledAddons)
  $notes = (Invoke-Guard @('notes', $Mod)) | ConvertFrom-Json
@@ -53,8 +54,8 @@ function Open-CheckedProject {
   $bbbProject = Invoke-Guard @('check', 'BBB')
   $addonDirs += ',' + (Split-Path (Split-Path $bbbProject -Parent) -Parent)
  }
- # ACA add-ons (maps, content packs) open beside the downloaded Workshop ACA/BBB and their own dependencies.
- if ($Mod -match '^(MAP|PACK)-') { $addonDirs += ',' + $InstalledAddons }
+ # ACA add-ons (maps, content packs) open beside the live Workshop ACA/BBB and their own dependencies.
+ if ($Mod -match '^(MAP|PACK)-') { $addonDirs += ',' + (Invoke-Guard @('addon-dirs', '--installed-root', $InstalledAddons)) }
  # Tools supply core; the game supplies data. Neither may depend on the shortcut working folder.
  $addonDirs += ',' + (Find-BaseGameAddons)
  $launchArgs = '-gproj "' + $project + '" -addonsDir "' + $addonDirs + '"'
@@ -71,7 +72,8 @@ function Open-CheckedProject {
  Get-Content -LiteralPath $notes.changelogFile -Encoding UTF8 | Out-Host
  Write-Host 'This uploads an update using the existing Workshop item and your Workbench login.'
  $confirmation = 'PUBLISH ' + $Mod + ' ' + $notes.version
- if ((Read-Host "Type $confirmation to upload, or press Enter to cancel") -cne $confirmation) {
+ if ($Confirmed -and $Mod -notmatch '^(MAP|PACK)-') { throw 'Only ACA add-ons are published without the typed confirmation.' }
+ if (!$Confirmed -and (Read-Host "Type $confirmation to upload, or press Enter to cancel") -cne $confirmation) {
   Write-Host 'Cancelled; nothing uploaded.'
   return
  }
