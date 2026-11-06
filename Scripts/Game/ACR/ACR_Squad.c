@@ -4715,6 +4715,28 @@ class ACR_Squad : Managed
   return CountAlive() + armed * 5;
  }
 
+ // Strength() less fixed guns (a roadblock's or a nest's MG, a tripod): what the squad takes with it
+ // when it moves off. Attacks and grabs count this, so a gunner leaving his post doesn't read as
+ // losses (6 Nov: a grab from a roadblock set out at 7, was 2 a second later, called off "too many losses").
+ int FieldStrength()
+ {
+  array<IEntity> vehicles = {};
+  GetVehicles(vehicles);
+  int armed;
+  foreach (IEntity vehicle : vehicles) if (HasGunner(vehicle) && !ACR_Intel.StaticGun(vehicle)) armed++;
+  return CountAlive() + armed * 5;
+ }
+
+ // In a vehicle that drives, not just a man on a fixed gun. IsMounted() counts both, so a squad
+ // manning a roadblock's MG passed for mounted: grabbed at driving speed, past the foot limit.
+ bool InMobileVehicle()
+ {
+  array<IEntity> vehicles = {};
+  GetVehicles(vehicles);
+  foreach (IEntity vehicle : vehicles) if (!ACR_Intel.StaticGun(vehicle)) return true;
+  return false;
+ }
+
  bool HasPlayer()
  {
   array<AIAgent> agents = {};

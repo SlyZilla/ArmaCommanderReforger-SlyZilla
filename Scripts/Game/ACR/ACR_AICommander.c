@@ -1289,7 +1289,7 @@ class ACR_AICommander : Managed
  // the squads a new attack actually takes). 'dist' is to the job's point.
  protected float AllocEta(ACR_Squad squad, float dist)
  {
-  if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad)) return dist / MOUNTED_SPEED;
+  if (squad.InMobileVehicle() || ACR_Transport.CrewedVehicle(squad)) return dist / MOUNTED_SPEED;
   if (dist <= WALK_REACH) return dist / WALK_SPEED;
   if (m_Manager.m_Rides) return dist / RIDE_SPEED + 120;
   if (SupportReady(ACR_ESupportType.AIR_LIFT)) return AIR_LIFT_SECONDS;
@@ -1473,8 +1473,9 @@ class ACR_AICommander : Managed
     float fit = 1;
     if (job.m_iKind == ACR_EAITask.ATTACK && support) fit = 0;
     if (job.m_iKind == ACR_EAITask.ATTACK && !job.m_bTeam && job.m_bRunning && ownAttack != job.m_Attack) fit = 0;
-    // A grab on foot only within 1500 m, as AssignAttacks sends them.
-    if (job.m_iKind == ACR_EAITask.ATTACK && !job.m_bTeam && !job.m_bRunning && !squad.IsMounted() && vector.DistanceXZ(pos, where.GetOrigin()) > 1500) fit = 0;
+    // A grab as AssignAttacks sends them: on foot within GRAB_WALK, farther by a free truck (GrabTime).
+    bool grabByTruck = false;
+    if (fit > 0 && job.m_iKind == ACR_EAITask.ATTACK && !job.m_bTeam && !job.m_bRunning && GrabTimeOf(squad, where.GetOrigin(), float.MAX, grabByTruck) < 0) fit = 0;
     if (job.m_iKind == ACR_EAITask.DEFEND && support) fit = 0.3;
     // A posted squad is only taken for real work, never walked to another post (as PostIdle leaves
     // it). Soak 4 Nov: with a front's hold slots shuffled, squads walked 2-3 km between two posts
@@ -1482,6 +1483,7 @@ class ACR_AICommander : Managed
     bool holdJob = job.m_iKind == ACR_EAITask.POSTED && j != reserveJob;
     if (holdJob && squad.m_iAITask == ACR_EAITask.POSTED && squad != m_ReserveSquad && vector.DistanceXZ(squad.m_MoveTarget, where.GetOrigin()) > where.m_fRadius + DEFENSE_DISTANCE) fit = 0;
     float eta = AllocEta(squad, dist);
+    if (grabByTruck && fit > 0) eta = dist / RIDE_SPEED + 120; // as AllocEta's ride, short of its walk
     // Its own attack: the way to its staging point, or none once going in.
     if (ownAttack && job.m_bRunning && ownAttack.m_Target == where)
     {
@@ -3236,6 +3238,39 @@ class ACR_AICommander : Managed
  static const int REACH_TAXI = 3;
  static const int REACH_AIR_LIFT = 4;
 
+ // ---- grabs of empty bases: how far, and how
+ static const float GRAB_WALK = 1500; // m: farthest a grab goes on foot (longer walks timed out, Everon soak 5 Oct)
+
+ // Pure: a grab's time in the planners' units (on foot 3, driving 9, as AssignAttacks has always
+ // ranked them): its own vehicle anywhere; on foot within GRAB_WALK; farther only by a free truck
+ // 'fetch' m away (Travel asks ACR_Rides for the same one), else -1. Before 6 Nov there was no truck
+ // case: a generated Chernarus put the US HQ 2.2 km from every other base, and with no base in walking
+ // range the US AI grabbed nothing all match while its truck stood at the HQ.
+ static float GrabTime(bool rolling, float dist, float fetch)
+ {
+  if (rolling) return dist / 9;
+  if (dist <= GRAB_WALK) return dist / 3;
+  if (fetch < 0) return -1;
+  return (fetch + dist) / 9 + 45; // the truck's way to them and the boarding
+ }
+
+ // GrabTime for this squad to 'target' (-1: out of its reach). 'beat': a time it has to beat to
+ // matter, so the transport search runs only for a squad that could. 'byTruck': it needs one.
+ protected float GrabTimeOf(ACR_Squad squad, vector target, float beat, out bool byTruck)
+ {
+  vector at = PositionOf(squad);
+  float dist = vector.DistanceXZ(at, target);
+  bool rolling = squad.InMobileVehicle() || ACR_Transport.CrewedVehicle(squad) != null;
+  byTruck = !rolling && dist > GRAB_WALK;
+  float fetch = -1;
+  if (byTruck && m_Manager.m_Rides && GrabTime(false, dist, 0) < beat)
+  {
+   float found;
+   if (m_Manager.m_Rides.FindTransport(m_sFaction, at, dist, squad.CountAlive(), found, true, null, false, m_bHandedOnly)) fetch = found;
+  }
+  return GrabTime(rolling, dist, fetch);
+ }
+
  // How a free squad would get to 'target' for an attack, and in how many seconds: in its own
  // vehicle; on foot within the doctrine's ride distance; by a taxi it can get (a free transport
  // within the pickup range ACR_Rides.Request fetches from, not counted for another squad of this
@@ -3245,7 +3280,7 @@ class ACR_AICommander : Managed
  {
   float dist = vector.DistanceXZ(PositionOf(squad), target);
   seconds = 0;
-  if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad))
+  if (squad.InMobileVehicle() || ACR_Transport.CrewedVehicle(squad))
   {
    seconds = dist / MOUNTED_SPEED;
    return REACH_OWN;
@@ -3342,7 +3377,7 @@ class ACR_AICommander : Managed
    if (!target || attack.m_bGrab || target.m_sOwner == m_sFaction || target.m_bRetired) continue;
    if (attack.m_SapperDemo && attack.m_SapperDemo.InProgress()) continue;
    int strength;
-   foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
+   foreach (ACR_Squad member : attack.m_Squads) strength += member.FieldStrength();
    float need = AttackNeed(target);
    if (InLaneOrFlank(target)) need *= LANE_MASS; // the main effort is filled up further
    if (attack.m_bAssaulting && attack.m_fAssaultStart > 0 && now - attack.m_fAssaultStart > 90000) need *= 1.35;
@@ -3362,7 +3397,7 @@ class ACR_AICommander : Managed
     // Observers, medics, snipers and other support teams don't join an assault.
     if (dist > maxDist || IsSupportTeam(squad)) { k++; continue; }
     vector stage = JoinAttack(attack, squad, now);
-    strength += squad.Strength();
+    strength += squad.FieldStrength();
     if (strength > attack.m_iStartStrength) attack.m_iStartStrength = strength;
     free.RemoveOrdered(k);
     Say(string.Format("[ACR] AI %1: %2 reinforces the attack on %3 (%4/%5), staging at grid %6", m_sFaction, squad.GetName(), target.m_sName, strength, (int)need, ACR_Manager.Grid(stage)));
@@ -3483,6 +3518,7 @@ class ACR_AICommander : Managed
    ACR_Base empty;
    ACR_Squad runner;
    float bestTime = float.MAX;
+   bool bestByTruck;
    foreach (ACR_Base candidate : ACR_Base.s_All)
    {
     if (!SeenOwner(candidate).IsEmpty() || !Visible(candidate) || IsAttacking(candidate) || CoolingDown(candidate)) continue;
@@ -3491,12 +3527,11 @@ class ACR_AICommander : Managed
     {
      // A medic or other support team stays out of it, as out of attacks (#34).
      if (IsSupportTeam(squad)) continue;
-     float dist = vector.DistanceXZ(PositionOf(squad), candidate.GetOrigin());
-     if (!squad.IsMounted() && dist > 1500) continue;
-     float speed = 3;
-     if (squad.IsMounted()) speed = 9;
-     float time = dist / speed;
-     if (time < bestTime) { bestTime = time; empty = candidate; runner = squad; }
+     // On foot within GRAB_WALK, in its own vehicle anywhere, farther by a free truck (GrabTime).
+     bool byTruck;
+     float time = GrabTimeOf(squad, candidate.GetOrigin(), bestTime, byTruck);
+     if (time < 0) continue;
+     if (time < bestTime) { bestTime = time; empty = candidate; runner = squad; bestByTruck = byTruck; }
     }
    }
    if (!empty) break;
@@ -3504,7 +3539,9 @@ class ACR_AICommander : Managed
    free.RemoveItem(runner);
    grabs++;
    if (laneActive && !InLaneOrFlank(empty)) rearGrabs++;
-   Say(string.Format("[ACR] AI %1: %2 grabs empty %3 (about %4 s away)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime));
+   string how = "";
+   if (bestByTruck) how = ", by truck";
+   Say(string.Format("[ACR] AI %1: %2 grabs empty %3 (about %4 s away%5)", m_sFaction, runner.GetName(), empty.m_sName, (int)bestTime, how));
    TwoICReport(string.Format("Taking %1 with %2 (about %3 s away)", empty.m_sName, runner.GetName(), (int)bestTime));
   }
   // A small 2IC force (#14 v1) only grabs empty bases.
@@ -3718,7 +3755,11 @@ class ACR_AICommander : Managed
  protected void LaunchAttack(ACR_AIAttack attack, vector from, int strength, float required, float pressure)
  {
   ACR_Base target = attack.m_Target;
-  attack.m_iStartStrength = strength;
+  // What it sets out with, as UpdateAttacks counts it later (FieldStrength): a squad leaving a
+  // roadblock's gun for this attack would otherwise count as 5 lost at once.
+  int fielded;
+  foreach (ACR_Squad starter : attack.m_Squads) if (starter) fielded += starter.FieldStrength();
+  attack.m_iStartStrength = fielded;
   attack.m_fLaunchedAt = GetGame().GetWorld().GetWorldTime();
   // Staging: the main approach from the attackers' side; with several squads
   // they spread out and come in from different angles (pincers).
@@ -4925,7 +4966,7 @@ class ACR_AICommander : Managed
     continue;
    }
    int strength;
-   foreach (ACR_Squad member : attack.m_Squads) strength += member.Strength();
+   foreach (ACR_Squad member : attack.m_Squads) strength += member.FieldStrength();
    bool fusePrimed = attack.m_SapperDemo && attack.m_SapperDemo.InProgress();
    NoteBBBFight(attack);
    bool broken = !fusePrimed && AttackBroken(strength, attack.m_iStartStrength, m_Doctrine.m_fAbortRatio);
@@ -8938,12 +8979,14 @@ class ACR_AICommander : Managed
   grab.m_bAssaulting = true;
   grab.m_fAssaultStart = GetGame().GetWorld().GetWorldTime();
   grab.Add(runner, empty.GetOrigin(), -1);
-  grab.m_iStartStrength = runner.Strength();
+  grab.m_iStartStrength = runner.FieldStrength(); // a roadblock's gun stays behind (FieldStrength)
   // Everon soak 5 Oct: most grabs of bases 2-3 km away timed out on the way at 480 s.
   // Allow the walk (or drive) there at about 1.2 m/s, plus 3 minutes. Foot grabs are already
-  // limited to 1500 m (AssignAttacks); only mounted grabs, which can be far but fast, cap at 10 min.
+  // limited to GRAB_WALK; farther ones go by truck and keep the walking allowance (the truck may
+  // be late or fall through, CatchRides then finds another on the way); only squads in their own
+  // vehicle, which can be far but fast, cap at 10 min.
   grab.m_fGrabSeconds = vector.DistanceXZ(PositionOf(runner), empty.GetOrigin()) / 1.2 + 180;
-  if (runner.IsMounted()) grab.m_fGrabSeconds = Math.Min(600, grab.m_fGrabSeconds);
+  if (runner.InMobileVehicle()) grab.m_fGrabSeconds = Math.Min(600, grab.m_fGrabSeconds);
   runner.SetAITask(ACR_EAITask.ATTACK);
   runner.m_AITarget = empty;
   runner.SetMode(ACR_EMoveMode.FAST);

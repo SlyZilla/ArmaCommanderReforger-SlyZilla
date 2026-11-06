@@ -4,6 +4,8 @@
 ### AI commanders
 
 - AI commanders no longer open a match by sending their spare squads at the enemy HQ. At the start it was usually the only enemy base they knew of, so every squad not off grabbing an empty base was sent into the enemy's spawn and its whole starting army. The enemy HQ is now the last objective: an AI attacks it once it is next in line from one of its own bases (no other base left to take is clearly nearer), or once nothing else is left. A counterattack, or a player's "take this base" to the 2IC, still goes for it.
+- AI commanders whose HQ is far from every other base no longer sit there all match. Squads only walked to empty bases within 1.5 km, and a grab never used a truck, so on a generated map that put the HQ more than 2 km from its neighbours the AI took nothing, earned nothing and never grew strong enough to attack. A farther empty base is now grabbed by truck when one is free.
+- A squad manning a roadblock's machine gun no longer counts as riding a vehicle, and the gun no longer counts toward its strength when it leaves for an attack or a grab. Its first grab used to be called off "for too many losses" a second after it set out, as the gunner got off the gun.
 
 ## 0.5.9 — released
 

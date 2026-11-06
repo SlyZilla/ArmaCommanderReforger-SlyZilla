@@ -157,7 +157,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 150; // includes one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 151; // includes one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -847,6 +847,12 @@ class ACR_TestRegress
    array<vector> hqFront = {"0 0 0".ToVector(), "2600 0 0".ToVector()};
    bool hqFoothold = ACR_AICommander.HqNextInLine(hqFront, "3000 0 0", hqOthers);
    Check("enemy HQ is a target only when next in line or nothing else is left", hqWaits && hqNext && hqLast && hqFoothold, string.Format("3 km behind two bases waits %1, 950 m vs 800 m next %2, nothing else left %3, own base 400 m from it %4", hqWaits, hqNext, hqLast, hqFoothold));
+   // Grabs: on foot within GRAB_WALK, farther only by a free truck (6 Nov: US HQ 2.2 km from every base grabbed nothing).
+   float walkNear = ACR_AICommander.GrabTime(false, 1400, -1);
+   float walkFar = ACR_AICommander.GrabTime(false, 2200, -1);
+   float truckFar = ACR_AICommander.GrabTime(false, 2200, 300);
+   float ownFar = ACR_AICommander.GrabTime(true, 2200, -1);
+   Check("a grab beyond walking range goes by a free truck, never on foot", walkNear > 0 && walkFar < 0 && truckFar > 0 && ownFar > 0 && ownFar < truckFar && truckFar < 2200 / 3.0, string.Format("1400 m on foot %1, 2200 m on foot %2, by truck %3, own vehicle %4", walkNear, walkFar, truckFar, ownFar));
    Check("first-player host is opt-in, fixed to the first connection, and ends on disconnect", ACR_Manager.TrustedFirstPlayerHost(7, 7, true, false) && !ACR_Manager.TrustedFirstPlayerHost(8, 7, true, false) && !ACR_Manager.TrustedFirstPlayerHost(7, 7, false, false) && !ACR_Manager.TrustedFirstPlayerHost(7, 7, true, true), "denied by default, no transfer or reconnect reuse");
    float radius = 100;
    Check("base-proximity intel reports without observation through radius + 60 m", ACR_Intel.InsideBaseProximityReport(radius, radius) && ACR_Intel.InsideBaseProximityReport(radius + 59, radius) && !ACR_Intel.InsideBaseProximityReport(radius + 60, radius), "automatic reporting is intentional; line of sight is not required");
