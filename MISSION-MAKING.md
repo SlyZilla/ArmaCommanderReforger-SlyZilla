@@ -708,8 +708,11 @@ are protected during selection; flashpoint income keeps its existing rules and 3
 Ordinary generated objectives are normally at least 350 m apart; two nearby opening objectives
 per side may be 250 m apart to preserve the opening. Compact flashpoints keep their existing
 circle-spacing rule. Bases remain on their map places, moved onto dry ground when necessary;
-capture circles can shrink to 35 m. HQ candidates remain widely separated (at least 80% of the
-greatest eligible military/airport separation). Half-map seeds choose rotated, shifted bands or
+capture circles can shrink to 35 m. A city, town, village or settlement whose map label lies
+beside its houses (common on third-party terrains), so that its capture circle would hold under
+3 buildings or under 15% of the densest group nearby, is centred on that group instead, unless
+the group is nearer another place's label. HQ candidates remain
+widely separated (at least 80% of the greatest eligible military/airport separation). Half-map seeds choose rotated, shifted bands or
 compact regions containing roughly 45-55% of the ordinary sites before access/spacing filtering.
 HQ selection checks up to 12 pairs: the three farthest with the fewest rear objectives plus up
 to nine seeded alternatives with at most two extra rear objectives. It chooses among pairs

@@ -16,6 +16,10 @@
 
 - FIA road ambushes look like ambushes. The men stood about in open grass right beside their barricade. They now set up 25-70 m back from the road in the best cover that still sees the kill zone (a treeline or a line of bushes over open ground), each man crouched on his own spot facing the road, and most bring a PKM on its low tripod, dug in on the best-covered spot with a man on it; if he falls, another man takes the gun. When they pull back they leave the gun behind, and it goes when they pack up unless someone else is on it.
 
+### Generated maps
+
+- Objectives on generated maps sit in their towns. Some maps put a town's name beside the town rather than on it, and the objective went where the name was: on Chernarus Minus, Bonzievka Petrovka was a capture circle in an empty meadow 220 m from the nearest house, with its trenches dug in the grass. An objective whose circle would hold almost no buildings now goes on the houses next to its name: 13 places on Chernarus Minus moved 50-265 m, and 4 small hamlets on Everon. A name at the edge of its town, with houses in the circle, stays where it is.
+
 ## 0.5.9 — released
 
 - Works with Arma Reforger 1.9 (with Better Battle Buddies 0.1.8). In 1.9 the game's automatic gearbox overrode the vehicles that AC: Actual and Better Battle Buddies drive by hand, so they sat still or crept forward: a vehicle backing out of a jam, pulling over before a get-out, or backing away from an armed enemy vehicle moves again. A truck backing away from an armed vehicle now gets a few seconds to turn round before its crew gives up on it under fire, and a vehicle its crew abandons keeps its handbrake on: in 1.9 an empty vehicle drops into neutral, and one rolled downhill into the enemy it had just backed away from.

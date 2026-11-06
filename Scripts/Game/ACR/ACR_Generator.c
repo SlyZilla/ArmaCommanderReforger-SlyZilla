@@ -158,6 +158,78 @@ class ACR_Generator
   return s_iHouses;
  }
 
+ protected static ref array<vector> s_HouseAt;
+
+ protected static bool CollectHouse(IEntity e)
+ {
+  if (!e) return true;
+  if (SCR_DestructibleBuildingEntity.Cast(e)) { s_HouseAt.Insert(e.GetOrigin()); return true; }
+  EntityPrefabData data = e.GetPrefabData();
+  if (data && data.GetPrefabName().Contains("/Buildings/")) s_HouseAt.Insert(e.GetOrigin());
+  return true;
+ }
+
+ protected static int HousesAround(vector at, float radius)
+ {
+  int count;
+  foreach (vector house : s_HouseAt) if (vector.DistanceXZ(house, at) <= radius) count++;
+  return count;
+ }
+
+ // Settlements sit on their houses, not on their map label (Jacob, 6 Nov: Chernarus Minus puts
+ // town labels in the fields beside the town, so "Bonzievka Petrovka" became a capture circle in
+ // an empty meadow with its trenches 200 m from any house). A label whose own circle holds under
+ // 3 buildings, or under 15% of the densest nearby spot's, moves to the centre of that spot's
+ // houses, unless that spot is nearer another settlement's label (it is that place's houses).
+ // Survey only, once per map.
+ protected static void CentreOnHouses(array<ref ACR_GenSite> sites)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  int moved;
+  foreach (ACR_GenSite site : sites)
+  {
+   if (site.m_sKind != "city" && site.m_sKind != "town" && site.m_sKind != "village" && site.m_sKind != "settlement") continue;
+   float radius = site.m_fRadius;
+   float reach = radius * 3 + 150;
+   s_HouseAt = {};
+   world.QueryEntitiesBySphere(site.m_vPos, reach, CollectHouse);
+   if (s_HouseAt.Count() < 4) continue;
+   int here = HousesAround(site.m_vPos, radius);
+   int best = here;
+   vector bestAt = site.m_vPos;
+   // At most 40 trial centres (every n-th house): a city can have hundreds of buildings.
+   int stride = Math.Max(1, Math.Ceil(s_HouseAt.Count() / 40.0));
+   for (int i = 0; i < s_HouseAt.Count(); i += stride)
+   {
+    int count = HousesAround(s_HouseAt[i], radius);
+    if (count > best) { best = count; bestAt = s_HouseAt[i]; }
+   }
+   // Only a nearly empty circle moves: a label at the edge of its town, with a dozen houses
+   // round it, stays (Everon's labels are where Jacob put its bases; Montignac's has 53).
+   if (best < 4 || (here >= 3 && 0.15 * best <= here)) continue;
+   float sumX, sumZ;
+   int n;
+   foreach (vector house : s_HouseAt)
+    if (vector.DistanceXZ(house, bestAt) <= radius) { sumX += house[0]; sumZ += house[2]; n++; }
+   if (n == 0) continue;
+   vector centre = Vector(sumX / n, 0, sumZ / n);
+   bool theirs = false;
+   float own = vector.DistanceXZ(centre, site.m_vPos);
+   foreach (ACR_GenSite other : sites)
+   {
+    if (other == site || other.m_sKind == "landmark" || other.m_sKind == "industry" || other.m_sKind == "military" || other.m_sKind == "airport") continue;
+    if (vector.DistanceXZ(centre, other.m_vPos) < own) { theirs = true; break; }
+   }
+   if (theirs) continue;
+   centre[1] = world.GetSurfaceY(centre[0], centre[2]);
+   PrintFormat("[ACR] GEN CENTRE %1 moved %2 m onto its houses (%3 -> %4 within %5 m)", site.m_sName, (int)own, here, HousesAround(centre, radius), (int)radius);
+   site.m_vPos = centre;
+   moved++;
+  }
+  s_HouseAt = null;
+  if (moved > 0) PrintFormat("[ACR] GEN CENTRE %1 settlement labels moved onto their houses", moved);
+ }
+
  protected static bool Collect(IEntity e)
  {
   if (e && e.FindComponent(MapDescriptorComponent)) s_Found.Insert(e);
@@ -223,6 +295,7 @@ class ACR_Generator
    sites.Insert(pending[best]);
    pending.RemoveOrdered(best);
   }
+  CentreOnHouses(sites);
   NameIndustry(sites);
   // Names find the site to edit and ids key the edit: two places with one name (a town and a
   // village label) were moved or deleted together and showed as two bases of one name. The second

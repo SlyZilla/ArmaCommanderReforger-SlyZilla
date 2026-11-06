@@ -647,8 +647,22 @@ class ACR_TestGenerate
   int unnamed;
   foreach (ACR_Base named : ACR_Base.s_All) if (named.m_sName == "" || named.m_sName.StartsWith("Base ") || named.m_sName.StartsWith("#")) unnamed++;
   ACR_TestRegress.Check("map: bases named from the map", unnamed == 0, string.Format("%1 unnamed", unnamed));
+  // Settlements on their houses (6 Nov: Chernarus labels lie in the fields beside the town).
+  int settled, onHouses;
+  string bare;
+  foreach (ACR_Base town : ACR_Base.s_All)
+  {
+   ACR_GenSite planned;
+   foreach (ACR_GenSite gs : ACR_Generator.s_Sites) if (gs.m_sName == town.m_sName) planned = gs;
+   if (!planned || (planned.m_sKind != "city" && planned.m_sKind != "town" && planned.m_sKind != "village")) continue;
+   settled++;
+   int inside = ACR_Generator.Houses(town.GetOrigin(), town.m_fRadius);
+   if (inside >= 3) onHouses++;
+   else bare += string.Format(" %1(%2)", town.m_sName, inside);
+  }
+  ACR_TestRegress.Check("map: towns sit on their houses", settled > 0 && 0.9 * settled <= onHouses, string.Format("%1 of %2 with 3+ buildings in the circle; bare:%3", onHouses, settled, bare));
  }
- static const int MAP_CHECKS = 11;
+ static const int MAP_CHECKS = 12;
 }
 
 // Synthetic terrain fixtures exercise the real sampler and graph traversal without relying on
