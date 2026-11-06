@@ -157,7 +157,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 142; // includes one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 149; // includes six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -442,6 +442,19 @@ class ACR_TestRegress
   fixture.m_iAITask = ACR_EAITask.FREE;
   fixture.SetOrder("Leash policy fixture", ACR_EOrderState.NONE);
   bool offWait = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT;
+  // The AI commander's fall-back: WITHDRAW to the order's point (also FAST with tactics off); forced
+  // (WatchFallBack's run) is ours again; a newer order ends it.
+  fixture.m_Mode = ACR_EMoveMode.FAST;
+  fixture.MarkFallBack(fixture.m_MoveTarget + Vector(50, 0, 0));
+  bool fallBack = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.WITHDRAW && vector.DistanceXZ(centre, fixture.m_MoveTarget) < 0.1 && radius > 0;
+  fixture.m_bForced = true;
+  bool fallBackRun = hooks.Intent(fixture.m_Group, centre, radius) == BBB_EIntent.TRANSIT;
+  fixture.m_bForced = false;
+  fixture.m_iOrderSerial++;
+  bool fallBackOver = hooks.Intent(fixture.m_Group, centre, radius) != BBB_EIntent.WITHDRAW;
+  fixture.m_iOrderSerial--;
+  fixture.m_iFallBackSerial = -1;
+  fixture.m_Mode = ACR_EMoveMode.COMBAT;
   target.m_fRadius = savedRadius;
   fixture.m_iAITask = savedTask;
   fixture.m_AITarget = savedTarget;
@@ -451,6 +464,7 @@ class ACR_TestRegress
   Check("BBB intent: attackers push, leashed to the ring only inside the objective", inside && staging && outside, string.Format("inside %1 staging %2 outside %3 (anchor %4 m from %5)", inside, staging, outside, (int)gap, target.m_sName));
   Check("BBB intent: waiting squads hold at their base, forced and quiet moves are ours, a FAST march in contact fights, commanded squads are left alone", waits && forced && fastFights && quietOurs && commanded, string.Format("waits %1 forced %2 fast %3 quiet %4 commanded %5", waits, forced, fastFights, quietOurs, commanded));
   Check("BBB intent: squad tactics off by default, movers still push, waiting squads and FAST marches stay ours", offPush && offWait && offFast, string.Format("push %1 wait %2 fast %3", offPush, offWait, offFast));
+  Check("BBB intent: a squad the AI commander pulls back is WITHDRAW to its order's point until forced or re-ordered", fallBack && fallBackRun && fallBackOver, string.Format("withdraw %1 forced %2 new order %3", fallBack, fallBackRun, fallBackOver));
  }
 
  // A roadblock click by a joint of two road pieces, or on a side road by a T-crossing, stays on
@@ -754,6 +768,7 @@ class ACR_TestRegress
   if (tick == 6) ACR_TestSpawnHeap.Place(harness.Ground("1250 0 2760"), harness.Ground("1235 0 2780"), harness.Ground("1180 0 2720"));
   if (tick == 7) ACR_TestSpawnHeap.CheckSpots();
   if (tick == 9) ACR_TestSpawnHeap.CheckSquad();
+  if (tick == 9) ACR_TestGround.CheckBackground();
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {
@@ -761,6 +776,9 @@ class ACR_TestRegress
    CheckRoadblockSnap(harness.m_Range.GetOrigin());
    ACR_TestOptions.Run();
    ACR_TestDoctrine.Run(manager);
+   ACR_TestLanes.Run(manager);
+   ACR_TestGround.Run(manager);
+   ACR_TestForecast.Run(manager);
    // Night audit 30 Oct: the abort share compared in ints (3 of 10 at 0.35 kept attacking).
    Check("attack abort share compares as a float", ACR_AICommander.AttackBroken(3, 10, 0.35) && !ACR_AICommander.AttackBroken(4, 10, 0.35) && ACR_AICommander.AttackBroken(1, 6, 0.25) && !ACR_AICommander.AttackBroken(0, 0, 0.35), "3/10 and 1/6 must break, 4/10 and an unset start must not");
    ACR_TestAccess.Run();

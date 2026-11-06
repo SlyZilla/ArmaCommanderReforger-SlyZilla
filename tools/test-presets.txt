@@ -55,6 +55,14 @@ manners|-acrMannersTest 1|540
 mannersgetout|-acrMannersGetOutTest 1|150
 mannersevade|-acrMannersEvadeTest 1|200
 fieldsoffire|-acrFieldsOfFireTest 1|120
+allocator|-acrAllocatorTest 1|60
+allocperf|-acrAllocPerfTest 1|260|Worlds/ACR_Arland.ent
+allocperfeveron|-acrAllocPerfTest 1|260|Worlds/ACR_Everon.ent
+allocsoak|-acrAllocSoakTest 1|1380|Worlds/ACR_Everon.ent
+alloc2perf|-acrAllocControlPerfTest 1|260|Worlds/ACR_Arland.ent
+alloc2perfeveron|-acrAllocControlPerfTest 1|260|Worlds/ACR_Everon.ent
+alloc2soak|-acrAllocControlSoakTest 1|1380|Worlds/ACR_Everon.ent
+alloc2longsoak|-acrAllocControlLongSoakTest 1|7380|Worlds/ACR_Everon.ent
 crewold|-acrCrewOldTest 1|120
 bbbaim|-acrBbbAimTest 1|3000
 bbbsuppress|-acrBbbSuppressTest 1|1200
@@ -91,12 +99,15 @@ skirmishsouth|-acrSkirmishSouthTest 1|120|Worlds/ACR_Everon.ent
 skirmishplay|-acrSkirmishPlayTest 1|240|Worlds/ACR_Everon.ent
 blast|-acrBlastTest 1|90
 blastold|-acrBlastOldTest 1|90
+civilians|-acrCivilianTest 1|90
 everonpads|-acrEveronPadsTest 1|120|Worlds/ACR_Everon.ent
 padslevie|-acrPadsLevieTest 1|130|Worlds/ACR_Everon.ent
 padsmontignac|-acrPadsMontignacTest 1|130|Worlds/ACR_Everon.ent
 padsphilippe|-acrPadsPhilippeTest 1|130|Worlds/ACR_Everon.ent
 motorized|-acrMotorizedTest 1|230
 everonsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Everon.ent
+forecastsoak|-acrForecastSoakTest 1|1380|Worlds/ACR_Everon.ent
+forecastskirmish|-acrForecastSkirmishTest 1|840|Worlds/ACR_Everon.ent
 longsoak|-acrLongSoakTest 1|7380|Worlds/ACR_Everon.ent
 fire|-acrFireTest 1|240
 factions|-acrFactionTest 1|120
@@ -154,6 +165,7 @@ twoicask|-acrTwoICAskTest 1|300
 twoicsuggest|-acrTwoICSuggestTest 1|200
 twoicshots|-acrTwoICShotsTest 1|240
 twoicdeclutter|-acrTwoICDeclutterTest 1|120
+twoicall|-acrTwoICAllTest 1|260
 ridelav|-acrRideLavTest 1|400
 ridelavkill|-acrRideLavKillTest 1|400
 ridelavgetout|-acrRideLavGetOutTest 1|400
@@ -166,6 +178,8 @@ patrol|-acrPatrolTest 1|600
 holdreturn|-acrHoldReturnTest 1|90
 capscale|-acrCapScaleTest 1|120
 qrf|-acrQrfTest 1|300
+forecastattack|-acrForecastAttackTest 1|300
+forecastdefend|-acrForecastDefendTest 1|540
 bbbfiremaneuver|-acrBbbFireManeuverTest 1|500|Worlds/BBB_TestArland.ent
 bbbfiremaneuverperf|-acrBbbFireManeuverPerfTest 1|160|Worlds/BBB_TestArland.ent
 bbbfiremaneuverprobe|-acrBbbFireManeuverProbeTest 1|170|Worlds/BBB_TestArland.ent
@@ -208,6 +222,7 @@ mappolygon|-acrMapPolygonTest 1|60
 rtsoverlay|-acrRTSOverlayTest 1|60
 intelmarks|-acrIntelMarksTest 1|60
 recon|-acrReconTest 1|90
+flydemo|-acrFlyDemoTest 1|270
 restart|-acrRestartTest 1|200
 stallwait|-acrStallWaitTest 1|130
 recrew|-acrRecrewTest 1|120

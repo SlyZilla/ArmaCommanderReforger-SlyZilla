@@ -14,6 +14,7 @@ class ACR_StaticInit
   s_bDone = true;
   ACR_AICommander.ACR_InitStatics();
   ACR_AirLift.ACR_InitStatics();
+  ACR_AttackGround.ACR_InitStatics();
   ACR_BBBHooks.ACR_InitStatics();
   ACR_BagHold.ACR_InitStatics();
   ACR_Base.ACR_InitStatics();
@@ -71,6 +72,7 @@ class ACR_StaticInit
   ACR_TwoIC.ACR_InitStatics();
   ACR_TwoICRequests.ACR_InitStatics();
   ACR_TwoICSuggest.ACR_InitStatics();
+  ACR_TwoICForecast.ACR_InitStatics();
   ACR_UALoadout.ACR_InitStatics();
   ACR_UiPrefs.ACR_InitStatics();
   ACR_Vehicles.ACR_InitStatics();

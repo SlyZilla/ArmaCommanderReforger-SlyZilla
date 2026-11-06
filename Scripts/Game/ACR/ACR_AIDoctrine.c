@@ -61,6 +61,12 @@ class ACR_AIDoctrine : Managed
  float m_fFobFront = 1500;      // m from the nearest deploy base before a front base wants a FOB
  float m_fFireBaseSeconds = 240; // s a base of fire supports before it joins the assault
  float m_fPocketScore = 2.5;    // x attack score of FIA pockets in the way (lower = sooner)
+ // Strategy: an axis of advance (ACR_AILanes, only with -acrAIStrategy 1)
+ bool m_bLanes = true;          // fights down a lane after the land-rush (Raider keeps raiding everywhere)
+ float m_fRushMinutes = 6;      // min of opening land-rush (grabs anywhere) before it picks a lane
+ float m_fLaneWidth = 700;      // m either side of the lane's axis
+ int m_iLaneFronts = 1;         // supporting attacks beside the main one while it has a lane
+ float m_fFlankWorks = 2;       // base works weight of a tactical point on the lane's flank
 
  // Moving (ACR_AICommander.Travel / TryAirLift)
  float m_fRideDistance = 900;   // m on foot before it asks for a truck
@@ -125,6 +131,8 @@ class ACR_AIDoctrine : Managed
   blitz.m_fVehicleWeight = 2.2;
   blitz.m_iTransports = 1;
   blitz.m_iSupportBudgetMax = 30;
+  blitz.m_fRushMinutes = 4;
+  blitz.m_fLaneWidth = 550;
   s_All.Insert(blitz);
 
   // Attrition: mortars and air first, one front at a time, every assault prepared by fire.
@@ -153,6 +161,7 @@ class ACR_AIDoctrine : Managed
   firepower.m_iSupportMissions = 2;
   firepower.m_bAirBudget = true;
   firepower.m_iSupportBudgetMax = 100;
+  firepower.m_iLaneFronts = 0;
   s_All.Insert(firepower);
 
   // Defence in depth: holds what it has, hits back hard at what it loses.
@@ -189,6 +198,10 @@ class ACR_AIDoctrine : Managed
   fortress.m_fRefitRatio = 0.6;
   fortress.m_fFireMissionGap = 0.8;
   fortress.m_fObserverWeight = 1.5;
+  fortress.m_fRushMinutes = 5;
+  fortress.m_fLaneWidth = 800;
+  fortress.m_iLaneFronts = 0;
+  fortress.m_fFlankWorks = 4;
   s_All.Insert(fortress);
 
   // Raids: many small teams going for weak spots and FOBs, quick to break off.
@@ -217,6 +230,8 @@ class ACR_AIDoctrine : Managed
   raider.m_fVehicleWeight = 0.7;
   raider.m_fSmallTeamWeight = 2.5;
   raider.m_bSmallTeamsFree = true;
+  raider.m_bLanes = false;
+  raider.m_fRushMinutes = 8;
   s_All.Insert(raider);
   return s_All;
  }

@@ -250,7 +250,7 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks", "strategy", "allocator", "forecast", "coveredfallback", "periodjets", "squadtactics", "pullover", "evadearmour", "fieldsoffire", "twoic"};
   foreach (string key : keys)
   {
    if (key == "seed" && !generated && Current("quickstart") == "off") continue;
@@ -341,7 +341,41 @@ class ACR_Setup
   if (key == "fortify") return "Fortify orders";
   if (key == "fortifyai") return "AI commanders fortify";
   if (key == "baseworks") return "Fortify a whole base";
+  // Experimental tab (Jacob, 5 Nov): features shipped off until they have been played.
+  if (key == "strategy") return "AI lanes (one main push)";
+  if (key == "allocator") return "AI job allocator";
+  if (key == "forecast") return "AI defence forecast";
+  if (key == "coveredfallback") return "AI covered fall-back";
+  if (key == "periodjets") return "Period jets (no RHS)";
+  if (key == "squadtactics") return "AI squad tactics in objectives";
+  if (key == "pullover") return "Pull over before getting out";
+  if (key == "evadearmour") return "Unarmed vehicles evade armour";
+  if (key == "fieldsoffire") return "Guns clear bushes round them";
+  if (key == "twoic") return "2IC runs the side for you";
   return key;
+ }
+
+ // The Experimental tab's rows: off by default, on/off unless Values says more.
+ static bool Experimental(string key)
+ {
+  return key == "strategy" || key == "allocator" || key == "forecast" || key == "coveredfallback" || key == "periodjets" || key == "squadtactics" || key == "pullover" || key == "evadearmour" || key == "fieldsoffire" || key == "twoic";
+ }
+
+ // What a row does, shown under the rows when it is pointed at or focused (ACR_SetupDialog.OnRowFocus).
+ // Two short lines at most: the text under the rows doesn't wrap.
+ static string Help(string key)
+ {
+  if (key == "strategy") return "After a short land-rush each AI commander picks one corridor\nand pushes down it: a main and a supporting attack, flanks after.";
+  if (key == "allocator") return "Weighs every attack, grab, defence and reserve job together.\nObserves: only logs what it would change. Gives out: it decides.";
+  if (key == "forecast") return "Reads intel to forecast where the next attack will come from.\nDefends on it: defenders and screens go first; 2IC warns players.";
+  if (key == "coveredfallback") return "A squad the AI pulls back under fire bounds back in covered\nhalves instead of going to ground in the open.";
+  if (key == "periodjets") return "Without RHS: recon flights and bomb runs show period jets\n(RF-4C, Su-17, A-10, Su-25) with engine sound and falling bombs.";
+  if (key == "squadtactics") return "AI squads use Better Battle Buddies' squad tactics (flank, bound,\nsearch) inside a base they attack or defend, never leaving it.";
+  if (key == "pullover") return "A squad told to get out on a road first has its driver pull\nonto the verge. Under fire it gets out where it stands.";
+  if (key == "evadearmour") return "An unarmed vehicle that sees an armed enemy vehicle drives 300 m\naway, then carries on. Needs Better Battle Buddies' setting on too.";
+  if (key == "fieldsoffire") return "Built guns, checkpoint posts and Fortify pieces clear the bushes\nround them and in front of a gun, the same on every screen.";
+  if (key == "twoic") return "While you command, the 2IC runs the side: buys units, runs supplies\nand FOBs, fights with the squads you leave it; 100 RP stay yours.";
+  return "";
  }
 
  // The values a row cycles through ("" = the scenario's default).
@@ -406,6 +440,8 @@ class ACR_Setup
   else if (key == "rpservice") values = {"0", "3", "5"};
   else if (key == "mines" || key == "fortify" || key == "baseworks") values = {"1", "0"};
   else if (key == "minesreal" || key == "minesai" || key == "fortifyai") values = {"0", "1"};
+  else if (key == "allocator" || key == "forecast") values = {"0", "1", "2"};
+  else if (Experimental(key)) values = {"0", "1"};
   return values;
  }
 
@@ -446,6 +482,16 @@ class ACR_Setup
   if (key == "fortify") return "acrFortify";
   if (key == "fortifyai") return "acrFortifyAI";
   if (key == "baseworks") return "acrBaseWorks";
+  if (key == "strategy") return "acrAIStrategy";
+  if (key == "allocator") return "acrAIAllocator";
+  if (key == "forecast") return "acrDefenceForecast";
+  if (key == "coveredfallback") return "acrCoveredFallBack";
+  if (key == "periodjets") return "acrPeriodJets";
+  if (key == "squadtactics") return "acrSquadTactics";
+  if (key == "pullover") return "acrPullOver";
+  if (key == "evadearmour") return "acrEvadeArmour";
+  if (key == "fieldsoffire") return "acrFieldsOfFire";
+  if (key == "twoic") return "acr2IC";
   return "";
  }
 
@@ -473,6 +519,12 @@ class ACR_Setup
    if (ACR_Options.Get("acrSeed", value) && value != "" && value != "0") return value;
    return "";
   }
+  // The 2IC is a flag: a bare -acr2IC is on (ACR_SquadAI.TwoIC), which the empty value would show as off.
+  if (key == "twoic")
+  {
+   if (ACR_Options.Flag("acr2IC")) return "1";
+   return "0";
+  }
   if (!ACR_Options.Get(Option(key), value)) value = "";
   value.ToLower();
   if (value == "")
@@ -494,6 +546,7 @@ class ACR_Setup
    if (key == "minesreal" || key == "minesai" || key == "fortifyai") return "0";
    if (key == "aibuild") return "0";
    if (key == "capscale") return "0";
+   if (Experimental(key)) return "0";
   }
   if (key == "threat" && value == "") return "normal";
   if (key == "pricing" && value == "") return "";
@@ -581,6 +634,16 @@ class ACR_Setup
   if (key == "capscale") return "off";
   if (key == "declutter" && value == "0") return "off (the classic map)";
   if (key == "declutter") return "on";
+  if (key == "allocator" && value == "1") return "observes only (log, Think)";
+  if (key == "allocator" && value == "2") return "gives out the jobs";
+  if (key == "forecast" && value == "1") return "log only";
+  if (key == "forecast" && value == "2") return "defends on it";
+  if (key == "evadearmour" && value == "1") return "on (needs BBB's setting too)";
+  if (Experimental(key))
+  {
+   if (value == "0") return "off";
+   return "on";
+  }
   if (key == "minesreal" && value == "1") return "dangerous to all";
   if (key == "minesreal") return "safe for our AI";
   if (key == "shared" || key == "fobrelay" || key == "mines" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks")
@@ -981,6 +1044,8 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
  protected ref map<SCR_ButtonBaseComponent, string> m_Keys = new map<SCR_ButtonBaseComponent, string>();
  protected Widget m_wTabs;
  protected Widget m_wRows;
+ protected TextWidget m_wHint; // the Experimental tab's line saying what the pointed-at row does
+ protected string m_sHintKey;  // the row it describes: a click rebuilds the rows, the line stays
  protected int m_iTab;
  protected int m_iPage;
  protected int m_iPages = 1;
@@ -1010,13 +1075,15 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
 
  // The tabs across the top (25 Oct redesign): the battlefield first, with its seed and map
  // preview together, then who commands, money, logistics and engineering.
- static const int TABS = 5;
+// Experimental: features shipped off by default until they have been played (Jacob, 5 Nov).
+ static const int TABS = 6;
  static string TabName(int tab)
  {
   if (tab == 1) return "Command";
   if (tab == 2) return "Economy";
   if (tab == 3) return "Logistics";
   if (tab == 4) return "Engineers";
+  if (tab == 5) return "Experimental";
   return "Battlefield";
  }
 
@@ -1029,6 +1096,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   if (key == "pricing" || key == "startrp" || key == "income" || key == "companywest" || key == "companyeast") return 2;
   if (key == "deployment" || key == "reinforcement" || key == "fobservices" || key == "fobrelay" || key == "depotcapacity" || key == "servicecost" || key == "rpservice") return 3;
   if (key == "mines" || key == "minesreal" || key == "minesai" || key == "fortify" || key == "fortifyai" || key == "baseworks") return 4;
+  if (ACR_Setup.Experimental(key)) return 5;
   return 0;
  }
 
@@ -1109,6 +1177,13 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   int first = m_iPage * perPage;
   for (int i = first; i < keys.Count() && i < first + perPage; i++) AddButton(m_wRows, keys[i], texts[i]);
   foreach (string about : abouts) AddText(m_wRows, about);
+  m_wHint = null;
+  if (m_iTab == 5)
+  {
+   string hint = ACR_Setup.Help(m_sHintKey);
+   if (hint.IsEmpty()) hint = HINT_IDLE;
+   m_wHint = AddText(m_wRows, hint);
+  }
   if (m_iPages > 1)
   {
    string more = string.Format("More settings (page %1 of %2)...", m_iPage + 1, m_iPages);
@@ -1131,12 +1206,28 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   return false;
  }
 
- protected void AddText(Widget parent, string text)
+ protected TextWidget AddText(Widget parent, string text)
  {
   TextWidget widget = TextWidget.Cast(GetGame().GetWorkspace().CreateWidgets(LAYOUT_TEXT, parent));
-  if (!widget) return;
+  if (!widget) return null;
   AlignableSlot.SetPadding(widget, 8, 4, 2, 0);
   widget.SetText(text);
+  return widget;
+ }
+
+ protected static const string HINT_IDLE = "These ship switched off until they have been played.\nPoint at a row to see what it does.";
+
+ // A row pointed at (a mouse over it focuses it) or reached with a pad: say what it does.
+ protected void OnRowFocus(Widget w)
+ {
+  if (!m_wHint || !w) return;
+  SCR_ButtonBaseComponent button = SCR_ButtonBaseComponent.Cast(w.FindHandler(SCR_ButtonBaseComponent));
+  string key;
+  if (!button || !m_Keys.Find(button, key)) return;
+  string help = ACR_Setup.Help(key);
+  if (help.IsEmpty()) return;
+  m_sHintKey = key;
+  m_wHint.SetText(help);
  }
 
  protected SCR_ButtonTextComponent AddButton(Widget parent, string key, string text, bool fill = false)
@@ -1155,6 +1246,7 @@ class ACR_SetupDialog : SCR_ConfigurableDialogUi
   Widget border = widget.FindAnyWidget("Border");
   if (border) border.SetColor(new Color(0.45, 0.72, 1.0, 1.0));
   button.m_OnClicked.Insert(OnRow);
+  button.m_OnFocus.Insert(OnRowFocus);
   m_Keys.Set(button, key);
   return button;
  }

@@ -16,6 +16,7 @@ class ACR_Contact : Managed
  IEntity m_Body;       // ...or one soldier of a group we don't manage
  int m_iIcons;          // EMilitarySymbolIcon flags for the map (ACR_Intel.IconsOf)
  float m_fHeading = -1; // degrees (0 = north) it was last seen moving towards, or -1
+ float m_fSpeed = -1;   // m/s it was seen moving at over its last HEADING_MIN_M, while it has a heading; -1 otherwise
  ref array<IEntity> m_Bodies = {}; // the soldiers of it we have seen
 }
 
@@ -111,6 +112,8 @@ class ACR_Intel : Managed
  protected ref map<string, vector> m_MoveFrom = new map<string, vector>();
  protected ref map<string, float> m_Heading = new map<string, float>();
  protected ref map<string, float> m_HeadingAt = new map<string, float>();
+ protected ref map<string, float> m_MoveFromAt = new map<string, float>(); // when it was at m_MoveFrom
+ protected ref map<string, float> m_Speed = new map<string, float>();
  protected ref map<IEntity, int> m_Role = new map<IEntity, int>(); // RoleOf, per soldier seen
 
  void ACR_Intel(ACR_Manager manager, string faction)
@@ -130,6 +133,19 @@ class ACR_Intel : Managed
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(body.FindComponent(FactionAffiliationComponent));
   if (!affiliation || !affiliation.GetAffiliatedFaction()) return "";
   return affiliation.GetAffiliatedFaction().GetFactionKey();
+ }
+
+ // Guard: civilians (vanilla CIV, or a civilian-population mod that makes them friendly to
+ // everyone) must never become contacts. The engine already leaves friendly CIV out of the
+ // DETECTED list (srv:civilians, 26 Oct); this keeps it so if a mission makes them otherwise.
+ // Only factions friendly to us are skipped, so neutral mod factions still count as before.
+ static bool FriendlyTo(string ourKey, string otherKey)
+ {
+  FactionManager factions = GetGame().GetFactionManager();
+  if (!factions) return false;
+  SCR_Faction ours = SCR_Faction.Cast(factions.GetFactionByKey(ourKey));
+  Faction other = factions.GetFactionByKey(otherKey);
+  return ours && other && ours.IsFactionFriendly(other);
  }
 
  protected void Note(IEntity enemy, float now, string spotter)
@@ -183,6 +199,7 @@ class ACR_Intel : Managed
   m_DoctrineIntel.Tick();
   float now = GetGame().GetWorld().GetWorldTime();
   // 1. Our AI squads' own perception.
+  bool identified = ACR_DefenceForecast.On();
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
    if (!squad.GetFaction() || squad.GetFaction().GetFactionKey() != m_sFaction || !squad.m_Group) continue;
@@ -196,14 +213,26 @@ class ACR_Intel : Managed
     if (!control || !control.GetAIAgent()) continue;
     SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(control.GetAIAgent().FindComponent(SCR_AIUtilityComponent));
     if (!utility || !utility.m_PerceptionComponent) continue;
+    // Identified enemies too: a target moves from DETECTED to ENEMY once it is made out, and intel read only the
+    // first list, so a squad watching an enemy walk in gave one sighting and then none (forecastdefend, 4 Nov:
+    // the contact aged to 81 s while the screen had him at 300 m). As ACR_Ambush reads them.
+    // Only with the defence forecast on for now (Jacob, 5 Nov: experimental features ship off): it
+    // changes threat counts, fire missions, the feed and the map for everyone, so it waits for an A/B.
     array<BaseTarget> targets = {};
-    utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.DETECTED);
+    if (identified)
+    {
+     utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.ENEMY);
+     array<BaseTarget> detected = {};
+     utility.m_PerceptionComponent.GetTargetsList(detected, ETargetCategory.DETECTED);
+     targets.InsertAll(detected);
+    }
+    else utility.m_PerceptionComponent.GetTargetsList(targets, ETargetCategory.DETECTED);
     foreach (BaseTarget target : targets)
     {
      if (!target || !RecentDetection(target.GetTimeSinceDetected())) continue;
      IEntity seen = target.GetTargetEntity();
      string key = FactionKeyOf(seen);
-     if (!key.IsEmpty() && !ACR_Insurgency.Friendly(key, m_sFaction)) NoteAt(seen, now - target.GetTimeSinceDetected() * 1000, squad.GetName(), target.GetLastDetectedPosition());
+     if (!key.IsEmpty() && !ACR_Insurgency.Friendly(key, m_sFaction) && !FriendlyTo(m_sFaction, key)) NoteAt(seen, now - target.GetTimeSinceDetected() * 1000, squad.GetName(), target.GetLastDetectedPosition());
     }
    }
   }
@@ -594,6 +623,8 @@ class ACR_Intel : Managed
    m_MoveFrom.Remove(lost);
    m_Heading.Remove(lost);
    m_HeadingAt.Remove(lost);
+   m_MoveFromAt.Remove(lost);
+   m_Speed.Remove(lost);
   }
  }
 
@@ -612,6 +643,8 @@ class ACR_Intel : Managed
   if (fresh > 0) contact.m_Pos = sum * (1.0 / fresh);
   contact.m_iIcons = IconsOf(contact);
   contact.m_fHeading = Heading(contact.m_sKey, contact.m_Pos, contact.m_fSeen);
+  contact.m_fSpeed = -1;
+  if (contact.m_fHeading >= 0) m_Speed.Find(contact.m_sKey, contact.m_fSpeed);
  }
 
  // Degrees (0 = north) from where the contact was to where it is once it has moved
@@ -622,13 +655,17 @@ class ACR_Intel : Managed
   if (!m_MoveFrom.Find(key, from))
   {
    m_MoveFrom.Set(key, pos);
+   m_MoveFromAt.Set(key, seen);
    return -1;
   }
   if (vector.DistanceXZ(from, pos) >= HEADING_MIN_M)
   {
    m_Heading.Set(key, Bearing(from, pos));
    m_HeadingAt.Set(key, seen);
+   float fromAt;
+   if (m_MoveFromAt.Find(key, fromAt) && seen > fromAt) m_Speed.Set(key, vector.DistanceXZ(from, pos) / ((seen - fromAt) / 1000));
    m_MoveFrom.Set(key, pos);
+   m_MoveFromAt.Set(key, seen);
   }
   float at;
   if (!m_HeadingAt.Find(key, at) || seen - at > HEADING_KEEP_MS) return -1;

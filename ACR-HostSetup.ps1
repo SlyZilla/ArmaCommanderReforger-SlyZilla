@@ -205,7 +205,7 @@ function Show-HostSetup([switch]$Solo) {
   if ($Solo) { $name = 'play-settings.txt' }
   $file = Join-Path $PSScriptRoot $name
   # Only pre-load choices belong here. Ignore old saved match settings.
-  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; Pack = 'none' }
+  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; Pack = 'none'; AiO = 'yes'; Civilians = 'no' }
   $bbb = @{}
   foreach ($o in $script:BBBOptions) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o }
   # Settings files from before the full BBB list used these names (yes/no).
@@ -230,6 +230,11 @@ function Show-HostSetup([switch]$Solo) {
   if ($packs -notcontains $s.Pack) { $s.Pack = 'none' }
   if (@('vanilla', 'ru_us', 'ru_ua', 'us_ua') -notcontains $s.Factions) { $s.Factions = 'vanilla' }
   if (@('yes', 'no') -notcontains $s.ACE) { $s.ACE = 'no' }
+  if (@('yes', 'no') -notcontains $s.AiO) { $s.AiO = 'yes' }
+  if (@('yes', 'no') -notcontains $s.Civilians) { $s.Civilians = 'no' }
+  # Optional mods get a row only when installed (ACR-Find.ps1).
+  $hasAio = (Find-WorkshopMod '629405AEFC950C12') -ne ''
+  $hasCivilians = Test-CivilPopulation
   foreach ($o in $script:BBBOptions) {
     $v = 0.0
     if ($o.ContainsKey('Values')) { if ($o.Values -notcontains $bbb[$o.Flag]) { $bbb[$o.Flag] = $o.Default } }
@@ -249,6 +254,8 @@ function Show-HostSetup([switch]$Solo) {
     Write-Host (' 3  ACE All in One          ' + $s.ACE)
     Write-Host (' 4  BBB options             ' + (Get-BBBSummary $bbb))
     if ($packs.Count -gt 1) { Write-Host (' 5  Expansion pack          ' + (Get-PackLabel $s.Pack)) }
+    if ($hasAio) { Write-Host (' 6  AiO Command Menu        ' + $s.AiO) }
+    if ($hasCivilians) { Write-Host (' 7  Civilians (Civil Pop.)  ' + $s.Civilians) }
     Write-Host 'Choose the playable sides, battlefield and match settings in game, then press Start.' -ForegroundColor DarkGray
     Write-Host 'Faction mods must be loaded now; UA replaces vanilla US while loaded.' -ForegroundColor DarkGray
     if (!$Solo) { Write-Host 'Connect before friends: the first connection controls setup; access does not transfer after disconnect.' -ForegroundColor Yellow }
@@ -260,7 +267,9 @@ function Show-HostSetup([switch]$Solo) {
       '3' { if ($s.ACE -eq 'yes') { $s.ACE = 'no' } else { $s.ACE = 'yes' } }
       '4' { Show-BBBOptions $bbb }
       '5' { if ($packs.Count -gt 1) { $i = [array]::IndexOf($packs, $s.Pack); $s.Pack = $packs[($i + 1) % $packs.Count] } else { Write-Host 'No expansion pack is installed beside ACA.' -ForegroundColor Yellow } }
-      default { Write-Host 'Type a number from 1 to 5, or press Enter to launch.' -ForegroundColor Yellow }
+      '6' { if ($hasAio) { if ($s.AiO -eq 'yes') { $s.AiO = 'no' } else { $s.AiO = 'yes' } } }
+      '7' { if ($hasCivilians) { if ($s.Civilians -eq 'yes') { $s.Civilians = 'no' } else { $s.Civilians = 'yes' } } }
+      default { Write-Host 'Type a number from the list, or press Enter to launch.' -ForegroundColor Yellow }
     }
   }
   # Only options changed from the launcher default are saved, so a new default reaches old files.
@@ -278,12 +287,12 @@ function Show-HostSetup([switch]$Solo) {
   $extra += Get-BBBArgs $bbb
   $mapId = ''
   if ($mapAddons.Contains($s.World)) { $mapId = $mapAddons[$s.World] }
-  return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE $s.Pack $mapId); Factions = $s.Factions; ACE = $s.ACE; Pack = $s.Pack; NeedsMods = (Test-NeedsModAddons $s.Factions $s.ACE $s.Pack $mapId) }
+  return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE $s.Pack $mapId); Factions = $s.Factions; ACE = $s.ACE; Pack = $s.Pack; AiO = $s.AiO; Civilians = $s.Civilians; NeedsMods = (Test-NeedsModAddons $s.Factions $s.ACE $s.Pack $mapId) }
 }
 
 function Show-JoinModSetup {
   $file = Join-Path $PSScriptRoot 'join-settings.txt'
-  $pair = 'vanilla'; $ace = 'no'; $pack = 'none'; $map = 'none'
+  $pair = 'vanilla'; $ace = 'no'; $pack = 'none'; $map = 'none'; $aio = 'yes'; $civilians = 'no'
   if (Test-Path -LiteralPath $file) {
     foreach ($line in Get-Content -LiteralPath $file) {
       $kv = $line.Split('=', 2)
@@ -291,6 +300,8 @@ function Show-JoinModSetup {
       if ($kv.Count -eq 2 -and $kv[0] -eq 'ACE') { $ace = $kv[1] }
       if ($kv.Count -eq 2 -and $kv[0] -eq 'Pack') { $pack = $kv[1] }
       if ($kv.Count -eq 2 -and $kv[0] -eq 'Map') { $map = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'AiO' -and @('yes', 'no') -contains $kv[1]) { $aio = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'Civilians' -and @('yes', 'no') -contains $kv[1]) { $civilians = $kv[1] }
     }
   }
   $packs = @('none') + @(Get-AvailablePacks | ForEach-Object { $_.Key })
@@ -299,6 +310,9 @@ function Show-JoinModSetup {
   $mapAddons = Get-MapAddons
   $maps = @('none') + @($mapAddons.Keys)
   if ($maps -notcontains $map) { $map = 'none' }
+  # Optional mods get a row only when installed (ACR-Find.ps1).
+  $hasAio = (Find-WorkshopMod '629405AEFC950C12') -ne ''
+  $hasCivilians = Test-CivilPopulation
   while ($true) {
     Write-Host ''
     Write-Host '=== JOIN MODS ===' -ForegroundColor Cyan
@@ -310,16 +324,20 @@ function Show-JoinModSetup {
       if ($map -ne 'none') { $mapLabel = [IO.Path]::GetFileNameWithoutExtension($map) -replace '^ACR_', '' }
       Write-Host (' 4  Map add-on  ' + $mapLabel + '   (the host''s map, if it is a map add-on)')
     }
+    if ($hasAio) { Write-Host (' 5  AiO         ' + $aio + '   (must match the host)') }
+    if ($hasCivilians) { Write-Host (' 6  Civilians   ' + $civilians + '   (must match the host)') }
     $choice = (Read-Host 'Choice (Enter to continue)').Trim()
     if ($choice -eq '1') {
       $pairs = @('vanilla', 'ru_us', 'ru_ua', 'us_ua'); $i = [array]::IndexOf($pairs, $pair); $pair = $pairs[($i + 1) % $pairs.Count]
     } elseif ($choice -eq '2') { if ($ace -eq 'yes') { $ace = 'no' } else { $ace = 'yes' } }
     elseif ($choice -eq '3' -and $packs.Count -gt 1) { $i = [array]::IndexOf($packs, $pack); $pack = $packs[($i + 1) % $packs.Count] }
     elseif ($choice -eq '4' -and $maps.Count -gt 1) { $i = [array]::IndexOf($maps, $map); $map = $maps[($i + 1) % $maps.Count] }
+    elseif ($choice -eq '5' -and $hasAio) { if ($aio -eq 'yes') { $aio = 'no' } else { $aio = 'yes' } }
+    elseif ($choice -eq '6' -and $hasCivilians) { if ($civilians -eq 'yes') { $civilians = 'no' } else { $civilians = 'yes' } }
     else { break }
   }
-  @('Factions=' + $pair, 'ACE=' + $ace, 'Pack=' + $pack, 'Map=' + $map) | Set-Content -LiteralPath $file
+  @('Factions=' + $pair, 'ACE=' + $ace, 'Pack=' + $pack, 'Map=' + $map, 'AiO=' + $aio, 'Civilians=' + $civilians) | Set-Content -LiteralPath $file
   $mapId = ''
   if ($map -ne 'none') { $mapId = $mapAddons[$map] }
-  return @{ Addons = (Get-ACRAddonList $pair $ace $pack $mapId); Factions = $pair; ACE = $ace; Pack = $pack; NeedsMods = (Test-NeedsModAddons $pair $ace $pack $mapId) }
+  return @{ Addons = (Get-ACRAddonList $pair $ace $pack $mapId); Factions = $pair; ACE = $ace; Pack = $pack; AiO = $aio; Civilians = $civilians; NeedsMods = (Test-NeedsModAddons $pair $ace $pack $mapId) }
 }

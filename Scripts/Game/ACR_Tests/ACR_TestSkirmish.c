@@ -48,7 +48,7 @@ class ACR_TestSkirmish
    if (hqs < 2) s_sProblems += layout.m_sName + ": " + hqs.ToString() + " HQs; ";
   }
   if (System.IsCLIParam("acrSkirmishSouthTest")) return "South half";
-  if (System.IsCLIParam("acrSkirmishPlayTest") || System.IsCLIParam("acrPadsMontignacTest")) return "Montignac";
+  if (System.IsCLIParam("acrSkirmishPlayTest") || System.IsCLIParam("acrForecastSkirmishTest") || System.IsCLIParam("acrPadsMontignacTest")) return "Montignac";
   if (System.IsCLIParam("acrPadsLevieTest")) return "Levie";
   return "Saint-Philippe";
  }
@@ -58,7 +58,7 @@ class ACR_TestSkirmish
  // Test runs that pick a layout (the pad tests run ACR_TestPads on a layout's HQs).
  static bool Wanted()
  {
-  return System.IsCLIParam("acrSkirmishTest") || System.IsCLIParam("acrSkirmishSouthTest") || System.IsCLIParam("acrSkirmishPlayTest")
+  return System.IsCLIParam("acrSkirmishTest") || System.IsCLIParam("acrSkirmishSouthTest") || System.IsCLIParam("acrSkirmishPlayTest") || System.IsCLIParam("acrForecastSkirmishTest")
    || System.IsCLIParam("acrPadsLevieTest") || System.IsCLIParam("acrPadsMontignacTest") || System.IsCLIParam("acrPadsPhilippeTest");
  }
 

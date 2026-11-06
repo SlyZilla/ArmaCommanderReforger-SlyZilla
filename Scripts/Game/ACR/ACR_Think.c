@@ -61,6 +61,12 @@ class ACR_Think
    array<string> attacks = {};
    ai.ThinkAttacks(attacks);
    foreach (string attack : attacks) lines.Insert("  " + attack);
+   array<string> allocator = {};
+   ai.ThinkAllocator(allocator);
+   foreach (string allocLine : allocator) lines.Insert(allocLine);
+   array<string> forecast = {};
+   ai.ThinkForecast(forecast);
+   foreach (string forecastLine : forecast) lines.Insert(forecastLine);
   }
   lines.Insert("");
   if (page == 1) Decisions(ai, lines);

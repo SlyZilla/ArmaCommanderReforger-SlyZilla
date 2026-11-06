@@ -405,6 +405,7 @@ class ACR_Manager : Managed
    }
   }
   ACR_PlayerSide.Key();
+  if (ACR_CivilianSocket.Get().Plugged()) PrintFormat("[ACR] Civilian socket: %1 plugged in, %2 AI slots", ACR_CivilianSocket.Get().Name(), ACR_CivilianSocket.Get().AiHeadroom());
   RaiseActiveAILimit();
   ACR_Options.Log();
   PrintFormat("[ACR] Threat level: %1", ThreatName(threat));
@@ -479,7 +480,7 @@ class ACR_Manager : Managed
  {
   AIWorld aiWorld = GetGame().GetAIWorld();
   if (!aiWorld) return;
-  int wanted = 2 * m_iSoldierCap + AI_LIMIT_HEADROOM;
+  int wanted = 2 * m_iSoldierCap + AI_LIMIT_HEADROOM + ACR_CivilianSocket.Get().AiHeadroom();
   int was = aiWorld.GetLimitOfActiveAIs();
   if (wanted > was) aiWorld.SetLimitOfActiveAIs(wanted);
   PrintFormat("[ACR] Active AI limit %1 (was %2)", aiWorld.GetLimitOfActiveAIs(), was);
@@ -948,6 +949,7 @@ class ACR_Manager : Managed
   foreach (ACR_FactionSettings handed : ACR_FactionSettings.s_All)
   {
    if (m_Debug.IsPaused(handed.m_sFaction) || !ACR_FobAI.AnyFor(handed.m_sFaction)) continue; // paused: as the AI commander
+   if (ACR_SquadAI.RunsAll(this, handed.m_sFaction)) continue; // the 2IC runs every FOB while a player commands (TickHanded)
    ACR_AICommander fobAI = FobAICommanderFor(handed.m_sFaction);
    // In command, the AI runs every FOB already.
    if (fobAI && !(handed.m_bAICommander && fobAI.m_bActive)) fobAI.ManageHandedFobs();
@@ -958,6 +960,9 @@ class ACR_Manager : Managed
   {
    if (m_Debug.IsPaused(squads.m_sFaction)) continue; // debug menu: frozen, as the AI commander
    ACR_AICommander squadAI;
+   // The 2IC with a player in command runs the whole side, buying included, so it
+   // turns even with no squad yet to command (it buys them).
+   bool runsAll = ACR_SquadAI.RunsAll(this, squads.m_sFaction);
    if (ACR_SquadAI.TwoIC())
    {
     squadAI = FobAICommanderFor(squads.m_sFaction);
@@ -965,11 +970,14 @@ class ACR_Manager : Managed
     if (twoICRuns) ACR_SquadAI.Adopt(squads.m_sFaction);
     // Players' requests first (ACR_TwoICRequests), ahead of its own plans.
     ACR_TwoICRequests.Tick(squads.m_sFaction, squadAI, twoICRuns);
-    ACR_TwoICSuggest.Tick(this, squads.m_sFaction, squadAI, twoICRuns);
+    // Running the whole side it sites and builds its own FOBs (ManageFobBuild): no suggestions
+    // that would send the same construction truck a second way.
+    ACR_TwoICSuggest.Tick(this, squads.m_sFaction, squadAI, twoICRuns && !runsAll);
+    ACR_TwoICForecast.Tick(this, squads.m_sFaction, squadAI, twoICRuns);
    }
-   if (!ACR_SquadAI.AnyFor(squads.m_sFaction)) continue;
+   if (!runsAll && !ACR_SquadAI.AnyFor(squads.m_sFaction)) continue;
    squadAI = FobAICommanderFor(squads.m_sFaction);
-   if (squadAI && !(squads.m_bAICommander && squadAI.m_bActive)) squadAI.TickHanded();
+   if (squadAI && !(squads.m_bAICommander && squadAI.m_bActive)) squadAI.TickHanded(runsAll);
   }
  }
 
