@@ -298,7 +298,7 @@ function Invoke-ServerTest($id, $preset, $config, $packed) {
     if ($packed) { $result += "packSeconds=$packSeconds" }
     $result += '---'
     if ($log -and (Test-Path -LiteralPath $log)) {
-        $result += Get-Content -LiteralPath $log | Where-Object { $_ -match '\[ACR\]|SCRIPT\s+\(E\)|SCRIPT\s+\(W\).*ACR|Can.t compile' }
+        $result += (Remove-TerrainNoise (Get-Content -LiteralPath $log -Raw)) -split '\r?\n' | Where-Object { $_ -match '\[ACR\]|SCRIPT\s+\(E\)|SCRIPT\s+\(W\).*ACR|Can.t compile' }
     } else {
         $result += 'No server console.log was found for this run.'
     }
@@ -329,7 +329,17 @@ function Remove-KnownNoise($text) {
     # Vanilla AI comms: a contact report whose target is gone by the time it is spoken (Everon long
     # soak 27 Oct), and the failed request it reports in turn.
     $text = ($text -split "`n" | Where-Object { $_ -notmatch "SCR_AISoundHandling: SetSignalsAndTransmit: Missing entity or position for|SCR_AICommsHandler: SCR_AISoundHandling\.SetSignalsAndTransmit failed for request" }) -join "`n"
+    $text = Remove-TerrainNoise $text
     return $text
+}
+
+# Community terrains place editable objects of their own without an RplComponent (6 Nov: Gulfcoast
+# Islands' town names, Zimnitrita's Gruwice radio tower). The engine logs a script error for each
+# as the world loads, straight after creating it, and carries on. Only that pairing is ignored:
+# the same error after anything ACA spawns still fails the test.
+$TerrainEditableNoise = '(Create entity @"ENTITY:\d+" \(''[^'']*'', GenericEntity\)[^\r\n]*\r?\n)[^\r\n]*SCRIPT\s+\(E\): Editable entity @"" is missing RplComponent![^\r\n]*'
+function Remove-TerrainNoise($text) {
+    return [regex]::Replace($text, $TerrainEditableNoise, '$1terrain editable object without RplComponent (ignored)')
 }
 
 function Write-Result($id, $lines) {
