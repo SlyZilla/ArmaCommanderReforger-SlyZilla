@@ -1,6 +1,10 @@
 # Changelog
 ## 0.5.11 — unreleased
 
+### AI commanders
+
+- The experimental 2IC (`-acr2IC 1`, the Experimental tab's 2IC row) is now "I'm the 2IC": while you command, the AI commander runs your side exactly as it would if nobody commanded, and buys units again. In 0.5.10 it kept 100 RP back for you, which a commander spending his own RP left near zero, so it bought almost nothing all match; it now spends the side's RP like an AI commander (`-acr2ICKeep N` still holds some back if a host wants) and runs the AI commander's whole turn, recon, lanes and the job allocator included. You keep every command power, and any squad you lead or order stays yours.
+
 ### Generated maps
 
 - Objectives on generated maps sit in their towns. Some maps put a town's name beside the town rather than on it, and the objective went where the name was: on Chernarus Minus, Bonzievka Petrovka was a capture circle in an empty meadow 220 m from the nearest house, with its trenches dug in the grass. An objective whose circle would hold almost no buildings now goes on the houses next to its name: 13 places on Chernarus Minus moved 50-265 m, and 4 small hamlets on Everon. A name at the edge of its town, with houses in the circle, stays where it is.
