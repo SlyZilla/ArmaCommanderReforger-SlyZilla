@@ -1365,6 +1365,9 @@ class ACR_AICommander : Managed
   {
    if (!base || base.m_bRetired || base.m_sOwner == m_sFaction || !HostileOwner(base) || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
    if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
+   // An enemy HQ waits its turn, unless it is the counterattack or the player's "take this base".
+   bool priorityTarget = base == RequestedTarget() || (base == m_CounterTarget && CounterDue());
+   if (!priorityTarget && !HqTargetable(base)) continue;
    // The lane, as AssignAttacks weighs it: in it sooner, its flanks later, elsewhere not while it has work.
    float laneFactor = LaneTargetFactor(base);
    if (laneFactor < 0 && !laneOpen) continue;
@@ -2205,6 +2208,7 @@ class ACR_AICommander : Managed
   {
    if (!base || base.m_bRetired || base.m_sOwner == m_sFaction || !HostileOwner(base) || !Visible(base) || CoolingDown(base)) continue;
    if (base.m_bPocket && NearestOwnDistance(base.GetOrigin()) > POCKET_IN_THE_WAY) continue;
+   if (!HqTargetable(base)) continue;
    if (InLaneOrFlank(base)) return true;
   }
   return false;
@@ -2244,6 +2248,57 @@ class ACR_AICommander : Managed
    if (point && !ACR_SpawnPoints.IsBasePoint(point) && point.GetFactionKey() == owner && vector.DistanceXZ(point.GetOrigin(), base.GetOrigin()) <= base.m_fRadius + 60) return true;
   return false;
  }
+
+ // An enemy HQ is the last objective, not the first (Jacob, 6 Nov: at the start it is often the only
+ // enemy base in sight, so every squad left over after the grabs went for it, into the enemy's
+ // spawn and its whole starting army). It is a target once it is next in line from one of our bases
+ // (no other base still to take is clearly nearer that base), or once nothing else is left to take.
+ // A counterattack or a player's "take this base" goes for it all the same (AssignAttacks' priority).
+ static const float HQ_NEXT_SLACK = 1.25;     // next in line: within 1.25x of that base's nearest other target
+ static const float HQ_LOG_INTERVAL = 120000; // ms between "leaves the HQ for later" lines
+ protected float m_fNextHqLog;
+
+ // Pure: is 'hq' next in line from any of 'own', given the other bases still to take?
+ static bool HqNextInLine(notnull array<vector> own, vector hq, notnull array<vector> others)
+ {
+  if (others.IsEmpty()) return true;
+  foreach (vector at : own)
+  {
+   float nearest = float.MAX;
+   foreach (vector other : others) nearest = Math.Min(nearest, vector.DistanceXZ(at, other));
+   if (vector.DistanceXZ(at, hq) <= nearest * HQ_NEXT_SLACK) return true;
+  }
+  return false;
+ }
+
+ // Whether the attack planners may pick this base: any base but an enemy HQ not yet next in line.
+ protected bool HqTargetable(ACR_Base base)
+ {
+  if (!EnemyHQ(base)) return true;
+  array<vector> own = {};
+  array<vector> others = {};
+  foreach (ACR_Base other : ACR_Base.s_All)
+  {
+   if (!other || other.m_bRetired || other == base) continue;
+   if (other.m_sOwner == m_sFaction) { own.Insert(other.GetOrigin()); continue; }
+   if (!Visible(other)) continue;
+   // Still to take: an empty base, or one held by an enemy (a found FIA pocket only when it is in
+   // the way, as AssignAttacks weighs it). An allied FIA's base is not.
+   string seen = SeenOwner(other);
+   if (!seen.IsEmpty() && !HostileOwner(other)) continue;
+   if (!seen.IsEmpty() && other.m_bPocket && NearestOwnDistance(other.GetOrigin()) > POCKET_IN_THE_WAY) continue;
+   others.Insert(other.GetOrigin());
+  }
+  if (HqNextInLine(own, base.GetOrigin(), others)) return true;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now >= m_fNextHqLog)
+  {
+   m_fNextHqLog = now + HQ_LOG_INTERVAL;
+   Say(string.Format("[ACR] AI %1: leaves the enemy HQ %2 for later (%3 other bases to take first)", m_sFaction, base.m_sName, others.Count()));
+  }
+  return false;
+ }
+ bool HqTargetableForTest(ACR_Base base) { return HqTargetable(base); }
 
  // What a lane from 'from' to 'to' wins (income of the bases in it we don't hold, an enemy HQ at
  // its end) against the defence we know of in it and its length. Only what this side can see.
@@ -3512,6 +3567,7 @@ class ACR_AICommander : Managed
    {
     if (base == priority) continue;
     if (base.m_sOwner == m_sFaction || !HostileOwner(base) || !Visible(base) || IsAttacking(base) || CoolingDown(base)) continue;
+    if (!HqTargetable(base)) continue;
     float cost = Math.Max(10, DefenceOf(base) * ATTACK_RATIO * m_Doctrine.m_fAttackRatio);
     float dist = NearestFreeDistance(free, base.GetOrigin());
     // FIA pockets: cleared when in the way (near our own bases), after the real enemy.

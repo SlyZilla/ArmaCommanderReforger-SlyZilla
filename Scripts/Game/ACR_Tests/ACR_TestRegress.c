@@ -157,7 +157,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 149; // includes six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 150; // includes one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -837,6 +837,16 @@ class ACR_TestRegress
    ACR_AICommander.FrontlinePick({900, 1050, 1050.5}, picked);
    int edge = picked.Count();
    Check("frontline bases the same whatever the order", sets[0] == "900 1000 " && sets[1] == sets[0] && sets[2] == sets[0] && edge == 2, string.Format("'%1' '%2' '%3', boundary %4", sets[0], sets[1], sets[2], edge));
+   // The enemy HQ waits until it is next in line from one of our bases (Jacob, 6 Nov).
+   array<vector> hqOwn = {"0 0 0".ToVector()};
+   array<vector> hqOthers = {"800 0 0".ToVector(), "1500 0 0".ToVector()};
+   bool hqWaits = !ACR_AICommander.HqNextInLine(hqOwn, "3000 0 0", hqOthers);
+   bool hqNext = ACR_AICommander.HqNextInLine(hqOwn, "950 0 0", hqOthers);
+   array<vector> hqNone = {};
+   bool hqLast = ACR_AICommander.HqNextInLine(hqOwn, "3000 0 0", hqNone);
+   array<vector> hqFront = {"0 0 0".ToVector(), "2600 0 0".ToVector()};
+   bool hqFoothold = ACR_AICommander.HqNextInLine(hqFront, "3000 0 0", hqOthers);
+   Check("enemy HQ is a target only when next in line or nothing else is left", hqWaits && hqNext && hqLast && hqFoothold, string.Format("3 km behind two bases waits %1, 950 m vs 800 m next %2, nothing else left %3, own base 400 m from it %4", hqWaits, hqNext, hqLast, hqFoothold));
    Check("first-player host is opt-in, fixed to the first connection, and ends on disconnect", ACR_Manager.TrustedFirstPlayerHost(7, 7, true, false) && !ACR_Manager.TrustedFirstPlayerHost(8, 7, true, false) && !ACR_Manager.TrustedFirstPlayerHost(7, 7, false, false) && !ACR_Manager.TrustedFirstPlayerHost(7, 7, true, true), "denied by default, no transfer or reconnect reuse");
    float radius = 100;
    Check("base-proximity intel reports without observation through radius + 60 m", ACR_Intel.InsideBaseProximityReport(radius, radius) && ACR_Intel.InsideBaseProximityReport(radius + 59, radius) && !ACR_Intel.InsideBaseProximityReport(radius + 60, radius), "automatic reporting is intentional; line of sight is not required");

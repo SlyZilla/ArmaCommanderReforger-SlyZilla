@@ -1,6 +1,10 @@
 # Changelog
 ## 0.5.10 — unreleased
 
+### AI commanders
+
+- AI commanders no longer open a match by sending their spare squads at the enemy HQ. At the start it was usually the only enemy base they knew of, so every squad not off grabbing an empty base was sent into the enemy's spawn and its whole starting army. The enemy HQ is now the last objective: an AI attacks it once it is next in line from one of its own bases (no other base left to take is clearly nearer), or once nothing else is left. A counterattack, or a player's "take this base" to the 2IC, still goes for it.
+
 ## 0.5.9 — released
 
 - Works with Arma Reforger 1.9 (with Better Battle Buddies 0.1.8). In 1.9 the game's automatic gearbox overrode the vehicles that AC: Actual and Better Battle Buddies drive by hand, so they sat still or crept forward: a vehicle backing out of a jam, pulling over before a get-out, or backing away from an armed enemy vehicle moves again. A truck backing away from an armed vehicle now gets a few seconds to turn round before its crew gives up on it under fire, and a vehicle its crew abandons keeps its handbrake on: in 1.9 an empty vehicle drops into neutral, and one rolled downhill into the enemy it had just backed away from.
