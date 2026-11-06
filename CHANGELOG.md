@@ -1,6 +1,10 @@
 # Changelog
 ## 0.5.10 — unreleased
 
+### Fixes
+
+- A gunner driving his vehicle from the turret climbs steep roads again (Reforger 1.9). The 1.9 gearbox keeps the clutch locked from idle up, so once the hill start was over a Humvee lugged up a 31% road in first at 1,100-1,500 rpm, short of its peak torque at 2,000, and covered 63 m in 20 s where 1.8 managed 96 m. Climbing in first now keeps slipping the clutch, eased in and out by the engine's rpm against its peak torque, until the wheels turn the engine that fast themselves: 78-80 m in 20 s, the whole stretch. Flat ground and the other gears are unchanged.
+
 ## 0.5.9 — released
 
 - Works with Arma Reforger 1.9 (with Better Battle Buddies 0.1.8). In 1.9 the game's automatic gearbox overrode the vehicles that AC: Actual and Better Battle Buddies drive by hand, so they sat still or crept forward: a vehicle backing out of a jam, pulling over before a get-out, or backing away from an armed enemy vehicle moves again. A truck backing away from an armed vehicle now gets a few seconds to turn round before its crew gives up on it under fire, and a vehicle its crew abandons keeps its handbrake on: in 1.9 an empty vehicle drops into neutral, and one rolled downhill into the enemy it had just backed away from.
