@@ -27,7 +27,7 @@ No Arma 3 assets (models, textures, sounds) are included.
 
 The port was openly vibecoded: nearly all of its code, launchers and documentation
 were written by **Claude**, Anthropic's AI model (in Claude Cowork), directed,
-designed and play-tested by **Jacob** (propst-design). **Codex** (OpenAI) contributes
+designed and play-tested by **Jacob** (propst-design), with **SlyZilla** as co-developer. **Codex** (OpenAI) contributes
 code and tests; **Antigravity** (Google's agentic coding environment) also contributes.
 Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**. It is an unofficial fan
 project, not affiliated with or endorsed by Bohemia Interactive or the original

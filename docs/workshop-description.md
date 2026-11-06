@@ -61,6 +61,6 @@ Use #issues for AC: Actual bugs and #suggestions for ideas or factions. No GitHu
 GitHub alternative: https://github.com/propst-design/ArmaCommanderReforger/issues
 Include map, versions, mods, reproduction steps and affected logs.
 
-Original Arma Commander: Martin Hájek. Community fork: Anarch Cassius, Ilyushkius and Will. Reforger port directed, designed and play-tested by Jacob (propst-design). Nearly all code and documentation by Claude (Anthropic), with code/test contributions from Codex (OpenAI) and contributions from Antigravity (Google). Playtesters: PoppiPoppins, Hexxyz and Frost.
+Original Arma Commander: Martin Hájek. Community fork: Anarch Cassius, Ilyushkius and Will. Reforger port directed, designed and play-tested by Jacob (propst-design). Co-developer: SlyZilla. Nearly all code and documentation by Claude (Anthropic), with code/test contributions from Codex (OpenAI) and contributions from Antigravity (Google). Playtesters: PoppiPoppins, Hexxyz and Frost.
 
 Arma Public License Share Alike (APL-SA); see LICENSE.md. Unofficial fan project, not affiliated with or endorsed by Bohemia Interactive or the original authors.

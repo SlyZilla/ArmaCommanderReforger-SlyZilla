@@ -199,7 +199,8 @@ Users of the older single-addon ZIP must download the paired ZIP once; after tha
 
 This project is openly vibecoded. Nearly all of the code, launchers and documentation
 were written by **Claude** (Anthropic's AI model), directed, designed and play-tested by
-**Jacob** ([propst-design](https://github.com/propst-design)).
+**Jacob** ([propst-design](https://github.com/propst-design)), with **SlyZilla**
+([SlyZilla](https://github.com/SlyZilla)) as co-developer.
 **Codex** (OpenAI) and **Antigravity** (Google) also contribute.
 Expect rough edges; bug reports with logs help a lot.
 
