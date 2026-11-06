@@ -8,9 +8,9 @@ This guide takes you from your own addon to a playable scenario, then covers the
 logistics, testing and sharing. Start with [Quick start: copy Arland](#quick-start-copy-arland)
 for an authored layout, or its generated-layout alternative for a procedural battlefield.
 
-> AC: Actual is an alpha. Arland is the main automated test map; Everon is the main large-map
+> AC: Actual is an alpha. Arland is the most tested map; Everon is the main large-map
 > playtest terrain. Kolguyev uses generated layouts. New maps, faction combinations and multiplayer
-> setup paths still need playtesting. AC: Actual requires standalone BBB (`BBB0261015000001`); install both in Workbench. Source developers keep the checkouts side by side. Custom scenarios also need their terrain dependencies. Mod log lines use `[ACR]` (the included AI systems also use `[BBB]`).
+> setup paths still need playtesting. AC: Actual requires Better Battle Buddies (BBB, `BBB0261015000001`); both must be available in Workbench. Custom scenarios also need their terrain dependencies. Mod log lines use `[ACR]` (the included AI systems also use `[BBB]`).
 
 ## Contents
 
@@ -30,10 +30,12 @@ for an authored layout, or its generated-layout alternative for a procedural bat
 ## Before you start
 
 - **Arma Reforger Tools** (Workbench) from Steam. Workbench is the editor used to make and test maps.
-- **The AC: Actual addon.** Use the installed Workshop project if available, or get the
-  `ArmaCommanderReforger` folder from the [release ZIP](https://github.com/propst-design/ACActual/releases/latest)
-  and add its `addon.gproj` to Workbench with **Add Existing Project**. Avoid loading two copies with
-  the same addon ID. Keep custom work out of an installation that self-updates.
+- **The AC: Actual and Better Battle Buddies addons.** Download AC: Actual from the Workshop in the
+  game (Better Battle Buddies comes with it); Workbench can then use both as dependencies. For the
+  source instead, clone [AC: Actual](https://github.com/propst-design/ArmaCommanderReforger) and
+  [Better Battle Buddies](https://github.com/propst-design/BetterBattleBuddies) side by side and add
+  each `addon.gproj` with **Add Existing Project**. Avoid loading two copies with the same addon ID.
+  Keep custom work out of an installation that self-updates.
 - **Your own addon** (your own mod project). Set AC: Actual, GUID `AC230926A0010001`, as a dependency so
   your map can use AC: Actual's game mode and settings. Keep your work in your own addon so an AC: Actual
   update does not replace it.
@@ -177,7 +179,7 @@ Infantry squads can lay minefields and disarm mines on the commander's orders (m
 mines**, **AT mines**, **Mixed mines**, **Disarm mines**). A point right-clicked twice lays a 30 m
 square: AT mines go in both lanes of a road within 20 m of it (across the area without one) and AP
 mines off the road; vanilla minefield signs mark the corners and the area shows on the owning side's
-command map. The commander can shape a field instead (#200): right-click up to four points, then the
+command map. The commander can shape a field instead: right-click up to four points, then the
 last one again (a fourth point lays at once). Two points make a line (a 6 m band, at least 10 m long),
 three or four that area. The field keeps its mines and its price, spread over the shape, which may be
 at most 120 m corner to corner and 2,700 m² (three times the square); AT mines go on the roads inside
@@ -245,8 +247,8 @@ job gives back counts) and refunded in full if it is called off before the piece
 are refused within 30 m of a base centre and 40 m of another of your positions. The squad then
 holds the position and mans its guns; the pieces stay when it leaves. The position shows on its
 side's command map as a pale ring until every piece is destroyed or dismantled, and its wire goes
-with it then. Tier II and III hold defenders in reserve at the position, from the side's garrison
-soldiers (2 at tier II, 4 at tier III; an upgrade adds the difference). Like a base's garrison
+with it then. Each tier holds defenders in reserve at the position, from the side's garrison
+soldiers (by default 1 at tier I, 2 at tier II, 4 at tier III; an upgrade adds the difference). Like a base's garrison
 they deploy when an enemy comes within 400 m, defend the position, pack up once none is within
 450 m and are used up as they die; a position that is gone takes its reserve with it. Hosts
 change the options below on the startup Logistics settings page; the defender sizes are launch
@@ -281,8 +283,8 @@ One per world. Place it anywhere.
 ### ACR_FactionSettings
 
 Add one for each side and place it anywhere (Arland puts each beside its HQ to keep the layer tidy).
-If you leave one out, that side still gets 50 RP, the automatic buy list, and all support calls, but its
-AI commander is turned off.
+If you leave one out, a playing side gets the defaults below (100 RP, an AI commander, the automatic
+buy list and all support calls).
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -390,10 +392,11 @@ keeps every commander on its first doctrine.
 
 #### Factions and mods
 
-The external ZIP/development launcher menu offers four side pairings: the game's US vs USSR, RHS US
+The ZIP/development launcher menu offers four side pairings: the game's US vs USSR, RHS US
 vs RHS AFRF, UA vs RHS AFRF, or RHS US vs UA. The launcher selects the RHS/UA addon IDs but does not
-download them; its current search path for optional faction mods is `E:\ArmaReforgerMods\addons`,
-which may need adapting on another PC. The UA mod replaces the game's US side for that session. ACE
+download them: download them in the game first. It looks for them in the game's addons folder
+(`Documents\My Games\ArmaReforger\addons`) or in the folder set in the `ACR_MODS_DIR` environment
+variable. The UA mod replaces the game's US side for that session. ACE
 All in One is a separate optional choice. Everyone joining must use the same side pairing and ACE
 choice as the host. With no extra faction mods selected, the game uses its usual US vs USSR sides.
 
@@ -861,7 +864,8 @@ world files named `Worlds/ACR_*.ent`, with each map's layer in
 `Worlds/ACR_<Name>_Layers/default.layer`.
 
 1. Save your map in the AC: Actual project as `Worlds/ACR_<Name>.ent`. Keep its layer at
-   `Worlds/ACR_<Name>_Layers/default.layer`. The terrain can stay in a separate addon.
+   `Worlds/ACR_<Name>_Layers/default.layer`. A terrain from another addon is not loaded by the
+   launcher (see below).
 2. Put its header in `Missions/ACR_<Name>.conf`. Workbench fills in which world it opens.
 3. To play alone, run `Start-Test-Range.ps1 -World "Worlds/ACR_<Name>.ent"`. The setup menu opens.
    Select your map in option 1 (the menu restores remembered settings), choose the other settings
@@ -877,8 +881,9 @@ package build for a local test. They start the selected world file directly; the
 for the game's scenario list. To let a friend play, give them a matching copy of the development
 project with your map included. Use that project copy, not the release zip: the release launcher
 updates itself and can replace your custom map with the released files. The helper loads AC: Actual,
-its selected faction/ACE mods, and a locally detected Workshop copy of All-in-One Command Menu. A
-custom terrain or separate scenario addon is not added automatically.
+Better Battle Buddies, its selected faction/ACE mods, and a locally detected Workshop copy of
+All-in-One Command Menu. A custom terrain or separate scenario addon is not added automatically,
+except as described in [Run a map kept in your own addon](#run-a-map-kept-in-your-own-addon).
 
 ### Run a map kept in your own addon
 
@@ -893,12 +898,13 @@ check the [publishing
 guide](https://community.bistudio.com/wiki/Arma_Reforger:Mod_Publishing_Process). Do not assume an
 uploader-only item is available to friends.
 
-The supplied launcher does not load a separate mission-maker addon or list its worlds. For the
-normal **Multiplayer > Host** flow, both players must be able to install and enable the scenario
-addon, AC: Actual and any terrain/faction dependencies through the game. An unpacked local AC:
-Actual copy alone is not discoverable in those scenario lists. For a local launcher test, use the
-matching development-project route above, with any additional addon dependencies added to the launch
-arguments.
+The supplied launchers list a separate addon's worlds only when its folder name starts with
+`ACAMap` and sits beside the AC: Actual folder, with worlds named `Worlds/ACR_<Name>.ent`; they then
+load that addon, and its terrain from the game's addons folder (downloaded in the game first). A
+joining friend picks the same map add-on in the join menu. For the normal **Multiplayer > Host**
+flow, both players must be able to install and enable the scenario addon, AC: Actual and any
+terrain/faction dependencies through the game. An unpacked local AC: Actual copy alone is not
+discoverable in those scenario lists.
 
 ## Host options
 
@@ -907,8 +913,8 @@ in-game setup screen. Workshop scenarios and ZIP/development Play and Host launc
 screen. Launchers choose only the map and optional mods; old saved match settings are ignored.
 Play passes `-acrSetup 1`; Host also enables the existing `-acrFirstPlayerHost 1` fallback because
 it runs a separate local server: the host must connect first, and access never transfers after
-disconnect. A world launched directly has no mission header. The table retains launch options for
-mission makers, automated tests and server operators; players choose match settings in game.
+disconnect. A world launched directly has no mission header. The table lists launch options for
+mission makers and server operators; players choose match settings in game.
 
 | Option | What it does |
 |---|---|
@@ -945,9 +951,9 @@ mission makers, automated tests and server operators; players choose match setti
 | `-acrHoldGuns 0` | Vanilla gunners: by default a squad holding a spot (Defend, a checkpoint, a Fortify position) keeps its men on the static guns there, unless an enemy seen in the last 10 s is within 60 m; an empty held gun is manned again after 8 s. Vanilla gets a gunner out whenever anything he knows of is outside the gun's arc. Setup row **Gunners stay on held guns** |
 | `-acrMapDeclutter 0` | The classic command map. By default the map is calm: dark panels, merged INTEL lines, base dots with size pips, squads at a base gathered into one icon with ×N, names and order lines thinned out when zoomed out. Setup row **Calm command map** |
 | `-acrSquadTactics 1` | AI squads use squad tactics inside an objective (off by default): an AI squad assaulting a base uses Better Battle Buddies' squad tactics (assault, flank, hold, search) and fire and manoeuvre once it is inside the base's ring, never leaving it, and squads defending a base on a Defend order may bound to cover or push back an enemy inside the base, never chasing out of it. Garrisons in buildings, squads staging or riding, and squads under a player's command are never affected |
-| `-acrRoadFlow 0` | AI vehicles stop at every road waypoint, as before 0.5.9. By default a crewed vehicle on a long road trip skips the waypoints on straight stretches (up to 600 m ahead, keeping those at bends and junctions) and gets its next waypoint earlier the faster it goes, so it doesn't brake and re-plan every 160 m |
+| `-acrRoadFlow 0` | AI vehicles stop at every road waypoint (the older driving). By default a crewed vehicle on a long road trip skips the waypoints on straight stretches (up to 600 m ahead, keeping those at bends and junctions) and gets its next waypoint earlier the faster it goes, so it doesn't brake and re-plan every 160 m |
 | `-acrFieldRoutes 0` | AI foot squads walk the game's own path, roads included, everywhere. By default an AI squad on foot crossing ground that isn't friendly (the nearest held base belongs to someone else) keeps at least 45 m off the roads (a waypoint every 60 m), except on the last 150 m to its destination, and crosses rivers on the nearest bridge within 300 m; on friendly ground it may use them. Player-led squads and player orders are never changed |
-| `-acrNoRoadHops 0` | AI vehicles drive longer trips along the roads in short hops, as before #102. By default a trip is one waypoint, and a failed drive falls back to hops once |
+| `-acrNoRoadHops 0` | AI vehicles drive longer trips along the roads in short hops (the older driving). By default a trip is one waypoint, and a failed drive falls back to hops once |
 | `-acrPullOver 1` | A squad told to get out on a road first has its driver pull onto the verge (off by default; needs Better Battle Buddies). Under fire or with nowhere to go, out where it stands |
 | `-acrEvadeArmour 1` | An unarmed vehicle of ours that sees an armed enemy vehicle drives 300 m away, then resumes its order (off by default; Better Battle Buddies asks only with its `bbbEvadeArmour` on) |
 | `-acrMinesRealistic 1` | Mines go off for everyone. By default the owning side's AI never sets off its own mines; its players do |
@@ -1010,7 +1016,7 @@ mission makers, automated tests and server operators; players choose match setti
 - Advancing infantry in Combat mode can detour around a fresh infantry contact after a short
   stalemate. Nearby squads take turns manoeuvring; the original destination and queued orders
   remain. Defend, Suppress, Fast and Silent orders keep their assigned roles. Terrain and native
-  pathfinding limit which flanks can be used; live combat acceptance is still pending.
+  pathfinding limit which flanks can be used; this is still being tuned in play.
 - **No victory conditions**, by design: the match runs until the host ends it.
 - **The AI commander cannot fly bought aircraft.** Combat support and off-map air lift are
   script-flown; the AI can call air lifts for long moves and road detours.
@@ -1032,7 +1038,7 @@ keyboard cancel the detour.
 
 1. Start the map from Workbench. For a map saved inside the AC: Actual project, you can also use
    `Start-Test-Range.ps1 -World "Worlds/ACR_<Name>.ent"` to play alone, or
-   `ACR-Multiplayer.ps1 -Mode Host` to host it; select your map in the menu. See [Save, export and run](#save-export-and-run).
+   `Host-ACA.cmd` to host it; select your map in the menu. See [Save, export and run](#save-export-and-run).
 2. Open Workbench's console, or the game's log in `Documents/My Games/ArmaReforger/logs/<date>/console.log`.
    Check that:
    - `[ACR] Scenario started` appears: AC: Actual is running on the map.
@@ -1052,11 +1058,12 @@ For a private playtest with the supplied launcher, copy your map into the AC: Ac
 computers. Keep the world, its layer, and its Workbench `.meta` files together. Send your friend a matching
 copy of the development project with the map included. The host starts `Host-ACA.cmd` and picks the map;
 the friend starts `Join-ACA.cmd` from their copy and enters the address shown in the host window. Use the
-development project, not the release zip, so the updater does not replace the custom map. The package's
-`READ ME FIRST.txt` explains the address and connection setup.
+development project, not the release zip, so the updater does not replace the custom map. The host
+window lists the addresses to share (ZeroTier, internet with the port forwarded, or the same network).
 
 If you keep your map in a separate addon, you can test it in Workbench and publish it for the game's
-scenario list. But the supplied AC: Actual launcher cannot load that separate addon yet. A published
+scenario list. The supplied launchers load a separate addon only when it follows the `ACAMap` folder
+naming in [Run a map kept in your own addon](#run-a-map-kept-in-your-own-addon). A published
 scenario can use the game's normal Multiplayer > Host flow only when both players can install and
 enable the mission addon and its AC: Actual dependency. Both players need a compatible AC: Actual
 version and all dependencies. An unpacked local copy does not by itself create a Scenarios/Host

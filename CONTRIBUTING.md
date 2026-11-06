@@ -15,19 +15,10 @@ changes ahead of Workshop. The README identifies the published Workshop version;
 A source push does not publish a Workshop update. Official Workshop publication
 is handled by the maintainer.
 
-## Current development limitation
-
-At the 23 October 2026 source sync, native regression reported 108 passes,
-four failures in the roadblock placement fixture, and one expected skip.
-The fixture did not find a suitable road segment; placement, physical composition
-alignment, vehicle obstruction and roadblock-spacing checks remain unresolved.
-Do not treat this development snapshot as release acceptance or dismiss those
-failures when testing related changes.
-
 ## Get your own working copy
 
 Install Git, Arma Reforger and **Arma Reforger Tools** (Workbench) through Steam.
-Use the regular game/tools versions together. Python 3 is used for source checks.
+Use the regular (1.9) game/tools versions together. Python 3 is used for source checks.
 Fork [this repository](https://github.com/propst-design/ArmaCommanderReforger) on GitHub, then run
 these commands from your Workbench `addons` directory (replace `YOUR-USERNAME`):
 
@@ -98,11 +89,30 @@ host policy belongs in ACA. Keep new mission options documented.
 Preserve resource GUIDs, license notices and existing line endings. Keep changes
 focused and avoid unrelated formatting. Enforce Script must compile in Workbench;
 be careful with engine API signatures and avoid unsupported ternary expressions.
+A squad's AI job changes only through `ACR_Squad.SetAITask`, never by writing
+`m_iAITask` directly. Game code never names test classes; it reaches tests only
+through `ACR_TestHooks`.
 
-Run the mission-document check from the repository root:
+Two Enforce Script traps catch most newcomers:
+
+- **Integer comparisons.** With an int on the left, `<` and `>=` compare in ints
+  (`6 >= 6.75` is true), and int / int divides in ints. Put the float first.
+- **Static initializer budget.** Every class-level static given a built value
+  (`= {}`, `= new ...`, `= Foo()`) and every `const` declared inside a function adds to one
+  engine function whose size is capped and shared by *every loaded mod*. Over the cap the game
+  fails to compile for players running big mod lists. Declare such statics bare and fill them
+  from the class's `ACR_InitStatics()` (listed in `ACR_StaticInit`).
+
+A new World Editor attribute or `-acr...` option must be documented in
+[MISSION-MAKING.md](MISSION-MAKING.md); the mission-document check fails otherwise.
+Run the source checks from the repository root (CI runs the same ones):
 
 ```powershell
 python tools/check_mission_doc.py
+python tools/check_enforce_numbers.py
+python tools/check_static_init.py
+python tools/check_ai_task_writes.py
+python -m unittest discover -s tools/sweep
 ```
 
 For native server tests, install **Arma Reforger Server** through Steam and run
@@ -132,9 +142,9 @@ python tools/check_public_source.py
 git diff --cached --check
 ```
 
-The source check also runs on GitHub pull requests and pushes. It catches common
-private/generated files and recognizable sensitive text; it cannot replace a
-manual review or compile/test the game.
+The source check also runs on GitHub pull requests and pushes, with the checks
+above. It catches common private/generated files and recognizable sensitive text;
+none of the checks replaces a manual review or compiles and tests the game.
 
 ## Submit a pull request
 
@@ -154,3 +164,9 @@ project records out of commits. Review staged file names and content before push
 sanitize any diagnostic excerpts you share. Do not commit extracted base-game or
 third-party mod assets. By submitting a contribution, you agree to distribute it
 under this project's existing [license](LICENSE.md); retain required attribution.
+
+## Maintainer notes
+
+Releases go out through the maintainer's release tooling, Better Battle Buddies first,
+then ACA. The Workshop-to-Discord changelog relay is described in
+[docs/workshop-relay.md](docs/workshop-relay.md).

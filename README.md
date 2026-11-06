@@ -7,162 +7,205 @@
 > testing and pull requests. No direct repository access is needed.
 
 [![Game: Arma Reforger](https://img.shields.io/badge/Arma-Reforger-556b2f?style=flat-square)](https://reforger.armaplatform.com/)
-[![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#maps-and-match-options)
-[![Requires Better Battle Buddies](https://img.shields.io/badge/Requires-Better_Battle_Buddies-teal?style=flat-square)](#maps-and-match-options)
+[![Development stage: Alpha](https://img.shields.io/badge/Status-Alpha-yellow?style=flat-square)](#requirements)
+[![Requires Better Battle Buddies](https://img.shields.io/badge/Requires-Better_Battle_Buddies-teal?style=flat-square)](#requirements)
 [![License: APL-SA](https://img.shields.io/badge/License-APL--SA-orange?style=flat-square)](LICENSE.md)
 
-Command squads from the map, then take control of a friendly AI soldier and join
+Command squads from the map, then take control of any friendly AI soldier and join
 the fight. Capture bases, requisition units and coordinate support across Arland,
-Everon and Kolguyev. Play solo against AI commanders or share command with friends.
+Everon and Kolguyev. Play solo against AI commanders, share command with friends, or
+play side against side.
 
 An unofficial Reforger rebuild of Arma 3's **Arma Commander**, licensed under
 APL-SA. Original authors and contributors are credited below and in [LICENSE.md](LICENSE.md).
 
-This is the main public source, development and [issue tracker](https://github.com/propst-design/ArmaCommanderReforger/issues) for AC: Actual.
-Install and update through the in-game Workshop for normal play. The older
-[ACActual repository](https://github.com/propst-design/ACActual) retains historical
-documentation, existing issues and legacy ZIP downloads/updaters. File new bug
-reports in [Discord](https://discord.gg/WK8xGSztB) under **#issues** and ideas under
-**#suggestions**; no GitHub account needed. This repository's issue tracker remains
-available as an alternative.
-
 The current Workshop release is **0.5.8**, with **Better Battle Buddies 0.1.7**.
-See [CHANGELOG.md](CHANGELOG.md) for the release history.
+See [CHANGELOG.md](CHANGELOG.md) for the release history and what is waiting for the next one.
 
-## Playing from Workshop
+## Requirements
 
-Workshop is the normal install route: open Workshop in Reforger, search for **Arma Commander
-Actual**, download and enable it, then select an included AC: Actual scenario in Scenarios or Host. The host/admin picks the sides and match options on the setup screen, then presses Start. No
-external launcher is needed for Workshop play. Report bugs in [Discord](https://discord.gg/WK8xGSztB)
-under **#issues** (choose **AC: Actual**), or use [GitHub Issues](https://github.com/propst-design/ArmaCommanderReforger/issues).
-Include the map, mod set, steps to reproduce and logs if available. No GitHub account is needed for Discord reports.
+- **Arma Reforger 1.9.** `main` has the 1.9 fixes (AI drivers backing up, pulling over and
+  gunner drive work again with 1.9's gearbox); they reach Workshop with ACA 0.5.9 and
+  Better Battle Buddies 0.1.8.
+- **[Better Battle Buddies](https://github.com/propst-design/BetterBattleBuddies)** (BBB),
+  available separately on Workshop. It is a declared dependency: let Workshop install it when
+  prompted. BBB runs every soldier's fighting behaviour; ACA runs the commanders, economy and orders.
+- Optional: [All-in-One Command Menu](https://github.com/propst-design/AIOCommandMenu) for
+  ordering the squad you lead, ACE, RHS and Ukraine Armed Forces RHS, and ACA's own add-ons
+  (content packs and extra maps, below). Everyone in a multiplayer game needs the same mods.
 
-## Maps and match options
+## Play from Workshop
 
-Everon, Arland and Kolguyev are included. Everon has a hand-built full-island layout, north/south
-halves and three flashpoints. Arland also has a hand-built layout. All
-three support generated layouts; Kolguyev always generates its bases and HQs from named map
-locations. Generated layouts can be previewed, rerolled and adjusted by clicking a base and then its
-new position on the in-game setup map. Other terrains need an AC: Actual scenario setup; installing
-a terrain alone does not add one.
+1. Open Workshop in Reforger, search for **Arma Commander Actual**, download and enable it
+   (Better Battle Buddies comes with it).
+2. Pick an AC: Actual scenario (Arland, Everon or Kolguyev) under **Scenarios** to play solo,
+   or under **Host** to play with friends.
+3. The host (or a logged-in admin on a dedicated server) chooses the battlefield, factions and
+   match options on the **setup screen**, then presses **Start**.
+4. Each player then picks a side, an officer loadout and where to deploy on the deploy screen.
+   You stay on that side for the match, reconnects included; hosts and admins can move a player
+   with `/acr side west|east [player name]` in chat.
 
-Capture bases for RP, requisition squads and vehicles, and call mortar, artillery and air support.
-Construction trucks build service stations, forward deploy points and helipads. There are no victory
-conditions or saved matches. AC: Actual requires
-[Better Battle Buddies](https://github.com/propst-design/BetterBattleBuddies), available
-separately on Workshop. Allow Workshop to install the dependency when prompted.
+Scenarios have 16 player slots (8 per side). An AI commander runs any side with no player in
+command, so solo, co-op, player-vs-player and mixed games all work. There are no victory
+conditions and no saved matches: play until you decide it's over.
 
-In **0.5.6**, use **Establish FOB** with a squad and a construction truck carrying
-500 supplies. Pick a clear site and keep the squad there for the 90-second build.
-Select the completed FOB to order supplies and develop its eight upgrade spots:
-hospital, maintenance, ammo, fuel, helipad, relay, barracks and supply depot.
-Upgrade Defences through sandbags, machine-gun nests, then bunkers and guard towers.
-The AI commander can build, supply and raid FOBs too. Destroyed headquarters take a
-FOB offline; rebuild friendly headquarters with Establish FOB.
+### Hosting a dedicated server
 
-FOBs start with an empty 1,000-supply store. Order 500 supplies for 20 RP, delivered
-after 60 uncontested seconds. Upgrades spend local supplies and build faster with
-engineers nearby; subsequent construction needs no truck. FOBs do not refill trucks for free.
-FOBs require a completed friendly radio relay inside their circle before deploying units or providing
-RP reinforcement. Losing the relay disables both until rebuilt; construction, deliveries and supplied
-services continue. Mission makers and hosts can disable this requirement in Logistics settings.
-One supply depot expands a FOB to 3,000 capacity. Hospital, ammo, maintenance and fuel buildings
-use its supplies for automatic service; RP reinforcement remains available. Generated settlements
-send infantry replacements, while HQs, military sites and FOBs deploy new formations. The startup
-**Logistics settings** page lets hosts change these policies, capacity bonuses and service costs;
-mission makers can set defaults and per-base roles.
-Heavy maintenance bays repair 40% more per step than light bays for the same supplies. Completed
-small/large living quarters inside a friendly FOB add 11/19 defenders; multiple quarters stack,
-casualties persist, and losing quarters reduces capacity. Engineers do not automatically build blueprints.
+Run one of the AC: Actual scenarios like any Workshop scenario, with ACA and BBB in the server
+config's mod list. Nothing spawns until an admin presses Start on the setup screen; if nobody
+does, the server starts by itself 5 minutes after the first player joins. Every setup-screen row
+also has a launch parameter (`-acr...`), so a server can preset its match: see
+[Host options](MISSION-MAKING.md#host-options) for the full list. BBB's own options are
+`-bbb...` parameters or a BBB preset (see the BBB README).
 
-## Legacy ZIP / development launchers
+## The game
 
-The release ZIP includes **Play-ACA.cmd**, **Host-ACA.cmd**, **Join-ACA.cmd** and a **READ ME
-FIRST.txt** guide. Play and Host ask only for the map and optional mods before loading; choose
-playable sides and match settings on the in-game startup screen, then press **Start**.
-New paired ZIPs use **ACActual-WithBBB.zip** and contain both addon folders. Users of the older
-single-addon ZIP must download/extract the complete paired ZIP once; the old updater cannot install
-BBB. After that migration, published paired ZIPs self-update. Keep custom work in a separate addon or use a development copy
-without the release updater source.
+**Maps.** Everon, Arland and Kolguyev are included. Everon has a hand-built full-island layout,
+north/south halves and three flashpoints; Arland also has a hand-built layout. All three can
+generate a layout instead, and Kolguyev always generates its bases and HQs from the map's named
+places. On the setup map a generated layout can be previewed, rerolled and adjusted (click a
+base, then its new position). Other terrains need an AC: Actual scenario: installing a terrain
+alone does not add one.
 
-## Playing the test range
+**Economy.** Capture bases for requisition points (RP), buy squads and vehicles, and call
+mortar, artillery, air and recon support. Threat level, pricing, starting RP, income and caps
+are setup-screen choices.
 
-Close Reforger, then double-click **Play-Test-Range.cmd** (offline, solo). In the development
-checkout, **Host-Test-Range.cmd** opens the normal game menu with the addon loaded. Unpacked local
-addons do not appear in the game's Scenarios/Host lists; use **Host-ACA.cmd** for a local
-multiplayer scenario instead. The ZIP does not include Host-Test-Range.cmd.
+**FOBs.** **Establish FOB** with a squad and a construction truck carrying 500 supplies: pick a
+clear site and keep the squad there for the 90-second build. A FOB's store starts empty
+(1,000 supplies); order 500 supplies for 20 RP, delivered after 60 uncontested seconds. Its
+eight upgrade spots take a hospital, maintenance bay, ammo dump, fuel, helipad, radio relay,
+barracks and supply depot. By default a FOB needs a finished radio relay before it can deploy
+units or reinforce. The setup screen's **Logistics** page changes these rules.
 
-## Factions and mods
+**Engineering.** Squads can dig in with **Fortify** (three tiers, with defenders held in reserve),
+fortify a whole base stretch by stretch, set up roadblocks and checkpoints, and lay minefields of
+any shape. AI commanders build too.
 
-The host setup menu can run vanilla US vs USSR, RHS US vs RHS Russia, RHS Russia vs Ukraine, or RHS
-US vs Ukraine. RHS and Ukraine Armed Forces RHS are optional; the launcher adds the required addon
-IDs when selected; it does not download those mods. ZIP launcher users may need to adjust addon
-search paths to match their installation. Ukraine Armed Forces RHS replaces
-the vanilla US faction for that session, so choose a pair containing **UA** to play it. ACE All in
-One is a separate optional toggle. When an expansion pack (the Cold War or Modern content pack) or an ACA map add-on sits beside ACA in the addons folder, the menu offers it too (row **Expansion pack**; map add-ons join the **Map** row, and joiners pick the same pack and the host's map add-on in the join menu); its Workshop dependencies must already be downloaded. Play/Host/Join also automatically load All-in-One Command Menu if
-its Workshop copy is found locally; it is a separate optional mod and joiners need it when the host
-loads it. Joiners should select the same faction pair and ACE setting as the host; a mod mismatch
-can prevent joining, and a different faction choice can produce the wrong setup. The join menu
-explains the selections to check.
-
-**Other faction mods (no promises).** AC: Actual can play any two eligible factions a map lists,
-picked as Blue side / Red side on the in-game setup screen (or `-acrFactions WEST,EAST`). The three
-scenario worlds list the game's US, USSR and FIA, plus RHS US and RHS Russia when RHS is loaded.
-Another faction mod works only if the map lists it (one line in the map's faction manager) and the
-mod sets up its factions the standard way (Game Master catalogs of soldiers, groups and vehicles).
-Even then it may look rough: mixed uniforms, a squad leader as your command unit, vanilla stand-ins
-for what the mod lacks. Only RHS and Ukraine Armed Forces RHS are hand-fitted. Want a faction mod
-supported properly? Ask in [Discord #suggestions](https://discord.gg/WK8xGSztB) or on
-[GitHub](https://github.com/propst-design/ArmaCommanderReforger/issues).
+**The opposition.** AI commanders follow a doctrine (Balanced, Blitz, Firepower, Fortress or
+Raider) and change it when it isn't working. FIA can hold pockets of resistance, run guerrilla
+cells and hideouts, and side with whoever treats it best. Each is a setup-screen row.
 
 ## Command map and controls
 
-Open with M or F9:
+Open the command map with **F9** (no map item needed) or the game map with **M**:
 
-- Left-click a squad or soldier marker to select that squad. Left-click empty map to deselect.
-- The panel on the right shows the squad. **Switch to squad** takes over its leader (or another free soldier).
-- Commander only: **Combat / Fast / Silent** set how the squad moves; **right-click** the map to move it there.
-  **Defend** or **Get in**, then right-click, to defend a spot or board a vehicle near the click.
-  **Get out** dismounts it; **Unload** dismounts other squads riding in its vehicles.
-- Multiple commanders can share a side, its squads and its requisition pool.
-  **Leave command** gives up command; **Take command** joins it when available.
+- Left-click a squad or soldier marker to select that squad; left-click empty map to deselect.
+- The ACA panel on the right shows the squad. **Switch to squad** takes over its leader (or
+  another free soldier).
+- Commander only: **Combat / Fast / Silent** set how the squad moves; **right-click** the map to
+  move it there. Arm **Defend**, **Get in**, **Fortify**, a roadblock or a minefield, then
+  right-click (or right-drag to aim it). **Get out** dismounts the squad; **Unload** dismounts
+  other squads riding in its vehicles. Standing orders include **Patrol** and **QRF**.
+- **Ctrl + 1-9** keeps the selected squads as a control group; **1-9** selects them again.
+- Several commanders can share a side, its squads and its RP. **Leave command** gives up
+  command; **Take command** joins it when available.
+- Every map panel (the ACA panel, INTEL, the Squads list) can be dragged by its title bar.
+  The calm map is the default; `-acrMapDeclutter 0` brings back the classic one.
 
 | Key | Action |
 | --- | --- |
-| F7 | Possess the soldier under your crosshair, or the marker under the map cursor |
+| F9 | Open/close the command map |
+| F7 | Take over the soldier under your crosshair, or the marker under the map cursor |
 | F8 | Return to your command unit |
-| F9 | Open/close the command map (no map item needed) |
-| F6 (driving, or as commander, in a vehicle) | Drop every passenger squad now (a second press within 3 s overrides the "too high/fast" warning) |
-| F5 | Move selected squad to cursor (map) or 35 m ahead |
+| F5 | Move the selected squad to the cursor (map) or 35 m ahead |
+| F6 (driver, pilot or commander of a vehicle) | Drop every passenger squad now (a second press within 3 s overrides the "too high/fast" warning) |
+| F10 | RTS 3D camera (H hides its UI, F follows the selected squad, W/A/S/D pans) |
+| F11 | Second-in-command panel on the map (with `-acr2IC 1`) |
 | W/A/S/D in a turret | Gunner drive with an AI driver (a map order hands control back) |
+| Ping (unbound by default) | Tap to mark where you look, hold to pick a ping |
 | Command menu key (default: backtick) | Native squad orders, only while possessing a squad leader |
 
-The ACA panel and INTEL's header can be dragged anywhere on the map (double click: back home). Off the map the keys show along the top of the screen; **Key reminders** on the ACA panel (under **More**) hides them. The panel never runs off the screen: Build orders, FOB Upgrades and More fold, the fold is remembered, and if it still can't all fit the wheel scrolls it.
+F7 only takes over living soldiers in your side's commandable squads, never another player's
+soldier or command unit. Rebind keys under **Settings > Controls > AC: Actual**. Off the map
+the keys show along the top of the screen; **Key reminders** on the ACA panel (under **More**)
+hides them. PC keyboard and mouse is the tested
+control scheme; console/controller play is unverified.
 
-F7 only takes over living soldiers in your side's commandable squads, never another player's soldier
-or command unit. Keys can be rebound under **Settings > Controls > AC: Actual**. PC keyboard/mouse
-is the tested control scheme; console/controller play remains unverified.
+**Intel** comes from what your soldiers perceive, from what a player sees within 300 m, and from
+automatic reports inside an owned base's radius plus 60 m. A contact drops off the map 90 s after
+its last update. The AI commander uses its own side's intel the same way.
 
-Intel comes from AI perception, player line of sight within 300 m, and automatic reports inside an
-owned base's radius plus 60 m (no line-of-sight requirement). Contacts turn suspected after 30 s and
-expire after 90 s without an update. The AI commander uses its side's intel.
+## Factions and mods
 
-Logs: normal play uses `Documents/My Games/ArmaReforger/logs`. Mod lines use
-`[ACR]` and `[BBB]`; ZIP-host server logs use
-`ArmaCommanderReforger/.local-server/logs`.
+The setup screen picks any two eligible factions a map lists as Blue side and Red side
+(or `-acrFactions <west>,<east>`). The scenarios list the game's US, USSR and FIA, plus RHS US
+and RHS Russia when RHS is loaded. Named pairs: vanilla US vs USSR, RHS Russia vs RHS US,
+RHS Russia vs Ukraine, RHS US vs Ukraine (`vanilla`, `ru_us`, `ru_ua`, `us_ua`). Ukraine Armed
+Forces RHS replaces the vanilla US faction for that session. RHS, Ukraine Armed Forces RHS and
+ACE are optional and are not downloaded for you.
+
+**Content packs and map add-ons.** Optional ACA add-ons bring vehicle and kit mods into the buy
+lists or add an ACA scenario for another terrain. Load them like any mod, with their own
+Workshop dependencies.
+
+- **Cold War pack** and **Modern pack**: each side's buy lists and its own attack helicopter on
+  the support menu (Cold War: AH-1S Cobra and Mi-24V Hind; Modern: AH-64D Apache and Mi-24V
+  Hind for the RHS sides). The Modern pack builds on RHS, which needs an update for
+  Reforger 1.9 before the Modern pack runs on 1.9.
+- **Map add-ons**: Chernarus Minus, Gulfcoast Islands, Kunar Province, West Zagoria and
+  Zimnitrita, each an AC: Actual scenario for that community terrain.
+
+**Other faction mods (no promises).** Another faction mod works only if the map lists it (one line
+in the map's faction manager) and the mod sets up its factions the standard way (Game Master
+catalogs of soldiers, groups and vehicles). Even then it may look rough: mixed uniforms, a squad
+leader as your command unit, vanilla stand-ins for what the mod lacks. Only RHS and Ukraine Armed
+Forces RHS are hand-fitted. Want a faction mod supported properly? Ask in
+[Discord #suggestions](https://discord.gg/WK8xGSztB) or on
+[GitHub](https://github.com/propst-design/ArmaCommanderReforger/issues).
+
+**AiO Command Menu** works beside ACA for the squad you lead; ACA's own orders and the AI
+commander handle the rest.
+
+## Reporting problems
+
+Report bugs in [Discord](https://discord.gg/WK8xGSztB) under **#issues** (choose
+**AC: Actual**) and ideas under **#suggestions**; no GitHub account needed. Or use
+[GitHub Issues](https://github.com/propst-design/ArmaCommanderReforger/issues): search first and
+add to an existing report when it describes the same problem.
+
+Include the map, mod list, whether you hosted, joined or played solo, steps to reproduce, and logs
+if you have them: `console.log` and `script.log` from `Documents/My Games/ArmaReforger/logs`
+(dedicated servers may log elsewhere). ACA's lines start with `[ACR]`, BBB's with `[BBB]`.
+Remove passwords, IP addresses and personal details before posting logs.
+
+The older [ACActual repository](https://github.com/propst-design/ACActual) keeps historical
+documentation, old issues and legacy ZIP downloads.
+
+## Legacy ZIP and development launchers
+
+Workshop is the normal route. For a source checkout or the legacy paired ZIP
+(**ACActual-WithBBB.zip**, both addon folders), Windows launchers are included:
+
+- **Play-ACA.cmd** (solo), **Host-ACA.cmd** (a local server you and friends join) and
+  **Join-ACA.cmd** ask only for the map and optional mods (RHS / Ukraine Armed Forces RHS, ACE,
+  an expansion pack, a map add-on); match settings are chosen on the in-game setup screen. They load AiO too when its
+  Workshop copy is found. Joiners pick the same mods as the host; the join menu explains what to
+  check.
+- **Play-Test-Range.cmd** opens a small offline test range.
+
+Unpacked local addons do not appear in the game's Scenarios/Host lists; use the launchers.
+Users of the older single-addon ZIP must download the paired ZIP once; after that it updates itself.
 
 ## Making scenarios and contributing
 
-See [MISSION-MAKING.md](MISSION-MAKING.md) to build scenarios in your own addon.
-
-Maintainers: [Workshop-to-Discord changelog relay setup and recovery](docs/workshop-relay.md).
+- [MISSION-MAKING.md](MISSION-MAKING.md): build an AC: Actual map in your own addon, every
+  World Editor setting and every `-acr...` host option.
+- [CONTRIBUTING.md](CONTRIBUTING.md): set up a working copy, test and open a pull request.
+  The pinned **Roadmap** issue lists what is being worked on.
 
 ## Made with AI
 
 This project is openly vibecoded. Nearly all of the code, launchers and documentation
-were written by **Claude** (Anthropic's AI model, working in Claude Cowork), directed,
-designed and play-tested by **Jacob** ([propst-design](https://github.com/propst-design)).
+were written by **Claude** (Anthropic's AI model), directed, designed and play-tested by
+**Jacob** ([propst-design](https://github.com/propst-design)).
 **Codex** (OpenAI) and **Antigravity** (Google) also contribute.
 Expect rough edges; bug reports with logs help a lot.
 
 Playtesters: **PoppiPoppins**, **Hexxyz** and **Frost**.
+
+## Licence
+
+APL-SA (Arma Public License Share Alike); see [LICENSE.md](LICENSE.md) for the terms and the
+original Arma Commander credits.

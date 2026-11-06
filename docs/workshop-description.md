@@ -6,13 +6,13 @@ Command squads from the map, take over a friendly soldier and fight alongside th
 
 Requires the separate Better Battle Buddies (BBB) addon. Vanilla sides need no faction mods.
 
-## In 0.5.8: pick a side
+## In 0.5.9: dig in and hold
 
-- Players choose their side, an officer loadout and a held base to deploy at, each with their own respawn timer. An AI commander runs any side no player commands, so PvP, co-op and mixed games use the same scenario. 16 player slots.
-- Smarter AI commanders: they refill worn-down squads first, attack with infantry that can take the base, approach out of the objective's sight, and build, upgrade and man defences along the front. A rich side digs in, fires more and buys quality.
-- Patrol loops, and drag to aim the facing of roadblocks, Fortify positions and minefields.
-- RTS camera: Fortify and minefield buttons, order lines and spotted enemies; right-click one to hunt it.
-- Base garrisons no longer spawn inside walls, and many AI and vehicle fixes.
+- Fortify a whole base: sandbag lines, MG nests, wire, bunkers and towers, planned town by town. A reserve mans the bags when the enemy comes.
+- Quick start opens the match at the front line. FIA guerrillas ambush roads from hideouts. Company kits shape each side's start and AI doctrine.
+- Recon flights, overheard enemy radio, QRF and road-ambush orders, minefields in any shape, convoys and an optional AI second-in-command.
+- A calmer command map: hover cards, a squad list, layer switches and control groups.
+- Ready for Arma Reforger 1.9.
 
 ## Command and fight
 
