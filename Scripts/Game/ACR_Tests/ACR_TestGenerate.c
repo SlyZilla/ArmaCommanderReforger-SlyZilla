@@ -664,6 +664,20 @@ class ACR_TestGenerate
    if (ACR_Generator.Plan(q * 104729, ACR_ESkirmishSize.HALF, halfSame, halfSameHQs)) halfLargest = Math.Max(halfLargest, halfSame.Count());
   }
   ACR_TestRegress.Check("map: quarter size on 8 seeds", quarterGood == 8 && quarterMax <= Math.Max(halfLargest, 8), string.Format("%1 of 8 planned, largest %2 sites (half up to %3), HQs up to %4 m apart", quarterGood, quarterMax, halfLargest, (int)quarterSpan));
+  // Axis (6 Nov, Jacob: Chernarus always fought corner to corner): full-map HQ lines over 12
+  // seeds point along at least three of the six 30-degree bearings.
+  array<int> bearings = {};
+  string bearingList;
+  for (int b = 1; b <= 12; b++)
+  {
+   array<ref ACR_GenSite> axisPlan = {};
+   array<ACR_GenSite> axisHQs = {};
+   if (!ACR_Generator.Plan(b * 15485863, -1, axisPlan, axisHQs) || axisHQs.Count() != 2) continue;
+   int bearing = ACR_Generator.Bearing(axisHQs[0].m_vPos, axisHQs[1].m_vPos);
+   bearingList += string.Format(" %1", bearing * 30);
+   if (!bearings.Contains(bearing)) bearings.Insert(bearing);
+  }
+  ACR_TestRegress.Check("map: seeds vary the HQ axis", bearings.Count() >= 3, string.Format("%1 bearings in 12 seeds:%2", bearings.Count(), bearingList));
   // Settlements on their houses (6 Nov: Chernarus labels lie in the fields beside the town).
   int settled, onHouses;
   string bare;
@@ -679,7 +693,7 @@ class ACR_TestGenerate
   }
   ACR_TestRegress.Check("map: towns sit on their houses", settled > 0 && 0.9 * settled <= onHouses, string.Format("%1 of %2 with 3+ buildings in the circle; bare:%3", onHouses, settled, bare));
  }
- static const int MAP_CHECKS = 13;
+ static const int MAP_CHECKS = 14;
 }
 
 // Synthetic terrain fixtures exercise the real sampler and graph traversal without relying on

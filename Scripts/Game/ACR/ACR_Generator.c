@@ -1221,7 +1221,49 @@ class ACR_Generator
   ACR_GenSite spanA, spanB;
   Farthest(candidates, spanA, spanB);
   if (!spanA || !spanB) return;
-  float minimumSpan = spanShare * vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
+  float longest = vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
+  // Bearings (6 Nov, Jacob: Chernarus "needs to vary its axis more"). 80% of the map's longest
+  // pair let only the diagonals through on a square map, so every match ran corner to corner.
+  // A seeded bearing (one of six 30-degree sectors) comes first: its pairs need 80% of the
+  // longest pair along that bearing, and that pair must be at least 55% of the longest overall
+  // (a narrow map is never fought across its width). Up to three bearings, then any bearing.
+  if (spanShare > 0.75)
+  {
+   array<float> sectorSpan = {0, 0, 0, 0, 0, 0};
+   for (int a = 0; a < candidates.Count(); a++)
+    for (int b = a + 1; b < candidates.Count(); b++)
+    {
+     int sector = Bearing(candidates[a].m_vPos, candidates[b].m_vPos);
+     sectorSpan[sector] = Math.Max(sectorSpan[sector], vector.DistanceXZ(candidates[a].m_vPos, candidates[b].m_vPos));
+    }
+   int first = Math.Min(5, Math.Floor(rng.RandFloat01() * 6));
+   int tried = 0;
+   for (int k = 0; k < 6 && tried < 3; k++)
+   {
+    int bearing = (first + k) % 6;
+    if (sectorSpan[bearing] < 0.55 * longest) continue;
+    tried++;
+    if (ChoosePair(pool, candidates, rng, bearing, spanShare * sectorSpan[bearing], west, east)) return;
+   }
+  }
+  if (ChoosePair(pool, candidates, rng, -1, spanShare * longest, west, east)) return;
+  // Archipelagos (29 Oct, Gulfcoast Islands): every widely separated pair can sit on islands
+  // with no dry route between them. Only then accept closer pairs; other maps keep 80%.
+  if (spanShare > 0.3) PickHQs(pool, flashpoint, rng, west, east, spanShare - 0.2);
+ }
+
+ // 0-5: the 30-degree sector of the line a-b's bearing (either direction).
+ static int Bearing(vector a, vector b)
+ {
+  float angle = Math.Atan2(b[2] - a[2], b[0] - a[0]);
+  if (angle < 0) angle += Math.PI;
+  if (angle >= Math.PI) angle -= Math.PI;
+  return Math.Min(5, Math.Floor(angle / (Math.PI / 6)));
+ }
+
+ // One HQ pair at least minimumSpan apart (on the given bearing sector, or any when -1).
+ protected static bool ChoosePair(array<ACR_GenSite> pool, array<ACR_GenSite> candidates, RandomGenerator rng, int sector, float minimumSpan, out ACR_GenSite west, out ACR_GenSite east)
+ {
   array<int> allA = {}, allB = {}, rearCounts = {};
   array<float> distances = {};
   int bestRear = int.MAX;
@@ -1230,6 +1272,7 @@ class ACR_Generator
    {
     float distance = vector.DistanceXZ(candidates[i].m_vPos, candidates[j].m_vPos);
     if (distance < minimumSpan) continue;
+    if (sector >= 0 && Bearing(candidates[i].m_vPos, candidates[j].m_vPos) != sector) continue;
     int rear = 0;
     foreach (ACR_GenSite objective : pool)
      if (objective.m_sKind != "landmark" && !BetweenHQs(objective.m_vPos, candidates[i].m_vPos, candidates[j].m_vPos)) rear++;
@@ -1267,17 +1310,12 @@ class ACR_Generator
   array<int> suitable = {};
   foreach (int checked, int total : counts)
    if (total >= bestCount - 1 && total >= 3) suitable.Insert(shortlist[checked]);
-  // Archipelagos (29 Oct, Gulfcoast Islands): every widely separated pair can sit on islands
-  // with no dry route between them. Only then accept closer pairs; other maps keep 80%.
-  if (suitable.IsEmpty())
-  {
-   if (spanShare > 0.3) PickHQs(pool, flashpoint, rng, west, east, spanShare - 0.2);
-   return;
-  }
+  if (suitable.IsEmpty()) return false;
   int pick = Math.Min(suitable.Count() - 1, Math.Floor(rng.RandFloat01() * suitable.Count()));
   int choice = suitable[pick];
   west = candidates[allA[choice]];
   east = candidates[allB[choice]];
+  return true;
  }
 
  // ---------------------------------------------------------------- building it

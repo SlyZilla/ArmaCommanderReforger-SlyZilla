@@ -712,7 +712,10 @@ capture circles can shrink to 35 m. A city, town, village or settlement whose ma
 beside its houses (common on third-party terrains), so that its capture circle would hold under
 3 buildings or under 15% of the densest group nearby, is centred on that group instead, unless
 the group is nearer another place's label. HQ candidates remain
-widely separated (at least 80% of the greatest eligible military/airport separation). Half-map seeds choose rotated, shifted bands or
+widely separated: each seed first draws a bearing (one of six 30-degree sectors) and takes pairs
+along it at least 80% as far apart as the longest pair on that bearing and 55% of the longest
+pair overall, so matches run across, along and diagonally over a map; when no bearing works, any
+pair at 80% of the greatest separation. Half-map seeds choose rotated, shifted bands or
 compact regions containing roughly 45-55% of the ordinary sites before access/spacing filtering.
 Quarter-map seeds choose a district: the 22-30% of ordinary sites (at least six) nearest a
 seeded site, measured in a round or stretched (up to 1.8 times, random bearing) region.
