@@ -691,7 +691,7 @@ class ACR_TestBaseWorks
   ACR_TestRegress.Check("baseworks plan: every gun touches a line", s_iGunAlone == 0, string.Format("%1 of %2 over 14 m from a sandbag", s_iGunAlone, s_iNests + s_iBunkers));
   ACR_TestRegress.Check("baseworks plan: a town with a long line gets a nest", s_iLongNoNest * 4 <= s_iLongLine, string.Format("%1 of %2 towns with a line of 60 m or more have none", s_iLongNoNest, s_iLongLine));
   ACR_TestRegress.Check("baseworks plan: no sandbags across a runway or apron", s_iOnApron * 100 <= s_iPieces, string.Format("%1 of %2 pieces", s_iOnApron, s_iPieces));
-  ACR_TestRegress.Check("baseworks plan: every nest is built into a line, 6 m of bags each side", s_iNestOff == 0, string.Format("%1 of %2 not", s_iNestOff, s_iNests));
+  ACR_TestRegress.Check("baseworks plan: every nest is built into a line, 6 m of bags each side", s_iNestOff == 0, string.Format("%1 of %2 not (a small gun position: its one piece, 3 m)", s_iNestOff, s_iNests));
   ACR_TestRegress.Check("baseworks plan: no walk gap beside a nest", s_iGapByNest == 0, string.Format("%1", s_iGapByNest));
   ACR_TestRegress.Check("baseworks plan: no line is short of 30 m unless it closes a gap", s_iFragments == 0, string.Format("%1 of %2", s_iFragments, s_iLines));
   ACR_TestRegress.Check("baseworks plan: checkpoints stand in a line's gate", s_iLoneCheck == 0, string.Format("%1 of %2 over 16 m from the line", s_iLoneCheck, s_iChecks));
@@ -873,7 +873,12 @@ class ACR_TestBaseWorks
    if (check.m_eKind == ACR_EBaseSite.ROADBLOCK && !check.m_bOwnGate && !NearBags(work, check.m_vPos, 16)) s_iLoneCheck++;
  }
 
- // The nest stands among its line's bags: 12 m of unbroken pieces each side of where it cut.
+ // The nest stands among its line's bags: unbroken pieces each side of where it cut, 6 m for a nest (its wings are
+ // 2-4 long pieces, ACR_BaseLines.NestWings). A small gun position (one piece cut, the last level) has one long piece
+ // each side by design, as a compound's short, bent lines allow (2 Nov, Chotain Base): it needs that piece, 3 m. Held to
+ // 6 m, small guns one piece from a line's end failed this check in every run since 4 Nov, on 1.8 and 1.9 alike.
+ static const float WING_NEST = 6;
+ static const float WING_SMALL_GUN = 3;
  protected static bool Winged(ACR_BaseWork work, ACR_BaseSite nest)
  {
   if (nest.m_aCuts.IsEmpty() || nest.m_iLine < 0 || nest.m_iLine >= work.m_aLines.Count()) return false;
@@ -889,7 +894,11 @@ class ACR_TestBaseWorks
     last = i;
    }
   }
-  if (first < 0) return false;
+  if (first < 0)
+  {
+   PrintFormat("[ACR] TEST baseworks plan %1: nest at %2 stands on none of its %3 cut pieces", work.m_Base.m_sName, nest.m_vPos, nest.m_aCuts.Count());
+   return false;
+  }
   float before = 0;
   for (int b = first - 1; b >= 0 && pieces[b].m_iBreak == 0; b--) before += vector.DistanceXZ(pieces[b].m_vFrom, pieces[b].m_vTo);
   float after = 0;
@@ -897,7 +906,11 @@ class ACR_TestBaseWorks
   // Walk gaps and nests.
   foreach (int k, ACR_LinePiece near : pieces)
    if (near.m_iBreak == ACR_BaseLines.BREAK_WALK && vector.DistanceXZ(near.m_vTo, nest.m_vPos) < 10) s_iGapByNest++;
-  return before >= 6 && after >= 6;
+  float need = WING_NEST;
+  if (nest.m_aCuts.Count() == 1) need = WING_SMALL_GUN;
+  if (before >= need && after >= need) return true;
+  PrintFormat("[ACR] TEST baseworks plan %1: nest at %2 has %3 m and %4 m of bags beside it (needs %5 m, %6 cut pieces)", work.m_Base.m_sName, nest.m_vPos, before.ToString(-1, 1), after.ToString(-1, 1), need, nest.m_aCuts.Count());
+  return false;
  }
 
  // A town's coverage row, from its pieces and its own query of walls and buildings: the threatened arc from
