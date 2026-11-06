@@ -3,6 +3,8 @@
 // base; a US fire team 400 m up the road deploys an ambush lying in wait off the road, holding its
 // fire; the team in the kill zone springs it (fire at will); it pulls back after its fight; with
 // nobody near it packs up, its barricade (if any) goes, and it moves on to another road later; a
+// forced tripod gun (s_bGunForTest) is manned with the rest on crouched posts, left when they pull
+// back and gone when they pack up; a
 // house cell deploys round its building holding its fire; traffic on a far road draws a waiting
 // ambush there.
 class ACR_TestGuerrillas
@@ -12,13 +14,18 @@ class ACR_TestGuerrillas
  protected static ACR_DefenderPost s_House;
  protected static vector s_vOldSite;
  protected static IEntity s_Heap;
+ protected static IEntity s_Gun;
 
  static void Run(int second)
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
   foreach (ACR_FactionSettings settings : ACR_FactionSettings.s_All) settings.m_bAICommander = false;
-  if (second == 10) Placement(manager);
+  if (second == 10)
+  {
+   ACR_Guerrillas.s_bGunForTest = true;
+   Placement(manager);
+  }
   if (!s_Ambush) return;
   // A heap on the hide site: terrain height alone would stand the men inside it (playtest pn20: a bunker's mound).
   if (second == 11) s_Heap = ACR_Manager.SpawnPrefab(ACR_TestSpawnHeap.GRAVEL, ACR_Manager.Ground(s_Ambush.m_vPos));
@@ -30,7 +37,12 @@ class ACR_TestGuerrillas
   if (second == 38) Sprung();
   if (second == 40) s_Ambush.m_Cell.m_fSprungAt -= ACR_Guerrillas.HIT_S * 1000;
   if (second == 42) PulledBack();
-  if (second == 43) Away(manager, "Guerrilla Bait");
+  // Before the bait goes: with nobody near, the cell packs up (and its gun goes) within one 5 s tick.
+  if (second == 43)
+  {
+   GunLeft();
+   Away(manager, "Guerrilla Bait");
+  }
   if (second == 57) MovedOn();
   if (second == 58) FollowsTraffic();
   if (!s_House) return;
@@ -101,6 +113,9 @@ class ACR_TestGuerrillas
     if (!man) continue;
     men++;
     if (ACR_Minefields.RoadClearance(man.GetOrigin()) >= 8) offRoad++;
+    // A man on the tripod gun sits under it: the trace from above meets the gun, not a heap.
+    ChimeraCharacter body = ChimeraCharacter.Cast(man);
+    if (body && body.IsInVehicle()) continue;
     if (ACR_BaseSystem.Buried(man.GetOrigin())) buried++;
    }
   }
@@ -109,6 +124,13 @@ class ACR_TestGuerrillas
   Check("guerrillas: they lie in wait off the road, holding their fire", men > 0 && offRoad == men && CombatMode(group) == EAIGroupCombatMode.HOLD_FIRE && !s_Ambush.m_Cell.m_bSprung, string.Format("%1 of %2 off the road, combat mode %3", offRoad, men, typename.EnumToString(EAIGroupCombatMode, CombatMode(group))));
   // An FIA barricade blocks the road: no lane cut through it for anyone (#85's lane is for a side's own roadblocks).
   ACR_Roadblock block = s_Ambush.m_Cell.m_Block;
+  // The gun on the best-covered spot with an FIA man on it, the others on posts (Jacob 6 Nov).
+  s_Gun = s_Ambush.m_Cell.m_Gun;
+  BaseCompartmentSlot seat = ACR_Defenders.TurretSeat(s_Gun);
+  IEntity gunner;
+  if (seat) gunner = seat.GetOccupant();
+  bool fia = gunner && ACR_Intel.FactionKeyOf(gunner) == ACR_Pockets.FACTION;
+  Check("guerrillas: they man a tripod gun, the rest on crouched posts", s_Gun && fia && group && ACR_Garrison.HasPosts(group), string.Format("gun %1, gunner %2 (FIA %3), posts %4, cover %5 at the hiding place %6 m off the road", s_Gun != null, gunner != null, fia, group && ACR_Garrison.HasPosts(group), ACR_Ambush.Cover(s_Ambush.m_vPos), (int)ACR_Minefields.RoadClearance(s_Ambush.m_vPos)));
   if (block) Check("guerrillas: its barricade has no lane through it", block.m_iLaneMoved == 0, string.Format("%1 pieces moved", block.m_iLaneMoved));
   else ACR_TestRegress.Skip("guerrillas: its barricade has no lane through it", "this ambush didn't block the road (a 40 % roll)");
  }
@@ -171,7 +193,18 @@ class ACR_TestGuerrillas
   bool gone = s_Ambush.m_iReserve > 0 || s_Ambush.m_bGone;
   Check("guerrillas: with nobody near it packs up, its barricade goes", !s_Ambush.m_Group && !cell.m_Block && gone, string.Format("group %1, barricade %2, reserve %3, gone %4%5", s_Ambush.m_Group != null, cell.m_Block != null, s_Ambush.m_iReserve, s_Ambush.m_bGone, NearestEnemy()));
   Check("guerrillas: survivors move on to another road later", s_Ambush.m_bGone || (cell.m_iMoves == 1 && moved && later), string.Format("moves %1, site %2 -> %3, ready in %4 s", cell.m_iMoves, s_vOldSite, cell.m_vKillZone, (int)((cell.m_fReadyAt - GetGame().GetWorld().GetWorldTime()) / 1000)));
+  Check("guerrillas: packed up, its gun goes", !s_Gun && !cell.m_Gun, string.Format("gun still there %1", s_Gun != null));
   if (!s_House) Finish();
+ }
+
+ // Pulling back they leave the gun: nobody of the cell on it, and it is not held any more.
+ protected static void GunLeft()
+ {
+  BaseCompartmentSlot seat = ACR_Defenders.TurretSeat(s_Gun);
+  IEntity gunner;
+  if (seat) gunner = seat.GetOccupant();
+  bool fiaOn = gunner && ACR_Respawn.IsAlive(gunner) && ACR_Intel.FactionKeyOf(gunner) == ACR_Pockets.FACTION;
+  Check("guerrillas: pulling back they leave the gun", s_Gun && !fiaOn && !ACR_Guerrillas.HeldGun(s_Ambush), string.Format("gun %1, FIA gunner on it %2, held %3", s_Gun != null, fiaOn, ACR_Guerrillas.HeldGun(s_Ambush) != null));
  }
 
  // Traffic on a stretch far from every cell: one waiting ambush moves there.
@@ -212,7 +245,7 @@ class ACR_TestGuerrillas
 
  protected static void Finish()
  {
-  ACR_TestRegress.Complete("guerrillas", 14);
+  ACR_TestRegress.Complete("guerrillas", 17);
  }
 
  protected static EAIGroupCombatMode CombatMode(SCR_AIGroup group)
