@@ -1,7 +1,7 @@
 # Isolated startup only. This does not certify gameplay or multiplayer acceptance.
 [CmdletBinding()]
 param(
- [Parameter(Mandatory=$true)][ValidatePattern('^(ACA|BBB|AIO|MAP-[A-Z]+)$')][string]$Mod,
+ [Parameter(Mandatory=$true)][ValidatePattern('^(ACA|BBB|AIO|MAP-[A-Z]+|PACK-[A-Z]+)$')][string]$Mod,
  [Parameter(Mandatory=$true)][string]$AddonRoot,
  [Parameter(Mandatory=$true)][string]$ReportDirectory,
  [string]$DependencyRoot,
@@ -9,7 +9,9 @@ param(
  # ACA map add-ons: loaded with the downloaded Workshop ACA/BBB and the map from InstalledRoot.
  [string]$AddonId,
  [string]$World,
- [string]$InstalledRoot
+ [string]$InstalledRoot,
+ # Log line that proves the add-on started (maps: a generated base; content packs: plugged in).
+ [string]$Signal
 )
 $ErrorActionPreference = 'Stop'
 if (Get-Process ArmaReforgerServer -ErrorAction SilentlyContinue) { throw 'A server is running. Wait for its test/session to finish before preparing a release.' }
@@ -30,10 +32,11 @@ $ids = @{ ACA='AC230926A0010001'; BBB='BBB0261015000001'; AIO='629405AEFC950C12'
 $signals = @{ ACA='\[ACR\] Squad registered'; BBB='\[BBB\] started on its own'; AIO='\[AIO\] ready' }
 $world = '{77C41EA429B6AC35}worlds/GameMaster/GM_Arland.ent'
 $dirs = Split-Path $AddonRoot -Parent
-if ($Mod.StartsWith('MAP-')) {
- if (!$AddonId -or !$World -or !$InstalledRoot) { throw 'Map add-on startup requires -AddonId, -World and -InstalledRoot.' }
+if ($Mod -match '^(MAP|PACK)-') {
+ if (!$AddonId -or !$World -or !$InstalledRoot) { throw 'ACA add-on startup requires -AddonId, -World and -InstalledRoot.' }
  $ids[$Mod] = $AddonId
  $signals[$Mod] = '\[ACR\] GEN BASE'
+ if ($Signal) { $signals[$Mod] = $Signal }
  $world = $World
  $dirs += ',' + $InstalledRoot
 }

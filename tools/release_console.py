@@ -38,6 +38,17 @@ for _key, (_folder, _title, _n, _short) in MAPS.items():
                        guid=f'AC230926D000000{_n}', dirs=['Missions', 'Worlds'],
                        files=['LICENSE.md', 'README.md', 'CHANGELOG.md'],
                        world=f'Worlds/ACR_{_short}.ent')
+# ACA content packs (6 Nov): optional add-ons that plug into ACR_ContentSocket. Like a map add-on,
+# the startup check loads the downloaded Workshop ACA/BBB and the pack's own Workshop dependencies,
+# starts a generated ACA world, and passes when the pack reports itself plugged in.
+PACKS = {
+    'PACK-COLDWAR': ('ACAColdWar', 'Cold War pack', 'AC230926CC000002', ['Scripts', 'Prefabs'], 'Cold War'),
+}
+for _key, (_folder, _title, _guid, _dirs, _name) in PACKS.items():
+    SPECS[_key] = dict(folder=_folder, title='Arma Commander: Actual - ' + _title, guid=_guid,
+                       dirs=_dirs, files=['LICENSE.md', 'README.md', 'CHANGELOG.md'],
+                       world='{AC230926A0010060}Worlds/ACR_Arland.ent',
+                       signal=r'\[ACR\] CONTENT pack plugged in: ' + _name)
 
 
 class Blocked(RuntimeError):
@@ -350,6 +361,8 @@ class Console:
         spec = SPECS[manifest['mod']]
         if 'world' in spec:
             args += ['-AddonId', spec['guid'], '-World', spec['world'], '-InstalledRoot', str(self.installed_root)]
+        if 'signal' in spec:
+            args += ['-Signal', spec['signal']]
         subprocess.run(args, check=True, stdout=sys.stderr)
         self.verify_manifest(parent)
         write_json(parent / 'STARTUP-CHECK.json', dict(
