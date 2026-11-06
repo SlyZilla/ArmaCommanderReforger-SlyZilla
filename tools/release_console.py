@@ -204,7 +204,7 @@ class Console:
         entry = dict(version=version, confirmedAt=dt.datetime.now(dt.timezone.utc).isoformat(),
                      evidence=evidence, notesSha256=notes_digest(text, version))
         if not candidate and self.pointer(mod).is_file():
-            # A manual Workbench upload (option 8): tie the record to the checked copy of this
+            # A manual Workbench upload (recorded by an agent when Jacob says it is up): tie the record to the checked copy of this
             # version, so the next add-on update knows which commit is live.
             pointed = Path(read_json(self.pointer(mod))['candidate'])
             with contextlib.suppress(Blocked, OSError, ValueError, KeyError):
@@ -409,7 +409,7 @@ class Console:
         clean_commit(source)
         releases = self.release_history(mod)['releases']
         if not releases:
-            raise Blocked(f'{mod}: publish the first version in Workbench (options 9, 10, then 8) first.')
+            raise Blocked(f'{mod}: upload the first version in Workbench (option 10), then record it (record-publication).')
         live = max(releases, key=lambda r: tuple(map(int, r['version'].split('.'))))
         since = live.get('sourceCommit')
         if not since:

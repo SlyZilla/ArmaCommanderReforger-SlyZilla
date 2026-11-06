@@ -1,7 +1,8 @@
 # Publish an update of an ACA add-on (map add-on or content pack) from the command line.
 # Jacob, 6 Nov: agents may run this whenever he asks for an add-on update; ACA, BBB and AiO
 # still go through the console with him. The first version of an add-on is published by hand
-# in Workbench (console options 9, 10, then 8 to record it).
+# in Workbench (console option 10); when he says it is up, an agent records it:
+# release_console.py record-publication <MOD> --version 0.1.0 --evidence <Workshop page>.
 #
 # 1. Changelog: bullets already under the next version are kept; otherwise they are written
 #    from the add-on's commit subjects since the live release, and committed.
