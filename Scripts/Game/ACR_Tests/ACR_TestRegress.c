@@ -157,7 +157,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 156; // includes two doctrine-hysteresis, two vehicle-exit, one AI-transport-truck, one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 158; // includes two doctrine-hysteresis, two truck drive-out, two vehicle-exit, one AI-transport-truck, one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -1020,6 +1020,17 @@ class ACR_TestRegress
     if (aiTransport && ACR_Logistics.ServiceOfName(truckEntry.m_sVehicle) != 0) { wrongTrucks++; wrongNames += " " + truckEntry.m_sName; }
    }
    Check("AI transport trucks are ones a ride takes", troopTrucks > 0 && serviceTrucks > 0 && wrongTrucks == 0, string.Format("troop %1, service %2, taken wrongly %3:%4", troopTrucks, serviceTrucks, wrongTrucks, wrongNames));
+   // A truck stopped under fire drives on when its way leads away from the enemy, else turns away
+   // (ACR_Squad.DriveOut, 6 Nov): enemy south, going north -> on; going south, or nearly there -> away.
+   bool onNorth = ACR_Squad.OnIsAway("0 0 0", "0 0 500", "0 0 -200");
+   bool onSouth = ACR_Squad.OnIsAway("0 0 0", "0 0 -500", "0 0 -200");
+   bool onThere = ACR_Squad.OnIsAway("0 0 0", "0 0 10", "0 0 -200");
+   Check("a truck under fire drives on only when its way leads away from the enemy", onNorth && !onSouth && !onThere, string.Format("north %1, south %2, arrived %3", onNorth, onSouth, onThere));
+   // ...and turning away it takes the way it faces, still opening the range (no three-point turn under fire).
+   vector side = ACR_Squad.DriveOutDir("1 0 0", "0 0 1");
+   vector behind = ACR_Squad.DriveOutDir("0 0 -1", "0 0 1");
+   bool facing = vector.Dot(side, "0 0 1") > 0.8 && vector.Dot(side, "1 0 0") > 0.3 && vector.Dot(behind, "0 0 -1") > 0.1;
+   Check("a truck driving out of fire takes the way it faces, still away from the enemy", facing, string.Format("side %1, behind %2", side, behind));
   }
   // 8. (1 Oct MP) A construction truck's crew gets the building shovel.
   if (tick == 28)

@@ -200,6 +200,12 @@ class ACR_TestVehicles : Managed
  // Stuck Truck: its driver "freezes" (AI off) on a move order, and again after each
  // back-up: two tries, then the crew bails and walks on. Lone Truck: gunner killed,
  // made too heavy to move, enemies close: the crew bails at once and takes cover.
+ // Parked Truck: unarmed, holding 150 m from where the enemy team comes in: it drives out of fire
+ // instead of sitting there until its crew gets out beside it (ACR_Squad.DriveOut, 6 Nov).
+ ACR_Squad m_ParkedSquad;
+ IEntity m_ParkedVehicle;
+ vector m_ParkedStart;
+ bool m_bParkedOut;
  ACR_Squad m_StuckSquad;
  ACR_Squad m_LoneSquad;
  ACR_Squad m_SoftSquad;     // unarmed truck, frozen: backs up twice, is re-routed, then holds with its crew aboard
@@ -292,6 +298,7 @@ class ACR_TestVehicles : Managed
    manager.SpawnUnit("Stuck Truck", "", gunTruck, true, "", h.Ground("1390 0 2795"), h.Ground("1395 0 2790"));
    manager.SpawnUnit("Lone Truck", "", gunTruck, true, "", h.Ground("1300 0 2530"), h.Ground("1305 0 2535"));
    manager.SpawnUnit("Soft Truck", "", "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", true, "", h.Ground("1375 0 2775"), h.Ground("1380 0 2780"));
+   manager.SpawnUnit("Parked Truck", "", "{F1FBD0972FA5FE09}Prefabs/Vehicles/Wheeled/M923A1/M923A1_transport.et", true, "", h.Ground("1180 0 2480"), h.Ground("1185 0 2485"));
   }
   if (h.m_Ticks == 14)
   {
@@ -324,6 +331,13 @@ class ACR_TestVehicles : Managed
     m_SoftSquad.MoveTo(h.Ground("1700 0 2850"));
     Freeze(m_SoftVehicle);
    }
+   m_ParkedSquad = h.NamedSquad(manager, "Parked Truck");
+   if (m_ParkedSquad) m_ParkedVehicle = ACR_Transport.CrewedVehicle(m_ParkedSquad);
+   if (m_ParkedVehicle)
+   {
+    m_ParkedSquad.Halt("Holding position");
+    m_ParkedStart = m_ParkedVehicle.GetOrigin();
+   }
    m_StallStart = m_StuckVehicle.GetOrigin();
    m_LoneStart = m_LoneVehicle.GetOrigin();
    Freeze(m_StuckVehicle);
@@ -341,7 +355,8 @@ class ACR_TestVehicles : Managed
    ACR_TestRegress.Check("stall: armed stuck truck holds with its crew", armedHeld, StallState(m_StuckSquad, m_StuckVehicle, m_StallStart));
    // An empty tank: the crew gets out as vanilla has it (ACR_Squad.OnGroupMoveFailed leaves it be).
    ACR_TestRegress.Check("stall: an out-of-fuel truck's crew gets out", m_bLoneOut, StallState(m_LoneSquad, m_LoneVehicle, m_LoneStart));
-   ACR_TestRegress.Complete("stall", 6);
+   ACR_TestRegress.Check("stall: a parked unarmed truck under fire drives out with its crew aboard", m_bParkedOut, StallState(m_ParkedSquad, m_ParkedVehicle, m_ParkedStart));
+   ACR_TestRegress.Complete("stall", 7);
   }
   if (h.m_Ticks == 172) Print("[ACR] TEST COMPLETE");
   if (!m_StuckSquad || h.m_Ticks <= 14) return;
@@ -364,6 +379,13 @@ class ACR_TestVehicles : Managed
    m_bLoneOut = true;
    PrintFormat("[ACR] STALL lone truck's crew got out at t=%1", h.m_Ticks);
   }
+  // Driven out: 40 m from where it stood, its crew still aboard.
+  if (!m_bParkedOut && m_ParkedVehicle && vector.DistanceXZ(m_ParkedVehicle.GetOrigin(), m_ParkedStart) > 40 && AllAboard(m_ParkedSquad, m_ParkedVehicle))
+  {
+   m_bParkedOut = true;
+   PrintFormat("[ACR] STALL parked truck drove out at t=%1: %2", h.m_Ticks, StallState(m_ParkedSquad, m_ParkedVehicle, m_ParkedStart));
+  }
+  if (m_ParkedSquad && h.m_Ticks % 5 == 0) PrintFormat("[ACR] STALL t=%1 parked: %2", h.m_Ticks, StallState(m_ParkedSquad, m_ParkedVehicle, m_ParkedStart));
   if (m_SoftSquad && m_SoftVehicle)
   {
    if (m_SoftSquad.Reroutes() > 0 && !m_bSoftRerouted) { m_bSoftRerouted = true; PrintFormat("[ACR] STALL soft truck re-routed at t=%1", h.m_Ticks); }

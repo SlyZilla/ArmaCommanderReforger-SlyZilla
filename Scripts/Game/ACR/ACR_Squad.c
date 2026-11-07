@@ -846,6 +846,7 @@ class ACR_Squad : Managed
  protected void NewOrder()
  {
   m_Evade = null; // a new order replaces an evasion and the order it would have put back
+  m_bFireEvade = false;
   // ...and a get-out's pull-over: the driver takes the new order now, not after parking.
   if (m_PullOverVehicle) BBB_PullOver.Release(m_PullOverVehicle);
   m_PullOverVehicle = null;
@@ -4000,6 +4001,12 @@ class ACR_Squad : Managed
    bool movingOrder = m_sOrderPrefab == WP_MOVE || m_sOrderPrefab == WP_DEFEND || m_sOrderPrefab == WP_SEARCH_DESTROY || m_sOrderPrefab == WP_GARRISON;
    wantsToMove = !waypoints.IsEmpty() && movingOrder && vector.DistanceXZ(vehicle.GetOrigin(), m_MoveTarget) > STALL_ARRIVED;
   }
+  // Parked, unarmed and under fire: driven off before the game's AI gets the crew out beside it.
+  ACR_EOrderState parkedState = OrderState();
+  bool parked = parkedState == ACR_EOrderState.HOLD || parkedState == ACR_EOrderState.NONE || parkedState == ACR_EOrderState.RETURN || parkedState == ACR_EOrderState.DEFEND;
+  if (eligible && !wantsToMove && parked && underFire && speed < 2 && !HasTurret(vehicle) && now >= m_fNextDriveOut && DriveOut(vehicle, now, "parked under fire"))
+   return;
+  if (!underFire) m_bDroveOut = false;
   ACR_Transport.SanitizeVehicleHorn(vehicle, !eligible || !wantsToMove);
   if (!wantsToMove || vehicle != m_StallVehicle || (speed > 1.0 && vector.DistanceXZ(vehicle.GetOrigin(), m_StallPos) > 5))
   {
@@ -4078,7 +4085,26 @@ class ACR_Squad : Managed
   // few seconds to turn it round before standing still means it is stuck (pak:mannersevade, 1.9).
   float helpless = STALL_SECONDS_HELPLESS;
   if (m_Evade) helpless = STALL_SECONDS_EVADING;
-  if (underFire && !fightingVehicle && stalled >= helpless) { Bail(vehicle, "stopped under fire, unarmed", false); return; }
+  if (m_bDroveOut || m_bFireEvade) helpless = DRIVE_OUT_GRACE_S;
+  if (underFire && !fightingVehicle && stalled >= helpless)
+  {
+   if (!m_bDroveOut && manager)
+   {
+    // Its riders were told to get out (above): a few seconds for them, then it drives out empty.
+    array<ACR_Squad> aboard = {};
+    ACR_Transport.PassengerSquads(manager, vehicle, aboard);
+    aboard.RemoveItem(this);
+    if (!aboard.IsEmpty() && stalled < helpless + DRIVE_OUT_RIDERS_S) return;
+    if (aboard.IsEmpty() && DriveOut(vehicle, now, "stopped under fire, unarmed"))
+    {
+     m_bDroveOut = true;
+     m_fStallSince = now;
+     return;
+    }
+   }
+   Bail(vehicle, "stopped under fire, unarmed", false);
+   return;
+  }
   float limit = s_fStallSeconds;
   if (underFire || armed) limit = STALL_SECONDS_FIGHTING;
   if (stalled < limit) return;
@@ -4962,6 +4988,139 @@ class ACR_Squad : Managed
   return true;
  }
 
+ // ---------------------------------------------------------------- driving out of fire
+ // Jacob, 6 Nov: "truck crews should really try to drive away before just bailing out". 6 Nov log:
+ // 5 of the US's 10 troop trucks were lost with the truck still sound: the game's driver stops dead
+ // under fire and the crew bailed 3 s later (DriveWatch), or a parked crew got out by itself, and
+ // was shot beside it. An unarmed vehicle we drive that stops under fire, or stands parked under
+ // fire, now first drives out: on along its order when that leads away from the enemy, else
+ // DRIVE_OUT_M away from the nearest enemy it knows of (a road point there), as Evade does for
+ // armour; its order is put back once it is quiet again (EvadeTick). It bails only if it still can't
+ // get going (DRIVE_OUT_GRACE_S). Not with a player leading it, aboard or having ordered it.
+ static const float DRIVE_OUT_M = 300;
+ static const float DRIVE_OUT_ENEMY = 400;      // m: the enemy it drives away from: the nearest it knows of this close
+ static const float DRIVE_OUT_AGAIN_MS = 60000; // a parked vehicle drives out at most this often
+ static const float DRIVE_OUT_RIDERS_S = 6;     // s its riders get to climb out first (still aboard: it bails as before)
+ // s it has to get going before the crew bails after all: the game's driver takes ~9 s to pull away
+ // from a standstill under fire (srv:stall 6 Nov: 3 m by 9 s, so the armour evade's 10 s bailed it).
+ static const float DRIVE_OUT_GRACE_S = 20;
+ protected bool m_bDroveOut;     // tried in this stall under fire
+ protected bool m_bFireEvade;    // m_Evade is a drive out of fire (EvadeTick waits for quiet, not for armour)
+ protected float m_fNextDriveOut;
+
+ // The nearest enemy this squad knows of within 'radius'.
+ bool NearestKnownEnemy(float radius, out vector at)
+ {
+  if (!m_Group) return false;
+  SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(m_Group.FindComponent(SCR_AIGroupUtilityComponent));
+  IEntity anchor = GetAnchor();
+  if (!utility || !utility.m_Perception || !anchor) return false;
+  float best = radius;
+  bool found;
+  foreach (IEntity enemy : utility.m_Perception.m_aTargetEntities)
+  {
+   if (!enemy || !ACR_Respawn.IsAlive(enemy)) continue;
+   float d = vector.DistanceXZ(enemy.GetOrigin(), anchor.GetOrigin());
+   if (d > best) continue;
+   best = d;
+   at = enemy.GetOrigin();
+   found = true;
+  }
+  return found;
+ }
+
+ // A player leads, rides in or ordered this vehicle's squad: he decides, the old rules stand.
+ protected bool PlayerHasSay(IEntity vehicle)
+ {
+  if (HasPlayer() || m_Commander != 0 || m_iOrderedBy != 0) return true;
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager) return false;
+  array<ACR_Squad> riders = {};
+  ACR_Transport.PassengerSquads(manager, vehicle, riders);
+  foreach (ACR_Squad rider : riders) if (rider.HasPlayer()) return true;
+  return false;
+ }
+
+ // Pure (tests): pushing on along its order gets it away from the enemy (the way there doesn't lead
+ // toward him: within 90 degrees of straight away from him).
+ static bool OnIsAway(vector at, vector goal, vector enemy)
+ {
+  vector way = goal - at;
+  vector away = at - enemy;
+  way[1] = 0;
+  away[1] = 0;
+  if (way.LengthSq() < 400) return false; // nearly there: it isn't going anywhere
+  return vector.Dot(way, away) > 0;
+ }
+
+ // Pure (tests): which way to drive out, within 80 degrees of straight 'away' from the enemy, the one
+ // most along where the vehicle faces ('forward'). srv:stall 6 Nov: sent straight away with the enemy
+ // behind it, the driver spent 40 s on a three-point turn under fire and the crew bailed.
+ static vector DriveOutDir(vector away, vector forward)
+ {
+  away[1] = 0;
+  forward[1] = 0;
+  away.Normalize();
+  if (forward.LengthSq() > 0.01) forward.Normalize();
+  vector best = away;
+  float bestScore = -10;
+  for (int step = -4; step <= 4; step++)
+  {
+   float rad = step * 20 * Math.DEG2RAD;
+   float c = Math.Cos(rad);
+   float sn = Math.Sin(rad);
+   vector dir = Vector(away[0] * c - away[2] * sn, 0, away[0] * sn + away[2] * c);
+   float score = vector.Dot(dir, forward) + 0.5 * vector.Dot(dir, away);
+   if (score > bestScore)
+   {
+    bestScore = score;
+    best = dir;
+   }
+  }
+  return best;
+ }
+
+ // Drives the vehicle out of fire (see above). False: it couldn't (no enemy to drive from and no
+ // order to push on with, water that way, a player's say).
+ protected bool DriveOut(IEntity vehicle, float now, string why)
+ {
+  if (!vehicle || !m_Group || m_Evade || PlayerHasSay(vehicle)) return false;
+  vector at = vehicle.GetOrigin();
+  vector enemy;
+  bool known = NearestKnownEnemy(DRIVE_OUT_ENEMY, enemy);
+  bool moving = OrderState() == ACR_EOrderState.MOVE || OrderState() == ACR_EOrderState.RETURN || OrderState() == ACR_EOrderState.DEFEND;
+  // On along its order when that gets it away (or no enemy is known: hit by someone unseen).
+  if (moving && !m_sOrderPrefab.IsEmpty() && (!known || OnIsAway(at, m_MoveTarget, enemy)))
+  {
+   int kind = m_OrderKind;
+   if (!IssueWaypoint(m_sOrderPrefab, m_MoveTarget, m_fOrderRadius, true)) return false;
+   m_OrderKind = kind;
+   m_fNextDriveOut = now + DRIVE_OUT_AGAIN_MS;
+   PrintFormat("[ACR] DRIVE %1: %2, drives on out of it", m_Name, why);
+   return true;
+  }
+  if (!known) return false;
+  vector away = at - enemy;
+  away[1] = 0;
+  if (away.LengthSq() < 1) return false;
+  away.Normalize();
+  vector target = at + DriveOutDir(away, vehicle.GetTransformAxis(2)) * DRIVE_OUT_M;
+  vector road;
+  if (BBB_Terrain.RoadPointNear(target, 150, road)) target = road;
+  else if (BBB_Terrain.IsWaterAt(target)) return false;
+  ACR_OrderSnapshot snapshot = SnapshotOrder();
+  if (!IssueWaypoint(WP_MOVE, target, 25, true)) return false;
+  m_Evade = snapshot;
+  m_bFireEvade = true;
+  m_vEvadeThreat = enemy;
+  m_fEvadeStart = now;
+  m_fEvadeClearAt = now + EVADE_CLEAR_MS;
+  m_fNextDriveOut = now + DRIVE_OUT_AGAIN_MS;
+  SetOrder("Getting away", ACR_EOrderState.MOVE);
+  PrintFormat("[ACR] DRIVE %1: %2, drives out %3 m away from the enemy %4 m off", m_Name, why, (int)DRIVE_OUT_M, Math.Round(vector.DistanceXZ(at, enemy)));
+  return true;
+ }
+
  // The threat lies near the straight way from 'from' to 'to' (within 150 m of it, between the two).
  static bool PastThreat(vector from, vector to, vector threat)
  {
@@ -4990,9 +5149,15 @@ class ACR_Squad : Managed
    m_fEvadeClearAt = now + EVADE_CLEAR_MS;
    m_vEvadeThreat = threat;
   }
+  else if (vehicle && m_bFireEvade && (BBB_Transport.VehicleHitRecently(vehicle, 6000) || NearestKnownEnemy(300, threat)))
+  {
+   m_fEvadeClearAt = now + EVADE_CLEAR_MS;
+   if (threat != vector.Zero) m_vEvadeThreat = threat;
+  }
   if (vehicle && now < m_fEvadeClearAt && now - m_fEvadeStart < EVADE_MAX_MS) return;
   ACR_OrderSnapshot back = m_Evade;
   m_Evade = null;
+  m_bFireEvade = false;
   // Its order leads past the armed vehicle (within 150 m of the way there): it waits instead of driving
   // back into it; the commander or the player gives the next order.
   if (vehicle && PastThreat(vehicle.GetOrigin(), back.m_Target, m_vEvadeThreat))
