@@ -26,6 +26,21 @@ function Invoke-Guard([string[]]$Arguments) {
  if ($LASTEXITCODE -ne 0) { throw 'Release blocked. The reason is printed above; ask your coding agent to resolve it.' }
  return $result
 }
+# Discord changelog post (Jacob, 7 Nov): the Workshop changelog relay (.github/workflows/workshop-relay.yml)
+# is scheduled every 15 min, but GitHub started it only every 4-5 h, so 0.5.10 and 0.5.11 reached Discord
+# late or by hand. Start it now, and again 10 and 30 minutes later in case reforgermods.net lists the new
+# version late. The relay records what it has posted, so the extra runs never post twice.
+function Start-ChangelogRelay([string]$Mod) {
+ if ($Mod -notin @('ACA', 'BBB', 'AIO')) { return }
+ $manual = 'Start "Workshop changelog relay" in the ACA repository''s GitHub Actions to post the changelog to Discord.'
+ if (!(Get-Command gh -ErrorAction SilentlyContinue)) { Write-Warning ('GitHub CLI not found. ' + $manual); return }
+ $run = 'gh workflow run workshop-relay.yml -R propst-design/ArmaCommanderReforger -f mode=poll'
+ $ErrorActionPreference = 'Continue'
+ & cmd.exe /c ($run + ' 2>&1') | Out-Host
+ if ($LASTEXITCODE -ne 0) { Write-Warning ('The Discord changelog relay did not start. ' + $manual); return }
+ Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', ('Start-Sleep 600; ' + $run + '; Start-Sleep 1200; ' + $run))
+ Write-Host 'Discord changelog relay started; it runs again in 10 and 30 minutes.' -ForegroundColor Green
+}
 function Open-CheckedProject {
  # -Confirmed: Jacob asked an agent to publish this update (Publish-AddOn.ps1, ACA add-ons only).
  param([string]$Mod, [switch]$PublishUpdate, [switch]$Confirmed)
@@ -94,6 +109,7 @@ function Open-CheckedProject {
  $relativeLog = 'logs/' + $log.FullName.Substring($logsRoot.Length).TrimStart('\').Replace('\','/')
  Invoke-Guard @('record-publication', $Mod, '--version', $notes.version, '--candidate', (Split-Path (Split-Path $project -Parent) -Parent), '--evidence', ('Workbench upload and processing success: ' + $relativeLog)) | Out-Null
  Write-Host "Uploaded $Mod $($notes.version). Download its Workshop update, then use option 6." -ForegroundColor Green
+ Start-ChangelogRelay $Mod
 }
 $mapMods = @('MAP-CHERNARUS','MAP-GULFCOAST','MAP-KUNAR','MAP-WESTZAGORIA','MAP-ZIMNITRITA','PACK-COLDWAR')
 $allMods = @('ACA','BBB','AIO') + $mapMods
@@ -148,6 +164,7 @@ while ($true) {
     $evidence = Read-Host 'Publication confirmation (for example, Workshop page or owner confirmation)'
     Invoke-Guard @('record-publication', $mod, '--version', $version, '--evidence', $evidence) | Out-Host
     Write-Host 'Publication recorded in source; next version opened. Ask the coding agent to review and commit the records.'
+    Start-ChangelogRelay $mod
    }
    '9' { $mod = Read-MapMod; Invoke-Guard @('prepare', $mod, '--installed-root', $InstalledAddons) | Out-Host; Write-Host 'Prepared. Next: option 10.' -ForegroundColor Green }
    '10' { Open-CheckedProject (Read-MapMod) }
