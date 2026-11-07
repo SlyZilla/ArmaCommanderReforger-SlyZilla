@@ -4475,6 +4475,7 @@ class ACR_AICommander : Managed
   CatchRides();
  }
  void TravelForTest(ACR_Squad squad, vector destination, bool defend) { Travel(squad, destination, defend, 0); }
+ void ManageLogisticsForTest() { ManageLogistics(); }
  void FreeSquadsForTest(array<ACR_Squad> result) { MySquads(result, true); }
 
  // 'approach': the enemy base this is a staging move for, to walk a covered way there on foot.
@@ -6951,6 +6952,10 @@ class ACR_AICommander : Managed
    }
    if (need == 0 || InAssault(squad) || ACR_Logistics.ServiceOf(ACR_Transport.CrewedVehicle(squad)) != 0) continue;
    m_iNeeds |= need;
+   // Not a squad giving or taking a ride: it finishes the trip first (6 Nov live: UAZ 1, low on
+   // fuel 1.2 km short of Soapograd, turned back for the fuel truck with its riders aboard).
+   // A tank that actually runs dry ends the ride on its own (transport lost, on foot).
+   if (m_Manager.m_Rides && (m_Manager.m_Rides.RideOf(squad) || m_Manager.m_Rides.Unloading(squad))) continue;
    array<int> services = {ACR_EService.AMMO, ACR_EService.REPAIR, ACR_EService.FUEL, ACR_EService.MEDICAL};
    foreach (int service : services)
    {
