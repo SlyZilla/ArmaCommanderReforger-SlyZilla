@@ -78,21 +78,21 @@ class ACR_TestRegress
  {
   SCR_Faction zombies = SCR_Faction.Cast(GetGame().GetFactionManager().GetFactionByKey("Z"));
   if (!zombies) return;
-  SCR_EntityCatalog catalog = zombies.GetFactionEntityCatalogOfType(EEntityCatalogType.CHARACTER);
-  if (!catalog) return;
+  SCR_EntityCatalog catalog = zombies.GetFactionEntityCatalogOfType(EEntityCatalogType.CHARACTER, false);
+  if (!catalog) { Print("[ACR] TEST zombies: Z has no character catalog"); return; }
   array<SCR_EntityCatalogEntry> entries = {};
   catalog.GetEntityList(entries);
   ResourceName prefab;
-  foreach (SCR_EntityCatalogEntry entry : entries) if (entry.IsEnabled() && !entry.GetPrefab().IsEmpty()) { prefab = entry.GetPrefab(); break; }
-  if (prefab.IsEmpty()) return;
+  foreach (SCR_EntityCatalogEntry entry : entries) if (!entry.GetPrefab().IsEmpty()) { prefab = entry.GetPrefab(); if (entry.IsEnabled()) break; }
+  if (prefab.IsEmpty()) { PrintFormat("[ACR] TEST zombies: no prefab in %1 catalog entries", entries.Count()); return; }
+  // A held base, not the HQ if there is another (the HQ is busy with other checks).
   string west = ACR_FactionSelection.West();
   foreach (ACR_Base base : ACR_Base.s_All)
   {
-   if (base.m_bRetired || base.m_sOwner != west || ACR_LogisticsRules.IsHQ(base)) continue;
-   s_ZombieBase = base;
-   break;
+   if (base.m_bRetired || base.m_sOwner != west) continue;
+   if (!s_ZombieBase || !ACR_LogisticsRules.IsHQ(base)) s_ZombieBase = base;
   }
-  if (!s_ZombieBase) return;
+  if (!s_ZombieBase) { Print("[ACR] TEST zombies: West holds no base"); return; }
   for (int i = 0; i < 4; i++)
   {
    vector at = ACR_Manager.Ground(s_ZombieBase.GetOrigin() + Vector(i * 2.0 - 3.0, 0, 2.0));
