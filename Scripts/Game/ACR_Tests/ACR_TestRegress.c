@@ -95,7 +95,7 @@ class ACR_TestRegress
   if (!s_ZombieBase) return;
   for (int i = 0; i < 4; i++)
   {
-   vector at = harness.Ground(s_ZombieBase.GetOrigin() + Vector(i * 2 - 3, 0, 2));
+   vector at = harness.Ground(s_ZombieBase.GetOrigin() + Vector(i * 2.0 - 3.0, 0, 2.0));
    if (ACR_Manager.SpawnPrefab(prefab, at)) s_iZombies++;
   }
   PrintFormat("[ACR] TEST zombies: %1 x %2 in %3", s_iZombies, FilePath.StripPath(prefab), s_ZombieBase.m_sName);
