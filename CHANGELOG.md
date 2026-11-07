@@ -1,5 +1,7 @@
 # Changelog
-## 0.5.11 — unreleased
+## 0.5.12 — unreleased
+
+## 0.5.11 — released
 
 ### AI commanders
 
