@@ -1,6 +1,10 @@
 # Changelog
 ## 0.5.12 — unreleased
 
+### AI commanders
+
+- With the experimental job allocator (`-acrAIAllocator 2`), an attack or grab whose squads the commander sends to another job no longer counts as beaten. Moving a squad off took its men out of the attack without taking them out of what it had set out with, so the attack read the move as losses, was called off as "too many losses", its target was left alone for a while as if it had held, and the squads still in it pulled back. In an overnight AI-vs-AI test that was 32 of 45 such call-offs in two hours. A squad leaving for another job, or for a player's request, now takes its strength with it, and an attack left with nobody simply ends. This also applies without the allocator, when base works borrow a squad from an attack.
+
 ## 0.5.11 — released
 
 ### AI commanders

@@ -806,7 +806,7 @@ class ACR_AIAttack
  vector m_Staging;                   // main approach, for smoke
  vector m_vApproach;                 // main approach direction, from the target towards the attackers
  bool m_bAssaulting;
- bool m_bGivenAway;                  // its last squad went to a player (Forget): ends without a "failed" report
+ bool m_bGivenAway;                  // its last squad went to a player (Forget) or another job (LeaveAttacks): ends without a "failed" report
  float m_fStageDeadline;
  ACR_Squad m_Suppressor;             // support-by-fire squad
  float m_fFireBaseMoveSince;         // world time the base of fire started moving up to a firing spot
@@ -1285,13 +1285,23 @@ class ACR_AICommander : Managed
 
  // Takes a squad out of every attack it is listed in (review 3 Nov: a squad the allocator moved to
  // another attack or grab stayed listed in its old one, which kept ordering it back).
+ // Its strength leaves with it: the attack's start strength drops by what it took (as for a walker
+ // dropped at launch), and an attack left empty ends as handed off, not lost (A/B soak 7 Nov: a
+ // grab's only squad moved to the Vernon attack, and Etoupe was "called off (too many losses)" 15 s
+ // later, put on the stalled cooldown and counted as a lane failure; 45 such call-offs in 2 h).
  protected void LeaveAttacks(ACR_Squad squad)
  {
-  foreach (ACR_AIAttack attack : m_Attacks)
-  {
-   int at = attack.m_Squads.Find(squad);
-   if (at >= 0) attack.Remove(at);
-  }
+  foreach (ACR_AIAttack attack : m_Attacks) LeaveAttack(attack, squad);
+ }
+
+ // Takes one squad out of one attack without counting it as a loss (LeaveAttacks, Forget).
+ protected static void LeaveAttack(ACR_AIAttack attack, ACR_Squad squad)
+ {
+  int at = attack.m_Squads.Find(squad);
+  if (at < 0) return;
+  attack.m_iStartStrength = Math.Max(0, attack.m_iStartStrength - squad.FieldStrength());
+  attack.Remove(at);
+  if (attack.m_Squads.IsEmpty()) attack.m_bGivenAway = true;
  }
 
  protected int AllocIndexOf(ACR_AIJob job)
@@ -1766,6 +1776,8 @@ class ACR_AICommander : Managed
      if (joiner.m_Squad == m_ReserveSquad) m_ReserveSquad = null;
      LeaveAttacks(joiner.m_Squad);
      vector stage = JoinAttack(team.m_Attack, joiner.m_Squad, now);
+     // Counted in what it set out with, as LeaveAttacks takes it off again if it moves on.
+     team.m_Attack.m_iStartStrength += joiner.m_Squad.FieldStrength();
      Say(string.Format("[ACR] AI %1: %2 joins the attack on %3 (allocator), staging at grid %4", m_sFaction, joiner.m_Squad.GetName(), team.m_sName, ACR_Manager.Grid(stage)));
     }
     continue;
@@ -5174,7 +5186,7 @@ class ACR_AICommander : Managed
     if (squad.m_iAITask != ACR_EAITask.ATTACK)
     {
      if (attack.m_Target) Say(string.Format("[ACR] AI %1: %2 leaves the attack on %3 (now %4)", m_sFaction, squad.GetName(), attack.m_Target.m_sName, typename.EnumToString(ACR_EAITask, squad.m_iAITask)));
-     attack.Remove(s);
+     LeaveAttack(attack, squad); // not a loss: its strength leaves with it
      continue;
     }
     // Lost its gunner (or down to one man): no use in an attack.
@@ -5211,8 +5223,10 @@ class ACR_AICommander : Managed
    foreach (ACR_Squad member : attack.m_Squads) strength += member.FieldStrength();
    bool fusePrimed = attack.m_SapperDemo && attack.m_SapperDemo.InProgress();
    NoteBBBFight(attack);
-   bool broken = !fusePrimed && AttackBroken(strength, attack.m_iStartStrength, m_Doctrine.m_fAbortRatio);
-   bool stalled = !fusePrimed && !won && target && Stalled(attack);
+   // Every squad went to another job (a player's request, the allocator): not a loss, not a stall.
+   bool handedOff = attack.m_bGivenAway && attack.m_Squads.IsEmpty() && !won;
+   bool broken = !fusePrimed && !handedOff && AttackBroken(strength, attack.m_iStartStrength, m_Doctrine.m_fAbortRatio);
+   bool stalled = !fusePrimed && !handedOff && !won && target && Stalled(attack);
    // Nobody left who can walk in (the infantry died or fell back): vehicles and support teams
    // alone never take it, so stop now instead of waiting out the time limit.
    bool noTakers = !fusePrimed && !won && target && !attack.m_bGrab && !target.m_sOwner.IsEmpty() && !attack.m_Squads.IsEmpty() && TakersIn(attack) == 0;
@@ -5220,6 +5234,7 @@ class ACR_AICommander : Managed
    {
     string outcome = "failed";
     if (won) outcome = "won";
+    if (handedOff) outcome = "ended (its squads went to other jobs)";
     if (noTakers) outcome = "called off (no infantry left to take it)";
     if (broken)
     {
@@ -5246,8 +5261,8 @@ class ACR_AICommander : Managed
     string why = "it failed";
     if (broken) why = "too many losses";
     else if (stalled) why = "it stalled";
-    // Its squads went to a player's request (2IC Support me / Hold this): not a failure.
-    bool givenAway = attack.m_bGivenAway && attack.m_Squads.IsEmpty() && !won;
+    // Its squads went to a player's request (2IC Support me / Hold this) or another job: not a failure.
+    bool givenAway = handedOff;
     if (!givenAway) NoteLaneOutcome(attack, won);
     if (target && won) TwoICReport(string.Format("Took %1", target.m_sName));
     else if (target && !givenAway && attack.m_bGrab) TwoICReport(string.Format("Couldn't take %1: %2", target.m_sName, why));
@@ -9502,6 +9517,8 @@ class ACR_AICommander : Managed
  {
   return IsAttacking(base);
  }
+ void LeaveAttacksForTest(ACR_Squad squad) { LeaveAttacks(squad); }
+ bool CoolingDownForTest(ACR_Base base) { return CoolingDown(base); }
 
  bool CanBuildHandedForTest(int cost, int reserve)
  {
@@ -9515,13 +9532,7 @@ class ACR_AICommander : Managed
  void Forget(ACR_Squad squad)
  {
   m_OnRequest.Remove(squad);
-  foreach (ACR_AIAttack attack : m_Attacks)
-  {
-   int index = attack.m_Squads.Find(squad);
-   if (index < 0) continue;
-   attack.Remove(index);
-   if (attack.m_Squads.IsEmpty()) attack.m_bGivenAway = true;
-  }
+  foreach (ACR_AIAttack attack : m_Attacks) LeaveAttack(attack, squad);
   m_RetreatingUntil.Remove(squad);
   m_ReinforceRetryAt.Remove(squad);
   m_Refitting.Remove(squad);
