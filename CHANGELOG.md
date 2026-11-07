@@ -16,9 +16,14 @@
 - The period jets (`-acrPeriodJets 1`) can be seen and heard on the Workshop. The 0.5.9 and 0.5.10 Workshop builds left out their models and engine sounds, so every recon flight and bomb run flew invisible and silent for everyone; the bombs' models were missing too. The release now packs every model and sound the mod loads, and refuses to build one that leaves a file out.
 - Game Master hears the period jets (`-acrPeriodJets 1`) from the Game Master camera. While the editor was open, the engine roar, its delay behind the jet and the close fly-past were all worked out for where the Game Master's own soldier stood, so with the camera over a bomb run far from that soldier you heard only a flat engine loop and no fly-past.
 
+### Vehicles
+
+- FIA's cars come with an FIA driver. The S105 and the S1203 minibus and van were driven by a civilian: buying one gave FIA a car whose driver joined the civilians, so nobody could command it.
+
 ### Content packs
 
 - A content pack's soldier swaps are now rolled for each garrison soldier, FIA cell member and pocket fighter as he spawns. They were rolled once when the side's garrison list was built, so one unlucky roll decided the whole match: with the Cold War pack, FIA could play a full match without a single fighter in Cold War kit. Hand-picked garrison lists from a mission now get the pack's swaps too, as hand-picked squads already did.
+- Bought tanks and IFVs get their whole crew. Some mod vehicles seat their commander or loader in what the game counts as a passenger seat inside the turret, and only drivers and gunners were spawned, so with the Cold War pack the Chieftain came with two men instead of four, the FV510 Warrior had no commander, and the T-55 and Leopard 1 had no loader. Those seats are now filled with the buyer's crewmen when the vehicle is bought (Chieftain 4, T-55 4, Warrior 3; the Leopard 1 seats a loader beside its pintle gunner), and they stay aboard as crew when passengers get out.
 
 ### Host tools
 

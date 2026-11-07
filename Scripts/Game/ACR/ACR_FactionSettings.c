@@ -437,6 +437,22 @@ class ACR_FactionCatalog
    return "{E1CB513B8B9B08F4}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Crew.et";
   }
   if (StandardPath(factionKey).IsEmpty()) return "";
+  return RoleCrewman(factionKey, vehicle);
+ }
+
+ // The side's own crewman for a vehicle whatever its subunits: CrewmanFor, else the first
+ // _Crew (_HeliPilot) soldier in its catalog. For seats whose default occupant isn't a
+ // soldier of the side at all (FIA's vanilla S105 and S1203 seat civilians).
+ static ResourceName SideCrewman(string factionKey, IEntity vehicle)
+ {
+  ResourceName crewman = CrewmanFor(factionKey, vehicle);
+  if (!crewman.IsEmpty() || !vehicle || !vehicle.GetPrefabData()) return crewman;
+  return RoleCrewman(factionKey, vehicle);
+ }
+
+ protected static ResourceName RoleCrewman(string factionKey, IEntity vehicle)
+ {
+  string vehiclePath = vehicle.GetPrefabData().GetPrefabName();
   string role = "_Crew";
   if (vehiclePath.Contains("/Helicopters/")) role = "_HeliPilot";
   string key = factionKey + role;
