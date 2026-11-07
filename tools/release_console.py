@@ -14,7 +14,8 @@ import zlib
 ROOT = Path(__file__).resolve().parent.parent
 SPECS = {
     'ACA': dict(workshopDraft=True, folder='ArmaCommanderReforger', title='Arma Commander: Actual',
-                guid='AC230926A0010001', dirs=['Scripts', 'Configs', 'Missions', 'Prefabs', 'Worlds'],
+                guid='AC230926A0010001', dirs=['Scripts', 'Configs', 'Missions', 'Prefabs', 'Worlds',
+                                               'Assets', 'Sounds'],
                 files=['LICENSE.md', 'README.md', 'MISSION-MAKING.md']),
     'BBB': dict(workshopDraft=True, folder='BetterBattleBuddies', title='Better Battle Buddies',
                 guid='BBB0261015000001', dirs=['Scripts/Game/BBB', 'Configs/BBB', 'Prefabs/BBB', 'UI/layouts/BBB'],
@@ -84,6 +85,30 @@ def no_links(path):
     for part in (path, *path.parents):
         if part.is_symlink() or (hasattr(part, 'is_junction') and part.is_junction()):
             raise Blocked(f'Linked path refused: {part}')
+
+
+REFERENCE = re.compile(rb'\{[0-9A-Fa-f]{16}\}([\w./-]+)')
+
+
+def missing_references(source, packaged, tracked):
+    """Tracked files that packaged prefabs, scripts, configs or sound projects load by {GUID}path but
+    the package leaves out. ACA 0.5.10 shipped its period jets' prefabs without their models (Assets/)
+    and engine sounds (Sounds/): the jets flew invisible and silent for everyone (Jacob, 6 Nov).
+    A path not tracked in this checkout belongs to the base game or another addon."""
+    missing = {}
+    for relative in sorted(packaged):
+        path = source / relative
+        if path.suffix in ('.rdb', '.meta') or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if b'\0' in data[:8192]:
+            continue  # binary (models, textures, samples)
+        for match in REFERENCE.findall(data):
+            reference = match.decode('utf-8', 'replace')
+            for needed in (reference, reference + '.meta'):
+                if needed in tracked and needed not in packaged:
+                    missing.setdefault(needed, relative)
+    return missing
 
 
 def latest_release_notes(source, dependency_only=False, require_draft=False):
@@ -276,6 +301,10 @@ class Console:
             no_links(path)
             if not path.is_file():
                 raise Blocked(f'Missing {path}. Open the development project in Workbench if its resource database needs creating.')
+        left_out = missing_references(source, paths, tracked)
+        if left_out:
+            raise Blocked(f'{mod}: the package would leave out files it loads (add their folder to SPECS): ' +
+                          ', '.join(f'{path} (from {origin})' for path, origin in sorted(left_out.items())[:8]))
         stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d-%H%M%S')
         parent = self.output / mod / (sha[:12] + '-' + stamp + '-' + uuid.uuid4().hex[:6])
         addon = parent / spec['folder']

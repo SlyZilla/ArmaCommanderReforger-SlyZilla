@@ -13,6 +13,7 @@
 
 ### Supports
 
+- The period jets (`-acrPeriodJets 1`) can be seen and heard on the Workshop. The 0.5.9 and 0.5.10 Workshop builds left out their models and engine sounds, so every recon flight and bomb run flew invisible and silent for everyone; the bombs' models were missing too. The release now packs every model and sound the mod loads, and refuses to build one that leaves a file out.
 - Game Master hears the period jets (`-acrPeriodJets 1`) from the Game Master camera. While the editor was open, the engine roar, its delay behind the jet and the close fly-past were all worked out for where the Game Master's own soldier stood, so with the camera over a bomb run far from that soldier you heard only a flat engine loop and no fly-past.
 
 ### Content packs

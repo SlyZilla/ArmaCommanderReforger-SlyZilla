@@ -125,6 +125,29 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(bbb_dependency.missing_references(self.bbb, without_prefabs),
                          {'Prefabs/BBB/FireHandheldFlare.bt': script, 'Prefabs/BBB/FireHandheldFlare.bt.meta': script})
 
+    def write_jet(self, model_dir):
+        """An ACA prefab that loads its model by {GUID}path, as the period jets do."""
+        model = self.root / model_dir / 'ACR_Jet.xob'
+        model.parent.mkdir(parents=True, exist_ok=True)
+        model.write_bytes(b'XOB\0binary')
+        Path(str(model) + '.meta').write_text(f'MetaFileClass {{ Name "{{AC230926E0A00099}}{model_dir}/ACR_Jet.xob" }}\n')
+        (self.root / 'Prefabs/ACR_Jet.et').write_text(
+            f'GenericEntity {{ components {{ MeshObject {{ Object "{{AC230926E0A00099}}{model_dir}/ACR_Jet.xob" }} }} }}\n')
+        for notes in [self.root / 'CHANGELOG.md', self.root / 'docs/workshop-changelog.md']:
+            notes.write_text(notes.read_text() + '- Reviewed jet fixture.\n')
+        self.commit(self.root)
+
+    def test_aca_ships_the_models_and_sounds_its_prefabs_load(self):
+        self.write_jet('Assets/Vehicles/Aircraft')
+        payload = self.console.stage('ACA') / SPECS['ACA']['folder']
+        self.assertTrue((payload / 'Assets/Vehicles/Aircraft/ACR_Jet.xob').is_file())
+        self.assertTrue((payload / 'Assets/Vehicles/Aircraft/ACR_Jet.xob.meta').is_file())
+
+    def test_package_leaving_out_a_loaded_file_refused(self):
+        self.write_jet('Unshipped')
+        with self.assertRaisesRegex(Blocked, r'leave out files it loads.*Unshipped/ACR_Jet\.xob \(from Prefabs/ACR_Jet\.et\)'):
+            self.console.stage('ACA')
+
     def test_fresh_candidate_and_unique_rebuild(self):
         first = self.mark_checked('BBB')
         self.assertEqual(first, self.console.checked('BBB'))
