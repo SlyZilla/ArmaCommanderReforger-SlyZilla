@@ -7160,6 +7160,7 @@ class ACR_AICommander : Managed
      crew.SetMode(ACR_EMoveMode.FAST);
      crew.RouteTo(ACR_Manager.Ground(PositionOf(squad)), ACR_Squad.WP_MOVE, -1, "Resupplying " + squad.GetName(), 0);
      m_ServiceJobs.Set(crew, squad);
+     m_ParkSentAt.Remove(crew); // back from the job, it goes straight to the park
      Say(string.Format("[ACR] AI %1: %2 drives out to %3 (%4)", m_sFaction, crew.GetName(), squad.GetName(), what));
     }
     else if (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED)
@@ -7174,8 +7175,13 @@ class ACR_AICommander : Managed
     break;
    }
   }
-  // Idle service vehicles: restock if low, otherwise wait at the supply point.
+  // Idle service vehicles: restock if low, otherwise wait at the supply point's truck park.
   ACR_Base supplyPoint = SupplyPoint();
+  vector park = TruckPark(supplyPoint);
+  array<ACR_Squad> parkGone = {};
+  foreach (ACR_Squad parkCrew, float parkSent : m_ParkSentAt)
+   if (!parkCrew || !m_Manager.m_Squads.Contains(parkCrew)) parkGone.Insert(parkCrew);
+  foreach (ACR_Squad gone : parkGone) { m_ParkSentAt.Remove(gone); m_ParkSentTo.Remove(gone); }
   foreach (ACR_Squad idleCrew : mine)
   {
    IEntity serviceVehicle = ACR_Transport.CrewedVehicle(idleCrew);
@@ -7184,13 +7190,56 @@ class ACR_AICommander : Managed
    if (idleCrew.OrderState() == ACR_EOrderState.BUILD_FOB || idleCrew.m_iAITask == ACR_EAITask.BUILD_FOB) continue;
    if (IsAssistingFobUpgrade(idleCrew) || StuckLately(idleCrew)) continue;
    ACR_Base goal = supplyPoint;
-   if (logistics.StockPercent(serviceVehicle) < 25) goal = HomeBase();
-   if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
-   if (idleCrew.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(idleCrew.RouteDestination(), goal.GetOrigin()) < goal.m_fRadius + 80) continue;
-   if (DangerOnTheWay(idleCrew, goal.GetOrigin())) continue;
-   idleCrew.RouteTo(ACR_Manager.Ground(goal.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
+   bool restock = logistics.StockPercent(serviceVehicle) < 25;
+   if (restock) goal = HomeBase();
+   if (!goal) continue;
+   // Restocking needs the ring (ACR_Logistics.Restock); waiting only needs a spot it can drive to.
+   vector spot = goal.GetOrigin();
+   if (!restock && goal == supplyPoint) spot = park;
+   vector at = serviceVehicle.GetOrigin();
+   if (vector.DistanceXZ(at, goal.GetOrigin()) < goal.m_fRadius) continue;
+   if (!restock && vector.DistanceXZ(at, spot) < PARK_ARRIVE) continue;
+   if (idleCrew.OrderState() == ACR_EOrderState.MOVE && (vector.DistanceXZ(idleCrew.RouteDestination(), goal.GetOrigin()) < goal.m_fRadius + 80 || vector.DistanceXZ(idleCrew.RouteDestination(), spot) < PARK_ARRIVE + 80)) continue;
+   // Sent here lately and stopped short (a spot its driver can't reach): it waits where it
+   // stopped, and tries again after PARK_RETRY_MS.
+   if (m_ParkSentAt.Contains(idleCrew) && nowMs - m_ParkSentAt.Get(idleCrew) < PARK_RETRY_MS && vector.DistanceXZ(m_ParkSentTo.Get(idleCrew), spot) < PARK_ARRIVE) continue;
+   if (DangerOnTheWay(idleCrew, spot)) continue;
+   idleCrew.RouteTo(ACR_Manager.Ground(spot), ACR_Squad.WP_MOVE, -1, "Moving", 0);
+   m_ParkSentAt.Set(idleCrew, nowMs);
+   m_ParkSentTo.Set(idleCrew, spot);
    Say(string.Format("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(serviceMask)));
   }
+ }
+
+ // The supply point's truck park (ACR_Logistics.ParkSpot), worked out once per supply point: a
+ // road point trucks can reach, on the side away from the nearest enemy base we know of. The
+ // base centre when no road is near.
+ static const float PARK_ARRIVE = 40;          // m from the park that counts as parked
+ static const float PARK_RETRY_MS = 300000;    // a truck that stopped short is sent again after this
+ protected ACR_Base m_ParkBase;
+ protected vector m_vPark;
+ protected ref map<ACR_Squad, float> m_ParkSentAt = new map<ACR_Squad, float>();
+ protected ref map<ACR_Squad, vector> m_ParkSentTo = new map<ACR_Squad, vector>();
+
+ protected vector TruckPark(ACR_Base base)
+ {
+  if (!base) return vector.Zero;
+  if (base == m_ParkBase) return m_vPark;
+  m_ParkBase = base;
+  vector centre = base.GetOrigin();
+  vector away = vector.Zero;
+  float nearest = float.MAX;
+  foreach (ACR_Base other : ACR_Base.s_All)
+  {
+   if (other.m_sOwner == m_sFaction || !Visible(other)) continue;
+   float d = vector.DistanceXZ(centre, other.GetOrigin());
+   if (d >= nearest || d < 1) continue;
+   nearest = d;
+   away = Vector(centre[0] - other.GetOrigin()[0], 0, centre[2] - other.GetOrigin()[2]).Normalized();
+  }
+  if (!ACR_Logistics.ParkSpot(centre, base.m_fRadius, away, m_vPark)) m_vPark = centre;
+  Say(string.Format("[ACR] AI %1: service trucks wait at %2, %3 m from its centre", m_sFaction, base.m_sName, Math.Round(vector.DistanceXZ(m_vPark, centre))));
+  return m_vPark;
  }
 
  // ---------------------------------------------------------------- dangerous roads (#89)
