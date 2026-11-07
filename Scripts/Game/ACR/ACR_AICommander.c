@@ -1577,6 +1577,13 @@ class ACR_AICommander : Managed
     if (entry.m_iCurrent < 0) continue;
     entry.m_bLocked = true;
    }
+   // A crew getting back into its vehicle (Recrew) keeps the job it has, and gets none while out of
+   // it: its orders go by vehicle once aboard.
+   if (Remounting(squad))
+   {
+    if (entry.m_iCurrent < 0) continue;
+    entry.m_bLocked = true;
+   }
    m_aAllocSquads.Insert(entry);
   }
 
@@ -2104,6 +2111,7 @@ class ACR_AICommander : Managed
    if (freeOnly && IsRetreating(squad)) continue; // just broke contact: let it fall back instead of re-tasking at once
    if (freeOnly && IsScreen(squad)) continue; // out front watching a way in: ManageScreens
    if (freeOnly && !committedToo && Committed(squad)) continue; // on its way to a posting: see the trips note
+   if (freeOnly && Remounting(squad)) continue; // a crew getting back into its vehicle: Recrew
    result.Insert(squad);
   }
  }
@@ -6227,6 +6235,39 @@ class ACR_AICommander : Managed
  protected ref map<ACR_Squad, int> m_RecrewTries = new map<ACR_Squad, int>();
  static const int RECREW_TRIES = 3;
  static const float RECREW_REST_MS = 600000;
+
+ // Recrew would put this crew back into 'vehicle' (its own): intact, nobody else aboard, fuel left,
+ // within 400 m, no enemy within 120 m ('nearEnemy' leaves that out: it gets back in once they are
+ // gone), not stuck in the last 10 minutes (the crew bailed, got back in, got stuck again).
+ protected bool RecrewFits(ACR_Squad squad, IEntity vehicle, bool driverless, float now, bool nearEnemy = false)
+ {
+  if (ACR_Logistics.Health(vehicle) < 0.25 || (!driverless && !ACR_Vehicles.IsEmpty(vehicle))) return false;
+  // Run dry (the game's AI gets out of a car with no fuel): wait for the fuel truck, not in and
+  // out again (Jacob's 27 Oct game: a Humvee crew left, got back in and left again three times).
+  float fuel = ACR_Logistics.Fuel(vehicle);
+  if (fuel >= 0 && fuel < 0.02) return false;
+  if (vector.DistanceXZ(PositionOf(squad), vehicle.GetOrigin()) > 400) return false;
+  if (!nearEnemy && squad.KnownEnemies(120) > 0) return false;
+  return now - squad.m_fStuckAt >= 600000;
+ }
+
+ // A crew off its own vehicle that Recrew is putting back in (between its tries too, and while an
+ // enemy close by holds it off; not while it rests after RECREW_TRIES): not free for other orders
+ // until it is aboard, when its orders go by vehicle. Match 6 Nov (Chernarus): the FV510 Warrior's crew, out of its 98% IFV, was in one tick
+ // posted to a town 2.9 km off on foot, put in a house there, given a truck ride to the front and
+ // sent back to the IFV; it lost the IFV and died on foot.
+ protected bool Remounting(ACR_Squad squad)
+ {
+  IEntity vehicle = squad.m_OwnVehicle;
+  if (!vehicle || squad.m_iAITask == ACR_EAITask.RESUPPLY) return false;
+  bool driverless = squad.m_bDriverBailed && squad.IsMounted() && !ACR_Squad.DriverOf(vehicle);
+  if (squad.IsMounted() && !driverless) return false;
+  float now = GetGame().GetWorld().GetWorldTime();
+  float next;
+  if (m_NextRecrew.Find(squad, next) && next - now > 90000) return false; // resting on foot
+  return RecrewFits(squad, vehicle, driverless, now, true);
+ }
+
  protected void Recrew()
  {
   float now = GetGame().GetWorld().GetWorldTime();
@@ -6244,16 +6285,9 @@ class ACR_AICommander : Managed
     m_RecrewTries.Remove(squad);
     continue;
    }
-   if (ACR_Logistics.Health(vehicle) < 0.25 || (!driverless && !ACR_Vehicles.IsEmpty(vehicle))) continue;
-   // Run dry (the game's AI gets out of a car with no fuel): wait for the fuel truck, not in and
-   // out again (Jacob's 27 Oct game: a Humvee crew left, got back in and left again three times).
-   float fuel = ACR_Logistics.Fuel(vehicle);
-   if (fuel >= 0 && fuel < 0.02) continue;
-   if (vector.DistanceXZ(PositionOf(squad), vehicle.GetOrigin()) > 400 || squad.KnownEnemies(120) > 0) continue;
+   if (!RecrewFits(squad, vehicle, driverless, now)) continue;
    float next;
    if (m_NextRecrew.Find(squad, next) && now < next) continue;
-   // Not back into a vehicle that just got stuck (the crew bailed, got back in, got stuck again).
-   if (now - squad.m_fStuckAt < 600000) continue;
    // Driverless: one man for the driver's seat (the group's Get in seats nobody while part of
    // the crew is aboard); its order stands. Tried again in 30 s if he isn't in by then.
    if (driverless)

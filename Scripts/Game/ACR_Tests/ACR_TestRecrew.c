@@ -5,7 +5,8 @@
 // The AI commander's Recrew puts the first one's driver back in his seat (the group's Get in
 // waypoint seats nobody while the gunner is aboard); the second truck it leaves alone. A third crew,
 // both men out, is told again and again without getting in: it is left on foot for a while (Everon
-// long match 31 Oct: 14 tries in 20 min).
+// long match 31 Oct: 14 tries in 20 min). While Recrew is putting it back in, that crew isn't free for
+// other orders; once it rests on foot it is (match 6 Nov: a Warrior crew sent off on foot instead).
 class ACR_TestRecrew
 {
  static ACR_Squad s_Driverless, s_Gunnerless, s_Walking;
@@ -20,6 +21,13 @@ class ACR_TestRecrew
    ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (body && ACR_Transport.SeatOf(body) == seat) body.GetCompartmentAccessComponent().GetOutVehicle(EGetOutType.TELEPORT, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
   }
+ }
+
+ static bool Free(ACR_AICommander ai, ACR_Squad squad)
+ {
+  array<ACR_Squad> free = {};
+  ai.FreeSquadsForTest(free);
+  return free.Contains(squad);
  }
 
  static string State(ACR_Squad squad, IEntity vehicle)
@@ -65,6 +73,7 @@ class ACR_TestRecrew
   if (tick == 20 && s_Walking)
   {
    ACR_AICommander tries = manager.FobAICommanderFor("US");
+   bool freeOut = tries && Free(tries, s_Walking);
    // Told again as soon as each try's wait is taken away, until the rest starts.
    int told;
    float rest = 0;
@@ -77,6 +86,8 @@ class ACR_TestRecrew
     if (rest < 300000) told++;
    }
    ACR_TestRegress.Check("recrew: a crew told again and again without getting in is left on foot for a while", told > 0 && told <= ACR_AICommander.RECREW_TRIES && rest > 300000, string.Format("told %1 more times, next try in %2 s, order '%3'", told, (int)(rest / 1000), s_Walking.m_Order));
+   bool freeResting = tries && Free(tries, s_Walking);
+   ACR_TestRegress.Check("recrew: a crew getting back into its vehicle gets no other orders; resting on foot it does", !freeOut && freeResting, string.Format("free while getting in %1, free while resting %2", freeOut, freeResting));
   }
   if (!s_Driverless || !s_Gunnerless || tick <= 14) return;
   if (tick % 5 == 0) PrintFormat("[ACR] RECREW t=%1: %2 | %3", tick, State(s_Driverless, s_DriverlessVehicle), State(s_Gunnerless, s_GunnerlessVehicle));
@@ -113,7 +124,7 @@ class ACR_TestRecrew
   {
    bool stuck = GetGame().GetWorld().GetWorldTime() - s_Driverless.m_fStuckAt < 10000;
    ACR_TestRegress.Check("recrew: a driver who bails a third time in 10 min marks the crew stuck", stuck, string.Format("%1, stuck %2 s ago", State(s_Driverless, s_DriverlessVehicle), (int)((GetGame().GetWorld().GetWorldTime() - s_Driverless.m_fStuckAt) / 1000)));
-   ACR_TestRegress.Complete("recrew", 5);
+   ACR_TestRegress.Complete("recrew", 6);
   }
   if (tick == 79) Print("[ACR] TEST COMPLETE");
  }
