@@ -1,6 +1,6 @@
 0.5.11
 
-Hotfix for 0.5.10: the period jets can be seen and heard, Project Outbreak zombies no longer lock you out of respawning, and generated maps put their objectives in the towns. Works with Better Battle Buddies 0.1.8.
+Hotfix for 0.5.10: the period jets can be seen and heard, Project Outbreak zombies no longer lock you out of respawning, generated maps put their objectives in the towns, and bought tanks get their whole crew. Needs Better Battle Buddies 0.1.9.
 
 FIXED
 
@@ -13,6 +13,9 @@ FIXED
 - Content packs: soldier swaps are rolled for each garrison soldier, FIA cell member and pocket fighter, so one unlucky roll no longer leaves a whole match without the pack's kit.
 - AI commanders no longer plan attacks around helicopter rides they never get. Far squads were counted as flying in, then walked 6 km and the attack was called off, over and over; on big generated maps the front froze. A squad left walking far now leaves the attack at once.
 - AI vehicle crews that got out under fire get back into their vehicle instead of being sent off on foot and leaving it behind.
+- Bought tanks and IFVs get their whole crew: with the Cold War pack the Chieftain came with 2 of 4 men, the FV510 Warrior had no commander, and the T-55 and Leopard 1 no loader. Their commanders and loaders now stay aboard when passengers get out.
+- FIA's S105 and S1203 minibus and van come with an FIA driver, not a civilian nobody could command.
+- A gunner driving his vehicle from the turret climbs steep roads again on Reforger 1.9.
 
 NEW
 
