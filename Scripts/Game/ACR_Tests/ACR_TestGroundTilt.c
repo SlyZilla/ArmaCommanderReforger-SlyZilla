@@ -1,12 +1,13 @@
-// -acrGroundTiltTest 1 (server-capable, ~1 min): pieces on a slope, level as before and tilted to the
+// -acrGroundTiltTest 1 (server-capable, ~1 min): pieces on a slope, level as before and fitted to the
 // ground (ACR_GroundTilt), for Jacob's before/after. On a 15-30% slope near the test range that the
 // site checks accept, each piece that lies on the ground is spawned through its own spawn path,
 // level and then tilted, facing up the slope and across it, and its footprint corners are measured
-// against the ground. An MG nest stays upright; a tilted composition's parts tilt with it; on flat
-// ground nothing changes. Each piece's numbers are logged as "[ACR] GROUNDTILT ...".
+// against the ground. An MG nest and a guard tower lean only part of the grade (the tower less) and
+// sink so their downhill side stands on less air than level ones; a tilted composition's parts tilt
+// with it; on flat ground nothing changes. Each piece's numbers are logged as "[ACR] GROUNDTILT ...".
 class ACR_TestGroundTilt
 {
- static const int CHECKS = 6;
+ static const int CHECKS = 7;
  protected static bool s_bBags, s_bWire, s_bBarricade;
 
  static void Run(ACR_TestHarness h, int tick)
@@ -39,12 +40,23 @@ class ACR_TestGroundTilt
   ACR_TestRegress.Check("groundtilt: a barbed-wire segment lies on the ground on a slope", s_bWire, wire);
   ACR_TestRegress.Check("groundtilt: a barricade lies on the ground on a slope (the roadblock's own spawn)", s_bBarricade, barricade);
 
-  // An MG nest stays upright.
-  IEntity nest = ACR_Fortify.SpawnPiece(ACR_FobDefences.NEST_US, ACR_Manager.Ground(slope), uphill, "US");
-  bool nestMade = nest != null;
-  float nestTilt = Tilt(nest);
-  Remove(nest);
-  ACR_TestRegress.Check("groundtilt: an MG nest stays upright on the slope", nestMade && nestTilt < 0.5, string.Format("tilt %1 deg", nestTilt));
+  // Upright pieces lean part of the grade, a tower less than a nest, and sink to stand on less air.
+  float grade = Grade(slope, uphill);
+  ACR_GroundTilt.s_bTrace = true;
+  float nestTilt, nestOver, nestUnder, nestLevelOver;
+  bool nestMade = Upright(ACR_FobDefences.NEST_US, slope, uphill, nestTilt, nestOver, nestUnder, nestLevelOver);
+  float towerTilt, towerOver, towerUnder, towerLevelOver;
+  bool towerMade = Upright(ACR_FobDefences.TOWER_US, slope, uphill, towerTilt, towerOver, towerUnder, towerLevelOver);
+  ACR_GroundTilt.s_bTrace = false;
+  string leanWhy = string.Format("slope %1 deg; nest %2 deg, tower %3 deg", grade, nestTilt, towerTilt);
+  PrintFormat("[ACR] GROUNDTILT upright: %1", leanWhy);
+  bool leans = nestMade && towerMade && nestTilt > 0.5 && nestTilt <= 5.1 && nestTilt < grade && towerTilt > 0.5 && towerTilt <= 2.6;
+  ACR_TestRegress.Check("groundtilt: an MG nest leans part of the grade (at most 5 deg), a guard tower at most 2.5", leans, leanWhy);
+  string floatWhy = string.Format("nest on air %1 cm (level %2), buried %3 cm; tower on air %4 cm (level %5), buried %6 cm", Cm(nestOver), Cm(nestLevelOver), Cm(nestUnder), Cm(towerOver), Cm(towerLevelOver), Cm(towerUnder));
+  PrintFormat("[ACR] GROUNDTILT upright: %1", floatWhy);
+  float buryOk = ACR_GroundTilt.BURY_MAX + 0.05;
+  bool sits = nestMade && towerMade && nestOver < nestLevelOver * 0.5 && towerOver < towerLevelOver * 0.5 && buryOk > nestUnder && buryOk > towerUnder;
+  ACR_TestRegress.Check("groundtilt: on the slope a nest and a tower stand on under half the air level ones do, buried at most 0.8 m", sits, floatWhy);
 
   // A tilted composition's parts tilt with it: each keeps the tilt it had to the root when level
   // (some parts are turned or tipped on purpose).
@@ -172,6 +184,34 @@ class ACR_TestGroundTilt
    dots.Insert(vector.Dot(mat[1], root[1]));
    child = child.GetSibling();
   }
+ }
+
+ // The ground's grade at 'at' up 'uphill' over 6 m, in degrees.
+ protected static float Grade(vector at, float uphill)
+ {
+  vector dir = Vector(Math.Sin(uphill * Math.DEG2RAD), 0, Math.Cos(uphill * Math.DEG2RAD));
+  BaseWorld world = GetGame().GetWorld();
+  float rise = world.GetSurfaceY(at[0] + dir[0] * 3, at[2] + dir[2] * 3) - world.GetSurfaceY(at[0] - dir[0] * 3, at[2] - dir[2] * 3);
+  return Math.Atan2(Math.AbsFloat(rise), 6) * Math.RAD2DEG;
+ }
+
+ // An upright piece (Fortify's spawn) on the slope facing up it: its tilt, how far its ground plane
+ // stands on air and is buried at worst, and how far a level one stands on air.
+ protected static bool Upright(ResourceName prefab, vector at, float uphill, out float tilt, out float over, out float under, out float levelOver)
+ {
+  float levelUnder;
+  ACR_GroundTilt.s_bLevel = true;
+  IEntity level = ACR_Fortify.SpawnPiece(prefab, ACR_Manager.Ground(at), uphill, "US");
+  bool made = level != null;
+  ACR_GroundTilt.Floats(level, prefab, levelOver, levelUnder);
+  Remove(level);
+  ACR_GroundTilt.s_bLevel = false;
+  IEntity piece = ACR_Fortify.SpawnPiece(prefab, ACR_Manager.Ground(at), uphill, "US");
+  made = made && piece != null;
+  tilt = Tilt(piece);
+  ACR_GroundTilt.Floats(piece, prefab, over, under);
+  Remove(piece);
+  return made;
  }
 
  protected static int Cm(float m)
