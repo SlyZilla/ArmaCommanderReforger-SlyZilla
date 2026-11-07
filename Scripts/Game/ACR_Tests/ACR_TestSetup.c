@@ -574,7 +574,10 @@ class ACR_TestSetup
   string renamed;
   if (index >= 0) renamed = ACR_Setup.s_PreviewNames[index];
   string expected = ACR_Generator.NameAt(target.m_vPos, source.m_sKind);
-  ACR_TestRegress.Check("editor: moved CP takes destination place name", moved && renamed == expected && renamed != source.m_sName, renamed + " / " + expected);
+  // A name another base in the layout already has gets " 2" (Move keeps names unique; 6 Nov, a
+  // Kolguyev half put the moved CP beside a second Ugoldar Base).
+  bool named = renamed == expected || renamed.StartsWith(expected + " ");
+  ACR_TestRegress.Check("editor: moved CP takes destination place name", moved && named && renamed != source.m_sName, renamed + " / " + expected);
   bool again = ACR_Generator.Move(renamed, target.m_vPos[0], target.m_vPos[2], reason);
   ACR_Setup.UpdatePreview();
   ACR_TestRegress.Check("editor: renamed CP can be moved again without duplicate edits", again && PreviewAt(target.m_vPos) >= 0 && ACR_Generator.MoveCount() == 2, reason);

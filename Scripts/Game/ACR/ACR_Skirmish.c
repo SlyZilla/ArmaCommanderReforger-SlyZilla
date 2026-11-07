@@ -9,10 +9,12 @@
 //  - moves each side's starting units and player spawn points to its new HQ,
 //  - drops helipads of retired bases; a side left without a pad gets the off-map helicopters.
 // Full size (or no layout of that size in the world) plays the world as placed.
+// QUARTER (6 Nov, Jacob: Chernarus needs a quarter map) is last so saved values keep their meaning.
 enum ACR_ESkirmishSize
 {
  HALF,
- FLASHPOINT
+ FLASHPOINT,
+ QUARTER
 }
 
 class ACR_SkirmishClass : GenericEntityClass {}
@@ -74,16 +76,18 @@ class ACR_Skirmish : GenericEntity
  static string SizeName(ACR_ESkirmishSize size)
  {
   if (size == ACR_ESkirmishSize.HALF) return "half";
+  if (size == ACR_ESkirmishSize.QUARTER) return "quarter";
   return "flashpoint";
  }
 
- // -acrSize full|half|flashpoint: -1 = full (default), else the ACR_ESkirmishSize.
+ // -acrSize full|half|quarter|flashpoint: -1 = full (default), else the ACR_ESkirmishSize.
  static int SizeOption()
  {
   string value;
   if (!ACR_Options.Get("acrSize", value)) return -1;
   value.ToLower();
   if (value == "half") return ACR_ESkirmishSize.HALF;
+  if (value == "quarter") return ACR_ESkirmishSize.QUARTER;
   if (value == "flashpoint" || value == "small" || value == "flash") return ACR_ESkirmishSize.FLASHPOINT;
   return -1;
  }

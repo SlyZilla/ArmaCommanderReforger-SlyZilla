@@ -10,7 +10,8 @@
 // Bases remain on their map places (moved onto dry ground when the place is in water).
 // Runs instead of a hand-built layout when the host picks "Generated" (acrLayout generated) or
 // the world has no bases (e.g. ACR_Kolguyev). Same seed + size + world = same layout.
-// Sizes: full map; half (a seeded rotated band or compact region); flashpoint (about seven
+// Sizes: full map; half (a seeded rotated band or compact region); quarter (a seeded district,
+// about a quarter of the sites); flashpoint (about seven
 // sites within 1.8 km of one town, HQs inside it at opposite ends).
 class ACR_GenSite
 {
@@ -158,6 +159,78 @@ class ACR_Generator
   return s_iHouses;
  }
 
+ protected static ref array<vector> s_HouseAt;
+
+ protected static bool CollectHouse(IEntity e)
+ {
+  if (!e) return true;
+  if (SCR_DestructibleBuildingEntity.Cast(e)) { s_HouseAt.Insert(e.GetOrigin()); return true; }
+  EntityPrefabData data = e.GetPrefabData();
+  if (data && data.GetPrefabName().Contains("/Buildings/")) s_HouseAt.Insert(e.GetOrigin());
+  return true;
+ }
+
+ protected static int HousesAround(vector at, float radius)
+ {
+  int count;
+  foreach (vector house : s_HouseAt) if (vector.DistanceXZ(house, at) <= radius) count++;
+  return count;
+ }
+
+ // Settlements sit on their houses, not on their map label (Jacob, 6 Nov: Chernarus Minus puts
+ // town labels in the fields beside the town, so "Bonzievka Petrovka" became a capture circle in
+ // an empty meadow with its trenches 200 m from any house). A label whose own circle holds under
+ // 3 buildings, or under 15% of the densest nearby spot's, moves to the centre of that spot's
+ // houses, unless that spot is nearer another settlement's label (it is that place's houses).
+ // Survey only, once per map.
+ protected static void CentreOnHouses(array<ref ACR_GenSite> sites)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  int moved;
+  foreach (ACR_GenSite site : sites)
+  {
+   if (site.m_sKind != "city" && site.m_sKind != "town" && site.m_sKind != "village" && site.m_sKind != "settlement") continue;
+   float radius = site.m_fRadius;
+   float reach = radius * 3 + 150;
+   s_HouseAt = {};
+   world.QueryEntitiesBySphere(site.m_vPos, reach, CollectHouse);
+   if (s_HouseAt.Count() < 4) continue;
+   int here = HousesAround(site.m_vPos, radius);
+   int best = here;
+   vector bestAt = site.m_vPos;
+   // At most 40 trial centres (every n-th house): a city can have hundreds of buildings.
+   int stride = Math.Max(1, Math.Ceil(s_HouseAt.Count() / 40.0));
+   for (int i = 0; i < s_HouseAt.Count(); i += stride)
+   {
+    int count = HousesAround(s_HouseAt[i], radius);
+    if (count > best) { best = count; bestAt = s_HouseAt[i]; }
+   }
+   // Only a nearly empty circle moves: a label at the edge of its town, with a dozen houses
+   // round it, stays (Everon's labels are where Jacob put its bases; Montignac's has 53).
+   if (best < 4 || (here >= 3 && 0.15 * best <= here)) continue;
+   float sumX, sumZ;
+   int n;
+   foreach (vector house : s_HouseAt)
+    if (vector.DistanceXZ(house, bestAt) <= radius) { sumX += house[0]; sumZ += house[2]; n++; }
+   if (n == 0) continue;
+   vector centre = Vector(sumX / n, 0, sumZ / n);
+   bool theirs = false;
+   float own = vector.DistanceXZ(centre, site.m_vPos);
+   foreach (ACR_GenSite other : sites)
+   {
+    if (other == site || other.m_sKind == "landmark" || other.m_sKind == "industry" || other.m_sKind == "military" || other.m_sKind == "airport") continue;
+    if (vector.DistanceXZ(centre, other.m_vPos) < own) { theirs = true; break; }
+   }
+   if (theirs) continue;
+   centre[1] = world.GetSurfaceY(centre[0], centre[2]);
+   PrintFormat("[ACR] GEN CENTRE %1 moved %2 m onto its houses (%3 -> %4 within %5 m)", site.m_sName, (int)own, here, HousesAround(centre, radius), (int)radius);
+   site.m_vPos = centre;
+   moved++;
+  }
+  s_HouseAt = null;
+  if (moved > 0) PrintFormat("[ACR] GEN CENTRE %1 settlement labels moved onto their houses", moved);
+ }
+
  protected static bool Collect(IEntity e)
  {
   if (e && e.FindComponent(MapDescriptorComponent)) s_Found.Insert(e);
@@ -223,6 +296,7 @@ class ACR_Generator
    sites.Insert(pending[best]);
    pending.RemoveOrdered(best);
   }
+  CentreOnHouses(sites);
   NameIndustry(sites);
   // Names find the site to edit and ids key the edit: two places with one name (a town and a
   // village label) were moved or deleted together and showed as two bases of one name. The second
@@ -448,13 +522,14 @@ class ACR_Generator
   int attempts = 1;
   // Halves too (29 Oct, Gulfcoast Islands): a band can cut an archipelago into unreachable
   // islands. Retries only follow a failed draw, so maps that plan first time are unchanged.
-  if (flash || size == ACR_ESkirmishSize.HALF) attempts = 8;
+  if (flash || size == ACR_ESkirmishSize.HALF || size == ACR_ESkirmishSize.QUARTER) attempts = 8;
   bool selected = false;
   for (int attempt = 0; attempt < attempts; attempt++)
   {
    pool.Clear(); hqPool.Clear();
    foreach (ACR_GenSite s : spaced) pool.Insert(s);
    if (size == ACR_ESkirmishSize.HALF) pool = Half(pool, rng);
+   else if (size == ACR_ESkirmishSize.QUARTER) pool = Quarter(pool, rng);
    else if (flash) pool = Flashpoint(pool, rng);
    if (pool.Count() < 3) continue;
    ACR_GenSite west, east;
@@ -1052,6 +1127,43 @@ class ACR_Generator
   return result;
  }
 
+ // A quarter (6 Nov, Jacob: Chernarus "desperately needs a quarter map"): the 22-30% of ordinary
+ // sites nearest a seeded anchor, measured in a seeded ellipse (round, or up to 1.8 times longer
+ // along a random bearing), so a quarter is a district rather than a strip. Landmarks inside
+ // come along as in a half. Same economy and spacing rules as a half or the full map.
+ protected static array<ACR_GenSite> Quarter(array<ACR_GenSite> pool, RandomGenerator rng)
+ {
+  array<ACR_GenSite> ordinary = {};
+  foreach (ACR_GenSite site : pool) if (site.m_sKind != "landmark") ordinary.Insert(site);
+  array<ACR_GenSite> result = {};
+  if (ordinary.Count() < 3) return result;
+  float angle = Math.PI2 * rng.RandFloat01();
+  vector axis = Vector(Math.Cos(angle), 0, Math.Sin(angle));
+  vector across = Vector(-axis[2], 0, axis[0]);
+  float stretch = 1 + 0.8 * rng.RandFloat01();
+  int anchorIndex = Math.Min(ordinary.Count() - 1, Math.Floor(rng.RandFloat01() * ordinary.Count()));
+  vector anchor = ordinary[anchorIndex].m_vPos;
+  int count = Math.Max(6, Math.Round((0.22 + 0.08 * rng.RandFloat01()) * ordinary.Count()));
+  count = Math.Min(count, ordinary.Count());
+  array<float> sorted = {};
+  foreach (ACR_GenSite point : ordinary) sorted.Insert(QuarterMetric(point.m_vPos, anchor, axis, across, stretch));
+  sorted.Sort();
+  float high = float.MAX;
+  if (count < sorted.Count()) high = 0.5 * (sorted[count - 1] + sorted[count]);
+  foreach (ACR_GenSite included : pool)
+   if (QuarterMetric(included.m_vPos, anchor, axis, across, stretch) <= high) result.Insert(included);
+  return result;
+ }
+
+ protected static float QuarterMetric(vector at, vector anchor, vector axis, vector across, float stretch)
+ {
+  vector offset = at - anchor;
+  offset[1] = 0;
+  float along = vector.Dot(offset, axis) / stretch;
+  float side = vector.Dot(offset, across);
+  return Math.Sqrt(along * along + side * side);
+ }
+
  // An accessible local candidate pool; final selection keeps 5-7 actual objectives.
  // Radius and centre vary; sparse neighbourhoods fall back to the original 1.8 km envelope.
  protected static array<ACR_GenSite> Flashpoint(array<ACR_GenSite> pool, RandomGenerator rng)
@@ -1109,7 +1221,49 @@ class ACR_Generator
   ACR_GenSite spanA, spanB;
   Farthest(candidates, spanA, spanB);
   if (!spanA || !spanB) return;
-  float minimumSpan = spanShare * vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
+  float longest = vector.DistanceXZ(spanA.m_vPos, spanB.m_vPos);
+  // Bearings (6 Nov, Jacob: Chernarus "needs to vary its axis more"). 80% of the map's longest
+  // pair let only the diagonals through on a square map, so every match ran corner to corner.
+  // A seeded bearing (one of six 30-degree sectors) comes first: its pairs need 80% of the
+  // longest pair along that bearing, and that pair must be at least 55% of the longest overall
+  // (a narrow map is never fought across its width). Up to three bearings, then any bearing.
+  if (spanShare > 0.75)
+  {
+   array<float> sectorSpan = {0, 0, 0, 0, 0, 0};
+   for (int a = 0; a < candidates.Count(); a++)
+    for (int b = a + 1; b < candidates.Count(); b++)
+    {
+     int sector = Bearing(candidates[a].m_vPos, candidates[b].m_vPos);
+     sectorSpan[sector] = Math.Max(sectorSpan[sector], vector.DistanceXZ(candidates[a].m_vPos, candidates[b].m_vPos));
+    }
+   int first = Math.Min(5, Math.Floor(rng.RandFloat01() * 6));
+   int tried = 0;
+   for (int k = 0; k < 6 && tried < 3; k++)
+   {
+    int bearing = (first + k) % 6;
+    if (sectorSpan[bearing] < 0.55 * longest) continue;
+    tried++;
+    if (ChoosePair(pool, candidates, rng, bearing, spanShare * sectorSpan[bearing], west, east)) return;
+   }
+  }
+  if (ChoosePair(pool, candidates, rng, -1, spanShare * longest, west, east)) return;
+  // Archipelagos (29 Oct, Gulfcoast Islands): every widely separated pair can sit on islands
+  // with no dry route between them. Only then accept closer pairs; other maps keep 80%.
+  if (spanShare > 0.3) PickHQs(pool, flashpoint, rng, west, east, spanShare - 0.2);
+ }
+
+ // 0-5: the 30-degree sector of the line a-b's bearing (either direction).
+ static int Bearing(vector a, vector b)
+ {
+  float angle = Math.Atan2(b[2] - a[2], b[0] - a[0]);
+  if (angle < 0) angle += Math.PI;
+  if (angle >= Math.PI) angle -= Math.PI;
+  return Math.Min(5, Math.Floor(angle / (Math.PI / 6)));
+ }
+
+ // One HQ pair at least minimumSpan apart (on the given bearing sector, or any when -1).
+ protected static bool ChoosePair(array<ACR_GenSite> pool, array<ACR_GenSite> candidates, RandomGenerator rng, int sector, float minimumSpan, out ACR_GenSite west, out ACR_GenSite east)
+ {
   array<int> allA = {}, allB = {}, rearCounts = {};
   array<float> distances = {};
   int bestRear = int.MAX;
@@ -1118,6 +1272,7 @@ class ACR_Generator
    {
     float distance = vector.DistanceXZ(candidates[i].m_vPos, candidates[j].m_vPos);
     if (distance < minimumSpan) continue;
+    if (sector >= 0 && Bearing(candidates[i].m_vPos, candidates[j].m_vPos) != sector) continue;
     int rear = 0;
     foreach (ACR_GenSite objective : pool)
      if (objective.m_sKind != "landmark" && !BetweenHQs(objective.m_vPos, candidates[i].m_vPos, candidates[j].m_vPos)) rear++;
@@ -1155,17 +1310,12 @@ class ACR_Generator
   array<int> suitable = {};
   foreach (int checked, int total : counts)
    if (total >= bestCount - 1 && total >= 3) suitable.Insert(shortlist[checked]);
-  // Archipelagos (29 Oct, Gulfcoast Islands): every widely separated pair can sit on islands
-  // with no dry route between them. Only then accept closer pairs; other maps keep 80%.
-  if (suitable.IsEmpty())
-  {
-   if (spanShare > 0.3) PickHQs(pool, flashpoint, rng, west, east, spanShare - 0.2);
-   return;
-  }
+  if (suitable.IsEmpty()) return false;
   int pick = Math.Min(suitable.Count() - 1, Math.Floor(rng.RandFloat01() * suitable.Count()));
   int choice = suitable[pick];
   west = candidates[allA[choice]];
   east = candidates[allB[choice]];
+  return true;
  }
 
  // ---------------------------------------------------------------- building it

@@ -96,7 +96,7 @@ class ACR_Guerrillas
  static const int RAISE_EVERY_S = 1800;
  protected static int s_iWantedCells;         // cells (not hideouts) placed at the start
 
- static int CountOption(bool half, out int houses)
+ static int CountOption(bool half, out int houses, bool quarter = false)
  {
   string value = ACR_TestHooks.Get().Guerrillas();
   if (value == "" && !ACR_Options.Get("acrGuerrillas", value)) value = "";
@@ -111,7 +111,12 @@ class ACR_Guerrillas
   int roads = 4;
   houses = 3;
   if (value == "many") { roads = 8; houses = 6; }
-  if (half)
+  if (quarter)
+  {
+   roads = Math.Ceil(roads * 0.25);
+   houses = Math.Ceil(houses * 0.34);
+  }
+  else if (half)
   {
    roads = Math.Ceil(roads * 0.5);
    houses = Math.Ceil(houses * 0.5);
@@ -140,7 +145,7 @@ class ACR_Guerrillas
   if (ACR_Skirmish.s_Active) size = ACR_Skirmish.s_Active.m_eSize;
   if (size == ACR_ESkirmishSize.FLASHPOINT) return;
   int houses;
-  int roads = CountOption(size == ACR_ESkirmishSize.HALF, houses);
+  int roads = CountOption(size == ACR_ESkirmishSize.HALF, houses, size == ACR_ESkirmishSize.QUARTER);
   if (roads + houses <= 0) return;
   string faction = ACR_Pockets.FACTION;
   if (ACR_FactionSelection.West() == faction || ACR_FactionSelection.East() == faction || !GetGame().GetFactionManager().GetFactionByKey(faction))

@@ -388,14 +388,17 @@ class ACR_Setup
    if (ACR_Generator.HasOwnBases()) values.Insert("full");
    values.Insert("gen:full");
    values.Insert("gen:half");
+   values.Insert("gen:quarter");
    values.Insert("gen:flashpoint");
-   bool half, flash;
+   bool half, quarter, flash;
    foreach (ACR_Skirmish layout : ACR_Skirmish.s_All)
    {
     if (layout.m_eSize == ACR_ESkirmishSize.HALF) half = true;
+    else if (layout.m_eSize == ACR_ESkirmishSize.QUARTER) quarter = true;
     else flash = true;
    }
    if (half) values.Insert("size:half");
+   if (quarter) values.Insert("size:quarter");
    if (flash) values.Insert("size:flashpoint");
    foreach (ACR_Skirmish named : ACR_Skirmish.s_All) values.Insert("name:" + named.m_sName);
   }
@@ -579,9 +582,11 @@ class ACR_Setup
   {
    if (value == "full") return "whole map";
    if (value == "size:half") return "a random half";
+   if (value == "size:quarter") return "a random quarter";
    if (value == "size:flashpoint") return "a random flashpoint";
    if (value == "gen:full") return "generated, whole map";
    if (value == "gen:half") return "generated, half the map";
+   if (value == "gen:quarter") return "generated, a quarter of the map";
    if (value == "gen:flashpoint") return "generated flashpoint";
    return value.Substring(5, value.Length() - 5);
   }
