@@ -287,6 +287,45 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(self.run_poll(), 1)
         self.assertEqual(len(self.http.posts), 1)
 
+    def test_updates_role_pinged_once_and_notes_still_cannot_ping(self):
+        role = '123456789012345678'
+        self.baseline()
+        notes = '@everyone <@&999999999999999999>\n' + ('changelog line 😀\n' * 400)
+        self.http.add_version(notes=notes)
+        self.assertEqual(r.poll([ID], copy.deepcopy(self.store.durable), self.store, self.workshop,
+                                self.http, 'not-a-real-webhook', role=role), 0)
+        posts = self.http.posts
+        self.assertGreater(len(posts), 1)
+        self.assertTrue(posts[0]['content'].startswith(f'<@&{role}>\n'))
+        self.assertEqual(posts[0]['allowed_mentions'], {'parse': [], 'users': [], 'roles': [role], 'replied_user': False})
+        for p in posts[1:]:
+            self.assertNotIn(f'<@&{role}>', p['content'])
+            self.assertEqual(p['allowed_mentions']['roles'], [])
+        self.assertTrue(all(r.units(p['content']) <= 2000 for p in posts))
+        self.assertEqual(''.join(p['content'].split('\n\n', 1)[1] for p in posts), notes)
+
+    def test_updates_role_validation(self):
+        self.assertEqual(r.updates_role(None), '')
+        self.assertEqual(r.updates_role(' 123456789012345678 '), '123456789012345678')
+        for bad in ['<@&123456789012345678>', 'Updates', '123', '0123456789012345678']:
+            with self.assertRaises(r.RelayError):
+                r.updates_role(bad)
+
+    def test_pending_role_mention_only_allowed_on_part_one(self):
+        role = '123456789012345678'
+        good = r.messages(ID, 'ACA', '1.0', 'notes\n' * 2000, role)
+        state = lambda msgs: {'schema': 1, 'mods': {ID: {'seen': [], 'pending': {'version': '1.0', 'messages': msgs, 'next': 0, 'inflight': None}}}}
+        r.validate_state(state(good))
+        moved = copy.deepcopy(good)
+        moved[1]['allowed_mentions']['roles'] = [role]
+        unprefixed = copy.deepcopy(good)
+        unprefixed[0]['content'] = unprefixed[0]['content'].split('\n', 1)[1]
+        parsed = copy.deepcopy(good)
+        parsed[0]['allowed_mentions']['parse'] = ['everyone']
+        for bad in [moved, unprefixed, parsed]:
+            with self.assertRaises(r.StateError):
+                r.validate_state(state(bad))
+
     def test_long_unicode_header_still_fits_discord(self):
         payloads = r.messages(ID, '😀' * 100, '😀' * 100, '😀' * 10000)
         self.assertTrue(all(r.units(p['content']) <= 2000 for p in payloads))

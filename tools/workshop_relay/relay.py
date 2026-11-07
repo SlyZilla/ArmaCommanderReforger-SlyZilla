@@ -19,6 +19,7 @@ API = "https://api.reforgermods.net/v2"
 BRANCH = "workshop-relay-state"
 STATE_PATH = "workshop-relay-state.json"
 ROOT = Path(__file__).resolve().parent
+ROLE_ID = re.compile(r"[1-9][0-9]{16,19}")
 
 
 class RelayError(Exception):
@@ -252,10 +253,15 @@ def validate_state(state):
             raise StateError("Invalid pending parts")
         if inflight is not None and (type(inflight) is not int or inflight != index or index >= len(payloads)):
             raise StateError("Invalid pending delivery intent")
-        for payload in payloads:
+        for part, payload in enumerate(payloads):
             if not isinstance(payload, dict) or not isinstance(payload.get("content"), str) or units(payload["content"]) > 2000:
                 raise StateError("Invalid pending payload")
-            if payload.get("allowed_mentions") != {"parse": [], "users": [], "roles": [], "replied_user": False}:
+            mentions = payload.get("allowed_mentions")
+            roles = mentions.get("roles") if isinstance(mentions, dict) else None
+            # The only mention ever allowed: the updates role, leading part 1, named explicitly.
+            role_ok = roles == [] or (part == 0 and isinstance(roles, list) and len(roles) == 1 and isinstance(roles[0], str)
+                                      and ROLE_ID.fullmatch(roles[0]) and payload["content"].startswith(f"<@&{roles[0]}>\n"))
+            if not role_ok or mentions != {"parse": [], "users": [], "roles": roles, "replied_user": False}:
                 raise StateError("Pending payload must suppress mentions")
 
 
@@ -287,18 +293,31 @@ def split_text(text, limit=1600):
     return chunks
 
 
-def messages(mod_id, name, version, notes):
+def updates_role(value):
+    """Optional Discord role pinged once per release (repo variable DISCORD_UPDATES_ROLE_ID)."""
+    value = (value or "").strip()
+    if value and not ROLE_ID.fullmatch(value):
+        raise RelayError("DISCORD_UPDATES_ROLE_ID must be a numeric Discord role ID")
+    return value
+
+
+def messages(mod_id, name, version, notes, role=""):
     base_header = f"{name[:100]} — {version}\nhttps://reforger.armaplatform.com/workshop/{mod_id}\n"
-    chunks = split_text(notes, min(1600, 2000 - units(base_header) - 100))
+    ping = f"<@&{role}>\n" if role else ""
+    chunks = split_text(notes, min(1600, 2000 - units(ping + base_header) - 100))
     digest = hashlib.sha256((mod_id + "\0" + version + "\0" + notes).encode()).hexdigest()[:16]
     payloads = []
     for index, chunk in enumerate(chunks, 1):
         marker = f"{digest}:{index}"
         header = base_header + f"Part {index}/{len(chunks)} · relay {marker}\n\n"
-        content = header + chunk
+        # Ping only on part 1, so a long changelog notifies the role once. Changelog text can
+        # never ping: allowed_mentions names just this role and parses nothing.
+        first = index == 1 and bool(role)
+        content = (ping if first else "") + header + chunk
         if units(content) > 2000:
             raise RelayError("Discord content length exceeded")
-        payloads.append({"content": content, "allowed_mentions": {"parse": [], "users": [], "roles": [], "replied_user": False}, "flags": 4})
+        roles = [role] if first else []
+        payloads.append({"content": content, "allowed_mentions": {"parse": [], "users": [], "roles": roles, "replied_user": False}, "flags": 4})
     return payloads
 
 
@@ -354,7 +373,7 @@ def deliver(entry, state, store, http, webhook):
     store.save(state)
 
 
-def poll(mod_ids, state, store, workshop, http, webhook, initialize=False):
+def poll(mod_ids, state, store, workshop, http, webhook, initialize=False, role=""):
     failures = []
     for mod_id in mod_ids:
         try:
@@ -379,7 +398,7 @@ def poll(mod_ids, state, store, workshop, http, webhook, initialize=False):
                 if version in entry["seen"]:
                     continue
                 notes = workshop.detail(mod_id, version)
-                entry["pending"] = {"version": version, "messages": messages(mod_id, mod["name"], version, notes), "next": 0, "inflight": None}
+                entry["pending"] = {"version": version, "messages": messages(mod_id, mod["name"], version, notes, role), "next": 0, "inflight": None}
                 store.save(state)
                 deliver(entry, state, store, http, webhook)
                 print(f"{mod_id}: delivered {version}")
@@ -426,6 +445,7 @@ def main():
             notes = workshop.detail(mod_id, mod["version"])
             print(f"{mod_id}: {mod['name']} {mod['version']}; {len(rows)} versions; {len(notes)} changelog characters; {len(messages(mod_id, mod['name'], mod['version'], notes))} Discord parts")
         return 0
+    role = updates_role(os.environ.get("DISCORD_UPDATES_ROLE_ID"))
     webhook = webhook_url(os.environ.get("DISCORD_WEBHOOK_URL", "")) if args.mode == "poll" else None
     if webhook:
         verify_webhook(http, webhook)
@@ -437,7 +457,7 @@ def main():
     if args.mode == "recover":
         recover(state, store, args.mod, args.version, args.part, args.decision)
         return 0
-    return poll(mod_ids, state, store, workshop, http, webhook, initialize=args.mode == "initialize")
+    return poll(mod_ids, state, store, workshop, http, webhook, initialize=args.mode == "initialize", role=role)
 
 
 if __name__ == "__main__":
