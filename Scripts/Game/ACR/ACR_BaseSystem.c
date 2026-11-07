@@ -41,6 +41,7 @@ class ACR_BaseSystem : Managed
  protected ref array<IEntity> m_Bodies = {};
  protected ref array<string> m_BodyFactions = {};
  protected ref array<ACR_Base> m_BodyFled = {}; // the base a body's group is falling back from (FallBack), else null
+ protected ref array<bool> m_BodyInWar = {}; // a body of the war's own factions (InWar)
 
  // Buy list, garrison soldiers and RP for a faction, built from its
  // ACR_FactionSettings entity (or catalog defaults) the first time it's needed.
@@ -190,6 +191,7 @@ class ACR_BaseSystem : Managed
   m_Bodies.Clear();
   m_BodyFactions.Clear();
   m_BodyFled.Clear();
+  m_BodyInWar.Clear();
   array<AIAgent> agents = {};
   GetGame().GetAIWorld().GetAIAgents(agents);
   foreach (AIAgent agent : agents)
@@ -216,8 +218,20 @@ class ACR_BaseSystem : Managed
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(character.FindComponent(FactionAffiliationComponent));
   if (!affiliation || !affiliation.GetAffiliatedFaction()) return;
   m_Bodies.Insert(character);
-  m_BodyFactions.Insert(affiliation.GetAffiliatedFaction().GetFactionKey());
+  string key = affiliation.GetAffiliatedFaction().GetFactionKey();
+  m_BodyFactions.Insert(key);
   m_BodyFled.Insert(fled);
+  m_BodyInWar.Insert(InWar(key));
+ }
+
+ // The war's own factions: the two sides and FIA. Only they (and a base's owner) hold, contest,
+ // take or find a base. Another mod's faction doesn't: Project Outbreak's zombies are a faction
+ // hostile to everyone that roams and nests everywhere, so they kept bases "under attack" for good,
+ // could even take them, and every spawn point of a side closed (6 Nov, Discord: a commander killed
+ // in his command unit sat on a deploy screen with nothing to pick). They still turn a garrison out.
+ static bool InWar(string key)
+ {
+  return ACR_FactionSelection.IsSelected(key) || key == ACR_Pockets.FACTION;
  }
 
  protected void UpdateBase(ACR_Manager manager, ACR_Base base)
@@ -239,8 +253,9 @@ class ACR_BaseSystem : Managed
    float distance = vector.DistanceXZ(body.GetOrigin(), center);
    // FIA's ally neither fights nor takes its pockets (ACR_Insurgency).
    bool friendOfOwner = base.m_bPocket && key != base.m_sOwner && ACR_Insurgency.Friendly(key, base.m_sOwner);
+   bool inWar = m_BodyInWar[i] || key == base.m_sOwner;
    // Survivors leaving a base they lost don't contest it (FallBack); at another base they count.
-   if (distance <= base.m_fRadius && !friendOfOwner && m_BodyFled[i] != base)
+   if (distance <= base.m_fRadius && !friendOfOwner && inWar && m_BodyFled[i] != base)
    {
     int count;
     inside.Find(key, count);
@@ -261,7 +276,7 @@ class ACR_BaseSystem : Managed
    {
     // An FIA pocket is found once its garrison would deploy against you.
     // Hidden FIA (-acrFIAHidden): only by entering it (above), and nobody is told.
-    if (base.m_bPocket && distance <= SPAWN_RANGE && !base.m_aDetectedBy.Contains(key) && !ACR_Guerrillas.Hidden())
+    if (base.m_bPocket && inWar && distance <= SPAWN_RANGE && !base.m_aDetectedBy.Contains(key) && !ACR_Guerrillas.Hidden())
     {
      base.m_aDetectedBy.Insert(key);
      manager.NotifyFaction(key, string.Format("FIA resistance at %1", base.m_sName));

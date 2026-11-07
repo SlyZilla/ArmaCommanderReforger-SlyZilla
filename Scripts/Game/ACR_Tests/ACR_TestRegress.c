@@ -54,6 +54,59 @@ class ACR_TestRegress
   bool fiaAllowed = affiliation && fia && affiliation.ACR_WouldAllow(fia);
   // (A server-only run has no player to ask with: then only the offer is checked.)
   Check("a side outside the pair is neither offered nor accepted", fia && !fiaPlayable && !fiaAllowed, string.Format("FIA found %1, playable %2, player %3, may request %4", fia != null, fiaPlayable, affiliation != null, fiaAllowed));
+  // Only the war's factions hold or contest bases (6 Nov, Discord: Project Outbreak's zombies
+  // kept every base under attack and the commander couldn't redeploy).
+  Check("only the sides and FIA hold or contest bases", ACR_BaseSystem.InWar(west) && ACR_BaseSystem.InWar(east) && ACR_BaseSystem.InWar("FIA") && !ACR_BaseSystem.InWar("Z") && !ACR_BaseSystem.InWar("CIV"), "");
+  // A side with every deploy base under attack still has somewhere to deploy (East has no HQ point here).
+  array<ACR_Base> flipped = {};
+  foreach (ACR_Base held : ACR_Base.s_All)
+   if (!held.m_bRetired && held.m_sOwner == east && !held.m_bContested) { held.m_bContested = true; flipped.Insert(held); }
+  ACR_SpawnPoints.Tick(manager);
+  SCR_SpawnPoint lastResort = ACR_SpawnPoints.Best(east);
+  bool eastOpen = lastResort && lastResort.IsSpawnPointEnabled();
+  foreach (ACR_Base back : flipped) back.m_bContested = false;
+  ACR_SpawnPoints.Tick(manager);
+  Check("a side with every deploy base under attack can still deploy", flipped.Count() > 0 && eastOpen, string.Format("%1 East bases marked under attack, open point %2", flipped.Count(), lastResort != null));
+  ZombieCheck();
+ }
+
+ // With Project Outbreak loaded (faction Z): zombies standing in a held base don't put it under
+ // attack or take it. Spawned at tick 44 (PlantZombies), checked with the spawn points at 50.
+ static ACR_Base s_ZombieBase;
+ static int s_iZombies;
+ static void PlantZombies(ACR_TestHarness harness)
+ {
+  SCR_Faction zombies = SCR_Faction.Cast(GetGame().GetFactionManager().GetFactionByKey("Z"));
+  if (!zombies) return;
+  SCR_EntityCatalog catalog = zombies.GetFactionEntityCatalogOfType(EEntityCatalogType.CHARACTER);
+  if (!catalog) return;
+  array<SCR_EntityCatalogEntry> entries = {};
+  catalog.GetEntityList(entries);
+  ResourceName prefab;
+  foreach (SCR_EntityCatalogEntry entry : entries) if (entry.IsEnabled() && !entry.GetPrefab().IsEmpty()) { prefab = entry.GetPrefab(); break; }
+  if (prefab.IsEmpty()) return;
+  string west = ACR_FactionSelection.West();
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base.m_bRetired || base.m_sOwner != west || ACR_LogisticsRules.IsHQ(base)) continue;
+   s_ZombieBase = base;
+   break;
+  }
+  if (!s_ZombieBase) return;
+  for (int i = 0; i < 4; i++)
+  {
+   vector at = harness.Ground(s_ZombieBase.GetOrigin() + Vector(i * 2 - 3, 0, 2));
+   if (ACR_Manager.SpawnPrefab(prefab, at)) s_iZombies++;
+  }
+  PrintFormat("[ACR] TEST zombies: %1 x %2 in %3", s_iZombies, FilePath.StripPath(prefab), s_ZombieBase.m_sName);
+ }
+ static void ZombieCheck()
+ {
+  if (!GetGame().GetFactionManager().GetFactionByKey("Z")) { Skip("zombies don't hold or contest a base", "Project Outbreak not loaded"); return; }
+  bool ok = s_ZombieBase && s_iZombies > 0 && !s_ZombieBase.m_bContested && s_ZombieBase.m_sOwner == ACR_FactionSelection.West();
+  string where = "no base";
+  if (s_ZombieBase) where = string.Format("%1: owner %2, contested %3, score %4", s_ZombieBase.m_sName, s_ZombieBase.m_sOwner, s_ZombieBase.m_bContested, s_ZombieBase.m_fScore);
+  Check("zombies don't hold or contest a base", ok, string.Format("%1 zombies; %2", s_iZombies, where));
  }
 
  static void Check(string name, bool ok, string detail = "")
@@ -157,7 +210,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 158; // includes two doctrine-hysteresis, two truck drive-out, two vehicle-exit, one AI-transport-truck, one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 161; // includes three Outbreak-zombie/last-resort spawn, two doctrine-hysteresis, two truck drive-out, two vehicle-exit, one AI-transport-truck, one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -1374,6 +1427,7 @@ class ACR_TestRegress
     Check("reinforce refused with enemy troops close, explained", refused.Contains("enemy troops within") && allowed == "", string.Format("nearest %1 m: '%2' / '%3'", gap, refused, allowed));
    }
   }
+  if (tick == 44) PlantZombies(harness);
   if (tick == 50) SpawnPointCheck(manager);
   if (tick == 50)
   {
