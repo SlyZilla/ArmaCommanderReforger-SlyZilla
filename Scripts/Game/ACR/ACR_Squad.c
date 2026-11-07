@@ -4245,7 +4245,7 @@ class ACR_Squad : Managed
   ACR_Roadblock near = null;
   if (vehicle && GetFaction()) near = ACR_Roadblocks.OwnNear(vehicle.GetOrigin(), GetFaction().GetFactionKey());
   // Its holders step out of the way of any of our vehicles, AI-driven or not.
-  if (near) ACR_RoadblockLane.ClearFor(near, vehicle);
+  if (near) ACR_RoadblockLane.ClearFor(near, vehicle, aiDriven);
   ACR_Roadblock rb = null;
   if (aiDriven) rb = near;
   if (m_LaneSlowVehicle && (m_LaneSlowVehicle != vehicle || !rb))

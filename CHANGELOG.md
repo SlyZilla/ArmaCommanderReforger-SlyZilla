@@ -18,6 +18,10 @@
 
 - A base's garrison no longer vanishes when the base is taken. Its survivors (and its patrol's) now fall back, returning fire, to their side's nearest base within 2.5 km, or 350 m away from the enemy when there is none, and help hold it if it is under attack. Once no enemy is near them they join that base's reserve. They don't count towards retaking the base they were just pushed out of. FIA pockets fall back to the next pocket the same way.
 
+### Roadblocks
+
+- A roadblock's men no longer run back in front of your own truck as it drives through the checkpoint's lane. Since Reforger 1.9 a soldier sprints to the nearest cover from any vehicle heading his way, and beside the lane that cover is the lane's own sandbags and barriers, so a man who had just stepped out of the way ran back in and was nearly run over. For an AI-driven vehicle of yours in the lane the checkpoint's men now just step clear and stay there; a vehicle a player drives still gets the game's own dodge.
+
 ### FIA
 
 - FIA road ambushes look like ambushes. The men stood about in open grass right beside their barricade. They now set up 25-70 m back from the road in the best cover that still sees the kill zone (a treeline or a line of bushes over open ground), each man crouched on his own spot facing the road, and most bring a PKM on its low tripod, dug in on the best-covered spot with a man on it; if he falls, another man takes the gun. When they pull back they leave the gun behind, and it goes when they pack up unless someone else is on it.

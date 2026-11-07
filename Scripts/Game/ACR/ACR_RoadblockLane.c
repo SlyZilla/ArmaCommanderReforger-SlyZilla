@@ -34,10 +34,21 @@ class ACR_RoadblockLane
  static const float STEP_ALONG = 15;
  static const float STEP_PRIORITY = 91;      // over attacking (90); danger and medical still outrank it
  static ref map<IEntity, ref SCR_AIMoveIndividuallyBehavior> s_mSteps;
+ // Reforger 1.9's own dodge (SCR_AIMoveFromIncomingVehicleBehavior, danger priority, far over
+ // STEP_PRIORITY) sprints a man on foot to the nearest cover within 9 m of any vehicle with a driver
+ // coming at him. Beside our lane that cover is the lane's own sandbags and barriers: it put the man
+ // ClearFor had just stepped out back in front of our truck, 0.1-1.2 m off its hull (srv:rblane, 6 Nov).
+ // For the holders ClearFor is looking after, our vehicle in the lane is its business, not the dodge's:
+ // each holder within STEP_ALONG, the vehicle it saw and when (world time, ms).
+ static const float GUARD_MS = 2500;         // ClearFor runs about once a second while the vehicle comes
+ static ref map<IEntity, IEntity> s_mGuardFor;
+ static ref map<IEntity, float> s_mGuardAt;
  // Called by ACR_StaticInit at game start (static initializer budget: HANDBOOK Pitfalls).
  static void ACR_InitStatics()
  {
   s_mSteps = new map<IEntity, ref SCR_AIMoveIndividuallyBehavior>();
+  s_mGuardFor = new map<IEntity, IEntity>();
+  s_mGuardAt = new map<IEntity, float>();
  }
  static int s_iStepsForTest;                 // step-clear moves ordered
 
@@ -375,7 +386,7 @@ class ACR_RoadblockLane
  // One of our vehicles is within ACR_Roadblocks.LANE_SLOW_RANGE (ACR_Squad.LaneSpeed): every
  // holder on foot in its way steps clear, to the nearer side of the lane (never across it in front
  // of the vehicle). Nothing for one standing still, or past and pulling away. Returns how many were sent.
- static int ClearFor(ACR_Roadblock rb, IEntity vehicle)
+ static int ClearFor(ACR_Roadblock rb, IEntity vehicle, bool aiDriven = false)
  {
   if (!rb || !rb.m_Entity || !vehicle || s_bOff) return 0;
   vector root[4];
@@ -393,20 +404,41 @@ class ACR_RoadblockLane
   }
   array<IEntity> men = {};
   Holders(rb, men);
+  float now = GetGame().GetWorld().GetWorldTime();
+  for (int g = s_mGuardAt.Count() - 1; g >= 0; g--)
+  {
+   if (!s_mGuardAt.GetKey(g) || now - s_mGuardAt.GetElement(g) > GUARD_MS)
+   {
+    s_mGuardFor.Remove(s_mGuardAt.GetKey(g));
+    s_mGuardAt.RemoveElement(g);
+   }
+  }
   int sent = 0;
   foreach (IEntity man : men)
   {
    vector l = Local(rb.m_Entity, man.GetOrigin());
-   if (Math.AbsFloat(l[2]) > STEP_ALONG || Clearance(l[0] - 0.3, l[0] + 0.3, l[2], l[2]) >= STEP_CLEAR) continue;
+   if (Math.AbsFloat(l[2]) > STEP_ALONG) continue;
    AIControlComponent control = AIControlComponent.Cast(man.FindComponent(AIControlComponent));
    if (!control || !control.GetControlAIAgent()) continue;
    SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(control.GetControlAIAgent().FindComponent(SCR_AIUtilityComponent));
    if (!utility) continue;
+   // Every holder near the lane, for an AI driver (it keeps to the lane, slowed): the game's dodge
+   // leaves this vehicle to us (Guarded), and one it had already started is called off. A player
+   // can drive anywhere, so the dodge stays for his vehicle.
+   if (aiDriven)
+   {
+    s_mGuardFor.Set(man, vehicle);
+    s_mGuardAt.Set(man, now);
+    SCR_AIMoveFromIncomingVehicleBehavior dodge = SCR_AIMoveFromIncomingVehicleBehavior.Cast(utility.FindActionOfType(SCR_AIMoveFromIncomingVehicleBehavior));
+    if (dodge && dodge.m_DangerEntity.m_Value == vehicle && dodge.GetActionState() != EAIActionState.COMPLETED && dodge.GetActionState() != EAIActionState.FAILED) dodge.Fail();
+   }
+   if (Clearance(l[0] - 0.3, l[0] + 0.3, l[2], l[2]) >= STEP_CLEAR) continue;
    // A step he is carrying out stands. One that something else has put aside while he is still
    // in the way (his Defend walking him back across the lane to a post on the far side, srv:rblane
    // 27 Oct) is replaced, for as long as the vehicle comes on.
    SCR_AIMoveIndividuallyBehavior was = s_mSteps.Get(man);
    if (was && utility.GetCurrentAction() == was) continue;
+   if (was && utility.GetCurrentAction()) PrintFormat("[ACR] ROADBLOCK lane: a holder's step was put aside by %1", utility.GetCurrentAction().ClassName());
    if (was && was.GetActionState() != EAIActionState.COMPLETED && was.GetActionState() != EAIActionState.FAILED) was.Fail();
    // The nearer side: the shortest walk out. (Always the post's side was tried: from the middle of
    // the lane that walk was longer and its end sat among the gun nest's sandbags, and men were still
@@ -425,6 +457,13 @@ class ACR_RoadblockLane
    PrintFormat("[ACR] ROADBLOCK lane at %1: %2 holder(s) step clear for %3 (%4 m off along the road)", rb.m_vPos, sent, FilePath.StripPath(PrefabName(vehicle)), Math.Round(at[2]));
   }
   return sent;
+ }
+
+ // True while ClearFor looks after this man for this vehicle (it saw them within GUARD_MS).
+ static bool Guarded(IEntity man, IEntity vehicle)
+ {
+  if (!man || !vehicle || !s_mGuardFor || s_mGuardFor.Get(man) != vehicle) return false;
+  return GetGame().GetWorld().GetWorldTime() - s_mGuardAt.Get(man) <= GUARD_MS;
  }
 
  // A point in the composition's frame, in the world.
@@ -459,5 +498,18 @@ class ACR_RoadblockLane
   }
   float x = LaneX(z) + side * (LANE_HALF_WIDTH + POST_GAP);
   return World(ent, x, z);
+ }
+}
+
+// The game's dodge from a vehicle coming at a man on foot stands aside for one of our vehicles in our
+// roadblock's lane while ACR_RoadblockLane.ClearFor looks after him (see GUARD_MS there). Every other
+// vehicle, and every man not by the lane, keeps the game's reaction.
+[BaseContainerProps()]
+modded class SCR_AIDangerReaction_Vehicle
+{
+ override bool PerformReaction(notnull SCR_AIUtilityComponent utility, notnull SCR_AIThreatSystem threatSystem, AIDangerEvent dangerEvent, int dangerEventCount)
+ {
+  if (dangerEvent && !utility.m_AIInfo.HasUnitState(EUnitState.IN_VEHICLE) && ACR_RoadblockLane.Guarded(utility.m_OwnerEntity, dangerEvent.GetVictim())) return false;
+  return super.PerformReaction(utility, threatSystem, dangerEvent, dangerEventCount);
  }
 }
