@@ -42,6 +42,7 @@ class ACR_ZombieNest : Managed
  vector m_vGoal;
  string m_sGoal;
  ACR_Base m_Raid;      // a night raid on this held base (null: none)
+ bool m_bGroundZero;   // where a contained outbreak started (ACR_Containment): refills and spreads fast
 }
 
 class ACR_Outbreak
@@ -113,7 +114,7 @@ class ACR_Outbreak
   if (value == "" && !ACR_Options.Get("acrZombies", value)) value = "";
   value.ToLower();
   if (value == "few" || value == "many") return value;
-  if (ACR_TvZ.On()) return "few"; // TvZ needs zombies
+  if (ACR_TvZ.On() || ACR_Containment.Asked()) return "few"; // TvZ and containment need zombies
   return "off";
  }
 
@@ -138,6 +139,7 @@ class ACR_Outbreak
  static void Apply()
  {
   s_bOn = false;
+  ACR_Containment.Reset();
   s_aStarts.Clear();
   s_iSeconds = 0;
   string level = LevelOption();
@@ -185,13 +187,33 @@ class ACR_Outbreak
   string names = "";
   // TvZ: the absent side's HQ is the hive, the biggest nest on the map.
   ACR_Base hive;
+  ACR_DefenderPost hivePost;
   if (tvz) hive = ACR_TvZ.Hive();
   if (hive && candidates.Contains(hive))
   {
    candidates.RemoveItem(hive);
-   ACR_DefenderPost hivePost = AddNest(hive.GetOrigin(), Math.Min(NEST_MAX, maxSize * 2), hive.m_sName);
+   hivePost = AddNest(hive.GetOrigin(), Math.Min(NEST_MAX, maxSize * 2), hive.m_sName);
    names += string.Format(" %1(%2, hive)", hivePost.m_sName, hivePost.m_iReserve);
    placed++;
+  }
+  // Containment (ACR_Containment): one ground zero (the hive in TvZ), nothing else at the start.
+  if (ACR_Containment.Asked())
+  {
+   ACR_Base zeroTown = hive;
+   ACR_DefenderPost zero = hivePost;
+   if (!zero)
+   {
+    zeroTown = PickGroundZero(candidates);
+    if (zeroTown) zero = AddNest(zeroTown.GetOrigin(), NEST_MAX, zeroTown.m_sName);
+   }
+   if (zero)
+   {
+    names += string.Format(" %1(%2, ground zero)", zeroTown.m_sName, zero.m_iReserve);
+    if (!hivePost) placed++;
+    atBases = placed;
+    country = 0;
+    ACR_Containment.Start(zero, zeroTown);
+   }
   }
   while (placed < atBases && !candidates.IsEmpty())
   {
@@ -337,6 +359,15 @@ class ACR_Outbreak
   else post.m_sName = string.Format("Zombies %1", ACR_Manager.Grid(post.m_vPos));
  }
 
+ // A nest's next horde: ground zero sends them sooner (ACR_Containment).
+ protected static float NestHordeGap(ACR_ZombieNest nest)
+ {
+  if (!nest.m_bGroundZero) return HordeGap();
+  float gap = ACR_Containment.GZ_HORDE_MS;
+  if (s_bNight) gap = gap / 3;
+  return gap * Math.RandomFloat(0.7, 1.3);
+ }
+
  protected static float HordeGap()
  {
   float gap = HORDE_MS;
@@ -349,6 +380,33 @@ class ACR_Outbreak
  {
   foreach (vector start : s_aStarts) if (vector.DistanceXZ(at, start) < clearance) return false;
   return true;
+ }
+
+ // Ground zero (ACR_Containment): among the open towns far enough from the starting bases, one of
+ // the three furthest from the nearest of them (null: none).
+ protected static ACR_Base PickGroundZero(notnull array<ACR_Base> candidates)
+ {
+  array<ACR_Base> picks = {};
+  array<float> spans = {};
+  foreach (ACR_Base base : candidates)
+  {
+   float nearest = 100000;
+   foreach (vector start : s_aStarts) nearest = Math.Min(nearest, vector.DistanceXZ(base.GetOrigin(), start));
+   int at = 0;
+   while (at < spans.Count() && spans[at] >= nearest) at++;
+   picks.InsertAt(base, at);
+   spans.InsertAt(nearest, at);
+  }
+  if (picks.IsEmpty()) return null;
+  int top = picks.Count();
+  if (top > 3) top = 3;
+  return picks[Math.RandomInt(0, top)];
+ }
+
+ // Zombies the cap still allows.
+ static int Room()
+ {
+  return Math.Max(0, s_iCap - Total());
  }
 
  protected static bool InsideBase(vector at)
@@ -436,7 +494,7 @@ class ACR_Outbreak
  {
   if (count < 4 || from.m_iReserve < count) return false;
   from.m_iReserve -= count;
-  if (from.m_iReserve < from.m_Nest.m_iSize && from.m_Nest.m_fGrowAt <= 0) from.m_Nest.m_fGrowAt = GetGame().GetWorld().GetWorldTime() + GrowGap();
+  if (from.m_iReserve < from.m_Nest.m_iSize && from.m_Nest.m_fGrowAt <= 0) from.m_Nest.m_fGrowAt = GetGame().GetWorld().GetWorldTime() + NestGrowGap(from.m_Nest);
   ACR_DefenderPost horde = ACR_Defenders.Add(FACTION, from.m_vPos, "", 40);
   horde.m_iReserve = count;
   horde.m_fSpawnRange = NEST_RANGE;
@@ -451,6 +509,8 @@ class ACR_Outbreak
   string kind = "horde";
   if (raid) kind = "raid";
   PrintFormat("[ACR] ZOMBIES %1 of %2 from %3 to %4 (%5 m)", kind, count, from.m_sName, goalName, (int)vector.DistanceXZ(from.m_vPos, goal));
+  // Containment: people are holed up in a town the dead are coming for, unless they already nest there.
+  if (!raid && ACR_Containment.On() && !NestNear(goal, 200, null)) ACR_Containment.AddSurvivors(goal, goalName);
   return true;
  }
 
@@ -485,6 +545,13 @@ class ACR_Outbreak
   return false;
  }
 
+ protected static float NestGrowGap(ACR_ZombieNest nest)
+ {
+  if (!nest.m_bGroundZero) return GrowGap();
+  if (s_bNight) return ACR_Containment.GZ_GROW_MS / 3;
+  return ACR_Containment.GZ_GROW_MS;
+ }
+
  protected static float GrowGap()
  {
   if (s_bNight) return GROW_MS / 3;
@@ -503,14 +570,16 @@ class ACR_Outbreak
   {
    nest.m_fGrowAt = 0;
    if (Total() < s_iCap) post.m_iReserve++;
-   if (post.m_iReserve < nest.m_iSize) nest.m_fGrowAt = now + GrowGap();
+   if (post.m_iReserve < nest.m_iSize) nest.m_fGrowAt = now + NestGrowGap(nest);
   }
   if (now >= nest.m_fHordeAt)
   {
-   nest.m_fHordeAt = now + HordeGap();
+   nest.m_fHordeAt = now + NestHordeGap(nest);
    vector goal;
    string goalName;
-   if (post.m_iReserve >= HORDE_MIN && post.m_iReserve >= nest.m_iSize && PickGoal(post.m_vPos, goal, goalName)) SendHorde(post, post.m_iReserve / 2, goal, goalName);
+   bool ready = post.m_iReserve >= HORDE_MIN && post.m_iReserve >= nest.m_iSize;
+   if (nest.m_bGroundZero) ready = post.m_iReserve >= ACR_Containment.GZ_HORDE_MIN;
+   if (ready && PickGoal(post.m_vPos, goal, goalName)) SendHorde(post, post.m_iReserve / 2, goal, goalName);
   }
   return false;
  }
@@ -554,6 +623,8 @@ class ACR_Outbreak
  protected static void Arrive(ACR_DefenderPost post)
  {
   ACR_ZombieNest nest = post.m_Nest;
+  // Containment: survivors there with nobody guarding them join it.
+  post.m_iReserve += ACR_Containment.HordeArrives(ACR_Manager.GetInstance(), post, Room());
   ACR_DefenderPost there = NestNear(nest.m_vGoal, 200, post);
   if (there && there.m_iReserve + post.m_iReserve <= NEST_MAX)
   {
@@ -615,12 +686,18 @@ class ACR_Outbreak
   if (post.m_iReserve <= 0)
   {
    PrintFormat("[ACR] ZOMBIES %1 cleared", post.m_sName);
+   // Containment pays the sides that cleared it (ACR_Containment.Bounty).
+   int bounty = ACR_Containment.Bounty(post);
    array<string> sides = {ACR_FactionSelection.West(), ACR_FactionSelection.East()};
    foreach (string side : sides)
    {
     if (!SideNear(manager, side, post.m_vPos, STAY_RANGE + 200)) continue;
+    string line = string.Format("%1 cleared", post.m_sName);
+    int paid = ACR_Containment.Give(manager, side, bounty);
+    if (paid > 0) line = string.Format("%1 cleared: +%2 RP", post.m_sName, paid);
+    if (paid > 0) PrintFormat("[ACR] CONTAIN %1 paid %2 RP for clearing %3", side, paid, post.m_sName);
     ACR_Intel intel = manager.IntelFor(side);
-    if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), string.Format("%1 cleared", post.m_sName));
+    if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), line, post.m_vPos);
    }
    ACR_Defenders.Remove(post);
    return;
@@ -635,7 +712,7 @@ class ACR_Outbreak
    if (where != vector.Zero) post.m_vPos = where;
    return;
   }
-  if (post.m_iReserve < nest.m_iSize) nest.m_fGrowAt = GetGame().GetWorld().GetWorldTime() + GrowGap();
+  if (post.m_iReserve < nest.m_iSize) nest.m_fGrowAt = GetGame().GetWorld().GetWorldTime() + NestGrowGap(nest);
  }
 
  // A man of 'side' killed at 'pos' (ACR_Report): by zombies, he joins the nearest nest or horde
@@ -701,7 +778,7 @@ class ACR_Outbreak
  }
 
  // A living soldier of 'side' (a squad's or a player) within range of pos.
- protected static bool SideNear(ACR_Manager manager, string side, vector pos, float range)
+ static bool SideNear(ACR_Manager manager, string side, vector pos, float range)
  {
   foreach (ACR_Squad squad : manager.m_Squads)
   {

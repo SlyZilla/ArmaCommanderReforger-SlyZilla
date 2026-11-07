@@ -593,6 +593,7 @@ class ACR_Manager : Managed
   ACR_Guerrillas.Tick();
   ACR_Insurgency.Tick();
   ACR_Outbreak.Tick();
+  ACR_Containment.Tick();
   t = ACR_Perf.Lap("cleanup", t);
   WatchEvictions();
   array<IEntity> allVehicles = {};

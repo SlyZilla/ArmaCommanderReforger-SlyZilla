@@ -9,7 +9,8 @@ enum ACR_EAITask
  ROADBLOCK, // establishing or holding a forward roadblock
  MINES,     // laying a minefield on an approach (-acrMinesAI)
  FORTIFY,   // digging in or upgrading a position on an approach (-acrFortifyAI)
- SWEEP      // clearing a road where FIA ambushed the side (ACR_Insurgency, #89)
+ SWEEP,     // clearing a road where FIA ambushed the side (ACR_Insurgency, #89)
+ RESCUE     // getting survivors out of a town the dead are coming for (ACR_Containment, #107)
 }
 
 enum ACR_ESapperDemoState
@@ -1170,6 +1171,7 @@ class ACR_AICommander : Managed
   t = ACR_Perf.Lap("ai.post", t);
   ManageLogistics();
   ManageDangerRoads();
+  ManageRescues();
   ManageFobBuild();
   ManageFobUpgrades();
   int beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
@@ -7344,6 +7346,49 @@ class ACR_AICommander : Managed
  }
  void ManageDangerRoadsForTest() { ManageDangerRoads(); }
 
+ // Containment (ACR_Containment): one squad at a time goes for the survivor site with the most
+ // people it can reach (the nearest free combat squad within SWEEP_REACH), day or night. The
+ // rescue itself is ACR_Containment's (any soldier of the side close enough); the squad is freed
+ // once the site is gone (rescued, overrun, or left), or as a sweeper would be.
+ protected ACR_SurvivorSite m_RescueSite;
+ protected ACR_Squad m_Rescuer;
+ protected float m_fRescueSince;
+
+ protected void ManageRescues()
+ {
+  if (!ACR_Containment.On()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (m_Rescuer)
+  {
+   bool going = ACR_Containment.Has(m_RescueSite) && m_Manager.m_Squads.Contains(m_Rescuer) && m_Rescuer.CountAlive() > 0 && !m_Rescuer.HasPlayer() && m_Rescuer.m_iAITask == ACR_EAITask.RESCUE && !m_Rescuer.GaveUpUnreachable() && now - m_fRescueSince <= SWEEP_MAX_MS;
+   if (going) return;
+   if (m_Rescuer.m_iAITask == ACR_EAITask.RESCUE) m_Rescuer.SetAITask(ACR_EAITask.FREE);
+   m_Rescuer = null;
+   m_RescueSite = null;
+  }
+  ACR_SurvivorSite pick;
+  ACR_Squad squad;
+  for (int i = 0; i < ACR_Containment.SiteCount(); i++)
+  {
+   ACR_SurvivorSite site = ACR_Containment.SiteAt(i);
+   if (pick && site.m_iCount <= pick.m_iCount) continue;
+   ACR_Squad near = FindSweeper(site.m_vPos);
+   if (!near) continue;
+   pick = site;
+   squad = near;
+  }
+  if (!pick) return;
+  m_RescueSite = pick;
+  m_Rescuer = squad;
+  m_fRescueSince = now;
+  squad.SetAITask(ACR_EAITask.RESCUE);
+  squad.SetMode(ACR_EMoveMode.COMBAT);
+  Travel(squad, pick.m_vPos, false, 0);
+  Say(string.Format("[ACR] AI %1: %2 to rescue %3 survivors at %4", m_sFaction, squad.GetName(), pick.m_iCount, ACR_Manager.Grid(pick.m_vPos)));
+ }
+ void ManageRescuesForTest() { ManageRescues(); }
+ ACR_Squad RescuerForTest() { return m_Rescuer; }
+
  // A service vehicle that gave up stuck (ACR_Squad.m_fStuckAt: holding where it is) waits before
  // it is sent anywhere again, as Recrew does. Jacob's 26 Oct game: an arsenal truck stuck by its
  // spawn at Saint-Philippe Factory was sent to Tyrone 59 times in 2.5 h, 353 stuck lines.
@@ -9253,6 +9298,7 @@ class ACR_AICommander : Managed
   if (task == ACR_EAITask.MINES) return "laying mines";
   if (task == ACR_EAITask.FORTIFY) return "digging in";
   if (task == ACR_EAITask.SWEEP) return "clearing a road";
+  if (task == ACR_EAITask.RESCUE) return "rescuing survivors";
   if (task == ACR_EAITask.ATTACK) return "attacking" + at;
   return "in reserve";
  }

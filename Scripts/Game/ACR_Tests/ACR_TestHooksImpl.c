@@ -98,6 +98,8 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrZombiesTest")) ACR_TestOutbreak.Run(seconds);
   // -acrTvZTest: one side against the zombies (ACR_TestTvZ, #107).
   if (System.IsCLIParam("acrTvZTest")) ACR_TestTvZ.Run(seconds);
+  // -acrContainmentTest: ground zero, survivors and rescues (ACR_TestContainment, #107).
+  if (System.IsCLIParam("acrContainmentTest")) ACR_TestContainment.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
   if (System.IsCLIParam("acrGenerateMapTest")) ACR_TestGenerate.RunAnyMap(seconds);
@@ -143,6 +145,12 @@ modded class ACR_TestHooks
  override string ZombieMode()
  {
   if (System.IsCLIParam("acrTvZTest")) return "tvz";
+  return "";
+ }
+
+ override string Outbreak()
+ {
+  if (System.IsCLIParam("acrContainmentTest")) return "contain";
   return "";
  }
 

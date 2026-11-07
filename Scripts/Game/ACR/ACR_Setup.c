@@ -250,12 +250,12 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "zombies", "zombiemode", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks", "strategy", "allocator", "forecast", "coveredfallback", "periodjets", "squadtactics", "pullover", "evadearmour", "fieldsoffire", "twoic"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "zombies", "zombiemode", "outbreak", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks", "strategy", "allocator", "forecast", "coveredfallback", "periodjets", "squadtactics", "pullover", "evadearmour", "fieldsoffire", "twoic"};
   foreach (string key : keys)
   {
    if (key == "seed" && !generated && Current("quickstart") == "off") continue;
    // Only with Project Outbreak loaded (ACR_Outbreak).
-   if ((key == "zombies" || key == "zombiemode") && !ACR_Outbreak.Loaded()) continue;
+   if ((key == "zombies" || key == "zombiemode" || key == "outbreak") && !ACR_Outbreak.Loaded()) continue;
    // Opens the map on the host's own screen with the layout drawn on it (client side).
    if (key == "map")
    {
@@ -316,6 +316,7 @@ class ACR_Setup
   if (key == "fialeaning") return "FIA leans by conduct";
   if (key == "zombies") return "Zombies";
   if (key == "zombiemode") return "Zombie mode";
+  if (key == "outbreak") return "Outbreak start";
   if (key == "threat") return "Threat";
   if (key == "pricing") return "Prices";
   if (key == "ai") return "AI commanders";
@@ -423,6 +424,7 @@ class ACR_Setup
   else if (key == "fialeaning") values = {"0", "1"};
   else if (key == "zombies") values = {"off", "few", "many"};
   else if (key == "zombiemode") values = {"tvtvz", "tvz"};
+  else if (key == "outbreak") values = {"nests", "contain"};
   else if (key == "threat") values = {"low", "normal", "high"};
   else if (key == "pricing") values = {"stepped", "stock"};
   else if (key == "ai")
@@ -464,6 +466,7 @@ class ACR_Setup
   if (key == "fialeaning") return "acrFIALeaning";
   if (key == "zombies") return "acrZombies";
   if (key == "zombiemode") return "acrZombieMode";
+  if (key == "outbreak") return "acrOutbreak";
   if (key == "threat") return "acrThreat";
   if (key == "pricing") return "acrPricing";
   if (key == "ai") return "acrAI";
@@ -550,6 +553,7 @@ class ACR_Setup
    if (key == "fialeaning") return "0";
    if (key == "zombies") return "off";
    if (key == "zombiemode") return "tvtvz";
+   if (key == "outbreak") return "nests";
    if (key == "deployment") return "military";
    if (key == "reinforcement") return "settlements";
    if (key == "fobservices") return "supplies";
@@ -642,6 +646,8 @@ class ACR_Setup
   if (key == "zombies" && value == "off") return "off";
   if (key == "zombiemode" && value == "tvtvz") return "both sides + zombies";
   if (key == "zombiemode" && value == "tvz") return "one side vs zombies (the other side sits out)";
+  if (key == "outbreak" && value == "nests") return "nests across the map";
+  if (key == "outbreak" && value == "contain") return "one ground zero that spreads; rescue survivors";
   if (key == "deployment" && value == "military") return "military bases / HQs / FOBs";
   if (key == "deployment" && value == "hq") return "HQs / FOBs only";
   if (key == "deployment" && value == "all") return "all deployment-enabled points";

@@ -29,6 +29,8 @@ class ACR_TestHooks
  string Zombies() { return ""; }
  // Zombie mode a test asks for (tvtvz / tvz), "" = the host option (ACR_TvZ).
  string ZombieMode() { return ""; }
+ // Outbreak start a test asks for (nests / contain), "" = the host option (ACR_Containment).
+ string Outbreak() { return ""; }
  // AI doctrine a test asks for (ACR_AIDoctrine key), "" = the host option or random.
  string AIDoctrine(string factionKey) { return ""; }
  // Side a test's player deploys on without the deploy screen ("west" / "east"), "" = the menu.
