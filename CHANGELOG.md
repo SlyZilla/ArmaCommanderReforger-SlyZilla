@@ -24,6 +24,11 @@
 
 - The host debug menu names the sides. Its buttons said "+500 RP us" and "+500 RP enemy", and with the US in the match "us" read as "the U.S.": a Soviet host gave his own side 500 RP and watched it become tanks. Every button now says which side it acts on ("+500 RP to USSR", "Give to US", "Pause US AI commander", "Reveal US"), the box opens with "You play USSR. Enemy: US." and shows both sides' RP, and the base and FOB buttons sit under the selected base's name and stay greyed out until you pick one. A click the menu ignores because it came too soon after the last one now says so; it used to vanish without a word.
 
+### Respawn and mods
+
+- With Project Outbreak's zombies in the match, a commander killed in his command unit could be stuck on the deploy screen for good, every spawn point closed and the whole command UI shut behind it. The zombies counted at bases like an enemy side: a base they wandered into stayed "under attack" for as long as they stood there, and enough of them could even take it. Only the two sides and FIA now hold, contest or take a base; zombies and any other mod's faction (civilians too) still bring the garrison out to fight, but no longer close a base or its spawn point.
+- A side is never left with nowhere to deploy. When every one of its deploy bases is under attack or offline and it has no HQ spawn point (East on Arland), its best deploy base stays open anyway: you deploy into the fight instead of waiting on an empty deploy screen.
+
 ## 0.5.10 — released
 
 ### AI commanders
