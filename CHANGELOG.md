@@ -19,6 +19,10 @@
 
 - Game Master hears the period jets (`-acrPeriodJets 1`) from the Game Master camera. While the editor was open, the engine roar, its delay behind the jet and the close fly-past were all worked out for where the Game Master's own soldier stood, so with the camera over a bomb run far from that soldier you heard only a flat engine loop and no fly-past.
 
+### Content packs
+
+- A content pack's soldier swaps are now rolled for each garrison soldier, FIA cell member and pocket fighter as he spawns. They were rolled once when the side's garrison list was built, so one unlucky roll decided the whole match: with the Cold War pack, FIA could play a full match without a single fighter in Cold War kit. Hand-picked garrison lists from a mission now get the pack's swaps too, as hand-picked squads already did.
+
 ## 0.5.10 — released
 
 ### AI commanders

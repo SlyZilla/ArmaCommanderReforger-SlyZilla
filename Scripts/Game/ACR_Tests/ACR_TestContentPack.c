@@ -208,16 +208,38 @@ class ACR_TestContentPack
   ACR_TestRegress.Check("content: unvetted mod vehicles stay out of the US list", foreign == 0, foreign.ToString());
   s_iExpected++;
 
-  // FIA garrisons (and so FIA cells) draw the pack's guerrilla kits.
+  // FIA garrisons (and so FIA cells) draw the pack's guerrilla kits, rolled per soldier as he
+  // spawns: most picks kitted, and every role in the pool kitted at least once. (6 Nov: the swap
+  // was rolled once into the pool, so a match could draw no kit at all, and only riflemen had one.)
+  array<ResourceName> fiaPool = manager.m_Bases.GetFaction("FIA").m_aGarrison;
+  int picks = 200;
   int guerrillas;
-  array<ResourceName> fiaPool = {};
-  ACR_FactionCatalog.BuildGarrisonPool("FIA", ACR_FactionSettings.Find("FIA"), fiaPool);
-  foreach (ResourceName fiaSoldier : fiaPool)
+  map<ResourceName, int> roleKitted = new map<ResourceName, int>();
+  foreach (ResourceName fiaRole : fiaPool) roleKitted.Set(fiaRole, 0);
+  for (int pick = 0; pick < picks && !fiaPool.IsEmpty(); pick++)
   {
-   string fiaPath = fiaSoldier;
-   if (fiaPath.Contains("CW_FIA_")) guerrillas++;
+   ResourceName role = fiaPool[pick % fiaPool.Count()];
+   array<ResourceName> one = {role};
+   string picked = ACR_BaseSystem.PickGarrisonSoldier("FIA", one);
+   if (!picked.Contains("CW_FIA_")) continue;
+   guerrillas++;
+   roleKitted.Set(role, roleKitted.Get(role) + 1);
   }
-  ACR_TestRegress.Check("content: FIA garrisons draw the pack's guerrilla kits", guerrillas > 0, string.Format("%1 of %2", guerrillas, fiaPool.Count()));
+  string bareRoles;
+  foreach (ResourceName checkedRole, int kitted : roleKitted)
+   if (kitted == 0) bareRoles += " " + FilePath.StripPath(checkedRole);
+  ACR_TestRegress.Check("content: FIA garrisons draw the pack's guerrilla kits", !fiaPool.IsEmpty() && guerrillas * 10 >= picks * 6, string.Format("%1 of %2 picks kitted (pool %3)", guerrillas, picks, fiaPool.Count()));
+  s_iExpected++;
+  ACR_TestRegress.Check("content: every FIA garrison role has a guerrilla kit", !fiaPool.IsEmpty() && bareRoles.IsEmpty(), "never kitted:" + bareRoles);
+  s_iExpected++;
+  // The pool itself stays the catalog's soldiers: the swap belongs to the spawn.
+  int prebaked;
+  foreach (ResourceName pooled : fiaPool)
+  {
+   string pooledPath = pooled;
+   if (pooledPath.Contains("CW_FIA_")) prebaked++;
+  }
+  ACR_TestRegress.Check("content: FIA garrison pool holds unswapped soldiers", prebaked == 0, string.Format("%1 of %2 pre-swapped", prebaked, fiaPool.Count()));
   s_iExpected++;
 
   // Kit mods add their soldiers to the catalogs too: garrisons stay vanilla.

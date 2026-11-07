@@ -745,13 +745,8 @@ class ACR_FactionCatalog
   catalog.GetEntityList(entries);
   AddGarrisonSoldiers(factionKey, entries, true, result);
   if (result.IsEmpty()) AddGarrisonSoldiers(factionKey, entries, false, result);
-  // A content pack's soldier swaps (per entry, so a varied swap gives a varied pool).
-  ACR_ContentSocket socket = ACR_ContentSocket.Get();
-  for (int i = 0; i < result.Count(); i++)
-  {
-   ResourceName swapped = socket.Soldier(factionKey, result[i]);
-   if (!swapped.IsEmpty()) result[i] = swapped;
-  }
+  // A content pack's soldier swaps are rolled per soldier as he spawns (ACR_BaseSystem.PickGarrisonSoldier),
+  // not here: a pool swapped once per match left the whole match on one roll (6 Nov: all FIA vanilla).
  }
 
  protected static void AddGarrisonSoldiers(string factionKey, array<SCR_EntityCatalogEntry> entries, bool standardOnly, array<ResourceName> result)
