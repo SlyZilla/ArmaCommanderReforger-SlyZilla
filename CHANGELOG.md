@@ -1,6 +1,10 @@
 # Changelog
 ## 0.5.12 — unreleased
 
+### AI commanders
+
+- A worn-down AI squad that can't get back to a base to refill tries another base instead of the same one again. In a two-hour AI-commander match on Everon, a Soviet machine-gun team was sent back to Lancre 29 times, every three minutes, and gave up each walk 75 seconds in. A base the squad gave up walking to is now skipped for 20 minutes, and each walk given up in a row waits two minutes longer before the next (up to ten).
+
 ## 0.5.11 — released
 
 ### AI commanders

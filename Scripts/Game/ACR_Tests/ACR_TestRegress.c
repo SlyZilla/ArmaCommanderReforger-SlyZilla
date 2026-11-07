@@ -1480,6 +1480,7 @@ class ACR_TestRegress
    bool waitsGaveUp = logisticsAI && logisticsAI.StuckLatelyForTest(bravo);
    bravo.m_fGaveUpAt = gaveUpBefore;
    Check("a service vehicle that gave up stuck or unreachable isn't sent on another run for a while", waits && free && waitsGaveUp, string.Format("waits %1, free later %2, waits after giving up %3", waits, free, waitsGaveUp));
+   if (logisticsAI) RefitGiveUpCheck(logisticsAI, bravo);
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
@@ -1662,6 +1663,46 @@ class ACR_TestRegress
    foreach (AIAgent cancelledAgent : cancelledAgents) if (ACR_Transport.VehicleOf(cancelledAgent.GetControlledEntity())) cancelledSeated++;
   }
   Check("Halt cancels delayed Get In seating", cancelled && cancelled.OrderState() == ACR_EOrderState.HOLD && cancelledSeated == 0, string.Format("%1 passengers", cancelledSeated));
+ }
+
+ // AI soak 7 Nov: a depleted squad was sent back to the same unreachable base 29 times. A base
+ // given up on is skipped for a while, other bases aren't, and each walk given up in a row waits
+ // longer. Works on the AI commander's bookkeeping only; nobody is ordered anywhere.
+ static void RefitGiveUpCheck(ACR_AICommander ai, ACR_Squad squad)
+ {
+  string skipName = "refit: a base given up on is skipped for a while, others aren't";
+  string waitName = "refit: each walk given up in a row waits longer, up to a cap";
+  ACR_Base first;
+  ACR_Base second;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!first) first = base;
+   else if (!second) second = base;
+  }
+  if (!first || !second)
+  {
+   Skip(skipName, "fewer than two bases");
+   Skip(waitName, "fewer than two bases");
+   return;
+  }
+  float now = GetGame().GetWorld().GetWorldTime();
+  ai.ForgetRefit(squad);
+  float wait1 = ai.NoteRefitGaveUp(squad, first, now);
+  bool skipped = ai.RefitGaveUpOn(squad, first, now + 60000);
+  bool otherOk = !ai.RefitGaveUpOn(squad, second, now + 60000);
+  bool laterOk = !ai.RefitGaveUpOn(squad, first, now + ACR_AICommander.REFIT_SKIP_MS + 1000);
+  float wait2 = ai.NoteRefitGaveUp(squad, second, now);
+  bool movedOn = ai.RefitGaveUpOn(squad, second, now) && !ai.RefitGaveUpOn(squad, first, now);
+  for (int i = 0; i < 6; i++) ai.NoteRefitGaveUp(squad, null, now);
+  float waitMax = ai.NoteRefitGaveUp(squad, null, now);
+  int giveUps = ai.RefitGiveUps(squad);
+  ai.ForgetRefit(squad);
+  Check(skipName, skipped && otherOk && laterOk && movedOn, string.Format("skipped %1, other base ok %2, ok after the skip %3, moves on to the newer one %4", skipped, otherOk, laterOk, movedOn));
+  bool waitsOk = wait1 == ACR_AICommander.REINFORCE_RETRY_MS && wait2 == 2 * ACR_AICommander.REINFORCE_RETRY_MS && waitMax == ACR_AICommander.REFIT_RETRY_MAX * ACR_AICommander.REINFORCE_RETRY_MS && giveUps == 9;
+  int s1 = wait1 / 1000;
+  int s2 = wait2 / 1000;
+  int sMax = waitMax / 1000;
+  Check(waitName, waitsOk, string.Format("waits %1/%2/%3 s, %4 in a row", s1, s2, sMax, giveUps));
  }
 
  static void VehicleDoorsCheck(IEntity vehicle)
