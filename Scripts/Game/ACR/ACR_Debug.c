@@ -47,16 +47,26 @@ class ACR_Debug : Managed
   return null;
  }
 
- // One line for the panel, e.g. "USSR AI: PAUSED   Reveal: off".
+ // A side's name as players see it ("RHS US", "UA"), for the menu and its replies. The buttons
+ // name sides, never "us"/"enemy": "+500 RP us" read as "+500 RP to the US" (6 Nov live, a USSR
+ // host funded his own side's tanks).
+ static string Name(string factionKey)
+ {
+  if (factionKey.IsEmpty()) return "?";
+  return ACR_FactionSelection.DisplayName(factionKey);
+ }
+
+ // One short line for the panel (it doesn't wrap), e.g. "USSR 503 RP | US 10 RP | US AI: PAUSED".
  string Status(ACR_Manager manager, string ownKey)
  {
   string enemy = EnemyOf(ownKey);
   string ai = "running";
   if (IsPaused(enemy)) ai = "PAUSED";
-  else if (!manager.IsAIInCommand(enemy)) ai = "not in command";
-  string reveal = "off";
-  if (Reveals(ownKey)) reveal = "ON";
-  return string.Format("%1 AI: %2   Reveal: %3", enemy, ai, reveal);
+  else if (!manager.IsAIInCommand(enemy)) ai = "off (player)";
+  int ownRP = manager.m_Bases.GetRP(ownKey);
+  int enemyRP;
+  if (!enemy.IsEmpty()) enemyRP = manager.m_Bases.GetRP(enemy);
+  return string.Format("%1 %2 RP | %3 %4 RP | %3 AI: %5", Name(ownKey), ownRP, Name(enemy), enemyRP, ai);
  }
 
  string Run(ACR_Manager manager, int action, string ownKey, string baseName)
@@ -117,8 +127,10 @@ class ACR_Debug : Managed
  {
   if (factionKey.IsEmpty()) return "No such side";
   ACR_FactionData data = manager.m_Bases.GetFaction(factionKey);
+  if (data.m_iRP >= ACR_BaseSystem.POINTS_CAP) return string.Format("Debug: %1 is already at the %2 RP cap", Name(factionKey), ACR_BaseSystem.POINTS_CAP);
+  int before = data.m_iRP;
   data.m_iRP = Math.Min(data.m_iRP + RP_STEP, ACR_BaseSystem.POINTS_CAP);
-  return string.Format("Debug: %1 now has %2 RP (cap %3)", factionKey, data.m_iRP, ACR_BaseSystem.POINTS_CAP);
+  return string.Format("Debug: +%1 RP to %2 (now %3, cap %4)", data.m_iRP - before, Name(factionKey), data.m_iRP, ACR_BaseSystem.POINTS_CAP);
  }
 
  protected string TogglePause(string factionKey)
@@ -127,16 +139,16 @@ class ACR_Debug : Managed
   if (m_Paused.Contains(factionKey))
   {
    m_Paused.RemoveItem(factionKey);
-   return string.Format("Debug: %1 AI commander resumed", factionKey);
+   return string.Format("Debug: %1 AI commander resumed", Name(factionKey));
   }
   m_Paused.Insert(factionKey);
-  return string.Format("Debug: %1 AI commander paused (squads keep their current orders)", factionKey);
+  return string.Format("Debug: %1 AI commander paused (squads keep their current orders)", Name(factionKey));
  }
 
  protected string AttackNow(ACR_Manager manager, string factionKey, ACR_Base target)
  {
   ACR_AICommander ai = manager.AICommanderFor(factionKey);
-  if (!ai) return string.Format("%1 has no AI commander", factionKey);
+  if (!ai) return string.Format("Debug: %1 has no AI commander", Name(factionKey));
   string result = "Debug: " + ai.ForceAttack(target);
   if (IsPaused(factionKey)) result += " (paused: it moves once you resume)";
   return result;
@@ -146,20 +158,21 @@ class ACR_Debug : Managed
  {
   if (!base) return "Debug: select a base on the map first";
   if (factionKey.IsEmpty()) return "No such side";
-  if (base.m_sOwner == factionKey) return string.Format("%1 already holds %2", factionKey, base.m_sName);
+  if (base.m_sOwner == factionKey) return string.Format("Debug: %1 already holds %2", Name(factionKey), base.m_sName);
   manager.m_Bases.DebugCapture(manager, base, factionKey);
-  return string.Format("Debug: %1 now belongs to %2", base.m_sName, factionKey);
+  return string.Format("Debug: %1 now belongs to %2", base.m_sName, Name(factionKey));
  }
 
  protected string ToggleReveal(string factionKey)
  {
+  string enemy = Name(EnemyOf(factionKey));
   if (m_Reveal.Contains(factionKey))
   {
    m_Reveal.RemoveItem(factionKey);
-   return "Debug: reveal off (sightings fade as usual)";
+   return string.Format("Debug: %1 soldiers hidden again (sightings fade as usual)", enemy);
   }
   m_Reveal.Insert(factionKey);
-  return string.Format("Debug: %1 intel now sees every enemy soldier", factionKey);
+  return string.Format("Debug: %1 intel now sees every %2 soldier", Name(factionKey), enemy);
  }
 
  protected string ResetSupports(ACR_Manager manager)
@@ -173,6 +186,6 @@ class ACR_Debug : Managed
     count++;
    }
   }
-  return string.Format("Debug: %1 support(s) ready again (both sides)", count);
+  return string.Format("Debug: %1 support(s) off cooldown (both sides)", count);
  }
 }

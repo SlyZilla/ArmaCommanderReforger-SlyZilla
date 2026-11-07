@@ -20,6 +20,10 @@
 
 - A content pack's soldier swaps are now rolled for each garrison soldier, FIA cell member and pocket fighter as he spawns. They were rolled once when the side's garrison list was built, so one unlucky roll decided the whole match: with the Cold War pack, FIA could play a full match without a single fighter in Cold War kit. Hand-picked garrison lists from a mission now get the pack's swaps too, as hand-picked squads already did.
 
+### Host tools
+
+- The host debug menu names the sides. Its buttons said "+500 RP us" and "+500 RP enemy", and with the US in the match "us" read as "the U.S.": a Soviet host gave his own side 500 RP and watched it become tanks. Every button now says which side it acts on ("+500 RP to USSR", "Give to US", "Pause US AI commander", "Reveal US"), the box opens with "You play USSR. Enemy: US." and shows both sides' RP, and the base and FOB buttons sit under the selected base's name and stay greyed out until you pick one. A click the menu ignores because it came too soon after the last one now says so; it used to vanish without a word.
+
 ## 0.5.10 — released
 
 ### AI commanders
