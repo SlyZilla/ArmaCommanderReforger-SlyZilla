@@ -54,6 +54,10 @@ class ACR_GunnerDrive
  static bool s_bHillStart = true; // hill start, lugging down-shift and hold (test switches it off for a before/after run)
  static const float HILL_START_SPEED = 3;       // m/s: slip the clutch below this until the engine is in its torque band
  static const float HILL_START_MIN_CLUTCH = 0.2;
+ // Climbing in first (Reforger 1.9): the clutch is eased in and out so the engine stays at its peak torque, like a
+ // torque converter, until the wheels turn it that fast themselves. Clutch per second at a whole band's rpm error.
+ static const float HILL_SLIP_RATE = 1.5;
+ float m_fHillClutch = -1;
  static const float HOLD_AFTER_DOWNSHIFT_MS = 6000;
  static const float HILL_PITCH = 5;          // degrees nose-up in the direction of travel
  static const float HILL_HOLD_MS = 2500;
@@ -367,8 +371,26 @@ class ACR_GunnerDrive
   // full throttle (650 rpm, no torque), and only reverse's lower gearing got it moving.
   // Slipping the clutch while slow lets the engine rev into its torque band first.
   // Uphill only: on the flat it cost about a second pulling away.
-  else if (s_bHillStart && throttle > 0 && Uphill() && Math.AbsFloat(speed) < HILL_START_SPEED && peakTorque > idle && rpm < peakTorque)
-   clutch = Math.Min(m_fClutch, Math.Clamp((rpm - idle) / (peakTorque - idle), HILL_START_MIN_CLUTCH, 1));
+  // Reforger 1.9's gearbox keeps the clutch locked from idle up, so past the start the Humvee lugged up a 31% road
+  // in first at 1100-1500 rpm (peak torque 2000) and climbed 63 m in 20 s where 1.8 managed 96 m. Climbing in first
+  // now keeps slipping until the wheels turn the engine at its peak torque: the clutch is eased in or out by the
+  // engine's rpm against that peak (an integrator, so it settles there rather than below it, as the start's
+  // proportional clutch did). The first measurement: 69 m in 20 s with a plain proportional slip at any speed.
+  bool hillSlip = false;
+  if (s_bHillStart && throttle > 0 && Uphill() && peakTorque > idle)
+  {
+   bool starting = Math.AbsFloat(speed) < HILL_START_SPEED && rpm < peakTorque;
+   bool lugging = gear == neutral + 1 && sim.EngineGetRPMFeedback() < peakTorque * 0.98;
+   hillSlip = starting || lugging;
+  }
+  if (!hillSlip) m_fHillClutch = -1;
+  // (The old all-the-time slip variant above, when it's switched on, takes the clutch instead.)
+  if (hillSlip && !s_bSlipClutch)
+  {
+   if (m_fHillClutch < 0) m_fHillClutch = Math.Clamp((rpm - idle) / (peakTorque - idle), HILL_START_MIN_CLUTCH, 1);
+   else m_fHillClutch = Math.Clamp(m_fHillClutch + HILL_SLIP_RATE * dt * (rpm - peakTorque) / (peakTorque - idle), HILL_START_MIN_CLUTCH, 1);
+   clutch = Math.Min(m_fClutch, m_fHillClutch);
+  }
   m_SetClutch = clutch;
 
   if (!s_bFixedOnly)

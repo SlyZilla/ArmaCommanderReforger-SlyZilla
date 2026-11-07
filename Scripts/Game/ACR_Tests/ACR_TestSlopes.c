@@ -88,6 +88,7 @@ class ACR_TestSlopes
    int at;
    for (int r = 0; r < 4; r++) if (second >= 15 + r * 23 && second <= 35 + r * 23) { run = r; at = second - (15 + r * 23); }
    ACR_GunnerDrive.s_bHillStart = run != 0;
+   if (second == 16 && s_G) PrintFormat("[ACR] SLOPE engine %1", Engine(s_G));
    s_Session.m_Throttle = 0;
    if (run >= 0 && at < 20) { s_Session.m_Throttle = 1; if (run == 3) s_Session.m_Throttle = -1; }
    if (second == 36) Pose(s_G, s_Bottom[0], Dir(0));
@@ -181,6 +182,15 @@ class ACR_TestSlopes
   s += string.Format(" driver=%1", driver != null);
   return s;
  }
+ // The engine and gearbox the climbs are made with (they changed with Reforger 1.9's powertrain).
+ static string Engine(IEntity v)
+ {
+  CarControllerComponent car = CarControllerComponent.Cast(v.FindComponent(CarControllerComponent));
+  if (!car || !car.GetSimulation()) return "unknown";
+  VehicleWheeledSimulation sim = car.GetSimulation();
+  return string.Format("idle %1 rpm, peak torque %2 Nm at %3 rpm, peak power at %4 rpm, max %5 rpm, %6 forward gears", sim.EngineGetRPMIdle(), sim.EngineGetPeakTorque(), sim.EngineGetRPMPeakTorque(), sim.EngineGetRPMPeakPower(), sim.EngineGetRPMMax(), sim.GearboxForwardGearsCount());
+ }
+
  static float RoadGap(vector pos)
  {
   ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
