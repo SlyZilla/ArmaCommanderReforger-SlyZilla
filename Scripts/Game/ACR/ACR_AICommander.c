@@ -1300,9 +1300,14 @@ class ACR_AICommander : Managed
  // free truck in fetch range ('truckNear', AllocTruckNear; 'byTruck' says it counts on one, and the
  // allocator gives each truck to one squad), as Reach. Soak 6 Nov: it counted a ride for every far
  // squad while the side had one truck, and Reach dropped the attack it planned, every 2 minutes.
- protected float AllocEta(ACR_Squad squad, float dist, bool truckNear, out bool byTruck)
+ // The air lift likewise: only one TryAirLift would call for this trip ('to': where it ends, 'task':
+ // the task it goes with; AirLiftCountable), and 'byAir' marks it so the allocator gives the one lift
+ // to one squad. Match 6 Nov (Chernarus): every far squad counted a 240 s lift, Travel refused it,
+ // squads walked 6 km and the attacks were called off "never formed up" six minutes later.
+ protected float AllocEta(ACR_Squad squad, float dist, bool truckNear, vector to, int task, out bool byTruck, out bool byAir)
  {
   byTruck = false;
+  byAir = false;
   if (squad.InMobileVehicle() || ACR_Transport.CrewedVehicle(squad)) return dist / MOUNTED_SPEED;
   if (dist <= WALK_REACH) return dist / WALK_SPEED;
   if (truckNear)
@@ -1310,8 +1315,22 @@ class ACR_AICommander : Managed
    byTruck = true;
    return dist / RIDE_SPEED + 120;
   }
-  if (SupportReady(ACR_ESupportType.AIR_LIFT)) return AIR_LIFT_SECONDS;
+  if (AirLiftCountable(squad, to, task))
+  {
+   byAir = true;
+   return AIR_LIFT_SECONDS;
+  }
   return -1;
+ }
+
+ // 'ring' metres out of 'target' on the side facing 'from' (where an attack from there stages).
+ static vector RingPoint(vector target, vector from, float ring)
+ {
+  vector dir = from - target;
+  dir[1] = 0;
+  if (ring <= 0 || dir.Length() <= ring) return target;
+  dir.Normalize();
+  return target + dir * ring;
  }
 
  // A free truck Reach would fetch for this squad on a long trip (the widest AI pickup).
@@ -1510,24 +1529,29 @@ class ACR_AICommander : Managed
     // worth 2 and back 30 s later.
     bool holdJob = job.m_iKind == ACR_EAITask.POSTED && j != reserveJob;
     if (holdJob && squad.m_iAITask == ACR_EAITask.POSTED && squad != m_ReserveSquad && vector.DistanceXZ(squad.m_MoveTarget, where.GetOrigin()) > where.m_fRadius + DEFENSE_DISTANCE) fit = 0;
-    bool byTruck;
-    float eta = AllocEta(squad, dist, truckNear, byTruck);
+    bool byTruck, byAir;
+    vector endsAt = where.GetOrigin();
+    if (job.m_bTeam) endsAt = RingPoint(endsAt, pos, AttackRing(where));
+    float eta = AllocEta(squad, dist, truckNear, endsAt, job.m_iKind, byTruck, byAir);
     if (grabByTruck && fit > 0)
     {
      eta = dist / RIDE_SPEED + 120; // as AllocEta's ride, short of its walk
      byTruck = true;
+     byAir = false;
     }
     // Its own attack: the way to its staging point, or none once going in (its ride, if any, is under way).
     if (ownAttack && job.m_bRunning && ownAttack.m_Target == where)
     {
      eta = 0;
-     bool ownRide;
-     if (!ownAttack.m_bAssaulting && job.m_bTeam) eta = AllocEta(squad, vector.DistanceXZ(pos, ownAttack.StagingOf(squad)), truckNear, ownRide);
+     bool ownRide, ownLift;
+     if (!ownAttack.m_bAssaulting && job.m_bTeam) eta = AllocEta(squad, vector.DistanceXZ(pos, ownAttack.StagingOf(squad)), truckNear, ownAttack.StagingOf(squad), ACR_EAITask.ATTACK, ownRide, ownLift);
      if (eta < 0) eta = 0;
      byTruck = false;
+     byAir = false;
     }
     entry.m_aEta.Insert(eta);
     entry.m_aByTruck.Insert(byTruck && fit > 0);
+    entry.m_aByAir.Insert(byAir && fit > 0);
     entry.m_aFit.Insert(fit);
     // What it has now.
     if (entry.m_iCurrent >= 0) continue;
@@ -1566,7 +1590,8 @@ class ACR_AICommander : Managed
   // The free trucks, one squad each (AllocEta only counts on one in fetch range; this says how many).
   int trucks = -1;
   if (m_Manager.m_Rides) trucks = m_Manager.m_Rides.CountIdleTransports(m_sFaction, m_bHandedOnly);
-  ACR_AIAllocator.Allocate(m_aAllocJobs, m_aAllocSquads, maxTeams, trucks);
+  // One air lift a plan, as Reach claims it (AllocEta marks only the squads it would fly).
+  ACR_AIAllocator.Allocate(m_aAllocJobs, m_aAllocSquads, maxTeams, trucks, 1);
   // In control the lane learns from the allocation: an attack in it funded (running or new) keeps
   // it fed; only unfunded ones in it count toward a starved lane (as AssignAttacks' musters).
   if (control && laneActive)
@@ -3369,6 +3394,16 @@ class ACR_AICommander : Managed
   return target.m_fRadius + STAGING_DISTANCE;
  }
 
+ // On foot with 'walk' metres to go, more than a walk (WALK_REACH): no vehicle of its own, no air
+ // lift, no truck ride under way or coming.
+ protected bool OnFootFar(ACR_Squad squad, float walk)
+ {
+  if (walk <= WALK_REACH) return false;
+  if (squad.IsMounted() || squad.InMobileVehicle() || ACR_Transport.CrewedVehicle(squad) || ACR_AirLift.Busy(squad)) return false;
+  if (m_Manager.m_Rides && m_Manager.m_Rides.RideOf(squad)) return false;
+  return true;
+ }
+
  // How a free squad would get to 'target' for an attack, and in how many seconds: in its own
  // vehicle; on foot within the doctrine's ride distance; by a taxi it can get (a free transport
  // within the pickup range ACR_Rides.Request fetches from, not counted for another squad of this
@@ -3405,7 +3440,8 @@ class ACR_AICommander : Managed
    seconds = dist / WALK_SPEED;
    return REACH_WALK;
   }
-  if (!liftTaken && SupportReady(ACR_ESupportType.AIR_LIFT))
+  // Only a lift TryAirLift would call for this trip (attacks: the squad goes as ATTACK).
+  if (!liftTaken && AirLiftCountable(squad, RingPoint(target, PositionOf(squad), ring), ACR_EAITask.ATTACK))
   {
    seconds = AIR_LIFT_SECONDS;
    return REACH_AIR_LIFT;
@@ -3853,7 +3889,7 @@ class ACR_AICommander : Managed
  }
 
  // Sends the chosen squads off: staging points (pincers), base of fire, orders.
- protected void LaunchAttack(ACR_AIAttack attack, vector from, int strength, float required, float pressure)
+ protected void LaunchAttack(ACR_AIAttack attack, vector from, int strength, float required, float pressure, bool dropWalkers = true)
  {
   ACR_Base target = attack.m_Target;
   // What it sets out with, as UpdateAttacks counts it later (FieldStrength): a squad leaving a
@@ -3927,6 +3963,34 @@ class ACR_AICommander : Managed
     Travel(squad, attack.StagingOf(squad), false, 0, target);
     // The travel estimate was the straight way: a covered way round adds its extra length.
     if (m_fCoverDetour > 0) attack.m_fStageDeadline = Math.Max(attack.m_fStageDeadline, Math.Min(attack.m_fStageLimit, plannedDeadline + m_fCoverDetour / COVER_WALK_SPEED * 1000));
+   }
+  }
+  // A squad sent on foot beyond a walk (the ride or air lift its plan counted on wasn't there when
+  // Travel asked) leaves the attack now, not six minutes later as "never formed up" (match 6 Nov,
+  // Chernarus: Holding Squad 1 walked 6.6 km for an attack planned on a 240 s lift, twice). The
+  // attack goes on without it while it keeps the strength it wanted and someone to take the base.
+  // An admin's forced attack keeps everyone.
+  if (!empty && dropWalkers)
+  {
+   for (int w = attack.m_Squads.Count() - 1; w >= 0; w--)
+   {
+    ACR_Squad walker = attack.m_Squads[w];
+    if (!walker || carried.Contains(walker)) continue;
+    float walk = vector.DistanceXZ(PositionOf(walker), attack.StagingOf(walker));
+    if (!OnFootFar(walker, walk)) continue;
+    Say(string.Format("[ACR] AI %1: %2 leaves the attack on %3: on foot for %4 m, no ride or air lift to be had", m_sFaction, walker.GetName(), target.m_sName, (int)walk));
+    strength -= walker.Strength();
+    attack.m_iStartStrength -= walker.FieldStrength();
+    attack.Remove(w);
+    walker.SetAITask(ACR_EAITask.FREE);
+   }
+   if (attack.m_Squads.IsEmpty() || required > strength || TakersIn(attack) == 0)
+   {
+    float droppedAt = GetGame().GetWorld().GetWorldTime();
+    Say(string.Format("[ACR] AI %1: attack on %2 called off at launch: its squads can't get there in time (%3/%4 strength left)", m_sFaction, target.m_sName, strength, (int)required));
+    m_StalledUntil.Set(target, droppedAt + ALLOC_DROP_COOLDOWN * 1000);
+    foreach (ACR_Squad released : attack.m_Squads) released.SetAITask(ACR_EAITask.FREE);
+    return;
    }
   }
   attack.m_bAssaulting = empty;
@@ -4028,7 +4092,7 @@ class ACR_AICommander : Managed
    strength += squad.Strength();
   }
   Say(string.Format("[ACR] AI %1: forced attack (debug menu)", m_sFaction));
-  LaunchAttack(attack, from, strength, strength, 1);
+  LaunchAttack(attack, from, strength, strength, 1, false);
   return string.Format("%1 AI attacking %2 with %3 squad(s)", m_sFaction, target.m_sName, free.Count());
  }
 
@@ -4244,21 +4308,19 @@ class ACR_AICommander : Managed
   return true;
  }
 
- bool TryAirLift(ACR_Squad squad, vector destination, ResourceName prefab, float radius, string order, int kind, float dropShort = 0)
+ // TryAirLift's cheap checks for 'squad' (at 'from') flying to 'destination' and going as 'task'
+ // (the idle-shuffle gate). The plans ask them too (AirLiftCountable), so they only count on a
+ // lift Travel would call. 'why': the check it fails ("" when an air lift was never on: none in
+ // this mission, a player's squad, a vehicle crew).
+ protected bool AirLiftOpen(ACR_Squad squad, vector from, vector destination, int task, out string why)
  {
+  why = "";
   if (!m_Manager || !m_Manager.m_Supports || (m_bHandedOnly && !m_bTwoICAll)) return false; // paid: not for handed squads (CallSupport), but the lazy commander's 2IC may
   if (!squad || !squad.m_Group || squad.HasPlayer()) return false;
   if (squad.IsMounted() || ACR_Transport.CrewedVehicle(squad) || squad.m_bMortar || squad.Aircraft()) return false;
   if (ACR_AirLift.Busy(squad)) return false;
-  IEntity anchor = squad.GetAnchor();
-  if (!anchor) return false;
-  vector from = anchor.GetOrigin();
   if (!ACR_Manager.OnMap(destination)) return false;
-
-  float distance = vector.DistanceXZ(from, destination);
-  if (distance < ACR_AirLift.MIN_DISTANCE) return false;
-
-  // Cheap checks before the road route and landing zone searches (Jacob 18 Oct: freezes).
+  if (vector.DistanceXZ(from, destination) < ACR_AirLift.MIN_DISTANCE) return false;
   int supportIdx = SupportIndex(ACR_ESupportType.AIR_LIFT);
   if (supportIdx < 0) return false;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(m_sFaction);
@@ -4267,21 +4329,71 @@ class ACR_AICommander : Managed
   if (!entry || !entry.m_bEnabled) return false;
   float now = GetGame().GetWorld().GetWorldTime();
   bool waveSlot = ACR_AirLift.WaveSlotAvailable(m_sFaction, now);
-  if (now < entry.m_fReadyAt && !waveSlot) return false;
-  if (now < m_fNextAirLiftTry && !waveSlot) return false;
+  if (now < entry.m_fReadyAt && !waveSlot)
+  {
+   why = string.Format("helicopter not ready for %1 s", (int)((entry.m_fReadyAt - now) / 1000));
+   return false;
+  }
+  if (now < m_fNextAirLiftTry && !waveSlot)
+  {
+   why = "waiting after a refused lift";
+   return false;
+  }
   int cost = entry.CostFor(true);
-  if (Purse(data) < cost + SUPPORT_RESERVE) return false;
-  if (squad.KnownEnemies(300) > 0) return false;
-
+  if (Purse(data) < cost + SUPPORT_RESERVE)
+  {
+   why = string.Format("short of RP (%1 for %2)", Purse(data), cost + SUPPORT_RESERVE);
+   return false;
+  }
+  if (squad.KnownEnemies(300) > 0)
+  {
+   why = "enemies within 300 m";
+   return false;
+  }
   // AI priority gate: when known enemy bases exist, preserve air lifts for combat attacks
   // and threatened base defense rather than idle squad shuffling or cheap grabs.
-  if (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED)
+  if ((task == ACR_EAITask.FREE || task == ACR_EAITask.POSTED) && HasKnownEnemyBase())
   {
-   if (HasKnownEnemyBase())
+   if (FriendlyBaseThreatened() || !m_Attacks.IsEmpty() || Purse(data) < cost * 2 + SUPPORT_RESERVE)
    {
-    if (FriendlyBaseThreatened() || !m_Attacks.IsEmpty() || Purse(data) < cost * 2 + SUPPORT_RESERVE) return false;
+    why = "kept for attacks and threatened bases";
+    return false;
    }
   }
+  return true;
+ }
+
+ // A lift the plans may count on for 'squad' to 'to', going as 'task': TryAirLift's cheap checks,
+ // a long trip (a short one is flown only round a detour by road, too dear to route for every
+ // estimate) and a clear flight path.
+ protected bool AirLiftCountable(ACR_Squad squad, vector to, int task)
+ {
+  if (!squad) return false;
+  IEntity anchor = squad.GetAnchor();
+  if (!anchor) return false;
+  vector from = anchor.GetOrigin();
+  string why;
+  if (!AirLiftOpen(squad, from, to, task, why)) return false;
+  if (vector.DistanceXZ(from, to) < m_Doctrine.m_fAirLiftDistance) return false;
+  return FlightPathClear(from, to);
+ }
+
+ bool TryAirLift(ACR_Squad squad, vector destination, ResourceName prefab, float radius, string order, int kind, float dropShort = 0)
+ {
+  if (!squad) return false;
+  IEntity anchor = squad.GetAnchor();
+  if (!anchor) return false;
+  vector from = anchor.GetOrigin();
+  float distance = vector.DistanceXZ(from, destination);
+  // Cheap checks before the road route and landing zone searches (Jacob 18 Oct: freezes).
+  string why;
+  if (!AirLiftOpen(squad, from, destination, squad.m_iAITask, why))
+  {
+   NoAirLift(squad, distance, why);
+   return false;
+  }
+  int supportIdx = SupportIndex(ACR_ESupportType.AIR_LIFT);
+  float now = GetGame().GetWorld().GetWorldTime();
 
   bool isLong = distance >= m_Doctrine.m_fAirLiftDistance;
   bool isDetour = false;
@@ -4319,7 +4431,11 @@ class ACR_AICommander : Managed
    }
   }
 
-  if (!FlightPathClear(from, targetLZ)) return false;
+  if (!FlightPathClear(from, targetLZ))
+  {
+   NoAirLift(squad, distance, "enemies seen along the flight path");
+   return false;
+  }
 
   string result = m_Manager.m_Supports.Call(m_sFaction, supportIdx, targetLZ, true, -1, squad, prefab, destination, radius, order, kind);
   if (!ACR_AirLift.Busy(squad))
@@ -4331,6 +4447,14 @@ class ACR_AICommander : Managed
   }
   Say(string.Format("[ACR] AI %1: air lift for %2 to %3 (%4 m): %5", m_sFaction, squad.GetName(), ACR_Manager.Grid(destination), (int)distance, result));
   return true;
+ }
+
+ // Why a long trip got no air lift, for attacks only (other long moves ask often; match 6 Nov:
+ // attacks counted on lifts that were refused without a word).
+ protected void NoAirLift(ACR_Squad squad, float distance, string why)
+ {
+  if (why.IsEmpty() || distance < m_Doctrine.m_fAirLiftDistance || squad.m_iAITask != ACR_EAITask.ATTACK) return;
+  Say(string.Format("[ACR] AI %1: no air lift for %2 (%3 m): %4", m_sFaction, squad.GetName(), (int)distance, why));
  }
 
  // ---------------------------------------------------------------- trips
