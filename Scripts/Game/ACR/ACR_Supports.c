@@ -594,10 +594,21 @@ class ACR_LocalFlyover : Managed
 		return at;
 	}
 
-	// Where this machine's player is: the controlled character, else the camera (a commander
-	// with no body). False when there is neither.
+	// Where this machine's player is listening: the Game Master camera while the editor is open (the
+	// game hears from that camera, wherever the GM's soldier stands; Jacob, 6 Nov), else the controlled
+	// character, else the camera (a commander with no body). False when there is none.
 	static bool Listener(out vector at)
 	{
+		SCR_EditorManagerEntity editor = SCR_EditorManagerEntity.GetInstance();
+		if (editor && editor.IsOpened())
+		{
+			SCR_ManualCamera gmCamera = SCR_CameraEditorComponent.GetCameraInstance();
+			if (gmCamera)
+			{
+				at = gmCamera.GetOrigin();
+				return true;
+			}
+		}
 		PlayerController controller = GetGame().GetPlayerController();
 		if (controller && controller.GetControlledEntity())
 		{

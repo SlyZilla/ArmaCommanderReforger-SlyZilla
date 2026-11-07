@@ -11,6 +11,10 @@
 - New battlefield size: a quarter of the map. The setup screen's Battlefield row has "generated, a quarter of the map" (or `-acrSize quarter`): a district of about a quarter of the map's towns, round or stretched, somewhere different on each seed. On Chernarus Minus that is 15-19 objectives with the HQs 4-8 km apart, instead of 30 objectives and 14 km for a half. FIA pockets and guerrillas scale down with it.
 - Generated battles no longer always run corner to corner. The two HQs had to be nearly as far apart as the map allows, which on a square map only the diagonals are. Each seed now picks a direction first (north-south, east-west or anything between) and puts the HQs far apart along it.
 
+### Supports
+
+- Game Master hears the period jets (`-acrPeriodJets 1`) from the Game Master camera. While the editor was open, the engine roar, its delay behind the jet and the close fly-past were all worked out for where the Game Master's own soldier stood, so with the camera over a bomb run far from that soldier you heard only a flat engine loop and no fly-past.
+
 ## 0.5.10 — released
 
 ### AI commanders
