@@ -4,12 +4,13 @@
 // the job a squad has is kept unless another is clearly better, locked squads stay, an attack
 // needs a squad that can take the base, a running attack is fully ready at the strength it set
 // out with, worth nothing once broken, keeps its slot under the cap, its own squads first and
-// them unless elsewhere is clearly better, and the value curves.
+// them unless elsewhere is clearly better, and the value curves; trucks are counted (one squad a
+// truck), and where a squad at a quiet rear base moves up to (ACR_AICommander.MoveUpPick).
 // Then live on the range with -acrAIAllocator 2: free Alpha 200 m from an empty base is sent to
 // grab it by the allocator, and not when it is a medic team.
 class ACR_TestAllocator
 {
- static const int CHECKS = 22;
+ static const int CHECKS = 27;
 
  static ACR_AIJobSquad Squad(string name, float strength, int current, array<float> etas, array<float> fits = null)
  {
@@ -58,6 +59,14 @@ class ACR_TestAllocator
   job.m_iMaxSquads = most;
   job.m_fPatience = 1200;
   return job;
+ }
+
+ // Its way to the first job (an attack) is a truck ride, to the second not.
+ static ACR_AIJobSquad Ride(ACR_AIJobSquad squad)
+ {
+  squad.m_aByTruck.Insert(true);
+  squad.m_aByTruck.Insert(false);
+  return squad;
  }
 
  static string Picks(array<ref ACR_AIJobSquad> squads, array<ref ACR_AIJob> jobs)
@@ -274,6 +283,52 @@ class ACR_TestAllocator
   ACR_AIAllocator.Allocate(jobs, squads, 1);
   bool ownFirst = squads[0].m_iPicked == 0 && squads[1].m_iPicked == 0 && squads[2].m_iPicked == 1;
   ACR_TestRegress.Check("allocator: a running attack keeps its own squads before a nearer outsider", ownFirst, Picks(squads, jobs));
+
+  // 12. The 6 Nov Soapy Yar case: trucks are counted, one squad a truck. An attack that needs two
+  // squads riding in isn't planned with one truck free (Reach would drop it at launch, every 2 min).
+  jobs.Clear();
+  jobs.Insert(Attack("SoapyYar", 40, 16));
+  jobs.Insert(Hold("Pulkovo", 2));
+  squads.Clear();
+  squads.Insert(Squad("Walker", 6, -1, E(300, 0)));
+  squads.Insert(Ride(Squad("RiderA", 6, -1, E(600, 0))));
+  squads.Insert(Ride(Squad("RiderB", 6, -1, E(650, 0))));
+  ACR_AIAllocator.Allocate(jobs, squads, 1, 2);
+  bool twoTrucks = jobs[0].m_aMembers.Count() == 3;
+  ACR_AIAllocator.Allocate(jobs, squads, 1, 1);
+  bool oneTruck = jobs[0].m_aMembers.IsEmpty();
+  ACR_TestRegress.Check("allocator: an attack needing two rides is planned with two trucks free, not with one", twoTrucks && oneTruck, Picks(squads, jobs) + string.Format(" (with two trucks: %1)", twoTrucks));
+  // A one-squad job by truck with none left goes to no one; with one free it does.
+  jobs.Clear();
+  jobs.Insert(Hold("Grab", 10, 1));
+  squads.Clear();
+  ACR_AIJobSquad farSquad = Squad("Far", 6, -1, E(600, 0));
+  farSquad.m_aByTruck.Insert(true);
+  squads.Insert(farSquad);
+  ACR_AIAllocator.Allocate(jobs, squads, 0, 0);
+  bool noTruck = squads[0].m_iPicked == -1;
+  ACR_AIAllocator.Allocate(jobs, squads, 0, 1);
+  ACR_TestRegress.Check("allocator: a job by truck goes to no one with no truck free", noTruck && squads[0].m_iPicked == 0, Picks(squads, jobs));
+
+  // 13. Moving up (ACR_AICommander.MoveUpPick), the 6 Nov Pulkovo case: a squad 9.5 km from the enemy,
+  // our front 2.2 km. Bases: Zaprudny (front, 7 km off), Vybor (6.3 km from the enemy, 2.8 km off),
+  // a neighbour 1 km off barely nearer the enemy.
+  array<float> gaps = {2200.0, 6300.0, 9000.0};
+  array<float> dists = {7000.0, 2800.0, 1000.0};
+  array<float> scores = {7000.0, 2800.0, 1000.0};
+  bool atFront;
+  int truckPick = ACR_AICommander.MoveUpPick(gaps, dists, scores, 9500, 2200, true, atFront);
+  bool frontByTruck = truckPick == 0 && atFront;
+  int onFoot = ACR_AICommander.MoveUpPick(gaps, dists, scores, 9500, 2200, false, atFront);
+  bool hops = onFoot == 1 && !atFront;
+  ACR_TestRegress.Check("move up: by truck to the front, on foot one hop of at most 3 km toward it", frontByTruck && hops, string.Format("truck %1, foot %2", truckPick, onFoot));
+  int stuck = ACR_AICommander.MoveUpPick(gaps, dists, scores, 6800, 2200, false, atFront);
+  ACR_TestRegress.Check("move up: never to a base less than 1.5 km nearer the enemy (waits instead)", stuck == -1, string.Format("from 6.8 km on foot: %1", stuck));
+  array<float> frontGaps = {2200.0, 2400.0};
+  array<float> frontDists = {7000.0, 7500.0};
+  array<float> frontScores = {7000.0, 5500.0};
+  int lane = ACR_AICommander.MoveUpPick(frontGaps, frontDists, frontScores, 9500, 2200, true, atFront);
+  ACR_TestRegress.Check("move up: of the front bases, the best posting score (the lane's pull) wins", lane == 1, string.Format("%1", lane));
 
   // The live checks follow at tick 8.
  }

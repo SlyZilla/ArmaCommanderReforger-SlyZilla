@@ -1144,10 +1144,12 @@ class ACR_AICommander : Managed
   ReturnToPosts();
   t = ACR_Perf.Lap("ai.defend", t);
   UpdateLane();
+  UpdateFrontGap();
   if (AllocatorControls()) RunAllocation(true);
   else AssignAttacks();
   t = ACR_Perf.Lap("ai.plan", t);
   PostIdle(); // with the allocator in control: only the squads it left with nothing to do
+  MoveUp();
   ManageScreens();
   CatchRides();
   PositionMortars();
@@ -1286,14 +1288,30 @@ class ACR_AICommander : Managed
  }
 
  // The cheap travel estimate the allocator ranks with (design: two tiers; full Reach only for
- // the squads a new attack actually takes). 'dist' is to the job's point.
- protected float AllocEta(ACR_Squad squad, float dist)
+ // the squads a new attack actually takes). 'dist' is to the job's point. Beyond a walk only with a
+ // free truck in fetch range ('truckNear', AllocTruckNear; 'byTruck' says it counts on one, and the
+ // allocator gives each truck to one squad), as Reach. Soak 6 Nov: it counted a ride for every far
+ // squad while the side had one truck, and Reach dropped the attack it planned, every 2 minutes.
+ protected float AllocEta(ACR_Squad squad, float dist, bool truckNear, out bool byTruck)
  {
+  byTruck = false;
   if (squad.InMobileVehicle() || ACR_Transport.CrewedVehicle(squad)) return dist / MOUNTED_SPEED;
   if (dist <= WALK_REACH) return dist / WALK_SPEED;
-  if (m_Manager.m_Rides) return dist / RIDE_SPEED + 120;
+  if (truckNear)
+  {
+   byTruck = true;
+   return dist / RIDE_SPEED + 120;
+  }
   if (SupportReady(ACR_ESupportType.AIR_LIFT)) return AIR_LIFT_SECONDS;
   return -1;
+ }
+
+ // A free truck Reach would fetch for this squad on a long trip (the widest AI pickup).
+ protected bool AllocTruckNear(ACR_Squad squad)
+ {
+  if (!m_Manager.m_Rides || squad.InMobileVehicle() || ACR_Transport.CrewedVehicle(squad)) return false;
+  float fetch;
+  return m_Manager.m_Rides.FindTransport(m_sFaction, PositionOf(squad), float.MAX, squad.CountAlive(), fetch, true, null, false, m_bHandedOnly) != null;
  }
 
  protected string AllocJobName(int j)
@@ -1428,6 +1446,7 @@ class ACR_AICommander : Managed
   // Holding: the front line, and the reserve.
   array<ACR_Base> front = {};
   FrontlineBases(front);
+  RearOut(front);
   foreach (ACR_Base post : front)
   {
    // A fallback for squads with nothing better: barely more for a richer base (Arland control
@@ -1465,6 +1484,7 @@ class ACR_AICommander : Managed
    ACR_AIAttack ownAttack;
    attackOf.Find(squad, ownAttack);
    bool support = IsSupportTeam(squad);
+   bool truckNear = AllocTruckNear(squad);
    foreach (int j, ACR_AIJob job : m_aAllocJobs)
    {
     ACR_Base where = job.m_Target;
@@ -1482,16 +1502,24 @@ class ACR_AICommander : Managed
     // worth 2 and back 30 s later.
     bool holdJob = job.m_iKind == ACR_EAITask.POSTED && j != reserveJob;
     if (holdJob && squad.m_iAITask == ACR_EAITask.POSTED && squad != m_ReserveSquad && vector.DistanceXZ(squad.m_MoveTarget, where.GetOrigin()) > where.m_fRadius + DEFENSE_DISTANCE) fit = 0;
-    float eta = AllocEta(squad, dist);
-    if (grabByTruck && fit > 0) eta = dist / RIDE_SPEED + 120; // as AllocEta's ride, short of its walk
-    // Its own attack: the way to its staging point, or none once going in.
+    bool byTruck;
+    float eta = AllocEta(squad, dist, truckNear, byTruck);
+    if (grabByTruck && fit > 0)
+    {
+     eta = dist / RIDE_SPEED + 120; // as AllocEta's ride, short of its walk
+     byTruck = true;
+    }
+    // Its own attack: the way to its staging point, or none once going in (its ride, if any, is under way).
     if (ownAttack && job.m_bRunning && ownAttack.m_Target == where)
     {
      eta = 0;
-     if (!ownAttack.m_bAssaulting && job.m_bTeam) eta = AllocEta(squad, vector.DistanceXZ(pos, ownAttack.StagingOf(squad)));
+     bool ownRide;
+     if (!ownAttack.m_bAssaulting && job.m_bTeam) eta = AllocEta(squad, vector.DistanceXZ(pos, ownAttack.StagingOf(squad)), truckNear, ownRide);
      if (eta < 0) eta = 0;
+     byTruck = false;
     }
     entry.m_aEta.Insert(eta);
+    entry.m_aByTruck.Insert(byTruck && fit > 0);
     entry.m_aFit.Insert(fit);
     // What it has now.
     if (entry.m_iCurrent >= 0) continue;
@@ -1527,7 +1555,10 @@ class ACR_AICommander : Managed
   if (ACR_Base.s_All.Count() > 24) extra = extra * 2;
   if (laneActive) extra = m_Doctrine.m_iLaneFronts; // a lane concentrates the force (AssignAttacks)
   maxTeams += Math.Min(extra, freeNow.Count() / Math.Max(1, m_Doctrine.m_iSquadsPerFront)); // free squads, as AssignAttacks counts
-  ACR_AIAllocator.Allocate(m_aAllocJobs, m_aAllocSquads, maxTeams);
+  // The free trucks, one squad each (AllocEta only counts on one in fetch range; this says how many).
+  int trucks = -1;
+  if (m_Manager.m_Rides) trucks = m_Manager.m_Rides.CountIdleTransports(m_sFaction, m_bHandedOnly);
+  ACR_AIAllocator.Allocate(m_aAllocJobs, m_aAllocSquads, maxTeams, trucks);
   // In control the lane learns from the allocation: an attack in it funded (running or new) keeps
   // it fed; only unfunded ones in it count toward a starved lane (as AssignAttacks' musters).
   if (control && laneActive)
@@ -1556,7 +1587,7 @@ class ACR_AICommander : Managed
    {
     if (n >= ALLOC_FULL_REACH) break;
     float seconds;
-    int how = Reach(m_aAllocSquads[memberIndex].m_Squad, funded.m_Target.GetOrigin(), taxis, liftTaken, seconds);
+    int how = Reach(m_aAllocSquads[memberIndex].m_Squad, funded.m_Target.GetOrigin(), taxis, liftTaken, seconds, AttackRing(funded.m_Target));
     reachCalls++;
     if (how == REACH_AIR_LIFT) liftTaken = true;
     if (how == REACH_NONE) reachWrong++;
@@ -1706,7 +1737,7 @@ class ACR_AICommander : Managed
     ACR_Squad goer = m_aAllocSquads[goAt].m_Squad;
     if (!goer) continue;
     float travel;
-    int how = Reach(goer, team.m_Target.GetOrigin(), taxis, liftTaken, travel);
+    int how = Reach(goer, team.m_Target.GetOrigin(), taxis, liftTaken, travel, AttackRing(team.m_Target));
     if (how == REACH_NONE) continue;
     if (how == REACH_AIR_LIFT) liftTaken = true;
     slowest = Math.Max(slowest, travel);
@@ -3271,14 +3302,24 @@ class ACR_AICommander : Managed
   return GrabTime(rolling, dist, fetch);
  }
 
+ // How far out of a base an attack on it forms up (LaunchAttack's staging ring).
+ static float AttackRing(ACR_Base target)
+ {
+  if (!target) return 0;
+  return target.m_fRadius + STAGING_DISTANCE;
+ }
+
  // How a free squad would get to 'target' for an attack, and in how many seconds: in its own
  // vehicle; on foot within the doctrine's ride distance; by a taxi it can get (a free transport
  // within the pickup range ACR_Rides.Request fetches from, not counted for another squad of this
  // attack: added to 'taxis'); on foot within WALK_REACH; by a ready air lift (one squad an attack,
- // 'liftTaken'); else REACH_NONE.
- protected int Reach(ACR_Squad squad, vector target, notnull array<ACR_Squad> taxis, bool liftTaken, out float seconds)
+ // 'liftTaken'); else REACH_NONE. 'ring': how far out of 'target' the trip ends (an attack stages
+ // its radius + STAGING_DISTANCE out, AttackRing). Soak 6 Nov: measured to the centre, a squad at
+ // Zaprudny (2.2 km from the USSR HQ, staging 1.9 km off) "couldn't get there" while the allocator,
+ // which counts the ring, kept picking it: the HQ attack was planned and dropped 23 times in an hour.
+ protected int Reach(ACR_Squad squad, vector target, notnull array<ACR_Squad> taxis, bool liftTaken, out float seconds, float ring = 0)
  {
-  float dist = vector.DistanceXZ(PositionOf(squad), target);
+  float dist = Math.Max(0, vector.DistanceXZ(PositionOf(squad), target) - ring);
   seconds = 0;
   if (squad.InMobileVehicle() || ACR_Transport.CrewedVehicle(squad))
   {
@@ -3313,7 +3354,7 @@ class ACR_AICommander : Managed
  }
 
  // The strength of the free squads that can get to 'target' (Reach), each taxi counted once.
- protected int ReachableStrength(array<ACR_Squad> free, vector target)
+ protected int ReachableStrength(array<ACR_Squad> free, vector target, float ring = 0)
  {
   int strength;
   array<ACR_Squad> taxis = {};
@@ -3321,7 +3362,7 @@ class ACR_AICommander : Managed
   foreach (ACR_Squad squad : free)
   {
    float seconds;
-   int how = Reach(squad, target, taxis, liftTaken, seconds);
+   int how = Reach(squad, target, taxis, liftTaken, seconds, ring);
    if (how == REACH_NONE) continue;
    if (how == REACH_AIR_LIFT) liftTaken = true;
    strength += squad.Strength();
@@ -3646,7 +3687,7 @@ class ACR_AICommander : Managed
    need = need * pressure;
    if (ACR_Manager.ThreatOption() == 2) need = need * 0.85; // High: launch a viable force sooner
    // Only the squads that can get there count (#27): a target beyond their reach is skipped.
-   int reachable = ReachableStrength(free, candidate.GetOrigin());
+   int reachable = ReachableStrength(free, candidate.GetOrigin(), AttackRing(candidate));
    if (!wanted) { wanted = candidate; wantedRequired = need; wantedReach = reachable; }
    if (need <= reachable) { target = candidate; required = need; break; }
   }
@@ -3711,7 +3752,7 @@ class ACR_AICommander : Managed
    // A squad that can't get there stays out (no taxi to be had, no air lift); one that can sets
    // how long the forming up waits.
    float travel;
-   int how = Reach(squad, target.GetOrigin(), taxis, liftTaken, travel);
+   int how = Reach(squad, target.GetOrigin(), taxis, liftTaken, travel, AttackRing(target));
    if (how == REACH_NONE) continue;
    if (how == REACH_AIR_LIFT) liftTaken = true;
    attack.m_fTravelSeconds = Math.Max(attack.m_fTravelSeconds, travel);
@@ -5144,6 +5185,7 @@ class ACR_AICommander : Managed
  {
   array<ACR_Base> front = {};
   FrontlineBases(front);
+  RearOut(front);
   if (front.IsEmpty()) return;
   array<ACR_Squad> free = {};
   MySquads(free, true);
@@ -5166,6 +5208,17 @@ class ACR_AICommander : Managed
      }
     }
    }
+   // At a rear base (new squads at the HQ): up to the front as MoveUp takes posted ones, by truck or
+   // base to base on foot, never a 13 km walk (soak 6 Nov: a US team set off on foot for 13196 m).
+   ACR_Base standing = NearestOwnBase(PositionOf(squad));
+   if (standing && vector.DistanceXZ(PositionOf(squad), standing.GetOrigin()) <= standing.m_fRadius + DEFENSE_DISTANCE && RearBase(standing))
+   {
+    bool upByTruck;
+    ACR_Base upTo = MoveUpTo(squad, EnemyGap(standing), upByTruck);
+    if (upTo) PostTo(squad, upTo);
+    else squad.SetAITask(ACR_EAITask.POSTED); // waits for a truck or a nearer base (MoveUp)
+    continue;
+   }
    // Nearest frontline base, but spread out: each squad already posted
    // there counts as 400 m farther, so idle troops don't pile up in one place.
    ACR_Base nearest;
@@ -5187,6 +5240,162 @@ class ACR_AICommander : Managed
    PostTo(squad, nearest);
   }
   PositionTransports();
+ }
+
+ // ---------------------------------------------------------------- 4a. moving up
+ // Squads posted at a quiet base far behind the front move up toward it (Jacob, 6 Nov: "squads
+ // weren't really getting around"). Soak 6 Nov (Chernarus, US AI): it held 21 bases to 4 and had 9
+ // line squads idle at bases 6-9 km back (Pulkovo, Vybor), posted there while those faced empty
+ // bases, as the attacks on the last enemy bases went short of strength in reach. A posted squad is
+ // never walked to another post (4 Nov: squads paced 2-3 km between two posts and back); this goes
+ // one way only: from a rear base with no threat to a base at least MOVEUP_GAIN nearer the enemy, so
+ // it can't swing back while the enemy's bases stand. Far moves go by truck; without one, in hops of
+ // at most MOVEUP_WALK on foot from base to base (CatchRides still picks them up on the way).
+ // "Rear" is judged against the enemy bases this side knows of, never empty ones (FrontlineBases
+ // counts those too): PostIdle and the allocator's hold jobs leave rear bases out as well.
+ static const float MOVEUP_INTERVAL_MS = 30000; // one squad moves up at a time, this often
+ static const float MOVEUP_DEPTH = 2500;        // m: a base this much farther from the enemy than our nearest is the rear
+ static const float MOVEUP_GAIN = 1500;         // m: a move up gets at least this much nearer the enemy
+ static const float MOVEUP_WALK = 3000;         // m: farthest a move up goes on foot in one hop
+ static const float MOVEUP_CALM = 500;          // m: a squad with an enemy it knows of this close stays put
+ protected float m_fNextMoveUp = -1;
+ protected float m_fFrontGap = -1;              // m from our base nearest the enemy to it, this tick (-1: no enemy base known)
+
+ // How far a base is from the nearest enemy base this side knows of (-1: none known).
+ protected float EnemyGap(ACR_Base base)
+ {
+  ACR_Base enemy = NearestEnemyBase(base.GetOrigin());
+  if (!enemy) return -1;
+  return vector.DistanceXZ(base.GetOrigin(), enemy.GetOrigin());
+ }
+
+ protected void UpdateFrontGap()
+ {
+  m_fFrontGap = -1;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner != m_sFaction) continue;
+   float gap = EnemyGap(base);
+   if (gap < 0) return; // no enemy base known: no front, no rear
+   if (m_fFrontGap < 0 || m_fFrontGap > gap) m_fFrontGap = gap;
+  }
+ }
+
+ // Ours, quiet and far behind the front: its posted squads move up (MoveUp), none are posted to it.
+ protected bool RearBase(ACR_Base base)
+ {
+  if (m_fFrontGap < 0 || !base || base.m_sOwner != m_sFaction) return false;
+  if (EnemyGap(base) <= m_fFrontGap + MOVEUP_DEPTH) return false;
+  return ThreatTo(base) <= 0 && DefenceThreat(base) <= 0;
+ }
+
+ // Drops the rear bases from a list of posts. All of them rear (FrontlineBases picked bases facing
+ // only empty ones): the posts become our bases nearest the enemy instead.
+ protected void RearOut(array<ACR_Base> posts)
+ {
+  array<ACR_Base> forward = {};
+  foreach (ACR_Base post : posts) if (!RearBase(post)) forward.Insert(post);
+  if (forward.IsEmpty() && !posts.IsEmpty())
+  {
+   foreach (ACR_Base base : ACR_Base.s_All)
+   {
+    if (!base || base.m_bRetired || base.m_sOwner != m_sFaction) continue;
+    float gap = EnemyGap(base);
+    if (gap >= 0 && gap <= m_fFrontGap + FRONTLINE_SLACK) forward.Insert(base);
+   }
+  }
+  if (!forward.IsEmpty()) posts.Copy(forward);
+ }
+
+ protected void MoveUp()
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (m_fFrontGap < 0 || now < m_fNextMoveUp) return;
+  m_fNextMoveUp = now + MOVEUP_INTERVAL_MS;
+  // The posted squads at rear bases, farthest back first.
+  array<ACR_Squad> free = {};
+  MySquads(free, true);
+  array<ACR_Squad> movers = {};
+  array<ACR_Base> froms = {};
+  array<float> gaps = {};
+  foreach (ACR_Squad squad : free)
+  {
+   if (squad.m_iAITask != ACR_EAITask.POSTED || squad == m_ReserveSquad || squad == m_FobEscort || OnRequest(squad) || IsReconTeam(squad)) continue;
+   if (squad.KnownEnemies(MOVEUP_CALM) > 0) continue;
+   ACR_Base from = NearestOwnBase(PositionOf(squad));
+   if (!from || vector.DistanceXZ(PositionOf(squad), from.GetOrigin()) > from.m_fRadius + DEFENSE_DISTANCE || !RearBase(from)) continue;
+   float gap = EnemyGap(from);
+   int at = 0;
+   while (at < gaps.Count() && gaps[at] >= gap) at++;
+   movers.InsertAt(squad, at);
+   froms.InsertAt(from, at);
+   gaps.InsertAt(gap, at);
+  }
+  foreach (int i, ACR_Squad mover : movers)
+  {
+   bool byTruck;
+   ACR_Base to = MoveUpTo(mover, gaps[i], byTruck);
+   if (!to) continue;
+   mover.SetAITask(ACR_EAITask.POSTED);
+   mover.SetMode(ACR_EMoveMode.FAST);
+   Travel(mover, to.GetOrigin(), true, 0);
+   string how = "on foot";
+   if (byTruck) how = "by truck";
+   Say(string.Format("[ACR] AI %1: %2 moves up from %3 to %4 (%5 m from the enemy, our front is %6 m; %7)", m_sFaction, mover.GetName(), froms[i].m_sName, to.m_sName, (int)gaps[i], (int)m_fFrontGap, how));
+   return;
+  }
+ }
+
+ // Where a squad at a rear base 'fromGap' m from the enemy moves up to (MoveUpPick on our bases).
+ // null: nowhere yet. 'byTruck': it counts on a free truck to get there.
+ protected ACR_Base MoveUpTo(ACR_Squad squad, float fromGap, out bool byTruck)
+ {
+  vector at = PositionOf(squad);
+  byTruck = AllocTruckNear(squad);
+  array<ACR_Base> bases = {};
+  array<float> gaps = {};
+  array<float> dists = {};
+  array<float> scores = {};
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner != m_sFaction) continue;
+   float d = vector.DistanceXZ(at, base.GetOrigin());
+   float score = d + PostedAt(base) * 400;
+   if (LaneActive() && m_Lane.Contains(base.GetOrigin())) score -= ACR_AILanes.POST_PULL;
+   bases.Insert(base);
+   gaps.Insert(EnemyGap(base));
+   dists.Insert(d);
+   scores.Insert(score);
+  }
+  bool atFront;
+  int pick = MoveUpPick(gaps, dists, scores, fromGap, m_fFrontGap, byTruck, atFront);
+  if (pick < 0) return null;
+  if (!atFront) byTruck = false;
+  return bases[pick];
+ }
+
+ // Pure (tests): of bases 'gaps' m from the enemy (-1: none known), 'dists' m away, posting 'scores'
+ // (lower first), the one a squad at a base 'fromGap' m from the enemy moves up to: every pick is at
+ // least MOVEUP_GAIN nearer the enemy. A base at the front ('frontGap' + MOVEUP_DEPTH) by truck or
+ // within MOVEUP_WALK, best score first ('atFront'); else the walk within MOVEUP_WALK that ends
+ // nearest the enemy. -1: none.
+ static int MoveUpPick(notnull array<float> gaps, notnull array<float> dists, notnull array<float> scores, float fromGap, float frontGap, bool truck, out bool atFront)
+ {
+  atFront = false;
+  int front = -1;
+  int hop = -1;
+  foreach (int i, float gap : gaps)
+  {
+   if (gap < 0 || gap > fromGap - MOVEUP_GAIN) continue;
+   if (gap <= frontGap + MOVEUP_DEPTH && (truck || dists[i] <= MOVEUP_WALK) && (front < 0 || scores[i] < scores[front])) front = i;
+   if (dists[i] <= MOVEUP_WALK && (hop < 0 || gap < gaps[hop])) hop = i;
+  }
+  if (front >= 0)
+  {
+   atFront = true;
+   return front;
+  }
+  return hop;
  }
 
  // ---------------------------------------------------------------- 4b. the screen
@@ -8573,6 +8782,7 @@ class ACR_AICommander : Managed
    UpdateAttacks();
    AssignDefenders();
    if (all) ReturnToPosts();
+   UpdateFrontGap();
    AssignAttacks();
    PostIdle();
    CatchRides();

@@ -11,6 +11,8 @@
 //   squads (assaulting in contact, on an air lift) stay where they are.
 // - Running team jobs are weighed first: a new one never takes a running one's slot under the cap.
 //   They try their own squads first, and keeping one costs STAY_MARGIN less than taking it fresh.
+// - Trucks are counted (soak 6 Nov): a squad whose way there is a truck ride takes one of the side's
+//   free trucks, one squad a truck, so a plan never counts on more rides than there are trucks.
 // Plain data in and out: the commander builds it (ACR_AICommander, "Job allocator"), and the
 // tests feed it made-up fronts (ACR_TestAllocator).
 
@@ -46,6 +48,7 @@ class ACR_AIJobSquad
  bool m_bLocked;           // stays on m_iCurrent this tick
  ref array<float> m_aEta = {}; // s to each job, < 0 can't get there
  ref array<float> m_aFit = {}; // 0..1 per job, 0 can't do it
+ ref array<bool> m_aByTruck = {}; // per job: its m_aEta counts on a free truck (none listed: never)
  // Filled by Allocate:
  int m_iPicked = -1;
  float m_fScore;           // its share of what its pick is worth
@@ -121,10 +124,18 @@ class ACR_AIAllocator
   return value;
  }
 
+ // Its way to job j counts on a free truck.
+ static bool ByTruck(ACR_AIJobSquad squad, int j)
+ {
+  return j < squad.m_aByTruck.Count() && squad.m_aByTruck[j];
+ }
+
  // The best team for a team job among the squads not yet taken: its locked members, then the
  // candidates in order (nearest first; 'ownFirst': its own squads first), keeping the prefix worth
  // most once what they'd do elsewhere is paid for. Returns that net worth (-1: none worth it).
- static float BestPrefix(ACR_AIJob job, int j, notnull array<ref ACR_AIJobSquad> squads, notnull array<bool> taken, bool ownFirst, notnull array<int> keep)
+ // 'trucks': free trucks left for squads that need a ride there (-1: no limit); one that would need
+ // more is passed over, and a nearer one on foot may take its place.
+ static float BestPrefix(ACR_AIJob job, int j, notnull array<ref ACR_AIJobSquad> squads, notnull array<bool> taken, bool ownFirst, notnull array<int> keep, int trucks = -1)
  {
   array<int> team = {};
   foreach (int m : job.m_aMembers) team.Insert(m); // locked members stay
@@ -148,10 +159,15 @@ class ACR_AIAllocator
    net = TeamValue(job, j, squads, team, strength, latest);
    keep.Copy(team);
   }
-  int tried;
+  int tried, riding;
   foreach (int o : order)
   {
    if (tried >= TEAM_CANDIDATES || team.Count() >= job.m_iMaxSquads) break;
+   if (ByTruck(squads[o], j))
+   {
+    if (trucks >= 0 && riding >= trucks) continue;
+    riding++;
+   }
    tried++;
    team.Insert(o);
    // Leaving work under way costs (the walk so far, the time): its own squads are cheaper to keep.
@@ -169,7 +185,8 @@ class ACR_AIAllocator
 
  // Gives every squad its job (m_iPicked, -1: nothing worth doing). New team jobs only while fewer
  // than 'maxTeams' team jobs are funded (running ones count, but are never cut for the cap).
- static void Allocate(notnull array<ref ACR_AIJob> jobs, notnull array<ref ACR_AIJobSquad> squads, int maxTeams)
+ // 'trucks': the side's free trucks, one squad each, shared by every job (-1: no limit).
+ static void Allocate(notnull array<ref ACR_AIJob> jobs, notnull array<ref ACR_AIJobSquad> squads, int maxTeams, int trucks = -1)
  {
   foreach (ACR_AIJob job : jobs)
   {
@@ -231,11 +248,11 @@ class ACR_AIAllocator
     // 4 Nov: a nearer outsider worth more elsewhere sat between two members, no nearest-first
     // prefix kept both, and an attack worth more than its squads' alternatives was called off).
     array<int> keep = {};
-    float net = BestPrefix(teamJob, j, squads, taken, false, keep);
+    float net = BestPrefix(teamJob, j, squads, taken, false, keep, trucks);
     if (teamJob.m_bRunning)
     {
      array<int> ownKeep = {};
-     float ownNet = BestPrefix(teamJob, j, squads, taken, true, ownKeep);
+     float ownNet = BestPrefix(teamJob, j, squads, taken, true, ownKeep, trucks);
      if (ownNet > net)
      {
       net = ownNet;
@@ -264,6 +281,7 @@ class ACR_AIAllocator
     won.m_aMembers.Insert(w);
     taken[w] = true;
     squads[w].m_iPicked = bestJob;
+    if (trucks > 0 && ByTruck(squads[w], bestJob) && !squads[w].m_bLocked) trucks--;
    }
    float wonStrength, wonLatest;
    won.m_fScore = TeamValue(won, bestJob, squads, won.m_aMembers, wonStrength, wonLatest);
@@ -293,6 +311,7 @@ class ACR_AIAllocator
     {
      if (solo.m_bTeam || solo.m_aMembers.Count() >= solo.m_iMaxSquads) continue;
      if (solo.m_fNeed > 0 && solo.m_fStrength >= solo.m_fNeed * OVERSTRENGTH) continue;
+     if (trucks == 0 && ByTruck(idle, j2)) continue;
      float score = SoloScore(solo, j2, idle);
      if (score > pickScore)
      {
@@ -308,6 +327,7 @@ class ACR_AIAllocator
    ACR_AIJob got = jobs[pickJ];
    picked.m_iPicked = pickJ;
    picked.m_fScore = pickScore;
+   if (trucks > 0 && ByTruck(picked, pickJ)) trucks--;
    got.m_aMembers.Insert(pickS);
    got.m_fStrength += picked.m_fStrength;
    got.m_fScore += pickScore;

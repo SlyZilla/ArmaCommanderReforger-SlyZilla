@@ -321,15 +321,22 @@ class ACR_Rides : Managed
  // A truck CountTransports counts is free for a ride right now, wherever it is.
  bool HasIdleTransport(string faction, bool handedOnly = false)
  {
+  return CountIdleTransports(faction, handedOnly) > 0;
+ }
+
+ // How many of those there are (the AI allocator's truck budget: one squad a truck).
+ int CountIdleTransports(string faction, bool handedOnly = false)
+ {
+  int count;
   float now = GetGame().GetWorld().GetWorldTime();
   foreach (ACR_Squad squad : m_Manager.m_Squads)
   {
    if (handedOnly && !squad.m_bAICommanded) continue;
    if (now - squad.m_fStuckAt < 600000) continue; // gave up stuck lately: it won't be coming
    if (!IsFreeTransport(squad, faction)) continue;
-   if (FreeSeats(ACR_Transport.CrewedVehicle(squad)) >= 4) return true;
+   if (FreeSeats(ACR_Transport.CrewedVehicle(squad)) >= 4) count++;
   }
-  return false;
+  return count;
  }
 
  // ---------------------------------------------------------------- requests
