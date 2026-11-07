@@ -1673,6 +1673,8 @@ class ACR_Squad : Managed
    vector onMesh;
    if (!pathing || !pathing.GetClosestPositionOnNavmesh(at, Vector(3, 3, 3), onMesh)) continue;
    if (vector.DistanceXZ(onMesh, at) < 0.5 && Math.AbsFloat(onMesh[1] - at[1]) < 0.6) continue;
+   // Not into a sealed attic, cellar or wall beside him (the navmesh is built there too, 6 Nov).
+   if (!ACR_BaseSystem.ReachesOpen(onMesh, pathing)) continue;
    PrintFormat("[ACR] SQUAD %1: soldier off the navmesh stepped %2 m onto it", m_Name, vector.Distance(onMesh, at));
    body.SetOrigin(onMesh);
   }
@@ -2063,7 +2065,7 @@ class ACR_Squad : Managed
    float left = ahead.Length();
    float step = Math.Min(WALK_STEP_M * (plan.m_iWalkRetries - 2), WALK_STEP_MOST_M);
    vector spot;
-   if (left > 1 && ReachableNear(at + ahead * (Math.Min(step, left) / left), WALK_STEP_M, spot))
+   if (left > 1 && ReachableNear(at + ahead * (Math.Min(step, left) / left), WALK_STEP_M, spot) && ACR_BaseSystem.ReachesOpen(spot, ACR_BaseSystem.Pathing(null)))
    {
     anchor.SetOrigin(spot);
     how = string.Format("leader stepped %1 m ahead", (int)vector.DistanceXZ(at, spot));

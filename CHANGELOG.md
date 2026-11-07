@@ -1,6 +1,10 @@
 # Changelog
 ## 0.5.11 — unreleased
 
+### Soldiers
+
+- Soldiers no longer appear inside sealed attics, cellars or the hollow inside of thick castle walls. The game puts every man of a new squad on the walkable spot nearest his place in the formation, up to 10 m away above or below, and inside many houses and castles that is a space nobody can get into or out of; the game also tops squads up one man at a time, so men kept turning up after the mod's check had already run. Every man the game makes is now looked at the moment he appears, and one standing under a roof, inside something or anywhere he can't walk out of to open ground steps to the nearest open ground first. Squads spawned on the houses of Chernarus towns and castles: 40 of 64 men in such places before, none now. Garrisons, patrols, bought and reinforcing soldiers get the same check, and a soldier's last-resort place is open ground near the base rather than the nearest walkable spot, which in a castle could be inside its walls.
+
 ### Generated maps
 
 - Objectives on generated maps sit in their towns. Some maps put a town's name beside the town rather than on it, and the objective went where the name was: on Chernarus Minus, Bonzievka Petrovka was a capture circle in an empty meadow 220 m from the nearest house, with its trenches dug in the grass. An objective whose circle would hold almost no buildings now goes on the houses next to its name: 13 places on Chernarus Minus moved 50-265 m, and 4 small hamlets on Everon. A name at the edge of its town, with houses in the circle, stays where it is.

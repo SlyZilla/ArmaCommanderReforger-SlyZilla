@@ -1,5 +1,27 @@
 // Server-side bases, capture, garrisons, hidden-base discovery and requisition
 // income. Numbers follow the Arma 3 mod (defines/commonDefines.inc, economy.sqf).
+
+// Every man the game itself makes for a group (SpawnGroupMember: bought squads, starting units,
+// riders, and any group the engine wakes from dormancy) goes on the navmesh point nearest his
+// formation slot within 10 m, up and down too: beside a house, a sealed attic, a cellar lifted to
+// the terrain or the hollow of a castle wall (Jacob, 6 Nov; srv:voidspawn: 40 of 64 men on houses).
+// The game fills a group from a queue, one man a tick, often after SettleSoon's two looks, so each
+// man is looked at the moment he is made (ACR_BaseSystem.SettleMan), before anyone sees him.
+modded class SCR_AIGroup
+{
+ override protected bool SpawnGroupMember(bool snapToTerrain, int index, ResourceName res, bool editMode, bool isLast)
+ {
+  if (editMode || !ACR_Manager.GetInstance() || ACR_BaseSystem.s_bTestNoSettle) return super.SpawnGroupMember(snapToTerrain, index, res, editMode, isLast);
+  array<AIAgent> before = {};
+  GetAgents(before);
+  bool spawned = super.SpawnGroupMember(snapToTerrain, index, res, editMode, isLast);
+  array<AIAgent> after = {};
+  GetAgents(after);
+  foreach (AIAgent agent : after) if (!before.Contains(agent)) ACR_BaseSystem.SettleMan(this, agent);
+  return spawned;
+ }
+}
+
 class ACR_FactionData
 {
  int m_iRP;
@@ -400,25 +422,30 @@ class ACR_BaseSystem : Managed
  }
 
  // #73: where a garrison, patrol or guard soldier appears near center: clear of walls (a 0.6 m
- // wide, 2 m tall cylinder), not under a roof, and on the soldiers' navmesh. Before, a soldier
- // whose random spot had no room within 5 m spawned there anyway, and a spot with room inside a
- // house was dropped to the terrain under its floor: FIA in walls, every village. Each try reaches
- // further out; with none good, the navmesh point nearest the centre (walkable, maybe indoors),
- // else the clear ground nearest it.
+ // wide, 2 m tall cylinder), not under a roof, on the soldiers' navmesh, and able to walk out from
+ // there (ReachesOpen). Before #73, a soldier whose random spot had no room within 5 m spawned there
+ // anyway, and a spot with room inside a house was dropped to the terrain under its floor: FIA in
+ // walls, every village. Each try reaches further out, the last SPOT_WIDE_TRIES well beyond the
+ // spread. With none good: clear open ground nearest the centre, else the centre's ground. Never the
+ // navmesh point nearest the centre, as before 6 Nov: in a castle or a crowded town that was a sealed
+ // attic, a cellar or the hollow inside of a thick wall (Jacob, Chernarus: Zub, Devil's Castle).
  // Where the navmesh isn't loaded (no AI near on a server) room and roof alone decide.
  // Soldiers with window posts are moved onto them afterwards (ACR_Garrison), as before.
  static const int SPOT_TRIES = 10;
+ static const int SPOT_WIDE_TRIES = 10;
+ static int s_iSpotSealed;     // tests: spots refused because they lead nowhere
+ static int s_iSpotLastResort; // tests: calls that found no good spot at all
  static vector SoldierSpot(vector center, float spread, IEntity navAgent)
  {
-  AIPathfindingComponent pathing;
-  if (navAgent) pathing = AIPathfindingComponent.Cast(navAgent.FindComponent(AIPathfindingComponent));
+  AIPathfindingComponent pathing = Pathing(navAgent);
   NavmeshWorldComponent mesh;
   if (pathing) mesh = pathing.GetNavmeshComponent();
   if (mesh && !mesh.IsTileLoaded(center)) mesh.LoadTileIn(center);
   vector onMesh;
-  for (int attempt = 0; attempt < SPOT_TRIES; attempt++)
+  for (int attempt = 0; attempt < SPOT_TRIES + SPOT_WIDE_TRIES; attempt++)
   {
    float reach = spread + attempt * 4;
+   if (attempt >= SPOT_TRIES) reach = spread + 40 + (attempt - SPOT_TRIES) * 8;
    vector candidate = ACR_Manager.Ground(center + Vector(Math.RandomFloat(-reach, reach), 0, Math.RandomFloat(-reach, reach)));
    vector free;
    if (!SCR_WorldTools.FindEmptyTerrainPosition(free, candidate, 6, 0.6, 2)) continue;
@@ -428,13 +455,96 @@ class ACR_BaseSystem : Managed
    if (!pathing || (mesh && !mesh.IsTileLoaded(free))) return free;
    if (!pathing.GetClosestPositionOnNavmesh(free, Vector(1, 1.5, 1), onMesh)) continue;
    if (vector.DistanceXZ(onMesh, free) > 1) continue;
+   if (!ReachesOpen(onMesh, pathing)) { s_iSpotSealed++; continue; }
    return free;
   }
+  s_iSpotLastResort++;
   vector near = ACR_Manager.Ground(center);
-  if (pathing && pathing.GetClosestPositionOnNavmesh(near, Vector(30, 10, 30), onMesh)) return onMesh + Vector(0, 0.15, 0);
-  vector wide;
-  if (SCR_WorldTools.FindEmptyTerrainPosition(wide, near, 40, 0.6, 2)) return ACR_Manager.Ground(wide);
+  array<vector> spots = {};
+  SCR_WorldTools.FindAllEmptyTerrainPositions(spots, near, 60, 0.6, 2, 24);
+  foreach (vector spot : spots)
+  {
+   vector ground = ACR_Manager.Ground(spot);
+   if (RoomAt(ground) && !Covered(ground)) return ground;
+  }
+  PrintFormat("[ACR] SPAWN no open ground near %1: a soldier stands at its centre", near);
   return near;
+ }
+
+ // Where a soldier made at 'at' stands: right there if he has room, isn't under a roof or in a
+ // heap and can walk out (ReachesOpen); else the nearest such spot (SoldierSpot).
+ static vector OpenSpot(vector at, IEntity navAgent = null)
+ {
+  if (RoomAt(at) && !Covered(at) && ReachesOpen(at, Pathing(navAgent))) return at;
+  return SoldierSpot(at, 2, navAgent);
+ }
+
+ // The soldiers' pathfinding (the navmesh they walk): navAgent's, else any squad's.
+ static AIPathfindingComponent Pathing(IEntity navAgent)
+ {
+  if (!navAgent) navAgent = ACR_Garrison.AnyAgent();
+  if (!navAgent) return null;
+  return AIPathfindingComponent.Cast(navAgent.FindComponent(AIPathfindingComponent));
+ }
+
+ // A soldier here can walk out onto open ground (Jacob, 6 Nov: men spawned in sealed attics and
+ // cellars and inside thick castle walls). The navmesh is built in those spaces too, so "on the
+ // navmesh" never told them apart. The engine hands out a point reachable from a given one
+ // (GetReachablePoint): a short random hop, about 1-15 m (probe, Everon). Hopping on from the
+ // farthest point found at ground level, a spot that connects to the outside soon lands OPEN_REACH
+ // m away on uncovered ground (OPEN_GROUND m above the terrain at most: not a roof or a floor); one
+ // in a sealed space never does. Three hops in a row that get no further restart from another point
+ // found (the walk can stall on a step or a porch: Lancre, probe). OPEN_HOPS queries at most:
+ // open ground takes 3-6 (srv:voidspawn).
+ // Nothing to judge (no navmesh, its tile not loaded, no navmesh within a metre, a query the engine
+ // can't answer: the walk reached a tile not loaded): true.
+ static int OPEN_HOPS = 48; // (tests may raise it)
+ static const float OPEN_REACH = 10;
+ static const float OPEN_STEP = 20;
+ static const float OPEN_GROUND = 2;
+ static int s_iOpenHops; // queries made, all calls (tests, perf)
+ static bool s_bOpenTrace; // tests: print every hop
+ static string s_sOpenWhy; // tests: how the last walk ended
+ static bool ReachesOpen(vector spot, AIPathfindingComponent pathing)
+ {
+  if (!pathing) return true;
+  NavmeshWorldComponent mesh = pathing.GetNavmeshComponent();
+  if (!mesh || !mesh.IsTileLoaded(spot)) return true;
+  vector start;
+  s_sOpenWhy = "not judged";
+  if (!pathing.GetClosestPositionOnNavmesh(spot, Vector(1, 1.5, 1), start)) return true;
+  BaseWorld world = GetGame().GetWorld();
+  array<vector> found = {start};
+  vector from = start;
+  float farthest = 0;
+  int stalled;
+  for (int hop = 0; hop < OPEN_HOPS; hop++)
+  {
+   vector next = start;
+   s_iOpenHops++;
+   bool got = mesh.GetReachablePoint(from, OPEN_STEP, next);
+   float away = vector.DistanceXZ(next, start);
+   float above = next[1] - world.GetSurfaceY(next[0], next[2]);
+   if (s_bOpenTrace) PrintFormat("[ACR] OPENHOP %1 from %2 got %3 -> %4 away %5 above ground %6", hop, from, got, next, away, above);
+   if (!got) { s_sOpenWhy = "no answer"; return true; } // the walk reached a tile not loaded, or the engine had no answer: nothing to judge
+   if (above > OPEN_GROUND || away <= farthest)
+   {
+    stalled++;
+    if (stalled >= 3 && found.Count() > 1)
+    {
+     from = found.GetRandomElement();
+     stalled = 0;
+    }
+    continue;
+   }
+   stalled = 0;
+   farthest = away;
+   from = next;
+   found.Insert(next);
+   if (away >= OPEN_REACH && !Covered(next)) { s_sOpenWhy = "open"; return true; }
+  }
+  s_sOpenWhy = string.Format("shut in (farthest %1 m)", farthest);
+  return false;
  }
 
  // Room for a soldier standing right here (only the spot itself is tried): nothing solid where
@@ -651,8 +761,8 @@ class ACR_BaseSystem : Managed
  }
 
  // #87: a squad the game spawned in its formation round one spot: anyone who came out inside a
- // wall or a heap or under a roof steps to clear ground near where he stands. The game queues its members
- // over a few frames, so it looks twice.
+ // wall or a heap or under a roof, or shut in where he can't walk out (ReachesOpen), steps to clear
+ // ground near where he stands. The game queues its members over a few frames, so it looks twice.
  static void SettleSoon(SCR_AIGroup group)
  {
   if (!group) return;
@@ -664,18 +774,25 @@ class ACR_BaseSystem : Managed
   if (!group) return;
   array<AIAgent> agents = {};
   group.GetAgents(agents);
-  foreach (AIAgent agent : agents)
-  {
-   IEntity body = agent.GetControlledEntity();
-   if (!body || !ACR_Respawn.IsAlive(body) || EntityUtils.IsPlayer(body) || ACR_Transport.VehicleOf(body)) continue;
-   vector at = body.GetOrigin();
-   if (!Covered(at) && RoomAt(at, body)) continue;
-   vector spot = SoldierSpot(at, 3, agent);
-   if (Covered(spot) || !RoomAt(spot, body)) continue;
-   body.SetOrigin(spot);
-   PrintFormat("[ACR] SPAWN %1: a soldier who came out inside something stepped %2 m clear", group.GetCustomName(), (int)vector.DistanceXZ(at, spot));
-  }
+  foreach (AIAgent agent : agents) SettleMan(group, agent);
   if (pass < 1) GetGame().GetCallqueue().CallLater(Settle, 4000, false, group, pass + 1);
+ }
+
+ // One man of the group: inside a wall or a heap, under a roof or shut in: to clear ground near him.
+ static int s_iSettled; // tests
+ static bool s_bTestNoSettle; // tests: the game's own placement, left alone
+ static void SettleMan(SCR_AIGroup group, AIAgent agent)
+ {
+  if (!agent) return;
+  IEntity body = agent.GetControlledEntity();
+  if (!body || !ACR_Respawn.IsAlive(body) || EntityUtils.IsPlayer(body) || ACR_Transport.VehicleOf(body)) return;
+  vector at = body.GetOrigin();
+  if (!Covered(at) && RoomAt(at, body) && ReachesOpen(at, Pathing(agent))) return;
+  vector spot = SoldierSpot(at, 3, agent);
+  if (Covered(spot) || !RoomAt(spot, body)) return;
+  body.SetOrigin(spot);
+  s_iSettled++;
+  PrintFormat("[ACR] SPAWN %1: a soldier who came out inside or shut in something stepped %2 m clear", group.GetCustomName(), (int)vector.DistanceXZ(at, spot));
  }
 
  protected void AddGarrisonSoldier(ACR_Base base, SCR_AIGroup group, array<ResourceName> pool)

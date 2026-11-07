@@ -65,6 +65,8 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrPathProbeTest")) ACR_TestPathProbe.Run(seconds);
   // -acrWorksShotsTest: Fortify a whole base, photographed (ACR_TestWorksShots).
   if (System.IsCLIParam("acrPlaceAuditTest") || System.IsCLIParam("acrPlaceAuditOldTest")) ACR_TestPlaceAudit.Run(seconds);
+  // -acrVoidSpawnTest: soldiers never placed in sealed spaces (ACR_TestVoidSpawn).
+  if (System.IsCLIParam("acrVoidSpawnTest")) ACR_TestVoidSpawn.Run(seconds);
   if (System.IsCLIParam("acrPartsTest")) ACR_TestParts.Run(seconds);
   if (System.IsCLIParam("acrWingsTest") || System.IsCLIParam("acrWingsOffTest") || System.IsCLIParam("acrWingShotsTest")) ACR_TestWings.Run(seconds);
   if (System.IsCLIParam("acrWorksShotsTest") || System.IsCLIParam("acrWorksShotsCompactTest") || ACR_TestBaseWorks.StyleTest("acrStyleShots")) ACR_TestWorksShots.Run(seconds);

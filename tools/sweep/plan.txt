@@ -290,6 +290,8 @@ ACA|srv:placeaudit|nightly|180   # median 114s, 6 runs/14d
 ACA|srv:placeauditold|skip|180   # A/B control with the feature off or the old code: run beside its pair by hand
 ACA|srv:placeauditarland|weekly|180   # not run in the last 14 days; server capability not yet seen
 ACA|srv:placeauditkolguyev|weekly|180   # not run in the last 14 days; server capability not yet seen
+ACA|srv:voidspawneveron|nightly|180   # soldiers never placed in sealed attics/cellars/walls; ~90 s
+ACA|srv:voidspawn|skip|180   # Chernarus Minus world (map add-on not in _wt/sweep, as genmapchernarus); run by hand with the add-on swapped in
 ACA|srv:parts|weekly|360   # not run in the last 14 days; server capability not yet seen
 ACA|srv:wings|nightly|240   # median 51s, 1 runs/14d
 ACA|srv:wingsarland|nightly|240   # median 45s, 1 runs/14d

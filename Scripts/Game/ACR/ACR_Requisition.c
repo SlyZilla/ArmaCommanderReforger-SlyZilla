@@ -347,7 +347,7 @@ class ACR_Requisition : Managed
   {
    // A line beside the spot, each man on his own clear ground (#87: not inside a heap).
    vector at = ACR_Manager.Ground(pos + Vector(1.5 * i, 0, 1));
-   if (!ACR_BaseSystem.RoomAt(at) || ACR_BaseSystem.Covered(at)) at = ACR_BaseSystem.SoldierSpot(at, 2, navAgent);
+   at = ACR_BaseSystem.OpenSpot(at, navAgent); // ... and not shut in a cellar or a wall (6 Nov)
    IEntity man = SpawnForPurchase(prefab, at);
    if (!man) { all = false; break; }
    made.Insert(man);
@@ -691,7 +691,7 @@ class ACR_Requisition : Managed
   int delivered;
   foreach (ResourceName prefab : missing)
   {
-   IEntity soldier = SpawnForPurchase(prefab, SpawnPoint(base, 4, 12, 0.8));
+   IEntity soldier = SpawnForPurchase(prefab, ACR_BaseSystem.OpenSpot(SpawnPoint(base, 4, 12, 0.8)));
    if (!soldier) continue;
    if (!squad.m_Group.AddAIEntityToGroup(soldier)) { SCR_EntityHelper.DeleteEntityAndChildren(soldier); continue; }
    delivered++;
