@@ -4,6 +4,7 @@
 ### AI commanders
 
 - The experimental 2IC (`-acr2IC 1`, the Experimental tab's 2IC row) is now "I'm the 2IC": while you command, the AI commander runs your side exactly as it would if nobody commanded, and buys units again. In 0.5.10 it kept 100 RP back for you, which a commander spending his own RP left near zero, so it bought almost nothing all match; it now spends the side's RP like an AI commander (`-acr2ICKeep N` still holds some back if a host wants) and runs the AI commander's whole turn, recon, lanes and the job allocator included. You keep every command power, and any squad you lead or order stays yours.
+- AI commanders stop planning attacks around helicopter rides they never get. A squad far from the target was counted as arriving in four minutes by air lift whenever the helicopter was ready, every far squad at once, even when the flight path crossed enemy positions or the lift was being held for later. When the order went out there was no lift, the squad set off on a 6 km walk, and six minutes later the attack was called off as "never formed up" and planned again with the next far squad. On a large generated map that froze the front (one base taken in an hour). Plans now count on the air lift only where it would really fly, for one squad at a time like each truck, and a squad that still ends up walking far leaves the attack at once, so the commander picks squads that can get there.
 
 ### Generated maps
 
