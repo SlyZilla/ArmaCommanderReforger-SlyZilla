@@ -484,15 +484,24 @@ modded class SCR_PlayerController
  protected bool m_ACR_DebugAllowed;
  protected bool m_ACR_DebugOpen;
  protected string m_ACR_DebugStatus;
- void ACR_SendDebug(bool allowed, string status)
+ protected string m_ACR_DebugOwn;     // side names for the buttons ("USSR", "RHS US")
+ protected string m_ACR_DebugEnemy;
+ protected bool m_ACR_DebugPaused;    // the enemy AI commander is paused
+ protected bool m_ACR_DebugReveal;    // our intel sees every enemy soldier
+ protected float m_ACR_LastDebug = -1000;
+ void ACR_SendDebug(bool allowed, string status, string ownName, string enemyName, bool paused, bool reveal)
  {
-  Rpc(ACR_DebugOwner, allowed, status);
+  Rpc(ACR_DebugOwner, allowed, status, ownName, enemyName, paused, reveal);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
- protected void ACR_DebugOwner(bool allowed, string status)
+ protected void ACR_DebugOwner(bool allowed, string status, string ownName, string enemyName, bool paused, bool reveal)
  {
   m_ACR_DebugAllowed = allowed;
   m_ACR_DebugStatus = status;
+  m_ACR_DebugOwn = ownName;
+  m_ACR_DebugEnemy = enemyName;
+  m_ACR_DebugPaused = paused;
+  m_ACR_DebugReveal = reveal;
  }
  void ACR_RequestDebug(int action)
  {
@@ -505,9 +514,15 @@ modded class SCR_PlayerController
  {
   ACR_Manager manager = ACR_Manager.GetInstance();
   if (!manager) return;
+  // Its own throttle, and it says so: sharing the order throttle dropped the second of two quick
+  // clicks without a word (6 Nov live: "+500 RP" pressed for both sides, one side got it).
   float now = GetGame().GetWorld().GetWorldTime();
-  if (now - m_ACR_LastCommand < 300) return;
-  m_ACR_LastCommand = now;
+  if (now - m_ACR_LastDebug < 250)
+  {
+   Rpc(ACR_FeedbackOwner, "Debug: too quick, that click was ignored; press it again");
+   return;
+  }
+  m_ACR_LastDebug = now;
   if (!ACR_Manager.IsHostOrAdmin(GetPlayerId()))
   {
    Rpc(ACR_FeedbackOwner, "Debug menu: host and admins only");
@@ -1502,7 +1517,7 @@ modded class SCR_PlayerController
   string reinforceFeedback = "";
   if (GetGame().GetWorld().GetWorldTime() - m_ACR_ReinforceFeedbackAt < 12000) reinforceFeedback = m_ACR_ReinforceFeedback;
   m_ACR_Panel.SetReinforceFeedback(reinforceFeedback);
-  m_ACR_Panel.SetDebug(m_ACR_DebugAllowed, m_ACR_DebugOpen, m_ACR_DebugStatus, m_ACR_SelectedBase);
+  m_ACR_Panel.SetDebug(m_ACR_DebugAllowed, m_ACR_DebugOpen, m_ACR_DebugStatus, m_ACR_SelectedBase, m_ACR_DebugOwn, m_ACR_DebugEnemy, m_ACR_DebugPaused, m_ACR_DebugReveal);
   bool canTake = !m_ACR_IsCommander && (m_ACR_SharedCommand || m_ACR_CommandText == "Command: AI");
   m_ACR_Panel.SetCommand(m_ACR_CommandText, m_ACR_IsCommander, canTake);
   int incomeIn = Math.Max(0, m_ACR_IncomeSeconds - ACR_MapData.Since(m_ACR_IncomeAt));

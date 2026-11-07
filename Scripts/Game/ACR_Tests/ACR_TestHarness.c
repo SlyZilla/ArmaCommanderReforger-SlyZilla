@@ -34,6 +34,7 @@ class ACR_TestHarness : Managed
  static const int MODE_FLYDEMO = 251; // ACA's jets over the player's head, to look and listen (client)
  static const int MODE_RESTART = 147; // a match restarted in the same process starts clean
  static const int MODE_RIDECOMMIT = 158; // posted squads keep their trip, catch rides on it, convoys (148-157 left for open branches)
+ static const int MODE_RIDECANCEL = 261; // a ride called off mid-trip: riders out, on to their destination (6 Nov live)
  static const int MODE_STALLWAIT = 118; // #53: a vehicle waiting for its own crew to board isn't stuck
  static const int MODE_RECREW = 121; // a driver who bailed is put back (120: order voices, parked)
  static const int MODE_MORTARGIVEUP = 122; // a mortar that can't reach its base isn't sent there again
@@ -233,6 +234,7 @@ class ACR_TestHarness : Managed
   if (System.GetCLIParam("acrLavGetOutTest", flag) || System.GetCLIParam("acrLavGetOutOldTest", flag)) mode = MODE_LAVGETOUT;
   if (System.GetCLIParam("acrRideCarryTest", flag)) mode = MODE_RIDECARRY;
   if (System.GetCLIParam("acrRideCommitTest", flag)) mode = MODE_RIDECOMMIT;
+  if (System.GetCLIParam("acrRideCancelTest", flag)) mode = MODE_RIDECANCEL;
   if (System.GetCLIParam("acrCapScaleTest", flag)) mode = MODE_CAPSCALE;
   if (System.GetCLIParam("acrDoctrineKitsTest", flag)) mode = MODE_DOCTRINEKITS;
   if (System.GetCLIParam("acrGrabsTest", flag)) mode = MODE_GRABS;
@@ -417,6 +419,7 @@ class ACR_TestHarness : Managed
   if (m_Mode == MODE_LAVGETOUT) { ACR_TestLavGetOut.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDECARRY) { ACR_TestRideCarry.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_RIDECOMMIT) { ACR_TestRideCommit.Run(this, m_Ticks); return; }
+  if (m_Mode == MODE_RIDECANCEL) { ACR_TestRideCancel.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_CAPSCALE) { ACR_TestCapScale.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_DOCTRINEKITS) { ACR_TestDoctrineKits.Run(this, m_Ticks); return; }
   if (m_Mode == MODE_GRABS) { ACR_TestGrabs.Run(this, m_Ticks); return; }

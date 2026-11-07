@@ -10,7 +10,7 @@
 // grab it by the allocator, and not when it is a medic team.
 class ACR_TestAllocator
 {
- static const int CHECKS = 27;
+ static const int CHECKS = 28;
 
  static ACR_AIJobSquad Squad(string name, float strength, int current, array<float> etas, array<float> fits = null)
  {
@@ -66,6 +66,14 @@ class ACR_TestAllocator
  {
   squad.m_aByTruck.Insert(true);
   squad.m_aByTruck.Insert(false);
+  return squad;
+ }
+
+ // Its way to the first job (an attack) is the air lift, to the second not.
+ static ACR_AIJobSquad Fly(ACR_AIJobSquad squad)
+ {
+  squad.m_aByAir.Insert(true);
+  squad.m_aByAir.Insert(false);
   return squad;
  }
 
@@ -309,6 +317,21 @@ class ACR_TestAllocator
   bool noTruck = squads[0].m_iPicked == -1;
   ACR_AIAllocator.Allocate(jobs, squads, 0, 1);
   ACR_TestRegress.Check("allocator: a job by truck goes to no one with no truck free", noTruck && squads[0].m_iPicked == 0, Picks(squads, jobs));
+  // The 6 Nov Topolinovo case: the air lift is counted the same way, one squad a lift. Two far
+  // squads that each count on a 240 s lift don't make an attack with one lift; the walker and one
+  // flyer don't reach its bar either, so it waits.
+  jobs.Clear();
+  jobs.Insert(Attack("Topolinovo", 40, 16));
+  jobs.Insert(Hold("Svergovka", 2));
+  squads.Clear();
+  squads.Insert(Squad("Walker", 6, -1, E(300, 0)));
+  squads.Insert(Fly(Squad("FlyerA", 6, -1, E(240, 0))));
+  squads.Insert(Fly(Squad("FlyerB", 6, -1, E(240, 0))));
+  ACR_AIAllocator.Allocate(jobs, squads, 1, -1, 2);
+  bool twoLifts = jobs[0].m_aMembers.Count() == 3;
+  ACR_AIAllocator.Allocate(jobs, squads, 1, -1, 1);
+  bool oneLift = jobs[0].m_aMembers.IsEmpty() && squads[1].m_iPicked != 0 && squads[2].m_iPicked != 0;
+  ACR_TestRegress.Check("allocator: an attack needing two air lifts is planned with two, not with the one there is", twoLifts && oneLift, Picks(squads, jobs) + string.Format(" (with two lifts: %1)", twoLifts));
 
   // 13. Moving up (ACR_AICommander.MoveUpPick), the 6 Nov Pulkovo case: a squad 9.5 km from the enemy,
   // our front 2.2 km. Bases: Zaprudny (front, 7 km off), Vybor (6.3 km from the enemy, 2.8 km off),

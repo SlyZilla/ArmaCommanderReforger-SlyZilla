@@ -9,7 +9,8 @@ clean_commit(root)
 out = root / 'dist' / 'ACActual-WithBBB.zip'
 out.parent.mkdir(exist_ok=True)
 top = 'ACActual-Arland'
-keep_dirs = ['Configs', 'Missions', 'Prefabs', 'Scripts', 'Worlds']
+# Same directories as the Workshop console's ACA spec (release_console.SPECS).
+keep_dirs = ['Configs', 'Missions', 'Prefabs', 'Scripts', 'Worlds', 'Assets', 'Sounds']
 # Dev-only test worlds stay out of player builds (Jacob, 11 Oct).
 skip_files = {'Worlds/BBB_TestArland.ent', 'Worlds/BBB_TestArland.ent.meta', 'Missions/BBB_TestArland.conf', 'Missions/BBB_TestArland.conf.meta'}
 # Test scripts stay out too (R17, Jacob 14 Oct); game code reaches them only through

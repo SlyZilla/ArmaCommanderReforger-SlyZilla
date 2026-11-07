@@ -164,6 +164,14 @@ class ACR_CommandPanel : Managed
  protected SCR_ButtonTextComponent m_DebugAttack;
  protected SCR_ButtonTextComponent m_DebugCaptureOwn;
  protected SCR_ButtonTextComponent m_DebugCaptureEnemy;
+ protected SCR_ButtonTextComponent m_DebugRPOwn;
+ protected SCR_ButtonTextComponent m_DebugRPEnemy;
+ protected SCR_ButtonTextComponent m_DebugPause;
+ protected SCR_ButtonTextComponent m_DebugReveal;
+ protected SCR_ButtonTextComponent m_DebugFobSupply;
+ protected SCR_ButtonTextComponent m_DebugFobFinish;
+ protected TextWidget m_DebugSides;
+ protected TextWidget m_DebugBaseHeader;
  protected string m_sDebugShown = "-";
  protected static const float NOTE_WIDTH = 340;
  protected Widget m_NoteRoot;
@@ -504,35 +512,42 @@ class ACR_CommandPanel : Managed
   Widget column = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, size);
   m_DebugToggle = AddButton(column, "Debug", ACR_EPanelAction.DEBUG_TOGGLE);
   m_DebugSection = ws.CreateWidget(WidgetType.VerticalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, column);
+  // Every button names the side it acts on (SetDebug fills the names in): "us" read as "U.S."
+  // (6 Nov live). Grouped by what each needs selected on the map.
+  m_DebugSides = AddText(m_DebugSection, LAYOUT_TEXT, "");
   m_DebugStatus = AddText(m_DebugSection, LAYOUT_TEXT, "");
   Widget rp = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
-  AddButton(rp, "+500 RP us", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RP_OWN, true);
-  AddButton(rp, "+500 RP enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RP_ENEMY, true);
-  Widget fob = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
-  AddButton(fob, "+500 FOB Supply", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.FOB_SUPPLY, true);
-  AddButton(fob, "Finish Upgrade", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.FOB_FINISH, true);
-  Widget squad = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
-  AddButton(squad, "Heal Squad", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.HEAL_SQUAD, true);
-  AddButton(squad, "Kill Squad", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.KILL_SQUAD, true);
-  AddButton(m_DebugSection, "Pause / resume enemy AI", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.PAUSE_ENEMY);
-  m_DebugAttack = AddButton(m_DebugSection, "Enemy attacks now", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.ATTACK_NOW);
+  m_DebugRPOwn = AddButton(rp, "+500 RP (your side)", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RP_OWN, true);
+  m_DebugRPEnemy = AddButton(rp, "+500 RP (enemy)", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RP_ENEMY, true);
+  m_DebugPause = AddButton(m_DebugSection, "Pause enemy AI commander", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.PAUSE_ENEMY);
+  m_DebugAttack = AddButton(m_DebugSection, "Enemy AI attacks now", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.ATTACK_NOW);
+  m_DebugBaseHeader = AddText(m_DebugSection, LAYOUT_TEXT, "");
   Widget capture = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
-  m_DebugCaptureOwn = AddButton(capture, "Base -> us", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.CAPTURE_OWN, true);
-  m_DebugCaptureEnemy = AddButton(capture, "Base -> enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.CAPTURE_ENEMY, true);
+  m_DebugCaptureOwn = AddButton(capture, "Give to your side", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.CAPTURE_OWN, true);
+  m_DebugCaptureEnemy = AddButton(capture, "Give to enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.CAPTURE_ENEMY, true);
+  Widget fob = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
+  m_DebugFobSupply = AddButton(fob, "FOB +500 supplies", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.FOB_SUPPLY, true);
+  m_DebugFobFinish = AddButton(fob, "Finish FOB upgrade", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.FOB_FINISH, true);
+  AddText(m_DebugSection, LAYOUT_TEXT, "Selected squad (none: heal yourself)");
+  Widget squad = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
+  AddButton(squad, "Heal + rearm", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.HEAL_SQUAD, true);
+  AddButton(squad, "Kill squad", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.KILL_SQUAD, true);
+  AddText(m_DebugSection, LAYOUT_TEXT, "World");
   Widget misc = ws.CreateWidget(WidgetType.HorizontalLayoutWidgetTypeID, WidgetFlags.VISIBLE, Color.FromInt(Color.WHITE), 0, m_DebugSection);
   AddButton(misc, "Time +6h", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.TIME_STEP, true);
-  AddButton(misc, "Reveal enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.REVEAL, true);
-  AddButton(misc, "Reset supports", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RESET_SUPPORTS, true);
+  m_DebugReveal = AddButton(misc, "Reveal enemy", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.REVEAL, true);
+  AddButton(misc, "Supports ready", ACR_EPanelAction.DEBUG_ACTION + ACR_EDebug.RESET_SUPPORTS, true);
   AddButton(m_DebugSection, "AC:A Think: what the AI commanders think", ACR_EPanelAction.DEBUG_THINK);
   AddText(m_DebugSection, LAYOUT_TEXT, "Console: type /acr [cmd] in chat (/acr help)");
   m_DebugSection.SetVisible(false);
  }
 
- // allowed = host/admin; baseName = the base selected on the map ("" none).
- void SetDebug(bool allowed, bool open, string status, string baseName)
+ // allowed = host/admin; baseName = the base selected on the map ("" none); own/enemy = side
+ // names; paused = the enemy AI commander is paused; reveal = our intel sees every enemy soldier.
+ void SetDebug(bool allowed, bool open, string status, string baseName, string own, string enemy, bool paused, bool reveal)
  {
   if (!m_DebugRoot) return;
-  string key = string.Format("%1|%2|%3|%4", allowed, open, status, baseName);
+  string key = string.Format("%1|%2|%3|%4|%5|%6|%7|%8", allowed, open, status, baseName, own, enemy, paused, reveal);
   if (key == m_sDebugShown) return;
   m_sDebugShown = key;
   m_DebugRoot.SetVisible(allowed);
@@ -543,25 +558,45 @@ class ACR_CommandPanel : Managed
    if (open) m_DebugToggle.SetText("Debug  [close]");
    else m_DebugToggle.SetText("Debug");
   }
+  if (own.IsEmpty()) own = "your side"; // before the first update from the server
+  if (enemy.IsEmpty()) enemy = "enemy";
+  if (m_DebugSides) m_DebugSides.SetText(string.Format("You play %1. Enemy: %2.", own, enemy));
   if (m_DebugStatus) m_DebugStatus.SetText(status);
+  if (m_DebugRPOwn) m_DebugRPOwn.SetText(string.Format("+500 RP to %1", own));
+  if (m_DebugRPEnemy) m_DebugRPEnemy.SetText(string.Format("+500 RP to %1", enemy));
+  if (m_DebugPause)
+  {
+   if (paused) m_DebugPause.SetText(string.Format("Resume %1 AI commander", enemy));
+   else m_DebugPause.SetText(string.Format("Pause %1 AI commander", enemy));
+  }
+  if (m_DebugReveal)
+  {
+   if (reveal) m_DebugReveal.SetText(string.Format("Hide %1", enemy));
+   else m_DebugReveal.SetText(string.Format("Reveal %1", enemy));
+  }
   bool hasBase = !baseName.IsEmpty();
   if (m_DebugAttack)
   {
-   if (hasBase) m_DebugAttack.SetText("Enemy attacks " + baseName + " now");
-   else m_DebugAttack.SetText("Enemy attacks now (select a base to aim)");
+   if (hasBase) m_DebugAttack.SetText(string.Format("%1 AI attacks %2 now", enemy, baseName));
+   else m_DebugAttack.SetText(string.Format("%1 AI attacks now (its pick)", enemy));
+  }
+  if (m_DebugBaseHeader)
+  {
+   if (hasBase) m_DebugBaseHeader.SetText("Selected base: " + baseName);
+   else m_DebugBaseHeader.SetText("Selected base: none (click a base)");
   }
   if (m_DebugCaptureOwn)
   {
    m_DebugCaptureOwn.SetEnabled(hasBase, false);
-   if (hasBase) m_DebugCaptureOwn.SetText(baseName + " -> us");
-   else m_DebugCaptureOwn.SetText("Base -> us");
+   m_DebugCaptureOwn.SetText("Give to " + own);
   }
   if (m_DebugCaptureEnemy)
   {
    m_DebugCaptureEnemy.SetEnabled(hasBase, false);
-   if (hasBase) m_DebugCaptureEnemy.SetText(baseName + " -> enemy");
-   else m_DebugCaptureEnemy.SetText("Base -> enemy");
+   m_DebugCaptureEnemy.SetText("Give to " + enemy);
   }
+  if (m_DebugFobSupply) m_DebugFobSupply.SetEnabled(hasBase, false);
+  if (m_DebugFobFinish) m_DebugFobFinish.SetEnabled(hasBase, false);
  }
 
  // The ping picker: four buttons that open at the cursor (Alt+right-click).

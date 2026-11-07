@@ -88,6 +88,8 @@ class ACR_SpawnPoints
   // Rebuilt every tick: a point deleted by something else leaves no stale key behind.
   s_Bases.Clear();
   foreach (ACR_Base owner, SCR_SpawnPoint own : s_Points) s_Bases.Set(own, owner);
+  // Decided first, applied once at the end: a point never flips off and on within a tick.
+  map<SCR_SpawnPoint, bool> want = new map<SCR_SpawnPoint, bool>();
   map<string, int> open = new map<string, int>();
   foreach (ACR_Base base : ACR_Base.s_All)
   {
@@ -99,16 +101,17 @@ class ACR_SpawnPoints
    if (homeHere)
    {
     // The HQ's own home point does the job; no second point beside it.
-    if (point) point.SetSpawnPointEnabled_S(false);
+    if (point) want.Set(point, false);
     continue;
    }
    if (!point && eligible) point = Create(manager, base);
    if (!point) continue;
    if (eligible && point.GetFactionKey() != base.m_sOwner) point.SetFactionKey(base.m_sOwner);
-   point.SetSpawnPointEnabled_S(eligible);
+   want.Set(point, eligible);
    if (eligible) open.Set(base.m_sOwner, open.Get(base.m_sOwner) + 1);
   }
   // Home points: open while the side holds its HQ, or when it has nowhere else.
+  map<string, int> reachable = new map<string, int>();
   foreach (SCR_SpawnPoint home : SCR_SpawnPoint.GetSpawnPoints())
   {
    if (!home || IsBasePoint(home)) continue;
@@ -119,9 +122,46 @@ class ACR_SpawnPoints
    bool enable = held || open.Get(side) == 0;
    if (hq && home.GetSpawnPointName() != hq.m_sName) home.SetSpawnPointName(hq.m_sName);
    home.SetPriority(PRIORITY_HQ);
-   home.SetSpawnPointEnabled_S(enable);
+   want.Set(home, enable);
+   if (enable) reachable.Set(side, 1);
   }
+  // Never nowhere to deploy: a side with no HQ point (East on Arland and the test range) whose
+  // deploy bases are all under attack or offline sat on a deploy screen with nothing to pick,
+  // its whole command UI shut behind it (6 Nov, Discord). It gets its best one anyway: better
+  // to deploy into the fight than never.
+  array<string> sides = {ACR_FactionSelection.West(), ACR_FactionSelection.East()};
+  foreach (string playable : sides)
+  {
+   if (!IsPlayableSide(playable) || open.Get(playable) > 0 || reachable.Get(playable) > 0) continue;
+   SCR_SpawnPoint last = LastResort(manager, playable);
+   if (!last) continue;
+   if (!last.IsSpawnPointEnabled()) PrintFormat("[ACR] SPAWN POINT %1 opened for %2 as a last resort (every deploy base under attack or offline)", last.GetSpawnPointName(), playable);
+   want.Set(last, true);
+  }
+  foreach (SCR_SpawnPoint spot, bool on : want) if (spot) spot.SetSpawnPointEnabled_S(on);
   LockDeployed();
+ }
+
+ // The side's best deploy base whatever its state (owned, deployable): uncontested first (an
+ // offline FOB), then FOBs, then the rest. Its point is made if it has none yet.
+ protected static SCR_SpawnPoint LastResort(ACR_Manager manager, string side)
+ {
+  ACR_Base best;
+  int bestScore = -1;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired || base.m_sOwner != side || !ACR_LogisticsRules.CanDeploy(base)) continue;
+   int score = 0;
+   if (!base.m_bContested) score += 10;
+   if (base.m_bBuilt) score += 1;
+   if (score > bestScore) { bestScore = score; best = base; }
+  }
+  if (!best) return null;
+  SCR_SpawnPoint point;
+  s_Points.Find(best, point);
+  if (!point) point = Create(manager, best);
+  if (point && point.GetFactionKey() != side) point.SetFactionKey(side);
+  return point;
  }
 
  protected static bool HasHomePoint(ACR_Base base)

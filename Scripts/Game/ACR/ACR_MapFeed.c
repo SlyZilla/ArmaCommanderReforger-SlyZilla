@@ -206,9 +206,19 @@ class ACR_MapFeed
   string statusSig = string.Format("%1|%2|%3|%4|%5|%6", commander, text, manager.m_SharedCommand, rp, income, (int)nextIncome);
   if (Changed(id, "command", statusSig, full)) pc.ACR_SendCommandStatus(commander, text, manager.m_SharedCommand, rp, income, seconds);
   bool debugAllowed = ACR_Manager.IsHostOrAdmin(id);
-  string debugText;
-  if (debugAllowed) debugText = manager.m_Debug.Status(manager, key);
-  if (Changed(id, "debug", string.Format("%1|%2", debugAllowed, debugText), full)) pc.ACR_SendDebug(debugAllowed, debugText);
+  string debugText, debugOwn, debugEnemy;
+  bool debugPaused, debugReveal;
+  if (debugAllowed)
+  {
+   string debugEnemyKey = ACR_Debug.EnemyOf(key);
+   debugText = manager.m_Debug.Status(manager, key);
+   debugOwn = ACR_Debug.Name(key);
+   debugEnemy = ACR_Debug.Name(debugEnemyKey);
+   debugPaused = manager.m_Debug.IsPaused(debugEnemyKey);
+   debugReveal = manager.m_Debug.Reveals(key);
+  }
+  string debugSig = string.Format("%1|%2|%3|%4|%5|%6", debugAllowed, debugText, debugOwn, debugEnemy, debugPaused, debugReveal);
+  if (Changed(id, "debug", debugSig, full)) pc.ACR_SendDebug(debugAllowed, debugText, debugOwn, debugEnemy, debugPaused, debugReveal);
   string report = ACR_Report.Text(key);
   if (Changed(id, "report", report, full)) pc.ACR_SendReport(report);
   bool calm = ACR_MapDeclutter.OptionOn();

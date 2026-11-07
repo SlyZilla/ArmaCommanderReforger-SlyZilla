@@ -4,6 +4,7 @@
 ### AI commanders
 
 - The experimental 2IC (`-acr2IC 1`, the Experimental tab's 2IC row) is now "I'm the 2IC": while you command, the AI commander runs your side exactly as it would if nobody commanded, and buys units again. In 0.5.10 it kept 100 RP back for you, which a commander spending his own RP left near zero, so it bought almost nothing all match; it now spends the side's RP like an AI commander (`-acr2ICKeep N` still holds some back if a host wants) and runs the AI commander's whole turn, recon, lanes and the job allocator included. You keep every command power, and any squad you lead or order stays yours.
+- AI commanders stop planning attacks around helicopter rides they never get. A squad far from the target was counted as arriving in four minutes by air lift whenever the helicopter was ready, every far squad at once, even when the flight path crossed enemy positions or the lift was being held for later. When the order went out there was no lift, the squad set off on a 6 km walk, and six minutes later the attack was called off as "never formed up" and planned again with the next far squad. On a large generated map that froze the front (one base taken in an hour). Plans now count on the air lift only where it would really fly, for one squad at a time like each truck, and a squad that still ends up walking far leaves the attack at once, so the commander picks squads that can get there.
 
 ### Soldiers
 
@@ -17,11 +18,21 @@
 
 ### Supports
 
+- The period jets (`-acrPeriodJets 1`) can be seen and heard on the Workshop. The 0.5.9 and 0.5.10 Workshop builds left out their models and engine sounds, so every recon flight and bomb run flew invisible and silent for everyone; the bombs' models were missing too. The release now packs every model and sound the mod loads, and refuses to build one that leaves a file out.
 - Game Master hears the period jets (`-acrPeriodJets 1`) from the Game Master camera. While the editor was open, the engine roar, its delay behind the jet and the close fly-past were all worked out for where the Game Master's own soldier stood, so with the camera over a bomb run far from that soldier you heard only a flat engine loop and no fly-past.
 
 ### Content packs
 
 - A content pack's soldier swaps are now rolled for each garrison soldier, FIA cell member and pocket fighter as he spawns. They were rolled once when the side's garrison list was built, so one unlucky roll decided the whole match: with the Cold War pack, FIA could play a full match without a single fighter in Cold War kit. Hand-picked garrison lists from a mission now get the pack's swaps too, as hand-picked squads already did.
+
+### Host tools
+
+- The host debug menu names the sides. Its buttons said "+500 RP us" and "+500 RP enemy", and with the US in the match "us" read as "the U.S.": a Soviet host gave his own side 500 RP and watched it become tanks. Every button now says which side it acts on ("+500 RP to USSR", "Give to US", "Pause US AI commander", "Reveal US"), the box opens with "You play USSR. Enemy: US." and shows both sides' RP, and the base and FOB buttons sit under the selected base's name and stay greyed out until you pick one. A click the menu ignores because it came too soon after the last one now says so; it used to vanish without a word.
+
+### Respawn and mods
+
+- With Project Outbreak's zombies in the match, a commander killed in his command unit could be stuck on the deploy screen for good, every spawn point closed and the whole command UI shut behind it. The zombies counted at bases like an enemy side: a base they wandered into stayed "under attack" for as long as they stood there, and enough of them could even take it. Only the two sides and FIA now hold, contest or take a base; zombies and any other mod's faction (civilians too) still bring the garrison out to fight, but no longer close a base or its spawn point.
+- A side is never left with nowhere to deploy. When every one of its deploy bases is under attack or offline and it has no HQ spawn point (East on Arland), its best deploy base stays open anyway: you deploy into the fight instead of waiting on an empty deploy screen.
 
 ## 0.5.10 — released
 
