@@ -27,6 +27,7 @@
 ### Vehicles
 
 - FIA's cars come with an FIA driver. The S105 and the S1203 minibus and van were driven by a civilian: buying one gave FIA a car whose driver joined the civilians, so nobody could command it.
+- A gunner driving his vehicle from the turret climbs steep roads again (Reforger 1.9). The 1.9 gearbox keeps the clutch locked from idle up, so once the hill start was over a Humvee lugged up a 31% road in first at 1,100-1,500 rpm, short of its peak torque at 2,000, and covered 63 m in 20 s where 1.8 managed 96 m. Climbing in first now keeps slipping the clutch, eased in and out by the engine's rpm against its peak torque, until the wheels turn the engine that fast themselves: 78-80 m in 20 s, the whole stretch. Flat ground and the other gears are unchanged.
 
 ### Content packs
 
@@ -76,10 +77,6 @@
 ### FIA
 
 - FIA road ambushes look like ambushes. The men stood about in open grass right beside their barricade. They now set up 25-70 m back from the road in the best cover that still sees the kill zone (a treeline or a line of bushes over open ground), each man crouched on his own spot facing the road, and most bring a PKM on its low tripod, dug in on the best-covered spot with a man on it; if he falls, another man takes the gun. When they pull back they leave the gun behind, and it goes when they pack up unless someone else is on it.
-
-### Fixes
-
-- A gunner driving his vehicle from the turret climbs steep roads again (Reforger 1.9). The 1.9 gearbox keeps the clutch locked from idle up, so once the hill start was over a Humvee lugged up a 31% road in first at 1,100-1,500 rpm, short of its peak torque at 2,000, and covered 63 m in 20 s where 1.8 managed 96 m. Climbing in first now keeps slipping the clutch, eased in and out by the engine's rpm against its peak torque, until the wheels turn the engine that fast themselves: 78-80 m in 20 s, the whole stretch. Flat ground and the other gears are unchanged.
 
 ## 0.5.9 — released
 
