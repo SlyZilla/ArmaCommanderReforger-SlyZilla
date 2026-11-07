@@ -1,6 +1,10 @@
 # Changelog
 ## 0.5.11 — unreleased
 
+### AI commanders
+
+- The experimental 2IC (`-acr2IC 1`, the Experimental tab's 2IC row) is now "I'm the 2IC": while you command, the AI commander runs your side exactly as it would if nobody commanded, and buys units again. In 0.5.10 it kept 100 RP back for you, which a commander spending his own RP left near zero, so it bought almost nothing all match; it now spends the side's RP like an AI commander (`-acr2ICKeep N` still holds some back if a host wants) and runs the AI commander's whole turn, recon, lanes and the job allocator included. You keep every command power, and any squad you lead or order stays yours.
+
 ### Soldiers
 
 - Soldiers no longer appear inside sealed attics, cellars or the hollow inside of thick castle walls. The game puts every man of a new squad on the walkable spot nearest his place in the formation, up to 10 m away above or below, and inside many houses and castles that is a space nobody can get into or out of; the game also tops squads up one man at a time, so men kept turning up after the mod's check had already run. Every man the game makes is now looked at the moment he appears, and one standing under a roof, inside something or anywhere he can't walk out of to open ground steps to the nearest open ground first. Squads spawned on the houses of Chernarus towns and castles: 40 of 64 men in such places before, none now. Garrisons, patrols, bought and reinforcing soldiers get the same check, and a soldier's last-resort place is open ground near the base rather than the nearest walkable spot, which in a castle could be inside its walls.
@@ -10,6 +14,10 @@
 - Objectives on generated maps sit in their towns. Some maps put a town's name beside the town rather than on it, and the objective went where the name was: on Chernarus Minus, Bonzievka Petrovka was a capture circle in an empty meadow 220 m from the nearest house, with its trenches dug in the grass. An objective whose circle would hold almost no buildings now goes on the houses next to its name: 13 places on Chernarus Minus moved 50-265 m, and 4 small hamlets on Everon. A name at the edge of its town, with houses in the circle, stays where it is.
 - New battlefield size: a quarter of the map. The setup screen's Battlefield row has "generated, a quarter of the map" (or `-acrSize quarter`): a district of about a quarter of the map's towns, round or stretched, somewhere different on each seed. On Chernarus Minus that is 15-19 objectives with the HQs 4-8 km apart, instead of 30 objectives and 14 km for a half. FIA pockets and guerrillas scale down with it.
 - Generated battles no longer always run corner to corner. The two HQs had to be nearly as far apart as the map allows, which on a square map only the diagonals are. Each seed now picks a direction first (north-south, east-west or anything between) and puts the HQs far apart along it.
+
+### Supports
+
+- Game Master hears the period jets (`-acrPeriodJets 1`) from the Game Master camera. While the editor was open, the engine roar, its delay behind the jet and the close fly-past were all worked out for where the Game Master's own soldier stood, so with the camera over a bomb run far from that soldier you heard only a flat engine loop and no fly-past.
 
 ## 0.5.10 — released
 
