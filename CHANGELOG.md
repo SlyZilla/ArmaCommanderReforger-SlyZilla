@@ -18,9 +18,17 @@
 
 - A base's garrison no longer vanishes when the base is taken. Its survivors (and its patrol's) now fall back, returning fire, to their side's nearest base within 2.5 km, or 350 m away from the enemy when there is none, and help hold it if it is under attack. Once no enemy is near them they join that base's reserve. They don't count towards retaking the base they were just pushed out of. FIA pockets fall back to the next pocket the same way.
 
+### Structures
+
+- Structures sit on sloping ground. Sandbag lines and wire already lay along a slope, but tents, bunkers, MG nests, checkpoints, guard towers and helipads were built dead level, so on a hillside their low side stood on air (more than a metre and a half under a guard tower). Now every structure takes as much of the slope as still leaves it usable: tents, bunkers, nests and checkpoints lean up to 5 degrees, towers and antennas up to 2.5, helipads up to 6, and each sinks a little into its uphill side so its low side meets the ground. Walls, barricades and wire follow the ground along their length but stay nearly upright through their thickness, as real ones are built. The host option -acrGroundTilt 0 still keeps everything level.
+
 ### Roadblocks
 
 - A roadblock's men no longer run back in front of your own truck as it drives through the checkpoint's lane. Since Reforger 1.9 a soldier sprints to the nearest cover from any vehicle heading his way, and beside the lane that cover is the lane's own sandbags and barriers, so a man who had just stepped out of the way ran back in and was nearly run over. For an AI-driven vehicle of yours in the lane the checkpoint's men now just step clear and stay there; a vehicle a player drives still gets the game's own dodge.
+
+### Setup
+
+- The match setup screen credits both of AC: Actual's developers, Jacob and SlyZilla.
 
 ### FIA
 
