@@ -149,6 +149,20 @@ class ACR_TestDoctrine
   home = home && homeEarly.Contains("held") && homeHeld == "" && driftWait.Contains("home style") && driftDone == "";
   ACR_TestRegress.Check("doctrine: a changed doctrine keeps the change while in trouble, then goes back to its home style after the hold", home,
    string.Format("losing [%1] bleeding [%2] over %3 (%4) stuck %5 winning [%6] at the counter [%7] from home %8; hold [%9]", stillLosing, stillBleeding, over, overWhy, stuckAway, winningAway, atCounter, fromHome, homeEarly) + string.Format(" held 35 [%1] drift [%2] / [%3]", homeHeld, driftWait, driftDone));
+
+  // 6 Nov Chernarus (US 21 bases to 4): well ahead, a quiet window or a believed enemy Blitz no
+  // longer changes how it fights; losing ground still does.
+  bool aheadOf = ACR_AICommander.Ahead(21, 4) && ACR_AICommander.Ahead(6, 1) && !ACR_AICommander.Ahead(9, 8) && !ACR_AICommander.Ahead(10, 6);
+  string aheadStuck = ACR_AICommander.PickDoctrine("balanced", "", 0, 0, 4, 4, why, "balanced", true);
+  string aheadCounter = ACR_AICommander.PickDoctrine("raider", "blitz", 1, 0, 3, 3, why, "balanced", true);
+  string aheadLosing = ACR_AICommander.PickDoctrine("balanced", "", 0, 3, 10, 10, why, "balanced", true);
+  bool ahead = aheadOf && aheadStuck == "" && aheadCounter == "" && aheadLosing == "fortress";
+  ACR_TestRegress.Check("doctrine: well ahead in bases it keeps its doctrine, unless losing ground", ahead,
+   string.Format("ahead %1, stuck [%2] counter [%3] losing [%4]", aheadOf, aheadStuck, aheadCounter, aheadLosing));
+  // The same day: Balanced <-> Blitz on single quiet windows. Only trouble changes it at once.
+  bool confirm = ACR_AICommander.NeedsConfirming("getting nowhere") && ACR_AICommander.NeedsConfirming("countering the enemy's Blitz") && ACR_AICommander.NeedsConfirming(ACR_AICommander.WHY_HOME);
+  confirm = confirm && !ACR_AICommander.NeedsConfirming("losing ground") && !ACR_AICommander.NeedsConfirming("losses too heavy");
+  ACR_TestRegress.Check("doctrine: only losing ground or heavy losses change it at once; other changes need two reviews in a row", confirm, "");
  }
 
  // #38: the doctrine row's default follows the side's company (Combat Engineers Fortress,

@@ -1785,6 +1785,15 @@ class ACR_AICommander : Managed
  static const float DOCTRINE_HOLD_MIN = 30;
  protected float m_fDoctrineSince = -1;
  protected string m_sDoctrineLeft, m_sDoctrineLeftWhy;
+ // A change that isn't urgent waits for the next review to pick it again (6 Nov, Chernarus: the US
+ // changed doctrine 9 times in 5 h, Balanced <-> Blitz on single quiet 10-minute windows and
+ // counters to an enemy doctrine its intel believed one review and not the next; every change
+ // re-tasks squads and changes what it buys). The pick it is waiting to confirm:
+ protected string m_sDoctrinePending;
+ // Ahead in the war: this many more bases than the enemy holds (that it knows of), and at least
+ // twice as many. 6 Nov: at 21 bases to 4 a quiet window read as "getting nowhere" and a believed
+ // Blitz turned it to Fortress.
+ static const int DOCTRINE_AHEAD_BY = 5;
 
  protected void SnapshotReview()
  {
@@ -1829,8 +1838,12 @@ class ACR_AICommander : Managed
   ACR_Intel intel = m_Manager.IntelFor(m_sFaction);
   if (intel) enemyKnown = intel.Doctrine().Believed();
   string why;
-  string pick = PickDoctrine(m_Doctrine.m_sKey, enemyKnown, won, basesLost, lost, kills, why, m_sHomeDoctrine);
-  Say(string.Format("[ACR] AI commander %1 doctrine review: %2, bases +%3 -%4, lost %5 killed %6, enemy doctrine '%7': %8", m_sFaction, m_Doctrine.m_sName, won, basesLost, lost, kills, enemyKnown, why));
+  int ours, theirs;
+  BasesHeld(ours, theirs);
+  string pick = PickDoctrine(m_Doctrine.m_sKey, enemyKnown, won, basesLost, lost, kills, why, m_sHomeDoctrine, Ahead(ours, theirs));
+  Say(string.Format("[ACR] AI commander %1 doctrine review: %2, bases +%3 -%4, lost %5 killed %6, enemy doctrine '%7', holds %8 to %9: ", m_sFaction, m_Doctrine.m_sName, won, basesLost, lost, kills, enemyKnown, ours, theirs) + why);
+  string pending = m_sDoctrinePending;
+  m_sDoctrinePending = "";
   if (pick.IsEmpty() || pick == m_Doctrine.m_sKey) return;
   float heldMin = -1;
   if (m_fDoctrineSince >= 0) heldMin = (now - m_fDoctrineSince) / 60000;
@@ -1841,7 +1854,40 @@ class ACR_AICommander : Managed
    Say(string.Format("[ACR] AI commander %1 doctrine: keeps %2 instead of %3 (%4)", m_sFaction, m_Doctrine.m_sName, ACR_AIDoctrine.NameOf(pick), blocked));
    return;
   }
+  if (NeedsConfirming(why) && pending != pick)
+  {
+   m_sDoctrinePending = pick;
+   Say(string.Format("[ACR] AI commander %1 doctrine: would switch to %2 (%3), if the next review agrees", m_sFaction, ACR_AIDoctrine.NameOf(pick), why));
+   return;
+  }
   ChangeDoctrine(ACR_AIDoctrine.Find(pick), why);
+ }
+
+ // Only losing ground and heavy losses change doctrine at once; anything else (getting nowhere, a
+ // counter, going home) must be picked at two reviews in a row.
+ static bool NeedsConfirming(string why)
+ {
+  return DoctrineReasonKind(why) != "going badly";
+ }
+
+ // Pure (tests): far enough ahead in bases held that a quiet spell or a believed enemy style
+ // doesn't change how it fights.
+ static bool Ahead(int ours, int theirs)
+ {
+  return ours >= theirs + DOCTRINE_AHEAD_BY && ours >= theirs * 2;
+ }
+
+ // Bases this side holds, and those it knows a hostile side holds.
+ protected void BasesHeld(out int ours, out int theirs)
+ {
+  ours = 0;
+  theirs = 0;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (!base || base.m_bRetired) continue;
+   if (base.m_sOwner == m_sFaction) ours++;
+   else if (HostileOwner(base) && Visible(base)) theirs++;
+  }
  }
 
  // Reasons that lead to the same answer count as one: losing ground and heavy losses both pick
@@ -1884,7 +1930,8 @@ class ACR_AICommander : Managed
 
  // What a review decides over one review window: the doctrine key to change to, "" to keep. Away
  // from its home style ("" none) a side only goes back to it (see below).
- static string PickDoctrine(string current, string enemyKnown, int won, int basesLost, int lost, int kills, out string why, string home = "")
+ // 'ahead' (Ahead): well ahead in the war, it changes only for losing ground or heavy losses.
+ static string PickDoctrine(string current, string enemyKnown, int won, int basesLost, int lost, int kills, out string why, string home = "", bool ahead = false)
  {
   bool losingGround = basesLost >= won + 2;
   bool bleeding = lost >= 12 && lost > kills * 1.6;
@@ -1895,6 +1942,11 @@ class ACR_AICommander : Managed
   if (winning)
   {
    why = "it is working";
+   return "";
+  }
+  if (ahead && !losingGround && !bleeding)
+  {
+   why = "well ahead in the war, keeps what it has";
    return "";
   }
   string counter = ACR_AIDoctrine.Counter(enemyKnown);
