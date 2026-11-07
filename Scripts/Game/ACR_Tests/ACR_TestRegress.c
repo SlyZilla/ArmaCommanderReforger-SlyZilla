@@ -210,7 +210,7 @@ class ACR_TestRegress
  }
 
  // Checks a full run makes (Skip counts as made). Raise it with every new check.
- static const int EXPECTED = 161; // includes three Outbreak-zombie/last-resort spawn, two doctrine-hysteresis, two truck drive-out, two vehicle-exit, one AI-transport-truck, one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach and one attack-takers check
+ static const int EXPECTED = 162; // includes three Outbreak-zombie/last-resort spawn, two doctrine-hysteresis, two truck drive-out, two vehicle-exit, one AI-transport-truck, one grab-by-truck, one enemy-HQ-next-in-line check, six attack-ground, one BBB fall-back intent, one no-pack attack-helicopter, five AI skill, one attack-abort share check, one garrison-spawn, two spawn-heap, nine BBB order-leash/intent, five roadblock placement, fourteen doctrine, two covered-approach, one attack-takers and one service-truck-at-cap check
  static SCR_AIGroup s_RecoveryGroup;
  static SCR_AIGroup s_BoardingGroup;
  static SCR_AIGroup s_CancelBoardingGroup;
@@ -1480,9 +1480,59 @@ class ACR_TestRegress
    bool waitsGaveUp = logisticsAI && logisticsAI.StuckLatelyForTest(bravo);
    bravo.m_fGaveUpAt = gaveUpBefore;
    Check("a service vehicle that gave up stuck or unreachable isn't sent on another run for a while", waits && free && waitsGaveUp, string.Format("waits %1, free later %2, waits after giving up %3", waits, free, waitsGaveUp));
+   ServiceAtCapCheck(manager);
    PrintFormat("[ACR] REGRESS invariant errors: %1", ACR_Perf.s_iInvariantErrors);
    Complete("regress", EXPECTED);
   }
+ }
+
+ // 7 Nov: a side at its squad cap still buys a service truck it needs (trucks don't count against
+ // the cap; the cap check came first, so a full side that lost its fuel truck went without). The
+ // last check of the run: the truck it buys stays.
+ static void ServiceAtCapCheck(ACR_Manager manager)
+ {
+  ACR_FactionSettings us = ACR_FactionSettings.Find("US");
+  ACR_FactionData data = manager.m_Bases.GetFaction("US");
+  if (!us || !data || !manager.m_Logistics)
+  {
+   Check("a side at its squad cap still buys a service truck it needs", false, "no US settings, faction data or logistics");
+   return;
+  }
+  // A service US has no truck for, and has on offer.
+  int service = 0;
+  array<int> kinds = {ACR_EService.FUEL, ACR_EService.REPAIR, ACR_EService.MEDICAL, ACR_EService.AMMO};
+  foreach (int kind : kinds)
+  {
+   if (service != 0 || manager.m_Logistics.CountStations("US", kind) > 0) continue;
+   foreach (ACR_RequisitionEntry offer : data.m_aRequisitions)
+    if (offer.m_iRemaining > 0 && !offer.m_sVehicle.IsEmpty() && (ACR_Logistics.ServiceOfName(offer.m_sVehicle) & kind) != 0) service = kind;
+  }
+  if (service == 0)
+  {
+   Check("a side at its squad cap still buys a service truck it needs", false, "US has a truck of every kind already, or none on offer");
+   return;
+  }
+  int capWas = us.m_iAIUnitCap;
+  int rpWas = data.m_iRP;
+  us.m_iAIUnitCap = -20; // full even with the banked-RP bonus
+  data.m_iRP = 1000;
+  ACR_AICommander ai = new ACR_AICommander(manager, "US");
+  int before = ServiceOnOffer(data, service);
+  ai.RequisitionForTest(0);
+  int afterNoNeed = ServiceOnOffer(data, service);
+  ai.RequisitionForTest(service);
+  int afterNeed = ServiceOnOffer(data, service);
+  us.m_iAIUnitCap = capWas;
+  data.m_iRP = rpWas;
+  Check("a side at its squad cap still buys a service truck it needs", afterNoNeed == before && afterNeed == before - 1, string.Format("%1 trucks on offer: %2, after a turn with no need %3, after one needing it %4", ACR_Logistics.ServiceName(service), before, afterNoNeed, afterNeed));
+ }
+
+ static int ServiceOnOffer(ACR_FactionData data, int service)
+ {
+  int count;
+  foreach (ACR_RequisitionEntry offer : data.m_aRequisitions)
+   if (!offer.m_sVehicle.IsEmpty() && (ACR_Logistics.ServiceOfName(offer.m_sVehicle) & service) != 0) count += offer.m_iRemaining;
+  return count;
  }
 
  static IEntity s_Unconscious;

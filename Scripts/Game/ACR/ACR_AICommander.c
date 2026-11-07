@@ -6728,7 +6728,6 @@ class ACR_AICommander : Managed
     capUsed += CapSlots(existing);
    }
   }
-  if (capUsed >= cap) return;
   // Deploy at the forward-most safe deployment base (military/airfield/FOB with
   // ThreatTo == 0 and at least FOB_DEPLOY_MIN_FRONT from any non-owned base);
   // fall back to the furthest rear base when all forward bases are under threat.
@@ -6755,7 +6754,9 @@ class ACR_AICommander : Managed
   if (forwardSpawn) spawn = forwardSpawn;
   if (!spawn) return;
   // A service truck for a need nobody can meet (squads low on ammo, a wrecked
-  // BRDM...), one of each kind at a time.
+  // BRDM...), one of each kind at a time. Trucks don't count against the cap, so a side at its
+  // cap still replaces a lost one (7 Nov: the cap check came first, and a full side that lost its
+  // only fuel truck went without until it lost a squad).
   if (m_Manager.m_Logistics)
   {
    array<int> services = {ACR_EService.AMMO, ACR_EService.REPAIR, ACR_EService.FUEL, ACR_EService.MEDICAL};
@@ -6774,6 +6775,7 @@ class ACR_AICommander : Managed
     return;
    }
   }
+  if (capUsed >= cap) return;
   // Squads keep having to walk far with no truck to fetch them: buy a transport first.
   int maxTransports = 4;
   if (ACR_Manager.ThreatOption() == 2) maxTransports = 5;
@@ -6976,6 +6978,7 @@ class ACR_AICommander : Managed
   return 1;
  }
  float CapSlotsForTest(ACR_Squad squad) { return CapSlots(squad); }
+ void RequisitionForTest(int needs) { m_iNeeds = needs; Requisition(); }
 
  protected bool IsRUArmorEntry(ACR_RequisitionEntry entry)
  {
