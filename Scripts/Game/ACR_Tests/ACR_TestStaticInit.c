@@ -9,6 +9,7 @@ class ACR_TestStaticInit
   ACR_TestBaseWorks.ACR_InitStatics();
   ACR_TestBlast.ACR_InitStatics();
   ACR_TestContentPack.ACR_InitStatics();
+  ACR_TestCrewAudit.ACR_InitStatics();
   ACR_TestDefenders.ACR_InitStatics();
   ACR_TestDoctrineKits.ACR_InitStatics();
   ACR_TestFactionPairs.ACR_InitStatics();

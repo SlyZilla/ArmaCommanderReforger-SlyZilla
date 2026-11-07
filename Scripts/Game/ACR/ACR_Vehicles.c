@@ -225,8 +225,9 @@ modded class BaseCompartmentSlot
   if (!custom.IsEmpty()) return custom;
   // A content pack's vehicles name the other side's soldiers or nobody (#108: Zagoria tanks seat
   // USSR riflemen whoever owns them, the M2 has no driver): the pack picks. Empty passenger
-  // seats stay empty.
-  if (!own.IsEmpty() || GetType() == ECompartmentType.PILOT || GetType() == ECompartmentType.TURRET)
+  // seats stay empty; a commander or loader seat (ACR_Transport.CommanderSeat) is crew.
+  bool crewSeat = GetType() == ECompartmentType.PILOT || GetType() == ECompartmentType.TURRET || ACR_Transport.CommanderSeat(this);
+  if (!own.IsEmpty() || crewSeat)
   {
    ResourceName packed = ACR_ContentSocket.Get().Crewman(owner, vehicle, GetType());
    if (!packed.IsEmpty()) return packed;
@@ -241,14 +242,24 @@ modded class BaseCompartmentSlot
    if (!path.Contains("/Vehicles/Wheeled/K4386/")) return own;
   }
   ResourceName crewman = ACR_FactionCatalog.CrewmanFor(owner, vehicle);
-  if (crewman.IsEmpty()) return own;
-  return crewman;
+  if (!crewman.IsEmpty()) return crewman;
+  // FIA's own vanilla S105 and S1203 seat civilians: a car FIA bought was driven by a CIV
+  // squad nobody commands (6 Nov crew audit). Crew seats get the side's crewman instead.
+  string ownPath = own;
+  if (crewSeat && owner != "CIV" && ownPath.Contains("/CIV/"))
+  {
+   crewman = ACR_FactionCatalog.SideCrewman(owner, vehicle);
+   if (!crewman.IsEmpty()) return crewman;
+  }
+  return own;
  }
 }
 
 // LAV-style commander seats are CARGO slots wired to a commander sight turret
 // (AutoConnectToTurret), so a crew spawned for PILOT + TURRET left the LAV without its
-// commander (Jacob, 20 Oct). Bought vehicles also get those seats filled, in the same group.
+// commander (Jacob, 20 Oct). Bought vehicles also get those seats filled, in the same group,
+// and so do the commander and loader seats inside mod tanks' turrets (6 Nov: Chieftain,
+// Leopard 1, T-55 and FV510 Warrior crews were short a commander or loader).
 modded class SCR_BaseCompartmentManagerComponent
 {
  override protected bool InitiateSpawnDefaultOccupants(notnull array<ECompartmentType> compartmentTypes)

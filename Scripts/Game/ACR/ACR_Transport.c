@@ -7,12 +7,10 @@ class ACR_Transport
  static IEntity VehicleOf(IEntity body) { return BBB_Transport.VehicleOf(body); }
  static ECompartmentType SeatOf(IEntity body) { return BBB_Transport.SeatOf(body); }
 
- // A commander seat: the engine calls it CARGO, but it's wired to a commander sight
- // turret (LAV-25). Its occupant is crew, not a passenger.
- static bool CommanderSeat(BaseCompartmentSlot slot)
- {
-  return slot && slot.GetType() == ECompartmentType.CARGO && !slot.GetAutoConnectTurret().IsEmpty();
- }
+ // A commander (or loader) seat: the engine calls it CARGO, but it's wired to a commander
+ // sight turret (LAV-25) or sits inside the turret (mod tanks). Its occupant is crew, not a
+ // passenger. BBB owns the rule, so both mods agree on who is crew.
+ static bool CommanderSeat(BaseCompartmentSlot slot) { return BBB_Transport.CommanderSeat(slot); }
 
  // Riding in the back (a cargo seat that isn't a commander seat).
  static bool Passenger(IEntity body)
