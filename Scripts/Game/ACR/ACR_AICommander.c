@@ -977,9 +977,12 @@ class ACR_AICommander : Managed
  // Engineering budget (-acrAIBuildShare N, 0 = off by default): N% (at most 30, times the
  // doctrine's m_fBuildShare) of what the side's RP gains between strategy ticks is set aside for
  // roadblocks and minefields (and Fortify positions where that order exists), and at least
- // BUILD_TRICKLE each strategy tick; unit purchases leave it alone, those orders are paid out of
- // it (CanBuild). At most BUILD_BUDGET_MAX, never more than the side holds.
+ // BUILD_TRICKLE each strategy tick; those orders are paid out of it (CanBuild). At most
+ // BUILD_BUDGET_MAX, never more than the side holds. Unit purchases leave only BUILD_FENCE of it
+ // alone (BuildKeep): the next order's worth, not the whole budget. (6 Nov Chernarus: USSR held
+ // 150-190 RP for 20 min, 100 of it a full budget no squad was free to spend, so units saw ~20.)
  static const int BUILD_BUDGET_MAX = 100;
+ static const int BUILD_FENCE = 30;        // the dearest single AI engineering order (minefield 25-28, fortify 25)
  static const float BUILD_TRICKLE = 2;
  float m_fBuildBudget;
  protected int m_iBuildLastRP = -1;
@@ -1059,11 +1062,13 @@ class ACR_AICommander : Managed
   if (spent > 0) m_fBuildBudget = Math.Max(0, m_fBuildBudget - spent);
  }
 
- // What unit purchases keep back for it.
+ // What unit purchases keep back for it: the next order's worth. The rest of the budget is how much
+ // engineering may spend, not RP locked away: units may spend it, and the budget follows the side's
+ // RP down at the next strategy tick (AccrueBuildBudget).
  int BuildKeep()
  {
   if (SideShare() <= 0) return 0;
-  return BuildBudget();
+  return Math.Min(BuildBudget(), BUILD_FENCE);
  }
 
  string BuildStatus()
@@ -6643,7 +6648,9 @@ class ACR_AICommander : Managed
    if (BuyMortarTeam(spawn, data)) return;
    if (BuyHelicopter(data)) return;
   }
-  keep += BuildKeep(); // the engineering budget (-acrAIBuildShare) isn't for units
+  // The engineering budget's next order (-acrAIBuildShare) isn't for units, unless troops are short:
+  // a poor side's budget can be all it holds (Chernarus 6 Nov: 16 of 16 RP).
+  if (!urgent) keep += BuildKeep();
   int smallTeams, lineSquads, vehicles;
   foreach (ACR_Squad existing : mine)
   {
@@ -7774,7 +7781,8 @@ class ACR_AICommander : Managed
  {
   // The lazy commander's 2IC never builds into the player's keep, budget or not.
   if (m_bTwoICAll && Purse() < cost) return false;
-  if (SideShare() > 0) return BuildBudget() >= cost;
+  // The budget can outrun the purse within a tick, now that units may spend past BUILD_FENCE.
+  if (SideShare() > 0) return BuildBudget() >= cost && Purse() >= cost;
   // The 2IC (squads handed to the AI) builds only out of the budget, never from the side's RP,
   // which is the commanding player's (#14): with the share off it builds nothing.
   if (m_bHandedOnly && !m_bTwoICAll) return false;

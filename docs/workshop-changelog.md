@@ -18,5 +18,6 @@ NEW
 BETTER
 
 - I'm the 2IC (Experimental): while you command, the AI commander runs your side as if nobody did and spends its RP; you keep every command power and the squads you lead or order.
+- AI commanders with the AI build budget on no longer sit on RP their engineers aren't using: units now get all but the next build's 30 RP.
 - Game Master hears the period jets from the Game Master camera.
 - The host debug menu names the side every button acts on, shows both sides' RP, and says when a click is ignored.

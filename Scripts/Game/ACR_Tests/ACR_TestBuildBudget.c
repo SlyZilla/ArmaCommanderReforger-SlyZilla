@@ -7,7 +7,7 @@
 // weighs its purchases towards dearer units.
 class ACR_TestBuildBudget
 {
- static const int CHECKS = 10;
+ static const int CHECKS = 11;
 
  static void Run(ACR_TestHarness h, int tick)
  {
@@ -54,6 +54,19 @@ class ACR_TestBuildBudget
   int afterSpend = ai.BuildBudget();
   ai.SpendBuildBudget(500);
   ACR_TestRegress.Check("budget: engineering spending comes out of it", afterSpend == 15 && ai.BuildBudget() == 0, string.Format("after 25: %1, after 500 more: %2", afterSpend, ai.BuildBudget()));
+
+  // A full budget fences only the next order from unit purchases (6 Nov Chernarus: 100 of USSR's
+  // 153 RP were kept from units while no squad was free to build); engineering pays only with the RP.
+  us.m_iRP = 5300;
+  ai.AccrueBuildBudget();
+  int full = ai.BuildBudget();
+  int fence = ai.BuildKeep();
+  us.m_iRP = 10;
+  bool broke = ai.CanBuild(20, 25);
+  us.m_iRP = 50;
+  bool paid = ai.CanBuild(20, 25);
+  ai.SpendBuildBudget(1000);
+  ACR_TestRegress.Check("budget: a full budget keeps only the next order (30 RP) from units; engineering pays only with the RP", full == 100 && fence == ACR_AICommander.BUILD_FENCE && fence == 30 && !broke && paid, string.Format("budget %1, kept from units %2, can build at 10 RP %3, at 50 RP %4", full, fence, broke, paid));
 
   CheckSurplus(ai, us);
   CheckRichFire(ai, us);

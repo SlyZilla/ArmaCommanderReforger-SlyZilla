@@ -3,6 +3,7 @@
 
 ### AI commanders
 
+- An AI commander with the build budget on no longer sits on RP it isn't using. Unit purchases used to leave the whole budget alone (up to 100 RP) even when no squad was free to build anything, so a side could hold 150-190 RP for 20 minutes and still be "saving up" for a BMP. Purchases now leave only the next engineering order's worth (30 RP) alone, and nothing while the side is short of troops; the budget still caps what engineering may spend, and roadblocks, minefields and positions are ordered only when the side has the RP.
 - The experimental 2IC (`-acr2IC 1`, the Experimental tab's 2IC row) is now "I'm the 2IC": while you command, the AI commander runs your side exactly as it would if nobody commanded, and buys units again. In 0.5.10 it kept 100 RP back for you, which a commander spending his own RP left near zero, so it bought almost nothing all match; it now spends the side's RP like an AI commander (`-acr2ICKeep N` still holds some back if a host wants) and runs the AI commander's whole turn, recon, lanes and the job allocator included. You keep every command power, and any squad you lead or order stays yours.
 
 ### Generated maps
