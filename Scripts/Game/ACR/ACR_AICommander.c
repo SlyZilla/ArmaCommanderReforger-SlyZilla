@@ -4088,7 +4088,10 @@ class ACR_AICommander : Managed
   array<string> words = {"fuel", "repair", "ammo", "supply", "medical", "ambulance", "command", "radio", "tanker"};
   foreach (string word : words)
    if (text.Contains(word)) return true;
-  return false;
+  // The rides' own test (ACR_Logistics.ServiceOfName: arsenal, engineer...): a truck they won't take
+  // as a taxi is no transport. 6 Nov: Arsenal and Construction trucks passed as transports, rides
+  // refused them ("service vehicle"), the shortage stayed and the AI bought 29 trucks in 3 h.
+  return ACR_Logistics.ServiceOfName(entry.m_sVehicle) != 0;
  }
 
  // Long trips on foot become rides or air lifts:
@@ -5412,6 +5415,10 @@ class ACR_AICommander : Managed
 
  // Keep idle unarmed transport trucks near safe bases where foot infantry spawn or stage,
  // while leaving their order state as RETURN so IsFreeTransport can claim them en route.
+ // At most MOTOR_POOL_PER_HUB park at one base; the rest go to the next nearest hub with room
+ // (Sly's match, Nov: a dozen trucks in rows at the HQ, one rocket run took them all).
+ static const int MOTOR_POOL_PER_HUB = 2;
+ static const float MOTOR_POOL_PARKED = 450; // m from a hub's centre: parked there
  protected void PositionTransports()
  {
   if (!m_Manager.m_Rides) return;
@@ -5431,27 +5438,67 @@ class ACR_AICommander : Managed
     hubs.Insert(base);
   }
   if (hubs.IsEmpty()) return;
-  foreach (ACR_Squad taxi : m_Manager.m_Squads)
+  // Who is parked at each hub already (trucks on their way count once there).
+  array<ACR_Squad> taxis = {};
+  array<int> parked = {};
+  foreach (ACR_Base countHub : hubs) parked.Insert(0);
+  foreach (ACR_Squad idle : m_Manager.m_Squads)
   {
-   if (!m_Manager.m_Rides.IsFreeTransport(taxi, m_sFaction)) continue;
-   if (m_bHandedOnly && !taxi.m_bAICommanded) continue; // a player commands the side: his trucks stay where he parked them
+   if (!m_Manager.m_Rides.IsFreeTransport(idle, m_sFaction)) continue;
+   if (m_bHandedOnly && !idle.m_bAICommanded) continue; // a player commands the side: his trucks stay where he parked them
+   taxis.Insert(idle);
+   if (idle.OrderState() == ACR_EOrderState.RETURN) continue; // on the move: counted once it has parked
+   int at = HubAt(hubs, ACR_Transport.CrewedVehicle(idle).GetOrigin());
+   if (at >= 0) parked[at] = parked[at] + 1;
+  }
+  foreach (ACR_Squad taxi : taxis)
+  {
    if (taxi.OrderState() == ACR_EOrderState.RETURN) continue;
-   IEntity vehicle = ACR_Transport.CrewedVehicle(taxi);
-   if (!vehicle) continue;
-   vector here = vehicle.GetOrigin();
-   ACR_Base bestHub;
-   float bestDist = float.MAX;
-   foreach (ACR_Base hub : hubs)
+   // Gave up stuck lately: sending it again just repeats that (6 Nov: one Ural re-sent 39 times).
+   if (GetGame().GetWorld().GetWorldTime() - taxi.m_fStuckAt < 600000) continue;
+   vector here = ACR_Transport.CrewedVehicle(taxi).GetOrigin();
+   int home = HubAt(hubs, here);
+   if (home >= 0 && parked[home] <= MOTOR_POOL_PER_HUB) continue; // parked, and the hub isn't crowded
+   // The nearest hub with room; with none, the nearest at all (a truck already at a hub stays).
+   int pickHub = -1;
+   int anyHub = -1;
+   float roomDist = float.MAX;
+   float anyDist = float.MAX;
+   foreach (int h, ACR_Base hub : hubs)
    {
+    if (h == home) continue;
     float d = vector.DistanceXZ(here, hub.GetOrigin());
-    if (d < bestDist) { bestDist = d; bestHub = hub; }
+    if (d < anyDist) { anyDist = d; anyHub = h; }
+    if (parked[h] < MOTOR_POOL_PER_HUB && d < roomDist) { roomDist = d; pickHub = h; }
    }
-   if (!bestHub || bestDist <= 450) continue;
+   if (pickHub < 0)
+   {
+    if (home >= 0) continue;
+    pickHub = anyHub;
+   }
+   if (pickHub < 0) continue;
+   if (home >= 0) parked[home] = parked[home] - 1;
+   parked[pickHub] = parked[pickHub] + 1;
+   ACR_Base bestHub = hubs[pickHub];
+   float bestDist = vector.DistanceXZ(here, bestHub.GetOrigin());
    taxi.SetMode(ACR_EMoveMode.FAST);
    taxi.RouteTo(ACR_Manager.Ground(bestHub.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Returning", ACR_EOrderKind.MOVE);
    taxi.SetOrder("Returning", ACR_EOrderState.RETURN);
    Say(string.Format("[ACR] AI %1: motor pool %2 repositioning to %3 (%4 m)", m_sFaction, taxi.GetName(), bestHub.m_sName, (int)bestDist));
   }
+ }
+
+ // Index of the hub 'pos' is parked at (within MOTOR_POOL_PARKED of its centre, nearest first); -1: none.
+ protected static int HubAt(notnull array<ACR_Base> hubs, vector pos)
+ {
+  int found = -1;
+  float best = MOTOR_POOL_PARKED;
+  foreach (int i, ACR_Base hub : hubs)
+  {
+   float d = vector.DistanceXZ(pos, hub.GetOrigin());
+   if (d <= best) { best = d; found = i; }
+  }
+  return found;
  }
 
  // A staging point around the target, as close to the wanted direction as

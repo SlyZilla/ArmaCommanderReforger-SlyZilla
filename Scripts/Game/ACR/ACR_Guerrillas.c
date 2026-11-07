@@ -4,10 +4,15 @@
 // once they are gone, so a cell costs nothing until someone comes near.
 //  - Road ambush: its site is a stretch of road between bases, away from both starting bases
 //    (BBB_Roads routes between bases, the most travelled stretches first). The men lie in wait
-//    off the road, holding their fire, until an enemy enters the kill zone, comes close or hits
-//    one of them; sometimes they block the road first with a log barricade (ACR_Roadblocks), so a
-//    convoy has to slow in the kill zone. Hit and run: after a short fight or heavy losses they
-//    pull back away from the road and pack up, and set up on another road later.
+//    set back from the road (25-70 m off it) in the best cover that sees the kill zone (a treeline
+//    over open grass, Jacob 6 Nov: men standing in the open by a barricade were no ambush), each
+//    crouched on his own post facing it (ACR_Garrison posts, as ACR_Ambush's), holding their fire
+//    until an enemy enters the kill zone, comes close or hits one of them; most bring a PKM on its
+//    light tripod, dug in on the best-covered spot with a man on it (BBB keeps him there,
+//    ACR_Defenders.CrewGunsOf; another man takes it if he falls, Reman); sometimes they block the road first with a log barricade
+//    (ACR_Roadblocks), so a convoy has to slow in the kill zone. Hit and run: after a short fight
+//    or heavy losses they pull back away from the road, leaving the gun, and pack up (the gun goes
+//    with them unless someone else is on it), and set up on another road later.
 //  - House: a few men in the windows of an ordinary building away from every base
 //    (ACR_Garrison posts), quiet until enemies come close; after a fight they move on too.
 //  - Hideout: FIA's home in a small isolated group of buildings (a farm or hamlet, not a village,
@@ -31,6 +36,7 @@ class ACR_GuerrillaCell : Managed
  vector m_vRoadDir;      // ambush: along the road there
  float m_fRoadWidth;
  ACR_Roadblock m_Block;  // the barricade it laid this time (none: a plain ambush)
+ IEntity m_Gun;          // ambush: its tripod gun this time (none: rifles only)
  int m_iOut;             // men deployed (a loss springs it)
  bool m_bSprung;
  string m_sSprung;       // what sprang it
@@ -56,6 +62,14 @@ class ACR_Guerrillas
  static const float MOVE_ON_MAX_S = 1200;
  static const float BLOCK_CHANCE = 0.4;  // ambushes that block the road first
  static const float HIDE_CLEAR = 18;     // m from any road where they lie in wait (cc89guer1: 12 let men onto it)
+ static const float HIDE_NEAR = 25;      // m off the road's edge the hiding place is looked for ...
+ static const float HIDE_FAR = 70;       // ... to this far: back in the treeline rather than out in the grass
+ static const float COVER_WEIGHT = 1.5;  // a hiding place's score for each tree, bush or rock round it (ACR_Ambush.Cover)
+ static const float GUN_CHANCE = 0.7;    // ambushes that bring a tripod machine gun
+ static const ResourceName GUN = "{723870DBB19D30B0}Prefabs/Weapons/Tripods/Tripod_6T5_PKM.et";
+ static bool s_bGunForTest;              // srv:guerrillas: every ambush brings its gun
+ static const int REMAN_EVERY_S = 8;     // an empty gun manned again this often ...
+ static const float REMAN_REACH = 30;    // ... by the nearest man on foot this close
  static const float SPACING = 700;       // m between two cells
  static const float BASE_CLEAR = 150;    // m outside any base's circle
  static const int MAX_ROUTES = 20;       // road searches at the start (cc89rs2: 14 left too few sites to move on to)
@@ -540,7 +554,7 @@ class ACR_Guerrillas
   if (!Usable(at, AMBUSH_HQ_CLEAR) || Crowded(at, except)) return false;
   vector road, dir, hide;
   float width;
-  return RoadSite(at, road, dir, width, hide);
+  return RoadSite(at, road, dir, width, hide, true);
  }
 
  // Another cell within SPACING of 'at'.
@@ -587,7 +601,7 @@ class ACR_Guerrillas
    }
    vector road, dir, hide;
    float width;
-   if (RoadSite(s_aRoads[index], road, dir, width, hide))
+   if (RoadSite(s_aRoads[index], road, dir, width, hide, true))
    {
     site = s_aRoads[index];
     return true;
@@ -627,14 +641,15 @@ class ACR_Guerrillas
  }
 
  // The road at 'at' and where to lie in wait beside it (HideSite); false with nowhere to hide.
- protected static bool RoadSite(vector at, out vector road, out vector dir, out float width, out vector hide)
+ // any: only whether there is one (the first that will do, not the best: site checks).
+ protected static bool RoadSite(vector at, out vector road, out vector dir, out float width, out vector hide, bool any = false)
  {
   width = 6;
   road = at;
   vector point;
   if (ACR_Minefields.Snap(at, 40, point, dir, width)) road = point;
   else dir = Vector(1, 0, 0);
-  return HideSite(road, dir, width, hide);
+  return HideSite(road, dir, width, hide, any);
  }
 
  // An ambush watches the road at 'site' (a site PickSite checked); it lies in wait off it.
@@ -650,31 +665,86 @@ class ACR_Guerrillas
   post.m_vPos = hide;
  }
 
- // Beside the road, 20-35 m off its edge and HIDE_CLEAR from any road, with the kill zone in
- // sight, where trees, bushes and rocks hide it and on higher ground (ACR_Ambush's cover and
- // sight rules). False with no such place.
- static bool HideSite(vector road, vector dir, float width, out vector best)
+ // Beside the road, HIDE_NEAR-HIDE_FAR m off its edge (and a little up or down it) and HIDE_CLEAR
+ // from any road, with the kill zone in sight, where trees, bushes and rocks hide it and on higher
+ // ground (ACR_Ambush's cover and sight rules). Cover counts most: a treeline 60 m back beats open
+ // grass by the road (Jacob 6 Nov); with as much cover, nearer first. False with no such place.
+ // any: the first that will do.
+ static bool HideSite(vector road, vector dir, float width, out vector best, bool any = false)
  {
   vector side = Vector(dir[2], 0, -dir[0]);
   float bestScore = -1000;
   bool found;
   array<float> sides = {1, -1};
-  array<float> offs = {20, 25, 30, 35};
+  array<float> offs = {25, 32, 40, 48, 56, 63, 70};
+  array<float> alongs = {0, -10, 10, -20, 20};
   foreach (float s : sides)
   {
    foreach (float o : offs)
    {
-    vector candidate = ACR_Manager.Ground(road + side * (s * (width * 0.5 + o)));
-    if (BBB_Terrain.IsWaterAt(candidate) || ACR_Minefields.RoadClearance(candidate) < HIDE_CLEAR) continue;
-    if (ACR_BaseSystem.Covered(candidate) || !ACR_Ambush.SeesKillZone(candidate, road)) continue;
-    float score = ACR_Ambush.Cover(candidate) + ACR_Ambush.Height(candidate, road) - Math.AbsFloat(o - 20) * 0.05;
-    if (score <= bestScore) continue;
-    bestScore = score;
-    best = candidate;
-    found = true;
+    foreach (float a : alongs)
+    {
+     vector candidate = ACR_Manager.Ground(road + side * (s * (width * 0.5 + o)) + dir * a);
+     if (BBB_Terrain.IsWaterAt(candidate) || ACR_Minefields.RoadClearance(candidate) < HIDE_CLEAR) continue;
+     if (ACR_BaseSystem.Covered(candidate) || !ACR_Ambush.SeesKillZone(candidate, road)) continue;
+     if (any)
+     {
+      best = candidate;
+      return true;
+     }
+     float score = ACR_Ambush.Cover(candidate) * COVER_WEIGHT + ACR_Ambush.Height(candidate, road) - (o - HIDE_NEAR) * 0.03 - Math.AbsFloat(a) * 0.02;
+     if (score <= bestScore) continue;
+     bestScore = score;
+     best = candidate;
+     found = true;
+    }
    }
   }
   return found;
+ }
+
+ // 'count' spots for the men round the hiding place, best first: in sight of the kill zone where
+ // they can be, by the most cover and the highest ground, ACR_Ambush.SPACING apart, never on or by
+ // a road, under a roof or inside what stands there (playtest pn20: men lay inside a bunker's mound),
+ // with room to crouch. Short of such places the rest stay where they spawned.
+ protected static void MenSpots(ACR_GuerrillaCell cell, vector hide, int count, notnull array<vector> spots)
+ {
+  spots.Clear();
+  vector away = hide - cell.m_vKillZone;
+  away[1] = 0;
+  if (away.LengthSq() < 0.01) away = Vector(cell.m_vRoadDir[2], 0, -cell.m_vRoadDir[0]);
+  away.Normalize();
+  array<vector> places = {};
+  array<float> scores = {};
+  array<float> depths = {0, -7, 7};
+  for (float a = -24; a <= 24; a += 6)
+  {
+   foreach (float depth : depths)
+   {
+    vector place = ACR_Manager.Ground(hide + cell.m_vRoadDir * a + away * depth);
+    if (BBB_Terrain.IsWaterAt(place) || ACR_Minefields.RoadClearance(place) < HIDE_CLEAR - 4 || ACR_BaseSystem.Covered(place)) continue;
+    if (!ACR_BaseSystem.RoomAt(place)) continue;
+    float score = ACR_Ambush.Cover(place) * COVER_WEIGHT + ACR_Ambush.Height(place, cell.m_vKillZone) - Math.AbsFloat(a) * 0.02 - Math.AbsFloat(depth) * 0.03;
+    if (!ACR_Ambush.SeesKillZone(place, cell.m_vKillZone)) score -= 20;
+    places.Insert(place);
+    scores.Insert(score);
+   }
+  }
+  while (spots.Count() < count)
+  {
+   int best = -1;
+   foreach (int i, vector open : places)
+   {
+    if (best >= 0 && scores[i] <= scores[best]) continue;
+    bool clear = true;
+    foreach (vector taken : spots) if (vector.DistanceXZ(taken, open) < ACR_Ambush.SPACING) clear = false;
+    if (clear) best = i;
+   }
+   if (best < 0) break;
+   spots.Insert(places[best]);
+   places.Remove(best);
+   scores.Remove(best);
+  }
  }
 
  // ---------------------------------------------------------------- ACR_Defenders hooks
@@ -710,35 +780,141 @@ class ACR_Guerrillas
    PrintFormat("[ACR] GUERRILLAS %1 deployed: %2 men in the house, %3 window posts", post.m_sName, cell.m_iOut, posts);
    return;
   }
-  // Spread along the road on the site's side, each with the kill zone in sight where he can.
+  // Each man on his own spot round the hiding place (MenSpots), the best one for the gun if they
+  // brought it; the others crouched on posts facing the kill zone under a garrison waypoint, as a
+  // player's ambush (ACR_Ambush.Spots). A Defend left them standing about in the open (Jacob 6 Nov).
   array<AIAgent> agents = {};
   group.GetAgents(agents);
-  vector across = post.m_vPos - cell.m_vKillZone;
-  across[1] = 0;
-  float off = across.Length();
-  across.Normalize();
-  foreach (int i, AIAgent agent : agents)
+  array<IEntity> men = {};
+  foreach (AIAgent agent : agents)
   {
-   IEntity man = agent.GetControlledEntity();
-   if (!man) continue;
-   float along = (i - (agents.Count() - 1) * 0.5) * ACR_Ambush.SPACING;
-   // Out from the road until clear of it (a bend can bring another stretch close) and of what stands
-   // on the ground (playtest pn20: men lay inside a bunker's mound) and with room to stand (a field
-   // wall or fence by the road). None clear: he stays where he spawned.
-   for (int step = 0; step < 4; step++)
+   IEntity body = agent.GetControlledEntity();
+   if (body && ACR_Respawn.IsAlive(body)) men.Insert(body);
+  }
+  array<vector> spots = {};
+  MenSpots(cell, post.m_vPos, men.Count(), spots);
+  string gun = "no gun";
+  int first = 0;
+  if (men.Count() >= 3 && !spots.IsEmpty() && (s_bGunForTest || Math.RandomFloat01() < GUN_CHANCE))
+  {
+   // The last man (never the leader) to the gun.
+   IEntity gunner = men[men.Count() - 1];
+   cell.m_Gun = SpawnGun(spots[0], cell.m_vKillZone);
+   if (cell.m_Gun)
    {
-    vector spot = ACR_Manager.Ground(cell.m_vKillZone + cell.m_vRoadDir * along + across * (off + step * 6));
-    if (BBB_Terrain.IsWaterAt(spot) || ACR_Minefields.RoadClearance(spot) < HIDE_CLEAR - 4 || ACR_BaseSystem.Covered(spot)) continue;
-    if (!ACR_BaseSystem.RoomAt(spot, man)) continue;
-    man.SetOrigin(spot);
-    break;
+    gunner.SetOrigin(ACR_Manager.Ground(spots[0] - Facing(spots[0], cell.m_vKillZone) * 1.2));
+    GetGame().GetCallqueue().CallLater(SeatGunner, 1000, false, cell.m_Gun, gunner);
+    GetGame().GetCallqueue().CallLater(SeatGunner, 3000, false, cell.m_Gun, gunner);
+    men.Remove(men.Count() - 1);
+    first = 1;
+    gun = string.Format("a PKM, cover %1", ACR_Ambush.Cover(spots[0]));
    }
   }
-  // A tight Defend: a wide one let the men walk onto the road (cc89guer1).
-  Order(group, ACR_Squad.WP_DEFEND, post.m_vPos, 10, false);
+  array<ref ACR_GarrisonSpot> held = {};
+  vector middle = post.m_vPos;
+  int onSpots;
+  foreach (int i, IEntity man : men)
+  {
+   if (first + i >= spots.Count()) break;
+   vector spot = spots[first + i];
+   man.SetOrigin(spot);
+   ACR_GarrisonSpot place = new ACR_GarrisonSpot();
+   place.m_Pos = spot;
+   place.m_Look = Facing(spot, cell.m_vKillZone);
+   held.Insert(place);
+   if (onSpots == 0) middle = spot;
+   onSpots++;
+  }
+  float radius = 15;
+  if (!held.IsEmpty() && ACR_Garrison.PostsAt(group, held, middle, radius) > 0) Order(group, ACR_Squad.WP_GARRISON, middle, radius, true);
+  // None: a tight Defend (a wide one let the men walk onto the road, cc89guer1).
+  else Order(group, ACR_Squad.WP_DEFEND, post.m_vPos, 10, false);
   string blocked = "plain";
   if (Math.RandomFloat01() < BLOCK_CHANCE) blocked = Block(post);
-  PrintFormat("[ACR] GUERRILLAS %1 deployed: %2 men lying in wait %3 m off the road (%4)", post.m_sName, cell.m_iOut, (int)off, blocked);
+  PrintFormat("[ACR] GUERRILLAS %1 deployed: %2 men lying in wait %3 m off the road, %4 on posts, cover %5 at the hiding place (%6; %7)", post.m_sName, cell.m_iOut, (int)ACR_Minefields.RoadClearance(post.m_vPos), onSpots, ACR_Ambush.Cover(post.m_vPos), gun, blocked);
+ }
+
+ // A horizontal unit vector from 'from' towards 'to'.
+ protected static vector Facing(vector from, vector to)
+ {
+  vector look = to - from;
+  look[1] = 0;
+  if (look.LengthSq() < 0.01) return Vector(0, 0, 1);
+  look.Normalize();
+  return look;
+ }
+
+ // The tripod gun on 'at', aimed at the kill zone. Its bushes stay: it is hiding.
+ protected static IEntity SpawnGun(vector at, vector killZone)
+ {
+  Resource resource = Resource.Load(GUN);
+  if (!resource.IsValid()) return null;
+  vector look = Facing(at, killZone);
+  EntitySpawnParams params = new EntitySpawnParams();
+  params.TransformMode = ETransformMode.WORLD;
+  Math3D.AnglesToMatrix(Vector(Math.Atan2(look[0], look[2]) * Math.RAD2DEG, 0, 0), params.Transform);
+  params.Transform[3] = ACR_Manager.Ground(at);
+  return GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), params);
+ }
+
+ // A moment after the gun spawned (its seat set up): its gunner onto it. Missed, Reman puts a
+ // man of the cell on it.
+ protected static void SeatGunner(IEntity gun, IEntity gunner)
+ {
+  ChimeraCharacter body = ChimeraCharacter.Cast(gunner);
+  if (!gun || !body || !ACR_Respawn.IsAlive(body) || body.IsInVehicle()) return;
+  BaseCompartmentSlot slot = ACR_Defenders.FreeTurret(gun);
+  CompartmentAccessComponent access = body.GetCompartmentAccessComponent();
+  if (slot && access) access.GetInVehicle(gun, slot, true, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+ }
+
+ // The gun a cell's men hold while they lie in wait or fight (none once pulling back): BBB keeps its
+ // gunner on it (ACR_Defenders.CrewGunsOf, ACR_BBBHooks.GetHeldGuns, BBB_HeldGuns.Keep).
+ static IEntity HeldGun(ACR_DefenderPost post)
+ {
+  if (!post || !post.m_Cell || post.m_Cell.m_bWithdrawing) return null;
+  return post.m_Cell.m_Gun;
+ }
+
+ // Every REMAN_EVERY_S while they hold the gun (HeldGun): standing empty (its gunner shot, or not
+ // seated at deploy), the nearest man of the cell on foot within REMAN_REACH takes it.
+ protected static void Reman(ACR_DefenderPost post)
+ {
+  IEntity gun = HeldGun(post);
+  if (!gun) return;
+  BaseCompartmentSlot slot = ACR_Defenders.FreeTurret(gun);
+  if (!slot) return;
+  array<AIAgent> agents = {};
+  post.m_Group.GetAgents(agents);
+  ChimeraCharacter best;
+  float nearest = REMAN_REACH;
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!body || !ACR_Respawn.IsAlive(body) || body.IsInVehicle()) continue;
+   CompartmentAccessComponent access = body.GetCompartmentAccessComponent();
+   if (!access || access.IsGettingIn() || access.IsGettingOut()) continue;
+   float d = vector.DistanceXZ(body.GetOrigin(), gun.GetOrigin());
+   if (d >= nearest) continue;
+   nearest = d;
+   best = body;
+  }
+  if (best && best.GetCompartmentAccessComponent().GetInVehicle(gun, slot, true, -1, ECloseDoorAfterActions.LEAVE_OPEN, false))
+   PrintFormat("[ACR] GUERRILLAS %1: a man %2 m off takes the gun", post.m_sName, (int)nearest);
+ }
+
+ // The gun stays when they pull back; it goes when they pack up, unless someone else is on it.
+ protected static void DropGun(ACR_GuerrillaCell cell)
+ {
+  IEntity gun = cell.m_Gun;
+  cell.m_Gun = null;
+  if (!gun) return;
+  // Someone else on it (its own gunner was packed up a moment ago and may still sit there).
+  BaseCompartmentSlot seat = ACR_Defenders.TurretSeat(gun);
+  IEntity occupant;
+  if (seat) occupant = seat.GetOccupant();
+  if (occupant && ACR_Respawn.IsAlive(occupant) && ACR_Intel.FactionKeyOf(occupant) != ACR_Pockets.FACTION) return;
+  SCR_EntityHelper.DeleteEntityAndChildren(gun);
  }
 
  // A log barricade across the road at the kill zone.
@@ -770,6 +946,7 @@ class ACR_Guerrillas
    if (!post.m_Cell || !post.m_Group) continue;
    ACR_GuerrillaCell cell = post.m_Cell;
    int alive = manager.m_Bases.GuardsAlive(post.m_Group);
+   if (s_iSeconds % REMAN_EVERY_S == 0) Reman(post);
    if (!cell.m_bSprung)
    {
     string why = SpringReason(manager, post, alive);
@@ -825,10 +1002,30 @@ class ACR_Guerrillas
   if (away.LengthSq() < 0.01) away = Vector(1, 0, 0);
   away.Normalize();
   vector fallback = ACR_Manager.Ground(post.m_vPos + away * FALLBACK);
-  if (cell.m_bHouse) ACR_Garrison.Release(post.m_Group);
+  // Off their posts (or out of the windows), and the gunner off the gun: they leave it.
+  ACR_Garrison.Release(post.m_Group);
+  LeaveGun(post);
   SetCombatMode(post.m_Group, EAIGroupCombatMode.RETURN_FIRE);
   Order(post.m_Group, ACR_Squad.WP_MOVE, fallback, 20, false);
   PrintFormat("[ACR] GUERRILLAS %1 pulls back to %2 (%3 of %4 left)", post.m_sName, ACR_Manager.Grid(fallback), alive, cell.m_iAliveAtSpring);
+ }
+
+ // Pulling back: a man of the cell on its gun gets off it (HeldGun no longer lists it, so BBB
+ // doesn't put him back).
+ protected static void LeaveGun(ACR_DefenderPost post)
+ {
+  IEntity gun = post.m_Cell.m_Gun;
+  if (!gun || !post.m_Group) return;
+  array<AIAgent> agents = {};
+  post.m_Group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter body = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!body || !body.IsInVehicle()) continue;
+   CompartmentAccessComponent access = body.GetCompartmentAccessComponent();
+   if (!access || !access.GetCompartment() || access.GetCompartment().GetOwner() != gun) continue;
+   access.GetOutVehicle(EGetOutType.ANIMATED, -1, ECloseDoorAfterActions.LEAVE_OPEN, false);
+  }
  }
 
  // While deployed (ACR_Defenders.Tick): stays out while an enemy is near; pulled back, until
@@ -847,11 +1044,12 @@ class ACR_Guerrillas
   return false;
  }
 
- // Packed up (ACR_Defenders.Tick): its barricade goes; after a fight it moves on to a new site
- // later; with nobody left the cell is gone.
+ // Packed up (ACR_Defenders.Tick): its barricade and gun go; after a fight it moves on to a new
+ // site later; with nobody left the cell is gone.
  static void PackedUp(ACR_DefenderPost post)
  {
   ACR_GuerrillaCell cell = post.m_Cell;
+  DropGun(cell);
   if (cell.m_Block)
   {
    ACR_Roadblocks.DismantleRoadblock(cell.m_Block);
@@ -899,7 +1097,7 @@ class ACR_Guerrillas
 
  // ---------------------------------------------------------------- helpers
 
- protected static void SetCombatMode(SCR_AIGroup group, EAIGroupCombatMode mode)
+ static void SetCombatMode(SCR_AIGroup group, EAIGroupCombatMode mode)
  {
   if (!group) return;
   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(group.FindComponent(SCR_AIGroupUtilityComponent));

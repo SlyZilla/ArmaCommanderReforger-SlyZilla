@@ -8,6 +8,16 @@ class ACR_FactionData
  ref array<ref ACR_SupportEntry> m_aSupports = {};
 }
 
+// The survivors of a base's garrison or patrol after it fell (ACR_BaseSystem.FallBack).
+class ACR_FallBack : Managed
+{
+ SCR_AIGroup m_Group;
+ string m_sFaction;
+ string m_sName;
+ ACR_Base m_From;  // the base they lost: they don't count towards taking it back
+ ACR_Base m_Dest;  // their side's base they make for, or null: a point FALLBACK_AWAY from the enemy
+}
+
 class ACR_BaseSystem : Managed
 {
  static const float CAPTURE_RATE = 0.4;     // score per second per soldier of difference
@@ -30,6 +40,7 @@ class ACR_BaseSystem : Managed
  // per-tick census
  protected ref array<IEntity> m_Bodies = {};
  protected ref array<string> m_BodyFactions = {};
+ protected ref array<ACR_Base> m_BodyFled = {}; // the base a body's group is falling back from (FallBack), else null
 
  // Buy list, garrison soldiers and RP for a faction, built from its
  // ACR_FactionSettings entity (or catalog defaults) the first time it's needed.
@@ -168,6 +179,7 @@ class ACR_BaseSystem : Managed
   CollectBodies(manager);
   foreach (ACR_Base base : ACR_Base.s_All)
    UpdateBase(manager, base);
+  TickFallBacks(manager);
   TickIncome(manager);
  }
 
@@ -177,6 +189,7 @@ class ACR_BaseSystem : Managed
  {
   m_Bodies.Clear();
   m_BodyFactions.Clear();
+  m_BodyFled.Clear();
   array<AIAgent> agents = {};
   GetGame().GetAIWorld().GetAIAgents(agents);
   foreach (AIAgent agent : agents)
@@ -192,16 +205,19 @@ class ACR_BaseSystem : Managed
   ChimeraCharacter character = ChimeraCharacter.Cast(entity);
   if (!character || m_Bodies.Contains(character) || character.GetCharacterController().IsDead() || character.GetCharacterController().IsUnconscious()) return;
   // Stationed support helicopter crews are not capture troops.
+  ACR_Base fled;
   AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
-  if (control && control.GetControlAIAgent() && manager.m_Supports)
+  if (control && control.GetControlAIAgent())
   {
    SCR_AIGroup group = SCR_AIGroup.Cast(control.GetControlAIAgent().GetParentGroup());
-   if (group && manager.m_Supports.IsSupportGroup(group)) return;
+   if (group && manager.m_Supports && manager.m_Supports.IsSupportGroup(group)) return;
+   if (group) fled = FledFrom(group);
   }
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(character.FindComponent(FactionAffiliationComponent));
   if (!affiliation || !affiliation.GetAffiliatedFaction()) return;
   m_Bodies.Insert(character);
   m_BodyFactions.Insert(affiliation.GetAffiliatedFaction().GetFactionKey());
+  m_BodyFled.Insert(fled);
  }
 
  protected void UpdateBase(ACR_Manager manager, ACR_Base base)
@@ -223,7 +239,8 @@ class ACR_BaseSystem : Managed
    float distance = vector.DistanceXZ(body.GetOrigin(), center);
    // FIA's ally neither fights nor takes its pockets (ACR_Insurgency).
    bool friendOfOwner = base.m_bPocket && key != base.m_sOwner && ACR_Insurgency.Friendly(key, base.m_sOwner);
-   if (distance <= base.m_fRadius && !friendOfOwner)
+   // Survivors leaving a base they lost don't contest it (FallBack); at another base they count.
+   if (distance <= base.m_fRadius && !friendOfOwner && m_BodyFled[i] != base)
    {
     int count;
     inside.Find(key, count);
@@ -323,8 +340,13 @@ class ACR_BaseSystem : Managed
  protected void Capture(ACR_Manager manager, ACR_Base base, string factionKey)
  {
   string previous = base.m_sOwner;
-  DespawnGarrison(base, false);
-  DespawnPatrol(base, false);
+  // Survivors fall back instead of vanishing (Jacob, 6 Nov: an FIA team was simply gone once its town fell).
+  SCR_AIGroup garrison = base.m_GarrisonGroup;
+  SCR_AIGroup patrol = base.m_PatrolGroup;
+  base.m_GarrisonGroup = null;
+  base.m_PatrolGroup = null;
+  FallBack(base, garrison, previous, "garrison");
+  FallBack(base, patrol, previous, "patrol");
   base.m_sOwner = factionKey;
   base.m_bPocket = false;
   base.m_sCapturer = "";
@@ -762,7 +784,7 @@ class ACR_BaseSystem : Managed
   return params;
  }
 
- // keepSurvivors: pack up (survivors return to the reserve) vs wiped on capture.
+ // keepSurvivors: pack up (survivors return to the reserve); a capture hands them to FallBack instead.
  protected void DespawnGarrison(ACR_Base base, bool keepSurvivors)
  {
   SCR_AIGroup group = base.m_GarrisonGroup;
@@ -947,6 +969,196 @@ class ACR_BaseSystem : Managed
   SCR_EntityHelper.DeleteEntityAndChildren(group);
   base.m_PatrolGroup = null;
   PrintFormat("[ACR] Patrol stood down at %1: %2 in reserve", base.m_sName, base.m_iGarrisonLeft);
+ }
+
+ // ================================================================ falling back
+
+ // A base taken: its garrison's and patrol's survivors don't vanish with it (Jacob, 6 Nov: an FIA
+ // team was simply gone once the town it held fell). They leave it, returning fire, for their side's
+ // nearest base within FALLBACK_REACH (else FALLBACK_AWAY m from the enemy round them) and hold it
+ // if it is under attack. Once no enemy is within DESPAWN_RANGE of any of them they pack up into the
+ // reserve of their side's nearest base that isn't fighting, as a garrison packs up (dispersed if
+ // their side holds none). They never count towards the base they lost (no instant recapture by the
+ // men just beaten out of it), do count at any other, and stay garrison groups: never squads.
+ static const float FALLBACK_REACH = 2500;
+ static const float FALLBACK_AWAY = 350;
+ static const float FALLBACK_TICK_MS = 5000;
+ protected ref array<ref ACR_FallBack> m_FallBacks = {};
+ protected float m_fNextFallBack;
+
+ protected void FallBack(ACR_Base base, SCR_AIGroup group, string faction, string kind)
+ {
+  if (!group) return;
+  int alive = CountAlive(group);
+  if (alive <= 0 || faction.IsEmpty())
+  {
+   PackUpGuards(group);
+   return;
+  }
+  // Off the bags and out of the windows first: the works and the posts would hold them there.
+  ACR_BaseWork work = ACR_BaseWorks.Find(base);
+  if (work && work.m_GarrisonPost && work.m_GarrisonPost.m_Group == group) work.m_GarrisonPost = null;
+  ACR_Garrison.Release(group);
+  ACR_FallBack retreat = new ACR_FallBack();
+  retreat.m_Group = group;
+  retreat.m_sFaction = faction;
+  retreat.m_From = base;
+  retreat.m_sName = base.m_sName + " " + kind;
+  group.SetCustomName(retreat.m_sName + " (falling back)", 0);
+  ACR_Guerrillas.SetCombatMode(group, EAIGroupCombatMode.RETURN_FIRE);
+  m_FallBacks.Insert(retreat);
+  vector to = Head(retreat);
+  PrintFormat("[ACR] FALLBACK %1: %2 left, %3 for %4", retreat.m_sName, alive, faction, Where(retreat, to));
+ }
+
+ // The group's way out: its side's nearest base in reach, else away from the enemy round it.
+ protected vector Head(ACR_FallBack retreat)
+ {
+  vector from = MenAt(retreat.m_Group, retreat.m_From.GetOrigin());
+  retreat.m_Dest = NearestHeld(retreat.m_sFaction, from, FALLBACK_REACH, retreat.m_From, false);
+  if (retreat.m_Dest)
+  {
+   vector home = retreat.m_Dest.GetOrigin();
+   ACR_Guerrillas.Order(retreat.m_Group, ACR_Squad.WP_MOVE, home, Math.Max(retreat.m_Dest.m_fRadius * 0.5, 20), false);
+   return home;
+  }
+  // Away from the enemies within 300 m of them (else from the base's middle).
+  vector sum = vector.Zero;
+  int count;
+  foreach (int i, IEntity body : m_Bodies)
+  {
+   if (!body || ACR_Insurgency.Friendly(m_BodyFactions[i], retreat.m_sFaction)) continue;
+   if (vector.DistanceXZ(body.GetOrigin(), from) > 300) continue;
+   sum += body.GetOrigin();
+   count++;
+  }
+  vector away = from - retreat.m_From.GetOrigin();
+  if (count > 0) away = from - sum * (1.0 / count);
+  away[1] = 0;
+  if (away.LengthSq() < 1) away = Vector(Math.RandomFloat(-1, 1), 0, Math.RandomFloat(-1, 1));
+  away.Normalize();
+  vector point = ACR_Manager.Ground(from + away * FALLBACK_AWAY);
+  // Not into the sea or a lake: a quarter turn at a time.
+  for (int turn = 0; turn < 3 && BBB_Terrain.IsWaterAt(point); turn++)
+  {
+   away = Vector(away[2], 0, -away[0]);
+   point = ACR_Manager.Ground(from + away * FALLBACK_AWAY);
+  }
+  ACR_Guerrillas.Order(retreat.m_Group, ACR_Squad.WP_MOVE, point, 20, false);
+  return point;
+ }
+
+ protected string Where(ACR_FallBack retreat, vector to)
+ {
+  if (retreat.m_Dest) return retreat.m_Dest.m_sName;
+  return ACR_Manager.Grid(to);
+ }
+
+ // The first living man's position, else 'fallback'.
+ protected vector MenAt(SCR_AIGroup group, vector fallback)
+ {
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity man = agent.GetControlledEntity();
+   if (man && ACR_Respawn.IsAlive(man)) return man.GetOrigin();
+  }
+  return fallback;
+ }
+
+ // The faction's nearest standing base to 'pos' within 'reach' (not 'except'); quiet: only one
+ // whose garrison isn't out (a deployed garrison counts its own men, ours would be lost).
+ protected ACR_Base NearestHeld(string faction, vector pos, float reach, ACR_Base except, bool quiet)
+ {
+  ACR_Base best;
+  float bestDistance = reach;
+  foreach (ACR_Base base : ACR_Base.s_All)
+  {
+   if (base == except || base.m_bRetired || base.m_sOwner != faction) continue;
+   if (quiet && base.m_GarrisonGroup) continue;
+   float distance = vector.DistanceXZ(pos, base.GetOrigin());
+   if (distance > bestDistance) continue;
+   bestDistance = distance;
+   best = base;
+  }
+  return best;
+ }
+
+ // The base a garrison group is falling back from, if it is.
+ protected ACR_Base FledFrom(SCR_AIGroup group)
+ {
+  foreach (ACR_FallBack retreat : m_FallBacks) if (retreat.m_Group == group) return retreat.m_From;
+  return null;
+ }
+
+ // Groups falling back, now and then (FALLBACK_TICK_MS).
+ protected void TickFallBacks(ACR_Manager manager)
+ {
+  if (m_FallBacks.IsEmpty()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (now < m_fNextFallBack) return;
+  m_fNextFallBack = now + FALLBACK_TICK_MS;
+  for (int i = m_FallBacks.Count() - 1; i >= 0; i--)
+  {
+   ACR_FallBack retreat = m_FallBacks[i];
+   SCR_AIGroup group = retreat.m_Group;
+   int alive;
+   if (group) alive = CountAlive(group);
+   if (alive <= 0)
+   {
+    if (group) PackUpGuards(group);
+    m_FallBacks.Remove(i);
+    PrintFormat("[ACR] FALLBACK %1: none left", retreat.m_sName);
+    continue;
+   }
+   ACR_Squad.KeepSimulated(group);
+   // The base they made for fell too: the next one.
+   if (retreat.m_Dest && (retreat.m_Dest.m_bRetired || retreat.m_Dest.m_sOwner != retreat.m_sFaction))
+   {
+    vector to = Head(retreat);
+    PrintFormat("[ACR] FALLBACK %1: now for %2", retreat.m_sName, Where(retreat, to));
+   }
+   if (StillFighting(manager, retreat))
+   {
+    // There and still pressed: they hold it with its garrison.
+    if (retreat.m_Dest && !group.GetCurrentWaypoint())
+     ACR_Guerrillas.Order(group, ACR_Squad.WP_DEFEND, retreat.m_Dest.GetOrigin(), retreat.m_Dest.m_fRadius, false);
+    continue;
+   }
+   // Clear of the enemy: into the reserve of a base of theirs that isn't fighting (offscreen, as a garrison packs up).
+   ACR_Base home = NearestHeld(retreat.m_sFaction, MenAt(group, retreat.m_From.GetOrigin()), float.MAX, null, true);
+   if (!home && NearestHeld(retreat.m_sFaction, vector.Zero, float.MAX, null, false)) continue; // every base of theirs is fighting: later
+   int men = PackUpGuards(group);
+   m_FallBacks.Remove(i);
+   if (home)
+   {
+    home.m_iGarrisonLeft += men;
+    PrintFormat("[ACR] FALLBACK %1: %2 back in the reserve at %3 (%4 there)", retreat.m_sName, men, home.m_sName, home.m_iGarrisonLeft);
+   }
+   else PrintFormat("[ACR] FALLBACK %1: %2 dispersed, %3 holds no base", retreat.m_sName, men, retreat.m_sFaction);
+  }
+ }
+
+ // An enemy (squad or player) within DESPAWN_RANGE of one of them.
+ protected bool StillFighting(ACR_Manager manager, ACR_FallBack retreat)
+ {
+  array<AIAgent> agents = {};
+  retreat.m_Group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   IEntity man = agent.GetControlledEntity();
+   if (man && ACR_Respawn.IsAlive(man) && ACR_Defenders.EnemyWithin(manager, retreat.m_sFaction, man.GetOrigin(), DESPAWN_RANGE)) return true;
+  }
+  return false;
+ }
+
+ // How many are falling back (tests).
+ int FallingBack(string faction)
+ {
+  int men;
+  foreach (ACR_FallBack retreat : m_FallBacks) if (retreat.m_Group && retreat.m_sFaction == faction) men += CountAlive(retreat.m_Group);
+  return men;
  }
 
  // One line for the command panel.

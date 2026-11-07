@@ -312,9 +312,24 @@ class ACR_Rides : Managed
   {
    if (FactionOf(squad) != faction) continue;
    IEntity vehicle = ACR_Transport.CrewedVehicle(squad);
-   if (vehicle && !squad.HasGunner(vehicle) && FreeSeats(vehicle) >= 4) count++;
+   // Service trucks have their own job and are never taxis (WhyNotTaxi), so they don't fill the quota.
+   if (vehicle && !squad.HasGunner(vehicle) && ACR_Logistics.ServiceOf(vehicle) == 0 && FreeSeats(vehicle) >= 4) count++;
   }
   return count;
+ }
+
+ // A truck CountTransports counts is free for a ride right now, wherever it is.
+ bool HasIdleTransport(string faction, bool handedOnly = false)
+ {
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (ACR_Squad squad : m_Manager.m_Squads)
+  {
+   if (handedOnly && !squad.m_bAICommanded) continue;
+   if (now - squad.m_fStuckAt < 600000) continue; // gave up stuck lately: it won't be coming
+   if (!IsFreeTransport(squad, faction)) continue;
+   if (FreeSeats(ACR_Transport.CrewedVehicle(squad)) >= 4) return true;
+  }
+  return false;
  }
 
  // ---------------------------------------------------------------- requests
@@ -342,7 +357,10 @@ class ACR_Rides : Managed
   if (!taxi) taxi = FindConvoy(faction, from, trip, seats, fetch, convoy, wideFetch, carriersToo, handedOnly);
   if (!taxi)
   {
-   m_NoTransportAt.Set(faction, GetGame().GetWorld().GetWorldTime());
+   // Short of trucks only when none is idle anywhere: one parked too far off is the motor pool's
+   // job (ACR_AICommander.PositionTransports), not a reason to buy another at the rear base
+   // (6 Nov: a new truck for nearly every refused ride, 29 in 3 h, parked in rows at the HQ).
+   if (!HasIdleTransport(faction, handedOnly)) m_NoTransportAt.Set(faction, GetGame().GetWorld().GetWorldTime());
    float maxFetch = MAX_PICKUP;
    float shareFetch = PICKUP_SHARE;
    if (wideFetch)

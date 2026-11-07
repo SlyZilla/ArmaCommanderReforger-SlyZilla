@@ -141,12 +141,19 @@ class ACR_Defenders
  // The guns a gun crew holds (ACR_BBBHooks.GetHeldGuns: BBB keeps them manned). Not a base's works reserve out
  // on its bags: listed here too, BBB's remount (every 8 s, from 40 m) pulled every man off the bags onto guns
  // the attackers were shooting at (srv:worksfightbase, 2 Nov: on post 8%, 7 of 8 lost). SeatLineMen does it
- // for the reserve, from beside the gun and seldom.
+ // for the reserve, from beside the gun and seldom. An FIA ambush's tripod gun is (ACR_Guerrillas.HeldGun): BBB keeps
+ // its gunner on it while he has no enemy close (BBB_HeldGuns.Keep; its remount walks squads only: ACR_Guerrillas.Reman).
  static bool CrewGunsOf(SCR_AIGroup group, notnull array<IEntity> guns)
  {
   if (!group) return false;
   foreach (ACR_DefenderPost post : s_Posts)
   {
+   if (post && post.m_Cell && post.m_Group == group)
+   {
+    IEntity held = ACR_Guerrillas.HeldGun(post);
+    if (held) guns.Insert(held);
+    return true;
+   }
    if (!post || post.m_GunCrew != group) continue;
    foreach (IEntity gun : post.m_aCrewGuns) if (gun) guns.Insert(gun);
    return true;
@@ -239,6 +246,18 @@ class ACR_Defenders
   seats.GetCompartmentsOfType(turrets, ECompartmentType.TURRET);
   foreach (BaseCompartmentSlot slot : turrets) if (slot && !slot.GetOccupant() && BBB_VehicleHelpers.TurretHasAmmo(slot)) return slot;
   return null;
+ }
+
+ // A gun's gunner seat, taken or not (null: none).
+ static BaseCompartmentSlot TurretSeat(IEntity gun)
+ {
+  if (!gun) return null;
+  SCR_BaseCompartmentManagerComponent seats = SCR_BaseCompartmentManagerComponent.Cast(gun.FindComponent(SCR_BaseCompartmentManagerComponent));
+  if (!seats) return null;
+  array<BaseCompartmentSlot> turrets = {};
+  seats.GetCompartmentsOfType(turrets, ECompartmentType.TURRET);
+  if (turrets.IsEmpty()) return null;
+  return turrets[0];
  }
 
  // The crew's men on foot into its guns' empty seats, each to a gun of his own (a seat only shows

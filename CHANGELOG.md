@@ -7,6 +7,16 @@
 - AI commanders whose HQ is far from every other base no longer sit there all match. Squads only walked to empty bases within 1.5 km, and a grab never used a truck, so on a generated map that put the HQ more than 2 km from its neighbours the AI took nothing, earned nothing and never grew strong enough to attack. A farther empty base is now grabbed by truck when one is free.
 - Bought vehicles no longer appear in courtyards they can't drive out of. A vehicle went on the first patch of ground big enough to hold it, so at a village base it often landed in a walled yard or a gap between houses and never moved again (on Everon about one in thirteen; at Saint-Philippe nearly every one). It now goes where a vehicle-wide lane leads at least 40 m away past the walls, fences, buildings and trees, looking further out when the base's ring has no such spot. The same goes for a vehicle you place with a click (the nearest open ground within 35 m of it) and for the starting vehicles of an HQ a skirmish layout moved.
 - A squad manning a roadblock's machine gun no longer counts as riding a vehicle, and the gun no longer counts toward its strength when it leaves for an attack or a grab. Its first grab used to be called off "for too many losses" a second after it set out, as the gunner got off the gun.
+- AI commanders no longer buy truck after truck. Arsenal and construction trucks passed as troop transports when buying, but no squad could ride in them, so the AI stayed "short of transport" and bought another, about 30 trucks in a 3-hour match. A truck parked too far from a squad wanting a ride also bought a new one at the HQ, farther away still. Now it buys only trucks that carry troops, and only when none is idle anywhere. Idle trucks spread out, at most two to a base, instead of parking in rows at the HQ where one rocket run could destroy a dozen.
+- AI commanders build FOBs they can keep using. Units are only bought at a FOB at least 500 m from every base the side doesn't hold, and a FOB went 300 to 550 m behind the base it was meant to support, so it stopped working the moment that base fell. Everything then came out at the HQ, which can be 7 km behind the front. A FOB now goes at least 600 m from every base that could fall, wherever such a spot exists.
+
+### Bases
+
+- A base's garrison no longer vanishes when the base is taken. Its survivors (and its patrol's) now fall back, returning fire, to their side's nearest base within 2.5 km, or 350 m away from the enemy when there is none, and help hold it if it is under attack. Once no enemy is near them they join that base's reserve. They don't count towards retaking the base they were just pushed out of. FIA pockets fall back to the next pocket the same way.
+
+### FIA
+
+- FIA road ambushes look like ambushes. The men stood about in open grass right beside their barricade. They now set up 25-70 m back from the road in the best cover that still sees the kill zone (a treeline or a line of bushes over open ground), each man crouched on his own spot facing the road, and most bring a PKM on its low tripod, dug in on the best-covered spot with a man on it; if he falls, another man takes the gun. When they pull back they leave the gun behind, and it goes when they pack up unless someone else is on it.
 
 ## 0.5.9 — released
 
