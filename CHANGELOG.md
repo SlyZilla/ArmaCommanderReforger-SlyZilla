@@ -1,6 +1,10 @@
 # Changelog
 ## 0.5.12 — unreleased
 
+### Vehicles
+
+- AI drivers judge "one of ours in the way" by their own lane. The stuck watch took any stopped vehicle of ours within 25 m on the side toward the destination for one it was queueing behind, and any within 10 m on the other side for one it mustn't back into, whichever way the vehicle faced, so a truck parked beside it counted, and two trucks nose to nose each waited for the other. In the Airbase motor pool on Everon, Humvee 1 was stopped from backing up by "a vehicle right behind" 64 times in 80 minutes. Now only a vehicle in front of its nose and in its lane makes a driver wait, and only one right behind its tail stops a back-up. Nose to nose, the newer of the two gives way and backs up while the older one waits.
+
 ## 0.5.11 — released
 
 ### AI commanders

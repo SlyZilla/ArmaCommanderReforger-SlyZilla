@@ -228,6 +228,26 @@ class ACR_TestRegress
  static bool s_bReplacedKept;
  static const ResourceName LAYOUT_BASE = "{BB1B3769EB8C290D}Prefabs/Compositions/Misc/FreeRoamBuilding/CompositionLayoutBase.et";
 
+ // Everon soak, 7 Nov: the drive watch's "one of ours ahead" (queueing, not stuck) and "one right
+ // behind" (don't back up) are the vehicle's own lane, not the half-plane toward its target: a truck
+ // parked beside it is neither. A truck facing north at the origin.
+ static void LaneCheck()
+ {
+  vector at = "1000 0 1000";
+  vector north = "0 0 1";
+  float ahead = ACR_Squad.QUEUE_AHEAD;
+  float behind = ACR_Squad.QUEUE_BEHIND;
+  bool inLane = ACR_Squad.InLane(at, north, at + Vector(0.5, 0, 12), ahead, true);
+  bool besideAhead = ACR_Squad.InLane(at, north, at + Vector(6, 0, 4), ahead, true);
+  bool onBend = ACR_Squad.InLane(at, north, at + Vector(6, 0, 20), ahead, true);
+  bool tooFar = ACR_Squad.InLane(at, north, at + Vector(0, 0, 30), ahead, true);
+  Check("lanes: a truck in the lane ahead (or round a bend) counts, one parked beside it or out of range doesn't", inLane && onBend && !besideAhead && !tooFar, string.Format("lane=%1 bend=%2 beside=%3 far=%4", inLane, onBend, besideAhead, tooFar));
+  bool rightBehind = ACR_Squad.InLane(at, north, at + Vector(0, 0, -8), behind, false);
+  bool besideBehind = ACR_Squad.InLane(at, north, at + Vector(5.5, 0, -3), behind, false);
+  bool aheadNotBehind = ACR_Squad.InLane(at, north, at + Vector(0, 0, 8), behind, false);
+  Check("lanes: only a vehicle right behind its tail stops a back-up, not one beside it or in front", rightBehind && !besideBehind && !aheadNotBehind, string.Format("behind=%1 beside=%2 front=%3", rightBehind, besideBehind, aheadNotBehind));
+ }
+
  // R15 (14 Oct review): each faction owns its support entries; a cooldown never reaches the
  // settings entity or survives ForgetFactions. Runs last: it rebuilds the faction data.
  static void SupportCloneCheck(ACR_Manager manager)
@@ -824,6 +844,7 @@ class ACR_TestRegress
   // Jacob, 6 Nov: bought vehicles go where they can drive out, not in a walled yard.
   if (tick == 10) ACR_TestVehicleExit.Regress();
   if (tick == 9) ACR_TestGround.CheckBackground();
+  if (tick == 9) LaneCheck();
   // R07 (5 Oct review): frontline bases don't depend on the order bases come in.
   if (tick == 4)
   {
