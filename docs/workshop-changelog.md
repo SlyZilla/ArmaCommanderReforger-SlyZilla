@@ -9,6 +9,8 @@ FIXED
 - A side is never left with nowhere to deploy: if every deploy base is under attack and there is no HQ spawn point, its best base stays open.
 - Objectives on generated maps sit on their towns' houses, not on the map label beside them (13 places on Chernarus Minus, 4 hamlets on Everon).
 - Content packs: soldier swaps are rolled for each garrison soldier, FIA cell member and pocket fighter, so one unlucky roll no longer leaves a whole match without the pack's kit.
+- AI commanders no longer plan attacks around helicopter rides they never get. Far squads were counted as flying in, then walked 6 km and the attack was called off, over and over; on big generated maps the front froze. A squad left walking far now leaves the attack at once.
+- AI vehicle crews that got out under fire get back into their vehicle instead of being sent off on foot and leaving it behind.
 
 NEW
 
