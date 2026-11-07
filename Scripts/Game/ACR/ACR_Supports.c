@@ -3067,7 +3067,12 @@ class ACR_Supports : Managed
   ResourceName configured = ConfiguredCrewPrefab(factionKey, gunship);
   if (!configured.IsEmpty()) return configured;
   ACR_FactionData data = m_Manager.m_Bases.GetFaction(factionKey);
-  if (!data.m_aGarrison.IsEmpty()) return data.m_aGarrison[0];
+  // The pool's first soldier, with a content pack's swap (the pool keeps unswapped soldiers).
+  if (!data.m_aGarrison.IsEmpty())
+  {
+   array<ResourceName> first = {data.m_aGarrison[0]};
+   return ACR_BaseSystem.PickGarrisonSoldier(factionKey, first);
+  }
   Faction faction = GetGame().GetFactionManager().GetFactionByKey(factionKey);
   SCR_BasePlayerLoadout loadout;
   if (faction) loadout = GetGame().GetLoadoutManager().GetRandomFactionLoadout(faction);

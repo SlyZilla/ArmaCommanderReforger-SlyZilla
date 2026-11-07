@@ -11,6 +11,10 @@
 - New battlefield size: a quarter of the map. The setup screen's Battlefield row has "generated, a quarter of the map" (or `-acrSize quarter`): a district of about a quarter of the map's towns, round or stretched, somewhere different on each seed. On Chernarus Minus that is 15-19 objectives with the HQs 4-8 km apart, instead of 30 objectives and 14 km for a half. FIA pockets and guerrillas scale down with it.
 - Generated battles no longer always run corner to corner. The two HQs had to be nearly as far apart as the map allows, which on a square map only the diagonals are. Each seed now picks a direction first (north-south, east-west or anything between) and puts the HQs far apart along it.
 
+### Content packs
+
+- A content pack's soldier swaps are now rolled for each garrison soldier, FIA cell member and pocket fighter as he spawns. They were rolled once when the side's garrison list was built, so one unlucky roll decided the whole match: with the Cold War pack, FIA could play a full match without a single fighter in Cold War kit. Hand-picked garrison lists from a mission now get the pack's swaps too, as hand-picked squads already did.
+
 ## 0.5.10 — released
 
 ### AI commanders

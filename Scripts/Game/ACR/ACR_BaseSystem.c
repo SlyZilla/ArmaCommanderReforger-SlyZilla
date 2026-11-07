@@ -678,11 +678,25 @@ class ACR_BaseSystem : Managed
   if (pass < 1) GetGame().GetCallqueue().CallLater(Settle, 4000, false, group, pass + 1);
  }
 
+ // One soldier from a side's garrison pool with a content pack's swap (ACR_ContentSocket.Soldier)
+ // rolled now, so a varied swap varies per soldier rather than once per match. A swap that doesn't
+ // load keeps the pool's own soldier.
+ static ResourceName PickGarrisonSoldier(string faction, notnull array<ResourceName> pool)
+ {
+  if (pool.IsEmpty()) return "";
+  ResourceName picked = pool.GetRandomElement();
+  ResourceName swapped = ACR_ContentSocket.Get().Soldier(faction, picked);
+  if (swapped.IsEmpty() || swapped == picked) return picked;
+  Resource resource = Resource.Load(swapped);
+  if (!resource || !resource.IsValid()) return picked;
+  return swapped;
+ }
+
  protected void AddGarrisonSoldier(ACR_Base base, SCR_AIGroup group, array<ResourceName> pool)
  {
   float spread = Math.Min(base.m_fRadius * 0.6, 25);
   vector spot = SoldierSpot(base.GetOrigin(), spread, ACR_Garrison.AnyAgent());
-  IEntity soldier = ACR_Manager.SpawnPrefab(pool.GetRandomElement(), spot);
+  IEntity soldier = ACR_Manager.SpawnPrefab(PickGarrisonSoldier(base.m_sOwner, pool), spot);
   if (!soldier) return;
   if (!group.AddAIEntityToGroup(soldier))
   {
@@ -825,7 +839,7 @@ class ACR_BaseSystem : Managed
   for (int i = 0; i < count; i++)
   {
    vector spot = SoldierSpot(center, 8, navAgent);
-   IEntity soldier = ACR_Manager.SpawnPrefab(data.m_aGarrison.GetRandomElement(), spot);
+   IEntity soldier = ACR_Manager.SpawnPrefab(PickGarrisonSoldier(faction, data.m_aGarrison), spot);
    if (!soldier) continue;
    if (!group.AddAIEntityToGroup(soldier))
    {
