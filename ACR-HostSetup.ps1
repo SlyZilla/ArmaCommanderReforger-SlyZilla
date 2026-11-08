@@ -200,12 +200,12 @@ function Show-BBBOptions($bbb) {
   }
 }
 
-function Show-HostSetup([switch]$Solo) {
+function Show-HostSetup([switch]$Solo, [string]$Zombies = '', [switch]$Contagion) {
   $name = 'host-settings.txt'
   if ($Solo) { $name = 'play-settings.txt' }
   $file = Join-Path $PSScriptRoot $name
   # Only pre-load choices belong here. Ignore old saved match settings.
-  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; Pack = 'none'; AiO = 'yes'; Civilians = 'no' }
+  $s = [ordered]@{ World = 'Worlds/ACR_Arland.ent'; Factions = 'vanilla'; ACE = 'no'; Pack = 'none'; AiO = 'yes'; Civilians = 'no'; Personal = 'yes'; Zombies = 'no'; Infection = 'no' }
   $bbb = @{}
   foreach ($o in $script:BBBOptions) { $bbb[$o.Flag] = Get-BBBLaunchDefault $o }
   # Settings files from before the full BBB list used these names (yes/no).
@@ -232,9 +232,18 @@ function Show-HostSetup([switch]$Solo) {
   if (@('yes', 'no') -notcontains $s.ACE) { $s.ACE = 'no' }
   if (@('yes', 'no') -notcontains $s.AiO) { $s.AiO = 'yes' }
   if (@('yes', 'no') -notcontains $s.Civilians) { $s.Civilians = 'no' }
+  if (@('yes', 'no') -notcontains $s.Personal) { $s.Personal = 'yes' }
+  # Zombie mode (Project Outbreak): -Zombies/-Contagion from the command line override the saved choice.
+  if ($Zombies) { $s.Zombies = $Zombies }
+  if ($Contagion) { $s.Infection = 'yes' }
+  if (@('no', 'contain', 'tvz', 'nests') -notcontains $s.Zombies) { $s.Zombies = 'no' }
+  if (@('yes', 'no') -notcontains $s.Infection) { $s.Infection = 'no' }
   # Optional mods get a row only when installed (ACR-Find.ps1).
   $hasAio = (Find-WorkshopMod '629405AEFC950C12') -ne ''
   $hasCivilians = Test-CivilPopulation
+  $hasPersonal = Test-PersonalMods
+  $hasZombies = Test-ProjectOutbreak
+  $hasContagion = (Find-WorkshopMod $script:OutbreakContagionId) -ne ''
   foreach ($o in $script:BBBOptions) {
     $v = 0.0
     if ($o.ContainsKey('Values')) { if ($o.Values -notcontains $bbb[$o.Flag]) { $bbb[$o.Flag] = $o.Default } }
@@ -256,6 +265,16 @@ function Show-HostSetup([switch]$Solo) {
     if ($packs.Count -gt 1) { Write-Host (' 5  Expansion pack          ' + (Get-PackLabel $s.Pack)) }
     if ($hasAio) { Write-Host (' 6  AiO Command Menu        ' + $s.AiO) }
     if ($hasCivilians) { Write-Host (' 7  Civilians (Civil Pop.)  ' + $s.Civilians) }
+    if ($hasPersonal) {
+      $personalNote = ''
+      if (!$Solo -and $s.Personal -eq 'yes') { $personalNote = '   (joiners need them too)' }
+      Write-Host (' 8  Personal mods           ' + $s.Personal + $personalNote)
+    }
+    if ($hasZombies) {
+      $zombieLabels = @{ no = 'no'; contain = 'Containment (TvTvZ)'; tvz = 'TvZ (players vs zombies)'; nests = 'Nests (TvTvZ)' }
+      Write-Host (' 9  Zombies (Outbreak)      ' + $zombieLabels[$s.Zombies])
+      if ($hasContagion -and $s.Zombies -ne 'no') { Write-Host ('10  Contagion mod           ' + $s.Infection) }
+    }
     Write-Host 'Choose the playable sides, battlefield and match settings in game, then press Start.' -ForegroundColor DarkGray
     Write-Host 'Faction mods must be loaded now; UA replaces vanilla US while loaded.' -ForegroundColor DarkGray
     if (!$Solo) { Write-Host 'Connect before friends: the first connection controls setup; access does not transfer after disconnect.' -ForegroundColor Yellow }
@@ -269,6 +288,9 @@ function Show-HostSetup([switch]$Solo) {
       '5' { if ($packs.Count -gt 1) { $i = [array]::IndexOf($packs, $s.Pack); $s.Pack = $packs[($i + 1) % $packs.Count] } else { Write-Host 'No expansion pack is installed beside ACA.' -ForegroundColor Yellow } }
       '6' { if ($hasAio) { if ($s.AiO -eq 'yes') { $s.AiO = 'no' } else { $s.AiO = 'yes' } } }
       '7' { if ($hasCivilians) { if ($s.Civilians -eq 'yes') { $s.Civilians = 'no' } else { $s.Civilians = 'yes' } } }
+      '8' { if ($hasPersonal) { if ($s.Personal -eq 'yes') { $s.Personal = 'no' } else { $s.Personal = 'yes' } } }
+      '9' { if ($hasZombies) { $modes = @('no', 'contain', 'tvz', 'nests'); $i = [array]::IndexOf($modes, $s.Zombies); $s.Zombies = $modes[($i + 1) % $modes.Count] } else { Write-Host 'Project Outbreak, Creature Melee AI and Special Zombies & Creatures are not all downloaded.' -ForegroundColor Yellow } }
+      '10' { if ($hasZombies -and $hasContagion -and $s.Zombies -ne 'no') { if ($s.Infection -eq 'yes') { $s.Infection = 'no' } else { $s.Infection = 'yes' } } }
       default { Write-Host 'Type a number from the list, or press Enter to launch.' -ForegroundColor Yellow }
     }
   }
@@ -285,14 +307,20 @@ function Show-HostSetup([switch]$Solo) {
   if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git')) { $extra += ' -acrAdminPassword 1' }
   # BBB options changed from their defaults (the AI runs where these args go).
   $extra += Get-BBBArgs $bbb
+  # Zombie mode starting values (the in-game setup screen shows them; they do nothing without Outbreak).
+  $zombies = 'no'
+  if ($hasZombies) { $zombies = $s.Zombies }
+  if ($zombies -eq 'contain') { $extra += ' -acrOutbreak contain -acrZombies many' }
+  elseif ($zombies -eq 'tvz') { $extra += ' -acrZombieMode tvz -acrZombies many' }
+  elseif ($zombies -eq 'nests') { $extra += ' -acrZombies many' }
   $mapId = ''
   if ($mapAddons.Contains($s.World)) { $mapId = $mapAddons[$s.World] }
-  return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE $s.Pack $mapId); Factions = $s.Factions; ACE = $s.ACE; Pack = $s.Pack; AiO = $s.AiO; Civilians = $s.Civilians; NeedsMods = (Test-NeedsModAddons $s.Factions $s.ACE $s.Pack $mapId) }
+  return @{ Args = $extra; World = $s.World; Addons = (Get-ACRAddonList $s.Factions $s.ACE $s.Pack $mapId); Factions = $s.Factions; ACE = $s.ACE; Pack = $s.Pack; AiO = $s.AiO; Civilians = $s.Civilians; Personal = $s.Personal; Zombies = $zombies; Infection = $s.Infection; NeedsMods = (Test-NeedsModAddons $s.Factions $s.ACE $s.Pack $mapId) }
 }
 
 function Show-JoinModSetup {
   $file = Join-Path $PSScriptRoot 'join-settings.txt'
-  $pair = 'vanilla'; $ace = 'no'; $pack = 'none'; $map = 'none'; $aio = 'yes'; $civilians = 'no'
+  $pair = 'vanilla'; $ace = 'no'; $pack = 'none'; $map = 'none'; $aio = 'yes'; $civilians = 'no'; $personal = 'yes'; $zombies = 'no'; $infection = 'no'
   if (Test-Path -LiteralPath $file) {
     foreach ($line in Get-Content -LiteralPath $file) {
       $kv = $line.Split('=', 2)
@@ -302,6 +330,9 @@ function Show-JoinModSetup {
       if ($kv.Count -eq 2 -and $kv[0] -eq 'Map') { $map = $kv[1] }
       if ($kv.Count -eq 2 -and $kv[0] -eq 'AiO' -and @('yes', 'no') -contains $kv[1]) { $aio = $kv[1] }
       if ($kv.Count -eq 2 -and $kv[0] -eq 'Civilians' -and @('yes', 'no') -contains $kv[1]) { $civilians = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'Personal' -and @('yes', 'no') -contains $kv[1]) { $personal = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'Zombies' -and @('yes', 'no') -contains $kv[1]) { $zombies = $kv[1] }
+      if ($kv.Count -eq 2 -and $kv[0] -eq 'Infection' -and @('yes', 'no') -contains $kv[1]) { $infection = $kv[1] }
     }
   }
   $packs = @('none') + @(Get-AvailablePacks | ForEach-Object { $_.Key })
@@ -313,6 +344,9 @@ function Show-JoinModSetup {
   # Optional mods get a row only when installed (ACR-Find.ps1).
   $hasAio = (Find-WorkshopMod '629405AEFC950C12') -ne ''
   $hasCivilians = Test-CivilPopulation
+  $hasPersonal = Test-PersonalMods
+  $hasZombies = Test-ProjectOutbreak
+  $hasContagion = (Find-WorkshopMod $script:OutbreakContagionId) -ne ''
   while ($true) {
     Write-Host ''
     Write-Host '=== JOIN MODS ===' -ForegroundColor Cyan
@@ -326,6 +360,9 @@ function Show-JoinModSetup {
     }
     if ($hasAio) { Write-Host (' 5  AiO         ' + $aio + '   (must match the host)') }
     if ($hasCivilians) { Write-Host (' 6  Civilians   ' + $civilians + '   (must match the host)') }
+    if ($hasPersonal) { Write-Host (' 7  Personal    ' + $personal + '   (must match the host)') }
+    if ($hasZombies) { Write-Host (' 8  Zombies     ' + $zombies + '   (must match the host)') }
+    if ($hasZombies -and $hasContagion -and $zombies -eq 'yes') { Write-Host (' 9  Contagion   ' + $infection + '   (must match the host)') }
     $choice = (Read-Host 'Choice (Enter to continue)').Trim()
     if ($choice -eq '1') {
       $pairs = @('vanilla', 'ru_us', 'ru_ua', 'us_ua'); $i = [array]::IndexOf($pairs, $pair); $pair = $pairs[($i + 1) % $pairs.Count]
@@ -334,10 +371,13 @@ function Show-JoinModSetup {
     elseif ($choice -eq '4' -and $maps.Count -gt 1) { $i = [array]::IndexOf($maps, $map); $map = $maps[($i + 1) % $maps.Count] }
     elseif ($choice -eq '5' -and $hasAio) { if ($aio -eq 'yes') { $aio = 'no' } else { $aio = 'yes' } }
     elseif ($choice -eq '6' -and $hasCivilians) { if ($civilians -eq 'yes') { $civilians = 'no' } else { $civilians = 'yes' } }
+    elseif ($choice -eq '7' -and $hasPersonal) { if ($personal -eq 'yes') { $personal = 'no' } else { $personal = 'yes' } }
+    elseif ($choice -eq '8' -and $hasZombies) { if ($zombies -eq 'yes') { $zombies = 'no' } else { $zombies = 'yes' } }
+    elseif ($choice -eq '9' -and $hasZombies -and $hasContagion -and $zombies -eq 'yes') { if ($infection -eq 'yes') { $infection = 'no' } else { $infection = 'yes' } }
     else { break }
   }
-  @('Factions=' + $pair, 'ACE=' + $ace, 'Pack=' + $pack, 'Map=' + $map, 'AiO=' + $aio, 'Civilians=' + $civilians) | Set-Content -LiteralPath $file
+  @('Factions=' + $pair, 'ACE=' + $ace, 'Pack=' + $pack, 'Map=' + $map, 'AiO=' + $aio, 'Civilians=' + $civilians, 'Personal=' + $personal, 'Zombies=' + $zombies, 'Infection=' + $infection) | Set-Content -LiteralPath $file
   $mapId = ''
   if ($map -ne 'none') { $mapId = $mapAddons[$map] }
-  return @{ Addons = (Get-ACRAddonList $pair $ace $pack $mapId); Factions = $pair; ACE = $ace; Pack = $pack; AiO = $aio; Civilians = $civilians; NeedsMods = (Test-NeedsModAddons $pair $ace $pack $mapId) }
+  return @{ Addons = (Get-ACRAddonList $pair $ace $pack $mapId); Factions = $pair; ACE = $ace; Pack = $pack; AiO = $aio; Civilians = $civilians; Personal = $personal; Zombies = $zombies; Infection = $infection; NeedsMods = (Test-NeedsModAddons $pair $ace $pack $mapId) }
 }

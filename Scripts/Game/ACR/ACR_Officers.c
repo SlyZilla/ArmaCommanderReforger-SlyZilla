@@ -57,7 +57,7 @@ modded class SCR_LoadoutManager
    SCR_Faction faction = SCR_Faction.Cast(baseFaction);
    if (!faction) continue;
    string key = faction.GetFactionKey();
-   if (key == "CIV" || key.IsEmpty()) continue;
+   if (key == "CIV" || key.IsEmpty() || ACR_Outbreak.IsZombies(key)) continue;
    bool has;
    foreach (SCR_BasePlayerLoadout existing : officers)
    {

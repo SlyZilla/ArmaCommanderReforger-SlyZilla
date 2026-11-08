@@ -50,6 +50,14 @@ for _key, (_folder, _title, _guid, _dirs, _name) in PACKS.items():
                        dirs=_dirs, files=['LICENSE.md', 'README.md', 'CHANGELOG.md'],
                        world='{AC230926A0010060}Worlds/ACR_Arland.ent',
                        signal=r'\[ACR\] CONTENT pack plugged in: ' + _name)
+# Zombie add-on (7 Nov, #107): no scripts, only dependencies on the Project Outbreak stack and zombie
+# scenarios on ACA's worlds. Its check starts the Everon zombie scenario against the live ACA and
+# passes when ACA places nests (Outbreak's Z faction found, the header's zombies applied).
+SPECS['PACK-ZOMBIES'] = dict(folder='ACAOutbreak', title='Arma Commander Actual - Zombies (Project Outbreak)',
+                             guid='AC230926CC000004', dirs=['Missions'],
+                             files=['LICENSE.md', 'README.md', 'CHANGELOG.md'],
+                             world='{AC230926CC000401}Missions/ACR_Zombies_Everon.conf',
+                             signal=r'\[ACR\] ZOMBIES many: ')
 
 
 class Blocked(RuntimeError):

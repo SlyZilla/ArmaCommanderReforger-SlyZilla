@@ -1,4 +1,4 @@
-param([switch]$HostMenu, [switch]$TestProfile, [switch]$NoSetup, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent')
+param([switch]$HostMenu, [switch]$TestProfile, [switch]$NoSetup, [string]$GamePath, [string]$Extra = '', [string]$World = 'Worlds/ACR_TestRange.ent', [string]$Zombies = '', [switch]$Contagion)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ACR-Find.ps1')
 # Everything this window shows also goes to launcher-log.txt (send it if something fails).
@@ -25,7 +25,7 @@ try {
  # Automated tests and explicit -NoSetup/-Extra callers keep their existing argument path.
  if (!$TestProfile -and !$HostMenu -and !$NoSetup -and $World -notlike '*TestRange*') {
   . (Join-Path $PSScriptRoot 'ACR-HostSetup.ps1')
-  $setup = Show-HostSetup -Solo
+  $setup = Show-HostSetup -Solo -Zombies $Zombies -Contagion:$Contagion
   $World = $setup.World
   $Extra = ($Extra + $setup.Args).Trim()
  }
@@ -40,7 +40,10 @@ try {
  if (!$TestProfile) {
   . (Join-Path $PSScriptRoot 'ACR-Find.ps1')
   if ($setup) { $withAio = Add-OptionalMods $addonsDir $addonList $setup }
-  else { $withAio = Add-AIOCommandMenu $addonsDir $addonList }
+  else {
+   $withAio = Add-AIOCommandMenu $addonsDir $addonList
+   $withAio = Add-PersonalMods $withAio[0] $withAio[1] # visual/sound mods, when installed
+  }
   $addonsDir = $withAio[0]; $addonList = $withAio[1]
  }
  # Players get their normal profile (controls, graphics); automated tests use a separate one.
@@ -49,7 +52,9 @@ try {
  if (!$HostMenu) { $arguments += ' -noBackend -world "' + $World + '"' }
  if ($Extra) { $arguments += ' ' + $Extra }
  # User-invoked interactive game launcher.
- Start-Process -FilePath $GamePath -ArgumentList $arguments -WorkingDirectory (Split-Path $GamePath -Parent)
+ $gameProc = Start-Process -FilePath $GamePath -ArgumentList $arguments -WorkingDirectory (Split-Path $GamePath -Parent) -PassThru
+  # Development copies show the on-screen banner while the game runs (tools\Show-TestBanner.ps1).
+  Start-PlayBanner 'PLAY TEST: AC: Actual (development copy)' @(('World ' + $World + ' | ' + $addonList), 'Closes by itself when the game closes.') $gameProc.Id
 } catch {
  Write-Host $_.Exception.Message -ForegroundColor Red
  Read-Host 'Press Enter to close'

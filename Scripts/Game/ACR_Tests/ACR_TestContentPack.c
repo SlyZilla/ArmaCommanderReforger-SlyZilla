@@ -193,6 +193,7 @@ class ACR_TestContentPack
    ACR_TestRegress.Check("content: " + side + " buy list prefabs all load", invalid == 0, report);
    int wanted = 5;
    if (side == "FIA") wanted = 3; // technicals
+   if (side == "US") wanted = 3; // M113s and FV510 off since Reforger 1.9 broke their driving
    ACR_TestRegress.Check("content: " + side + " sells the pack's vehicles", packed >= wanted, string.Format("%1:%2", packed, report));
    s_iExpected += 2;
   }

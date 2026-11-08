@@ -157,11 +157,112 @@ function Add-CivilPopulation([string]$addonsDir, [string]$addonList) {
   return @(($dirs -join ','), $addonList)
 }
 
-# The optional mods picked in the Play/Host/Join menu (AiO = yes/no, Civilians = yes/no).
+# Personal mods: extra Workshop mods the player always wants loaded (visual and sound mods). The list is
+# local and git-excluded: personal-mods.txt beside this file, one 16-digit mod ID per line, '#' starts
+# a comment. Without the file nothing is loaded and the menus show no row. Each mod loads only when
+# its Workshop copy is on this PC. They go last in -addonsDir, so local ACA/BBB copies still win.
+function Get-PersonalModIds {
+  $file = Join-Path $PSScriptRoot 'personal-mods.txt'
+  $ids = @()
+  if (Test-Path -LiteralPath $file) {
+    foreach ($line in Get-Content -LiteralPath $file) {
+      $id = ($line -replace '#.*$', '').Trim()
+      if ($id -match '^[0-9A-Fa-f]{16}$') { $ids += $id.ToUpperInvariant() }
+    }
+  }
+  return $ids
+}
+
+function Test-PersonalMods {
+  foreach ($id in @(Get-PersonalModIds)) { if (Find-WorkshopMod $id) { return $true } }
+  return $false
+}
+
+function Add-PersonalMods([string]$addonsDir, [string]$addonList) {
+  $dirs = @($addonsDir.Split(',') | Where-Object { $_ })
+  $count = 0
+  foreach ($id in @(Get-PersonalModIds)) {
+    $modDir = Find-WorkshopMod $id
+    if (!$modDir) { continue }
+    $parent = Split-Path $modDir -Parent
+    if (($dirs | ForEach-Object { $_.TrimEnd('\') }) -notcontains $parent.TrimEnd('\')) { $dirs += $parent }
+    if (($addonList.Split(',')) -notcontains $id) { $addonList += ',' + $id }
+    $count++
+  }
+  if ($count -gt 0) { Write-Host ('Personal mods: loading ' + $count + ' of ' + @(Get-PersonalModIds).Count + '.') -ForegroundColor DarkCyan }
+  return @(($dirs -join ','), $addonList)
+}
+
+# Project Outbreak (zombie mode, issue #107): Outbreak itself, its Creature Melee AI dependency and
+# Special Zombies & Creatures, all Workshop mods. The optional contagion mod (Project Outbreak
+# Infection) is separate and off unless asked for. Resolved like every optional mod, via Find-WorkshopMod.
+$script:OutbreakIds = @('4FD4A1BD550793F4', 'F1D4B9B5245B36ED', '297640FBAC0C46C3') # Creature Melee AI, Project Outbreak, Special Zombies & Creatures
+$script:OutbreakContagionId = '7B763100BAFA1F9A'
+# ACA's zombie add-on (ACAOutbreak, AC230926CC000004): depends on the three mods above and adds the
+# zombie scenarios. Loaded alongside them when found (a copy beside ACA or its Workshop copy); ACA's
+# zombie mode itself needs only the mods.
+$script:OutbreakCompatId = 'AC230926CC000004'
+function Find-OutbreakCompat {
+  $project = Join-Path (Split-Path $PSScriptRoot -Parent) 'ACAOutbreak\addon.gproj'
+  if ((Test-Path -LiteralPath $project) -and (Get-Content -LiteralPath $project -Raw) -match ('GUID\s+"' + $script:OutbreakCompatId + '"')) { return (Split-Path $project -Parent) }
+  return (Find-WorkshopMod $script:OutbreakCompatId)
+}
+
+function Test-ProjectOutbreak {
+  foreach ($id in $script:OutbreakIds) { if (!(Find-WorkshopMod $id)) { return $false } }
+  return $true
+}
+
+function Add-ProjectOutbreak([string]$addonsDir, [string]$addonList, [bool]$contagion = $false) {
+  if (!(Test-ProjectOutbreak)) {
+    Write-Host 'Project Outbreak (or Creature Melee AI / Special Zombies & Creatures) is not downloaded: starting without zombies.' -ForegroundColor Yellow
+    return @($addonsDir, $addonList)
+  }
+  $ids = @($script:OutbreakIds)
+  if ($contagion) {
+    if (Find-WorkshopMod $script:OutbreakContagionId) { $ids += $script:OutbreakContagionId }
+    else { Write-Host 'The contagion mod is not downloaded: starting without it.' -ForegroundColor Yellow }
+  }
+  $dirs = @($addonsDir.Split(',') | Where-Object { $_ })
+  foreach ($id in $ids) {
+    $parent = Split-Path (Find-WorkshopMod $id) -Parent
+    if (($dirs | ForEach-Object { $_.TrimEnd('\') }) -notcontains $parent.TrimEnd('\')) { $dirs += $parent }
+    if (($addonList.Split(',')) -notcontains $id) { $addonList += ',' + $id }
+  }
+  $what = 'Project Outbreak: loading ' + $ids.Count + ' zombie mods'
+  $compat = Find-OutbreakCompat
+  if ($compat) {
+    $parent = Split-Path $compat -Parent
+    if (($dirs | ForEach-Object { $_.TrimEnd('\') }) -notcontains $parent.TrimEnd('\')) { $dirs += $parent }
+    if (($addonList.Split(',')) -notcontains $script:OutbreakCompatId) { $addonList += ',' + $script:OutbreakCompatId }
+    $what += ' and the ACA zombie add-on'
+  }
+  Write-Host ($what + '.') -ForegroundColor DarkCyan
+  return @(($dirs -join ','), $addonList)
+}
+
+# On-screen banner for a development copy that opens the game on the maintainer's screen
+# (cross-mod rule; ACR-Watcher.ps1 does the same for automated tests). Packaged copies have no
+# .git folder or tools\ folder, so players never see it.
+function Start-PlayBanner([string]$title, [string[]]$lines, [int]$gamePid) {
+  try {
+    $script = Join-Path $PSScriptRoot 'tools\Show-TestBanner.ps1'
+    if (!(Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git')) -or !(Test-Path -LiteralPath $script) -or $gamePid -le 0) { return }
+    $started = Get-Date
+    $spec = Join-Path $env:TEMP ('aca-play-' + $gamePid + '.banner.json')
+    @{ title = $title; lines = @($lines); timeoutSec = 14400; started = $started.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $spec -Encoding UTF8
+    $bannerArgs = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $script + '" -SpecFile "' + $spec + '" -WatchPid ' + $gamePid
+    Start-Process -FilePath 'powershell.exe' -ArgumentList $bannerArgs -WindowStyle Hidden | Out-Null
+  } catch { Write-Host ('Banner not shown: ' + $_.Exception.Message) -ForegroundColor Yellow }
+}
+
+# The optional mods picked in the Play/Host/Join menu (AiO, Civilians, Personal, Zombies = yes/no).
 function Add-OptionalMods([string]$addonsDir, [string]$addonList, $choices) {
   $r = @($addonsDir, $addonList)
   if ($choices.AiO -ne 'no') { $r = Add-AIOCommandMenu $r[0] $r[1] }
   if ($choices.Civilians -eq 'yes') { $r = Add-CivilPopulation $r[0] $r[1] }
+  if ($choices.Personal -ne 'no') { $r = Add-PersonalMods $r[0] $r[1] }
+  if ($choices.Zombies -and $choices.Zombies -ne 'no') { $r = Add-ProjectOutbreak $r[0] $r[1] ($choices.Infection -eq 'yes') }
   return $r
 }
 

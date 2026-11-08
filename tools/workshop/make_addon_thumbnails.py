@@ -410,8 +410,39 @@ def tac_attack(blue_label, obj_label, red_label):
     return tac
 
 
+SICK = (150, 230, 90)
+
+
+def zombies():
+    """The zombie add-on: an Everon-like coast at dusk, nests in the towns and hordes on the move."""
+    img, _ = topo_map(66, coast_south, GREEN_LAND, sea=72, forest=((52, 82, 46), 120))
+    rgb = ImageEnhance.Brightness(img.convert('RGB')).enhance(0.62)
+    rgb = ImageEnhance.Color(rgb).enhance(0.5)
+    r, g, b = rgb.split()
+    img = Image.merge('RGB', (r.point(lambda v: int(v * 0.9)), g, b.point(lambda v: int(v * 0.85)))).convert('RGBA')
+    grid(img, colour=SICK, alpha=40)
+    left_shade(img)
+
+    def tac(d):
+        objective(d, 1240, 330, SICK, 'NEST')
+        objective(d, 1640, 640, SICK, 'NEST')
+        objective(d, 1450, 900, SICK, 'GROUND ZERO')
+        route(d, [(1640, 610), (1560, 500), (1420, 420), (1290, 360)], SICK, dash=10)
+        route(d, [(1450, 870), (1400, 760), (1300, 640)], SICK, dash=10)
+        unit_marker(d, 1250, 700, BLUE, 'inf', '1 PLT')
+        unit_marker(d, 1320, 780, BLUE, 'armour')
+        unit_marker(d, 1780, 200, RED, 'inf', 'OPFOR')
+        route(d, [(1250, 670), (1230, 540), (1235, 395)], CYAN)
+    apply_overlay(img, tac)
+    title_block(img, 'ARMA COMMANDER ACTUAL ADD-ON', 'ZOMBIES', SICK,
+                'PROJECT OUTBREAK   |   NESTS AND HORDES   |   NIGHT RAIDS   |   TVTVZ OR TVZ')
+    vignette(img, 140)
+    return img
+
+
 ADDONS = {
     'coldwar': cold_war,
+    'zombies': zombies,
     'chernarus-minus': lambda: map_card('CHERNARUS MINUS', 11, chernarus, (120, 200, 110),
                                         'GENERATED BASES AND HQS   |   NEEDS THE CHERNARUS MINUS TERRAIN',
                                         tac_attack('1 PLT', 'OBJ ECHO', 'INS')),
