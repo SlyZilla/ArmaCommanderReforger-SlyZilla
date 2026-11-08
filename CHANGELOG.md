@@ -1,6 +1,8 @@
 # Changelog
 ## 0.5.12 — unreleased
 
+Zombie mode on Project Outbreak, the 2IC back beside "I'm the 2IC", and AI logistics fixes. Needs Better Battle Buddies 0.1.10. The zombie modes need the **Project Outbreak** mod; without it nothing changes. A compat add-on, **AC: Actual - Zombies**, follows separately.
+
 ### AI commanders
 
 - The experimental 2IC and "I'm the 2IC" are both back as choices on the Experimental tab's 2IC row (off, 2IC, I'm the 2IC). In 0.5.11 "I'm the 2IC" replaced the 2IC. **2IC** (`-acr2IC 1`): while you command, the AI runs only the squads nobody leads, and the buying, logistics and FOBs stay yours, with its FOB suggestions. **I'm the 2IC** (now `-acr2IC 2`): the AI commander runs your side as if nobody commanded, and you keep every command power and your squads. A host who set `-acr2IC 1` for "I'm the 2IC" in 0.5.11 now sets `2`.
@@ -15,6 +17,7 @@
 - Players versus zombies (TvZ, #107): with Project Outbreak loaded, the setup screen's **Zombie mode** row (`-acrZombieMode tvz`) puts your side alone against the zombies, with no second side. The other side sits out: its bases start as open towns and its HQ becomes the hive, the biggest nest on the map. There are far more zombies than in the two-sided mode, hordes set out sooner, night raids hit your HQ too, and zombies can take bases back: a base you hold with zombies inside and none of your soldiers for a minute is overrun, goes open and becomes a nest. Clear towns, take them and hold them.
 - Zombie counterattacks (#107, idea from Poppi): take a town or clear a nest and the dead nearby come for it. By day one nest within 2 km sends a third of its zombies, at night two send half, and they move fast; at a town you hold they come out inside it, so the garrison fights. Your side is warned ("The dead are stirring near ..."), and each place is counterattacked at most once every 15 minutes.
 - Contained outbreak (#107): with Project Outbreak loaded, the setup screen's **Outbreak start** row (`-acrOutbreak contain`) starts the zombies in one town, ground zero, far from both sides (the hive in TvZ), instead of nests everywhere. It spreads from there: ground zero refills fast and sends hordes to the towns round it, which nest and spread in turn. A town the dead are coming for has survivors holed up in it, shown on both sides' maps: get any soldier there first, with no zombies on them, and they are rescued for 5 RP each. AI commanders send a squad to rescue them too, one site at a time. If the horde gets there and nobody is there, they join it. Clearing a nest pays the side that cleared it, and both sides hear how far the outbreak has spread. No timer and no way to lose: the zombie cap stops the spread, and clearing every nest contains it.
+- Coming next for zombie mode: a compat add-on, **AC: Actual - Zombies**, published separately once this version is live, and more to come (civilian evacuation, airdrops, a truce with the other side).
 
 ## 0.5.11 — released
 
