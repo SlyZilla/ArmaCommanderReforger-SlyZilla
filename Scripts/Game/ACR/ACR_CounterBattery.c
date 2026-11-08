@@ -263,6 +263,9 @@ class ACR_CounterBattery
    if (vector.DistanceXZ(team.m_Tube.GetOrigin(), aim) > INCOMING_NEAR) continue;
    team.m_fIncomingAt = landsAtMs;
    team.m_vIncomingFrom = from;
+   // Its side's players hear it coming in (an AI commander's team moves by itself: DisplaceUnderFire).
+   if (team.m_Squad && (team.m_Squad.HasPlayer() || team.m_Squad.m_bClaimed || team.m_Squad.m_Commander != 0))
+    manager.NotifyFaction(team.m_sFaction, string.Format("Counter-battery fire coming in on %1: move it", team.m_sName));
   }
  }
 

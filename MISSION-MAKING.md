@@ -603,7 +603,8 @@ minutes after the last round heard; a team that moves leaves it behind. Mortar t
 will shell a ring heard in the last 2 minutes and at most 160 m wide (3 rounds spread over it, at
 most once a minute per ring) instead of a spotted enemy: always when it is pinned down, otherwise
 weighed against the enemy as AI choices are (`-acrVariety`). An AI commander's mortar team that
-counter-battery rounds land near packs up and moves 150-300 m away from where they came from.
+counter-battery rounds land near packs up and moves 150-300 m away from where they came from; on
+a player's team, the side is warned ("Counter-battery fire coming in on ...: move it").
 `-acrCounterBattery 0` turns it off.
 
 `AIR_LIFT` flies an infantry squad with no player-controlled member. It must be on foot and not a
