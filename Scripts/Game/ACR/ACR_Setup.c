@@ -351,7 +351,7 @@ class ACR_Setup
   if (key == "pullover") return "Pull over before getting out";
   if (key == "evadearmour") return "Unarmed vehicles evade armour";
   if (key == "fieldsoffire") return "Guns clear bushes round them";
-  if (key == "twoic") return "I'm the 2IC: the AI commands";
+  if (key == "twoic") return "Second-in-command (2IC)";
   return key;
  }
 
@@ -374,7 +374,7 @@ class ACR_Setup
   if (key == "pullover") return "A squad told to get out on a road first has its driver pull\nonto the verge. Under fire it gets out where it stands.";
   if (key == "evadearmour") return "An unarmed vehicle that sees an armed enemy vehicle drives 300 m\naway, then carries on. Needs Better Battle Buddies' setting on too.";
   if (key == "fieldsoffire") return "Built guns, checkpoint posts and Fortify pieces clear the bushes\nround them and in front of a gun, the same on every screen.";
-  if (key == "twoic") return "While you command, the AI commander runs the side as if you didn't;\nyou keep every command power and the squads you lead or order.";
+  if (key == "twoic") return "2IC: the AI runs the squads nobody leads while you buy and build.\nI'm the 2IC: the AI commander runs the side; you keep your squads.";
   return "";
  }
 
@@ -443,7 +443,7 @@ class ACR_Setup
   else if (key == "rpservice") values = {"0", "3", "5"};
   else if (key == "mines" || key == "fortify" || key == "baseworks") values = {"1", "0"};
   else if (key == "minesreal" || key == "minesai" || key == "fortifyai") values = {"0", "1"};
-  else if (key == "allocator" || key == "forecast") values = {"0", "1", "2"};
+  else if (key == "allocator" || key == "forecast" || key == "twoic") values = {"0", "1", "2"};
   else if (Experimental(key)) values = {"0", "1"};
   return values;
  }
@@ -523,8 +523,10 @@ class ACR_Setup
    return "";
   }
   // The 2IC is a flag: a bare -acr2IC is on (ACR_SquadAI.TwoIC), which the empty value would show as off.
+  // 2 is "I'm the 2IC" (ACR_SquadAI.ImThe2IC).
   if (key == "twoic")
   {
+   if (ACR_SquadAI.ImThe2IC()) return "2";
    if (ACR_Options.Flag("acr2IC")) return "1";
    return "0";
   }
@@ -644,6 +646,8 @@ class ACR_Setup
   if (key == "forecast" && value == "1") return "log only";
   if (key == "forecast" && value == "2") return "defends on it";
   if (key == "evadearmour" && value == "1") return "on (needs BBB's setting too)";
+  if (key == "twoic" && value == "1") return "2IC: runs the squads nobody leads";
+  if (key == "twoic" && value == "2") return "I'm the 2IC: the AI commands";
   if (Experimental(key))
   {
    if (value == "0") return "off";
