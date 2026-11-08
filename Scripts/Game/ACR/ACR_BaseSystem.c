@@ -408,6 +408,8 @@ class ACR_BaseSystem : Managed
   ACR_DoctrineIntel.OnCapture(manager, factionKey, previous);
   manager.NotifyFaction(factionKey, string.Format("%1 captured", base.m_sName));
   if (!previous.IsEmpty()) manager.NotifyFaction(previous, string.Format("%1 lost", base.m_sName));
+  // Zombies near a town just taken come for it (ACR_Outbreak.CounterAttack).
+  ACR_Outbreak.CounterAttack(base.GetOrigin(), base.m_sName, base, factionKey);
  }
 
  // TvZ (ACR_TvZ): zombies alone inside a held base long enough take it back. It goes open (no

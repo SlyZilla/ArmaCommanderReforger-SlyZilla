@@ -4,7 +4,8 @@
 // clear of both starting bases; survivors in the towns round it; both sides mark it. Ground zero
 // sends a horde and the town it goes for gets survivors; a US team at a site rescues them and the
 // US side gets RP; a horde reaching survivors with nobody there takes them; an AI commander sends
-// a squad to a site; ground zero's bounty and the RP cap; the spread is reported.
+// a squad to a site; ground zero's bounty and the RP cap; a town taken near a nest is counterattacked
+// (once per place); the spread is reported.
 class ACR_TestContainment
 {
  static const ResourceName FIRE_TEAM = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
@@ -33,6 +34,7 @@ class ACR_TestContainment
   if (second == 58) AIRescueSetup(manager);
   if (second == 70) AIRescue(manager);
   if (second == 72) Bounty(manager);
+  if (second == 74) Counterattack();
   if (second == 130) Spread();
  }
 
@@ -63,7 +65,7 @@ class ACR_TestContainment
    detail += string.Format(" %1(%2)", post.m_sName, post.m_iReserve);
   }
   Check("containment: the outbreak starts as one nest, ground zero", ACR_Containment.On() && nests == 1 && s_Zero != null, string.Format("on %1, nests %2:%3", ACR_Containment.On(), nests, detail));
-  if (!s_Zero) { ACR_TestRegress.Complete("containment", 11); return; }
+  if (!s_Zero) { ACR_TestRegress.Complete("containment", 13); return; }
   bool clear = true;
   foreach (ACR_Base base : ACR_Base.s_All)
    if (!base.m_sOwner.IsEmpty() && !base.m_bPocket && !base.m_bRetired && vector.DistanceXZ(base.GetOrigin(), s_Zero.m_vPos) < ACR_Outbreak.HQ_CLEAR) clear = false;
@@ -170,11 +172,27 @@ class ACR_TestContainment
   Check("containment: ground zero pays its bounty, and RP stops at the cap", bounty == ACR_Containment.RP_GROUND_ZERO && rp == ACR_BaseSystem.POINTS_CAP, string.Format("bounty %1, rp %2", bounty, rp));
  }
 
+ protected static void Counterattack()
+ {
+  vector dir = Vector(6400, 0, 6400) - s_Zero.m_vPos;
+  dir[1] = 0;
+  dir.Normalize();
+  vector at = ACR_Manager.Ground(s_Zero.m_vPos + dir * 700);
+  int reserve = s_Zero.m_iReserve;
+  int sent = ACR_Outbreak.CounterAttack(at, "Test town", null, "US");
+  bool counter;
+  foreach (ACR_DefenderPost post : ACR_Defenders.s_Posts)
+   if (post.m_Nest && post.m_Nest.m_bRoaming && post.m_Nest.m_bCounter && post.m_Nest.m_vGoal == at) counter = true;
+  Check("counterattack: a place taken near a nest has the dead come for it", sent >= 1 && counter, string.Format("sent %1, counter horde %2, ground zero had %3", sent, counter, reserve));
+  int again = ACR_Outbreak.CounterAttack(at, "Test town", null, "US");
+  Check("counterattack: once per place, not again straight away", again == 0, string.Format("%1", again));
+ }
+
  protected static void Spread()
  {
   int level = ACR_Containment.LevelForTest();
   Check("containment: how far it has spread is worked out and reported", level >= 1, string.Format("level %1, %2 zombies", level, ACR_Outbreak.Total()));
-  ACR_TestRegress.Complete("containment", 11);
+  ACR_TestRegress.Complete("containment", 13);
  }
 
  protected static void Spawn(ACR_Manager manager, string name, vector at, float distance)

@@ -19,6 +19,12 @@
 //    fast and spread three times as often, hordes walk twice as fast, more specials come out, and
 //    at nightfall nests near a held base (not an HQ) send a raid at it. A raid comes out inside the
 //    base, so its garrison fights; with nobody to fight it nests there until someone comes.
+//  - Counterattacks (Poppi via Jacob, 7 Nov; Benny's Warfare QRF): a side that takes a town or
+//    clears a nest has the dead come for it. Up to COUNTER_NESTS settled nests within COUNTER_REACH
+//    (packed up, COUNTER_MIN or more) send a horde there, by day one nest a third of its zombies, at
+//    night two nests half; it walks COUNTER_PACE times as fast. At a held base it comes out inside
+//    like a raid (the garrison fights); at an empty place it nests unless someone is there. The side
+//    is warned. One per place per COUNTER_GAP_MS.
 //  - Specials (Outbreak's Giants and Nightingales, Special Zombies & Creatures' Mutant, known by
 //    their components): one at most per spawn by day, two at night.
 //  - Bases: zombies never hold, take or find a base. Inside one they block it: a held base is
@@ -42,6 +48,7 @@ class ACR_ZombieNest : Managed
  vector m_vGoal;
  string m_sGoal;
  ACR_Base m_Raid;      // a night raid on this held base (null: none)
+ bool m_bCounter;      // a counterattack (walks faster)
  bool m_bGroundZero;   // where a contained outbreak started (ACR_Containment): refills and spreads fast
 }
 
@@ -66,7 +73,13 @@ class ACR_Outbreak
  static const float RAID_REACH = 2500;     // nightfall: nests this close to a held base raid it
  static const float ZONE_RADIUS = 300;     // a side's zombie area
  static const int PACK = 3;                // zombies seen at once that mark an area
+ static const float COUNTER_REACH = 2000;  // m: nests this close to a town just taken or cleared ...
+ static const int COUNTER_NESTS = 2;       // ... at most this many (night; one by day) ...
+ static const int COUNTER_MIN = 6;         // ... holding this many send a counterattack
+ static const float COUNTER_PACE = 3;      // a counterattack walks this many times as fast
+ static const float COUNTER_GAP_MS = 900000; // one per place per 15 min
  static float s_fWalkScaleForTest = 1;
+ static int s_iCounters;                   // counterattacks sent (tests)
 
  protected static bool s_bOn;
  protected static int s_iCap;
@@ -75,8 +88,12 @@ class ACR_Outbreak
  protected static ref array<vector> s_aStarts;
  protected static ref array<ResourceName> s_aSpecial;
  protected static ref array<ResourceName> s_aPlain;
+ protected static ref array<vector> s_aCounterAt;
+ protected static ref array<float> s_aCounterTime;
  static void ACR_InitStatics()
  {
+  s_aCounterAt = {};
+  s_aCounterTime = {};
   s_aStarts = {};
   s_aSpecial = {};
   s_aPlain = {};
@@ -140,6 +157,9 @@ class ACR_Outbreak
  {
   s_bOn = false;
   ACR_Containment.Reset();
+  s_aCounterAt.Clear();
+  s_aCounterTime.Clear();
+  s_iCounters = 0;
   s_aStarts.Clear();
   s_iSeconds = 0;
   string level = LevelOption();
@@ -594,6 +614,7 @@ class ACR_Outbreak
   float left = to.Length();
   float step = WALK * 5 * s_fWalkScaleForTest;
   if (s_bNight) step *= 2;
+  if (nest.m_bCounter) step *= COUNTER_PACE;
   // A raid comes out inside its base (the garrison fights it).
   if (nest.m_Raid && left <= step + 150)
   {
@@ -699,7 +720,10 @@ class ACR_Outbreak
     ACR_Intel intel = manager.IntelFor(side);
     if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), line, post.m_vPos);
    }
+   string clearedBy = "";
+   foreach (string near : sides) if (clearedBy.IsEmpty() && SideNear(manager, near, post.m_vPos, STAY_RANGE + 200)) clearedBy = near;
    ACR_Defenders.Remove(post);
+   if (!clearedBy.IsEmpty()) CounterAttack(post.m_vPos, post.m_sName, null, clearedBy);
    return;
   }
   if (nest.m_Raid)
@@ -713,6 +737,57 @@ class ACR_Outbreak
    return;
   }
   if (post.m_iReserve < nest.m_iSize) nest.m_fGrowAt = GetGame().GetWorld().GetWorldTime() + NestGrowGap(nest);
+ }
+
+ // 'side' took a town or cleared a nest at 'at' ('base': the town, null for a country nest): the
+ // dead near it come for it. Returns how many hordes set out.
+ static int CounterAttack(vector at, string name, ACR_Base base, string side)
+ {
+  if (!s_bOn || !Replication.IsServer() || side.IsEmpty() || IsZombies(side)) return 0;
+  float now = GetGame().GetWorld().GetWorldTime();
+  for (int c = s_aCounterAt.Count() - 1; c >= 0; c--)
+  {
+   if (now - s_aCounterTime[c] > COUNTER_GAP_MS) { s_aCounterAt.Remove(c); s_aCounterTime.Remove(c); continue; }
+   if (vector.DistanceXZ(s_aCounterAt[c], at) < 300) return 0;
+  }
+  int most = 1;
+  float share = 0.34;
+  if (s_bNight) { most = COUNTER_NESTS; share = 0.5; }
+  // The nearest nests first.
+  array<ACR_DefenderPost> near = {};
+  array<float> spans = {};
+  foreach (ACR_DefenderPost post : ACR_Defenders.s_Posts)
+  {
+   if (!post.m_Nest || post.m_Nest.m_bRoaming || post.m_bGone || post.m_Group || post.m_iReserve < COUNTER_MIN) continue;
+   float d = vector.DistanceXZ(post.m_vPos, at);
+   if (d > COUNTER_REACH || d < 200) continue;
+   int i = 0;
+   while (i < spans.Count() && spans[i] <= d) i++;
+   near.InsertAt(post, i);
+   spans.InsertAt(d, i);
+  }
+  ACR_Base raid;
+  if (base && !base.m_sOwner.IsEmpty() && !base.m_bRetired) raid = base;
+  int sent;
+  foreach (ACR_DefenderPost from : near)
+  {
+   if (sent >= most) break;
+   int count = Math.Max(4, Math.Round(from.m_iReserve * share));
+   if (!SendHorde(from, count, at, name, raid)) continue;
+   foreach (ACR_DefenderPost horde : ACR_Defenders.s_Posts)
+    if (horde.m_Nest && horde.m_Nest.m_bRoaming && horde.m_Nest.m_vGoal == at && !horde.m_Nest.m_bCounter) { horde.m_Nest.m_bCounter = true; horde.m_sName = string.Format("Zombies counterattacking %1", name); }
+   sent++;
+  }
+  if (sent == 0) return 0;
+  s_aCounterAt.Insert(at);
+  s_aCounterTime.Insert(now);
+  s_iCounters += sent;
+  PrintFormat("[ACR] ZOMBIES counterattack on %1 (%2 took it): %3 hordes", name, side, sent);
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  ACR_Intel intel;
+  if (manager) intel = manager.IntelFor(side);
+  if (intel) intel.AddFeed(now, string.Format("The dead are stirring near %1. Expect them soon", name), at);
+  return sent;
  }
 
  // A man of 'side' killed at 'pos' (ACR_Report): by zombies, he joins the nearest nest or horde
