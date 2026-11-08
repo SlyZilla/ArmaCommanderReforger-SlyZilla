@@ -1,30 +1,21 @@
-0.5.11
+0.5.12
 
-Hotfix for 0.5.10: the period jets can be seen and heard, Project Outbreak zombies no longer lock you out of respawning, generated maps put their objectives in the towns, and bought tanks get their whole crew. Needs Better Battle Buddies 0.1.9.
-
-FIXED
-
-- Period jets (-acrPeriodJets 1) are visible and audible. The 0.5.9 and 0.5.10 Workshop builds left out their models and engine sounds, so recon flights and bomb runs flew invisible and silent for everyone.
-- With Project Outbreak's zombies in the match, a commander killed in his command unit could be stuck on the deploy screen with nothing to pick. Zombies no longer hold, contest or take bases; they still bring the garrison out to fight.
-- A side is never left with nowhere to deploy: if every deploy base is under attack and there is no HQ spawn point, its best base stays open.
-- Objectives on generated maps sit on their towns' houses, not on the map label beside them (13 places on Chernarus Minus, 4 hamlets on Everon).
-- An AI truck giving a squad a ride no longer turns back halfway to the service truck and leaves its riders on the road.
-- Soldiers no longer spawn inside sealed attics, cellars or thick castle walls.
-- Content packs: soldier swaps are rolled for each garrison soldier, FIA cell member and pocket fighter, so one unlucky roll no longer leaves a whole match without the pack's kit.
-- AI commanders no longer plan attacks around helicopter rides they never get. Far squads were counted as flying in, then walked 6 km and the attack was called off, over and over; on big generated maps the front froze. A squad left walking far now leaves the attack at once.
-- AI vehicle crews that got out under fire get back into their vehicle instead of being sent off on foot and leaving it behind.
-- Bought tanks and IFVs get their whole crew: with the Cold War pack the Chieftain came with 2 of 4 men, the FV510 Warrior had no commander, and the T-55 and Leopard 1 no loader. Their commanders and loaders now stay aboard when passengers get out.
-- FIA's S105 and S1203 minibus and van come with an FIA driver, not a civilian nobody could command.
-- A gunner driving his vehicle from the turret climbs steep roads again on Reforger 1.9.
+Zombie mode. With the Project Outbreak mod loaded, the dead join the war. Needs Better Battle Buddies 0.1.10. Zombie mode needs Project Outbreak; without it nothing changes. A compat add-on, AC: Actual - Zombies, follows separately once this version is live.
 
 NEW
 
-- Battlefield size: a quarter of the map (-acrSize quarter). On Chernarus Minus that is 15-19 objectives with the HQs 4-8 km apart.
-- Generated battles run in a different direction on each seed instead of always corner to corner.
+- Zombies (needs Project Outbreak): the setup screen gets a Zombies row (-acrZombies few or many, off by default). Nests sit in open towns away from both starting bases and in buildings out in the country: blood on the ground, burnt patches, smouldering fires, wrecked-car junk. When soldiers of either side come near, a nest pours out and hunts by sight and sound. Full nests send hordes to other towns, so a cleared town can be overrun again, and the men they kill join them. At night they wake from further out, spread faster and raid held bases near them. While zombies are inside a base it can't be captured or secured. The AI commander clears marked zombie areas by day, keeps out of them at night and keeps supply runs away from them.
+- Players versus zombies (Zombie mode row, -acrZombieMode tvz): your side alone against the dead. The other side sits out, its HQ becomes the hive, there are far more zombies, and zombies can overrun and take back bases you hold.
+- Contained outbreak (Outbreak start row, -acrOutbreak contain): the outbreak starts in one town, ground zero, and spreads from there. Towns it is heading for have survivors holed up: reach them first for 5 RP each. AI commanders send squads to rescue them too. Clearing a nest pays the side that cleared it. No timer and no way to lose.
+- Zombie counterattacks (idea from Poppi): take a town or clear a nest and the dead nearby come for it, fast, once per place every 15 minutes, with a warning first.
+- Still to come for zombie mode: civilian evacuation, airdrops and a truce with the other side.
 
 BETTER
 
-- I'm the 2IC (Experimental): while you command, the AI commander runs your side as if nobody did and spends its RP; you keep every command power and the squads you lead or order.
-- AI commanders with the AI build budget on no longer sit on RP their engineers aren't using: units now get all but the next build's 30 RP.
-- Game Master hears the period jets from the Game Master camera.
-- The host debug menu names the side every button acts on, shows both sides' RP, and says when a click is ignored.
+- 2IC (Experimental tab): the plain 2IC and I'm the 2IC are both choices again (off, 2IC, I'm the 2IC). 2IC (-acr2IC 1): the AI runs only the squads nobody leads and the buying, logistics and FOBs stay yours. I'm the 2IC (now -acr2IC 2): the AI runs your side and you keep every command power. Hosts who set -acr2IC 1 for I'm the 2IC in 0.5.11 now set 2.
+
+FIXED
+
+- An AI commander at its squad limit still buys a fuel or repair truck it needs; service trucks never counted toward the limit.
+- AI service trucks waiting behind the front stop being re-sent to the same base every 15 seconds: each base now has a truck park on a nearby road.
+- With the experimental job allocator (-acrAIAllocator 2), an attack whose squads are moved to another job is no longer called off as beaten.

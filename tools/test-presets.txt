@@ -168,7 +168,7 @@ twoicfob|-acrTwoICFobTest 1|240
 twoicsuggest|-acrTwoICSuggestTest 1|200
 twoicshots|-acrTwoICShotsTest 1|240
 twoicdeclutter|-acrTwoICDeclutterTest 1|120
-twoicall|-acrTwoICAllTest 1|260
+twoicall|-acrTwoICAllTest 1|340
 ridelav|-acrRideLavTest 1|400
 ridelavkill|-acrRideLavKillTest 1|400
 ridelavgetout|-acrRideLavGetOutTest 1|400
@@ -220,6 +220,9 @@ guerrillas|-acrGuerrillasTest 1|150|Worlds/ACR_Everon.ent
 insurgency|-acrInsurgencyTest 1|170|Worlds/ACR_Everon.ent
 fialeaning|-acrFIALeaningTest 1|100|Worlds/ACR_Everon.ent
 hideouts|-acrHideoutsTest 1|120|Worlds/ACR_Everon.ent
+zombies|-acrZombiesTest 1|200|Worlds/ACR_Everon.ent
+tvz|-acrTvZTest 1|150|Worlds/ACR_Everon.ent
+containment|-acrContainmentTest 1|150|Worlds/ACR_Everon.ent
 kolguyevsoak|-acrEveronSoakTest 1|1380|Worlds/ACR_Kolguyev.ent
 deploymenu|-acrDeployMenuTest 1|180|Worlds/ACR_Arland.ent
 mappolygon|-acrMapPolygonTest 1|60
@@ -280,6 +283,7 @@ placeauditarland|-acrPlaceAuditTest 1|180|Worlds/ACR_Arland.ent
 placeauditkolguyev|-acrPlaceAuditTest 1|180|Worlds/ACR_Kolguyev.ent
 voidspawn|-acrVoidSpawnTest 1|180|Worlds/ACR_ChernarusMinus.ent
 voidspawneveron|-acrVoidSpawnTest 1|180|Worlds/ACR_Everon.ent
+truckpark|-acrTruckParkTest 1|180|Worlds/ACR_ChernarusMinus.ent
 parts|-acrPartsTest 1|360
 wings|-acrWingsTest 1|240|Worlds/ACR_Everon.ent
 wingsarland|-acrWingsTest 1|240|Worlds/ACR_Arland.ent

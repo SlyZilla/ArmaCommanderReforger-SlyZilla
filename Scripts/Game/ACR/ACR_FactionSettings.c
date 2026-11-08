@@ -755,6 +755,12 @@ class ACR_FactionCatalog
    result.Copy(settings.m_aGarrisonSoldiers);
    return;
   }
+  // Zombies carry no role labels: every kind Outbreak lists (ACR_Outbreak).
+  if (ACR_Outbreak.IsZombies(factionKey))
+  {
+   ACR_Outbreak.BuildPool(result);
+   return;
+  }
   SCR_EntityCatalog catalog = GetCatalog(factionKey, EEntityCatalogType.CHARACTER);
   if (!catalog) return;
   array<SCR_EntityCatalogEntry> entries = {};

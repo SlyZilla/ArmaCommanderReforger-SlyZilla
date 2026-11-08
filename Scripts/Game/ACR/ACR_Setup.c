@@ -250,10 +250,12 @@ class ACR_Setup
   string rows;
   bool generated = Current("layout").StartsWith("gen:");
   // The map preview sits right under the battlefield and its seed (25 Oct: it was last, a page away).
-  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks", "strategy", "allocator", "forecast", "coveredfallback", "periodjets", "squadtactics", "pullover", "evadearmour", "fieldsoffire", "twoic"};
+  array<string> keys = {"west", "east", "layout", "seed", "map", "undo", "pockets", "quickstart", "guerrillas", "fiaallegiance", "fialeaning", "fiahidden", "zombies", "zombiemode", "outbreak", "threat", "pricing", "ai", "doctrinewest", "doctrineeast", "doctrineadapt", "unitcap", "aibuild", "capscale", "startrp", "income", "companywest", "companyeast", "shared", "holdguns", "declutter", "deployment", "reinforcement", "fobservices", "fobrelay", "depotcapacity", "servicecost", "rpservice", "mines", "minesreal", "minesai", "fortify", "fortifyai", "baseworks", "strategy", "allocator", "forecast", "coveredfallback", "periodjets", "squadtactics", "pullover", "evadearmour", "fieldsoffire", "twoic"};
   foreach (string key : keys)
   {
    if (key == "seed" && !generated && Current("quickstart") == "off") continue;
+   // Only with Project Outbreak loaded (ACR_Outbreak).
+   if ((key == "zombies" || key == "zombiemode" || key == "outbreak") && !ACR_Outbreak.Loaded()) continue;
    // Opens the map on the host's own screen with the layout drawn on it (client side).
    if (key == "map")
    {
@@ -312,6 +314,9 @@ class ACR_Setup
   if (key == "fiahidden") return "Hidden FIA";
   if (key == "fiaallegiance") return "FIA sides with";
   if (key == "fialeaning") return "FIA leans by conduct";
+  if (key == "zombies") return "Zombies";
+  if (key == "zombiemode") return "Zombie mode";
+  if (key == "outbreak") return "Outbreak start";
   if (key == "threat") return "Threat";
   if (key == "pricing") return "Prices";
   if (key == "ai") return "AI commanders";
@@ -351,7 +356,7 @@ class ACR_Setup
   if (key == "pullover") return "Pull over before getting out";
   if (key == "evadearmour") return "Unarmed vehicles evade armour";
   if (key == "fieldsoffire") return "Guns clear bushes round them";
-  if (key == "twoic") return "I'm the 2IC: the AI commands";
+  if (key == "twoic") return "Second-in-command (2IC)";
   return key;
  }
 
@@ -374,7 +379,7 @@ class ACR_Setup
   if (key == "pullover") return "A squad told to get out on a road first has its driver pull\nonto the verge. Under fire it gets out where it stands.";
   if (key == "evadearmour") return "An unarmed vehicle that sees an armed enemy vehicle drives 300 m\naway, then carries on. Needs Better Battle Buddies' setting on too.";
   if (key == "fieldsoffire") return "Built guns, checkpoint posts and Fortify pieces clear the bushes\nround them and in front of a gun, the same on every screen.";
-  if (key == "twoic") return "While you command, the AI commander runs the side as if you didn't;\nyou keep every command power and the squads you lead or order.";
+  if (key == "twoic") return "2IC: the AI runs the squads nobody leads while you buy and build.\nI'm the 2IC: the AI commander runs the side; you keep your squads.";
   return "";
  }
 
@@ -417,6 +422,9 @@ class ACR_Setup
   else if (key == "fiahidden") values = {"0", "1"};
   else if (key == "fiaallegiance") values = {"hostile", "west", "east"};
   else if (key == "fialeaning") values = {"0", "1"};
+  else if (key == "zombies") values = {"off", "few", "many"};
+  else if (key == "zombiemode") values = {"tvtvz", "tvz"};
+  else if (key == "outbreak") values = {"nests", "contain"};
   else if (key == "threat") values = {"low", "normal", "high"};
   else if (key == "pricing") values = {"stepped", "stock"};
   else if (key == "ai")
@@ -443,7 +451,7 @@ class ACR_Setup
   else if (key == "rpservice") values = {"0", "3", "5"};
   else if (key == "mines" || key == "fortify" || key == "baseworks") values = {"1", "0"};
   else if (key == "minesreal" || key == "minesai" || key == "fortifyai") values = {"0", "1"};
-  else if (key == "allocator" || key == "forecast") values = {"0", "1", "2"};
+  else if (key == "allocator" || key == "forecast" || key == "twoic") values = {"0", "1", "2"};
   else if (Experimental(key)) values = {"0", "1"};
   return values;
  }
@@ -456,6 +464,9 @@ class ACR_Setup
   if (key == "fiahidden") return "acrFIAHidden";
   if (key == "fiaallegiance") return "acrFIAAllegiance";
   if (key == "fialeaning") return "acrFIALeaning";
+  if (key == "zombies") return "acrZombies";
+  if (key == "zombiemode") return "acrZombieMode";
+  if (key == "outbreak") return "acrOutbreak";
   if (key == "threat") return "acrThreat";
   if (key == "pricing") return "acrPricing";
   if (key == "ai") return "acrAI";
@@ -523,8 +534,10 @@ class ACR_Setup
    return "";
   }
   // The 2IC is a flag: a bare -acr2IC is on (ACR_SquadAI.TwoIC), which the empty value would show as off.
+  // 2 is "I'm the 2IC" (ACR_SquadAI.ImThe2IC).
   if (key == "twoic")
   {
+   if (ACR_SquadAI.ImThe2IC()) return "2";
    if (ACR_Options.Flag("acr2IC")) return "1";
    return "0";
   }
@@ -538,6 +551,9 @@ class ACR_Setup
    if (key == "fiahidden") return "0";
    if (key == "fiaallegiance") return "hostile";
    if (key == "fialeaning") return "0";
+   if (key == "zombies") return "off";
+   if (key == "zombiemode") return "tvtvz";
+   if (key == "outbreak") return "nests";
    if (key == "deployment") return "military";
    if (key == "reinforcement") return "settlements";
    if (key == "fobservices") return "supplies";
@@ -625,6 +641,13 @@ class ACR_Setup
   if (key == "fiaallegiance" && value == "east") return "the Red side";
   if (key == "fialeaning" && value == "1") return "on: FIA treats sides by their conduct";
   if (key == "fialeaning" && value == "0") return "off: as FIA sides with";
+  if (key == "zombies" && value == "few") return "a few nests (open bases, country)";
+  if (key == "zombies" && value == "many") return "many nests (open bases, country)";
+  if (key == "zombies" && value == "off") return "off";
+  if (key == "zombiemode" && value == "tvtvz") return "both sides + zombies";
+  if (key == "zombiemode" && value == "tvz") return "one side vs zombies (the other side sits out)";
+  if (key == "outbreak" && value == "nests") return "nests across the map";
+  if (key == "outbreak" && value == "contain") return "one ground zero that spreads; rescue survivors";
   if (key == "deployment" && value == "military") return "military bases / HQs / FOBs";
   if (key == "deployment" && value == "hq") return "HQs / FOBs only";
   if (key == "deployment" && value == "all") return "all deployment-enabled points";
@@ -644,6 +667,8 @@ class ACR_Setup
   if (key == "forecast" && value == "1") return "log only";
   if (key == "forecast" && value == "2") return "defends on it";
   if (key == "evadearmour" && value == "1") return "on (needs BBB's setting too)";
+  if (key == "twoic" && value == "1") return "2IC: runs the squads nobody leads";
+  if (key == "twoic" && value == "2") return "I'm the 2IC: the AI commands";
   if (Experimental(key))
   {
    if (value == "0") return "off";

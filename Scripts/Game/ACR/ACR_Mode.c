@@ -91,6 +91,7 @@ class ACR_Mode : GenericEntity
   ACR_DoctrineKits.Plan(manager);
   foreach (ACR_StartingUnit unit : ACR_StartingUnit.s_All)
   {
+   if (unit.m_bDropped) continue;
    string factionKey = "";
    float nearest = 1000000;
    // Moved to its side's new HQ by a layout (ACR_Skirmish, ACR_QuickStart.SideOf reads it so):
@@ -255,6 +256,7 @@ class ACR_StartingUnit : GenericEntity
   s_All = {};
  }
  ACR_Base m_MovedTo; // runtime: a skirmish layout put this side's HQ at another base
+ bool m_bDropped;    // runtime: its side doesn't play (TvZ, ACR_TvZ)
 
  void ACR_StartingUnit(IEntitySource src, IEntity parent)
  {

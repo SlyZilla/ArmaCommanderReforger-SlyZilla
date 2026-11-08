@@ -938,8 +938,14 @@ class ACR_Intel : Managed
    m_Reported.Set(contact.m_sKey, now);
    string spotter = contact.m_sSpotter;
    if (spotter.IsEmpty()) spotter = "Contact";
-   AddFeed(now, string.Format("%1: %2 %3", spotter, Describe(contact.m_iKind, contact.m_iCount), Place(contact.m_Pos)), contact.m_Pos);
-   QueueRadio(string.Format("%1: contact, %2, %3.", spotter, Describe(contact.m_iKind, contact.m_iCount), Relative(contact.m_Pos)));
+   string what = Describe(contact.m_iKind, contact.m_iCount);
+   if (ACR_Outbreak.IsZombie(contact.m_Body))
+   {
+    what = ACR_Outbreak.Describe(contact.m_iCount);
+    ACR_Outbreak.Sighted(m_sFaction, contact.m_Pos, contact.m_iCount);
+   }
+   AddFeed(now, string.Format("%1: %2 %3", spotter, what, Place(contact.m_Pos)), contact.m_Pos);
+   QueueRadio(string.Format("%1: contact, %2, %3.", spotter, what, Relative(contact.m_Pos)));
    // The report goes out on the radio, where the enemy may hear it.
    ACR_RadioIntercept.Transmitted(m_sFaction, TransmitterAt(contact.m_sSpotter), contact.m_sSpotter);
    m_DoctrineIntel.OnContact(contact);
