@@ -6496,10 +6496,37 @@ class ACR_AICommander : Managed
   return m_MortarUnreachable.Find(base, until) && GetGame().GetWorld().GetWorldTime() < until;
  }
 
+ // A team under counter-battery fire (ACR_CounterBattery.UnderFire) packs up and moves well away
+ // from where the rounds came from, so the estimate the enemy built goes stale. Not held back by
+ // MORTAR_MOVE_MS: the rounds are landing now. A team that is still firing finishes its mission first.
+ protected void DisplaceUnderFire(float now)
+ {
+  array<ACR_MortarTeam> teams = {};
+  m_Manager.Mortars().TeamsOf(m_sFaction, teams);
+  foreach (ACR_MortarTeam team : teams)
+  {
+   ACR_Squad squad = team.m_Squad;
+   if (!squad || squad.HasPlayer() || team.m_bLost || team.m_bFiring || team.m_eState != ACR_EMortarState.DEPLOYED) continue;
+   if (m_bHandedOnly && (squad.m_bClaimed || squad.m_Commander != 0)) continue; // a team the player ordered is theirs
+   vector from;
+   if (!ACR_CounterBattery.UnderFire(team, now, from)) continue;
+   vector away = ACR_CounterBattery.DisplaceSpot(team, from);
+   team.m_fIncomingAt = 0;
+   team.m_iFired = 0;
+   team.m_fLastFinished = 0;
+   squad.MoveTo(away);
+   m_fNextMortarMove = now + MORTAR_MOVE_MS;
+   Say(string.Format("[ACR] AI %1 mortar: %2 under counter-battery fire, displacing %3 m", m_sFaction, squad.GetName(), Math.Round(vector.DistanceXZ(team.m_Spot, away))));
+  }
+ }
+
+ void DisplaceUnderFireForTest(float now) { DisplaceUnderFire(now); }
+
  protected void PositionMortars()
  {
   float now = GetGame().GetWorld().GetWorldTime();
   NoteMortarGiveUps(now);
+  DisplaceUnderFire(now);
   if (now < m_fNextMortarMove) return;
   array<ACR_MortarTeam> teams = {};
   m_Manager.Mortars().TeamsOf(m_sFaction, teams);
