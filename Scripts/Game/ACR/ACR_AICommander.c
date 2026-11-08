@@ -9,7 +9,8 @@ enum ACR_EAITask
  ROADBLOCK, // establishing or holding a forward roadblock
  MINES,     // laying a minefield on an approach (-acrMinesAI)
  FORTIFY,   // digging in or upgrading a position on an approach (-acrFortifyAI)
- SWEEP      // clearing a road where FIA ambushed the side (ACR_Insurgency, #89)
+ SWEEP,     // clearing a road where FIA ambushed the side (ACR_Insurgency, #89)
+ RESCUE     // getting survivors out of a town the dead are coming for (ACR_Containment, #107)
 }
 
 enum ACR_ESapperDemoState
@@ -806,7 +807,7 @@ class ACR_AIAttack
  vector m_Staging;                   // main approach, for smoke
  vector m_vApproach;                 // main approach direction, from the target towards the attackers
  bool m_bAssaulting;
- bool m_bGivenAway;                  // its last squad went to a player (Forget): ends without a "failed" report
+ bool m_bGivenAway;                  // its last squad went to a player (Forget) or another job (LeaveAttacks): ends without a "failed" report
  float m_fStageDeadline;
  ACR_Squad m_Suppressor;             // support-by-fire squad
  float m_fFireBaseMoveSince;         // world time the base of fire started moving up to a firing spot
@@ -1170,6 +1171,7 @@ class ACR_AICommander : Managed
   t = ACR_Perf.Lap("ai.post", t);
   ManageLogistics();
   ManageDangerRoads();
+  ManageRescues();
   ManageFobBuild();
   ManageFobUpgrades();
   int beforeBuild = m_Manager.m_Bases.GetRP(m_sFaction);
@@ -1285,13 +1287,23 @@ class ACR_AICommander : Managed
 
  // Takes a squad out of every attack it is listed in (review 3 Nov: a squad the allocator moved to
  // another attack or grab stayed listed in its old one, which kept ordering it back).
+ // Its strength leaves with it: the attack's start strength drops by what it took (as for a walker
+ // dropped at launch), and an attack left empty ends as handed off, not lost (A/B soak 7 Nov: a
+ // grab's only squad moved to the Vernon attack, and Etoupe was "called off (too many losses)" 15 s
+ // later, put on the stalled cooldown and counted as a lane failure; 45 such call-offs in 2 h).
  protected void LeaveAttacks(ACR_Squad squad)
  {
-  foreach (ACR_AIAttack attack : m_Attacks)
-  {
-   int at = attack.m_Squads.Find(squad);
-   if (at >= 0) attack.Remove(at);
-  }
+  foreach (ACR_AIAttack attack : m_Attacks) LeaveAttack(attack, squad);
+ }
+
+ // Takes one squad out of one attack without counting it as a loss (LeaveAttacks, Forget).
+ protected static void LeaveAttack(ACR_AIAttack attack, ACR_Squad squad)
+ {
+  int at = attack.m_Squads.Find(squad);
+  if (at < 0) return;
+  attack.m_iStartStrength = Math.Max(0, attack.m_iStartStrength - squad.FieldStrength());
+  attack.Remove(at);
+  if (attack.m_Squads.IsEmpty()) attack.m_bGivenAway = true;
  }
 
  protected int AllocIndexOf(ACR_AIJob job)
@@ -1766,6 +1778,8 @@ class ACR_AICommander : Managed
      if (joiner.m_Squad == m_ReserveSquad) m_ReserveSquad = null;
      LeaveAttacks(joiner.m_Squad);
      vector stage = JoinAttack(team.m_Attack, joiner.m_Squad, now);
+     // Counted in what it set out with, as LeaveAttacks takes it off again if it moves on.
+     team.m_Attack.m_iStartStrength += joiner.m_Squad.FieldStrength();
      Say(string.Format("[ACR] AI %1: %2 joins the attack on %3 (allocator), staging at grid %4", m_sFaction, joiner.m_Squad.GetName(), team.m_sName, ACR_Manager.Grid(stage)));
     }
     continue;
@@ -5174,7 +5188,7 @@ class ACR_AICommander : Managed
     if (squad.m_iAITask != ACR_EAITask.ATTACK)
     {
      if (attack.m_Target) Say(string.Format("[ACR] AI %1: %2 leaves the attack on %3 (now %4)", m_sFaction, squad.GetName(), attack.m_Target.m_sName, typename.EnumToString(ACR_EAITask, squad.m_iAITask)));
-     attack.Remove(s);
+     LeaveAttack(attack, squad); // not a loss: its strength leaves with it
      continue;
     }
     // Lost its gunner (or down to one man): no use in an attack.
@@ -5211,8 +5225,10 @@ class ACR_AICommander : Managed
    foreach (ACR_Squad member : attack.m_Squads) strength += member.FieldStrength();
    bool fusePrimed = attack.m_SapperDemo && attack.m_SapperDemo.InProgress();
    NoteBBBFight(attack);
-   bool broken = !fusePrimed && AttackBroken(strength, attack.m_iStartStrength, m_Doctrine.m_fAbortRatio);
-   bool stalled = !fusePrimed && !won && target && Stalled(attack);
+   // Every squad went to another job (a player's request, the allocator): not a loss, not a stall.
+   bool handedOff = attack.m_bGivenAway && attack.m_Squads.IsEmpty() && !won;
+   bool broken = !fusePrimed && !handedOff && AttackBroken(strength, attack.m_iStartStrength, m_Doctrine.m_fAbortRatio);
+   bool stalled = !fusePrimed && !handedOff && !won && target && Stalled(attack);
    // Nobody left who can walk in (the infantry died or fell back): vehicles and support teams
    // alone never take it, so stop now instead of waiting out the time limit.
    bool noTakers = !fusePrimed && !won && target && !attack.m_bGrab && !target.m_sOwner.IsEmpty() && !attack.m_Squads.IsEmpty() && TakersIn(attack) == 0;
@@ -5220,6 +5236,7 @@ class ACR_AICommander : Managed
    {
     string outcome = "failed";
     if (won) outcome = "won";
+    if (handedOff) outcome = "ended (its squads went to other jobs)";
     if (noTakers) outcome = "called off (no infantry left to take it)";
     if (broken)
     {
@@ -5246,8 +5263,8 @@ class ACR_AICommander : Managed
     string why = "it failed";
     if (broken) why = "too many losses";
     else if (stalled) why = "it stalled";
-    // Its squads went to a player's request (2IC Support me / Hold this): not a failure.
-    bool givenAway = attack.m_bGivenAway && attack.m_Squads.IsEmpty() && !won;
+    // Its squads went to a player's request (2IC Support me / Hold this) or another job: not a failure.
+    bool givenAway = handedOff;
     if (!givenAway) NoteLaneOutcome(attack, won);
     if (target && won) TwoICReport(string.Format("Took %1", target.m_sName));
     else if (target && !givenAway && attack.m_bGrab) TwoICReport(string.Format("Couldn't take %1: %2", target.m_sName, why));
@@ -6713,7 +6730,6 @@ class ACR_AICommander : Managed
     capUsed += CapSlots(existing);
    }
   }
-  if (capUsed >= cap) return;
   // Deploy at the forward-most safe deployment base (military/airfield/FOB with
   // ThreatTo == 0 and at least FOB_DEPLOY_MIN_FRONT from any non-owned base);
   // fall back to the furthest rear base when all forward bases are under threat.
@@ -6740,7 +6756,9 @@ class ACR_AICommander : Managed
   if (forwardSpawn) spawn = forwardSpawn;
   if (!spawn) return;
   // A service truck for a need nobody can meet (squads low on ammo, a wrecked
-  // BRDM...), one of each kind at a time.
+  // BRDM...), one of each kind at a time. Trucks don't count against the cap, so a side at its
+  // cap still replaces a lost one (7 Nov: the cap check came first, and a full side that lost its
+  // only fuel truck went without until it lost a squad).
   if (m_Manager.m_Logistics)
   {
    array<int> services = {ACR_EService.AMMO, ACR_EService.REPAIR, ACR_EService.FUEL, ACR_EService.MEDICAL};
@@ -6759,6 +6777,7 @@ class ACR_AICommander : Managed
     return;
    }
   }
+  if (capUsed >= cap) return;
   // Squads keep having to walk far with no truck to fetch them: buy a transport first.
   int maxTransports = 4;
   if (ACR_Manager.ThreatOption() == 2) maxTransports = 5;
@@ -6961,6 +6980,7 @@ class ACR_AICommander : Managed
   return 1;
  }
  float CapSlotsForTest(ACR_Squad squad) { return CapSlots(squad); }
+ void RequisitionForTest(int needs) { m_iNeeds = needs; Requisition(); }
 
  protected bool IsRUArmorEntry(ACR_RequisitionEntry entry)
  {
@@ -7145,6 +7165,7 @@ class ACR_AICommander : Managed
      crew.SetMode(ACR_EMoveMode.FAST);
      crew.RouteTo(ACR_Manager.Ground(PositionOf(squad)), ACR_Squad.WP_MOVE, -1, "Resupplying " + squad.GetName(), 0);
      m_ServiceJobs.Set(crew, squad);
+     m_ParkSentAt.Remove(crew); // back from the job, it goes straight to the park
      Say(string.Format("[ACR] AI %1: %2 drives out to %3 (%4)", m_sFaction, crew.GetName(), squad.GetName(), what));
     }
     else if (squad.m_iAITask == ACR_EAITask.FREE || squad.m_iAITask == ACR_EAITask.POSTED)
@@ -7159,8 +7180,13 @@ class ACR_AICommander : Managed
     break;
    }
   }
-  // Idle service vehicles: restock if low, otherwise wait at the supply point.
+  // Idle service vehicles: restock if low, otherwise wait at the supply point's truck park.
   ACR_Base supplyPoint = SupplyPoint();
+  vector park = TruckPark(supplyPoint);
+  array<ACR_Squad> parkGone = {};
+  foreach (ACR_Squad parkCrew, float parkSent : m_ParkSentAt)
+   if (!parkCrew || !m_Manager.m_Squads.Contains(parkCrew)) parkGone.Insert(parkCrew);
+  foreach (ACR_Squad gone : parkGone) { m_ParkSentAt.Remove(gone); m_ParkSentTo.Remove(gone); }
   foreach (ACR_Squad idleCrew : mine)
   {
    IEntity serviceVehicle = ACR_Transport.CrewedVehicle(idleCrew);
@@ -7169,13 +7195,56 @@ class ACR_AICommander : Managed
    if (idleCrew.OrderState() == ACR_EOrderState.BUILD_FOB || idleCrew.m_iAITask == ACR_EAITask.BUILD_FOB) continue;
    if (IsAssistingFobUpgrade(idleCrew) || StuckLately(idleCrew)) continue;
    ACR_Base goal = supplyPoint;
-   if (logistics.StockPercent(serviceVehicle) < 25) goal = HomeBase();
-   if (!goal || vector.DistanceXZ(serviceVehicle.GetOrigin(), goal.GetOrigin()) < goal.m_fRadius) continue;
-   if (idleCrew.OrderState() == ACR_EOrderState.MOVE && vector.DistanceXZ(idleCrew.RouteDestination(), goal.GetOrigin()) < goal.m_fRadius + 80) continue;
-   if (DangerOnTheWay(idleCrew, goal.GetOrigin())) continue;
-   idleCrew.RouteTo(ACR_Manager.Ground(goal.GetOrigin()), ACR_Squad.WP_MOVE, -1, "Moving", 0);
+   bool restock = logistics.StockPercent(serviceVehicle) < 25;
+   if (restock) goal = HomeBase();
+   if (!goal) continue;
+   // Restocking needs the ring (ACR_Logistics.Restock); waiting only needs a spot it can drive to.
+   vector spot = goal.GetOrigin();
+   if (!restock && goal == supplyPoint) spot = park;
+   vector at = serviceVehicle.GetOrigin();
+   if (vector.DistanceXZ(at, goal.GetOrigin()) < goal.m_fRadius) continue;
+   if (!restock && vector.DistanceXZ(at, spot) < PARK_ARRIVE) continue;
+   if (idleCrew.OrderState() == ACR_EOrderState.MOVE && (vector.DistanceXZ(idleCrew.RouteDestination(), goal.GetOrigin()) < goal.m_fRadius + 80 || vector.DistanceXZ(idleCrew.RouteDestination(), spot) < PARK_ARRIVE + 80)) continue;
+   // Sent here lately and stopped short (a spot its driver can't reach): it waits where it
+   // stopped, and tries again after PARK_RETRY_MS.
+   if (m_ParkSentAt.Contains(idleCrew) && nowMs - m_ParkSentAt.Get(idleCrew) < PARK_RETRY_MS && vector.DistanceXZ(m_ParkSentTo.Get(idleCrew), spot) < PARK_ARRIVE) continue;
+   if (DangerOnTheWay(idleCrew, spot)) continue;
+   idleCrew.RouteTo(ACR_Manager.Ground(spot), ACR_Squad.WP_MOVE, -1, "Moving", 0);
+   m_ParkSentAt.Set(idleCrew, nowMs);
+   m_ParkSentTo.Set(idleCrew, spot);
    Say(string.Format("[ACR] AI %1: %2 to %3 (%4)", m_sFaction, idleCrew.GetName(), goal.m_sName, ACR_Logistics.ServiceName(serviceMask)));
   }
+ }
+
+ // The supply point's truck park (ACR_Logistics.ParkSpot), worked out once per supply point: a
+ // road point trucks can reach, on the side away from the nearest enemy base we know of. The
+ // base centre when no road is near.
+ static const float PARK_ARRIVE = 40;          // m from the park that counts as parked
+ static const float PARK_RETRY_MS = 300000;    // a truck that stopped short is sent again after this
+ protected ACR_Base m_ParkBase;
+ protected vector m_vPark;
+ protected ref map<ACR_Squad, float> m_ParkSentAt = new map<ACR_Squad, float>();
+ protected ref map<ACR_Squad, vector> m_ParkSentTo = new map<ACR_Squad, vector>();
+
+ protected vector TruckPark(ACR_Base base)
+ {
+  if (!base) return vector.Zero;
+  if (base == m_ParkBase) return m_vPark;
+  m_ParkBase = base;
+  vector centre = base.GetOrigin();
+  vector away = vector.Zero;
+  float nearest = float.MAX;
+  foreach (ACR_Base other : ACR_Base.s_All)
+  {
+   if (other.m_sOwner == m_sFaction || !Visible(other)) continue;
+   float d = vector.DistanceXZ(centre, other.GetOrigin());
+   if (d >= nearest || d < 1) continue;
+   nearest = d;
+   away = Vector(centre[0] - other.GetOrigin()[0], 0, centre[2] - other.GetOrigin()[2]).Normalized();
+  }
+  if (!ACR_Logistics.ParkSpot(centre, base.m_fRadius, away, m_vPark)) m_vPark = centre;
+  Say(string.Format("[ACR] AI %1: service trucks wait at %2, %3 m from its centre", m_sFaction, base.m_sName, Math.Round(vector.DistanceXZ(m_vPark, centre))));
+  return m_vPark;
  }
 
  // ---------------------------------------------------------------- dangerous roads (#89)
@@ -7191,7 +7260,7 @@ class ACR_AICommander : Managed
   if (now - m_fDangerSaidAt > 60000)
   {
    m_fDangerSaidAt = now;
-   Say(string.Format("[ACR] AI %1: %2 waits, FIA ambushed the road at %3", m_sFaction, crew.GetName(), ACR_Manager.Grid(road.m_vPos)));
+   Say(string.Format("[ACR] AI %1: %2 waits, %3 on the way at %4", m_sFaction, crew.GetName(), ACR_Insurgency.Label(road), ACR_Manager.Grid(road.m_vPos)));
   }
   return true;
  }
@@ -7205,6 +7274,9 @@ class ACR_AICommander : Managed
   if (ACR_Insurgency.s_aRoads.IsEmpty()) return;
   float now = GetGame().GetWorld().GetWorldTime();
   array<ACR_DangerRoad> cleared = {};
+  // One zombie area cleared at a time: the dead mustn't pull the army off the war.
+  bool zombieSweep;
+  foreach (ACR_DangerRoad sweeping : ACR_Insurgency.s_aRoads) if (sweeping.m_bZombies && sweeping.m_sSide == m_sFaction && sweeping.m_Sweeper) zombieSweep = true;
   foreach (ACR_DangerRoad road : ACR_Insurgency.s_aRoads)
   {
    if (road.m_sSide != m_sFaction) continue;
@@ -7221,8 +7293,11 @@ class ACR_AICommander : Managed
     int most = 2;
     if (road.m_Hideout) most = 3;
     if (road.m_iSweeps >= most) continue;
+    // Nobody goes into a zombie town at night: the area stays marked (supply waits) until day.
+    if (road.m_bZombies && (ACR_Outbreak.Night() || zombieSweep)) continue;
     sweeper = FindSweeper(road.m_vPos);
     if (!sweeper) continue;
+    if (road.m_bZombies) zombieSweep = true;
     road.m_Sweeper = sweeper;
     road.m_fSweepSince = now;
     road.m_iSweeps++;
@@ -7231,6 +7306,7 @@ class ACR_AICommander : Managed
     Travel(sweeper, road.m_vPos, false, 0);
     string what = "the road at %1 (FIA ambush)";
     if (road.m_Hideout) what = "the FIA hideout at %1";
+    if (road.m_bZombies) what = "the zombie area at %1";
     Say(string.Format("[ACR] AI %1: %2 to clear %3", m_sFaction, sweeper.GetName(), string.Format(what, ACR_Manager.Grid(road.m_vPos))));
     continue;
    }
@@ -7269,6 +7345,49 @@ class ACR_AICommander : Managed
   return null;
  }
  void ManageDangerRoadsForTest() { ManageDangerRoads(); }
+
+ // Containment (ACR_Containment): one squad at a time goes for the survivor site with the most
+ // people it can reach (the nearest free combat squad within SWEEP_REACH), day or night. The
+ // rescue itself is ACR_Containment's (any soldier of the side close enough); the squad is freed
+ // once the site is gone (rescued, overrun, or left), or as a sweeper would be.
+ protected ACR_SurvivorSite m_RescueSite;
+ protected ACR_Squad m_Rescuer;
+ protected float m_fRescueSince;
+
+ protected void ManageRescues()
+ {
+  if (!ACR_Containment.On()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  if (m_Rescuer)
+  {
+   bool going = ACR_Containment.Has(m_RescueSite) && m_Manager.m_Squads.Contains(m_Rescuer) && m_Rescuer.CountAlive() > 0 && !m_Rescuer.HasPlayer() && m_Rescuer.m_iAITask == ACR_EAITask.RESCUE && !m_Rescuer.GaveUpUnreachable() && now - m_fRescueSince <= SWEEP_MAX_MS;
+   if (going) return;
+   if (m_Rescuer.m_iAITask == ACR_EAITask.RESCUE) m_Rescuer.SetAITask(ACR_EAITask.FREE);
+   m_Rescuer = null;
+   m_RescueSite = null;
+  }
+  ACR_SurvivorSite pick;
+  ACR_Squad squad;
+  for (int i = 0; i < ACR_Containment.SiteCount(); i++)
+  {
+   ACR_SurvivorSite site = ACR_Containment.SiteAt(i);
+   if (pick && site.m_iCount <= pick.m_iCount) continue;
+   ACR_Squad near = FindSweeper(site.m_vPos);
+   if (!near) continue;
+   pick = site;
+   squad = near;
+  }
+  if (!pick) return;
+  m_RescueSite = pick;
+  m_Rescuer = squad;
+  m_fRescueSince = now;
+  squad.SetAITask(ACR_EAITask.RESCUE);
+  squad.SetMode(ACR_EMoveMode.COMBAT);
+  Travel(squad, pick.m_vPos, false, 0);
+  Say(string.Format("[ACR] AI %1: %2 to rescue %3 survivors at %4", m_sFaction, squad.GetName(), pick.m_iCount, ACR_Manager.Grid(pick.m_vPos)));
+ }
+ void ManageRescuesForTest() { ManageRescues(); }
+ ACR_Squad RescuerForTest() { return m_Rescuer; }
 
  // A service vehicle that gave up stuck (ACR_Squad.m_fStuckAt: holding where it is) waits before
  // it is sent anywhere again, as Recrew does. Jacob's 26 Oct game: an arsenal truck stuck by its
@@ -9179,6 +9298,7 @@ class ACR_AICommander : Managed
   if (task == ACR_EAITask.MINES) return "laying mines";
   if (task == ACR_EAITask.FORTIFY) return "digging in";
   if (task == ACR_EAITask.SWEEP) return "clearing a road";
+  if (task == ACR_EAITask.RESCUE) return "rescuing survivors";
   if (task == ACR_EAITask.ATTACK) return "attacking" + at;
   return "in reserve";
  }
@@ -9502,6 +9622,8 @@ class ACR_AICommander : Managed
  {
   return IsAttacking(base);
  }
+ void LeaveAttacksForTest(ACR_Squad squad) { LeaveAttacks(squad); }
+ bool CoolingDownForTest(ACR_Base base) { return CoolingDown(base); }
 
  bool CanBuildHandedForTest(int cost, int reserve)
  {
@@ -9515,13 +9637,7 @@ class ACR_AICommander : Managed
  void Forget(ACR_Squad squad)
  {
   m_OnRequest.Remove(squad);
-  foreach (ACR_AIAttack attack : m_Attacks)
-  {
-   int index = attack.m_Squads.Find(squad);
-   if (index < 0) continue;
-   attack.Remove(index);
-   if (attack.m_Squads.IsEmpty()) attack.m_bGivenAway = true;
-  }
+  foreach (ACR_AIAttack attack : m_Attacks) LeaveAttack(attack, squad);
   m_RetreatingUntil.Remove(squad);
   m_ReinforceRetryAt.Remove(squad);
   m_Refitting.Remove(squad);

@@ -1,13 +1,14 @@
-// -acrTwoICAllTest 1 (server-capable, ~2 min): "I'm the 2IC" (-acr2IC 1, Jacob 6 Nov): while a player
+// -acrTwoICAllTest 1 (server-capable, ~3 min): "I'm the 2IC" (-acr2IC 2, Jacob 6 Nov): while a player
 // commands, the AI commander runs the whole side as if nobody did. No AI commander on either side;
 // the test says a player commands US (ACR_TestHooks.PlayerCommandsForTest). The AI then spends the
 // side's RP as a commander would (a -acr2ICKeep holds some back only when set), buys squads with a
 // modest purse (6 Nov play: a 100 RP keep left it 0-42 RP and it bought nothing all match) and takes
 // them on, and leaves a squad the player ordered alone. With nobody in command it only runs the
-// squads, and buys nothing.
+// squads, and buys nothing. The plain 2IC (-acr2IC 1) coexists with it (Jacob 7 Nov): with a player
+// in command it runs only the squads and buys nothing.
 class ACR_TestTwoICAll
 {
- static const int CHECKS = 6;
+ static const int CHECKS = 8;
  static string s_sCommanded;
  static int s_iStep;
  static int s_iStepAt;
@@ -34,7 +35,7 @@ class ACR_TestTwoICAll
    if (tick == 60) ACR_TestRegress.Abort("twoicall", "no Alpha or Bravo squad");
    return;
   }
-  if (tick > 250) ACR_TestRegress.Abort("twoicall", string.Format("timed out in step %1", s_iStep));
+  if (tick > 320) ACR_TestRegress.Abort("twoicall", string.Format("timed out in step %1", s_iStep));
   if (tick < 8) return;
   int waited = tick - s_iStepAt;
   ACR_FactionData us = manager.m_Bases.GetFaction("US");
@@ -47,8 +48,12 @@ class ACR_TestTwoICAll
 
   if (s_iStep == 0)
   {
+   // The plain 2IC first: a player commands US, and it still never runs the side.
    ACR_Options.Set("acr2IC", "1");
    s_sCommanded = "US";
+   bool plain = !ACR_SquadAI.RunsAll(manager, "US") && ACR_SquadAI.TwoIC() && !ACR_SquadAI.ImThe2IC();
+   ACR_TestRegress.Check("twoicall: the plain 2IC (-acr2IC 1) never runs the side, even with a player in command", plain, string.Format("RunsAll US %1, TwoIC %2, ImThe2IC %3", ACR_SquadAI.RunsAll(manager, "US"), ACR_SquadAI.TwoIC(), ACR_SquadAI.ImThe2IC()));
+   ACR_Options.Set("acr2IC", "2");
    bool runs = ACR_SquadAI.RunsAll(manager, "US") && !ACR_SquadAI.RunsAll(manager, "USSR");
    ACR_TestRegress.Check("twoicall: the 2IC runs the whole side only where a player commands", runs, string.Format("US %1, USSR %2", ACR_SquadAI.RunsAll(manager, "US"), ACR_SquadAI.RunsAll(manager, "USSR")));
    us.m_iRP = 400;
@@ -101,6 +106,19 @@ class ACR_TestTwoICAll
    if (waited < 50) return;
    int after = CountSide(manager, "US");
    ACR_TestRegress.Check("twoicall: with nobody in command the 2IC buys nothing", after <= s_iSquadsAt && us.m_iRP >= 600, string.Format("US squads %1 -> %2, %3 RP", s_iSquadsAt, after, us.m_iRP));
+   // The plain 2IC with a player in command: the squads only, the side's RP left to the player.
+   ACR_Options.Set("acr2IC", "1");
+   s_sCommanded = "US";
+   NextStep(tick);
+   return;
+  }
+
+  if (s_iStep == 4)
+  {
+   if (waited == 10) s_iSquadsAt = CountSide(manager, "US");
+   if (waited < 50) return;
+   int plainAfter = CountSide(manager, "US");
+   ACR_TestRegress.Check("twoicall: the plain 2IC with a player in command buys nothing", plainAfter <= s_iSquadsAt && us.m_iRP >= 600, string.Format("US squads %1 -> %2, %3 RP", s_iSquadsAt, plainAfter, us.m_iRP));
    s_sCommanded = "";
    ACR_Options.Unset("acr2IC");
    ACR_Options.Unset("acrDeployment");

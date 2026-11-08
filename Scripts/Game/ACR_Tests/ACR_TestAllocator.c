@@ -10,7 +10,7 @@
 // grab it by the allocator, and not when it is a medic team.
 class ACR_TestAllocator
 {
- static const int CHECKS = 28;
+ static const int CHECKS = 29;
 
  static ACR_AIJobSquad Squad(string name, float strength, int current, array<float> etas, array<float> fits = null)
  {
@@ -389,6 +389,15 @@ class ACR_TestAllocator
   ai.RunAllocationForTest(true);
   bool grabs = alpha.m_iAITask == ACR_EAITask.ATTACK && alpha.m_AITarget == empty && ai.IsAttackingForTest(empty);
   ACR_TestRegress.Check("allocator live: in control, a free squad 200 m from an empty base is sent to grab it", grabs, string.Format("%1: task %2, target %3", alpha.m_Name, typename.EnumToString(ACR_EAITask, alpha.m_iAITask), alpha.m_AITarget == empty));
+
+  // A/B soak 7 Nov: the allocator moved a grab's only squad to another job, and the grab was then
+  // "called off (too many losses)" and its base put on the stalled cooldown. Moved off, it ends
+  // handed off: no cooldown on the base.
+  ai.LeaveAttacksForTest(alpha);
+  alpha.m_iAITask = ACR_EAITask.DEFEND;
+  ai.UpdateAttacksForTest();
+  bool handedOff = !ai.IsAttackingForTest(empty) && !ai.CoolingDownForTest(empty);
+  ACR_TestRegress.Check("allocator live: a grab whose squad the allocator moves ends without a loss cooldown", handedOff, string.Format("still attacking %1, cooling down %2", ai.IsAttackingForTest(empty), ai.CoolingDownForTest(empty)));
 
   alpha.Halt("Holding");
   alpha.m_iAITask = ACR_EAITask.FREE;

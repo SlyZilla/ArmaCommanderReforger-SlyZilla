@@ -676,6 +676,7 @@ class ACR_MapFeed
   // ...and roads where FIA ambushed it (danger areas, ACR_Insurgency).
   ACR_Insurgency.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
   ACR_Guerrillas.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
+  ACR_Containment.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
   // ...and enemy transmissions it picked up (pale rings, ACR_RadioIntercept).
   ACR_RadioIntercept.Zones(frame.m_sKey, frame.m_ZonePos, frame.m_ZoneRadii, frame.m_ZoneLabels);
   foreach (int r, vector rangePos : frame.m_ZonePos) sig += P(rangePos) + frame.m_ZoneLabels[r] + ";";

@@ -56,6 +56,7 @@ class ACR_Base : GenericEntity
  bool m_bHqLost;                    // built FOB whose HQ was destroyed: offline, capturable, rebuildable
  bool m_bAIManaged;                 // handed to the AI (FOB panel, ACR_FobAI)...
  string m_sAIManagedFor;            // ...by this side
+ float m_fZombiesSince;             // TvZ: zombies alone inside this held base since (ACR_TvZ overrun)
  bool m_bPocket;                    // FIA pocket of resistance (ACR_Pockets) until someone captures it
  vector m_vDriveOut;                // last vehicle spot found here with a way out (ACR_Requisition.VehicleSpot)
  bool m_bDriveOut;
