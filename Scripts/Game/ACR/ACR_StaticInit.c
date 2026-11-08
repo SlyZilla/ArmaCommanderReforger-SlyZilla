@@ -24,6 +24,7 @@ class ACR_StaticInit
   ACR_BaseRing.ACR_InitStatics();
   ACR_BaseSurvey.ACR_InitStatics();
   ACR_BaseWorks.ACR_InitStatics();
+  ACR_Containment.ACR_InitStatics();
   ACR_ContentSocket.ACR_InitStatics();
   ACR_Defenders.ACR_InitStatics();
   ACR_DoctrineKits.ACR_InitStatics();
@@ -49,7 +50,9 @@ class ACR_StaticInit
   ACR_MapLayers.ACR_InitStatics();
   ACR_Minefields.ACR_InitStatics();
   ACR_Mortars.ACR_InitStatics();
+  ACR_NestDressing.ACR_InitStatics();
   ACR_Options.ACR_InitStatics();
+  ACR_Outbreak.ACR_InitStatics();
   ACR_OrganEasterEgg.ACR_InitStatics();
   ACR_PanelMover.ACR_InitStatics();
   ACR_Perf.ACR_InitStatics();

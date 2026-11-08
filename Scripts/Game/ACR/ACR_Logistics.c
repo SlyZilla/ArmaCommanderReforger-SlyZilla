@@ -718,4 +718,56 @@ class ACR_Logistics : Managed
    if ((ServiceOf(station) & service) != 0 && FactionOfVehicle(station) == faction) count++;
   return count;
  }
+
+ // Where idle service trucks wait at a base, and so where they count as parked (Jacob, 7 Nov:
+ // Zub on Chernarus is a castle on a hilltop; US trucks were re-sent every 15 s for 34 min, when
+ // 100-200 m east at the foot would have done). A vehicle's move ends at the road point nearest
+ // its goal (ACR_Squad.RouteTo, BBB_Terrain.RoadPointNear: a road piece's own point); at Zub that
+ // is 214 m east, 47 m down (srv:truckpark), so the trucks got there, but parked meant inside the
+ // 45 m ring. The spot is one of those points within PARK_REACH of the centre: not steep, not on
+ // water, and preferably not up on a hill over the ground round it, inside the ring, and on the
+ // side away from the front ('away': a flat unit vector pointing away from it; zero for no
+ // side). A flat town keeps the road point nearest its centre, as before. False: no road near.
+ static const float PARK_REACH = 250;
+ static const float PARK_SLOPE = 0.2;      // most rise per m, 6 m either way along both axes
+ static const float PARK_HILL = 6;         // m over the mean ground 60 m round before it costs
+ static const float PARK_HILL_COST = 20;   // score (m) per m higher than that
+ static const float PARK_OUT_OF_RING = 40; // score (m) for a spot outside the base ring
+ static const float PARK_MIN_WIDTH = 2.5;  // m: narrower pieces are paths
+ static bool ParkSpot(vector centre, float radius, vector away, out vector spot)
+ {
+  ChimeraAIWorld aiWorld = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  if (!aiWorld || !aiWorld.GetRoadNetworkManager()) return false;
+  BaseWorld world = GetGame().GetWorld();
+  array<BaseRoad> roads = {};
+  aiWorld.GetRoadNetworkManager().GetRoadsInAABB(centre - Vector(PARK_REACH, 1000, PARK_REACH), centre + Vector(PARK_REACH, 1000, PARK_REACH), roads);
+  float best = float.MAX;
+  bool found;
+  foreach (BaseRoad road : roads)
+  {
+   if (!road || road.GetWidth() < PARK_MIN_WIDTH) continue;
+   array<vector> points = {};
+   road.GetPoints(points);
+   foreach (vector p : points)
+   {
+    float d = vector.DistanceXZ(p, centre);
+    if (d > PARK_REACH) continue;
+    float h = world.GetSurfaceY(p[0], p[2]);
+    float rise = Math.Max(Math.AbsFloat(world.GetSurfaceY(p[0] + 6, p[2]) - h), Math.AbsFloat(world.GetSurfaceY(p[0] - 6, p[2]) - h));
+    rise = Math.Max(rise, Math.Max(Math.AbsFloat(world.GetSurfaceY(p[0], p[2] + 6) - h), Math.AbsFloat(world.GetSurfaceY(p[0], p[2] - 6) - h)));
+    if (rise / 6 > PARK_SLOPE || BBB_Terrain.IsDeepWaterAt(p)) continue;
+    float score = d;
+    if (d > radius) score += PARK_OUT_OF_RING;
+    float hill = ACR_SiteScore.Elevation(p, 60) - PARK_HILL;
+    if (hill > 0) score += hill * PARK_HILL_COST;
+    float frontward = -((p[0] - centre[0]) * away[0] + (p[2] - centre[2]) * away[2]);
+    if (frontward > 0) score += frontward;
+    if (score >= best) continue;
+    best = score;
+    spot = ACR_Manager.Ground(p);
+    found = true;
+   }
+  }
+  return found;
+ }
 }
