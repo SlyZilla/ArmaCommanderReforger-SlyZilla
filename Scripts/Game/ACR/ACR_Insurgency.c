@@ -26,9 +26,12 @@
 //    marked like a dangerous road (no time limit, supply runs don't wait for it) so the side's AI
 //    sends a squad to clear it. Destroying one costs standing (HIDEOUT_TAKEN). FIA's friends
 //    know where its hideouts are.
+//    Zombies (ACR_Outbreak) mark their own ("Zombies", anywhere, MarkZombies): the same sweep and
+//    hold, but the AI doesn't send a sweeper into one at night.
 class ACR_DangerRoad : Managed
 {
  string m_sSide;
+ bool m_bZombies;      // a zombie area (ACR_Outbreak), not an FIA ambush
  vector m_vPos;
  float m_fUntil;
  int m_iLosses;
@@ -498,7 +501,7 @@ class ACR_Insurgency
   float now = GetGame().GetWorld().GetWorldTime();
   foreach (ACR_DangerRoad known : s_aRoads)
   {
-   if (known.m_sSide != side || vector.DistanceXZ(known.m_vPos, pos) > DANGER_RADIUS) continue;
+   if (known.m_bZombies || known.m_sSide != side || vector.DistanceXZ(known.m_vPos, pos) > DANGER_RADIUS) continue;
    known.m_fUntil = now + DANGER_MS;
    known.m_iLosses++;
    return;
@@ -514,6 +517,46 @@ class ACR_Insurgency
   if (!manager) return;
   ACR_Intel intel = manager.IntelFor(side);
   if (intel) intel.AddFeed(now, string.Format("FIA ambush at %1: the road there is dangerous", ACR_Manager.Grid(pos)));
+ }
+
+ // Zombies seen or met at 'pos' by 'side' (ACR_Outbreak): a zombie area on its map for DANGER_MS,
+ // renewed while they keep turning up there. 'line' goes to the side's feed for a new area.
+ static void MarkZombies(string side, vector pos, string line)
+ {
+  if (side.IsEmpty() || !Replication.IsServer()) return;
+  float now = GetGame().GetWorld().GetWorldTime();
+  foreach (ACR_DangerRoad known : s_aRoads)
+  {
+   if (!known.m_bZombies || known.m_sSide != side || vector.DistanceXZ(known.m_vPos, pos) > ACR_Outbreak.ZONE_RADIUS) continue;
+   known.m_fUntil = now + DANGER_MS;
+   known.m_iLosses++;
+   return;
+  }
+  ACR_DangerRoad area = new ACR_DangerRoad();
+  area.m_sSide = side;
+  area.m_vPos = pos;
+  area.m_fUntil = now + DANGER_MS;
+  area.m_iLosses = 1;
+  area.m_bZombies = true;
+  s_aRoads.Insert(area);
+  PrintFormat("[ACR] ZOMBIES %1 marks a zombie area at %2 for %3 min", side, ACR_Manager.Grid(pos), (int)(DANGER_MS / 60000));
+  ACR_Manager manager = ACR_Manager.GetInstance();
+  if (!manager || line.IsEmpty()) return;
+  ACR_Intel intel = manager.IntelFor(side);
+  if (intel) intel.AddFeed(now, line);
+ }
+
+ static float Radius(ACR_DangerRoad road)
+ {
+  if (road.m_bZombies) return ACR_Outbreak.ZONE_RADIUS;
+  return DANGER_RADIUS;
+ }
+
+ static string Label(ACR_DangerRoad road)
+ {
+  if (road.m_bZombies) return "Zombies";
+  if (road.m_Hideout) return "FIA hideout";
+  return "FIA ambush";
  }
 
  // Every second (ACR_Manager.Tick): marks run out; once a minute, the leaning.
@@ -543,7 +586,9 @@ class ACR_Insurgency
   ACR_Manager manager = ACR_Manager.GetInstance();
   ACR_Intel intel;
   if (manager) intel = manager.IntelFor(road.m_sSide);
-  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), string.Format("The road at %1 is clear again", ACR_Manager.Grid(road.m_vPos)));
+  string line = string.Format("The road at %1 is clear again", ACR_Manager.Grid(road.m_vPos));
+  if (road.m_bZombies) line = string.Format("No more zombies at %1", ACR_Manager.Grid(road.m_vPos));
+  if (intel) intel.AddFeed(GetGame().GetWorld().GetWorldTime(), line);
   Release(road);
   s_aRoads.RemoveItem(road);
  }
@@ -558,7 +603,7 @@ class ACR_Insurgency
  static ACR_DangerRoad OnTheWay(string side, vector a, vector b)
  {
   foreach (ACR_DangerRoad road : s_aRoads)
-   if (!road.m_Hideout && road.m_sSide == side && ACR_AICommander.DistanceToSegment(road.m_vPos, a, b) < DANGER_RADIUS) return road;
+   if (!road.m_Hideout && road.m_sSide == side && ACR_AICommander.DistanceToSegment(road.m_vPos, a, b) < Radius(road)) return road;
   return null;
  }
 
@@ -569,8 +614,8 @@ class ACR_Insurgency
   {
    if (road.m_sSide != faction || road.m_Hideout) continue; // drawn by ACR_Guerrillas.Zones
    positions.Insert(road.m_vPos);
-   radii.Insert(DANGER_RADIUS);
-   labels.Insert("FIA ambush");
+   radii.Insert(Radius(road));
+   labels.Insert(Label(road));
   }
  }
 }

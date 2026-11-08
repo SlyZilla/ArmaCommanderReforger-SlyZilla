@@ -9,11 +9,20 @@
 // The always-on second-in-command (#14, -acr2IC 1, off for now): while no AI commander is in
 // command of a side, every squad of it nobody has claimed is the AI's (Adopt). A player claims a
 // squad by leading it or giving it an order, until he hands it back with the panel's toggle.
-// While a player commands, the 2IC runs the rest of the side too (RunsAll, Jacob 5 Nov: the lazy
-// commander): purchases, logistics, FOBs, mortars, supports, fortifying.
+// Two modes, both kept (Jacob 7 Nov: they coexist as an option): -acr2IC 1, the 2IC, runs only
+// the squads nobody claimed while the player commands and spends; -acr2IC 2, "I'm the 2IC"
+// (RunsAll), runs the rest of the side too: purchases, logistics, FOBs, mortars, supports, fortifying.
 class ACR_SquadAI
 {
  static bool TwoIC() { return ACR_Options.Flag("acr2IC"); }
+
+ // -acr2IC 2: "I'm the 2IC", the AI commander runs the side while a player commands (RunsAll).
+ // 1 (or a bare -acr2IC) is the plain 2IC: the squads nobody claimed, no economy.
+ static bool ImThe2IC()
+ {
+  string value;
+  return ACR_Options.Get("acr2IC", value) && value == "2";
+ }
 
  // The RP the 2IC leaves the commanding player for their own purchases (ACR_AICommander.Purse).
  static int TwoICKeep() { return Math.ClampInt(ACR_LogisticsRules.Choice("acr2ICKeep", "0").ToInt(), 0, 100000); }
@@ -38,7 +47,7 @@ class ACR_SquadAI
  // so it never gets an AI economy because nobody has taken command yet.
  static bool RunsAll(ACR_Manager manager, string faction)
  {
-  if (!manager || !TwoIC()) return false;
+  if (!manager || !ImThe2IC()) return false;
   if (ACR_TestHooks.Get().PlayerCommandsForTest(faction)) return true;
   Faction side = GetGame().GetFactionManager().GetFactionByKey(faction);
   if (!side) return false;

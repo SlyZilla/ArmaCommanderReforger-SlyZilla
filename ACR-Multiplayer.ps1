@@ -134,7 +134,8 @@ try {
   # The game uses the player's normal profile (controls, graphics, name).
   $clientArgs = '-client ' + $Address + ' ' + $mod + ' -noSplash' + $backend
   Write-Host ('Joining ' + $Address + ' ...') -ForegroundColor Cyan
-  Start-Process -FilePath $game -ArgumentList $clientArgs -WorkingDirectory (Split-Path $game -Parent)
+  $gameProc = Start-Process -FilePath $game -ArgumentList $clientArgs -WorkingDirectory (Split-Path $game -Parent) -PassThru
+  Start-PlayBanner ('PLAY TEST: AC: Actual (' + $Mode + ', development copy)') @(('Joining ' + $Address), 'Closes by itself when the game closes.') $gameProc.Id
   if ($Mode -eq 'Host') {
     Write-Host ''
     Write-Host 'Game started. Keep this window and the server window open while you play.' -ForegroundColor Green

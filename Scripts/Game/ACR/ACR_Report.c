@@ -74,6 +74,7 @@ class ACR_Report
   if (instigator) shooter = instigator.GetInstigatorEntity();
   if (victim) ACR_Insurgency.OnLoss(ACR_Intel.FactionKeyOf(victim), victim.GetOrigin(), ACR_Intel.FactionKeyOf(shooter));
   if (victim && ACR_Intel.FactionKeyOf(victim) == ACR_Pockets.FACTION) ACR_Insurgency.OnFIAKilled(victim, ACR_Intel.FactionKeyOf(shooter));
+  if (victim) ACR_Outbreak.OnLoss(ACR_Intel.FactionKeyOf(victim), victim.GetOrigin(), ACR_Intel.FactionKeyOf(shooter));
   if (!Running()) return;
   string side = ACR_Intel.FactionKeyOf(victim);
   ACR_SideStats lost = Of(side);

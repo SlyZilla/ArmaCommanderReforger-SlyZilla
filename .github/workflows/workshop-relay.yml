@@ -49,6 +49,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           REFORGERMODS_API_KEY: ${{ secrets.REFORGERMODS_API_KEY }}
+          DISCORD_UPDATES_ROLE_ID: ${{ vars.DISCORD_UPDATES_ROLE_ID }}
           MODE: ${{ inputs.mode || 'poll' }}
           RECOVERY_MOD: ${{ inputs.mod }}
           RECOVERY_VERSION: ${{ inputs.version }}

@@ -67,6 +67,8 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrPlaceAuditTest") || System.IsCLIParam("acrPlaceAuditOldTest")) ACR_TestPlaceAudit.Run(seconds);
   // -acrVoidSpawnTest: soldiers never placed in sealed spaces (ACR_TestVoidSpawn).
   if (System.IsCLIParam("acrVoidSpawnTest")) ACR_TestVoidSpawn.Run(seconds);
+  // -acrTruckParkTest: where idle service trucks wait at a base (ACR_TestTruckPark).
+  if (System.IsCLIParam("acrTruckParkTest")) ACR_TestTruckPark.Run(seconds);
   if (System.IsCLIParam("acrPartsTest")) ACR_TestParts.Run(seconds);
   if (System.IsCLIParam("acrWingsTest") || System.IsCLIParam("acrWingsOffTest") || System.IsCLIParam("acrWingShotsTest")) ACR_TestWings.Run(seconds);
   if (System.IsCLIParam("acrWorksShotsTest") || System.IsCLIParam("acrWorksShotsCompactTest") || ACR_TestBaseWorks.StyleTest("acrStyleShots")) ACR_TestWorksShots.Run(seconds);
@@ -92,6 +94,12 @@ modded class ACR_TestHooks
   if (System.IsCLIParam("acrFIALeaningTest")) ACR_TestFIALeaning.Run(seconds);
   // -acrHideoutsTest: FIA hideouts (ACR_TestHideouts, #89).
   if (System.IsCLIParam("acrHideoutsTest")) ACR_TestHideouts.Run(seconds);
+  // -acrZombiesTest: zombie nests with Project Outbreak, or nothing without it (ACR_TestOutbreak, #107).
+  if (System.IsCLIParam("acrZombiesTest")) ACR_TestOutbreak.Run(seconds);
+  // -acrTvZTest: one side against the zombies (ACR_TestTvZ, #107).
+  if (System.IsCLIParam("acrTvZTest")) ACR_TestTvZ.Run(seconds);
+  // -acrContainmentTest: ground zero, survivors and rescues (ACR_TestContainment, #107).
+  if (System.IsCLIParam("acrContainmentTest")) ACR_TestContainment.Run(seconds);
   if (System.IsCLIParam("acrGenerateTest")) ACR_TestGenerate.Run(seconds);
   if (System.IsCLIParam("acrGenerateEveronTest")) ACR_TestGenerate.RunEveron(seconds);
   if (System.IsCLIParam("acrGenerateMapTest")) ACR_TestGenerate.RunAnyMap(seconds);
@@ -110,10 +118,12 @@ modded class ACR_TestHooks
  }
 
  // Game tests (launched straight into a world) deploy their player at once, as the old
- // auto-spawn did; -acrDeployMenuTest keeps the deploy screen (GitHub #39).
+ // auto-spawn did; -acrDeployMenuTest keeps the deploy screen (GitHub #39). The launcher's
+ // play launches pass -world too, with -acrSetup: those are real matches, deploy screen on
+ // (7 Nov: Jacob, solo on Zimnitrita, never got back after his command unit died).
  override string AutoDeploySide()
  {
-  if (!System.IsCLIParam("world") || System.IsCLIParam("acrDeployMenuTest")) return "";
+  if (!System.IsCLIParam("world") || System.IsCLIParam("acrSetup") || System.IsCLIParam("acrDeployMenuTest")) return "";
   return "west";
  }
 
@@ -122,6 +132,25 @@ modded class ACR_TestHooks
  {
   if (System.IsCLIParam("acrQuickStartFIATest") || System.IsCLIParam("acrWorksAISoakTest")) return "many";
   if (System.IsCLIParam("acrGuerrillasTest") || System.IsCLIParam("acrInsurgencyTest") || System.IsCLIParam("acrFIALeaningTest") || System.IsCLIParam("acrHideoutsTest") || System.IsCLIParam("acrEveronSoakTest") || System.IsCLIParam("acrForecastSoakTest") || System.IsCLIParam("acrAllocSoakTest") || System.IsCLIParam("acrAllocControlSoakTest") || System.IsCLIParam("acrLongSoakTest") || System.IsCLIParam("acrAllocControlLongSoakTest")) return "few";
+  return "";
+ }
+
+ // Only the zombie test asks for zombies (and only Outbreak worlds have any).
+ override string Zombies()
+ {
+  if (System.IsCLIParam("acrZombiesTest")) return "many";
+  return "";
+ }
+
+ override string ZombieMode()
+ {
+  if (System.IsCLIParam("acrTvZTest")) return "tvz";
+  return "";
+ }
+
+ override string Outbreak()
+ {
+  if (System.IsCLIParam("acrContainmentTest")) return "contain";
   return "";
  }
 

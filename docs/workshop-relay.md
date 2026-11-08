@@ -97,7 +97,14 @@ possible, with a Unicode-safe fallback for long lines; headers and text fit with
 Discord's 2,000-character limit using conservative UTF-16 counts. Markdown code
 blocks can span messages and therefore render differently across part boundaries;
 the underlying text is not rewritten. All user/role/everyone mentions are disabled
-and link previews are suppressed.
+and link previews are suppressed, with one exception: if the Actions **variable**
+`DISCORD_UPDATES_ROLE_ID` is set (Settings → Secrets and variables → Actions →
+Variables; a role ID is not secret), part 1 of each release starts with that role's
+mention and its `allowed_mentions` names only that role, so subscribers are pinged
+once per release. Changelog text still cannot ping anyone. Unset it to stop pinging.
+The role is frozen into a release's pending payloads when they are built. If the
+mention renders but nobody is notified, enable the role's **Allow anyone to @mention
+this role**, or check the channel doesn't deny the webhook mention permission.
 
 Missing, empty or whitespace-only changelogs leave that release unsent and produce
 a failed run for visibility. Later polls retry it, retaining chronological order
