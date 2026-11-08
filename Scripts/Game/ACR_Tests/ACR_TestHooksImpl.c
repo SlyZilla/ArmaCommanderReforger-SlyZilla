@@ -112,10 +112,12 @@ modded class ACR_TestHooks
  }
 
  // Game tests (launched straight into a world) deploy their player at once, as the old
- // auto-spawn did; -acrDeployMenuTest keeps the deploy screen (GitHub #39).
+ // auto-spawn did; -acrDeployMenuTest keeps the deploy screen (GitHub #39). The launcher's
+ // play launches pass -world too, with -acrSetup: those are real matches, deploy screen on
+ // (7 Nov: Jacob, solo on Zimnitrita, never got back after his command unit died).
  override string AutoDeploySide()
  {
-  if (!System.IsCLIParam("world") || System.IsCLIParam("acrDeployMenuTest")) return "";
+  if (!System.IsCLIParam("world") || System.IsCLIParam("acrSetup") || System.IsCLIParam("acrDeployMenuTest")) return "";
   return "west";
  }
 

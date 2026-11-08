@@ -410,6 +410,10 @@ modded class SCR_MenuSpawnLogic
   if (pc && pc.IsPossessing() && ACR_Respawn.IsAlive(pc.GetControlledEntity())) return;
   if (!ACR_PlayerSide.AutoDeploySide().IsEmpty())
   {
+   // Skipping super also skipped the respawn eligibility it grants: every spawn request was
+   // then refused (SPAWN_NOT_ALLOWED, "Spawn point not available") and the player never
+   // came back after dying in the command unit (7 Nov).
+   m_aRespawnEligiblePlayers.Insert(playerId);
    DoSpawn_S(playerId);
    return;
   }
