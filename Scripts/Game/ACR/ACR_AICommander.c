@@ -3243,7 +3243,35 @@ class ACR_AICommander : Managed
     if (CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, enemySeen, "roadblock interdiction")) break;
    }
   }
+  CounterBatterySupport(fireFactor);
  }
+
+ // Counter-battery the side pays for (ACR_CounterBattery): an enemy mortar pinned down (its ring
+ // FIX_TIGHT or less) that our own fire-at-will teams left alone for CB_PAID_WAIT_MS (none in reach,
+ // or all busy) gets our mortar support, or else the howitzer battery when the side can spare it:
+ // rich, or a doctrine that fires more (Firepower always; Fortress from about 670 RP, the others
+ // from about 800-900). CallSupport keeps it to the side's own RP and away from our own men.
+ protected void CounterBatterySupport(float fireFactor)
+ {
+  ACR_Intel intel = m_Manager.IntelFor(m_sFaction);
+  float now = GetGame().GetWorld().GetWorldTime();
+  ACR_CBFix fix = ACR_CounterBattery.Target(intel, now);
+  if (!fix || fix.m_fRadius > ACR_CounterBattery.FIX_TIGHT || fix.m_fPinnedAt <= 0) return;
+  if (now - fix.m_fPinnedAt < ACR_CounterBattery.CB_PAID_WAIT_MS) return;
+  string why = "counter-battery on the enemy mortar " + intel.Place(fix.m_vCentre);
+  bool fired = CallSupport(ACR_ESupportType.MORTAR_HE_SMALL, fix.m_vCentre, why);
+  float lands = ACR_CounterBattery.MORTAR_LANDS_MS;
+  float eager = fireFactor / Math.Max(0.1, m_Doctrine.m_fFireMissionGap);
+  if (!fired && eager >= ACR_CounterBattery.CB_BATTERY_EAGER)
+  {
+   fired = CallSupport(ACR_ESupportType.ARTILLERY_BATTERY, fix.m_vCentre, "battery " + why);
+   lands = ACR_CounterBattery.BATTERY_LANDS_MS;
+  }
+  if (!fired) return;
+  ACR_CounterBattery.s_iPaidFires++;
+  ACR_CounterBattery.Shelled(fix, fix.m_vCentre, vector.Zero, now + lands);
+ }
+ void CounterBatterySupportForTest(float fireFactor) { CounterBatterySupport(fireFactor); }
 
  // Defence in depth (Jacob 20 Oct: defenders only ever held the point itself). When an
  // attack on a base is seen coming (intel), part of its defenders move out to a forward

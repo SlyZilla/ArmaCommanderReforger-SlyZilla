@@ -11,6 +11,9 @@
 //    enough (ACR_FireMissions.FreeFire) instead of the newest contact: always when the ring is
 //    FIX_TIGHT or less, otherwise weighted against the contact (ACR_Variety, seeded). The rounds are
 //    spread over the ring. Players see the ring and decide for themselves.
+//  - An AI commander whose teams leave a pinned-down ring alone for CB_PAID_WAIT_MS (none in reach,
+//    or all busy) pays for counter-battery: its mortar support when a team reaches it, otherwise the
+//    howitzer battery if it can spare it (rich, or a doctrine that fires more: CB_BATTERY_EAGER).
 //  - Shoot-and-scoot: an AI commander's mortar team that counter-battery rounds land near packs up
 //    and moves DISPLACE_MIN..DISPLACE_MAX away from where they came from (ACR_AICommander
 //    PositionMortars), so the estimate the other side built goes stale.
@@ -27,6 +30,7 @@ class ACR_CBFix : Managed
  int m_iRounds;        // rounds heard from there
  float m_fShelledAt;   // when this side's counter-battery last fired on it (ms, 0 never)
  bool m_bToldTight;    // the feed said "pinned down" already
+ float m_fPinnedAt;    // ...when (world ms)
 }
 
 class ACR_CounterBattery
@@ -54,10 +58,15 @@ class ACR_CounterBattery
  static const float INCOMING_MS = 90000;    // the team reacts within this of the rounds landing
  static const float DISPLACE_MIN = 150;
  static const float DISPLACE_MAX = 300;
+ static const float CB_PAID_WAIT_MS = 20000; // an AI commander pays for counter-battery on a ring pinned this long that its teams left alone
+ static const float MORTAR_LANDS_MS = 30000;  // a paid mortar mission's first rounds land about then (its call says so)
+ static const float BATTERY_LANDS_MS = 90000; // ...the battery's ("ETA about 90 s")
+ static const float CB_BATTERY_EAGER = 1.4;  // ...and calls the battery when its fire factor over its doctrine's fire-mission gap is this or more
 
  static int s_iHeard;              // tests
  static int s_iCounterFires;       // tests
  static vector s_vLastAim;         // tests: where the last counter-battery mission aimed
+ static int s_iPaidFires;          // tests: counter-battery an AI commander paid for
  static float s_fForceChance = -1; // tests: a fixed chance for a listener in hearing range (-1: worked out)
 
  static bool On() { return ACR_LogisticsRules.Choice("acrCounterBattery", "1") != "0"; }
@@ -173,6 +182,7 @@ class ACR_CounterBattery
   else if (!fix.m_bToldTight && fix.m_fRadius <= FIX_TIGHT)
   {
    fix.m_bToldTight = true;
+   fix.m_fPinnedAt = now;
    line = string.Format("Enemy mortar pinned down %1 (within %2 m)", intel.Place(centre), within);
   }
   if (!line.IsEmpty())
@@ -285,12 +295,17 @@ class ACR_CounterBattery
  {
   vector here = team.m_Spot;
   if (team.m_Tube) here = team.m_Tube.GetOrigin();
+  RandomGenerator rng = ACR_Variety.For(string.Format("cb displace %1 %2", team.m_sName, Math.Round(team.m_fIncomingAt / 1000)));
   vector away = here - from;
   away[1] = 0;
-  if (from == vector.Zero || away.Length() < 1) away = Vector(1, 0, 0);
-  away = away.Normalized();
-  RandomGenerator rng = ACR_Variety.For(string.Format("cb displace %1 %2", team.m_sName, Math.Round(team.m_fIncomingAt / 1000)));
   float turn = (rng.RandFloat01() * 2 - 1) * 60 * Math.DEG2RAD;
+  // Fired from off the map (the battery): any way will do.
+  if (from == vector.Zero || away.Length() < 1)
+  {
+   away = Vector(1, 0, 0);
+   turn = rng.RandFloat01() * Math.PI2;
+  }
+  away = away.Normalized();
   float distance = DISPLACE_MIN + (DISPLACE_MAX - DISPLACE_MIN) * rng.RandFloat01();
   float c = Math.Cos(turn);
   float s = Math.Sin(turn);

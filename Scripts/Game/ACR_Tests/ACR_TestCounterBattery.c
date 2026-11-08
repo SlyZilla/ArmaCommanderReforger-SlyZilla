@@ -8,9 +8,11 @@
 //     West's team (fire at will) answers with counter-battery fire on the ring, and the East team,
 //     under it, is sent 150-300 m away from where the rounds came from.
 //  11, -acrCounterBattery 0: a round fired is heard by nobody, and no ring is a target.
+//  12, East's AI commander pays for counter-battery on a pinned ring of West's tube its own teams left
+//     alone, not before they had CB_PAID_WAIT_MS: the battery, since its mortar is on the move.
 class ACR_TestCounterBattery
 {
- static const int EXPECTED = 11;
+ static const int EXPECTED = 12;
  static int s_iStage;
  static int s_iStageTick;
  static ACR_MortarTeam s_West;
@@ -239,6 +241,28 @@ class ACR_TestCounterBattery
    bool quiet = ACR_CounterBattery.s_iHeard == s_iHeardBefore && !still;
    ACR_Options.Unset("acrCounterBattery");
    ACR_TestRegress.Check("counterbattery: -acrCounterBattery 0: nobody hears a round, no ring is a target", quiet, string.Format("heard %1 more, target %2", ACR_CounterBattery.s_iHeard - s_iHeardBefore, still != null));
+   Next(tick);
+   return;
+  }
+  // 7: paid counter-battery by East's AI commander on West's tube.
+  if (s_iStage == 7)
+  {
+   ACR_AICommander payer = manager.EnsureAICommander(east);
+   ACR_Intel eastIntel = manager.IntelFor(east);
+   if (!payer || !eastIntel || !s_West || !s_West.m_Tube) { FailLive("no East commander or West tube for the paid counter-battery"); return; }
+   if (!manager.m_Supports) manager.m_Supports = new ACR_Supports(manager);
+   manager.m_Bases.GetFaction(east).m_iRP = 1000;
+   eastIntel.m_CBFixes.Clear();
+   string ringKey = west + ":" + s_West.m_sName;
+   ACR_CBFix ring;
+   for (int r = 0; r < 8; r++) ring = ACR_CounterBattery.Heard(eastIntel, west, ringKey, s_West.m_Tube.GetOrigin());
+   int paidBefore = ACR_CounterBattery.s_iPaidFires;
+   payer.CounterBatterySupportForTest(payer.FireFactor());
+   bool heldBack = ACR_CounterBattery.s_iPaidFires == paidBefore;
+   ring.m_fPinnedAt = GetGame().GetWorld().GetWorldTime() - ACR_CounterBattery.CB_PAID_WAIT_MS - 1000;
+   payer.CounterBatterySupportForTest(payer.FireFactor());
+   bool paid = ACR_CounterBattery.s_iPaidFires == paidBefore + 1 && ring.m_fShelledAt > 0;
+   ACR_TestRegress.Check("counterbattery: an AI commander pays for counter-battery on a pinned ring its teams left alone, after giving them their go", heldBack && paid && ring.m_fPinnedAt > 0, string.Format("pinned ring %1 m, waited first %2, paid after %3 (fire factor %4)", Math.Round(ring.m_fRadius), heldBack, paid, payer.FireFactor()));
    Finish();
   }
  }
