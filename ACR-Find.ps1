@@ -198,6 +198,15 @@ function Add-PersonalMods([string]$addonsDir, [string]$addonList) {
 # Infection) is separate and off unless asked for. Resolved like every optional mod, via Find-WorkshopMod.
 $script:OutbreakIds = @('4FD4A1BD550793F4', 'F1D4B9B5245B36ED', '297640FBAC0C46C3') # Creature Melee AI, Project Outbreak, Special Zombies & Creatures
 $script:OutbreakContagionId = '7B763100BAFA1F9A'
+# ACA's zombie add-on (ACAOutbreak, AC230926CC000004): depends on the three mods above and adds the
+# zombie scenarios. Loaded alongside them when found (a copy beside ACA or its Workshop copy); ACA's
+# zombie mode itself needs only the mods.
+$script:OutbreakCompatId = 'AC230926CC000004'
+function Find-OutbreakCompat {
+  $project = Join-Path (Split-Path $PSScriptRoot -Parent) 'ACAOutbreak\addon.gproj'
+  if ((Test-Path -LiteralPath $project) -and (Get-Content -LiteralPath $project -Raw) -match ('GUID\s+"' + $script:OutbreakCompatId + '"')) { return (Split-Path $project -Parent) }
+  return (Find-WorkshopMod $script:OutbreakCompatId)
+}
 
 function Test-ProjectOutbreak {
   foreach ($id in $script:OutbreakIds) { if (!(Find-WorkshopMod $id)) { return $false } }
@@ -220,7 +229,15 @@ function Add-ProjectOutbreak([string]$addonsDir, [string]$addonList, [bool]$cont
     if (($dirs | ForEach-Object { $_.TrimEnd('\') }) -notcontains $parent.TrimEnd('\')) { $dirs += $parent }
     if (($addonList.Split(',')) -notcontains $id) { $addonList += ',' + $id }
   }
-  Write-Host ('Project Outbreak: loading ' + $ids.Count + ' zombie mods.') -ForegroundColor DarkCyan
+  $what = 'Project Outbreak: loading ' + $ids.Count + ' zombie mods'
+  $compat = Find-OutbreakCompat
+  if ($compat) {
+    $parent = Split-Path $compat -Parent
+    if (($dirs | ForEach-Object { $_.TrimEnd('\') }) -notcontains $parent.TrimEnd('\')) { $dirs += $parent }
+    if (($addonList.Split(',')) -notcontains $script:OutbreakCompatId) { $addonList += ',' + $script:OutbreakCompatId }
+    $what += ' and the ACA zombie add-on'
+  }
+  Write-Host ($what + '.') -ForegroundColor DarkCyan
   return @(($dirs -join ','), $addonList)
 }
 
