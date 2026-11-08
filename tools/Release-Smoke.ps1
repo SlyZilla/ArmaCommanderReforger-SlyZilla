@@ -96,6 +96,8 @@ try {
  if (!$passed) { throw 'Startup timed out. Candidate remains blocked.' }
 } finally {
  if (!$process.HasExited) { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
+ # Stop-Process returns before the server has gone; the next check (ACA after BBB) refuses while it lingers.
+ $process.WaitForExit(30000) | Out-Null
  @("mod=$Mod", "passed=$passed", "arguments=$arguments", $body) | Set-Content -LiteralPath (Join-Path $ReportDirectory 'result.txt') -Encoding UTF8
 }
 Write-Host "$Mod isolated startup passed. Gameplay/MP acceptance remains separate."
