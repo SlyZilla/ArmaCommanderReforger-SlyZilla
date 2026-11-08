@@ -1,7 +1,7 @@
 // -acrTwoICFobTest 1 (server-capable, ~1 min): the 2IC and FOBs while a player commands (pn44, 7 Nov:
 // the whole-side 2IC never suggested a FOB, so "Send truck" and "Buy a truck" never came, and a
 // player's armed Establish FOB never got its numbered sites). No AI commander; the test says a player
-// commands US (ACR_TestTwoICAll.s_sCommanded), so the 2IC runs the whole side.
+// commands US (ACR_TestTwoICAll.s_sCommanded), and with -acr2IC 2 ("I'm the 2IC") the 2IC runs the whole side.
 // 1. Establish FOB armed: its sites come, through the manager's own tick.
 // 2. "Build a FOB here" with a loaded construction truck by the 2IC's squad: it goes to build it, the
 //    line says who with Cancel, the map shows the site as a sent truck's dashed ring.
@@ -50,8 +50,9 @@ class ACR_TestTwoICFob
 
   if (s_iStep == 0)
   {
-   // The 2IC on, a player in command of US: it runs the whole side.
-   ACR_Options.Set("acr2IC", "1");
+   // "I'm the 2IC" (-acr2IC 2 since main c6ea9c07; 1 is the plain 2IC), a player in command of
+   // US: it runs the whole side.
+   ACR_Options.Set("acr2IC", "2");
    ACR_TestTwoICAll.s_sCommanded = "US";
    NextStep(tick);
    return;
