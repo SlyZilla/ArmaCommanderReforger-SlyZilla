@@ -34,7 +34,9 @@ class ACR_Containment
  static const float GUARDED = 300;         // ... unless a soldier is this close
  static const float GZ_GROW_MS = 75000;    // ground zero gets one back this often (night: a third)
  static const float GZ_HORDE_MS = 720000;  // and sends a horde about this often (night: a third)
- static const int GZ_HORDE_MIN = 16;       // once it has this many
+ static const int GZ_HORDE_MIN = 40;       // once it has this many
+ static const int GZ_START = 60;           // ground zero starts with this many ...
+ static const int GZ_MAX = 80;             // ... and refills towards this many (its own ceiling, not NEST_MAX)
  static const float FIRST_HORDE_MIN = 360000; // the first horde leaves 6-10 min in
  static const float FIRST_HORDE_MAX = 600000;
  static const int START_SITES = 2;         // towns round ground zero with survivors at the start
@@ -96,6 +98,8 @@ class ACR_Containment
   s_sGroundZero = town.m_sName;
   float now = GetGame().GetWorld().GetWorldTime();
   post.m_Nest.m_bGroundZero = true;
+  post.m_Nest.m_iSize = GZ_MAX;
+  if (post.m_iReserve < GZ_MAX) post.m_Nest.m_fGrowAt = now + GZ_GROW_MS;
   post.m_Nest.m_fHordeAt = now + Math.RandomFloat(FIRST_HORDE_MIN, FIRST_HORDE_MAX);
   post.m_sName = string.Format("Ground zero at %1", town.m_sName);
   PrintFormat("[ACR] CONTAIN ground zero at %1 (%2), %3 zombies", town.m_sName, ACR_Manager.Grid(town.GetOrigin()), post.m_iReserve);

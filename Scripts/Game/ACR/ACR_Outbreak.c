@@ -64,9 +64,9 @@ class ACR_Outbreak
  static const float BASE_CLEAR = 100;      // a country nest: m outside every base's circle
  static const float SPACING = 500;         // m between two nests
  static const int MAX_LOOKS = 40;          // building searches for country nests
- static const int NEST_MAX = 24;           // a nest never grows past this many
+ static const int NEST_MAX = 50;           // a nest never grows past this many (ground zero: ACR_Containment.GZ_MAX)
  static const float HORDE_MS = 1500000;    // a full nest sends a horde about this often (night: a third)
- static const int HORDE_MIN = 8;           // a nest needs this many to send one
+ static const int HORDE_MIN = 15;          // a nest needs this many to send one
  static const float WALK = 1.0;            // m/s a horde walks (night: twice)
  static const float GOAL_MIN = 800;        // a horde's next town is this far ...
  static const float GOAL_MAX = 3000;       // ... at most
@@ -75,7 +75,7 @@ class ACR_Outbreak
  static const int PACK = 3;                // zombies seen at once that mark an area
  static const float COUNTER_REACH = 2000;  // m: nests this close to a town just taken or cleared ...
  static const int COUNTER_NESTS = 2;       // ... at most this many (night; one by day) ...
- static const int COUNTER_MIN = 6;         // ... holding this many send a counterattack
+ static const int COUNTER_MIN = 15;        // ... holding this many send a counterattack
  static const float COUNTER_PACE = 3;      // a counterattack walks this many times as fast
  static const float COUNTER_GAP_MS = 900000; // one per place per 15 min
  static float s_fWalkScaleForTest = 1;
@@ -183,10 +183,10 @@ class ACR_Outbreak
   Sort(pool);
   float share = 0.15;
   int country = 3;
-  int minSize = 6;
-  int maxSize = 10;
-  s_iCap = 150;
-  if (level == "many") { share = 0.3; country = 6; minSize = 10; maxSize = 16; s_iCap = 300; }
+  int minSize = 15;
+  int maxSize = 25;
+  s_iCap = 300;
+  if (level == "many") { share = 0.3; country = 6; minSize = 25; maxSize = 40; s_iCap = 500; }
   float clearance = HQ_CLEAR;
   // TvZ: zombies are the only enemy (ACR_TvZ). The absent side's bases are already open, so the
   // starting bases below (clearance, horde goals) are the living side's alone.
@@ -224,7 +224,7 @@ class ACR_Outbreak
    if (!zero)
    {
     zeroTown = PickGroundZero(candidates);
-    if (zeroTown) zero = AddNest(zeroTown.GetOrigin(), NEST_MAX, zeroTown.m_sName);
+    if (zeroTown) zero = AddNest(zeroTown.GetOrigin(), ACR_Containment.GZ_START, zeroTown.m_sName);
    }
    if (zero)
    {
@@ -241,14 +241,16 @@ class ACR_Outbreak
    ACR_Base pick = candidates[i];
    candidates.Remove(i);
    if (Crowded(pick.GetOrigin(), null)) continue;
-   ACR_DefenderPost post = AddNest(pick.GetOrigin(), Math.RandomIntInclusive(minSize, maxSize), pick.m_sName);
+   // The cap holds from the start: no nest the cap can't hold at its smallest size.
+   if (ACR_Outbreak.Room() < minSize) break;
+   ACR_DefenderPost post = AddNest(pick.GetOrigin(), Math.Min(Math.RandomIntInclusive(minSize, maxSize), ACR_Outbreak.Room()), pick.m_sName);
    names += string.Format(" %1(%2)", post.m_sName, post.m_iReserve);
    placed++;
   }
   // Out in the country: buildings round the open bases, outside every base.
   int wild;
   int looks;
-  while (wild < country && looks < MAX_LOOKS && !open.IsEmpty())
+  while (wild < country && looks < MAX_LOOKS && !open.IsEmpty() && ACR_Outbreak.Room() >= minSize)
   {
    looks++;
    ACR_Base near = open.GetRandomElement();
@@ -261,7 +263,7 @@ class ACR_Outbreak
    {
     vector at = building.GetOrigin();
     if (!Clear(at, clearance) || InsideBase(at) || Crowded(at, null) || BBB_Terrain.IsWaterAt(at)) continue;
-    ACR_DefenderPost nest = AddNest(at, Math.RandomIntInclusive(minSize, maxSize), "");
+    ACR_DefenderPost nest = AddNest(at, Math.Min(Math.RandomIntInclusive(minSize, maxSize), ACR_Outbreak.Room()), "");
     names += string.Format(" %1(%2)", nest.m_sName, nest.m_iReserve);
     wild++;
     break;
@@ -421,6 +423,13 @@ class ACR_Outbreak
   int top = picks.Count();
   if (top > 3) top = 3;
   return picks[Math.RandomInt(0, top)];
+ }
+
+ // The most a nest holds: ground zero has its own, bigger ceiling (ACR_Containment.GZ_MAX).
+ static int MaxOf(ACR_ZombieNest nest)
+ {
+  if (nest && nest.m_bGroundZero) return ACR_Containment.GZ_MAX;
+  return NEST_MAX;
  }
 
  // Zombies the cap still allows.
@@ -623,6 +632,9 @@ class ACR_Outbreak
   }
   if (left <= step + 20)
   {
+   // Arrive at the goal itself: overrun reach and the settled nest go by m_vPos (a test's
+   // fast walk takes km-long steps).
+   post.m_vPos = ACR_Manager.Ground(nest.m_vGoal);
    Arrive(post);
    return false;
   }
@@ -645,12 +657,12 @@ class ACR_Outbreak
  {
   ACR_ZombieNest nest = post.m_Nest;
   // Containment: survivors there with nobody guarding them join it.
-  post.m_iReserve += ACR_Containment.HordeArrives(ACR_Manager.GetInstance(), post, Room());
+  post.m_iReserve += ACR_Containment.HordeArrives(ACR_Manager.GetInstance(), post, ACR_Outbreak.Room());
   ACR_DefenderPost there = NestNear(nest.m_vGoal, 200, post);
-  if (there && there.m_iReserve + post.m_iReserve <= NEST_MAX)
+  if (there && there.m_iReserve + post.m_iReserve <= MaxOf(there.m_Nest))
   {
    there.m_iReserve += post.m_iReserve;
-   there.m_Nest.m_iSize = Math.Min(NEST_MAX, Math.Max(there.m_Nest.m_iSize, there.m_iReserve));
+   there.m_Nest.m_iSize = Math.Min(MaxOf(there.m_Nest), Math.Max(there.m_Nest.m_iSize, there.m_iReserve));
    PrintFormat("[ACR] ZOMBIES %1 joins %2 (%3 now)", post.m_sName, there.m_sName, there.m_iReserve);
    post.m_iReserve = 0;
    ACR_Defenders.Remove(post);
@@ -700,7 +712,7 @@ class ACR_Outbreak
   ACR_ZombieNest nest = post.m_Nest;
   if (post.m_iReserve > 0 && nest.m_iRisen > 0)
   {
-   post.m_iReserve = Math.Min(NEST_MAX, post.m_iReserve + nest.m_iRisen);
+   post.m_iReserve = Math.Min(MaxOf(nest), post.m_iReserve + nest.m_iRisen);
    PrintFormat("[ACR] ZOMBIES %1: %2 of the dead join them", post.m_sName, nest.m_iRisen);
   }
   nest.m_iRisen = 0;
@@ -806,7 +818,7 @@ class ACR_Outbreak
   if (nearest && Total() < s_iCap)
   {
    if (nearest.m_Group) nearest.m_Nest.m_iRisen++;
-   else nearest.m_iReserve = Math.Min(NEST_MAX, nearest.m_iReserve + 1);
+   else nearest.m_iReserve = Math.Min(MaxOf(nearest.m_Nest), nearest.m_iReserve + 1);
   }
   ACR_Insurgency.MarkZombies(side, pos, string.Format("Zombies killed our men at %1: that area is dangerous", ACR_Manager.Grid(pos)));
  }
