@@ -92,12 +92,13 @@ class ACR_TestOutbreak
 
  protected static void SendHorde()
  {
+  // A nest with a town in horde reach (a country nest at the map's edge may have none).
   ACR_DefenderPost from;
-  foreach (ACR_DefenderPost post : ACR_Defenders.s_Posts)
-   if (post.m_Nest && !post.m_Nest.m_bRoaming && !post.m_Group && !post.m_bGone && post.m_iReserve >= 8 && post != s_Nest) from = post;
   vector goal;
   string goalName;
-  bool sent = from && ACR_Outbreak.PickGoal(from.m_vPos, goal, goalName) && ACR_Outbreak.SendHorde(from, 4, goal, goalName);
+  foreach (ACR_DefenderPost post : ACR_Defenders.s_Posts)
+   if (!from && post.m_Nest && !post.m_Nest.m_bRoaming && !post.m_Group && !post.m_bGone && post.m_iReserve >= 8 && post != s_Nest && ACR_Outbreak.PickGoal(post.m_vPos, goal, goalName)) from = post;
+  bool sent = from && ACR_Outbreak.SendHorde(from, 4, goal, goalName);
   foreach (ACR_DefenderPost horde : ACR_Defenders.s_Posts) if (horde.m_Nest && horde.m_Nest.m_bRoaming) s_Horde = horde;
   Check("zombies: a nest sends a horde to another town", sent && s_Horde != null, string.Format("to %1", goalName));
   ACR_Outbreak.s_fWalkScaleForTest = 400;
